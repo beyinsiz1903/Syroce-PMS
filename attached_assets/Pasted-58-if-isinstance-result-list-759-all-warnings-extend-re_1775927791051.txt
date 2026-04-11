@@ -1,0 +1,948 @@
+58 |             if isinstance(result, list):
+759 |                 all_warnings.extend(result)
+760 |     
+    | ^^^^
+761 |     # Sort by confidence (highest first)
+762 |     all_warnings.sort(key=lambda w: w.confidence, reverse=True)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:763:1
+    |
+761 |     # Sort by confidence (highest first)
+762 |     all_warnings.sort(key=lambda w: w.confidence, reverse=True)
+763 |     
+    | ^^^^
+764 |     # Convert to dict
+765 |     return [w.to_dict() for w in all_warnings]
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:771:1
+    |
+769 |     """Emit ops events for generated warnings. Returns count of emitted events."""
+770 |     emitted = 0
+771 |     
+    | ^^^^
+772 |     for warning in warnings:
+773 |         # Skip info-level recovery signals from event emission (too noisy)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:776:1
+    |
+774 |         if warning["severity"] == "info":
+775 |             continue
+776 |         
+    | ^^^^^^^^
+777 |         # Check if we recently emitted the same warning (dedup within 30 min)
+778 |         recent_same = await db.ops_events.find_one({
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:784:1
+    |
+782 |             "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=30)).isoformat()},
+783 |         })
+784 |         
+    | ^^^^^^^^
+785 |         if recent_same:
+786 |             continue  # Already emitted recently
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:787:1
+    |
+785 |         if recent_same:
+786 |             continue  # Already emitted recently
+787 |         
+    | ^^^^^^^^
+788 |         severity = SEVERITY_WARNING if warning["severity"] == "warning" else SEVERITY_WARNING
+789 |         if warning["severity"] == "critical":
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:792:1
+    |
+790 |             from routers.ops_event_emitter import SEVERITY_CRITICAL
+791 |             severity = SEVERITY_CRITICAL
+792 |         
+    | ^^^^^^^^
+793 |         await emit_ops_event(
+794 |             warning["warning_type"],
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:811:1
+    |
+809 |         )
+810 |         emitted += 1
+811 |     
+    | ^^^^
+812 |     return emitted
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:821:1
+    |
+819 | class EarlyWarningEngine:
+820 |     """Background engine for periodic warning generation."""
+821 |     
+    | ^^^^
+822 |     def __init__(self):
+823 |         self._running = False
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:826:1
+    |
+824 |         self._task = None
+825 |         self._check_interval = 300  # 5 minutes
+826 |     
+    | ^^^^
+827 |     async def start(self):
+828 |         """Start the background warning checker."""
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:834:1
+    |
+832 |         self._task = asyncio.create_task(self._run_loop())
+833 |         logger.info("[EARLY-WARNING] Engine started (interval=%ds)", self._check_interval)
+834 |     
+    | ^^^^
+835 |     async def stop(self):
+836 |         """Stop the background checker."""
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:845:1
+    |
+843 |                 pass
+844 |         logger.info("[EARLY-WARNING] Engine stopped")
+845 |     
+    | ^^^^
+846 |     async def _run_loop(self):
+847 |         """Background loop."""
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:854:1
+    |
+852 |                 logger.error("[EARLY-WARNING] Check failed: %s", exc)
+853 |             await asyncio.sleep(self._check_interval)
+854 |     
+    | ^^^^
+855 |     async def _check_all_tenants(self):
+856 |         """Check warnings for all tenants."""
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:858:1
+    |
+856 |         """Check warnings for all tenants."""
+857 |         tenants = await db.tenants.find({}, {"_id": 0, "id": 1}).to_list(100)
+858 |         
+    | ^^^^^^^^
+859 |         for tenant in tenants:
+860 |             tenant_id = tenant.get("id", "")
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_engine.py:863:1
+    |
+861 |             if not tenant_id:
+862 |                 continue
+863 |             
+    | ^^^^^^^^^^^^
+864 |             try:
+865 |                 warnings = await generate_all_warnings(tenant_id)
+    |
+help: Remove whitespace from blank line
+
+F401 [*] `typing.Any` imported but unused
+  --> routers/early_warning_router.py:18:20
+   |
+16 | import logging
+17 | from datetime import UTC, datetime, timedelta
+18 | from typing import Any
+   |                    ^^^
+19 |
+20 | from fastapi import APIRouter, Depends, HTTPException, Query
+   |
+help: Remove unused import: `typing.Any`
+
+F401 [*] `routers.early_warning_engine.analyze_system_warnings` imported but unused
+  --> routers/early_warning_router.py:27:5
+   |
+25 | from routers.early_warning_engine import (
+26 |     analyze_connector_warnings,
+27 |     analyze_system_warnings,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+28 |     emit_warning_events,
+29 |     generate_all_warnings,
+   |
+help: Remove unused import: `routers.early_warning_engine.analyze_system_warnings`
+
+W293 Blank line contains whitespace
+  --> routers/early_warning_router.py:59:1
+   |
+57 | ):
+58 |     """Tüm erken uyarıları getir.
+59 |     
+   | ^^^^
+60 |     Her uyarı için:
+61 |     - warning_type: Uyarı tipi
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/early_warning_router.py:70:1
+   |
+68 |     """
+69 |     tenant_id = _get_tenant(current_user)
+70 |     
+   | ^^^^
+71 |     try:
+72 |         warnings = await generate_all_warnings(tenant_id)
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/early_warning_router.py:73:1
+   |
+71 |     try:
+72 |         warnings = await generate_all_warnings(tenant_id)
+73 |         
+   | ^^^^^^^^
+74 |         # Filter by confidence
+75 |         filtered = [w for w in warnings if w["confidence"] >= min_confidence]
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/early_warning_router.py:76:1
+   |
+74 |         # Filter by confidence
+75 |         filtered = [w for w in warnings if w["confidence"] >= min_confidence]
+76 |         
+   | ^^^^^^^^
+77 |         # Emit events if requested
+78 |         emitted_count = 0
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/early_warning_router.py:81:1
+   |
+79 |         if emit_events and filtered:
+80 |             emitted_count = await emit_warning_events(tenant_id, filtered)
+81 |         
+   | ^^^^^^^^
+82 |         # Group by severity
+83 |         critical = [w for w in filtered if w["severity"] == "critical"]
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/early_warning_router.py:86:1
+   |
+84 |         warning_level = [w for w in filtered if w["severity"] == "warning"]
+85 |         info = [w for w in filtered if w["severity"] == "info"]
+86 |         
+   | ^^^^^^^^
+87 |         return {
+88 |             "warnings": filtered,
+   |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> routers/early_warning_router.py:112:1
+    |
+110 | ):
+111 |     """Erken uyarı özeti — Dashboard kartı için optimize edilmiş.
+112 |     
+    | ^^^^
+113 |     Returns:
+114 |     - warning_count: Toplam uyarı sayısı
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:121:1
+    |
+119 |     """
+120 |     tenant_id = _get_tenant(current_user)
+121 |     
+    | ^^^^
+122 |     try:
+123 |         warnings = await generate_all_warnings(tenant_id)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:124:1
+    |
+122 |     try:
+123 |         warnings = await generate_all_warnings(tenant_id)
+124 |         
+    | ^^^^^^^^
+125 |         # Get only actionable warnings (confidence >= 50)
+126 |         actionable = [w for w in warnings if w["confidence"] >= 50]
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:127:1
+    |
+125 |         # Get only actionable warnings (confidence >= 50)
+126 |         actionable = [w for w in warnings if w["confidence"] >= 50]
+127 |         
+    | ^^^^^^^^
+128 |         critical = [w for w in actionable if w["severity"] == "critical"]
+129 |         warning_level = [w for w in actionable if w["severity"] == "warning"]
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:130:1
+    |
+128 |         critical = [w for w in actionable if w["severity"] == "critical"]
+129 |         warning_level = [w for w in actionable if w["severity"] == "warning"]
+130 |         
+    | ^^^^^^^^
+131 |         # Get unique connectors at risk
+132 |         connectors_at_risk = list(set([
+    |
+help: Remove whitespace from blank line
+
+C403 Unnecessary list comprehension (rewrite as a set comprehension)
+   --> routers/early_warning_router.py:132:35
+    |
+131 |           # Get unique connectors at risk
+132 |           connectors_at_risk = list(set([
+    |  ___________________________________^
+133 | |             w["provider"] for w in actionable 
+134 | |             if w["provider"] and w["provider"] != "system"
+135 | |         ]))
+    | |__________^
+136 |           
+137 |           # Calculate system health indicator
+    |
+help: Rewrite as a set comprehension
+
+W291 [*] Trailing whitespace
+   --> routers/early_warning_router.py:133:46
+    |
+131 |         # Get unique connectors at risk
+132 |         connectors_at_risk = list(set([
+133 |             w["provider"] for w in actionable 
+    |                                              ^
+134 |             if w["provider"] and w["provider"] != "system"
+135 |         ]))
+    |
+help: Remove trailing whitespace
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:136:1
+    |
+134 |             if w["provider"] and w["provider"] != "system"
+135 |         ]))
+136 |         
+    | ^^^^^^^^
+137 |         # Calculate system health indicator
+138 |         if len(critical) > 0:
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:146:1
+    |
+144 |         else:
+145 |             system_health = "healthy"
+146 |         
+    | ^^^^^^^^
+147 |         # Top warnings (sorted by confidence)
+148 |         top_warnings = actionable[:5]
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:149:1
+    |
+147 |         # Top warnings (sorted by confidence)
+148 |         top_warnings = actionable[:5]
+149 |         
+    | ^^^^^^^^
+150 |         return {
+151 |             "warning_count": len(actionable),
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:186:1
+    |
+184 |     """Belirli bir connector için erken uyarıları ve trend verilerini getir."""
+185 |     tenant_id = _get_tenant(current_user)
+186 |     
+    | ^^^^
+187 |     # Get connector info
+188 |     connector = await db.cm_connectors.find_one(
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:192:1
+    |
+190 |         {"_id": 0}
+191 |     )
+192 |     
+    | ^^^^
+193 |     if not connector:
+194 |         raise HTTPException(status_code=404, detail="Connector bulunamadı")
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:195:1
+    |
+193 |     if not connector:
+194 |         raise HTTPException(status_code=404, detail="Connector bulunamadı")
+195 |     
+    | ^^^^
+196 |     provider = connector.get("provider", "unknown")
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:197:1
+    |
+196 |     provider = connector.get("provider", "unknown")
+197 |     
+    | ^^^^
+198 |     # Get warnings for this connector
+199 |     warnings = await analyze_connector_warnings(tenant_id, connector_id, provider)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:200:1
+    |
+198 |     # Get warnings for this connector
+199 |     warnings = await analyze_connector_warnings(tenant_id, connector_id, provider)
+200 |     
+    | ^^^^
+201 |     # Get detailed trend data
+202 |     failure_trend = await get_failure_rate_trend(tenant_id, connector_id, provider)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:206:1
+    |
+204 |     health_trend = await get_health_score_trend(tenant_id, connector_id, provider)
+205 |     throttle_trend = await get_throttle_trend(tenant_id, provider)
+206 |     
+    | ^^^^
+207 |     return {
+208 |         "connector_id": connector_id,
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> routers/early_warning_router.py:240:1
+    |
+238 | ):
+239 |     """Trend verileri — UI sparkline'lar için.
+240 |     
+    | ^^^^
+241 |     Returns time-series data for:
+242 |     - failure_rate: Hata oranı trendi
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:248:1
+    |
+246 |     tenant_id = _get_tenant(current_user)
+247 |     now = datetime.now(UTC)
+248 |     
+    | ^^^^
+249 |     # Get connectors
+250 |     connectors = await db.cm_connectors.find(
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:254:1
+    |
+252 |         {"_id": 0, "id": 1, "provider": 1}
+253 |     ).to_list(50)
+254 |     
+    | ^^^^
+255 |     # Build time buckets (1 hour each)
+256 |     buckets = []
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:265:1
+    |
+263 |             "label": f"{h}h ago",
+264 |         })
+265 |     
+    | ^^^^
+266 |     # Aggregate failure rates per bucket
+267 |     failure_rate_series = []
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:285:1
+    |
+283 |             "failed": failed,
+284 |         })
+285 |     
+    | ^^^^
+286 |     # Get current DLQ and backlog
+287 |     dlq_trend = await get_dlq_trend(tenant_id)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:289:1
+    |
+287 |     dlq_trend = await get_dlq_trend(tenant_id)
+288 |     backlog_trend = await get_backlog_trend(tenant_id)
+289 |     
+    | ^^^^
+290 |     # Get connector health scores
+291 |     connector_scores = []
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:301:1
+    |
+299 |             "score_delta": health["score_delta"],
+300 |         })
+301 |     
+    | ^^^^
+302 |     return {
+303 |         "failure_rate_series": failure_rate_series,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:325:1
+    |
+323 |     tenant_id = _get_tenant(current_user)
+324 |     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+325 |     
+    | ^^^^
+326 |     events = await db.ops_events.find(
+327 |         {
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:334:1
+    |
+332 |         {"_id": 0}
+333 |     ).sort("created_at", -1).limit(limit).to_list(limit)
+334 |     
+    | ^^^^
+335 |     # Group by warning type
+336 |     by_type: dict[str, int] = {}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:340:1
+    |
+338 |         wtype = ev.get("event_type", "unknown")
+339 |         by_type[wtype] = by_type.get(wtype, 0) + 1
+340 |     
+    | ^^^^
+341 |     return {
+342 |         "events": events,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:359:1
+    |
+357 |     """Early Warning Engine durumunu getir."""
+358 |     engine = get_early_warning_engine()
+359 |     
+    | ^^^^
+360 |     return {
+361 |         "running": engine._running,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:382:1
+    |
+380 |     engine = get_early_warning_engine()
+381 |     await engine.start()
+382 |     
+    | ^^^^
+383 |     return {"ok": True, "message": "Early Warning Engine başlatıldı"}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:393:1
+    |
+391 |     engine = get_early_warning_engine()
+392 |     await engine.stop()
+393 |     
+    | ^^^^
+394 |     return {"ok": True, "message": "Early Warning Engine durduruldu"}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:407:1
+    |
+405 |     """Manuel olarak uyarı kontrolü tetikle ve event'leri emit et."""
+406 |     tenant_id = _get_tenant(current_user)
+407 |     
+    | ^^^^
+408 |     try:
+409 |         warnings = await generate_all_warnings(tenant_id)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/early_warning_router.py:411:1
+    |
+409 |         warnings = await generate_all_warnings(tenant_id)
+410 |         emitted = await emit_warning_events(tenant_id, warnings)
+411 |         
+    | ^^^^^^^^
+412 |         return {
+413 |             "ok": True,
+    |
+help: Remove whitespace from blank line
+
+F401 [*] `uuid` imported but unused
+  --> routers/ops_events_router.py:13:8
+   |
+11 | """
+12 | import logging
+13 | import uuid
+   |        ^^^^
+14 | from datetime import UTC, datetime
+   |
+help: Remove unused import: `uuid`
+
+F401 [*] `typing.Any` imported but unused
+  --> routers/ops_timeline_router.py:15:20
+   |
+13 | import logging
+14 | from datetime import UTC, datetime, timedelta
+15 | from typing import Any
+   |                    ^^^
+16 |
+17 | from fastapi import APIRouter, Depends, HTTPException, Query
+   |
+help: Remove unused import: `typing.Any`
+
+W293 Blank line contains whitespace
+  --> routers/ops_timeline_router.py:42:1
+   |
+40 | ):
+41 |     """Tek bir correlation_id'nin tum yasam dongusu timeline'i.
+42 |     
+   | ^^^^
+43 |     Webhook → import → push → retry → DLQ/success zincirini gosterir.
+44 |     """
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/ops_timeline_router.py:73:1
+   |
+71 |     first_event = events[0]
+72 |     last_event = events[-1]
+73 |     
+   | ^^^^
+74 |     # Determine terminal state
+75 |     terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure", 
+   |
+help: Remove whitespace from blank line
+
+W291 [*] Trailing whitespace
+  --> routers/ops_timeline_router.py:75:90
+   |
+74 |     # Determine terminal state
+75 |     terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure", 
+   |                                                                                          ^
+76 |                        "webhook.delivery.dlq", "push.succeeded", "push.failed_terminal",
+77 |                        "import.completed", "import.failed"]
+   |
+help: Remove trailing whitespace
+
+W293 [*] Blank line contains whitespace
+  --> routers/ops_timeline_router.py:78:1
+   |
+76 |                        "webhook.delivery.dlq", "push.succeeded", "push.failed_terminal",
+77 |                        "import.completed", "import.failed"]
+78 |     
+   | ^^^^
+79 |     terminal_event = None
+80 |     for ev in reversed(events):
+   |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+  --> routers/ops_timeline_router.py:87:1
+   |
+85 |     # Count retry attempts
+86 |     retry_count = sum(1 for ev in events if "retry" in ev["event_type"].lower())
+87 |     
+   | ^^^^
+88 |     # Affected entities
+89 |     affected_tenant = first_event.get("tenant_id", "")
+   |
+help: Remove whitespace from blank line
+
+W291 [*] Trailing whitespace
+   --> routers/ops_timeline_router.py:105:69
+    |
+103 |     ]
+104 |     is_terminal_failure = terminal_event and terminal_event["event_type"] in [
+105 |         "webhook.delivery.terminal_failure", "webhook.delivery.dlq", 
+    |                                                                     ^
+106 |         "push.failed_terminal", "import.failed"
+107 |     ]
+    |
+help: Remove trailing whitespace
+
+W293 Blank line contains whitespace
+   --> routers/ops_timeline_router.py:178:1
+    |
+176 | ):
+177 |     """Tek bir ops event'in ozet bilgileri ve baglamli timeline.
+178 |     
+    | ^^^^
+179 |     Bir satira tiklandiginda drilldown icin kullanilir.
+180 |     """
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:195:1
+    |
+194 |     correlation_id = event.get("correlation_id")
+195 |     
+    | ^^^^
+196 |     # If has correlation_id, get full timeline
+197 |     related_events = []
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:200:1
+    |
+198 |     delivery = None
+199 |     dlq_item = None
+200 |     
+    | ^^^^
+201 |     if correlation_id:
+202 |         related_events = await db.ops_events.find(
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> routers/ops_timeline_router.py:255:1
+    |
+253 | ):
+254 |     """Onceliklendirmis incident listesi.
+255 |     
+    | ^^^^
+256 |     Oncelik sirasi:
+257 |     1. terminal DLQ (critical)
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> routers/ops_timeline_router.py:441:1
+    |
+439 | ):
+440 |     """Tum connector'larin standardize edilmis health durumu.
+441 |     
+    | ^^^^
+442 |     Her connector icin ayni schema:
+443 |     - provider
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:457:1
+    |
+455 |     sysdb = get_system_db()
+456 |     tenant_id = _get_tenant(current_user)
+457 |     
+    | ^^^^
+458 |     now = datetime.now(UTC)
+459 |     since_1h = (now - timedelta(hours=1)).isoformat()
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:527:1
+    |
+525 |         # Calculate health score (0-100)
+526 |         health_score = 100
+527 |         
+    | ^^^^^^^^
+528 |         # Deduct for failure rate
+529 |         if failure_rate_1h > 50:
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:672:1
+    |
+670 |                 "last_event_at": ev.get("created_at"),
+671 |             }
+672 |         
+    | ^^^^^^^^
+673 |         if ev.get("severity") == "critical":
+674 |             channel_impact[ch]["critical_count"] += 1
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:677:1
+    |
+675 |         else:
+676 |             channel_impact[ch]["warning_count"] += 1
+677 |         
+    | ^^^^^^^^
+678 |         channel_impact[ch]["event_types"].add(ev.get("event_type"))
+679 |         channel_impact[ch]["last_event_at"] = ev.get("created_at")
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:713:1
+    |
+712 |     engine = get_remediation_engine()
+713 |     
+    | ^^^^
+714 |     return {
+715 |         "engine_running": engine._running,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:750:1
+    |
+748 |     engine = get_remediation_engine()
+749 |     await engine.start()
+750 |     
+    | ^^^^
+751 |     return {"ok": True, "message": "Auto-remediation engine baslatildi"}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:763:1
+    |
+761 |     engine = get_remediation_engine()
+762 |     await engine.stop()
+763 |     
+    | ^^^^
+764 |     return {"ok": True, "message": "Auto-remediation engine durduruldu"}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:777:1
+    |
+775 |     tenant_id = _get_tenant(current_user)
+776 |     result = await manually_recover_connector(tenant_id, connector_id)
+777 |     
+    | ^^^^
+778 |     if not result.get("ok"):
+779 |         raise HTTPException(status_code=400, detail=result.get("error", "Recovery basarisiz"))
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:780:1
+    |
+778 |     if not result.get("ok"):
+779 |         raise HTTPException(status_code=400, detail=result.get("error", "Recovery basarisiz"))
+780 |     
+    | ^^^^
+781 |     return result
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:795:1
+    |
+793 |     tenant_id = _get_tenant(current_user)
+794 |     result = await manually_degrade_connector(tenant_id, connector_id, reason)
+795 |     
+    | ^^^^
+796 |     if not result.get("ok"):
+797 |         raise HTTPException(status_code=400, detail=result.get("error", "Degrade basarisiz"))
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> routers/ops_timeline_router.py:798:1
+    |
+796 |     if not result.get("ok"):
+797 |         raise HTTPException(status_code=400, detail=result.get("error", "Degrade basarisiz"))
+798 |     
+    | ^^^^
+799 |     return result
+    |
+help: Remove whitespace from blank line
+
+F401 [*] `security.key_registry.KeyRegistry` imported but unused
+  --> security/encryption_management_router.py:21:35
+   |
+19 | from core.security import get_current_user
+20 | from models.schemas import User
+21 | from security.key_registry import KeyRegistry, KeyState, KeyType, get_key_registry
+   |                                   ^^^^^^^^^^^
+22 | from security.reencryption_worker import JobState, get_reencryption_worker
+   |
+help: Remove unused import: `security.key_registry.KeyRegistry`
+
+F841 Local variable `total_in_collection` is assigned to but never used
+   --> security/reencryption_worker.py:436:9
+    |
+435 |         doc_ids = [doc["_id"] async for doc in cursor]
+436 |         total_in_collection = len(doc_ids)
+    |         ^^^^^^^^^^^^^^^^^^^
+437 |
+438 |         processed = 0
+    |
+help: Remove assignment to unused variable `total_in_collection`
+
+Found 165 errors.
+[*] 153 fixable with the `--fix` option (12 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Error: Process completed with exit code 1.

@@ -15,7 +15,6 @@ Provides:
 """
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -24,7 +23,6 @@ from core.security import get_current_user
 from models.schemas import User
 from routers.early_warning_engine import (
     analyze_connector_warnings,
-    analyze_system_warnings,
     emit_warning_events,
     generate_all_warnings,
     get_backlog_trend,
@@ -56,7 +54,7 @@ async def get_early_warnings(
     current_user: User = Depends(get_current_user),
 ):
     """Tüm erken uyarıları getir.
-    
+
     Her uyarı için:
     - warning_type: Uyarı tipi
     - provider: Etkilenen kanal
@@ -67,23 +65,23 @@ async def get_early_warnings(
     - trend_data: Trend verileri
     """
     tenant_id = _get_tenant(current_user)
-    
+
     try:
         warnings = await generate_all_warnings(tenant_id)
-        
+
         # Filter by confidence
         filtered = [w for w in warnings if w["confidence"] >= min_confidence]
-        
+
         # Emit events if requested
         emitted_count = 0
         if emit_events and filtered:
             emitted_count = await emit_warning_events(tenant_id, filtered)
-        
+
         # Group by severity
         critical = [w for w in filtered if w["severity"] == "critical"]
         warning_level = [w for w in filtered if w["severity"] == "warning"]
         info = [w for w in filtered if w["severity"] == "info"]
-        
+
         return {
             "warnings": filtered,
             "total": len(filtered),
@@ -109,7 +107,7 @@ async def get_early_warnings_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Erken uyarı özeti — Dashboard kartı için optimize edilmiş.
-    
+
     Returns:
     - warning_count: Toplam uyarı sayısı
     - critical_count: Kritik uyarı sayısı
@@ -118,22 +116,22 @@ async def get_early_warnings_summary(
     - system_health_indicator: Genel sistem durumu
     """
     tenant_id = _get_tenant(current_user)
-    
+
     try:
         warnings = await generate_all_warnings(tenant_id)
-        
+
         # Get only actionable warnings (confidence >= 50)
         actionable = [w for w in warnings if w["confidence"] >= 50]
-        
+
         critical = [w for w in actionable if w["severity"] == "critical"]
         warning_level = [w for w in actionable if w["severity"] == "warning"]
-        
+
         # Get unique connectors at risk
-        connectors_at_risk = list(set([
-            w["provider"] for w in actionable 
+        connectors_at_risk = list({
+            w["provider"] for w in actionable
             if w["provider"] and w["provider"] != "system"
-        ]))
-        
+        })
+
         # Calculate system health indicator
         if len(critical) > 0:
             system_health = "critical"
@@ -143,10 +141,10 @@ async def get_early_warnings_summary(
             system_health = "attention"
         else:
             system_health = "healthy"
-        
+
         # Top warnings (sorted by confidence)
         top_warnings = actionable[:5]
-        
+
         return {
             "warning_count": len(actionable),
             "critical_count": len(critical),
@@ -183,27 +181,27 @@ async def get_connector_warnings(
 ):
     """Belirli bir connector için erken uyarıları ve trend verilerini getir."""
     tenant_id = _get_tenant(current_user)
-    
+
     # Get connector info
     connector = await db.cm_connectors.find_one(
         {"tenant_id": tenant_id, "id": connector_id},
         {"_id": 0}
     )
-    
+
     if not connector:
         raise HTTPException(status_code=404, detail="Connector bulunamadı")
-    
+
     provider = connector.get("provider", "unknown")
-    
+
     # Get warnings for this connector
     warnings = await analyze_connector_warnings(tenant_id, connector_id, provider)
-    
+
     # Get detailed trend data
     failure_trend = await get_failure_rate_trend(tenant_id, connector_id, provider)
     staleness_data = await get_staleness_data(tenant_id, connector_id)
     health_trend = await get_health_score_trend(tenant_id, connector_id, provider)
     throttle_trend = await get_throttle_trend(tenant_id, provider)
-    
+
     return {
         "connector_id": connector_id,
         "provider": provider,
@@ -237,7 +235,7 @@ async def get_warning_trends(
     current_user: User = Depends(get_current_user),
 ):
     """Trend verileri — UI sparkline'lar için.
-    
+
     Returns time-series data for:
     - failure_rate: Hata oranı trendi
     - dlq_count: DLQ sayısı trendi
@@ -245,13 +243,13 @@ async def get_warning_trends(
     """
     tenant_id = _get_tenant(current_user)
     now = datetime.now(UTC)
-    
+
     # Get connectors
     connectors = await db.cm_connectors.find(
         {"tenant_id": tenant_id},
         {"_id": 0, "id": 1, "provider": 1}
     ).to_list(50)
-    
+
     # Build time buckets (1 hour each)
     buckets = []
     for h in range(hours, 0, -1):
@@ -262,7 +260,7 @@ async def get_warning_trends(
             "end": bucket_end,
             "label": f"{h}h ago",
         })
-    
+
     # Aggregate failure rates per bucket
     failure_rate_series = []
     for bucket in buckets:
@@ -282,11 +280,11 @@ async def get_warning_trends(
             "total": total,
             "failed": failed,
         })
-    
+
     # Get current DLQ and backlog
     dlq_trend = await get_dlq_trend(tenant_id)
     backlog_trend = await get_backlog_trend(tenant_id)
-    
+
     # Get connector health scores
     connector_scores = []
     for conn in connectors[:10]:  # Limit to 10 connectors
@@ -298,7 +296,7 @@ async def get_warning_trends(
             "trend_direction": health["trend_direction"],
             "score_delta": health["score_delta"],
         })
-    
+
     return {
         "failure_rate_series": failure_rate_series,
         "dlq_current": dlq_trend["pending_count"],
@@ -322,7 +320,7 @@ async def get_recent_warning_events(
     """Son erken uyarı event'lerini getir (ops_events'tan)."""
     tenant_id = _get_tenant(current_user)
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    
+
     events = await db.ops_events.find(
         {
             "tenant_id": tenant_id,
@@ -331,13 +329,13 @@ async def get_recent_warning_events(
         },
         {"_id": 0}
     ).sort("created_at", -1).limit(limit).to_list(limit)
-    
+
     # Group by warning type
     by_type: dict[str, int] = {}
     for ev in events:
         wtype = ev.get("event_type", "unknown")
         by_type[wtype] = by_type.get(wtype, 0) + 1
-    
+
     return {
         "events": events,
         "total": len(events),
@@ -356,7 +354,7 @@ async def get_engine_status(
 ):
     """Early Warning Engine durumunu getir."""
     engine = get_early_warning_engine()
-    
+
     return {
         "running": engine._running,
         "check_interval_seconds": engine._check_interval,
@@ -379,7 +377,7 @@ async def start_warning_engine(
     """Early Warning Engine'i başlat."""
     engine = get_early_warning_engine()
     await engine.start()
-    
+
     return {"ok": True, "message": "Early Warning Engine başlatıldı"}
 
 
@@ -390,7 +388,7 @@ async def stop_warning_engine(
     """Early Warning Engine'i durdur."""
     engine = get_early_warning_engine()
     await engine.stop()
-    
+
     return {"ok": True, "message": "Early Warning Engine durduruldu"}
 
 
@@ -404,11 +402,11 @@ async def force_warning_check(
 ):
     """Manuel olarak uyarı kontrolü tetikle ve event'leri emit et."""
     tenant_id = _get_tenant(current_user)
-    
+
     try:
         warnings = await generate_all_warnings(tenant_id)
         emitted = await emit_warning_events(tenant_id, warnings)
-        
+
         return {
             "ok": True,
             "warnings_generated": len(warnings),

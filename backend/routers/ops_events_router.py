@@ -10,7 +10,6 @@ Provides endpoints for:
   - Thin dashboard summary (single endpoint for frontend)
 """
 import logging
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query

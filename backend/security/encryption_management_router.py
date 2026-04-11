@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
-from security.key_registry import KeyRegistry, KeyState, KeyType, get_key_registry
+from security.key_registry import KeyState, KeyType, get_key_registry
 from security.reencryption_worker import JobState, get_reencryption_worker
 
 logger = logging.getLogger("security.encryption_management_router")

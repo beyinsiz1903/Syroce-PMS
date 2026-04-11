@@ -433,7 +433,7 @@ class ReencryptionWorker:
         ).skip(offset).batch_size(batch_size)
 
         doc_ids = [doc["_id"] async for doc in cursor]
-        total_in_collection = len(doc_ids)
+        len(doc_ids)
 
         processed = 0
         failed = 0

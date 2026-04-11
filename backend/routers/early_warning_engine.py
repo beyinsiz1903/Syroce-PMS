@@ -35,7 +35,6 @@ from typing import Any
 
 from core.database import db
 from routers.ops_event_emitter import (
-    SEVERITY_INFO,
     SEVERITY_WARNING,
     emit_ops_event,
 )
@@ -48,7 +47,7 @@ logger = logging.getLogger("early_warning_engine")
 
 # Trend analysis windows
 TREND_WINDOW_SHORT = 30    # minutes
-TREND_WINDOW_MEDIUM = 90   # minutes  
+TREND_WINDOW_MEDIUM = 90   # minutes
 TREND_WINDOW_LONG = 180    # minutes
 
 # Failure rate thresholds
@@ -89,7 +88,7 @@ CONFIDENCE_HISTORY_BONUS = 15         # add if pattern matches history
 
 class EarlyWarning:
     """Represents a predictive warning."""
-    
+
     def __init__(
         self,
         warning_type: str,
@@ -133,19 +132,19 @@ class EarlyWarning:
 # ══════════════════════════════════════════════════════════════════════
 
 async def get_failure_rate_trend(
-    tenant_id: str, 
-    connector_id: str, 
+    tenant_id: str,
+    connector_id: str,
     provider: str
 ) -> dict[str, Any]:
     """Get failure rate trend across multiple time windows."""
     now = datetime.now(UTC)
-    
+
     windows = {
         "short": (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat(),
         "medium": (now - timedelta(minutes=TREND_WINDOW_MEDIUM)).isoformat(),
         "long": (now - timedelta(minutes=TREND_WINDOW_LONG)).isoformat(),
     }
-    
+
     results = {}
     for window_name, since in windows.items():
         total = await db.cm_rate_push_metrics.count_documents({
@@ -165,12 +164,12 @@ async def get_failure_rate_trend(
             "failed": failed,
             "rate": rate,
         }
-    
+
     # Calculate trend direction
     short_rate = results["short"]["rate"]
     medium_rate = results["medium"]["rate"]
     long_rate = results["long"]["rate"]
-    
+
     trend_direction = "stable"
     if short_rate > medium_rate > long_rate:
         trend_direction = "rising"
@@ -180,7 +179,7 @@ async def get_failure_rate_trend(
         trend_direction = "rising_recent"
     elif short_rate < medium_rate:
         trend_direction = "falling_recent"
-    
+
     return {
         "windows": results,
         "trend_direction": trend_direction,
@@ -193,31 +192,31 @@ async def get_dlq_trend(tenant_id: str) -> dict[str, Any]:
     """Get DLQ growth trend."""
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
-    
+
     now = datetime.now(UTC)
     short_since = (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat()
     medium_since = (now - timedelta(minutes=TREND_WINDOW_MEDIUM)).isoformat()
-    
+
     # Current pending count
     pending_count = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "status": "pending",
     })
-    
+
     # Recent additions (short window)
     recent_additions = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "created_at": {"$gte": short_since},
     })
-    
+
     # Medium term additions
     medium_additions = await sysdb.webhook_dlq.count_documents({
         "tenant_id": tenant_id,
         "created_at": {"$gte": medium_since},
     })
-    
+
     growth_rate = recent_additions  # items per short window
-    
+
     return {
         "pending_count": pending_count,
         "recent_additions": recent_additions,
@@ -232,23 +231,23 @@ async def get_backlog_trend(tenant_id: str) -> dict[str, Any]:
     """Get retry backlog trend."""
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
-    
+
     now = datetime.now(UTC)
     short_since = (now - timedelta(minutes=TREND_WINDOW_SHORT)).isoformat()
-    
+
     # Current backlog
     current_backlog = await sysdb.webhook_deliveries.count_documents({
         "tenant_id": tenant_id,
         "status": "retrying",
     })
-    
+
     # Recent additions to backlog
     recent_retrying = await sysdb.webhook_deliveries.count_documents({
         "tenant_id": tenant_id,
         "status": "retrying",
         "created_at": {"$gte": short_since},
     })
-    
+
     return {
         "current_backlog": current_backlog,
         "recent_additions": recent_retrying,
@@ -263,7 +262,7 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
     since_1h = (now - timedelta(hours=1)).isoformat()
     since_6h = (now - timedelta(hours=6)).isoformat()
     since_24h = (now - timedelta(hours=24)).isoformat()
-    
+
     # Throttle events by window
     throttle_1h = await db.ops_events.count_documents({
         "tenant_id": tenant_id,
@@ -271,27 +270,27 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
         "channel": {"$regex": provider, "$options": "i"},
         "created_at": {"$gte": since_1h},
     })
-    
+
     throttle_6h = await db.ops_events.count_documents({
         "tenant_id": tenant_id,
         "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
         "channel": {"$regex": provider, "$options": "i"},
         "created_at": {"$gte": since_6h},
     })
-    
+
     throttle_24h = await db.ops_events.count_documents({
         "tenant_id": tenant_id,
         "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
         "channel": {"$regex": provider, "$options": "i"},
         "created_at": {"$gte": since_24h},
     })
-    
+
     # Check if frequency is increasing
     avg_6h = throttle_6h / 6  # per hour
     avg_24h = throttle_24h / 24  # per hour
-    
+
     is_increasing = throttle_1h > avg_6h > avg_24h
-    
+
     return {
         "throttle_1h": throttle_1h,
         "throttle_6h": throttle_6h,
@@ -304,12 +303,12 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
 
 
 async def get_staleness_data(
-    tenant_id: str, 
+    tenant_id: str,
     connector_id: str
 ) -> dict[str, Any]:
     """Get last success age data."""
     now = datetime.now(UTC)
-    
+
     # Get last successful push
     last_success = await db.cm_rate_push_metrics.find_one(
         {
@@ -320,7 +319,7 @@ async def get_staleness_data(
         {"_id": 0, "recorded_at": 1},
         sort=[("recorded_at", -1)],
     )
-    
+
     if not last_success:
         return {
             "last_success_at": None,
@@ -328,20 +327,20 @@ async def get_staleness_data(
             "is_stale": True,
             "staleness_level": "critical",
         }
-    
+
     last_ts_str = last_success.get("recorded_at")
     try:
         last_ts = datetime.fromisoformat(last_ts_str.replace("Z", "+00:00"))
         age_minutes = (now - last_ts).total_seconds() / 60
     except Exception:
         age_minutes = 999
-    
+
     staleness_level = "normal"
     if age_minutes >= STALENESS_CRITICAL_MINUTES:
         staleness_level = "critical"
     elif age_minutes >= STALENESS_WARNING_MINUTES:
         staleness_level = "warning"
-    
+
     return {
         "last_success_at": last_ts_str,
         "age_minutes": round(age_minutes, 1),
@@ -360,14 +359,14 @@ async def get_health_score_trend(
     now = datetime.now(UTC)
     since_1h = (now - timedelta(hours=1)).isoformat()
     since_6h = (now - timedelta(hours=6)).isoformat()
-    
+
     async def calc_health(since: str) -> int:
         """Calculate health score for a time window."""
         from core.tenant_db import get_system_db
         sysdb = get_system_db()
-        
+
         score = 100
-        
+
         # Failure rate impact
         total = await db.cm_rate_push_metrics.count_documents({
             "tenant_id": tenant_id,
@@ -381,14 +380,14 @@ async def get_health_score_trend(
             "recorded_at": {"$gte": since},
         })
         failure_rate = failed / max(total, 1) * 100
-        
+
         if failure_rate > 50:
             score -= 40
         elif failure_rate > 20:
             score -= 20
         elif failure_rate > 5:
             score -= 10
-        
+
         # DLQ impact
         dlq_count = await sysdb.webhook_dlq.count_documents({
             "tenant_id": tenant_id,
@@ -400,7 +399,7 @@ async def get_health_score_trend(
             score -= 20
         elif dlq_count > 0:
             score -= 10
-        
+
         # Retry backlog impact
         backlog = await sysdb.webhook_deliveries.count_documents({
             "tenant_id": tenant_id,
@@ -410,12 +409,12 @@ async def get_health_score_trend(
             score -= 15
         elif backlog > 5:
             score -= 5
-        
+
         return max(0, score)
-    
+
     current_score = await calc_health(since_1h)
     historical_score = await calc_health(since_6h)
-    
+
     score_delta = current_score - historical_score
     trend_direction = "stable"
     if score_delta <= -HEALTH_SCORE_DROP_THRESHOLD:
@@ -426,7 +425,7 @@ async def get_health_score_trend(
         trend_direction = "slight_drop"
     elif score_delta > 0:
         trend_direction = "slight_improvement"
-    
+
     return {
         "current_score": current_score,
         "historical_score": historical_score,
@@ -448,15 +447,15 @@ async def check_failure_rate_warning(
 ) -> EarlyWarning | None:
     """Check for rising failure rate trend."""
     trend = await get_failure_rate_trend(tenant_id, connector_id, provider)
-    
+
     short_rate = trend["windows"]["short"]["rate"]
     delta = trend["short_vs_long_delta"]
     direction = trend["trend_direction"]
-    
+
     # Skip if failure rate is low and stable
     if short_rate < FAILURE_RATE_WARNING_THRESHOLD and delta < FAILURE_RATE_TREND_THRESHOLD:
         return None
-    
+
     # Calculate confidence
     confidence = CONFIDENCE_BASE
     if direction in ("rising", "rising_recent"):
@@ -465,11 +464,11 @@ async def check_failure_rate_warning(
         confidence += CONFIDENCE_SEVERITY_BONUS
     if delta >= FAILURE_RATE_TREND_THRESHOLD * 2:
         confidence += CONFIDENCE_HISTORY_BONUS
-    
+
     # Generate warning
     if direction in ("rising", "rising_recent") or short_rate >= FAILURE_RATE_WARNING_THRESHOLD:
         severity = "critical" if short_rate >= FAILURE_RATE_CRITICAL_THRESHOLD else "warning"
-        
+
         return EarlyWarning(
             warning_type="predictive.warning.failure_rate_rising",
             provider=provider,
@@ -481,17 +480,17 @@ async def check_failure_rate_warning(
             trend_data=trend,
             severity=severity,
         )
-    
+
     return None
 
 
 async def check_dlq_warning(tenant_id: str) -> EarlyWarning | None:
     """Check for DLQ spike or growth."""
     trend = await get_dlq_trend(tenant_id)
-    
+
     if not trend["is_spiking"] and not trend["is_growing"]:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if trend["is_spiking"] and trend["is_growing"]:
         confidence += CONFIDENCE_SEVERITY_BONUS + CONFIDENCE_TREND_BONUS
@@ -499,13 +498,13 @@ async def check_dlq_warning(tenant_id: str) -> EarlyWarning | None:
         confidence += CONFIDENCE_TREND_BONUS
     elif trend["is_growing"]:
         confidence += CONFIDENCE_SEVERITY_BONUS
-    
+
     reason_parts = []
     if trend["is_spiking"]:
         reason_parts.append(f"Son 30 dakikada {trend['recent_additions']} yeni DLQ item eklendi")
     if trend["is_growing"]:
         reason_parts.append(f"Toplam {trend['pending_count']} pending DLQ item bekliyor")
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.dlq_spike",
         provider="system",
@@ -522,16 +521,16 @@ async def check_dlq_warning(tenant_id: str) -> EarlyWarning | None:
 async def check_backlog_warning(tenant_id: str) -> EarlyWarning | None:
     """Check for growing retry backlog."""
     trend = await get_backlog_trend(tenant_id)
-    
+
     if not trend["is_growing"]:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if trend["current_backlog"] >= BACKLOG_WARNING_THRESHOLD * 2:
         confidence += CONFIDENCE_SEVERITY_BONUS
     if trend["recent_additions"] >= BACKLOG_GROWTH_RATE_THRESHOLD:
         confidence += CONFIDENCE_TREND_BONUS
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.backlog_growth",
         provider="system",
@@ -551,16 +550,16 @@ async def check_throttle_warning(
 ) -> EarlyWarning | None:
     """Check for increasing throttle frequency."""
     trend = await get_throttle_trend(tenant_id, provider)
-    
+
     if not trend["is_frequent"] and not trend["is_increasing"]:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if trend["is_frequent"]:
         confidence += CONFIDENCE_SEVERITY_BONUS
     if trend["is_increasing"]:
         confidence += CONFIDENCE_TREND_BONUS
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.throttle_risk",
         provider=provider,
@@ -581,18 +580,18 @@ async def check_staleness_warning(
 ) -> EarlyWarning | None:
     """Check for stale connector (no recent success)."""
     data = await get_staleness_data(tenant_id, connector_id)
-    
+
     if not data["is_stale"]:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if data["staleness_level"] == "critical":
         confidence += CONFIDENCE_SEVERITY_BONUS + CONFIDENCE_TREND_BONUS
     elif data["staleness_level"] == "warning":
         confidence += CONFIDENCE_TREND_BONUS
-    
+
     age_text = f"{data['age_minutes']:.0f} dakika" if data["age_minutes"] else "hiç"
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.staleness_risk",
         provider=provider,
@@ -613,11 +612,11 @@ async def check_health_score_warning(
 ) -> EarlyWarning | None:
     """Check for dropping health score trend."""
     trend = await get_health_score_trend(tenant_id, connector_id, provider)
-    
+
     # Generate warning for significant drops or low scores
     if not trend["is_dropping"] and trend["current_score"] >= HEALTH_SCORE_WARNING_THRESHOLD:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if trend["is_dropping"]:
         confidence += CONFIDENCE_TREND_BONUS
@@ -625,9 +624,9 @@ async def check_health_score_warning(
         confidence += CONFIDENCE_SEVERITY_BONUS
     if abs(trend["score_delta"]) >= HEALTH_SCORE_DROP_THRESHOLD * 2:
         confidence += CONFIDENCE_HISTORY_BONUS
-    
+
     severity = "critical" if trend["current_score"] <= HEALTH_SCORE_CRITICAL_THRESHOLD else "warning"
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.degradation_likely",
         provider=provider,
@@ -649,24 +648,24 @@ async def check_recovery_signal(
     """Check for recovery signals (improving metrics)."""
     health_trend = await get_health_score_trend(tenant_id, connector_id, provider)
     failure_trend = await get_failure_rate_trend(tenant_id, connector_id, provider)
-    
+
     # Check if things are improving
     is_health_improving = health_trend["is_improving"]
     is_failure_falling = failure_trend["trend_direction"] in ("falling", "falling_recent")
-    
+
     if not is_health_improving and not is_failure_falling:
         return None
-    
+
     # Only emit if score was previously low
     if health_trend["historical_score"] >= HEALTH_SCORE_WARNING_THRESHOLD:
         return None
-    
+
     confidence = CONFIDENCE_BASE
     if is_health_improving and is_failure_falling:
         confidence += CONFIDENCE_TREND_BONUS + CONFIDENCE_SEVERITY_BONUS
     elif is_health_improving:
         confidence += CONFIDENCE_TREND_BONUS
-    
+
     return EarlyWarning(
         warning_type="predictive.warning.recovery_expected",
         provider=provider,
@@ -694,7 +693,7 @@ async def analyze_connector_warnings(
 ) -> list[EarlyWarning]:
     """Analyze all warning types for a specific connector."""
     warnings = []
-    
+
     # Run all checks in parallel
     results = await asyncio.gather(
         check_failure_rate_warning(tenant_id, connector_id, provider),
@@ -704,63 +703,63 @@ async def analyze_connector_warnings(
         check_recovery_signal(tenant_id, connector_id, provider),
         return_exceptions=True,
     )
-    
+
     for result in results:
         if isinstance(result, EarlyWarning):
             warnings.append(result)
         elif isinstance(result, Exception):
             logger.warning("Warning check failed: %s", result)
-    
+
     return warnings
 
 
 async def analyze_system_warnings(tenant_id: str) -> list[EarlyWarning]:
     """Analyze system-wide warnings (DLQ, backlog)."""
     warnings = []
-    
+
     results = await asyncio.gather(
         check_dlq_warning(tenant_id),
         check_backlog_warning(tenant_id),
         return_exceptions=True,
     )
-    
+
     for result in results:
         if isinstance(result, EarlyWarning):
             warnings.append(result)
         elif isinstance(result, Exception):
             logger.warning("System warning check failed: %s", result)
-    
+
     return warnings
 
 
 async def generate_all_warnings(tenant_id: str) -> list[dict[str, Any]]:
     """Generate all early warnings for a tenant."""
     all_warnings = []
-    
+
     # System-wide warnings
     system_warnings = await analyze_system_warnings(tenant_id)
     all_warnings.extend(system_warnings)
-    
+
     # Per-connector warnings
     connectors = await db.cm_connectors.find(
         {"tenant_id": tenant_id},
         {"_id": 0, "id": 1, "provider": 1, "status": 1}
     ).to_list(50)
-    
+
     connector_tasks = [
         analyze_connector_warnings(tenant_id, conn["id"], conn.get("provider", ""))
         for conn in connectors
     ]
-    
+
     if connector_tasks:
         connector_results = await asyncio.gather(*connector_tasks, return_exceptions=True)
         for result in connector_results:
             if isinstance(result, list):
                 all_warnings.extend(result)
-    
+
     # Sort by confidence (highest first)
     all_warnings.sort(key=lambda w: w.confidence, reverse=True)
-    
+
     # Convert to dict
     return [w.to_dict() for w in all_warnings]
 
@@ -768,12 +767,12 @@ async def generate_all_warnings(tenant_id: str) -> list[dict[str, Any]]:
 async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) -> int:
     """Emit ops events for generated warnings. Returns count of emitted events."""
     emitted = 0
-    
+
     for warning in warnings:
         # Skip info-level recovery signals from event emission (too noisy)
         if warning["severity"] == "info":
             continue
-        
+
         # Check if we recently emitted the same warning (dedup within 30 min)
         recent_same = await db.ops_events.find_one({
             "tenant_id": tenant_id,
@@ -781,15 +780,15 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
             "connector_id": warning.get("connector_id", ""),
             "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=30)).isoformat()},
         })
-        
+
         if recent_same:
             continue  # Already emitted recently
-        
+
         severity = SEVERITY_WARNING if warning["severity"] == "warning" else SEVERITY_WARNING
         if warning["severity"] == "critical":
             from routers.ops_event_emitter import SEVERITY_CRITICAL
             severity = SEVERITY_CRITICAL
-        
+
         await emit_ops_event(
             warning["warning_type"],
             tenant_id,
@@ -808,7 +807,7 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
             affected_entity_id=warning.get("connector_id", "system"),
         )
         emitted += 1
-    
+
     return emitted
 
 
@@ -818,12 +817,12 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
 
 class EarlyWarningEngine:
     """Background engine for periodic warning generation."""
-    
+
     def __init__(self):
         self._running = False
         self._task = None
         self._check_interval = 300  # 5 minutes
-    
+
     async def start(self):
         """Start the background warning checker."""
         if self._running:
@@ -831,7 +830,7 @@ class EarlyWarningEngine:
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
         logger.info("[EARLY-WARNING] Engine started (interval=%ds)", self._check_interval)
-    
+
     async def stop(self):
         """Stop the background checker."""
         self._running = False
@@ -842,7 +841,7 @@ class EarlyWarningEngine:
             except asyncio.CancelledError:
                 pass
         logger.info("[EARLY-WARNING] Engine stopped")
-    
+
     async def _run_loop(self):
         """Background loop."""
         while self._running:
@@ -851,16 +850,16 @@ class EarlyWarningEngine:
             except Exception as exc:
                 logger.error("[EARLY-WARNING] Check failed: %s", exc)
             await asyncio.sleep(self._check_interval)
-    
+
     async def _check_all_tenants(self):
         """Check warnings for all tenants."""
         tenants = await db.tenants.find({}, {"_id": 0, "id": 1}).to_list(100)
-        
+
         for tenant in tenants:
             tenant_id = tenant.get("id", "")
             if not tenant_id:
                 continue
-            
+
             try:
                 warnings = await generate_all_warnings(tenant_id)
                 if warnings:

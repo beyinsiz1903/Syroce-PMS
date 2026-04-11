@@ -12,7 +12,6 @@ Provides endpoints for:
 """
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -39,7 +38,7 @@ async def get_event_timeline(
     current_user: User = Depends(get_current_user),
 ):
     """Tek bir correlation_id'nin tum yasam dongusu timeline'i.
-    
+
     Webhook → import → push → retry → DLQ/success zincirini gosterir.
     """
     from core.tenant_db import get_system_db
@@ -70,12 +69,12 @@ async def get_event_timeline(
     # 4. Analyze timeline
     first_event = events[0]
     last_event = events[-1]
-    
+
     # Determine terminal state
-    terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure", 
+    terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure",
                        "webhook.delivery.dlq", "push.succeeded", "push.failed_terminal",
                        "import.completed", "import.failed"]
-    
+
     terminal_event = None
     for ev in reversed(events):
         if ev["event_type"] in terminal_states:
@@ -84,7 +83,7 @@ async def get_event_timeline(
 
     # Count retry attempts
     retry_count = sum(1 for ev in events if "retry" in ev["event_type"].lower())
-    
+
     # Affected entities
     affected_tenant = first_event.get("tenant_id", "")
     affected_channel = first_event.get("channel", "")
@@ -102,7 +101,7 @@ async def get_event_timeline(
         "webhook.delivery.succeeded", "push.succeeded", "import.completed"
     ]
     is_terminal_failure = terminal_event and terminal_event["event_type"] in [
-        "webhook.delivery.terminal_failure", "webhook.delivery.dlq", 
+        "webhook.delivery.terminal_failure", "webhook.delivery.dlq",
         "push.failed_terminal", "import.failed"
     ]
 
@@ -175,7 +174,7 @@ async def get_incident_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Tek bir ops event'in ozet bilgileri ve baglamli timeline.
-    
+
     Bir satira tiklandiginda drilldown icin kullanilir.
     """
     from core.tenant_db import get_system_db
@@ -192,12 +191,12 @@ async def get_incident_summary(
         raise HTTPException(status_code=404, detail="Event bulunamadi")
 
     correlation_id = event.get("correlation_id")
-    
+
     # If has correlation_id, get full timeline
     related_events = []
     delivery = None
     dlq_item = None
-    
+
     if correlation_id:
         related_events = await db.ops_events.find(
             {"tenant_id": tenant_id, "correlation_id": correlation_id},
@@ -252,7 +251,7 @@ async def get_prioritized_incidents(
     current_user: User = Depends(get_current_user),
 ):
     """Onceliklendirmis incident listesi.
-    
+
     Oncelik sirasi:
     1. terminal DLQ (critical)
     2. active throttle affecting pushes (critical)
@@ -438,7 +437,7 @@ async def get_connectors_health(
     current_user: User = Depends(get_current_user),
 ):
     """Tum connector'larin standardize edilmis health durumu.
-    
+
     Her connector icin ayni schema:
     - provider
     - status (healthy/degraded/critical)
@@ -454,7 +453,7 @@ async def get_connectors_health(
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
-    
+
     now = datetime.now(UTC)
     since_1h = (now - timedelta(hours=1)).isoformat()
 
@@ -524,7 +523,7 @@ async def get_connectors_health(
 
         # Calculate health score (0-100)
         health_score = 100
-        
+
         # Deduct for failure rate
         if failure_rate_1h > 50:
             health_score -= 40
@@ -669,12 +668,12 @@ async def get_impact_analysis(
                 "first_event_at": ev.get("created_at"),
                 "last_event_at": ev.get("created_at"),
             }
-        
+
         if ev.get("severity") == "critical":
             channel_impact[ch]["critical_count"] += 1
         else:
             channel_impact[ch]["warning_count"] += 1
-        
+
         channel_impact[ch]["event_types"].add(ev.get("event_type"))
         channel_impact[ch]["last_event_at"] = ev.get("created_at")
 
@@ -710,7 +709,7 @@ async def get_remediation_status(
     from routers.auto_remediation_engine import get_remediation_engine
 
     engine = get_remediation_engine()
-    
+
     return {
         "engine_running": engine._running,
         "rules": {
@@ -747,7 +746,7 @@ async def start_remediation_engine(
 
     engine = get_remediation_engine()
     await engine.start()
-    
+
     return {"ok": True, "message": "Auto-remediation engine baslatildi"}
 
 
@@ -760,7 +759,7 @@ async def stop_remediation_engine(
 
     engine = get_remediation_engine()
     await engine.stop()
-    
+
     return {"ok": True, "message": "Auto-remediation engine durduruldu"}
 
 
@@ -774,10 +773,10 @@ async def recover_connector(
 
     tenant_id = _get_tenant(current_user)
     result = await manually_recover_connector(tenant_id, connector_id)
-    
+
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Recovery basarisiz"))
-    
+
     return result
 
 
@@ -792,8 +791,8 @@ async def degrade_connector(
 
     tenant_id = _get_tenant(current_user)
     result = await manually_degrade_connector(tenant_id, connector_id, reason)
-    
+
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Degrade basarisiz"))
-    
+
     return result
