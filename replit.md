@@ -64,6 +64,24 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 14 Changes (Channel Onboarding + Go-Live Readiness Cockpit)
+
+### Frontend — GoLiveReadinessCockpit.jsx
+- **Route**: `/go-live-readiness`, nav item "Go-Live Hazirlik" in channels group
+- **Data sources**: Aggregates 3 existing endpoints (no new backend):
+  - `GET /api/channel-manager/connections/overview` — connection status
+  - `GET /channel-manager/v2/dashboard/overview` — KPIs, mapping visibility, connectors
+  - `GET /api/validation/golive-score` — 7-category readiness score, blockers, go_live_ready boolean
+- **Onboarding Checklist** (5 items): Credential/Connection, Provider Validation, Mapping Conflicts, Review Queue, Recent Failures — each with pass/fail/warn status + corrective action CTA
+- **Test & Validation Panel**: "Test Connection" (POST /connectors/{id}/test), "Dry Run" (POST dry-run/ari-push), "Mapping Wizard" navigation
+- **Blockers Panel**: Lists categories scoring <50 from GoLiveReadinessScorer with issues
+- **Readiness Score Sidebar**: Large circular score, maturity name, 7 category bars (runtime_validation, provider_validation, incident_response, observability, pilot_checklist, tenant_isolation, audit_timeline) with weight display
+- **Connector Summary Sidebar**: Quick status for each connector with inline test button
+- **Go-Live Button**: Enabled only when `go_live_ready === true` (score ≥75 + no blockers); disabled state shows blocker count
+
+### Nav Changes
+- "Go-Live Hazirlik" added in channels group after CM Dashboard, before Channel Manager
+
 ## Sprint 13 Changes (Surface Consolidation + Cross-Module UX Audit)
 
 ### Nav Structure Cleanup (`navItems.jsx`)

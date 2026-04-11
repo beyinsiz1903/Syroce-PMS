@@ -190,6 +190,7 @@ const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
+const GoLiveReadinessCockpit = lazy(() => import("@/pages/GoLiveReadinessCockpit"));
 const EncryptionManagementPage = lazy(() => import("@/pages/EncryptionManagementPage"));
 
 // ── Exported components for direct access ──────────────────────────
@@ -271,6 +272,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Channel Manager ────────────────────────────────
     { path: "/channel-connections", ...p(ChannelConnections) },
     { path: "/cm-dashboard", ...p(ChannelManagerDashboardV2) },
+    { path: "/go-live-readiness", ...p(GoLiveReadinessCockpit) },
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
     { path: "/channel-ops", ...p(ChannelOpsPage) },

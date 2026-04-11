@@ -217,6 +217,15 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
+    key: "go_live_readiness",
+    label: "Go-Live Hazirlik",
+    path: "/go-live-readiness",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "channel_manager",
     label: "Channel Manager",
     path: "/app/channel-manager",
