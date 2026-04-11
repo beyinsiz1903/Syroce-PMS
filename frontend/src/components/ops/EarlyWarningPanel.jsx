@@ -125,7 +125,7 @@ const SystemHealthIndicator = ({ health }) => {
 };
 
 // ── Warning Card ─────────────────────────────────────────────────────
-const WarningCard = ({ warning, onViewDetails }) => {
+const WarningCard = ({ warning, onViewDetails, onAction }) => {
   const severityBg = {
     critical: 'border-red-300 bg-red-50/80',
     warning: 'border-orange-300 bg-orange-50/80',
@@ -159,12 +159,74 @@ const WarningCard = ({ warning, onViewDetails }) => {
           </Button>
         )}
       </div>
+      {onAction && <ActionCTA warning={warning} onAction={onAction} />}
+    </div>
+  );
+};
+
+// ── Recommended Action CTAs ──────────────────────────────────────────
+const ActionCTA = ({ warning, onAction }) => {
+  const getActions = (warningType) => {
+    const actionMap = {
+      'predictive.warning.degradation_likely': [
+        { label: 'Timeline İncele', action: 'inspect_timeline', icon: Eye },
+        { label: 'Connector Filtrele', action: 'filter_connector', icon: Target },
+      ],
+      'predictive.warning.failure_rate_rising': [
+        { label: 'Timeline İncele', action: 'inspect_timeline', icon: Eye },
+        { label: 'Connector Filtrele', action: 'filter_connector', icon: Target },
+      ],
+      'predictive.warning.backlog_growth': [
+        { label: 'Backlog Aç', action: 'open_backlog', icon: Activity },
+        { label: 'Queue İncele', action: 'force_queue_review', icon: RefreshCw },
+      ],
+      'predictive.warning.dlq_spike': [
+        { label: 'DLQ İncele', action: 'open_backlog', icon: AlertCircle },
+        { label: 'Manuel Retry', action: 'force_queue_review', icon: RefreshCw },
+      ],
+      'predictive.warning.throttle_risk': [
+        { label: 'Connector Filtrele', action: 'filter_connector', icon: Target },
+        { label: 'Rate Limit Gör', action: 'inspect_timeline', icon: Clock },
+      ],
+      'predictive.warning.staleness_risk': [
+        { label: 'Connector İncele', action: 'filter_connector', icon: Target },
+        { label: 'Timeline Aç', action: 'inspect_timeline', icon: Eye },
+      ],
+      'predictive.warning.recovery_expected': [
+        { label: 'Durumu Gör', action: 'filter_connector', icon: CheckCircle2 },
+      ],
+    };
+    return actionMap[warningType] || [{ label: 'Detay', action: 'inspect_timeline', icon: Eye }];
+  };
+
+  const actions = getActions(warning.warning_type);
+
+  return (
+    <div className="flex items-center gap-1.5 mt-2">
+      {actions.map((act, i) => {
+        const Icon = act.icon;
+        return (
+          <Button
+            key={i}
+            variant="outline"
+            size="sm"
+            className="h-6 text-[11px] px-2 bg-white hover:bg-blue-50"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction && onAction(act.action, warning);
+            }}
+          >
+            <Icon className="w-3 h-3 mr-1" />
+            {act.label}
+          </Button>
+        );
+      })}
     </div>
   );
 };
 
 // ── Main Early Warning Panel ─────────────────────────────────────────
-const EarlyWarningPanel = ({ onViewConnector }) => {
+const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) => {
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
@@ -258,6 +320,31 @@ const EarlyWarningPanel = ({ onViewConnector }) => {
       </Card>
     );
   }
+
+  const handleWarningAction = (action, warning) => {
+    switch (action) {
+      case 'inspect_timeline':
+        if (warning.connector_id && onOpenTimeline) {
+          onOpenTimeline(warning.connector_id);
+        } else if (warning.provider && onViewConnector) {
+          onViewConnector(warning.provider);
+        }
+        break;
+      case 'filter_connector':
+        if (warning.provider && onViewConnector) {
+          onViewConnector(warning.provider);
+        }
+        break;
+      case 'open_backlog':
+      case 'force_queue_review':
+        if (onOpenBacklog) {
+          onOpenBacklog();
+        }
+        break;
+      default:
+        break;
+    }
+  };
 
   const topWarnings = summary?.top_warnings || [];
   const failureRateSeries = trends?.failure_rate_series || [];
@@ -414,6 +501,7 @@ const EarlyWarningPanel = ({ onViewConnector }) => {
                   key={`${warning.warning_type}-${warning.provider}-${idx}`}
                   warning={warning}
                   onViewDetails={setSelectedWarning}
+                  onAction={handleWarningAction}
                 />
               ))}
             </div>

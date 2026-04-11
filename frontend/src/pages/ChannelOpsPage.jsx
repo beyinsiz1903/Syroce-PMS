@@ -361,6 +361,17 @@ const ChannelOpsPage = () => {
   const [selectedCorrelationId, setSelectedCorrelationId] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [incidentFilter, setIncidentFilter] = useState('all');
+  const [earlyWarningSummary, setEarlyWarningSummary] = useState(null);
+  const [highlightProvider, setHighlightProvider] = useState(null);
+
+  const fetchEarlyWarningSummary = useCallback(async () => {
+    try {
+      const resp = await axios.get(`${API}/api/ops-events/early-warnings/summary`, {
+        headers: getAuthHeaders(),
+      });
+      setEarlyWarningSummary(resp.data);
+    } catch (e) { /* silently ignore */ }
+  }, []);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -428,12 +439,14 @@ const ChannelOpsPage = () => {
     fetchDashboard();
     fetchPrioritizedIncidents();
     fetchConnectorsHealth();
+    fetchEarlyWarningSummary();
     const interval = setInterval(() => {
       fetchDashboard();
       fetchPrioritizedIncidents();
+      fetchEarlyWarningSummary();
     }, 15000); // 15s auto-refresh
     return () => clearInterval(interval);
-  }, [fetchDashboard, fetchPrioritizedIncidents, fetchConnectorsHealth]);
+  }, [fetchDashboard, fetchPrioritizedIncidents, fetchConnectorsHealth, fetchEarlyWarningSummary]);
 
   useEffect(() => {
     if (activeTab === 'webhooks') {
@@ -451,6 +464,7 @@ const ChannelOpsPage = () => {
     fetchDashboard();
     fetchPrioritizedIncidents();
     fetchConnectorsHealth();
+    fetchEarlyWarningSummary();
     if (activeTab === 'webhooks') {
       fetchDeliveries();
       fetchDlq();
@@ -647,6 +661,81 @@ const ChannelOpsPage = () => {
               </div>
             )}
 
+            {/* Early Warning Summary Card */}
+            {earlyWarningSummary && (earlyWarningSummary.warning_count > 0 || earlyWarningSummary.system_health_indicator === 'critical') && (
+              <Card className={`border-l-4 ${
+                earlyWarningSummary.system_health_indicator === 'critical' ? 'border-l-red-500 bg-red-50/50' :
+                earlyWarningSummary.system_health_indicator === 'degraded' ? 'border-l-orange-500 bg-orange-50/50' :
+                'border-l-yellow-500 bg-yellow-50/50'
+              }`} data-testid="early-warning-overview-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      Erken Uyarı Durumu
+                      {earlyWarningSummary.system_health_indicator === 'critical' && (
+                        <Badge className="bg-red-500 text-white text-[10px]">Kritik</Badge>
+                      )}
+                      {earlyWarningSummary.system_health_indicator === 'degraded' && (
+                        <Badge className="bg-orange-500 text-white text-[10px]">Bozulma Riski</Badge>
+                      )}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setActiveTab('early-warning')}>
+                      Detaylı Görünüm <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-6 mb-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                      <span className="text-sm"><strong>{earlyWarningSummary.critical_count}</strong> kritik</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-orange-500" />
+                      <span className="text-sm"><strong>{earlyWarningSummary.warning_count_warning}</strong> uyarı</span>
+                    </div>
+                    {earlyWarningSummary.connectors_at_risk_count > 0 && (
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm"><strong>{earlyWarningSummary.connectors_at_risk_count}</strong> connector risk altında</span>
+                      </div>
+                    )}
+                  </div>
+                  {earlyWarningSummary.top_warnings?.length > 0 && (
+                    <div className="space-y-2">
+                      {earlyWarningSummary.top_warnings.slice(0, 2).map((w, i) => (
+                        <div key={i} className="flex items-center justify-between bg-white rounded-md p-2 border text-sm">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${w.severity === 'critical' ? 'bg-red-500' : 'bg-orange-500'}`} />
+                            <span className="truncate text-gray-700">{w.reason}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${w.confidence >= 80 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {w.confidence}%
+                            </span>
+                            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveTab('early-warning')}>
+                              <Eye className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {earlyWarningSummary.connectors_at_risk?.length > 0 && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className="text-xs text-gray-500">Risk altında:</span>
+                      {earlyWarningSummary.connectors_at_risk.map((prov) => (
+                        <Badge key={prov} variant="outline" className="bg-orange-50 border-orange-300 text-orange-800 capitalize text-[10px]">
+                          {prov}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Connector Health Overview */}
             <Card>
               <CardHeader className="pb-3">
@@ -725,10 +814,16 @@ const ChannelOpsPage = () => {
 
           {/* ═══════ EARLY WARNING TAB (Sprint 4) ═══════ */}
           <TabsContent value="early-warning" className="space-y-6" data-testid="tab-content-early-warning">
-            <EarlyWarningPanel 
+            <EarlyWarningPanel
               onViewConnector={(provider) => {
-                // Switch to channels tab and highlight the connector
+                setHighlightProvider(provider);
                 setActiveTab('channels');
+              }}
+              onOpenTimeline={(connectorId) => {
+                openTimelineDrawer(connectorId);
+              }}
+              onOpenBacklog={() => {
+                setActiveTab('incidents');
               }}
             />
           </TabsContent>
@@ -996,6 +1091,19 @@ const ChannelOpsPage = () => {
               </CardContent>
             </Card>
 
+            {/* Provider Filter */}
+            {highlightProvider && (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <Filter className="w-4 h-4 text-blue-500" />
+                <span className="text-sm text-blue-700">
+                  Filtre: <strong className="capitalize">{highlightProvider}</strong>
+                </span>
+                <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={() => setHighlightProvider(null)}>
+                  Filtreyi Kaldır
+                </Button>
+              </div>
+            )}
+
             {/* Unified Connector Health Cards */}
             <Card>
               <CardHeader className="pb-3">
@@ -1028,7 +1136,9 @@ const ChannelOpsPage = () => {
                   </div>
                 ) : (
                   <div className="grid md:grid-cols-2 gap-4">
-                    {(connectorsHealth.connectors || []).map((conn) => (
+                    {(connectorsHealth.connectors || [])
+                      .filter(conn => !highlightProvider || (conn.provider || '').toLowerCase() === highlightProvider.toLowerCase())
+                      .map((conn) => (
                       <ConnectorHealthCard
                         key={conn.connector_id}
                         connector={conn}

@@ -1,0 +1,154 @@
+Evet, **Sprint 4 olarak Predictive Alerting’i alalım**.
+
+Zamanlaması doğru. Çünkü artık elinde bunun için gereken temel katmanlar var:
+
+* ops events
+* correlation timeline
+* connector health contract
+* auto-remediation v1
+* key lifecycle / security ops maturity
+* dashboard ve admin yüzeyleri
+
+Yani artık “erken uyarı” boş fikir değil; veriyle beslenebilecek noktadasın.
+
+## Neden şimdi doğru adım
+
+Predictive alerting’i erken alsaydın zayıf kalırdı.
+Ama şimdi sistemde zaten:
+
+* geçmiş olay akışı
+* anlık health scoring
+* retry/DLQ davranışı
+* throttle görünürlüğü
+* connector bazlı metrikler
+
+var. Bu yüzden Sprint 4, mevcut altyapının doğal devamı.
+
+## Sprint 4 hedefi
+
+**Early Warning + Predictive Ops v1**
+
+Ama kapsamı kontrollü tutalım.
+İlk versiyon “prediction engine” değil, **trend-based early warning engine** olsun.
+
+## Benim önerdiğim kapsam
+
+### P0 — Early Warning Engine
+
+Rule-based trend analiz motoru.
+
+İlk kural seti:
+
+* `failure_rate_1h` artış trendi
+* `retry_backlog` sürekli yükseliyor
+* `dlq_count` kısa sürede sıçrıyor
+* `throttle_active` pencereleri sıklaşıyor
+* `last_success_age` anormal uzuyor
+* `health_score` düşüş eğiliminde
+
+Üretilecek çıktı:
+
+* `warning_type`
+* `provider`
+* `confidence`
+* `reason`
+* `detected_at`
+* `recommended_action`
+* `impacted_scope`
+
+### P1 — Dashboard entegrasyonu
+
+`/channel-ops` içinde yeni bir katman:
+
+* Early warnings kartı
+* “Likely degradation” badge’i
+* trend sparkline veya mini zaman serisi
+* recommended action CTA:
+
+  * inspect timeline
+  * filter connector
+  * open backlog
+  * force queue review
+
+### P1 — Ops event entegrasyonu
+
+Predictive uyarılar normal event modeline otursun.
+
+Yeni event tipleri:
+
+* `predictive.warning.degradation_likely`
+* `predictive.warning.backlog_growth`
+* `predictive.warning.throttle_risk`
+* `predictive.warning.recovery_expected`
+
+Böylece notification, incident feed ve audit akışı parçalanmaz.
+
+### P1.5 — Auto-remediation ile bağla
+
+Ama dikkatli.
+
+İlk versiyonda predictive signal doğrudan otomatik aksiyon almasın.
+Önce sadece:
+
+* uyarı üret
+* öneri ver
+* operator görünürlüğü sağla
+
+İkinci adımda:
+
+* düşük riskli durumlarda queue slow-down
+* connector provisional degrade
+* alert severity yükseltme
+
+eklenebilir.
+
+## Özellikle ne yapmayalım
+
+Sprint 4’te şunlara girme:
+
+* ML model
+* karmaşık anomaly detection framework
+* çok fazla yeni ekran
+* explainability’siz skorlar
+* otomatik sert aksiyonlar
+
+İlk sürümün gücü sadelik olsun.
+Operatör “neden bu uyarı geldi?” sorusuna anında cevap almalı.
+
+## Başarı kriteri
+
+Sprint 4 sonunda sistem şunu yapabilmeli:
+
+* sorun çıkmadan önce riskli connector’u işaretlemek
+* neden risk gördüğünü açıkça söylemek
+* etkilenecek scope’u tahmin etmek
+* operatöre önerilen aksiyon vermek
+
+Yani tek cümleyle:
+**“Bu connector son 90 dakikada bozulma eğiliminde; failure rate yükseliyor, backlog artıyor, son başarılı push gecikiyor.”**
+
+Bunu net verebiliyorsan Sprint 4 başarılıdır.
+
+## Sonraki sıralama önerim
+
+### Sprint 4
+
+**Predictive Alerting / Early Warning v1**
+
+### Sprint 5
+
+**Teknik borç sprinti**
+
+* `BasicReports.jsx`
+* `hotelrunner_sync.py`
+* gerekirse büyük router/service parçalama
+
+### Sprint 6
+
+**B2B Analytics Dashboard**
+
+Bu sıralama en sağlıklısı. Çünkü predictive katman şimdi ürün değerini yükseltir; teknik borç sprinti ise hemen arkasından gelirse hız kaybını önler.
+
+Benim net cevabım:
+**Evet, Sprint 4 olarak bunu alın.**
+Ama adı “Predictive Alerting” olsa da uygulamada **trend-based early warning v1** olarak tasarlayın.
