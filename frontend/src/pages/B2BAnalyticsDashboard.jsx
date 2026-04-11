@@ -5,15 +5,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  BarChart3, TrendingUp, Users, DollarSign, Activity, Download,
-  Building2, ArrowUpRight, ArrowDownRight, Globe, Zap, RefreshCw, FileText,
+  BarChart3, TrendingUp, DollarSign, Activity, Download,
+  Building2, Zap, RefreshCw, FileText,
 } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
 } from 'recharts';
 import { KPICard, CustomTooltip, COLORS, formatCurrency, formatNumber } from './reports/ReportHelpers';
-import api from '@/lib/api';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+const apiFetch = async (path, params = {}) => {
+  const token = localStorage.getItem('token');
+  const qs = new URLSearchParams(params).toString();
+  const url = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
+};
+
+const apiFetchBlob = async (path, params = {}) => {
+  const token = localStorage.getItem('token');
+  const qs = new URLSearchParams(params).toString();
+  const url = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  if (!res.ok) throw new Error(`Export ${res.status}`);
+  return res.blob();
+};
 
 const PERIOD_OPTIONS = [
   { value: '7d', label: 'Son 7 Gun' },
@@ -56,28 +75,27 @@ export default function B2BAnalyticsDashboard() {
     setError(null);
     try {
       const params = { period };
+      const trendParams = { ...params, ...(agencyFilter !== 'all' ? { agency_id: agencyFilter } : {}) };
       const [sumRes, agRes, trendRes, usageRes, topRes] = await Promise.all([
-        api.get('/api/b2b-analytics/summary', { params }).catch((e) => ({ data: null, _err: e })),
-        api.get('/api/b2b-analytics/agency-breakdown', { params }).catch((e) => ({ data: null, _err: e })),
-        api.get('/api/b2b-analytics/booking-trends', {
-          params: { ...params, ...(agencyFilter !== 'all' ? { agency_id: agencyFilter } : {}) },
-        }).catch((e) => ({ data: null, _err: e })),
-        api.get('/api/b2b-analytics/api-usage', { params }).catch((e) => ({ data: null, _err: e })),
-        api.get('/api/b2b-analytics/top-endpoints', { params }).catch((e) => ({ data: null, _err: e })),
+        apiFetch('/api/b2b-analytics/summary', params).catch(() => null),
+        apiFetch('/api/b2b-analytics/agency-breakdown', params).catch(() => null),
+        apiFetch('/api/b2b-analytics/booking-trends', trendParams).catch(() => null),
+        apiFetch('/api/b2b-analytics/api-usage', params).catch(() => null),
+        apiFetch('/api/b2b-analytics/top-endpoints', params).catch(() => null),
       ]);
 
-      const failedCount = [sumRes, agRes, trendRes, usageRes, topRes].filter(r => !r.data).length;
+      const failedCount = [sumRes, agRes, trendRes, usageRes, topRes].filter(r => !r).length;
       if (failedCount === 5) {
         setError('Analitik verileri yuklenemedi. Lutfen tekrar deneyin.');
       } else if (failedCount > 0) {
         setError('Bazi veriler yuklenemedi. Eksik bolumler olabilir.');
       }
 
-      if (sumRes.data) setSummary(sumRes.data);
-      if (agRes.data) setAgencies(agRes.data.agencies || []);
-      if (trendRes.data) setTrends(trendRes.data.trends || []);
-      if (usageRes.data) setApiUsage({ timeline: usageRes.data.timeline || [], totals: usageRes.data.totals || [] });
-      if (topRes.data) setTopEndpoints(topRes.data.endpoints || []);
+      if (sumRes) setSummary(sumRes);
+      if (agRes) setAgencies(agRes.agencies || []);
+      if (trendRes) setTrends(trendRes.trends || []);
+      if (usageRes) setApiUsage({ timeline: usageRes.timeline || [], totals: usageRes.totals || [] });
+      if (topRes) setTopEndpoints(topRes.endpoints || []);
     } catch {
       setError('Analitik verileri yuklenemedi. Lutfen tekrar deneyin.');
     } finally {
@@ -90,11 +108,8 @@ export default function B2BAnalyticsDashboard() {
   const handleExport = async (type) => {
     setExporting(true);
     try {
-      const response = await api.get('/api/b2b-analytics/export', {
-        params: { period, export_type: type },
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const blob = await apiFetchBlob('/api/b2b-analytics/export', { period, export_type: type });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `b2b_${type}_${period}.csv`);
