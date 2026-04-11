@@ -268,7 +268,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "reports",
+    navGroup: "channels",
   },
   {
     key: "report_scheduler",
@@ -282,6 +282,16 @@ export const NAV_ITEMS = [
 
   // ──── CHANNELS GROUP — Admin (kanal operasyonlari) ────────────
   {
+    key: "channel_ops",
+    label: "Operasyon Merkezi",
+    path: "/channel-ops",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+    requireSuperAdmin: true,
+  },
+  {
     key: "channel_connections",
     label: "Kanal Baglantilari",
     path: "/channel-connections",
@@ -290,15 +300,6 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "channels",
     requireSuperAdmin: true,
-  },
-  {
-    key: "channel_ops",
-    label: "Operasyon Merkezi",
-    path: "/channel-ops",
-    moduleKey: "channel_manager",
-    tier: "professional",
-    group: "professional",
-    navGroup: "channels",
   },
   {
     key: "wire_failures",
@@ -501,24 +502,6 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
   },
   {
-    key: "data_pipeline",
-    label: "Data Pipeline",
-    path: "/data-pipeline",
-    moduleKey: "advanced_analytics",
-    tier: "enterprise",
-    group: "enterprise",
-    navGroup: "infrastructure",
-  },
-  {
-    key: "event_bus",
-    label: "Event Bus",
-    path: "/event-bus",
-    moduleKey: "advanced_analytics",
-    tier: "enterprise",
-    group: "enterprise",
-    navGroup: "infrastructure",
-  },
-  {
     key: "system_health",
     label: "System Health",
     path: "/system-health",
@@ -537,9 +520,9 @@ export const NAV_ITEMS = [
     navGroup: "infrastructure",
   },
   {
-    key: "runtime_infrastructure",
-    label: "Runtime Infrastructure",
-    path: "/runtime-infrastructure",
+    key: "encryption_management",
+    label: "Sifreleme Yonetimi",
+    path: "/encryption-management",
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
@@ -554,6 +537,38 @@ export const NAV_ITEMS = [
     group: "enterprise",
     navGroup: "infrastructure",
   },
+
+  // ──── INFRASTRUCTURE — Hidden (deep platform ops, direct URL still works) ──
+  {
+    key: "data_pipeline",
+    label: "Data Pipeline",
+    path: "/data-pipeline",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+    hidden: true,
+  },
+  {
+    key: "event_bus",
+    label: "Event Bus",
+    path: "/event-bus",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+    hidden: true,
+  },
+  {
+    key: "runtime_infrastructure",
+    label: "Runtime Infrastructure",
+    path: "/runtime-infrastructure",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "infrastructure",
+    hidden: true,
+  },
   {
     key: "platform_scaling",
     label: "Platform Scaling",
@@ -562,6 +577,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "infrastructure",
+    hidden: true,
   },
   {
     key: "enterprise_live",
@@ -571,15 +587,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "infrastructure",
-  },
-  {
-    key: "encryption_management",
-    label: "Sifreleme Yonetimi",
-    path: "/encryption-management",
-    moduleKey: "advanced_analytics",
-    tier: "enterprise",
-    group: "enterprise",
-    navGroup: "infrastructure",
+    hidden: true,
   },
 
   // ──── STANDALONE: Settings ─────────────────────────

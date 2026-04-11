@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -63,6 +64,8 @@ const TimeAgo = ({ ts }) => {
 };
 
 const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
+  const navigate = useNavigate();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [drilldown, setDrilldown] = useState(null);
@@ -128,10 +131,18 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
               <p className="text-sm text-slate-500">Tum kanal operasyonlarinin birlesik gorunumu</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchDashboard} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Yenile
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && (
+              <Button variant="outline" size="sm" onClick={() => navigate('/channel-ops')} data-testid="cta-channel-ops">
+                <Zap className="w-4 h-4 mr-1.5 text-amber-500" />
+                Operasyon Merkezi
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={fetchDashboard} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="kpi-grid">
@@ -146,21 +157,36 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
         {(kpis.review_queue > 0 || kpis.dlq_count > 0 || mapping.total_conflicts > 0) && (
           <div className="flex flex-wrap gap-2" data-testid="alert-strip">
             {kpis.review_queue > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+              <div
+                className={`flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm ${isSuperAdmin ? 'cursor-pointer hover:bg-amber-100 transition-colors' : ''}`}
+                onClick={isSuperAdmin ? () => navigate('/channel-ops') : undefined}
+                data-testid="alert-review-queue"
+              >
                 <Eye className="w-4 h-4 text-amber-600" />
                 <span className="text-amber-800 font-medium">{kpis.review_queue} rezervasyon inceleme bekliyor</span>
+                {isSuperAdmin && <ArrowRight className="w-3.5 h-3.5 text-amber-500" />}
               </div>
             )}
             {kpis.dlq_count > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm">
+              <div
+                className={`flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm ${isSuperAdmin ? 'cursor-pointer hover:bg-red-100 transition-colors' : ''}`}
+                onClick={isSuperAdmin ? () => navigate('/channel-ops') : undefined}
+                data-testid="alert-dlq"
+              >
                 <Shield className="w-4 h-4 text-red-600" />
                 <span className="text-red-800 font-medium">{kpis.dlq_count} mesaj DLQ&apos;da</span>
+                {isSuperAdmin && <ArrowRight className="w-3.5 h-3.5 text-red-500" />}
               </div>
             )}
             {mapping.total_conflicts > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm">
+              <div
+                className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm cursor-pointer hover:bg-orange-100 transition-colors"
+                onClick={() => navigate('/room-mapping-wizard')}
+                data-testid="alert-mapping-conflicts"
+              >
                 <ArrowLeftRight className="w-4 h-4 text-orange-600" />
                 <span className="text-orange-800 font-medium">{mapping.total_conflicts} mapping cakismasi</span>
+                <ArrowRight className="w-3.5 h-3.5 text-orange-500" />
               </div>
             )}
           </div>
@@ -293,12 +319,17 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
                   </div>
                 </div>
                 {mapping.total_conflicts > 0 && (
-                  <div className="p-2.5 rounded-lg bg-red-50 flex items-center gap-2">
+                  <div
+                    className="p-2.5 rounded-lg bg-red-50 flex items-center gap-2 cursor-pointer hover:bg-red-100 transition-colors"
+                    onClick={() => navigate('/room-mapping-wizard')}
+                    data-testid="mapping-conflict-cta"
+                  >
                     <AlertTriangle className="w-4 h-4 text-red-500" />
-                    <div>
+                    <div className="flex-1">
                       <div className="text-sm font-bold text-red-700">{mapping.total_conflicts} Cakisma</div>
                       <div className="text-[10px] text-red-600">Mapping Sihirbazi&apos;ndan cozun</div>
                     </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-red-400" />
                   </div>
                 )}
 
@@ -353,6 +384,21 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
                   <span className="text-slate-600">Inceleme Kuyrugu</span>
                   <Badge className={kpis.review_queue > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}>{kpis.review_queue || 0}</Badge>
                 </div>
+                {isSuperAdmin && (
+                  <div className="pt-2 border-t mt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+                      onClick={() => navigate('/channel-ops')}
+                      data-testid="ops-summary-cta"
+                    >
+                      <Zap className="w-3.5 h-3.5 mr-1.5" />
+                      Detayli Operasyon Gorunumu
+                      <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

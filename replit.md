@@ -64,6 +64,32 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 13 Changes (Surface Consolidation + Cross-Module UX Audit)
+
+### Nav Structure Cleanup (`navItems.jsx`)
+- **B2B Analytics**: Moved from `reports` navGroup → `channels` navGroup (moduleKey was already `channel_manager`)
+- **Channel Ops**: Added `requireSuperAdmin: true` — deep ops tooling, not for regular hotel staff
+- **Channels group reordered**: CM Dashboard → user-facing items (Channel Manager, Rate Manager, Mapping, Agencies, B2B) → admin-only section (Ops, Connections, Wire Failures, ARI Push, Lockdown)
+- **Infrastructure group slimmed**: 11 → 6 visible items. Hidden (still accessible via direct URL): Data Pipeline, Event Bus, Runtime Infrastructure, Platform Scaling, Enterprise Live
+- **Visible infrastructure items**: Control Plane, Runtime Cockpit, Incident Panel, System Health, Security Hardening, Encryption Management, Production Go-Live
+
+### Cross-Surface CTAs (CM Dashboard → Channel Ops → Mapping Wizard)
+- **CM Dashboard header**: Added "Operasyon Merkezi" button → navigates to `/channel-ops` (super_admin only)
+- **CM Dashboard alert strip**: Review queue + DLQ alerts clickable → `/channel-ops` (super_admin only). Mapping conflicts → `/room-mapping-wizard` (all users)
+- **CM Dashboard mapping sidebar**: Conflict card clickable → `/room-mapping-wizard` (all users)
+- **CM Dashboard ops summary card**: "Detayli Operasyon Gorunumu" CTA → `/channel-ops` (super_admin only)
+- **Channel Ops header**: Added "CM Dashboard" button → navigates to `/cm-dashboard`
+- All Channel Ops CTAs gated by `user.role === 'super_admin'` — non-admin users see alerts but cannot navigate
+- Both pages use `useNavigate` from react-router-dom
+
+### Surface Boundary Summary
+| Surface | Audience | Focus | API |
+|---|---|---|---|
+| CM Dashboard | Hotel staff | Business continuity: connectors, reservations, mappings | `/channel-manager/v2/dashboard/...` |
+| Channel Ops | SuperAdmin | System stability: webhooks, DLQ, rate limits, incidents | `/api/ops-events/...` |
+| B2B Analytics | Hotel staff | Channel revenue & booking analytics | channels navGroup |
+| Report Scheduler | All users | Automated report delivery | reports navGroup |
+
 ## Sprint 12 Changes (v1_ Module Migration / Cleanup)
 
 ### Backend — Module Renaming

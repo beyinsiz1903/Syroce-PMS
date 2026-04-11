@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -344,6 +345,7 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
 // ── Main Component ─────────────────────────────────────────────────
 
 const ChannelOpsPage = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -561,6 +563,15 @@ const ChannelOpsPage = () => {
                 Son: <TimeAgo timestamp={data.generated_at} />
               </span>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/cm-dashboard')}
+              data-testid="cta-cm-dashboard"
+            >
+              <BarChart3 className="w-4 h-4 mr-1 text-blue-500" />
+              CM Dashboard
+            </Button>
             <Button
               variant="outline"
               size="sm"
