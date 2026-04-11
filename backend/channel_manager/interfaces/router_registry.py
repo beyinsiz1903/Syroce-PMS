@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from .routers.alert_router import router as alert_router
 from .routers.audit_router import router as audit_router
 from .routers.connector_router import router as connector_router
+from .routers.dashboard_router import router as dashboard_router
 from .routers.delivery_router import router as delivery_router
 from .routers.health_router import router as health_router
 from .routers.mapping_wizard_router import router as mapping_wizard_router
@@ -35,3 +36,4 @@ router.include_router(worker_router)
 router.include_router(validation_router)
 router.include_router(sandbox_router)
 router.include_router(mapping_wizard_router)
+router.include_router(dashboard_router)

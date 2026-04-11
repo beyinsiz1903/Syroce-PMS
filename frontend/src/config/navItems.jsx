@@ -208,6 +208,15 @@ export const NAV_ITEMS = [
 
   // ──── CHANNELS GROUP — Normal kullanici (otel personeli) ─────────
   {
+    key: "cm_dashboard",
+    label: "CM Dashboard",
+    path: "/cm-dashboard",
+    moduleKey: "channel_manager",
+    tier: "professional",
+    group: "professional",
+    navGroup: "channels",
+  },
+  {
     key: "channel_manager",
     label: "Channel Manager",
     path: "/app/channel-manager",

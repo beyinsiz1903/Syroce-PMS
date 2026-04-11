@@ -23,6 +23,7 @@ const PMSModule = lazy(() => import("@/pages/PMSModule"));
 const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
 const RMSModule = lazy(() => import("@/pages/RMSModule"));
 const ChannelManagerModule = lazy(() => import("@/pages/ChannelManagerModule"));
+const ChannelManagerDashboardV2 = lazy(() => import("@/pages/ChannelManagerDashboardV2"));
 const MappingManager = lazy(() => import("@/pages/MappingManager"));
 const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
@@ -269,6 +270,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Channel Manager ────────────────────────────────
     { path: "/channel-connections", ...p(ChannelConnections) },
+    { path: "/cm-dashboard", ...p(ChannelManagerDashboardV2) },
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
     { path: "/channel-ops", ...p(ChannelOpsPage) },

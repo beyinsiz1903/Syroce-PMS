@@ -64,6 +64,34 @@ Configured as a static deployment:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Sprint 11 Changes (Channel Manager Dashboard)
+
+### Backend
+- **`backend/channel_manager/interfaces/routers/dashboard_router.py`** — Unified CM Dashboard API:
+  - `GET /channel-manager/v2/dashboard/overview` — Single aggregation endpoint returning:
+    - KPIs: total/healthy/degraded/error/paused connectors, recent reservations (24h), failed imports, review queue, push queue depth, wire failures (24h), DLQ count
+    - Connector details: display name, provider, status, sync timestamps, errors, consecutive failures
+    - Recent reservations: last 10 imported reservations with guest name, dates, status
+    - Mapping visibility: connectors with mappings, total review-pending, total conflicts, per-provider summaries (mapped/auto/review/unmatched/conflicts)
+  - `GET /channel-manager/v2/dashboard/connector/{connector_id}` — Connector drilldown:
+    - Sync stats (total syncs, total errors, consecutive failures)
+    - Queue status (pending/retry/dead_letter items)
+    - Reservation stats grouped by status
+    - Mapping summary + conflicts for that connector
+    - Recent failure log entries
+  - Registered in `router_registry.py`
+
+### Frontend
+- **`frontend/src/pages/ChannelManagerDashboardV2.jsx`** — Full operational dashboard:
+  - 6 KPI cards: total connectors, healthy, degraded+error, recent reservations (24h), failed imports, push queue depth
+  - Alert strip: review queue warnings, DLQ alerts, mapping conflict notices
+  - Connector health table: display name, provider badge, status badge, consecutive failure count, last sync time-ago, last error with truncation, drilldown button
+  - Recent imported reservations list with status badges and check-in/out dates
+  - Mapping visibility sidebar: matched/review counts, conflict alerts, per-provider breakdown
+  - Operations summary sidebar: push queue, wire failures, DLQ, review queue counts
+  - Connector drilldown slide-over panel: sync stats grid, queue status (pending/retry/DLQ), reservation stats, mapping summary with conflicts, recent failure log
+  - Route: `/cm-dashboard`, nav: "channels" group as "CM Dashboard"
+
 ## Sprint 10 Changes (Auto Room Mapping v2)
 
 ### Backend
