@@ -97,7 +97,7 @@ class AutoRemediationEngine:
         """Evaluate all remediation rules."""
         # Get all tenants
         tenants = await db.tenants.find({}, {"_id": 0, "id": 1}).to_list(100)
-        
+
         for tenant in tenants:
             tenant_id = tenant.get("id", "")
             if not tenant_id:
@@ -347,7 +347,7 @@ def get_remediation_engine() -> AutoRemediationEngine:
 
 async def on_dlq_retry_success(tenant_id: str, dlq_id: str, correlation_id: str):
     """Called when a DLQ item is successfully retried.
-    
+
     Emits an auto-resolve event.
     """
     if not DLQ_AUTO_RESOLVE_ENABLED:
@@ -373,7 +373,7 @@ async def on_dlq_retry_success(tenant_id: str, dlq_id: str, correlation_id: str)
 
 async def on_rate_limit_active(tenant_id: str, provider: str, cooldown_until: str):
     """Called when rate limit becomes active.
-    
+
     Enables controlled queueing for new pushes.
     """
     if not RATE_LIMIT_QUEUE_ENABLED:
@@ -399,7 +399,7 @@ async def on_rate_limit_active(tenant_id: str, provider: str, cooldown_until: st
 
 async def on_rate_limit_cleared(tenant_id: str, provider: str):
     """Called when rate limit is cleared.
-    
+
     Triggers backlog drain if enabled.
     """
     if not RECOVERY_DRAIN_ENABLED:
