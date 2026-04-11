@@ -383,7 +383,7 @@ const ChannelOpsPage = () => {
         headers: getAuthHeaders(),
       });
       setDlqItems(resp.data?.items || []);
-    } catch {}
+    } catch (e) { /* silently ignore */ }
   }, []);
 
   const fetchDeliveries = useCallback(async () => {
@@ -392,7 +392,7 @@ const ChannelOpsPage = () => {
         headers: getAuthHeaders(),
       });
       setDeliveries(resp.data?.deliveries || []);
-    } catch {}
+    } catch (e) { /* silently ignore */ }
   }, []);
 
   const fetchOpsEvents = useCallback(async () => {
@@ -401,7 +401,7 @@ const ChannelOpsPage = () => {
         headers: getAuthHeaders(),
       });
       setOpsEvents(resp.data?.events || []);
-    } catch {}
+    } catch (e) { /* silently ignore */ }
   }, []);
 
   // Sprint 2: Fetch prioritized incidents
@@ -411,7 +411,7 @@ const ChannelOpsPage = () => {
         headers: getAuthHeaders(),
       });
       setPrioritizedIncidents(resp.data);
-    } catch {}
+    } catch (e) { /* silently ignore */ }
   }, []);
 
   // Sprint 2: Fetch connectors health
@@ -421,7 +421,7 @@ const ChannelOpsPage = () => {
         headers: getAuthHeaders(),
       });
       setConnectorsHealth(resp.data);
-    } catch {}
+    } catch (e) { /* silently ignore */ }
   }, []);
 
   useEffect(() => {
