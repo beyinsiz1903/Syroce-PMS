@@ -14,12 +14,13 @@ Enterprise-grade multi-tenant Hotel Property Management System (PMS) with AI-pow
 - **i18n**: i18next (8 languages including Turkish)
 - **Package Manager**: Yarn 1.22.22
 
-### Backend (FastAPI - Port 8001)
+### Backend (FastAPI - Port 8000)
 - **Framework**: FastAPI (Python 3.11+)
-- **Database**: MongoDB 7.0+ (motor for async)
-- **Cache**: Redis
+- **Database**: MongoDB 7.0+ (motor for async, local mongod on /tmp/mongodb-data)
+- **Cache**: Redis (local redis-server on port 6379)
 - **Tasks**: Celery with Redis
 - **Auth**: JWT + AES-256-GCM + RBAC
+- **Startup**: `bash backend/start.sh` (starts MongoDB, Redis, then uvicorn)
 
 ## Directory Structure
 
@@ -40,11 +41,13 @@ docs/              - ADRs and playbooks
 
 ## Running the App
 
-The frontend dev server runs on port 5000 with the "Start application" workflow.
+Two workflows:
+1. **Start application** — Frontend dev server on port 5000 (`cd frontend && yarn run start`)
+2. **Backend API** — MongoDB + Redis + FastAPI on port 8000 (`bash backend/start.sh`)
 
-```bash
-cd frontend && yarn start
-```
+Vite proxies `/api` requests to backend at `http://localhost:8000`.
+
+Demo login: `demo@hotel.com` / `demo123` (super_admin role)
 
 ## Deployment
 

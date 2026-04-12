@@ -73,9 +73,10 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         return {"status": "healthy"}
 
     # ── Screenshots download ────────────────────────────────────────
+    _backend_dir = Path(__file__).parent
     @application.get("/api/download/screenshots", include_in_schema=False)
     async def download_screenshots_zip():
-        zip_path = Path("/app/backend/Syroce_PMS_AppStore_Screenshots.zip")
+        zip_path = _backend_dir / "Syroce_PMS_AppStore_Screenshots.zip"
         if not zip_path.exists():
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Screenshots ZIP not found")
@@ -86,11 +87,12 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         )
 
     # ── Static file serving (uploads) ───────────────────────────────
-    upload_dir = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads"))
+    upload_dir = Path(os.environ.get("UPLOAD_DIR", str(_backend_dir / "uploads")))
     try:
         upload_dir.mkdir(parents=True, exist_ok=True)
         application.mount("/api/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
-    except PermissionError:
-        pass
+    except (PermissionError, OSError) as e:
+        import logging
+        logging.getLogger(__name__).warning("Upload static mount failed (%s): %s", upload_dir, e)
 
     return application
