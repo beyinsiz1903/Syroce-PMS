@@ -906,26 +906,40 @@ async def delete_agency_rate_overrides(
 async def get_push_providers(current_user: User = Depends(get_current_user)):
     """Aktif push saglayicilarini dondurur."""
     tenant_id = current_user.tenant_id
-    detection = await _detect_active_provider(tenant_id)
-
     providers = []
 
-    if detection["provider"]:
-        if detection["provider"] == "hotelrunner":
-            try:
-                conn = detection["connection"]
-                push_mode = conn.get("push_mode", "shadow")
-                providers.append({
-                    "slug": "hotelrunner",
-                    "name": "HotelRunner",
-                    "mode": push_mode,
-                })
-            except Exception:
-                providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": "shadow"})
-        else:
-            conn = detection["connection"]
-            push_mode = conn.get("push_mode", "live")
-            providers.append({"slug": "exely", "name": "Exely", "mode": push_mode})
+    hr_conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+    )
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+    )
+
+    hr_flags = await db.connector_flags.find_one(
+        {"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0}
+    )
+    ex_flags = await db.connector_flags.find_one(
+        {"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0}
+    )
+
+    def _derive_mode(flags, conn_doc):
+        if flags:
+            if not flags.get("connector_enabled", False):
+                return "inactive"
+            shadow = flags.get("shadow_mode", True)
+            write = flags.get("write_enabled", False) and not shadow
+            return "shadow" if shadow else ("live" if write else "read_only")
+        return conn_doc.get("push_mode", "shadow")
+
+    if hr_conn:
+        hr_mode = _derive_mode(hr_flags, hr_conn)
+        if hr_mode != "inactive":
+            providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": hr_mode})
+
+    if exely_conn:
+        ex_mode = _derive_mode(ex_flags, exely_conn)
+        if ex_mode != "inactive":
+            providers.append({"slug": "exely", "name": "Exely", "mode": ex_mode})
 
     # Syroce B2B provider — aktif acente varsa ekle
     active_agency_count = await db.agencies.count_documents(

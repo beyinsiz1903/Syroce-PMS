@@ -191,8 +191,26 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/test")
 async def test_connection(current_user: User = Depends(get_current_user)):
-    client, conn = await _get_client(current_user.tenant_id)
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
+    if conn.get("mode") == "sandbox":
+        return {
+            "success": True,
+            "connected": True,
+            "message": "Sandbox modu — baglanti aktif ve hazir",
+            "hotel_code": conn.get("hotel_code", ""),
+            "property_name": conn.get("property_name", ""),
+            "mode": "sandbox",
+        }
+    client, _conn = await _get_client(current_user.tenant_id)
     result = await client.legacy_test_connection()
+    if isinstance(result, dict) and "connected" not in result:
+        result["connected"] = result.get("success", False)
+    if isinstance(result, dict) and "success" not in result:
+        result["success"] = result.get("connected", False)
     return result
 
 

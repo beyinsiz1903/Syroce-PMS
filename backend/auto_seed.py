@@ -474,8 +474,19 @@ async def auto_seed_if_empty(db):
         "mode": "sandbox",
         "currency": "TRY",
         "is_active": True,
-        "room_types": [],
-        "rate_plans": [],
+        "room_types": [
+            {"code": "STD", "name": "Standard", "max_occupancy": 2},
+            {"code": "DLX", "name": "Deluxe", "max_occupancy": 2},
+            {"code": "SUP", "name": "Superior", "max_occupancy": 3},
+            {"code": "SUI", "name": "Suite", "max_occupancy": 4},
+            {"code": "JSU", "name": "Junior Suite", "max_occupancy": 3},
+            {"code": "FAM", "name": "Family", "max_occupancy": 5},
+        ],
+        "rate_plans": [
+            {"code": "BAR", "name": "Best Available Rate"},
+            {"code": "RACK", "name": "Rack Rate"},
+            {"code": "PROMO", "name": "Promotional Rate"},
+        ],
         "connected_at": _now().isoformat(),
         "last_sync_at": None,
         "created_by": "auto_seed",
@@ -587,6 +598,22 @@ async def auto_seed_if_empty(db):
         "created_at": now_iso,
     }
     await db.rate_plan_mappings.insert_many([hr_rate, ex_rate])
+
+    # ── 11b. Connector Flags (LIVE mode for both providers) ──
+    for prov in ["hotelrunner", "exely"]:
+        await db.connector_flags.update_one(
+            {"tenant_id": tenant_id, "provider": prov},
+            {"$set": {
+                "tenant_id": tenant_id,
+                "provider": prov,
+                "connector_enabled": True,
+                "shadow_mode": False,
+                "write_enabled": True,
+                "updated_at": now_iso,
+                "updated_by": "auto_seed",
+            }},
+            upsert=True,
+        )
 
     # ── 12. Room Types (for RMS) ─────────────────────────────
     room_type_data = [

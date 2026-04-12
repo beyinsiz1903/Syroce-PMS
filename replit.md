@@ -81,6 +81,24 @@ Two URL patterns coexist in frontend code:
 - Multi-tenant architecture
 - 8-language internationalization
 
+## Channel Manager Connection State & Sandbox Mode
+
+### Connector Flags (`connector_flags` collection)
+- Controls provider mode: `shadow_mode: False + write_enabled: True` = LIVE mode
+- `shadow_mode: True` = Shadow mode (default if no entry exists)
+- Seeded by `auto_seed.py` for both `hotelrunner` and `exely` providers
+- Push providers endpoint (`/push-providers`) reads flags from `connector_flags` collection for each provider independently
+
+### Exely Sandbox Mode
+- `exely_connections.mode = "sandbox"` → connection test returns mock success (skips real SOAP API call)
+- Demo credentials: `syroce_demo` / `demo_sandbox_2026` / hotel_code `501694`
+- Room types and rate plans pre-seeded in `exely_connections` document (6 room types, 3 rate plans)
+
+### Push Providers Endpoint
+- `/api/channel-manager/unified-rate-manager/push-providers` lists ALL active providers independently
+- Each provider's mode derived from `connector_flags` (preferred) or connection doc's `push_mode` field
+- Previously only showed single detected provider; now shows both HotelRunner and Exely when both active
+
 ## Sprint 14 Changes (Channel Onboarding + Go-Live Readiness Cockpit)
 
 ### Frontend — GoLiveReadinessCockpit.jsx
