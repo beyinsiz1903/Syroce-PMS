@@ -35,11 +35,46 @@ def _encrypt_doc(doc: dict, collection: str) -> dict:
 
 
 
+async def _ensure_hr_legacy_connection(db):
+    """Ensure hotelrunner_connections exists even when full seed is skipped."""
+    user = await db.users.find_one({})
+    if not user:
+        return
+    tid = user.get("tenant_id")
+    if not tid:
+        return
+    existing = await db.hotelrunner_connections.find_one({"tenant_id": tid})
+    if existing:
+        return
+    pc = await db.provider_connections.find_one(
+        {"tenant_id": tid, "provider": "hotelrunner", "status": "active"}
+    )
+    if not pc:
+        return
+    creds = pc.get("credentials", {})
+    hr_legacy = {
+        "tenant_id": tid,
+        "hr_id": creds.get("hr_id", ""),
+        "token": creds.get("token", creds.get("hr_token", "")),
+        "property_name": pc.get("display_name", "HotelRunner Connection"),
+        "environment": pc.get("environment", "sandbox"),
+        "is_active": True,
+        "channels": ["booking.com", "expedia", "airbnb"],
+        "auto_sync_reservations": True,
+        "connected_at": _now().isoformat(),
+        "last_sync_at": None,
+        "created_by": "auto_ensure",
+    }
+    await db.hotelrunner_connections.insert_one(hr_legacy)
+    print("✅ hotelrunner_connections legacy doc created from provider_connections")
+
+
 async def auto_seed_if_empty(db):
     """Main entry point: seeds demo data only when users collection is empty."""
     user_count = await db.users.count_documents({})
     if user_count > 0:
         print("ℹ️  Database already has users — skipping auto-seed.")
+        await _ensure_hr_legacy_connection(db)
         return False
 
     print("🌱 Empty database detected — seeding demo data...")

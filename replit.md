@@ -91,6 +91,12 @@ Two URL patterns coexist in frontend code:
 - Seeded by `auto_seed.py` for both `hotelrunner` and `exely` providers
 - Push providers endpoint (`/push-providers`) reads flags from `connector_flags` collection for each provider independently
 
+### HotelRunner Connection (Dual Collection Model)
+- **Two collections**: `hotelrunner_connections` (legacy, used by `_get_provider()` helper and overview endpoint) AND `provider_connections` (CM 9-collection model, used by CM v2 dashboard)
+- `_get_provider()` falls back to `provider_connections` when `hotelrunner_connections` is empty
+- `auto_seed.py` includes `_ensure_hr_legacy_connection()` that auto-creates legacy doc from `provider_connections` even when full seed is skipped (DB already has users)
+- `/test` endpoint returns mock success only when `environment` is explicitly `sandbox` or `mock`; connections without an `environment` field go through real API validation
+
 ### Exely Sandbox Mode
 - `exely_connections.mode = "sandbox"` → connection test returns mock success (skips real SOAP API call)
 - Demo credentials: `syroce_demo` / `demo_sandbox_2026` / hotel_code `501694`

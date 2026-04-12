@@ -67,10 +67,23 @@ async def _get_provider(tenant_id: str):
 
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
-        {"_id": 0, "token": 0},  # Never load raw token from connection doc
+        {"_id": 0, "token": 0},
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
+        pc = await db.provider_connections.find_one(
+            {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"},
+        )
+        if pc:
+            conn = {
+                "tenant_id": tenant_id,
+                "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                "property_name": pc.get("display_name", ""),
+                "environment": pc.get("environment", "sandbox"),
+                "is_active": True,
+                "channels": [],
+            }
+        else:
+            raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
     # Resolve environment
     environment = conn.get("environment", "mock")
@@ -218,7 +231,20 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 @router.post("/test")
 async def test_connection(current_user: User = Depends(get_current_user)):
     """Test existing HotelRunner connection."""
-    provider, conn = await _get_provider(current_user.tenant_id)
+    tid = current_user.tenant_id
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tid, "is_active": True})
+    if not hr_conn:
+        hr_conn = await db.provider_connections.find_one(
+            {"tenant_id": tid, "provider": "hotelrunner", "status": "active"}
+        )
+    if not hr_conn:
+        raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
+
+    env = hr_conn.get("environment") or hr_conn.get("mode")
+    if env in ("sandbox", "mock"):
+        return {"success": True, "connected": True, "mode": env, "message": "Sandbox/mock test basarili"}
+
+    provider, conn = await _get_provider(tid)
     result = await provider.test_connection()
     return result
 
