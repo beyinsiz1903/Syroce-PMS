@@ -18,8 +18,7 @@ import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 
-const API = "";
-const UNIFIED_PREFIX = '/api/channel-manager/unified-rate-manager';
+const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(false);
@@ -77,7 +76,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     const detect = async () => {
       try {
-        const { data } = await axios.get(`${API}${UNIFIED_PREFIX}/detect-provider`, { headers });
+        const { data } = await axios.get(`${UNIFIED_PREFIX}/detect-provider`, { headers });
         setProvider(data.provider);
         setProviderName(data.provider_name || '');
       } catch {
@@ -94,7 +93,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const { data } = await axios.get(
-        `${API}${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`,
+        `${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`,
         { headers }
       );
       setGrid(data.grid || []);
@@ -113,14 +112,14 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   // Fetch push providers
   useEffect(() => {
     if (!provider) return;
-    axios.get(`${API}${UNIFIED_PREFIX}/push-providers`, { headers })
+    axios.get(`${UNIFIED_PREFIX}/push-providers`, { headers })
       .then(res => setPushProviders(res.data?.providers || []))
       .catch(() => {});
   }, [provider]);
 
   // Fetch agencies
   useEffect(() => {
-    axios.get(`${API}${UNIFIED_PREFIX}/agencies`, { headers })
+    axios.get(`${UNIFIED_PREFIX}/agencies`, { headers })
       .then(res => setAgencies(res.data?.agencies || []))
       .catch(() => {});
   }, []);
@@ -214,7 +213,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
     const newType = current === 'per_person' ? 'per_room' : 'per_person';
     setPricingSettings(prev => ({ ...prev, [roomTypeCode]: newType }));
     try {
-      await axios.put(`${API}${UNIFIED_PREFIX}/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
+      await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
@@ -254,11 +253,11 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
       } else {
         override.fixed_rate = parseFloat(value);
       }
-      await axios.post(`${API}${UNIFIED_PREFIX}/agency-rates`, { overrides: [override] }, { headers });
+      await axios.post(`${UNIFIED_PREFIX}/agency-rates`, { overrides: [override] }, { headers });
       toast.success('Acente fiyat tanimi kaydedildi');
       setEditingOverride(null);
       // Refresh agencies
-      const { data } = await axios.get(`${API}${UNIFIED_PREFIX}/agencies`, { headers });
+      const { data } = await axios.get(`${UNIFIED_PREFIX}/agencies`, { headers });
       setAgencies(data?.agencies || []);
     } catch {
       toast.error('Fiyat tanimi kaydedilemedi');
@@ -268,9 +267,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   // Delete agency override
   const deleteAgencyOverride = async (agencyId) => {
     try {
-      await axios.delete(`${API}${UNIFIED_PREFIX}/agency-rates/${agencyId}`, { headers });
+      await axios.delete(`${UNIFIED_PREFIX}/agency-rates/${agencyId}`, { headers });
       toast.success('Acente ozel fiyati silindi');
-      const { data } = await axios.get(`${API}${UNIFIED_PREFIX}/agencies`, { headers });
+      const { data } = await axios.get(`${UNIFIED_PREFIX}/agencies`, { headers });
       setAgencies(data?.agencies || []);
     } catch {
       toast.error('Silinemedi');
@@ -312,7 +311,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
 
       const agencyIds = selectedAgencies.size > 0 ? Array.from(selectedAgencies) : null;
 
-      const { data } = await axios.post(`${API}${UNIFIED_PREFIX}/bulk-grid-update`, {
+      const { data } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,

@@ -113,7 +113,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
       ]);
       if (connRes.status === 'fulfilled') { setConnections(connRes.value); } else { errors.push('Baglanti verileri'); setConnections(null); }
       if (dashRes.status === 'fulfilled') { setDashboard(dashRes.value); } else { errors.push('Dashboard verileri'); setDashboard(null); }
-      if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value); } else { errors.push('Hazirlik skoru'); setGoliveScore(null); }
+      if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value?.data || scoreRes.value); } else { errors.push('Hazirlik skoru'); setGoliveScore(null); }
       setFetchErrors(errors);
       if (errors.length > 0) toast.error(`Yuklenemedi: ${errors.join(', ')}`);
     } catch {
@@ -168,11 +168,10 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
   const blockers = goliveScore?.blockers || [];
   const goLiveReady = goliveScore?.go_live_ready === true;
 
-  const hasActiveConnectors = connectors.some(c => c.status === 'active');
-  const hasCredentials = connections != null && (
-    Array.isArray(connections) ? connections.length > 0 :
-    (connections.hotelrunner?.connected || connections.exely?.connected || connectors.length > 0)
-  );
+  const providers = connections?.providers || [];
+  const connectedProviders = providers.filter(p => p.connected);
+  const hasCredentials = connectedProviders.length > 0;
+  const hasActiveConnectors = connectors.some(c => c.status === 'active' || c.status === 'healthy') || connectedProviders.length > 0;
   const noMappingConflicts = (mapping.total_conflicts || 0) === 0;
   const reviewQueueClear = (kpis.review_queue || 0) === 0;
   const noRecentFailures = (kpis.failed_imports || 0) === 0 && (kpis.wire_failures_24h || 0) === 0;
@@ -241,7 +240,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   icon={Key}
                   status={hasCredentials && hasActiveConnectors ? 'pass' : hasCredentials ? 'warn' : 'fail'}
                   detail={hasActiveConnectors
-                    ? `${connectors.filter(c => c.status === 'active').length} aktif connector`
+                    ? `${connectedProviders.length} aktif baglanti (${connectedProviders.map(p => p.display_name || p.provider).join(', ')})`
                     : hasCredentials ? 'Connector aktif degil' : 'Baglanti bulunamadi'
                   }
                   action={isSuperAdmin ? () => navigate('/channel-connections') : undefined}
