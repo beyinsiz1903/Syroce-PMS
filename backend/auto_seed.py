@@ -542,6 +542,26 @@ async def auto_seed_if_empty(db):
     }
     await db.provider_connections.insert_many([hr_conn, ex_conn])
 
+    # ── 9b. hotelrunner_connections (legacy format for overview) ──
+    hr_legacy = {
+        "tenant_id": tenant_id,
+        "hr_id": "373816343",
+        "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05",
+        "property_name": "Syroce Demo Hotel",
+        "environment": "sandbox",
+        "is_active": True,
+        "channels": ["booking.com", "expedia", "airbnb"],
+        "auto_sync_reservations": True,
+        "connected_at": now_iso,
+        "last_sync_at": None,
+        "created_by": "auto_seed",
+    }
+    await db.hotelrunner_connections.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": hr_legacy},
+        upsert=True,
+    )
+
     # ── 10. Channel Manager: Room Mappings ───────────────────
     hr_room = {
         "id": _uuid(),

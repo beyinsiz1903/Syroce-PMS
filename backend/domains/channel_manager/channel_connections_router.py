@@ -26,12 +26,34 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
     """Tüm kanal sağlayıcılarının bağlantı durumunu döndürür."""
     tid = current_user.tenant_id
 
-    # HotelRunner status
+    # HotelRunner status — check legacy collection first, then provider_connections
     hr_conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tid},
         {"_id": 0, "token": 0, "credentials_ref": 0},
     )
+    if not hr_conn:
+        prov_hr = await db.provider_connections.find_one(
+            {"tenant_id": tid, "provider": "hotelrunner", "status": "active"},
+            {"_id": 0},
+        )
+        if prov_hr:
+            creds = prov_hr.get("credentials", {})
+            hr_conn = {
+                "is_active": True,
+                "property_name": prov_hr.get("display_name", "HotelRunner"),
+                "hr_id": creds.get("hr_id", ""),
+                "environment": "sandbox",
+                "channels": [],
+                "connected_at": prov_hr.get("created_at"),
+                "last_sync_at": None,
+                "auto_sync_reservations": prov_hr.get("sync_reservations", False),
+            }
     hr_mappings = await db.hotelrunner_room_mappings.count_documents({"tenant_id": tid})
+    if hr_mappings == 0:
+        hr_mappings = await db.cm_mappings.count_documents(
+            {"tenant_id": tid, "entity_type": "room_type",
+             "connector_id": {"$regex": "hr"}, "status": "active"}
+        )
 
     hr_status = {
         "provider": "hotelrunner",
@@ -53,6 +75,11 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
         {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0},
     )
     exely_mappings = await db.exely_room_mappings.count_documents({"tenant_id": tid})
+    if exely_mappings == 0:
+        exely_mappings = await db.cm_mappings.count_documents(
+            {"tenant_id": tid, "entity_type": "room_type",
+             "connector_id": {"$regex": "ex"}, "status": "active"}
+        )
 
     exely_status = {
         "provider": "exely",
