@@ -157,6 +157,7 @@ async def auto_seed_if_empty(db):
             room = {
                 "id": _uuid(),
                 "tenant_id": tenant_id,
+                "property_id": "prop-001",
                 "room_number": str(room_num),
                 "room_type": rtype,
                 "floor": floor,
@@ -614,6 +615,129 @@ async def auto_seed_if_empty(db):
             }},
             upsert=True,
         )
+
+    # ── 11c. CM v2 Connectors + External Data + Mappings ────
+    hr_connector_id = "conn-hr-001"
+    ex_connector_id = "conn-ex-001"
+
+    hr_connector = {
+        "id": hr_connector_id,
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "hotelrunner",
+        "display_name": "HotelRunner - Syroce Demo",
+        "status": "active",
+        "credentials": {"hr_token": "demo_hr_token_2026", "hr_id": "hr-demo-001"},
+        "credentials_encrypted": False,
+        "sync_enabled": True,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    ex_connector = {
+        "id": ex_connector_id,
+        "tenant_id": tenant_id,
+        "property_id": "prop-001",
+        "provider": "exely",
+        "display_name": "Exely - Syroce Demo",
+        "status": "active",
+        "credentials": {"username": "syroce_demo", "password": "demo_sandbox_2026", "hotel_code": "501694"},
+        "credentials_encrypted": False,
+        "sync_enabled": True,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await db.cm_connectors.insert_many([hr_connector, ex_connector])
+
+    pms_room_defs = [
+        {"id": "std-001", "name": "Standard", "code": "STD", "capacity": 2, "base_price": 4500},
+        {"id": "dlx-001", "name": "Deluxe", "code": "DLX", "capacity": 2, "base_price": 6800},
+        {"id": "sup-001", "name": "Superior", "code": "SUP", "capacity": 3, "base_price": 9200},
+        {"id": "sui-001", "name": "Suite", "code": "SUI", "capacity": 4, "base_price": 14000},
+        {"id": "jsu-001", "name": "Junior Suite", "code": "JSU", "capacity": 3, "base_price": 10500},
+        {"id": "fam-001", "name": "Family", "code": "FAM", "capacity": 5, "base_price": 7800},
+    ]
+    pms_rate_defs = [
+        {"id": "bar-001", "name": "Best Available Rate", "code": "BAR"},
+        {"id": "rack-001", "name": "Rack Rate", "code": "RACK"},
+        {"id": "promo-001", "name": "Promotional Rate", "code": "PROMO"},
+    ]
+
+    for cid, prov in [(hr_connector_id, "hotelrunner"), (ex_connector_id, "exely")]:
+        ext_rooms = []
+        for r in pms_room_defs:
+            ext_rooms.append({
+                "id": f"ext-room-{prov[:2]}-{r['code'].lower()}",
+                "tenant_id": tenant_id,
+                "connector_id": cid,
+                "provider": prov,
+                "external_id": f"{prov[:2]}-{r['code'].lower()}-001",
+                "name": r["name"],
+                "code": r["code"],
+                "max_occupancy": r["capacity"],
+                "base_price": r["base_price"],
+                "is_active": True,
+                "created_at": now_iso,
+            })
+        if ext_rooms:
+            await db.cm_external_room_types.insert_many(ext_rooms)
+
+        ext_rates = []
+        for rp in pms_rate_defs:
+            ext_rates.append({
+                "id": f"ext-rate-{prov[:2]}-{rp['code'].lower()}",
+                "tenant_id": tenant_id,
+                "connector_id": cid,
+                "provider": prov,
+                "external_id": f"{prov[:2]}-{rp['code'].lower()}-001",
+                "name": rp["name"],
+                "code": rp["code"],
+                "is_active": True,
+                "created_at": now_iso,
+            })
+        if ext_rates:
+            await db.cm_external_rate_plans.insert_many(ext_rates)
+
+        room_mappings_v2 = []
+        for r in pms_room_defs:
+            room_mappings_v2.append({
+                "id": f"map-room-{prov[:2]}-{r['code'].lower()}",
+                "tenant_id": tenant_id,
+                "connector_id": cid,
+                "entity_type": "room_type",
+                "pms_entity_id": r["name"],
+                "pms_entity_name": r["name"],
+                "external_entity_id": f"{prov[:2]}-{r['code'].lower()}-001",
+                "external_entity_name": r["name"],
+                "status": "active",
+                "validation_status": "valid",
+                "confidence_score": 100,
+                "created_by": "auto_seed",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            })
+        if room_mappings_v2:
+            await db.cm_mappings.insert_many(room_mappings_v2)
+
+        rate_mappings_v2 = []
+        for rp in pms_rate_defs:
+            rate_mappings_v2.append({
+                "id": f"map-rate-{prov[:2]}-{rp['code'].lower()}",
+                "tenant_id": tenant_id,
+                "connector_id": cid,
+                "entity_type": "rate_plan",
+                "pms_entity_id": rp["id"],
+                "pms_entity_name": rp["name"],
+                "external_entity_id": f"{prov[:2]}-{rp['code'].lower()}-001",
+                "external_entity_name": rp["name"],
+                "status": "active",
+                "validation_status": "valid",
+                "confidence_score": 100,
+                "created_by": "auto_seed",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            })
+        if rate_mappings_v2:
+            await db.cm_mappings.insert_many(rate_mappings_v2)
 
     # ── 12. Room Types (for RMS) ─────────────────────────────
     room_type_data = [
