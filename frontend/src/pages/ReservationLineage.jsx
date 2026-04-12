@@ -12,7 +12,7 @@ import {
   AlertTriangle, Clock, Copy, Eye, ArrowRight, Filter
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_CONFIG = {
   created: { label: 'Oluşturuldu', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle },
@@ -69,7 +69,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
 
   const loadConnectors = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/channel-manager/v2/connectors`, { headers });
+      const res = await axios.get(`/channel-manager/v2/connectors`, { headers });
       setConnectors(res.data.connectors || []);
     } catch { /* ignore */ }
   }, []);
@@ -81,7 +81,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
       if (selectedConnector) params.append('connector_id', selectedConnector);
       if (statusFilter) params.append('status', statusFilter);
       params.append('limit', '100');
-      const res = await axios.get(`${API}/api/channel-manager/v2/reservations/imported?${params}`, { headers });
+      const res = await axios.get(`/channel-manager/v2/reservations/imported?${params}`, { headers });
       setReservations(res.data.reservations || []);
     } catch {
       toast.error('Rezervasyonlar yüklenemedi');
@@ -93,7 +93,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
   const loadStats = useCallback(async () => {
     try {
       const params = selectedConnector ? `?connector_id=${selectedConnector}` : '';
-      const res = await axios.get(`${API}/api/channel-manager/v2/reservations/stats${params}`, { headers });
+      const res = await axios.get(`/channel-manager/v2/reservations/stats${params}`, { headers });
       setStats(res.data);
     } catch { /* ignore */ }
   }, [selectedConnector]);
@@ -101,7 +101,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
   const loadLineage = async (reservationId) => {
     setLineageLoading(true);
     try {
-      const res = await axios.get(`${API}/api/channel-manager/v2/reservations/lineage/${reservationId}`, { headers });
+      const res = await axios.get(`/channel-manager/v2/reservations/lineage/${reservationId}`, { headers });
       setLineageData(res.data);
     } catch {
       // Lineage endpoint may not exist yet, show single reservation

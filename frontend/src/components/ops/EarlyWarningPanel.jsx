@@ -23,7 +23,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
@@ -236,7 +236,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
 
   const fetchSummary = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/early-warnings/summary`, {
+      const resp = await axios.get(`/ops-events/early-warnings/summary`, {
         headers: getAuthHeaders(),
       });
       setSummary(resp.data);
@@ -247,7 +247,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
 
   const fetchTrends = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/early-warnings/trends?hours=6`, {
+      const resp = await axios.get(`/ops-events/early-warnings/trends?hours=6`, {
         headers: getAuthHeaders(),
       });
       setTrends(resp.data);
@@ -258,7 +258,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
 
   const fetchEngineStatus = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/early-warnings/engine/status`, {
+      const resp = await axios.get(`/ops-events/early-warnings/engine/status`, {
         headers: getAuthHeaders(),
       });
       setEngineStatus(resp.data);
@@ -270,7 +270,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
   const toggleEngine = async () => {
     try {
       const endpoint = engineStatus?.running ? 'stop' : 'start';
-      await axios.post(`${API}/api/ops-events/early-warnings/engine/${endpoint}`, {}, {
+      await axios.post(`/ops-events/early-warnings/engine/${endpoint}`, {}, {
         headers: getAuthHeaders(),
       });
       await fetchEngineStatus();
@@ -282,7 +282,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
   const forceCheck = async () => {
     setRefreshing(true);
     try {
-      await axios.post(`${API}/api/ops-events/early-warnings/force-check`, {}, {
+      await axios.post(`/ops-events/early-warnings/force-check`, {}, {
         headers: getAuthHeaders(),
       });
       await fetchSummary();

@@ -36,7 +36,7 @@ const GuestProfileComplete = ({ guestId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/guests/${guestId}/profile-complete`,
+        `/api/guests/${guestId}/profile-complete`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -59,7 +59,7 @@ const GuestProfileComplete = ({ guestId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/guests/${guestId}/preferences`,
+        `/api/guests/${guestId}/preferences`,
         {
           method: 'POST',
           headers: {
@@ -83,7 +83,7 @@ const GuestProfileComplete = ({ guestId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/guests/${guestId}/tags`,
+        `/api/guests/${guestId}/tags`,
         {
           method: 'POST',
           headers: {

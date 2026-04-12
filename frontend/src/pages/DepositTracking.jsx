@@ -17,7 +17,7 @@ import {
   Search, X, ArrowDownCircle, ArrowUpCircle, Receipt
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 export default function DepositTracking({ user, tenant, onLogout }) {
   const [deposits, setDeposits] = useState([]);
@@ -51,7 +51,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
 
   const loadDeposits = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/deposits/all`, { headers });
+      const res = await axios.get(`/pms/deposits/all`, { headers });
       setDeposits(res.data.deposits || []);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -68,7 +68,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
     const timer = setTimeout(async () => {
       setSearchingBookings(true);
       try {
-        const res = await axios.get(`${API}/api/pms/bookings?search=${encodeURIComponent(bookingSearch)}&limit=10`, { headers });
+        const res = await axios.get(`/pms/bookings?search=${encodeURIComponent(bookingSearch)}&limit=10`, { headers });
         setBookingResults(res.data.bookings || []);
       } catch {
         setBookingResults([]);
@@ -92,7 +92,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
     setSavingDeposit(true);
     try {
       await axios.post(
-        `${API}/api/pms/reservations/${selectedBooking.id}/record-deposit`,
+        `/pms/reservations/${selectedBooking.id}/record-deposit`,
         { amount, method: newDepositData.method, reference: newDepositData.reference || null },
         { headers }
       );
@@ -123,7 +123,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
     setSavingRefund(true);
     try {
       await axios.post(
-        `${API}/api/pms/reservations/${refundTarget.booking_id}/refund-deposit`,
+        `/pms/reservations/${refundTarget.booking_id}/refund-deposit`,
         {
           deposit_id: refundTarget.id,
           refund_amount: amount,
@@ -149,7 +149,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
     setGeneratingInvoice(true);
     try {
       const res = await axios.post(
-        `${API}/api/pms/reservations/${deposit.booking_id}/generate-invoice`,
+        `/pms/reservations/${deposit.booking_id}/generate-invoice`,
         { selected_charge_ids: [], billing_name: deposit.guest_name || null },
         { headers }
       );

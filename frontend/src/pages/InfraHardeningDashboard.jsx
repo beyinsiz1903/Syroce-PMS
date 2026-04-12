@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 // Status badge component
 const StatusBadge = ({ status }) => {
@@ -74,7 +74,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/infra/summary`, {
+      const res = await fetch(`/api/infra/summary`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -97,7 +97,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
   const triggerBackup = async () => {
     try {
       setBackupTriggered(true);
-      await fetch(`${API}/api/infra/backup/trigger`, {
+      await fetch(`/api/infra/backup/trigger`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -24,7 +24,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [loading, setLoading] = useState(false);
 
-  const loadCari = async () => { try { const r = await axios.get(`${API}/api/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
+  const loadCari = async () => { try { const r = await axios.get(`/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
 
   const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
 
@@ -56,7 +56,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showPayment && (
         <FormPanel color="emerald" title="Odeme Kaydet" testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`${API}/api/pms/reservations/${booking.id}/record-payment`, { ...payForm, amount: parseFloat(payForm.amount) });
+            await axios.post(`/pms/reservations/${booking.id}/record-payment`, { ...payForm, amount: parseFloat(payForm.amount) });
             toast.success('Odeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
@@ -73,7 +73,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showCari && (
         <FormPanel color="orange" title="Cariye Aktar" testid="cari-transfer-form" onClose={() => setShowCari(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`${API}/api/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount: parseFloat(cariForm.amount) });
+            await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount: parseFloat(cariForm.amount) });
             toast.success('Cariye aktarildi'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
@@ -88,7 +88,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showAgency && (
         <FormPanel color="purple" title="Acente Odemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`${API}/api/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount: parseFloat(agencyForm.amount) });
+            await axios.post(`/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount: parseFloat(agencyForm.amount) });
             toast.success('Acente odemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
@@ -103,7 +103,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="indigo" title="Cariyi Acenteye Aktar" testid="cari-agency-transfer-form" onClose={() => setShowCariTransfer(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seciniz'); return; }
-            await axios.post(`${API}/api/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
+            await axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
               amount: parseFloat(cariTransferForm.amount),
               cari_account_id: cariTransferForm.target_id,
               description: cariTransferForm.description || 'Acenteye aktarim'
@@ -146,7 +146,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               if (!newCariForm.name) { toast.error('Hesap adi zorunlu'); return; }
               setLoading(true);
               try {
-                await axios.post(`${API}/api/pms/cari-accounts/create`, newCariForm);
+                await axios.post(`/pms/cari-accounts/create`, newCariForm);
                 toast.success('Yeni cari hesap olusturuldu');
                 setShowNewCari(false);
                 setNewCariForm({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
@@ -165,7 +165,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="teal" title="Mahsuplastirma (Cari Odeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seciniz'); return; }
-            await axios.post(`${API}/api/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
+            await axios.post(`/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
               amount: parseFloat(reconcileForm.amount),
               description: reconcileForm.description || 'Mahsuplastirma'
             });

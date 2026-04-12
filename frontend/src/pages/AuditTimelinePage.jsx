@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function SeverityBadge({ severity }) {
   const map = {
@@ -102,8 +102,8 @@ export default function AuditTimelinePage() {
       params.append("limit", filters.limit);
 
       const [timelineRes, summaryRes] = await Promise.all([
-        axios.get(`${API}/api/audit/timeline?${params}`, { headers }),
-        axios.get(`${API}/api/audit/summary?period=24h`, { headers }),
+        axios.get(`/audit/timeline?${params}`, { headers }),
+        axios.get(`/audit/summary?period=24h`, { headers }),
       ]);
       setEvents(timelineRes.data?.events || timelineRes.data?.data?.events || []);
       setSummary(summaryRes.data?.data || summaryRes.data || null);
@@ -119,7 +119,7 @@ export default function AuditTimelinePage() {
     if (!searchEntity.type || !searchEntity.id) return;
     try {
       const res = await axios.get(
-        `${API}/api/audit/timeline/${searchEntity.type}/${searchEntity.id}`,
+        `/audit/timeline/${searchEntity.type}/${searchEntity.id}`,
         { headers }
       );
       setEntityTrail(res.data?.data || res.data);

@@ -26,7 +26,7 @@ import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection,
 import { ChannelsSection, SourcesSection } from './reports/ChannelsSection';
 import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = "";
 
 const REPORT_MENU = [
   { type: 'header', label: 'GENEL' },

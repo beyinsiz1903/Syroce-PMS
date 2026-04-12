@@ -18,7 +18,7 @@ import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const UNIFIED_PREFIX = '/api/channel-manager/unified-rate-manager';
 
 const UnifiedRateManager = ({ user, tenant, onLogout }) => {

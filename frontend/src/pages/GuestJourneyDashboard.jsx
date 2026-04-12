@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import Layout from '@/components/Layout';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_COLORS = {
   open: 'bg-red-100 text-red-800',
@@ -52,9 +52,9 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
       if (typeFilter) reqParams += `&request_type=${typeFilter}`;
 
       const [dashRes, reqRes, tplRes] = await Promise.all([
-        axios.get(`${API}/api/guest-journey/satisfaction-dashboard`, { headers }),
-        axios.get(`${API}/api/guest-journey/guest-requests${reqParams}`, { headers }),
-        axios.get(`${API}/api/guest-journey/message-templates`, { headers }),
+        axios.get(`/guest-journey/satisfaction-dashboard`, { headers }),
+        axios.get(`/guest-journey/guest-requests${reqParams}`, { headers }),
+        axios.get(`/guest-journey/message-templates`, { headers }),
       ]);
       setDashboard(dashRes.data);
       setRequests(reqRes.data);
@@ -70,7 +70,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
 
   const updateRequestStatus = async (requestId, newStatus) => {
     try {
-      await axios.post(`${API}/api/guest-journey/guest-request/status`, {
+      await axios.post(`/guest-journey/guest-request/status`, {
         request_id: requestId, new_status: newStatus
       }, { headers });
       fetchAll();

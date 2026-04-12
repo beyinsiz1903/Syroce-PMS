@@ -13,7 +13,7 @@ import {
   Server, Database, Zap, Lock
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 // ─── Status Indicator ────────────────────────────────────────
 const StatusDot = ({ status }) => {
@@ -87,13 +87,13 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
   const fetchAll = useCallback(async () => {
     try {
       const [sRes, iRes, lRes, rRes, mRes, cRes, tRes] = await Promise.allSettled([
-        axios.get(`${API}/api/lockdown/status`, { headers }),
-        axios.get(`${API}/api/lockdown/metrics/ingest?hours=24`, { headers }),
-        axios.get(`${API}/api/lockdown/metrics/lineage`, { headers }),
-        axios.get(`${API}/api/lockdown/metrics/reconciliation`, { headers }),
-        axios.get(`${API}/api/lockdown/health/mapping`, { headers }),
-        axios.get(`${API}/api/lockdown/providers/capabilities`, { headers }),
-        axios.get(`${API}/api/lockdown/reconciliation/truth-table`, { headers }),
+        axios.get(`/lockdown/status`, { headers }),
+        axios.get(`/lockdown/metrics/ingest?hours=24`, { headers }),
+        axios.get(`/lockdown/metrics/lineage`, { headers }),
+        axios.get(`/lockdown/metrics/reconciliation`, { headers }),
+        axios.get(`/lockdown/health/mapping`, { headers }),
+        axios.get(`/lockdown/providers/capabilities`, { headers }),
+        axios.get(`/lockdown/reconciliation/truth-table`, { headers }),
       ]);
 
       if (sRes.status === 'fulfilled') setStatus(sRes.value.data);

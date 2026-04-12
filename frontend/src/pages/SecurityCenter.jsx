@@ -9,7 +9,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 
 export default function SecurityCenter({ user, tenant, onLogout }) {
   const { t } = useTranslation();
@@ -30,14 +30,14 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
 
   const fetch2FAStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`${BACKEND}/api/security/2fa/status`, { headers });
+      const res = await axios.get(`/security/2fa/status`, { headers });
       setTwoFAStatus(res.data);
     } catch (e) { console.error(e); }
   }, []);
 
   const fetchIPRules = useCallback(async () => {
     try {
-      const res = await axios.get(`${BACKEND}/api/security/ip/rules`, { headers });
+      const res = await axios.get(`/security/ip/rules`, { headers });
       setIpRules(res.data.rules || []);
     } catch (e) { console.error(e); }
   }, []);
@@ -47,7 +47,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
   const setup2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`${BACKEND}/api/security/2fa/setup`, {}, { headers });
+      const res = await axios.post(`/security/2fa/setup`, {}, { headers });
       setSetupData(res.data);
       setMessage('');
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
@@ -57,7 +57,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
   const verify2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`${BACKEND}/api/security/2fa/verify`, { code: verifyCode }, { headers });
+      const res = await axios.post(`/security/2fa/verify`, { code: verifyCode }, { headers });
       setBackupCodes(res.data.backup_codes);
       setMessage(res.data.message);
       setSetupData(null);
@@ -70,7 +70,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
     const code = prompt('2FA kodunuzu girin:');
     if (!code) return;
     try {
-      await axios.post(`${BACKEND}/api/security/2fa/disable`, { code }, { headers });
+      await axios.post(`/security/2fa/disable`, { code }, { headers });
       setMessage('2FA devre disi birakildi');
       fetch2FAStatus();
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
@@ -79,7 +79,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
   const addIPRule = async () => {
     if (!newIP) return;
     try {
-      await axios.post(`${BACKEND}/api/security/ip/rules`, {
+      await axios.post(`/security/ip/rules`, {
         ip_address: newIP, rule_type: newIPType, description: newIPDesc
       }, { headers });
       setNewIP(''); setNewIPDesc('');
@@ -89,14 +89,14 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
 
   const deleteIPRule = async (ruleId) => {
     try {
-      await axios.delete(`${BACKEND}/api/security/ip/rules/${ruleId}`, { headers });
+      await axios.delete(`/security/ip/rules/${ruleId}`, { headers });
       fetchIPRules();
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
   };
 
   const checkIP = async () => {
     try {
-      const res = await axios.post(`${BACKEND}/api/security/ip/check`, {}, { headers });
+      const res = await axios.post(`/security/ip/check`, {}, { headers });
       setIpCheck(res.data);
     } catch (e) { console.error(e); }
   };

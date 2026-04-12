@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, TrendingDown, Minus, Activity, AlertTriangle, RefreshCcw, BarChart3 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const MetricCard = ({ label, current, previous, delta, trend, suffix = '%' }) => {
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
@@ -75,7 +75,7 @@ const HealthTrendTab = () => {
 
   const fetchConnectors = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/channel-manager/v2/connectors`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/connectors`, { headers });
       if (res.ok) {
         const data = await res.json();
         const list = data.connectors || data || [];
@@ -90,9 +90,9 @@ const HealthTrendTab = () => {
     setLoading(true);
     try {
       const [dailyRes, weeklyRes, summaryRes] = await Promise.all([
-        fetch(`${API}/api/channel-manager/v2/health-trend/${selectedConnector}/daily?days=30`, { headers }),
-        fetch(`${API}/api/channel-manager/v2/health-trend/${selectedConnector}/weekly?weeks=12`, { headers }),
-        fetch(`${API}/api/channel-manager/v2/health-trend/${selectedConnector}/summary`, { headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/daily?days=30`, { headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/weekly?weeks=12`, { headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/summary`, { headers }),
       ]);
       if (dailyRes.ok) setDailyTrend(await dailyRes.json());
       if (weeklyRes.ok) setWeeklyTrend(await weeklyRes.json());

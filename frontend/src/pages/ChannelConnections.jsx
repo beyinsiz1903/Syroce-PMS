@@ -17,7 +17,7 @@ import {
   ShieldCheck, Clock, AlertTriangle
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 export default function ChannelConnections({ user, tenant, onLogout }) {
   const [overview, setOverview] = useState(null);
@@ -45,7 +45,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
   const fetchOverview = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await axios.get(`${API}/api/channel-manager/connections/overview`, { headers });
+      const { data } = await axios.get(`/channel-manager/connections/overview`, { headers });
       setOverview(data);
     } catch (err) {
       toast.error('Bağlantı durumu alınamadı');
@@ -66,7 +66,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
     }
     setConnecting(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/connect`, {
+      const { data } = await axios.post(`/channel-manager/hotelrunner/connect`, {
         ...hrForm,
         environment: 'production',
       }, { headers });
@@ -89,7 +89,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
     }
     setConnecting(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/exely/connect`, exelyForm, { headers });
+      const { data } = await axios.post(`/channel-manager/exely/connect`, exelyForm, { headers });
       toast.success('Exely bağlantısı başarıyla kuruldu!');
       setConnectDialog(null);
       setExelyForm({ username: '', password: '', hotel_code: '', endpoint_url: '', property_name: '', currency: 'TRY', auto_sync_reservations: true, sync_interval_minutes: 15 });
@@ -106,8 +106,8 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
     setTesting(provider);
     try {
       const endpoint = provider === 'hotelrunner'
-        ? `${API}/api/channel-manager/hotelrunner/test`
-        : `${API}/api/channel-manager/exely/test`;
+        ? `/channel-manager/hotelrunner/test`
+        : `/channel-manager/exely/test`;
       const { data } = await axios.post(endpoint, {}, { headers });
       if (data.success || data.connected) {
         toast.success(`${provider === 'hotelrunner' ? 'HotelRunner' : 'Exely'} bağlantısı aktif ve çalışıyor!`);
@@ -126,8 +126,8 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
     setDisconnecting(provider);
     try {
       const endpoint = provider === 'hotelrunner'
-        ? `${API}/api/channel-manager/hotelrunner/disconnect`
-        : `${API}/api/channel-manager/exely/disconnect`;
+        ? `/channel-manager/hotelrunner/disconnect`
+        : `/channel-manager/exely/disconnect`;
       await axios.delete(endpoint, { headers });
       toast.success(`${provider === 'hotelrunner' ? 'HotelRunner' : 'Exely'} bağlantısı kesildi`);
       fetchOverview();

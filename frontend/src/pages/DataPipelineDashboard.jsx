@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function StatusBadge({ status }) {
   const colors = {
@@ -54,9 +54,9 @@ export default function DataPipelineDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [healthRes, runsRes, predsRes] = await Promise.all([
-        axios.get(`${API}/api/data-pipeline/health`, { headers }),
-        axios.get(`${API}/api/data-pipeline/runs?limit=10`, { headers }),
-        axios.get(`${API}/api/data-pipeline/predictions/confidence`, { headers }),
+        axios.get(`/data-pipeline/health`, { headers }),
+        axios.get(`/data-pipeline/runs?limit=10`, { headers }),
+        axios.get(`/data-pipeline/predictions/confidence`, { headers }),
       ]);
       setHealth(healthRes.data);
       setRuns(runsRes.data);
@@ -73,7 +73,7 @@ export default function DataPipelineDashboard() {
   const executePipeline = async (modelType) => {
     setExecuting(modelType);
     try {
-      await axios.post(`${API}/api/data-pipeline/runs/execute?model_type=${modelType}`, {}, { headers });
+      await axios.post(`/data-pipeline/runs/execute?model_type=${modelType}`, {}, { headers });
       toast.success(`${modelType} pipeline tamamlandi`);
       fetchData();
     } catch (err) {

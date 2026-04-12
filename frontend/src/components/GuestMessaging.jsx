@@ -17,7 +17,7 @@ import {
   Loader2, ArrowLeft, Tag
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const TYPE_LABELS = {
   general: { tr: 'Genel', en: 'General', color: 'bg-blue-100 text-blue-700' },
@@ -55,8 +55,8 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
   const fetchMessages = async () => {
     try {
       const url = bookingId
-        ? `${API}/api/guest/messages?booking_id=${bookingId}`
-        : `${API}/api/guest/messages`;
+        ? `/api/guest/messages?booking_id=${bookingId}`
+        : `/api/guest/messages`;
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -76,7 +76,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
 
   const fetchUnreadCount = async () => {
     try {
-      const res = await fetch(`${API}/api/guest/messages/unread-count`, {
+      const res = await fetch(`/api/guest/messages/unread-count`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -90,7 +90,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
     if (!newMessage.trim()) return;
     setSending(true);
     try {
-      const res = await fetch(`${API}/api/guest/messages`, {
+      const res = await fetch(`/api/guest/messages`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -112,7 +112,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
 
   const markAllRead = async () => {
     try {
-      await fetch(`${API}/api/guest/messages/mark-all-read${bookingId ? `?booking_id=${bookingId}` : ''}`, {
+      await fetch(`/api/guest/messages/mark-all-read${bookingId ? `?booking_id=${bookingId}` : ''}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` },
       });

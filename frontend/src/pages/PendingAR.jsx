@@ -156,12 +156,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const criticalCount = arData.filter(item => item.days_outstanding > 60).length;
 
   const handleExportCompanyAging = () => {
-    const baseUrl = import.meta.env.VITE_BACKEND_URL || '';
-    if (!baseUrl) {
-      toast.error('Rapor indirilemedi: backend adresi tanımlı değil');
-      return;
-    }
-    const url = `${baseUrl}/reports/company-aging/excel`;
+    const url = `/api/reports/company-aging/excel`;
     window.open(url, '_blank');
   };
 

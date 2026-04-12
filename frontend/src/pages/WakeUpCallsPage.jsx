@@ -13,7 +13,7 @@ import {
   Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -47,7 +47,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
       const params = {};
       if (filterDate) params.date = filterDate;
       if (filterStatus) params.status = filterStatus;
-      const res = await axios.get(`${API}/api/pms/wake-up-calls`, { params });
+      const res = await axios.get(`/pms/wake-up-calls`, { params });
       setCalls(res.data?.calls || []);
       setStats(res.data?.stats || {});
     } catch (e) {
@@ -64,7 +64,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
       toast.error('Oda no, saat ve tarih zorunlu'); return;
     }
     try {
-      await axios.post(`${API}/api/pms/wake-up-calls`, form);
+      await axios.post(`/pms/wake-up-calls`, form);
       toast.success('Uyandirma cagrisi olusturuldu');
       setShowCreate(false);
       setForm({ room_number: '', guest_name: '', wake_time: '07:00', wake_date: filterDate || '', recurring: false, recurrence_end_date: '', notes: '', method: 'phone' });
@@ -78,7 +78,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
     try {
       const payload = { status };
       if (response) payload.response = response;
-      await axios.put(`${API}/api/pms/wake-up-calls/${callId}`, payload);
+      await axios.put(`/pms/wake-up-calls/${callId}`, payload);
       toast.success(`Durum "${STATUS_LABELS[status]}" olarak guncellendi`);
       loadCalls();
     } catch (e) {
@@ -89,7 +89,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
   const handleDelete = async (callId) => {
     if (!window.confirm('Bu uyandirma cagrisini silmek istediginize emin misiniz?')) return;
     try {
-      await axios.delete(`${API}/api/pms/wake-up-calls/${callId}`);
+      await axios.delete(`/pms/wake-up-calls/${callId}`);
       toast.success('Silindi');
       loadCalls();
     } catch (e) {

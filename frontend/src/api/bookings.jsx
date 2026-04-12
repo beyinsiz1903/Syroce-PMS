@@ -1,8 +1,6 @@
 // frontend/src/api/bookings.js
 
-const DEFAULT_BASE_URL =
-  (typeof process !== "undefined" && process.env && import.meta.env.VITE_BACKEND_URL) ||
-  "";
+const DEFAULT_BASE_URL = "";
 
 function _joinUrl(baseUrl, path) {
   const b = (baseUrl || "").replace(/\/+$/, "");

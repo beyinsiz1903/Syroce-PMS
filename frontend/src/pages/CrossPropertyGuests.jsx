@@ -8,7 +8,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 
 export default function CrossPropertyGuests({ user, tenant, onLogout }) {
   const { t } = useTranslation();
@@ -24,7 +24,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
   const searchGuests = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${BACKEND}/api/cross-property/guests/search?q=${searchQuery}`, { headers });
+      const res = await axios.get(`/cross-property/guests/search?q=${searchQuery}`, { headers });
       setSearchResults(res.data);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -32,7 +32,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
 
   const viewGuestProfile = async (guestId) => {
     try {
-      const res = await axios.get(`${BACKEND}/api/cross-property/guests/profile/${guestId}`, { headers });
+      const res = await axios.get(`/cross-property/guests/profile/${guestId}`, { headers });
       setSelectedGuest(res.data);
       setActiveTab('profile');
     } catch (e) { console.error(e); }
@@ -40,7 +40,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
 
   const fetchLoyalty = useCallback(async () => {
     try {
-      const res = await axios.get(`${BACKEND}/api/cross-property/guests/loyalty-summary`, { headers });
+      const res = await axios.get(`/cross-property/guests/loyalty-summary`, { headers });
       setLoyaltySummary(res.data);
     } catch (e) { console.error(e); }
   }, []);

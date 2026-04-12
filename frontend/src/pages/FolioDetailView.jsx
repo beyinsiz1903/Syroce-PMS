@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function TimelineItem({ event, t }) {
   const typeConfig = {
@@ -177,7 +177,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
     if (!id) return;
     setLoading(true);
     try {
-      const { data: d } = await axios.get(`${API}/api/pms-core/folio/detail/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const { data: d } = await axios.get(`/pms-core/folio/detail/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       setData(d);
     } catch (e) { toast.error(e.response?.data?.detail || t("folio.failedToLoad")); }
     finally { setLoading(false); }

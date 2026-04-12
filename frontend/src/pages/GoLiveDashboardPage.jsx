@@ -10,7 +10,7 @@ import {
   Clock, BarChart3, Server
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function ScoreRing({ score, size = 120, label }) {
   const color = score >= 90 ? "#34d399" : score >= 75 ? "#a3e635" : score >= 60 ? "#fbbf24" : "#f87171";
@@ -93,10 +93,10 @@ export default function GoLiveDashboardPage() {
     setLoading(true);
     try {
       const [scoreRes, scenariosRes, reportRes, drillsRes] = await Promise.all([
-        axios.get(`${API}/api/validation/golive-score`, { headers }),
-        axios.get(`${API}/api/validation/scenarios`, { headers }),
-        axios.get(`${API}/api/validation/report?hours=72`, { headers }),
-        axios.get(`${API}/api/validation/drills/history?limit=10`, { headers }),
+        axios.get(`/validation/golive-score`, { headers }),
+        axios.get(`/validation/scenarios`, { headers }),
+        axios.get(`/validation/report?hours=72`, { headers }),
+        axios.get(`/validation/drills/history?limit=10`, { headers }),
       ]);
       setGoliveScore(scoreRes.data?.data || null);
       setScenarios(scenariosRes.data?.data?.scenarios || {});
@@ -113,7 +113,7 @@ export default function GoLiveDashboardPage() {
   const runScenario = async (type, id) => {
     setRunningScenario(id);
     try {
-      await axios.post(`${API}/api/validation/run`,
+      await axios.post(`/validation/run`,
         { scenario_type: type, scenario_id: id }, { headers });
       fetchAll();
     } catch (e) { console.error(e); }
@@ -123,7 +123,7 @@ export default function GoLiveDashboardPage() {
   const runDrill = async (drillId) => {
     setRunningDrill(drillId);
     try {
-      await axios.post(`${API}/api/validation/drills/execute`,
+      await axios.post(`/validation/drills/execute`,
         { drill_id: drillId }, { headers });
       fetchAll();
     } catch (e) { console.error(e); }

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const PRIORITY_STYLES = {
   critical: 'bg-red-100 text-red-800 border-red-300',
@@ -53,11 +53,11 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
     try {
       const priorityParam = filterPriority ? `&priority=${filterPriority}` : '';
       const [feedRes, statsRes, unreadRes, fdRes, hkRes] = await Promise.all([
-        axios.get(`${API}/api/event-system/live-feed?limit=50${priorityParam}`, { headers }),
-        axios.get(`${API}/api/event-system/stats?hours=24`, { headers }),
-        axios.get(`${API}/api/event-system/unread-count`, { headers }),
-        axios.get(`${API}/api/event-system/front-desk-queue`, { headers }),
-        axios.get(`${API}/api/event-system/housekeeping-board`, { headers }),
+        axios.get(`/event-system/live-feed?limit=50${priorityParam}`, { headers }),
+        axios.get(`/event-system/stats?hours=24`, { headers }),
+        axios.get(`/event-system/unread-count`, { headers }),
+        axios.get(`/event-system/front-desk-queue`, { headers }),
+        axios.get(`/event-system/housekeeping-board`, { headers }),
       ]);
       setLiveFeed(feedRes.data);
       setStats(statsRes.data);
@@ -81,14 +81,14 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
 
   const markRead = async (eventIds) => {
     try {
-      await axios.post(`${API}/api/event-system/mark-read`, { event_ids: eventIds }, { headers });
+      await axios.post(`/event-system/mark-read`, { event_ids: eventIds }, { headers });
       fetchAll();
     } catch (err) { console.error(err); }
   };
 
   const acknowledge = async (eventId, note) => {
     try {
-      await axios.post(`${API}/api/event-system/acknowledge`, { event_id: eventId, note: note || 'Acknowledged' }, { headers });
+      await axios.post(`/event-system/acknowledge`, { event_id: eventId, note: note || 'Acknowledged' }, { headers });
       fetchAll();
     } catch (err) { console.error(err); }
   };

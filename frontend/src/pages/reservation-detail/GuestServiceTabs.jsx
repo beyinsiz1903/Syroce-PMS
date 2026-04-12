@@ -22,7 +22,7 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
     if (!form.content.trim()) { toast.error('Mesaj icerigi zorunlu'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/communication`, form);
+      await axios.post(`/pms/reservations/${booking.id}/communication`, form);
       toast.success('Iletisim kaydedildi'); setShowForm(false); setForm({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -103,7 +103,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
     if (!content.trim()) return;
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/add-note`, { content, note_type: noteType });
+      await axios.post(`/pms/reservations/${booking.id}/add-note`, { content, note_type: noteType });
       toast.success('Not eklendi'); setContent(''); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);

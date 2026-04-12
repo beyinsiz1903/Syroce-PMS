@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const headers = () => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`,
   'Content-Type': 'application/json',

@@ -150,7 +150,7 @@ const MobileMaintenance = ({ user }) => {
   // New helper functions for enhanced features
   const handleTaskStatusUpdate = async (taskId, newStatus, reason = null) => {
     try {
-      await axios.post(`/api/maintenance/mobile/task/${taskId}/status`, null, {
+      await axios.post(`/maintenance/mobile/task/${taskId}/status`, null, {
         params: { new_status: newStatus, reason }
       });
       toast.success(`Görev durumu "${newStatus}" olarak güncellendi`);
@@ -174,7 +174,7 @@ const MobileMaintenance = ({ user }) => {
       reader.onloadend = async () => {
         const base64Data = reader.result;
         
-        await axios.post(`/api/maintenance/mobile/task/${selectedTask.id}/photo`, null, {
+        await axios.post(`/maintenance/mobile/task/${selectedTask.id}/photo`, null, {
           params: {
             photo_data: base64Data,
             photo_type: photoType,
@@ -195,7 +195,7 @@ const MobileMaintenance = ({ user }) => {
 
   const loadTaskPhotos = async (taskId) => {
     try {
-      const res = await axios.get(`/api/maintenance/mobile/task/${taskId}/photos`);
+      const res = await axios.get(`/maintenance/mobile/task/${taskId}/photos`);
       setTaskPhotos(res.data.photos || []);
     } catch (error) {
       console.error('Failed to load photos:', error);
@@ -209,7 +209,7 @@ const MobileMaintenance = ({ user }) => {
     }
 
     try {
-      await axios.post(`/api/maintenance/mobile/spare-parts/use`, null, {
+      await axios.post(`/maintenance/mobile/spare-parts/use`, null, {
         params: {
           task_id: selectedTask.id,
           spare_part_id: selectedPart.id,
@@ -285,7 +285,7 @@ const MobileMaintenance = ({ user }) => {
       if (filters.start_date) params.append('start_date', filters.start_date);
       if (filters.end_date) params.append('end_date', filters.end_date);
 
-      const res = await axios.get(`/api/maintenance/mobile/tasks/filtered?${params.toString()}`);
+      const res = await axios.get(`/maintenance/mobile/tasks/filtered?${params.toString()}`);
       setTasks(res.data.tasks || []);
       setFilterModalOpen(false);
       toast.success(`${res.data.count} görev bulundu`);

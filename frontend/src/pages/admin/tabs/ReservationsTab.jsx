@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { API, MetricCard, SeverityBadge } from '../shared';
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+const API_BASE = "";
 
 const fetchAPI = async (path) => {
   const token = localStorage.getItem('token');

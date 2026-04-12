@@ -15,7 +15,7 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
 
   const handleSave = async () => {
     try {
-      await axios.put(`${API}/api/pms/reservations/${booking.id}/update-guest`, guestForm);
+      await axios.put(`/pms/reservations/${booking.id}/update-guest`, guestForm);
       toast.success('Misafir bilgileri guncellendi');
       setEditing(false);
       onGuestUpdate?.();

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Users, Plus, LogIn, LogOut, Search, Building2, Calendar, Loader2, ChevronRight, X } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 export default function GroupBookings({ user, tenant, onLogout }) {
   const [groups, setGroups] = useState([]);
@@ -24,7 +24,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
   const loadGroups = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/group-bookings`);
+      const res = await axios.get(`/pms/group-bookings`);
       setGroups(res.data.groups || []);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -32,7 +32,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
   const loadBookings = async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/bookings`);
+      const res = await axios.get(`/pms/bookings`);
       setAllBookings(Array.isArray(res.data) ? res.data : (res.data.bookings || []));
     } catch (e) { console.error(e); }
   };
@@ -46,7 +46,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
     }
     setCreating(true);
     try {
-      await axios.post(`${API}/api/pms/group-bookings`, { group_name: groupName, booking_ids: selectedBookingIds });
+      await axios.post(`/pms/group-bookings`, { group_name: groupName, booking_ids: selectedBookingIds });
       toast.success('Grup olusturuldu');
       setShowCreate(false);
       setGroupName('');
@@ -58,7 +58,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
   const handleGroupCheckin = async (groupId) => {
     try {
-      const res = await axios.post(`${API}/api/pms/group-bookings/${groupId}/check-in-all`);
+      const res = await axios.post(`/pms/group-bookings/${groupId}/check-in-all`);
       toast.success(`${res.data.checked_in_count} misafir giris yapti`);
       loadGroups();
       if (showDetail) loadGroupDetail(groupId);
@@ -67,7 +67,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
   const handleGroupCheckout = async (groupId) => {
     try {
-      const res = await axios.post(`${API}/api/pms/group-bookings/${groupId}/check-out-all`);
+      const res = await axios.post(`/pms/group-bookings/${groupId}/check-out-all`);
       toast.success(`${res.data.checked_out_count} misafir cikis yapti`);
       loadGroups();
       if (showDetail) loadGroupDetail(groupId);
@@ -76,7 +76,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
   const loadGroupDetail = async (groupId) => {
     try {
-      const res = await axios.get(`${API}/api/pms/group-bookings/${groupId}`);
+      const res = await axios.get(`/pms/group-bookings/${groupId}`);
       setShowDetail(res.data);
     } catch (e) { toast.error('Detay yuklenemedi'); }
   };

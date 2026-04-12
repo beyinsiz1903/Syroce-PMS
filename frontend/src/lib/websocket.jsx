@@ -4,9 +4,8 @@
  */
 import React from 'react';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
-// Construct WebSocket URL from backend URL
-const WEBSOCKET_URL = BACKEND_URL.replace('/api', '').replace(/\/+$/, '');
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+const WEBSOCKET_URL = BACKEND_URL ? BACKEND_URL.replace('/api', '').replace(/\/+$/, '') : '';
 
 let ioModule = null;
 

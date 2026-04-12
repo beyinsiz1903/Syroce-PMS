@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlayCircle, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, RotateCcw, Server, Settings } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_STYLES = {
   completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', icon: CheckCircle },
@@ -35,8 +35,8 @@ export default function ImportJobsTab() {
   const fetchData = useCallback(async () => {
     try {
       const [jobsRes, envsRes] = await Promise.all([
-        fetch(`${API}/api/channel-manager/v2/import-jobs?limit=50`, { headers }),
-        fetch(`${API}/api/channel-manager/v2/environments`, { headers }),
+        fetch(`/api/channel-manager/v2/import-jobs?limit=50`, { headers }),
+        fetch(`/api/channel-manager/v2/environments`, { headers }),
       ]);
       if (jobsRes.ok) { const d = await jobsRes.json(); setJobs(d.jobs || []); }
       if (envsRes.ok) { const d = await envsRes.json(); setEnvironments(d.environments || {}); }
@@ -49,7 +49,7 @@ export default function ImportJobsTab() {
   const runAll = async () => {
     setRunning(true);
     try {
-      await fetch(`${API}/api/channel-manager/v2/import-jobs/run-all`, { method: 'POST', headers });
+      await fetch(`/api/channel-manager/v2/import-jobs/run-all`, { method: 'POST', headers });
       await fetchData();
     } catch (e) { console.error(e); }
     setRunning(false);
@@ -58,7 +58,7 @@ export default function ImportJobsTab() {
   const runSafetyNet = async () => {
     setRunningSafety(true);
     try {
-      await fetch(`${API}/api/channel-manager/v2/safety-net/inventory-sync`, { method: 'POST', headers });
+      await fetch(`/api/channel-manager/v2/safety-net/inventory-sync`, { method: 'POST', headers });
       await fetchData();
     } catch (e) { console.error(e); }
     setRunningSafety(false);
@@ -66,7 +66,7 @@ export default function ImportJobsTab() {
 
   const retryJob = async (jobId) => {
     try {
-      await fetch(`${API}/api/channel-manager/v2/import-jobs/${jobId}/retry`, { method: 'POST', headers });
+      await fetch(`/api/channel-manager/v2/import-jobs/${jobId}/retry`, { method: 'POST', headers });
       await fetchData();
     } catch (e) { console.error(e); }
   };

@@ -13,7 +13,7 @@ import {
   Plus, Trash2, ShieldCheck, ArrowLeft, Loader2, Info
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const ENTITY_TYPE_LABELS = {
   room_type: 'Oda Tipi',
@@ -67,7 +67,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
 
   const loadConnectors = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/channel-manager/v2/connectors`, { headers });
+      const res = await axios.get(`/channel-manager/v2/connectors`, { headers });
       setConnectors(res.data.connectors || []);
       if (!selectedConnector && res.data.connectors?.length > 0) {
         setSelectedConnector(res.data.connectors[0]);
@@ -81,7 +81,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
     if (!connectorId) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/api/channel-manager/v2/mappings/${connectorId}/readiness-report`, { headers });
+      const res = await axios.get(`/channel-manager/v2/mappings/${connectorId}/readiness-report`, { headers });
       setReport(res.data);
     } catch {
       toast.error('Hazırlık raporu yüklenemedi');
@@ -99,7 +99,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
     if (!selectedConnector) return;
     setValidating(true);
     try {
-      await axios.post(`${API}/api/channel-manager/v2/mappings/${selectedConnector.id}/validate`, {}, { headers });
+      await axios.post(`/channel-manager/v2/mappings/${selectedConnector.id}/validate`, {}, { headers });
       toast.success('Tüm mapping\'ler doğrulandı');
       await loadReadinessReport(selectedConnector.id);
     } catch {
@@ -115,7 +115,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
       return;
     }
     try {
-      await axios.post(`${API}/api/channel-manager/v2/mappings`, {
+      await axios.post(`/channel-manager/v2/mappings`, {
         connector_id: selectedConnector.id,
         ...addForm,
       }, { headers });
@@ -130,7 +130,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
 
   const handleDeleteMapping = async (mappingId) => {
     try {
-      await axios.delete(`${API}/api/channel-manager/v2/mappings/${mappingId}`, { headers });
+      await axios.delete(`/channel-manager/v2/mappings/${mappingId}`, { headers });
       toast.success('Mapping silindi');
       await loadReadinessReport(selectedConnector.id);
     } catch {

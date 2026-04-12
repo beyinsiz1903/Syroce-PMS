@@ -209,7 +209,7 @@ const MobileFinance = ({ user }) => {
 
   const loadFolioExtract = async (folioId) => {
     try {
-      const res = await axios.get(`/api/finance/mobile/folio-full-extract/${folioId}`);
+      const res = await axios.get(`/finance/mobile/folio-full-extract/${folioId}`);
       setSelectedFolioExtract(res.data);
       setFolioExtractModalOpen(true);
     } catch (error) {
@@ -225,7 +225,7 @@ const MobileFinance = ({ user }) => {
       if (invoiceFilters.unpaidOnly) params.append('unpaid_only', 'true');
       if (invoiceFilters.department) params.append('department', invoiceFilters.department);
       
-      const res = await axios.get(`/api/finance/mobile/invoices?${params.toString()}`);
+      const res = await axios.get(`/finance/mobile/invoices?${params.toString()}`);
       setEnhancedInvoices(res.data.invoices || []);
       setInvoicesModalOpen(true);
     } catch (error) {

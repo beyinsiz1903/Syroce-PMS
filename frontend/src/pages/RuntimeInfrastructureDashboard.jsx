@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Activity, Database, Radio, Mail, AlertTriangle, Shield, RefreshCw, CheckCircle, XCircle, Clock } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function StatusIndicator({ status }) {
   const map = {
@@ -62,12 +62,12 @@ export default function RuntimeInfrastructureDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [overviewRes, persistRes, alertsRes, engineRes, msgRes, obsRes] = await Promise.all([
-        axios.get(`${API}/api/runtime/overview`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/runtime/persistence/health`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/runtime/alerts/candidates`, { headers }).catch(() => ({ data: [] })),
-        axios.get(`${API}/api/runtime/alerts/engine-status`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/runtime/messaging/status`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/runtime/observability/summary`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/runtime/overview`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/runtime/persistence/health`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/runtime/alerts/candidates`, { headers }).catch(() => ({ data: [] })),
+        axios.get(`/runtime/alerts/engine-status`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/runtime/messaging/status`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/runtime/observability/summary`, { headers }).catch(() => ({ data: null })),
       ]);
       setOverview(overviewRes.data);
       setPersistence(persistRes.data);
@@ -87,7 +87,7 @@ export default function RuntimeInfrastructureDashboard() {
   const evaluateAlerts = async () => {
     setEvaluating(true);
     try {
-      const res = await axios.get(`${API}/api/runtime/alerts/evaluate`, { headers });
+      const res = await axios.get(`/runtime/alerts/evaluate`, { headers });
       toast.success(`Alert taramasi tamamlandi: ${res.data.count} alert`);
       fetchData();
     } catch { toast.error("Alert taramasi basarisiz"); }
@@ -96,7 +96,7 @@ export default function RuntimeInfrastructureDashboard() {
 
   const acknowledgeAlert = async (alertId) => {
     try {
-      await axios.post(`${API}/api/runtime/alerts/${alertId}/acknowledge`, {}, { headers });
+      await axios.post(`/runtime/alerts/${alertId}/acknowledge`, {}, { headers });
       toast.success("Alert onaylandi");
       fetchData();
     } catch { toast.error("Alert onaylama basarisiz"); }

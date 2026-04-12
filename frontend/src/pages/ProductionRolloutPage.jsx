@@ -11,7 +11,7 @@ import {
   Layers, Lock, Database, MonitorCheck, BarChart3
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 /* ── Helper Components ────────────────────────────────────────────── */
 
@@ -92,16 +92,16 @@ export default function ProductionRolloutDashboard() {
     setLoading(true);
     try {
       const [envRes, planRes, statusRes, onbRes, monRes, loadRes, isoRes, plRes, matRes, scRes] = await Promise.allSettled([
-        axios.get(`${API}/api/production/env/validate`, { headers: headers() }),
-        axios.get(`${API}/api/production/canary/plan`, { headers: headers() }),
-        axios.get(`${API}/api/production/canary/status`, { headers: headers() }),
-        axios.get(`${API}/api/production/pilot/onboarding`, { headers: headers() }),
-        axios.get(`${API}/api/production/monitoring/dashboard`, { headers: headers() }),
-        axios.get(`${API}/api/production/load/scenarios`, { headers: headers() }),
-        axios.get(`${API}/api/production/isolation/validate`, { headers: headers() }),
-        axios.get(`${API}/api/production/post-launch/status`, { headers: headers() }),
-        axios.get(`${API}/api/production/maturity/score`, { headers: headers() }),
-        axios.get(`${API}/api/production/pilot/success-criteria`, { headers: headers() }),
+        axios.get(`/production/env/validate`, { headers: headers() }),
+        axios.get(`/production/canary/plan`, { headers: headers() }),
+        axios.get(`/production/canary/status`, { headers: headers() }),
+        axios.get(`/production/pilot/onboarding`, { headers: headers() }),
+        axios.get(`/production/monitoring/dashboard`, { headers: headers() }),
+        axios.get(`/production/load/scenarios`, { headers: headers() }),
+        axios.get(`/production/isolation/validate`, { headers: headers() }),
+        axios.get(`/production/post-launch/status`, { headers: headers() }),
+        axios.get(`/production/maturity/score`, { headers: headers() }),
+        axios.get(`/production/pilot/success-criteria`, { headers: headers() }),
       ]);
       if (envRes.status === "fulfilled") setEnvValidation(envRes.value.data?.data);
       if (planRes.status === "fulfilled") setCanaryPlan(planRes.value.data?.data);

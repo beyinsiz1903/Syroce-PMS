@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Radio, RefreshCw, Zap, ArrowDownToLine, AlertTriangle, Activity } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function StatusDot({ status }) {
   const color = status === "healthy" ? "bg-emerald-500" : status === "disconnected" ? "bg-red-500" : "bg-amber-500";
@@ -28,10 +28,10 @@ export default function EventBusDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [statusRes, metricsRes, channelsRes, replayRes] = await Promise.all([
-        axios.get(`${API}/api/event-bus/status`, { headers }),
-        axios.get(`${API}/api/event-bus/metrics`, { headers }),
-        axios.get(`${API}/api/event-bus/channels`, { headers }),
-        axios.get(`${API}/api/event-bus/replay/summary`, { headers }),
+        axios.get(`/event-bus/status`, { headers }),
+        axios.get(`/event-bus/metrics`, { headers }),
+        axios.get(`/event-bus/channels`, { headers }),
+        axios.get(`/event-bus/replay/summary`, { headers }),
       ]);
       setStatus(statusRes.data);
       setMetrics(metricsRes.data);
@@ -48,7 +48,7 @@ export default function EventBusDashboard() {
 
   const publishTest = async () => {
     try {
-      await axios.post(`${API}/api/event-bus/publish?event_type=test_event&priority=normal`, {}, { headers });
+      await axios.post(`/event-bus/publish?event_type=test_event&priority=normal`, {}, { headers });
       toast.success("Test event yayinlandi");
       fetchData();
     } catch { toast.error("Event yayin basarisiz"); }

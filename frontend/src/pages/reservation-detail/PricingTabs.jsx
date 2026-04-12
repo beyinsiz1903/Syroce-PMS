@@ -15,7 +15,7 @@ export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`${API}/api/pms/reservations/${booking.id}/daily-rates`, { rates });
+      await axios.put(`/pms/reservations/${booking.id}/daily-rates`, { rates });
       toast.success('Gunluk fiyatlar guncellendi'); setEditMode(false); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setSaving(false);
@@ -64,7 +64,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
     if (!form.description || !form.amount) { toast.error('Aciklama ve tutar zorunlu'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/add-extra-charge`, { ...form, amount: parseFloat(form.amount), quantity: parseFloat(form.quantity) || 1 });
+      await axios.post(`/pms/reservations/${booking.id}/add-extra-charge`, { ...form, amount: parseFloat(form.amount), quantity: parseFloat(form.quantity) || 1 });
       toast.success('Ekstra ucret eklendi'); setShowAdd(false); setForm({ description: '', category: 'other', amount: '', quantity: '1' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -74,7 +74,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
     if (!splitForm.split_amount || !splitForm.target_booking_id) { toast.error('Tutar ve hedef secimi zorunlu'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/split-charge`, { charge_id: chargeId, target_booking_id: splitForm.target_booking_id, split_amount: parseFloat(splitForm.split_amount), reason: splitForm.reason });
+      await axios.post(`/pms/reservations/${booking.id}/split-charge`, { charge_id: chargeId, target_booking_id: splitForm.target_booking_id, split_amount: parseFloat(splitForm.split_amount), reason: splitForm.reason });
       toast.success('Masraf bolundu'); setShowSplit(null); setSplitForm({ target_booking_id: '', split_amount: '', reason: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);

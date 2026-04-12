@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle2, XCircle, AlertTriangle, Shield, RefreshCcw, Lock, Unlock } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const ScoreRing = ({ score, size = 120 }) => {
   const radius = (size - 16) / 2;
@@ -81,7 +81,7 @@ const MappingCompletenessTab = () => {
 
   const fetchConnectors = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/channel-manager/v2/connectors`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/connectors`, { headers });
       if (res.ok) {
         const data = await res.json();
         const list = data.connectors || data || [];
@@ -95,7 +95,7 @@ const MappingCompletenessTab = () => {
     if (!selectedConnector) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/channel-manager/v2/mapping-completeness/${selectedConnector}`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/mapping-completeness/${selectedConnector}`, { headers });
       if (res.ok) setReport(await res.json());
     } catch (e) { console.error(e); }
     setLoading(false);

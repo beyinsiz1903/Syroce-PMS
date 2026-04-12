@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, Zap, Shield, Layers, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const MiniBarChart = ({ data, maxVal, color = '#22d3ee', height = 48 }) => {
   if (!data || data.length === 0) return <div className="text-xs text-zinc-600">No data</div>;
@@ -45,7 +45,7 @@ export const TrendCharts = ({ headers }) => {
   const fetchTrends = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/monitoring/trends?hours=${hours}`, { headers: headers() });
+      const { data } = await axios.get(`/channel-manager/monitoring/trends?hours=${hours}`, { headers: headers() });
       setTrends(data);
     } catch (e) { console.error('Trends fetch failed:', e); }
     setLoading(false);

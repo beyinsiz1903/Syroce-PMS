@@ -20,7 +20,7 @@ const AIRMSDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/rms/ai-pricing/competitor-scrape`,
+        `/rms/ai-pricing/competitor-scrape`,
         {
           date: new Date().toISOString().split('T')[0],
           competitors: ['Competitor A', 'Competitor B', 'Competitor C'],
@@ -41,7 +41,7 @@ const AIRMSDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/rms/ai-pricing/calculate-elasticity`,
+        `/rms/ai-pricing/calculate-elasticity`,
         { room_type: 'Standard', analysis_days: 90 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -57,7 +57,7 @@ const AIRMSDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/rms/market-compression`,
+        `/rms/market-compression`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMarketCompression(response.data);
@@ -75,7 +75,7 @@ const AIRMSDashboard = () => {
       endDate.setDate(endDate.getDate() + 30);
       
       const response = await axios.post(
-        `${API_URL}/api/rms/ai-pricing/auto-publish-rates`,
+        `/rms/ai-pricing/auto-publish-rates`,
         {
           start_date: today.toISOString().split('T')[0],
           end_date: endDate.toISOString().split('T')[0],

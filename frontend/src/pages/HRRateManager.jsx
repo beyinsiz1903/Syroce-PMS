@@ -11,7 +11,7 @@ import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { ProviderToggle } from './rate-manager/ProviderToggle';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const HR_API_PREFIX = '/api/channel-manager/hr-rate-manager';
 
 const HRRateManager = ({ user, tenant, onLogout }) => {

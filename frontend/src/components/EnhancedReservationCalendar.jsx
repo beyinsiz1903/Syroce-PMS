@@ -20,7 +20,7 @@ const EnhancedReservationCalendar = () => {
   const fetchRooms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/rooms`, {
+      const response = await axios.get(`/rooms`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRooms(response.data.rooms || []);
@@ -36,7 +36,7 @@ const EnhancedReservationCalendar = () => {
       endDate.setDate(endDate.getDate() + 30);
       
       const response = await axios.get(
-        `${API_URL}/api/reservations/adr-visibility?start_date=${selectedDate}&end_date=${endDate.toISOString().split('T')[0]}`,
+        `/reservations/adr-visibility?start_date=${selectedDate}&end_date=${endDate.toISOString().split('T')[0]}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAdrData(response.data);
@@ -52,7 +52,7 @@ const EnhancedReservationCalendar = () => {
       endDate.setDate(endDate.getDate() + 30);
       
       const response = await axios.post(
-        `${API_URL}/api/rms/ai-pricing/auto-publish-rates`,
+        `/rms/ai-pricing/auto-publish-rates`,
         {
           start_date: selectedDate,
           end_date: endDate.toISOString().split('T')[0],
@@ -71,7 +71,7 @@ const EnhancedReservationCalendar = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/reservations/rate-override-panel`,
+        `/reservations/rate-override-panel`,
         {
           booking_id: bookingId,
           new_rate: parseFloat(newRate),

@@ -17,7 +17,7 @@ const SimpleAdminPanel = () => {
 
   const fetchSystemStatus = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/monitoring/health`);
+      const response = await fetch(`/api/monitoring/health`);
       const data = await response.json();
       setSystemStatus(data);
       setLoading(false);

@@ -18,7 +18,7 @@ const AIHousekeepingBoard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/ai/housekeeping/smart-schedule`,
+        `/ai/housekeeping/smart-schedule`,
         { date: selectedDate },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -32,7 +32,7 @@ const AIHousekeepingBoard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/housekeeping/staff-performance-table`,
+        `/housekeeping/staff-performance-table`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setStaffPerformance(response.data.staff_performance || []);
@@ -45,7 +45,7 @@ const AIHousekeepingBoard = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.put(
-        `${API_URL}/api/housekeeping/tasks/${taskId}`,
+        `/housekeeping/tasks/${taskId}`,
         { status: newStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );

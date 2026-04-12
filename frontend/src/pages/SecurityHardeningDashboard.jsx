@@ -11,7 +11,7 @@ import { Shield, Lock, FileCheck, Users, Server, Eye, RefreshCw, Loader2 } from 
 const PIIStrictModeDashboard = lazy(() => import("@/pages/PIIStrictModeDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function ScoreBadge({ score, label }) {
   const color = score >= 0.9 ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
@@ -45,10 +45,10 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
   const fetchData = useCallback(async () => {
     try {
       const [isoRes, permRes, vaultRes, auditRes] = await Promise.all([
-        axios.get(`${API}/api/security-hardening/tenant-scope/check`, { headers }),
-        axios.get(`${API}/api/security-hardening/property-permissions`, { headers }),
-        axios.get(`${API}/api/security-hardening/vault/status`, { headers }),
-        axios.get(`${API}/api/security-hardening/audit-completeness?hours=24`, { headers }),
+        axios.get(`/security-hardening/tenant-scope/check`, { headers }),
+        axios.get(`/security-hardening/property-permissions`, { headers }),
+        axios.get(`/security-hardening/vault/status`, { headers }),
+        axios.get(`/security-hardening/audit-completeness?hours=24`, { headers }),
       ]);
       setIsolation(isoRes.data);
       setPermissions(permRes.data);

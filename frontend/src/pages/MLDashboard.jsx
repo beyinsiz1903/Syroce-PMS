@@ -9,7 +9,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 
 export default function MLDashboard({ user, tenant, onLogout }) {
   const { t } = useTranslation();
@@ -26,7 +26,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`${BACKEND}/api/ml/models/status`, { headers });
+      const res = await axios.get(`/ml/models/status`, { headers });
       setModelsStatus(res.data.models);
     } catch (e) { console.error(e); }
   }, []);
@@ -36,7 +36,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
   const trainModel = async (type) => {
     setLoading(true); setTrainingResult(null);
     try {
-      const res = await axios.post(`${BACKEND}/api/ml/${type}/train`, {}, { headers });
+      const res = await axios.post(`/ml/${type}/train`, {}, { headers });
       setTrainingResult({ type, ...res.data });
       setMessage(`${type} modeli basariyla egitildi!`);
       fetchStatus();
@@ -49,21 +49,21 @@ export default function MLDashboard({ user, tenant, onLogout }) {
   const analyzeSentiment = async () => {
     if (!sentimentText) return;
     try {
-      const res = await axios.post(`${BACKEND}/api/ml/sentiment/analyze?text=${encodeURIComponent(sentimentText)}`, {}, { headers });
+      const res = await axios.post(`/ml/sentiment/analyze?text=${encodeURIComponent(sentimentText)}`, {}, { headers });
       setSentimentResult(res.data);
     } catch (e) { console.error(e); }
   };
 
   const predictPrice = async () => {
     try {
-      const res = await axios.post(`${BACKEND}/api/ml/pricing/predict?room_type=Standard&channel=direct`, {}, { headers });
+      const res = await axios.post(`/ml/pricing/predict?room_type=Standard&channel=direct`, {}, { headers });
       setPredictionResult({ type: 'pricing', ...res.data });
     } catch (e) { setPredictionResult({ type: 'pricing', error: e.response?.data?.detail || 'Hata' }); }
   };
 
   const predictNoShow = async () => {
     try {
-      const res = await axios.post(`${BACKEND}/api/ml/noshow/predict?lead_days=7&channel=booking&nights=2`, {}, { headers });
+      const res = await axios.post(`/ml/noshow/predict?lead_days=7&channel=booking&nights=2`, {}, { headers });
       setPredictionResult({ type: 'noshow', ...res.data });
     } catch (e) { setPredictionResult({ type: 'noshow', error: e.response?.data?.detail || 'Hata' }); }
   };

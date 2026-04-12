@@ -28,7 +28,7 @@ const MessagingModuleAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/messaging/templates`,
+        `/api/messaging/templates`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -48,7 +48,7 @@ const MessagingModuleAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/messaging/send-message`,
+        `/api/messaging/send-message`,
         {
           method: 'POST',
           headers: {
@@ -82,7 +82,7 @@ const MessagingModuleAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/messaging/auto-messages/trigger?trigger_type=${triggerType}`,
+        `/api/messaging/auto-messages/trigger?trigger_type=${triggerType}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

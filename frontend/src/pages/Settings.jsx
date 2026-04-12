@@ -171,8 +171,8 @@ const Settings = ({ user, tenant, onLogout }) => {
   const loadInvoiceSettings = useCallback(async () => {
     setInvoiceLoading(true);
     try {
-      const API = import.meta.env.VITE_BACKEND_URL;
-      const res = await axios.get(`${API}/api/pms/hotel-settings`);
+      const API = "";
+      const res = await axios.get(`/pms/hotel-settings`);
       setInvoiceSettings(res.data || {});
     } catch (err) { console.error('Invoice settings load failed', err); }
     finally { setInvoiceLoading(false); }
@@ -182,8 +182,8 @@ const Settings = ({ user, tenant, onLogout }) => {
     if (!isSuperAdmin) return;
     setRoomsLoading(true);
     try {
-      const API = import.meta.env.VITE_BACKEND_URL;
-      const res = await axios.get(`${API}/api/pms/rooms?limit=500`);
+      const API = "";
+      const res = await axios.get(`/pms/rooms?limit=500`);
       setRoomsList(res.data || []);
     } catch (err) { console.error('Rooms load failed', err); }
     finally { setRoomsLoading(false); }
@@ -287,8 +287,8 @@ const Settings = ({ user, tenant, onLogout }) => {
   const handleSaveInvoiceSettings = async () => {
     setInvoiceSaving(true);
     try {
-      const API = import.meta.env.VITE_BACKEND_URL;
-      const res = await axios.put(`${API}/api/pms/hotel-settings`, invoiceSettings);
+      const API = "";
+      const res = await axios.put(`/pms/hotel-settings`, invoiceSettings);
       toast.success('Fatura ayarları kaydedildi');
       setInvoiceSettings(res.data?.settings || invoiceSettings);
     } catch (err) {
@@ -315,8 +315,8 @@ const Settings = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     setRoomSaving(true);
     try {
-      const API = import.meta.env.VITE_BACKEND_URL;
-      await axios.post(`${API}/api/pms/rooms`, newRoom);
+      const API = "";
+      await axios.post(`/pms/rooms`, newRoom);
       toast.success('Oda oluşturuldu');
       setShowAddRoomDialog(false);
       setNewRoom({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
@@ -329,8 +329,8 @@ const Settings = ({ user, tenant, onLogout }) => {
   const handleDeleteRoom = async (roomId, roomNumber) => {
     if (!window.confirm(`${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`)) return;
     try {
-      const API = import.meta.env.VITE_BACKEND_URL;
-      await axios.post(`${API}/api/pms/rooms/bulk/delete`, {
+      const API = "";
+      await axios.post(`/pms/rooms/bulk/delete`, {
         ids: [roomId],
         confirm_text: 'DELETE'
       });

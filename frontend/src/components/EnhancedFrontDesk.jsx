@@ -20,7 +20,7 @@ const EnhancedFrontDesk = () => {
       const today = new Date().toISOString().split('T')[0];
       
       const response = await axios.get(
-        `${API_URL}/api/bookings?check_in=${today}`,
+        `/bookings?check_in=${today}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setArrivals(response.data.bookings || []);
@@ -33,7 +33,7 @@ const EnhancedFrontDesk = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/frontdesk/guest-alerts/${guestId}`,
+        `/frontdesk/guest-alerts/${guestId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setGuestAlerts(response.data.alerts || []);
@@ -46,7 +46,7 @@ const EnhancedFrontDesk = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/frontdesk/passport-scan`,
+        `/frontdesk/passport-scan`,
         { image_base64: imageBase64, booking_id: bookingId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -62,7 +62,7 @@ const EnhancedFrontDesk = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/frontdesk/walk-in-booking`,
+        `/frontdesk/walk-in-booking`,
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -79,7 +79,7 @@ const EnhancedFrontDesk = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/mobile/staff/quick-checkin`,
+        `/mobile/staff/quick-checkin`,
         { booking_id: bookingId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

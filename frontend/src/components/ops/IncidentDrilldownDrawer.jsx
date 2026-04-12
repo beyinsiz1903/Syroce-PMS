@@ -31,7 +31,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
@@ -209,7 +209,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
     setLoading(true);
     setError(null);
     try {
-      const resp = await axios.get(`${API}/api/ops-events/timeline/${corrId}`, {
+      const resp = await axios.get(`/ops-events/timeline/${corrId}`, {
         headers: getAuthHeaders(),
       });
       setTimelineData(resp.data);
@@ -225,14 +225,14 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
     setLoading(true);
     setError(null);
     try {
-      const resp = await axios.get(`${API}/api/ops-events/incident/${evId}/summary`, {
+      const resp = await axios.get(`/ops-events/incident/${evId}/summary`, {
         headers: getAuthHeaders(),
       });
       setIncidentData(resp.data);
       
       // If incident has correlation_id, also fetch full timeline
       if (resp.data.correlation_id) {
-        const timelineResp = await axios.get(`${API}/api/ops-events/timeline/${resp.data.correlation_id}`, {
+        const timelineResp = await axios.get(`/ops-events/timeline/${resp.data.correlation_id}`, {
           headers: getAuthHeaders(),
         });
         setTimelineData(timelineResp.data);
@@ -250,7 +250,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
     if (!timelineData?.dlq_item?.id) return;
     setRetrying(true);
     try {
-      await axios.post(`${API}/api/ops-events/webhook-dlq/${timelineData.dlq_item.id}/retry`, {}, {
+      await axios.post(`/ops-events/webhook-dlq/${timelineData.dlq_item.id}/retry`, {}, {
         headers: getAuthHeaders(),
       });
       // Refresh data

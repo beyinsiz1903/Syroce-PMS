@@ -16,7 +16,7 @@ const PredictiveMaintenanceDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/ai/predictive-maintenance/dashboard`,
+        `/ai/predictive-maintenance/dashboard`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAlerts(response.data.alerts || []);
@@ -30,7 +30,7 @@ const PredictiveMaintenanceDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/ai/predictive-maintenance/analyze`,
+        `/ai/predictive-maintenance/analyze`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );

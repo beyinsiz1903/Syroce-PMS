@@ -10,7 +10,7 @@ import {
   FlaskConical, Loader2, CheckCircle, XCircle, AlertTriangle, Search, ArrowRight
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STEPS = [
   { id: 1, title: 'Test Rezervasyon Oluşturun', description: 'Exely\'nin bağlı olduğu OTA platformunda (Booking.com vb.) test bir rezervasyon oluşturun.' },
@@ -35,7 +35,7 @@ const TestBookingVerification = () => {
       if (reservationId.trim()) payload.reservation_id = reservationId.trim();
       if (guestName.trim()) payload.guest_name = guestName.trim();
 
-      const res = await axios.post(`${API}/api/channel-manager/exely/test-booking/verify`, payload, { headers });
+      const res = await axios.post(`/channel-manager/exely/test-booking/verify`, payload, { headers });
       setResult(res.data);
       setStep(3);
 

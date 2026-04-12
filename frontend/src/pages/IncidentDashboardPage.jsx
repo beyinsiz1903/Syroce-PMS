@@ -9,7 +9,7 @@ import {
   RefreshCw, Loader2, Shield, Activity, Eye, Check
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function AlertCard({ alert, onAck, onResolve }) {
   const sevMap = {
@@ -66,10 +66,10 @@ export default function IncidentDashboardPage() {
     setLoading(true);
     try {
       const [alertRes, incRes, healthRes, summRes] = await Promise.all([
-        axios.get(`${API}/api/alerts/active`, { headers }),
-        axios.get(`${API}/api/incidents/list?limit=20`, { headers }),
-        axios.get(`${API}/api/incidents/service-health`, { headers }),
-        axios.get(`${API}/api/alerts/summary?hours=24`, { headers }),
+        axios.get(`/alerts/active`, { headers }),
+        axios.get(`/incidents/list?limit=20`, { headers }),
+        axios.get(`/incidents/service-health`, { headers }),
+        axios.get(`/alerts/summary?hours=24`, { headers }),
       ]);
       setAlerts(alertRes.data?.data?.alerts || []);
       setIncidents(incRes.data?.data?.incidents || []);
@@ -85,14 +85,14 @@ export default function IncidentDashboardPage() {
 
   const ackAlert = async (id) => {
     try {
-      await axios.post(`${API}/api/alerts/acknowledge`, { alert_id: id }, { headers });
+      await axios.post(`/alerts/acknowledge`, { alert_id: id }, { headers });
       fetchAll();
     } catch (e) { console.error(e); }
   };
 
   const resolveAlert = async (id) => {
     try {
-      await axios.post(`${API}/api/alerts/resolve`, { alert_id: id, resolution_note: "Resolved from dashboard" }, { headers });
+      await axios.post(`/alerts/resolve`, { alert_id: id, resolution_note: "Resolved from dashboard" }, { headers });
       fetchAll();
     } catch (e) { console.error(e); }
   };

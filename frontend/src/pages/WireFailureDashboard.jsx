@@ -11,7 +11,7 @@ import {
   Activity, Zap, XCircle, TrendingDown, Clock, Shield
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const WireFailureDashboard = ({ user, tenant, onLogout }) => {
   const [summary, setSummary] = useState(null);
@@ -25,21 +25,21 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/wire-failures/summary?days=30`, { headers });
+      const { data } = await axios.get(`/channel-manager/wire-failures/summary?days=30`, { headers });
       setSummary(data);
     } catch { /* ignore */ }
   }, []);
 
   const fetchFailures = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/wire-failures/recent?limit=100&provider=${filterProvider}`, { headers });
+      const { data } = await axios.get(`/channel-manager/wire-failures/recent?limit=100&provider=${filterProvider}`, { headers });
       setFailures(data.failures || []);
     } catch { /* ignore */ }
   }, [filterProvider]);
 
   const fetchTrend = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/wire-failures/trend?days=30`, { headers });
+      const { data } = await axios.get(`/channel-manager/wire-failures/trend?days=30`, { headers });
       setTrend(data.trend || []);
     } catch { /* ignore */ }
   }, []);

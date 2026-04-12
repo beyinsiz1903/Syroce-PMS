@@ -25,8 +25,8 @@ const POSEnhancements = () => {
     try {
       const token = localStorage.getItem('token');
       const url = selectedCategory === 'all'
-        ? `${import.meta.env.VITE_BACKEND_URL}/api/pos/menu-items`
-        : `${import.meta.env.VITE_BACKEND_URL}/api/pos/menu-items?category=${selectedCategory}`;
+        ? `/api/pos/menu-items`
+        : `/api/pos/menu-items?category=${selectedCategory}`;
       
       const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -46,7 +46,7 @@ const POSEnhancements = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/pos/orders`,
+        `/api/pos/orders`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -114,7 +114,7 @@ const POSEnhancements = () => {
       }));
 
       const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/pos/create-order`,
+        `/api/pos/create-order`,
         {
           method: 'POST',
           headers: {

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
@@ -31,7 +31,7 @@ const NotificationBell = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      const response = await axios.get(`${API}/api/notifications/list?limit=20`, {
+      const response = await axios.get(`/notifications/list?limit=20`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNotifications(response.data.notifications || []);
@@ -44,7 +44,7 @@ const NotificationBell = () => {
   const markAllAsRead = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`${API}/api/notifications/mark-all-read`, {}, {
+      await axios.put(`/notifications/mark-all-read`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));

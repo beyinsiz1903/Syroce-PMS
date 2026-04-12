@@ -13,7 +13,7 @@ import {
   MapPin, Calendar, Tag, Archive, CheckCircle, Clock, Send
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_CONFIG = {
   found: { label: 'Bulundu', color: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -55,7 +55,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
       if (filterStatus) params.status = filterStatus;
       if (filterCategory) params.category = filterCategory;
       if (search) params.search = search;
-      const res = await axios.get(`${API}/api/pms/lost-found`, { params });
+      const res = await axios.get(`/pms/lost-found`, { params });
       setItems(res.data?.items || []);
       setStats(res.data?.stats || {});
     } catch (e) {
@@ -72,7 +72,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
       toast.error('Esya adi ve bulundugu yer zorunlu'); return;
     }
     try {
-      await axios.post(`${API}/api/pms/lost-found`, form);
+      await axios.post(`/pms/lost-found`, form);
       toast.success('Kayip esya kaydedildi');
       setShowCreate(false);
       setForm({
@@ -88,7 +88,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
 
   const handleStatusUpdate = async (itemId, newStatus) => {
     try {
-      await axios.put(`${API}/api/pms/lost-found/${itemId}`, { status: newStatus });
+      await axios.put(`/pms/lost-found/${itemId}`, { status: newStatus });
       toast.success(`Durum "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);
       loadItems();
       if (showDetail?.id === itemId) {
@@ -107,7 +107,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
       if (matchForm.guest_contact) params.append('guest_contact', matchForm.guest_contact);
       if (matchForm.booking_id) params.append('booking_id', matchForm.booking_id);
 
-      await axios.post(`${API}/api/pms/lost-found/${showMatch.id}/match-guest?${params.toString()}`);
+      await axios.post(`/pms/lost-found/${showMatch.id}/match-guest?${params.toString()}`);
       toast.success('Misafir eslestirmesi yapildi');
       setShowMatch(null);
       loadItems();
@@ -119,7 +119,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
   const handleDelete = async (itemId) => {
     if (!window.confirm('Bu kaydi silmek istediginize emin misiniz?')) return;
     try {
-      await axios.delete(`${API}/api/pms/lost-found/${itemId}`);
+      await axios.delete(`/pms/lost-found/${itemId}`);
       toast.success('Kayit silindi');
       setShowDetail(null);
       loadItems();

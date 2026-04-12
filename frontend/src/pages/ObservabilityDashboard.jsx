@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Activity, RefreshCw, AlertCircle, Clock, Gauge, BarChart3 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function HealthDot({ status }) {
   const color = status === "healthy" ? "bg-emerald-500" : status === "degraded" ? "bg-amber-500" : "bg-red-500";
@@ -29,11 +29,11 @@ export default function ObservabilityDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [metricsRes, traceRes, errorRes, healthRes, recentRes] = await Promise.all([
-        axios.get(`${API}/api/observability/metrics`, { headers }),
-        axios.get(`${API}/api/observability/traces/summary?hours=1`, { headers }),
-        axios.get(`${API}/api/observability/errors/summary?hours=24`, { headers }),
-        axios.get(`${API}/api/observability/health`, { headers }),
-        axios.get(`${API}/api/observability/traces?limit=20&slow_only=false`, { headers }),
+        axios.get(`/observability/metrics`, { headers }),
+        axios.get(`/observability/traces/summary?hours=1`, { headers }),
+        axios.get(`/observability/errors/summary?hours=24`, { headers }),
+        axios.get(`/observability/health`, { headers }),
+        axios.get(`/observability/traces?limit=20&slow_only=false`, { headers }),
       ]);
       setDashMetrics(metricsRes.data);
       setTraces(traceRes.data);
@@ -51,14 +51,14 @@ export default function ObservabilityDashboard() {
 
   const flushMetrics = async () => {
     try {
-      await axios.post(`${API}/api/observability/metrics/flush`, {}, { headers });
+      await axios.post(`/observability/metrics/flush`, {}, { headers });
       toast.success("Metrikler flush edildi");
     } catch { toast.error("Flush basarisiz"); }
   };
 
   const flushTraces = async () => {
     try {
-      await axios.post(`${API}/api/observability/traces/flush`, {}, { headers });
+      await axios.post(`/observability/traces/flush`, {}, { headers });
       toast.success("Trace'ler flush edildi");
       fetchData();
     } catch { toast.error("Flush basarisiz"); }

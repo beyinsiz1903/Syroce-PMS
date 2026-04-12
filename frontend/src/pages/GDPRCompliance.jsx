@@ -8,7 +8,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 
 export default function GDPRCompliance({ user, tenant, onLogout }) {
   const { t } = useTranslation();
@@ -25,9 +25,9 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
     setLoading(true);
     try {
       const [statusRes, policyRes, dpaRes] = await Promise.all([
-        axios.get(`${BACKEND}/api/gdpr/compliance-status`, { headers }),
-        axios.get(`${BACKEND}/api/gdpr/retention-policy`, { headers }),
-        axios.get(`${BACKEND}/api/gdpr/dpa`, { headers })
+        axios.get(`/gdpr/compliance-status`, { headers }),
+        axios.get(`/gdpr/retention-policy`, { headers }),
+        axios.get(`/gdpr/dpa`, { headers })
       ]);
       setComplianceStatus(statusRes.data);
       setRetentionPolicy(policyRes.data);

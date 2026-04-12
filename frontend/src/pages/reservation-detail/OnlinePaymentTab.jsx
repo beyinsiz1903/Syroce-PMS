@@ -25,7 +25,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
 
   const loadStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/reservations/${booking.id}/vcc/status`);
+      const res = await axios.get(`/pms/reservations/${booking.id}/vcc/status`);
       setStatus(res.data);
     } catch {
       setStatus({ has_vcc: false });
@@ -49,7 +49,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
 
     setRevealing(true);
     try {
-      const res = await axios.post(`${API}/api/pms/reservations/${booking.id}/vcc/reveal`);
+      const res = await axios.post(`/pms/reservations/${booking.id}/vcc/reveal`);
       setRevealedCard(res.data);
       // Update local status
       setStatus(prev => ({
@@ -74,7 +74,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
     }
     setSaving(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/vcc`, form);
+      await axios.post(`/pms/reservations/${booking.id}/vcc`, form);
       toast.success('Kart bilgileri kaydedildi');
       setShowAddForm(false);
       setForm({ card_holder: '', card_number: '', expiry: '', cvv: '', card_type: 'virtual' });
@@ -90,7 +90,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
     if (!window.confirm('Kart bilgileri kalici olarak silinecek. Emin misiniz?')) return;
     setDeleting(true);
     try {
-      await axios.delete(`${API}/api/pms/reservations/${booking.id}/vcc`);
+      await axios.delete(`/pms/reservations/${booking.id}/vcc`);
       toast.success('Kart bilgileri silindi');
       setStatus({ has_vcc: false });
       setRevealedCard(null);

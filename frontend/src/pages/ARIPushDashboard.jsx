@@ -14,7 +14,7 @@ import {
   TestTube, Play, ChevronRight
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const StatusBadge = ({ status }) => {
   const map = {
@@ -77,14 +77,14 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
     try {
       const params = `tenant_id=${tenantId}&property_id=${propertyId}`;
       const [statsRes, engineRes, csRes, logsRes, driftRes, evRes, metricsRes, modeRes] = await Promise.all([
-        axios.get(`${API}/api/channel-manager/ari/stats?${params}`).catch(() => ({ data: {} })),
-        axios.get(`${API}/api/channel-manager/ari/engine-stats`).catch(() => ({ data: {} })),
-        axios.get(`${API}/api/channel-manager/ari/change-sets?${params}&limit=100`).catch(() => ({ data: { change_sets: [] } })),
-        axios.get(`${API}/api/channel-manager/ari/outbound-logs?${params}&limit=50`).catch(() => ({ data: { logs: [] } })),
-        axios.get(`${API}/api/channel-manager/ari/drift?${params}&limit=50`).catch(() => ({ data: { drift_states: [] } })),
-        axios.get(`${API}/api/channel-manager/ari/events?${params}&limit=50`).catch(() => ({ data: { events: [] } })),
-        axios.get(`${API}/api/channel-manager/ari/test-harness/metrics?${params}`).catch(() => ({ data: {} })),
-        axios.get(`${API}/api/channel-manager/ari/drift/mode`).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/ari/stats?${params}`).catch(() => ({ data: {} })),
+        axios.get(`/channel-manager/ari/engine-stats`).catch(() => ({ data: {} })),
+        axios.get(`/channel-manager/ari/change-sets?${params}&limit=100`).catch(() => ({ data: { change_sets: [] } })),
+        axios.get(`/channel-manager/ari/outbound-logs?${params}&limit=50`).catch(() => ({ data: { logs: [] } })),
+        axios.get(`/channel-manager/ari/drift?${params}&limit=50`).catch(() => ({ data: { drift_states: [] } })),
+        axios.get(`/channel-manager/ari/events?${params}&limit=50`).catch(() => ({ data: { events: [] } })),
+        axios.get(`/channel-manager/ari/test-harness/metrics?${params}`).catch(() => ({ data: {} })),
+        axios.get(`/channel-manager/ari/drift/mode`).catch(() => ({ data: null })),
       ]);
       setStats(statsRes.data);
       setEngineStats(engineRes.data);
@@ -102,7 +102,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
   const pushPending = async () => {
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/ari/push`, {
+      const { data } = await axios.post(`/channel-manager/ari/push`, {
         tenant_id: tenantId, provider: providerFilter === 'all' ? null : providerFilter,
       });
       toast.success(`Pushed: ${data.pushed}, Skipped: ${data.skipped}, Failed: ${data.failed}`);
@@ -113,7 +113,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
   const toggleDriftMode = async () => {
     const newMode = driftMode?.mode === 'normal' ? 'recovery' : 'normal';
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/ari/drift/mode/${newMode}`);
+      const { data } = await axios.post(`/channel-manager/ari/drift/mode/${newMode}`);
       // Map current_mode to mode for consistent state shape
       setDriftMode({ mode: data.current_mode, interval: data.interval, scope: data.scope });
       toast.success(`Drift mode: ${data.current_mode} (${data.interval}s interval)`);
@@ -123,7 +123,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
   const runProviderTest = async (provider) => {
     setTestRunning(provider);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/ari/test-harness/run/${provider}`);
+      const { data } = await axios.post(`/channel-manager/ari/test-harness/run/${provider}`);
       setTestResults(prev => ({ ...prev, [provider]: data }));
       const s = data.summary;
       if (s.failed === 0) {

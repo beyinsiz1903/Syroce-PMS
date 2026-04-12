@@ -15,7 +15,7 @@ import {
   XCircle, Search, BarChart3, Bell, Radio, Zap, Heart
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const ProviderBadge = ({ provider }) => {
   const map = {
@@ -75,7 +75,7 @@ const SlackConfigPanel = ({ headers }) => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const { data } = await axios.get(`${API}/api/channel-manager/monitoring/dispatch-config`, { headers: headers() });
+        const { data } = await axios.get(`/channel-manager/monitoring/dispatch-config`, { headers: headers() });
         setConfig(data);
         const s = data.slack || {};
         setSlackEnabled(s.enabled || false);
@@ -89,7 +89,7 @@ const SlackConfigPanel = ({ headers }) => {
   const saveSlack = async () => {
     setSaving(true);
     try {
-      await axios.post(`${API}/api/channel-manager/monitoring/dispatch-config/slack`, {
+      await axios.post(`/channel-manager/monitoring/dispatch-config/slack`, {
         enabled: slackEnabled, webhook_url: slackUrl, severities: slackSeverities,
       }, { headers: headers() });
       toast.success('Slack configuration saved');
@@ -100,7 +100,7 @@ const SlackConfigPanel = ({ headers }) => {
   const testSlack = async () => {
     setTesting(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/monitoring/dispatch-config/slack/test`, {}, { headers: headers() });
+      const { data } = await axios.post(`/channel-manager/monitoring/dispatch-config/slack/test`, {}, { headers: headers() });
       if (data.success) toast.success('Test message sent to Slack!');
       else toast.error(data.message || 'Test failed');
     } catch (e) { toast.error(e.response?.data?.detail || 'Test failed'); }
@@ -208,19 +208,19 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     try {
       const h = headers();
       const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes, reconDashRes, reconMetricsRes, monOverviewRes, monAlertsRes] = await Promise.all([
-        axios.get(`${API}/api/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } })),
-        axios.get(`${API}/api/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`${API}/api/channel-manager/model/rate-plan-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`${API}/api/channel-manager/ingest/events?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { events: [] } })),
-        axios.get(`${API}/api/channel-manager/model/lineage?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { lineages: [] } })),
-        axios.get(`${API}/api/channel-manager/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
-        axios.get(`${API}/api/channel-manager/model/reconciliation/summary`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/monitoring/overview`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/channel-manager/monitoring/alerts`, { headers: h }).catch(() => ({ data: { alerts: [] } })),
+        axios.get(`/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } })),
+        axios.get(`/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
+        axios.get(`/channel-manager/model/rate-plan-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
+        axios.get(`/channel-manager/ingest/events?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { events: [] } })),
+        axios.get(`/channel-manager/model/lineage?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { lineages: [] } })),
+        axios.get(`/channel-manager/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
+        axios.get(`/channel-manager/model/reconciliation/summary`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/monitoring/overview`, { headers: h }).catch(() => ({ data: null })),
+        axios.get(`/channel-manager/monitoring/alerts`, { headers: h }).catch(() => ({ data: { alerts: [] } })),
       ]);
       setSchema(schemaRes.data);
       setConnections(connRes.data.connections || []);
@@ -243,7 +243,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const activateConnection = async (id) => {
     try {
-      await axios.post(`${API}/api/channel-manager/model/connections/${id}/activate`, {}, { headers: headers() });
+      await axios.post(`/channel-manager/model/connections/${id}/activate`, {}, { headers: headers() });
       toast.success('Connection activated');
       fetchAll();
     } catch { toast.error('Activation failed'); }
@@ -251,7 +251,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const deleteConnection = async (id) => {
     try {
-      await axios.delete(`${API}/api/channel-manager/model/connections/${id}`, { headers: headers() });
+      await axios.delete(`/channel-manager/model/connections/${id}`, { headers: headers() });
       toast.success('Connection deleted');
       fetchAll();
     } catch { toast.error('Delete failed'); }
@@ -259,7 +259,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const resolveCase = async (caseId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
+      await axios.post(`/channel-manager/reconciliation/cases/${caseId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
       toast.success('Case resolved');
       fetchAll();
     } catch { toast.error('Resolve failed'); }
@@ -267,7 +267,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const ignoreCase = async (caseId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/ignore`, { reason: 'Manually ignored' }, { headers: headers() });
+      await axios.post(`/channel-manager/reconciliation/cases/${caseId}/ignore`, { reason: 'Manually ignored' }, { headers: headers() });
       toast.success('Case ignored');
       fetchAll();
     } catch { toast.error('Ignore failed'); }
@@ -275,7 +275,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const acknowledgeCase = async (caseId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/reconciliation/cases/${caseId}/acknowledge`, { note: 'Under review' }, { headers: headers() });
+      await axios.post(`/channel-manager/reconciliation/cases/${caseId}/acknowledge`, { note: 'Under review' }, { headers: headers() });
       toast.success('Case acknowledged');
       fetchAll();
     } catch { toast.error('Acknowledge failed'); }
@@ -284,7 +284,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const triggerReconciliation = async () => {
     setReconRunning(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/reconciliation/run`, {}, { headers: headers() });
+      const { data } = await axios.post(`/channel-manager/reconciliation/run`, {}, { headers: headers() });
       const r = data.result || {};
       toast.success(`Reconciliation done: ${r.mismatches_found || 0} mismatches, ${r.cases_created || 0} cases created`);
       fetchAll();
@@ -300,7 +300,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     if (reconFilter.case_type) params.set('case_type', reconFilter.case_type);
     if (reconFilter.provider) params.set('provider', reconFilter.provider);
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/reconciliation/cases?${params.toString()}`, { headers: h });
+      const { data } = await axios.get(`/channel-manager/reconciliation/cases?${params.toString()}`, { headers: h });
       setReconCases(data.cases || []);
     } catch { toast.error('Filter failed'); }
   };
@@ -308,7 +308,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const triggerWorker = async (action) => {
     setWorkerAction(action);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/ingest/workers/${action}`, {}, { headers: headers() });
+      const { data } = await axios.post(`/channel-manager/ingest/workers/${action}`, {}, { headers: headers() });
       const r = data.result || {};
       if (action === 'process') {
         toast.success(`Processed: ${r.processed || 0} events (${r.created || 0} created, ${r.updated || 0} updated, ${r.skipped || 0} skipped)`);
@@ -324,7 +324,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const ackAlert = async (alertId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/monitoring/alerts/${alertId}/ack`, { note: '' }, { headers: headers() });
+      await axios.post(`/channel-manager/monitoring/alerts/${alertId}/ack`, { note: '' }, { headers: headers() });
       toast.success('Alert acknowledged');
       fetchAll();
     } catch { toast.error('Acknowledge failed'); }
@@ -332,7 +332,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const resolveAlert = async (alertId) => {
     try {
-      await axios.post(`${API}/api/channel-manager/monitoring/alerts/${alertId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
+      await axios.post(`/channel-manager/monitoring/alerts/${alertId}/resolve`, { resolution: 'Manually resolved' }, { headers: headers() });
       toast.success('Alert resolved');
       fetchAll();
     } catch { toast.error('Resolve failed'); }
@@ -340,14 +340,14 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const fetchMonitoringMetrics = async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/monitoring/metrics`, { headers: headers() });
+      const { data } = await axios.get(`/channel-manager/monitoring/metrics`, { headers: headers() });
       setMonitoringMetrics(data);
     } catch { toast.error('Metrics fetch failed'); }
   };
 
   const fetchProviderConfigs = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/config/providers`, { headers: headers() });
+      const { data } = await axios.get(`/channel-manager/config/providers`, { headers: headers() });
       setProviderConfigs(data.providers || []);
     } catch (e) { console.error('Provider config fetch failed:', e); }
   }, [headers]);
@@ -357,7 +357,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const saveCredentials = async (provider) => {
     const form = credForms[provider] || {};
     try {
-      await axios.post(`${API}/api/channel-manager/config/providers/${provider}/credentials`, {
+      await axios.post(`/channel-manager/config/providers/${provider}/credentials`, {
         credentials: form, property_id: 'default',
       }, { headers: headers() });
       toast.success('Credentials saved');
@@ -367,7 +367,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
 
   const deleteCredentials = async (provider) => {
     try {
-      await axios.delete(`${API}/api/channel-manager/config/providers/${provider}/credentials`, { headers: headers() });
+      await axios.delete(`/channel-manager/config/providers/${provider}/credentials`, { headers: headers() });
       toast.success('Credentials deleted');
       setCredForms(prev => ({ ...prev, [provider]: {} }));
       fetchProviderConfigs();
@@ -377,7 +377,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const runValidation = async (provider) => {
     setValidationRunning(prev => ({ ...prev, [provider]: true }));
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/config/providers/${provider}/validate`, {}, { headers: headers() });
+      const { data } = await axios.post(`/channel-manager/config/providers/${provider}/validate`, {}, { headers: headers() });
       setValidationResults(prev => ({ ...prev, [provider]: data }));
       if (data.overall_status === 'passed') toast.success(`${provider} validation passed!`);
       else if (data.overall_status === 'partial') toast.info(`${provider}: ${data.passed}/${data.total} checks passed`);
@@ -390,7 +390,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const testConnection = async (provider) => {
     setValidationRunning(prev => ({ ...prev, [`${provider}_conn`]: true }));
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/config/providers/${provider}/test-connection`, {}, { headers: headers() });
+      const { data } = await axios.post(`/channel-manager/config/providers/${provider}/test-connection`, {}, { headers: headers() });
       if (data.connected) toast.success(`${provider} connected! (${data.duration_ms}ms)`);
       else toast.error(`Connection failed: ${data.error}`);
       setValidationResults(prev => ({ ...prev, [`${provider}_conn`]: data }));

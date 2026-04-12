@@ -7,7 +7,7 @@ import {
   Gauge, TrendingUp, Zap, Shield
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function MetricCard({ label, value, unit, icon: Icon, status }) {
   const statusColors = {
@@ -127,7 +127,7 @@ export default function SoakTestDashboard() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/production/soak-test/status`, { headers });
+      const res = await axios.get(`/production/soak-test/status`, { headers });
       setData(res.data);
     } catch (e) {
       console.error("Soak test status fetch error:", e);
@@ -146,7 +146,7 @@ export default function SoakTestDashboard() {
     setStarting(true);
     try {
       await axios.post(
-        `${API}/api/production/soak-test/start?duration=${duration}&users=${users}`,
+        `/production/soak-test/start?duration=${duration}&users=${users}`,
         {}, { headers }
       );
       toast.success(`Soak test baslatildi: ${users} kullanici, ${duration}`);
@@ -161,7 +161,7 @@ export default function SoakTestDashboard() {
   const stopTest = async () => {
     setStopping(true);
     try {
-      await axios.post(`${API}/api/production/soak-test/stop`, {}, { headers });
+      await axios.post(`/production/soak-test/stop`, {}, { headers });
       toast.success("Soak test durduruldu");
       setTimeout(fetchStatus, 2000);
     } catch (e) {

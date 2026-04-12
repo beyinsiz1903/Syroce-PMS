@@ -12,7 +12,7 @@ import {
   ArrowUpRight, Archive, Search
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 // ─── Severity Config ─────────────────────────────────────────
 const SEVERITY_CONFIG = {
@@ -177,8 +177,8 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
       params.append('limit', '50');
 
       const [sumRes, listRes] = await Promise.allSettled([
-        axios.get(`${API}/api/ops/incidents/summary`, { headers }),
-        axios.get(`${API}/api/ops/incidents/list?${params}`, { headers }),
+        axios.get(`/ops/incidents/summary`, { headers }),
+        axios.get(`/ops/incidents/list?${params}`, { headers }),
       ]);
 
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
@@ -199,7 +199,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
   const handleAction = async (incidentId, action) => {
     try {
       await axios.post(
-        `${API}/api/ops/incidents/action/${incidentId}`,
+        `/ops/incidents/action/${incidentId}`,
         { action },
         { headers },
       );

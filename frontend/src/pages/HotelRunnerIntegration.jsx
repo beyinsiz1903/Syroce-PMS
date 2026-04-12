@@ -16,7 +16,7 @@ import {
   AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const [activeTab, setActiveTab] = useState('connection');
@@ -45,7 +45,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   const fetchConnection = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/hotelrunner/connection`, { headers });
+      const { data } = await axios.get(`/channel-manager/hotelrunner/connection`, { headers });
       setConnection(data);
     } catch { setConnection({ connected: false }); }
   }, []);
@@ -54,12 +54,12 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     if (!connection?.connected) return;
     try {
       const [roomsRes, mappingsRes, logsRes, localRes, pmsTypesRes, cachedRoomsRes] = await Promise.all([
-        axios.get(`${API}/api/channel-manager/hotelrunner/room-mappings`, { headers }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`${API}/api/channel-manager/hotelrunner/sync-logs?limit=20`, { headers }).catch(() => ({ data: { logs: [] } })),
-        axios.get(`${API}/api/channel-manager/hotelrunner/reservations/local`, { headers }).catch(() => ({ data: { reservations: [] } })),
-        axios.get(`${API}/api/channel-manager/hotelrunner/channels/connected`, { headers }).catch(() => ({ data: { channels: [] } })),
-        axios.get(`${API}/api/channel-manager/hotelrunner/pms-room-types`, { headers }).catch(() => ({ data: { room_types: [] } })),
-        axios.get(`${API}/api/channel-manager/hotelrunner/cached-rooms`, { headers }).catch(() => ({ data: { rooms: [] } })),
+        axios.get(`/channel-manager/hotelrunner/room-mappings`, { headers }).catch(() => ({ data: { mappings: [] } })),
+        axios.get(`/channel-manager/hotelrunner/sync-logs?limit=20`, { headers }).catch(() => ({ data: { logs: [] } })),
+        axios.get(`/channel-manager/hotelrunner/reservations/local`, { headers }).catch(() => ({ data: { reservations: [] } })),
+        axios.get(`/channel-manager/hotelrunner/channels/connected`, { headers }).catch(() => ({ data: { channels: [] } })),
+        axios.get(`/channel-manager/hotelrunner/pms-room-types`, { headers }).catch(() => ({ data: { room_types: [] } })),
+        axios.get(`/channel-manager/hotelrunner/cached-rooms`, { headers }).catch(() => ({ data: { rooms: [] } })),
       ]);
       setMappings(roomsRes.data.mappings || []);
       setSyncLogs(logsRes.data.logs || []);
@@ -77,7 +77,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   const fetchMappingStatus = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/auto-map/status/hotelrunner`, { headers });
+      const { data } = await axios.get(`/channel-manager/auto-map/status/hotelrunner`, { headers });
       setMappingStatus(data);
     } catch { /* ignore */ }
   }, []);
@@ -87,7 +87,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const handleAutoMapSuggest = async () => {
     setAutoMapLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/suggest`, { provider: 'hotelrunner' }, { headers });
+      const { data } = await axios.post(`/channel-manager/auto-map/suggest`, { provider: 'hotelrunner' }, { headers });
       setAutoMapSuggestions(data);
       setAutoMapOpen(true);
     } catch (e) { toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi'); }
@@ -108,7 +108,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
           provider_rate_plan_name: s.provider_rate_plan_name,
         })),
       };
-      const { data } = await axios.post(`${API}/api/channel-manager/auto-map/apply`, payload, { headers });
+      const { data } = await axios.post(`/channel-manager/auto-map/apply`, payload, { headers });
       toast.success(data.message);
       setAutoMapOpen(false);
       fetchAll();
@@ -124,7 +124,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     }
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/connect`, connectForm, { headers });
+      const { data } = await axios.post(`/channel-manager/hotelrunner/connect`, connectForm, { headers });
       toast.success(data.message);
       setConnection({ connected: true, connection: data });
       fetchConnection();
@@ -136,7 +136,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   const handleDisconnect = async () => {
     try {
-      await axios.delete(`${API}/api/channel-manager/hotelrunner/disconnect`, { headers });
+      await axios.delete(`/channel-manager/hotelrunner/disconnect`, { headers });
       toast.success('Baglanti kesildi');
       setConnection({ connected: false });
     } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
@@ -145,7 +145,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const handleTestConnection = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/test`, {}, { headers });
+      const { data } = await axios.post(`/channel-manager/hotelrunner/test`, {}, { headers });
       if (data.connected) toast.success(`Baglanti basarili (${data.duration_ms}ms)`);
       else toast.error(`Baglanti hatasi: ${data.error}`);
     } catch (e) { toast.error(e.response?.data?.detail || 'Test hatasi'); }
@@ -155,7 +155,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const handleFetchRooms = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/api/channel-manager/hotelrunner/rooms`, { headers });
+      const { data } = await axios.get(`/channel-manager/hotelrunner/rooms`, { headers });
       setRooms(data.rooms || []);
       toast.success(`${data.count} oda/fiyat plani yuklendi`);
     } catch (e) { toast.error(e.response?.data?.detail || 'Oda listesi alinamadi'); }
@@ -165,7 +165,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const handleSyncReservations = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/reservations/sync`, {}, { headers });
+      const { data } = await axios.post(`/channel-manager/hotelrunner/reservations/sync`, {}, { headers });
       toast.success(data.message);
       fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || 'Senkronizasyon hatasi'); }
@@ -182,7 +182,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     }
     setSavingMapping(key);
     try {
-      await axios.post(`${API}/api/channel-manager/hotelrunner/room-mappings`, {
+      await axios.post(`/channel-manager/hotelrunner/room-mappings`, {
         pms_room_type: pmsType,
         hr_inv_code: room.inv_code,
         hr_rate_code: room.rate_code,
@@ -199,7 +199,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   const handleDeleteMapping = async (mappingId) => {
     try {
-      await axios.delete(`${API}/api/channel-manager/hotelrunner/room-mappings/${mappingId}`, { headers });
+      await axios.delete(`/channel-manager/hotelrunner/room-mappings/${mappingId}`, { headers });
       toast.success('Esleme silindi');
       fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatasi'); }
@@ -228,7 +228,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
           sync_restrictions: d.sync_restrictions ?? true,
         };
       });
-      const { data } = await axios.post(`${API}/api/channel-manager/hotelrunner/room-mappings/bulk`, payload, { headers });
+      const { data } = await axios.post(`/channel-manager/hotelrunner/room-mappings/bulk`, payload, { headers });
       toast.success(data.message);
       fetchAll();
     } catch (e) { toast.error(e.response?.data?.detail || 'Toplu esleme hatasi'); }

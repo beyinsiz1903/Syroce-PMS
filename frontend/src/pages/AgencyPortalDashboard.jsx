@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-const API_BASE = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '') + '/api';
+const API_BASE = '';
 
 const AgencyPortalDashboard = () => {
   const [agencyUser, setAgencyUser] = useState(null);

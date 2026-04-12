@@ -11,7 +11,7 @@ import {
   Database, Radio, Zap, TrendingUp, Users, Building2, Layers
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 /* ── Tiny Reusable Components ─────────────────────────── */
 
@@ -526,18 +526,18 @@ export default function SystemHealthDashboard({ user }) {
     setLoading(true);
     try {
       const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am] = await Promise.allSettled([
-        axios.get(`${API}/api/channel-manager/runtime/status`, { headers }),
-        axios.get(`${API}/api/workers/queues/health`, { headers }),
-        axios.get(`${API}/api/security/audit/status`, { headers }),
-        axios.get(`${API}/api/security/rate-limit/status`, { headers }),
-        axios.get(`${API}/api/security/tenant-guard/status`, { headers }),
-        axios.get(`${API}/api/security/log-sanitization/status`, { headers }),
-        axios.get(`${API}/api/observability/runtime/alerts`, { headers }),
-        axios.get(`${API}/api/observability/runtime/metrics`, { headers }),
-        axios.get(`${API}/api/workers/tasks/stuck`, { headers }),
-        axios.get(`${API}/api/system-health/normalized/overview`, { headers }),
-        axios.get(`${API}/api/system-health/role-dashboard`, { headers }),
-        axios.get(`${API}/api/system-health/audit/metrics`, { headers }),
+        axios.get(`/channel-manager/runtime/status`, { headers }),
+        axios.get(`/workers/queues/health`, { headers }),
+        axios.get(`/security/audit/status`, { headers }),
+        axios.get(`/security/rate-limit/status`, { headers }),
+        axios.get(`/security/tenant-guard/status`, { headers }),
+        axios.get(`/security/log-sanitization/status`, { headers }),
+        axios.get(`/observability/runtime/alerts`, { headers }),
+        axios.get(`/observability/runtime/metrics`, { headers }),
+        axios.get(`/workers/tasks/stuck`, { headers }),
+        axios.get(`/system-health/normalized/overview`, { headers }),
+        axios.get(`/system-health/role-dashboard`, { headers }),
+        axios.get(`/system-health/audit/metrics`, { headers }),
       ]);
       if (cm.status === "fulfilled") setCmStatus(cm.value.data);
       if (q.status === "fulfilled") setQueueHealth(q.value.data);
@@ -560,14 +560,14 @@ export default function SystemHealthDashboard({ user }) {
 
   const triggerDriftScan = async () => {
     setDriftScanLoading(true);
-    try { await axios.post(`${API}/api/channel-manager/drift/scan`, null, { headers }); await fetchAll(); }
+    try { await axios.post(`/channel-manager/drift/scan`, null, { headers }); await fetchAll(); }
     catch (e) { console.error(e); }
     setDriftScanLoading(false);
   };
 
   const triggerRecon = async () => {
     setReconLoading(true);
-    try { await axios.post(`${API}/api/channel-manager/reconciliation/run?auto_fix=true`, null, { headers }); await fetchAll(); }
+    try { await axios.post(`/channel-manager/reconciliation/run?auto_fix=true`, null, { headers }); await fetchAll(); }
     catch (e) { console.error(e); }
     setReconLoading(false);
   };

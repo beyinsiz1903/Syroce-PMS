@@ -23,7 +23,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       try {
         const ci = booking?.check_in?.toString().slice(0, 10) || '';
         const co = booking?.check_out?.toString().slice(0, 10) || '';
-        const res = await axios.get(`${API}/api/pms/available-rooms-by-type?check_in=${ci}&check_out=${co}`);
+        const res = await axios.get(`/pms/available-rooms-by-type?check_in=${ci}&check_out=${co}`);
         setRoomTypes(res.data.room_types || []);
       } catch (e) { console.log('Room load error:', e); }
       setLoadingRooms(false);
@@ -41,7 +41,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
     setLoading(true);
     try {
       const extraCharge = pricingOption === 'upgrade' ? Math.max(0, priceDiff) : pricingOption === 'custom' ? parseFloat(customPrice) || 0 : 0;
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/room-change`, {
+      await axios.post(`/pms/reservations/${booking.id}/room-change`, {
         new_room_id: selectedRoomId, reason, transfer_folio: true, extra_charge: extraCharge
       });
       toast.success('Oda degistirildi');
@@ -182,7 +182,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     if (!window.confirm(applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?')) return;
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${bookingId}/cancel`, {
+      await axios.post(`/pms/reservations/${bookingId}/cancel`, {
         reason, cancel_type: cancelType, apply_noshow: applyNoshow,
         noshow_charge_type: applyNoshow ? noshowChargeType : null,
         noshow_charge_amount: applyNoshow ? parseFloat(noshowAmount) || 0 : null,

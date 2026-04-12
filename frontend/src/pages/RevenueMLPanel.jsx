@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function StatBox({ label, value, color = 'text-slate-800' }) {
   return (
@@ -51,7 +51,7 @@ export default function RevenueMLPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/api/platform/ml/dashboard`, { headers });
+      const res = await axios.get(`/platform/ml/dashboard`, { headers });
       setData(res.data);
     } catch (e) { console.error(e); }
     setLoading(false);

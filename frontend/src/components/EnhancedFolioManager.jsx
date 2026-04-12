@@ -22,7 +22,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/folio/${bookingId}`,
+        `/folio/${bookingId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setFolio(response.data.folio);
@@ -37,7 +37,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/folio/charge`,
+        `/folio/charge`,
         { ...chargeData, folio_id: folio.id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -54,7 +54,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/folio/payment`,
+        `/folio/payment`,
         { ...paymentData, folio_id: folio.id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -73,7 +73,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${API_URL}/api/bookings/${bookingId}/checkout`,
+        `/bookings/${bookingId}/checkout`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );

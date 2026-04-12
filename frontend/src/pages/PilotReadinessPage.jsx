@@ -9,7 +9,7 @@ import {
   RefreshCw, Loader2, Rocket, ToggleLeft, ToggleRight
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function CheckItem({ item }) {
   const icon = item.passed
@@ -47,8 +47,8 @@ export default function PilotReadinessPage() {
     setLoading(true);
     try {
       const [readRes, toggleRes] = await Promise.all([
-        axios.get(`${API}/api/pilot/readiness`, { headers }),
-        axios.get(`${API}/api/pilot/feature-toggles`, { headers }),
+        axios.get(`/pilot/readiness`, { headers }),
+        axios.get(`/pilot/feature-toggles`, { headers }),
       ]);
       setReadiness(readRes.data?.data || readRes.data);
       setToggles(toggleRes.data?.data?.toggles || []);
@@ -62,7 +62,7 @@ export default function PilotReadinessPage() {
 
   const toggleFeature = async (feature, enabled) => {
     try {
-      await axios.post(`${API}/api/pilot/feature-toggles`, { feature, enabled: !enabled }, { headers });
+      await axios.post(`/pilot/feature-toggles`, { feature, enabled: !enabled }, { headers });
       fetchData();
     } catch (err) {
       console.error("Toggle error:", err);

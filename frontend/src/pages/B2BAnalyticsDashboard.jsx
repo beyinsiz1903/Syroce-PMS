@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 import { KPICard, CustomTooltip, COLORS, formatCurrency, formatNumber } from './reports/ReportHelpers';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = "";
 
 const apiFetch = async (path, params = {}) => {
   const token = localStorage.getItem('token');

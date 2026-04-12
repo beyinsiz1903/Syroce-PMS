@@ -8,7 +8,7 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 
 export default function CentralPricingManager({ user, tenant, onLogout }) {
   const { t } = useTranslation();
@@ -26,9 +26,9 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
     setLoading(true);
     try {
       const [ratesRes, templatesRes, historyRes] = await Promise.all([
-        axios.get(`${BACKEND}/api/central-pricing/rates`, { headers }),
-        axios.get(`${BACKEND}/api/central-pricing/rate-templates`, { headers }),
-        axios.get(`${BACKEND}/api/central-pricing/rate-history`, { headers })
+        axios.get(`/central-pricing/rates`, { headers }),
+        axios.get(`/central-pricing/rate-templates`, { headers }),
+        axios.get(`/central-pricing/rate-history`, { headers })
       ]);
       setRates(ratesRes.data);
       setTemplates(templatesRes.data.templates || []);
@@ -42,7 +42,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
   const handleBulkUpdate = async () => {
     if (!bulkForm.new_rate) return;
     try {
-      const res = await axios.post(`${BACKEND}/api/central-pricing/bulk-update`, {
+      const res = await axios.post(`/central-pricing/bulk-update`, {
         ...bulkForm,
         new_rate: parseFloat(bulkForm.new_rate)
       }, { headers });

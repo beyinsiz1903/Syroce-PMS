@@ -107,9 +107,9 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
     const errors = [];
     try {
       const [connRes, dashRes, scoreRes] = await Promise.allSettled([
-        axios.get('/api/channel-manager/connections/overview', { headers }).then(r => r.data),
+        axios.get('/channel-manager/connections/overview', { headers }).then(r => r.data),
         axios.get('/channel-manager/v2/dashboard/overview', { headers }).then(r => r.data),
-        axios.get('/api/validation/golive-score', { headers }).then(r => r.data),
+        axios.get('/validation/golive-score', { headers }).then(r => r.data),
       ]);
       if (connRes.status === 'fulfilled') { setConnections(connRes.value); } else { errors.push('Baglanti verileri'); setConnections(null); }
       if (dashRes.status === 'fulfilled') { setDashboard(dashRes.value); } else { errors.push('Dashboard verileri'); setDashboard(null); }
@@ -146,7 +146,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
     setDryRunning(true);
     setDryRunResult(null);
     try {
-      const { data } = await axios.post('/api/channel/hotelrunner-v2/dry-run/ari-push', { simulate_failure: false }, { headers });
+      const { data } = await axios.post('/channel/hotelrunner-v2/dry-run/ari-push', { simulate_failure: false }, { headers });
       setDryRunResult(data);
       if (data?.success) {
         toast.success('Dry run basarili');

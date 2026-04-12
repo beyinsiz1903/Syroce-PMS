@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899'];
 
 export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
@@ -36,11 +36,11 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
     setLoading(true);
     try {
       const [evtRes, mpRes, mlRes, compRes, notifRes] = await Promise.all([
-        axios.get(`${API}/api/platform/events/analytics?hours=24`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/platform/multi-property/dashboard`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/platform/ml/dashboard`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/platform/competitive/dashboard`, { headers }).catch(() => ({ data: null })),
-        axios.get(`${API}/api/platform/events/notifications?unread_only=true&limit=10`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/platform/events/analytics?hours=24`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/platform/multi-property/dashboard`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/platform/ml/dashboard`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/platform/competitive/dashboard`, { headers }).catch(() => ({ data: null })),
+        axios.get(`/platform/events/notifications?unread_only=true&limit=10`, { headers }).catch(() => ({ data: null })),
       ]);
       setEventData(evtRes.data);
       setMultiPropData(mpRes.data);
@@ -293,8 +293,8 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
     const fetchEvents = async () => {
       try {
         const [evtRes, escRes] = await Promise.all([
-          axios.get(`${API}/api/platform/events/stream?limit=20`, { headers }),
-          axios.get(`${API}/api/platform/events/escalation-queue`, { headers }),
+          axios.get(`/platform/events/stream?limit=20`, { headers }),
+          axios.get(`/platform/events/escalation-queue`, { headers }),
         ]);
         setEvents(evtRes.data?.events || []);
         setEscalations(escRes.data?.events || []);
@@ -308,11 +308,11 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
     try {
       let payload = {};
       try { payload = JSON.parse(publishForm.payload); } catch { payload = { message: publishForm.payload }; }
-      await axios.post(`${API}/api/platform/events/publish`, {
+      await axios.post(`/platform/events/publish`, {
         event_type: publishForm.event_type, payload
       }, { headers });
       fetchAll();
-      const evtRes = await axios.get(`${API}/api/platform/events/stream?limit=20`, { headers });
+      const evtRes = await axios.get(`/platform/events/stream?limit=20`, { headers });
       setEvents(evtRes.data?.events || []);
     } catch (e) { console.error(e); }
     setPublishing(false);
@@ -584,7 +584,7 @@ function CompetitivePanel({ data, headers, fetchAll }) {
     if (!addForm.name) return;
     setAdding(true);
     try {
-      await axios.post(`${API}/api/platform/competitive/add-competitor`, {
+      await axios.post(`/platform/competitive/add-competitor`, {
         name: addForm.name, star_rating: addForm.star_rating,
       }, { headers });
       setAddForm({ name: '', star_rating: 4 });

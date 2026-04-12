@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = import.meta.env.VITE_BACKEND_URL || '';
 
 /**
  * Custom hook for WebSocket real-time admin updates.

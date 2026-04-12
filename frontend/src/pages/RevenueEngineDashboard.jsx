@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
 
 export default function RevenueEngineDashboard({ user, tenant, onLogout, embedded = false }) {
@@ -40,11 +40,11 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
     setLoading(true);
     try {
       const [dashRes, forecastRes, sugRes, yieldRes, chRes] = await Promise.all([
-        axios.get(`${API}/api/revenue-engine/dashboard`, { headers }),
-        axios.get(`${API}/api/revenue-engine/occupancy-forecast?days=14`, { headers }),
-        axios.get(`${API}/api/revenue-engine/rate-suggestions?days=7`, { headers }),
-        axios.get(`${API}/api/revenue-engine/yield-recommendations`, { headers }),
-        axios.get(`${API}/api/revenue-engine/channel-performance?days_back=30`, { headers }),
+        axios.get(`/revenue-engine/dashboard`, { headers }),
+        axios.get(`/revenue-engine/occupancy-forecast?days=14`, { headers }),
+        axios.get(`/revenue-engine/rate-suggestions?days=7`, { headers }),
+        axios.get(`/revenue-engine/yield-recommendations`, { headers }),
+        axios.get(`/revenue-engine/channel-performance?days_back=30`, { headers }),
       ]);
       setDashboard(dashRes.data);
       setForecast(forecastRes.data);
@@ -62,7 +62,7 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
 
   const handleApplyRate = async (targetDate, newRate) => {
     try {
-      await axios.post(`${API}/api/revenue-engine/apply-rate`, { target_date: targetDate, new_rate: newRate }, { headers });
+      await axios.post(`/revenue-engine/apply-rate`, { target_date: targetDate, new_rate: newRate }, { headers });
       fetchAll();
     } catch (err) { console.error(err); }
   };

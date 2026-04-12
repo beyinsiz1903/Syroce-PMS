@@ -11,7 +11,7 @@ import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { ProviderToggle } from './rate-manager/ProviderToggle';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const RateManager = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(false);
@@ -56,7 +56,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const { data } = await axios.get(
-        `${API}/api/channel-manager/rate-manager/grid?start_date=${startDate}&end_date=${endDate}`,
+        `/channel-manager/rate-manager/grid?start_date=${startDate}&end_date=${endDate}`,
         { headers }
       );
       setGrid(data.grid || []);
@@ -73,7 +73,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
   useEffect(() => { fetchGrid(); }, [fetchGrid]);
 
   useEffect(() => {
-    axios.get(`${API}/api/channel-manager/rate-manager/push-providers`, { headers })
+    axios.get(`/channel-manager/rate-manager/push-providers`, { headers })
       .then(res => setPushProviders(res.data?.providers || []))
       .catch(() => {});
   }, []);
@@ -166,7 +166,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
     const newType = current === 'per_person' ? 'per_room' : 'per_person';
     setPricingSettings(prev => ({ ...prev, [roomTypeCode]: newType }));
     try {
-      await axios.put(`${API}/api/channel-manager/rate-manager/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
+      await axios.put(`/channel-manager/rate-manager/pricing-settings`, { settings: [{ room_type_code: roomTypeCode, pricing_type: newType }] }, { headers });
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
@@ -212,7 +212,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
         };
       });
 
-      const { data } = await axios.post(`${API}/api/channel-manager/rate-manager/bulk-grid-update`,
+      const { data } = await axios.post(`/channel-manager/rate-manager/bulk-grid-update`,
         { per_room_values: perRoomValues, start_date: dateFrom, end_date: dateTo, selected_days: allDays ? null : Array.from(selectedDays), update_fields: Array.from(enabledFields) },
         { headers }
       );

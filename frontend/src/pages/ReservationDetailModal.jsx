@@ -27,7 +27,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const loadData = useCallback(async () => {
     if (!bookingId) return;
     try {
-      const res = await axios.get(`${API}/api/pms/reservations/${bookingId}/full-detail`);
+      const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
       setData(res.data);
     } catch (e) {
       toast.error('Rezervasyon detayi yuklenemedi');
@@ -171,7 +171,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
                   <Button size="sm" variant="outline" onClick={async () => {
                     try {
-                      await axios.post(`${API}/api/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
+                      await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
                       toast.success('Giris yapildi'); loadData();
                     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
                   }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giris Yap</Button>
@@ -180,7 +180,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <Button size="sm" variant="outline" onClick={async () => {
                     if (!window.confirm('Cikis yapilsin mi?')) return;
                     try {
-                      const res = await axios.post(`${API}/api/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
+                      const res = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
                       if (res.data.total_balance > 0.01) {
                         toast.warning(`Acik bakiye ile cikis yapildi: ${res.data.total_balance.toFixed(2)}`);
                       } else {
@@ -201,7 +201,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Gec cikis kaydedildi')} className="w-full h-8 text-xs justify-start"><LogOut className="w-3 h-3 mr-2" /> Gec Cikis</Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   const vip = data?.guest?.vip_status || false;
-                  try { await axios.put(`${API}/api/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldirildi' : 'VIP yapildi'); loadData(); }
+                  try { await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldirildi' : 'VIP yapildi'); loadData(); }
                   catch (e) { toast.error('Hata'); }
                 }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldir' : 'VIP Yap'}</Button>
                 <Button size="sm" variant="outline" onClick={() => { if (window.confirm('No-show olarak isaretlensin mi?')) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show isaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>

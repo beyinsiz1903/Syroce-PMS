@@ -7,7 +7,7 @@ import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
+const BACKEND = "";
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
 export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
@@ -24,10 +24,10 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
     setLoading(true);
     try {
       const [dashRes, compRes, revRes, alertRes] = await Promise.all([
-        axios.get(`${BACKEND}/api/central-office/dashboard`, { headers }),
-        axios.get(`${BACKEND}/api/central-office/occupancy-comparison`, { headers }),
-        axios.get(`${BACKEND}/api/central-office/revenue-report`, { headers }),
-        axios.get(`${BACKEND}/api/central-office/alerts`, { headers })
+        axios.get(`/central-office/dashboard`, { headers }),
+        axios.get(`/central-office/occupancy-comparison`, { headers }),
+        axios.get(`/central-office/revenue-report`, { headers }),
+        axios.get(`/central-office/alerts`, { headers })
       ]);
       setDashboard(dashRes.data);
       setComparison(compRes.data);

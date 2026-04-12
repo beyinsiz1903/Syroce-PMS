@@ -55,6 +55,20 @@ Configured as a static deployment:
 - Build: `cd frontend && yarn install && yarn build`
 - Public dir: `frontend/build`
 
+## API Call Conventions
+
+Two URL patterns coexist in frontend code:
+
+1. **axios calls** (via `axiosConfig.js` with `baseURL="/api"`): Use relative paths WITHOUT `/api/` prefix.
+   - Example: `axios.get('/notifications/list')` → resolves to `/api/notifications/list`
+   - Channel manager tabs using `${API}` (= `/channel-manager/v2`): `axios.get(`${API}/delivery/channels`)` → `/api/channel-manager/v2/delivery/channels`
+
+2. **fetch calls** (native, no baseURL): Must include `/api/` prefix explicitly.
+   - Example: `fetch('/api/security/summary', ...)` 
+   - Helper wrappers like `fetchAPI` in some files construct the full URL
+
+**Common mistake**: Using `/api/xxx` with axios → double prefix `/api/api/xxx`. Using `/xxx` with fetch → misses `/api/` prefix entirely.
+
 ## Key Features
 
 - Front desk management and reservations

@@ -11,7 +11,7 @@ import {
   TrendingUp, Zap, Server, Globe, Key, UserCheck, Ban
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const SecurityDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -21,7 +21,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/security/summary`, {
+      const res = await fetch(`/api/security/summary`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error();
@@ -37,7 +37,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
 
   const refreshToken = async () => {
     try {
-      const res = await fetch(`${API}/api/auth/refresh-token`, {
+      const res = await fetch(`/api/auth/refresh-token`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

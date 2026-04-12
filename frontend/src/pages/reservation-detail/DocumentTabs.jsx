@@ -17,7 +17,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     if (!depForm.amount) { toast.error('Tutar giriniz'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/record-deposit`, { ...depForm, amount: parseFloat(depForm.amount) });
+      await axios.post(`/pms/reservations/${booking.id}/record-deposit`, { ...depForm, amount: parseFloat(depForm.amount) });
       toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -27,7 +27,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     if (!refundForm.refund_amount) { toast.error('Iade tutari giriniz'); return; }
     setLoading(true);
     try {
-      await axios.post(`${API}/api/pms/reservations/${booking.id}/refund-deposit`, { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) });
+      await axios.post(`/pms/reservations/${booking.id}/refund-deposit`, { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) });
       toast.success('Depozito iade edildi'); setShowRefund(null); setRefundForm({ refund_amount: '', refund_method: 'cash', reason: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -114,7 +114,7 @@ export function VoucherTab({ booking, bookingId }) {
   const generateVoucher = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/api/pms/reservations/${bookingId}/voucher`);
+      const res = await axios.get(`/pms/reservations/${bookingId}/voucher`);
       setVoucherHtml(res.data?.voucher_html || '');
     } catch (e) { toast.error('Voucher olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -168,7 +168,7 @@ export function InvoiceTab({ booking, bookingId }) {
     const loadCharges = async () => {
       setLoadingCharges(true);
       try {
-        const res = await axios.get(`${API}/api/pms/reservations/${bookingId}/invoice-charges`);
+        const res = await axios.get(`/pms/reservations/${bookingId}/invoice-charges`);
         const items = res.data?.charges || [];
         setCharges(items);
         setSelectedIds(new Set(items.map(c => c.id)));
@@ -191,7 +191,7 @@ export function InvoiceTab({ booking, bookingId }) {
   const generateInvoice = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`${API}/api/pms/reservations/${bookingId}/generate-invoice`, {
+      const res = await axios.post(`/pms/reservations/${bookingId}/generate-invoice`, {
         selected_charge_ids: [...selectedIds],
         billing_name: billingInfo.name || null,
         billing_tax_id: billingInfo.tax_id || null,

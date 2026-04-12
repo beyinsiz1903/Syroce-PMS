@@ -20,7 +20,7 @@ import {
   BarChart3, Table2, ArrowUpDown, Settings2, BookmarkPlus, Eye
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const DATE_PRESETS = [
   { id: 'today', label: 'Bugün', calc: () => { const d = new Date(); const s = d.toISOString().split('T')[0]; return { from: s, to: s }; } },
@@ -83,7 +83,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch(`${API}/api/reports/builder/config`, {
+        const res = await fetch(`/api/reports/builder/config`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error(t('reportBuilder.configError'));
@@ -101,7 +101,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch(`${API}/api/reports/builder/templates`, {
+      const res = await fetch(`/api/reports/builder/templates`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -174,7 +174,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
     setLoading(true);
     setReportData(null);
     try {
-      const res = await fetch(`${API}/api/reports/builder/generate`, {
+      const res = await fetch(`/api/reports/builder/generate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
@@ -197,7 +197,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
 
     setExporting(true);
     try {
-      const res = await fetch(`${API}/api/reports/builder/export/${format}`, {
+      const res = await fetch(`/api/reports/builder/export/${format}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
@@ -227,7 +227,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
     if (!selectedSource || selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
 
     try {
-      const res = await fetch(`${API}/api/reports/builder/templates`, {
+      const res = await fetch(`/api/reports/builder/templates`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: templateName, config: buildConfig() }),
@@ -260,7 +260,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
 
   const deleteTemplate = async (id) => {
     try {
-      await fetch(`${API}/api/reports/builder/templates/${id}`, {
+      await fetch(`/api/reports/builder/templates/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });

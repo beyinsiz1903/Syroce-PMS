@@ -15,7 +15,7 @@ const LoyaltyAutoTierManager = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/ai/loyalty/auto-tier-upgrade`,
+        `/ai/loyalty/auto-tier-upgrade`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -33,7 +33,7 @@ const LoyaltyAutoTierManager = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${API_URL}/api/ai/guest-persona/analyze/${guestId}`,
+        `/ai/guest-persona/analyze/${guestId}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -49,7 +49,7 @@ const LoyaltyAutoTierManager = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${API_URL}/api/ai/guest-persona/all-insights`,
+        `/ai/guest-persona/all-insights`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setGuestPersonas(response.data.insights || []);

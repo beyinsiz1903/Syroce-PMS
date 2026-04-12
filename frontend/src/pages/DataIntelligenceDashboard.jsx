@@ -10,7 +10,7 @@ import {
   ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, ChevronRight,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function useAuth() {
   const token = localStorage.getItem('token');
@@ -128,7 +128,7 @@ function RevenueTab() {
   const runPipeline = async () => {
     setRunning(true);
     try {
-      const result = await fetch(`${API}/api/data-intelligence/revenue/run-pipeline`, {
+      const result = await fetch(`/api/data-intelligence/revenue/run-pipeline`, {
         method: 'POST', headers, body: JSON.stringify({}),
       }).then(r => r.json());
       setPipelineResult(result);

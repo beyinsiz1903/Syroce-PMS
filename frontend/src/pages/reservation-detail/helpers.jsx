@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check } from 'lucide-react';
 
-export const API = import.meta.env.VITE_BACKEND_URL;
+export const API = "";
 
 export const fmtDate = (d) => {
   if (!d) return '-';

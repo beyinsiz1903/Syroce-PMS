@@ -80,7 +80,7 @@ export default function EncryptionManagementPage() {
   const fetchDashboard = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/ops/encryption/dashboard`, {
+      const response = await axios.get(`/ops/encryption/dashboard`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setDashboard(response.data);
@@ -96,7 +96,7 @@ export default function EncryptionManagementPage() {
     try {
       const token = localStorage.getItem('token');
       const params = keyId ? `?key_id=${keyId}` : '';
-      const response = await axios.get(`${API_URL}/api/ops/encryption/audit/keys${params}`, {
+      const response = await axios.get(`/ops/encryption/audit/keys${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setKeyAudit(response.data.items || []);
@@ -109,7 +109,7 @@ export default function EncryptionManagementPage() {
     try {
       const token = localStorage.getItem('token');
       const params = jobId ? `?job_id=${jobId}` : '';
-      const response = await axios.get(`${API_URL}/api/ops/encryption/audit/jobs${params}`, {
+      const response = await axios.get(`/ops/encryption/audit/jobs${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setJobAudit(response.data.items || []);
@@ -135,7 +135,7 @@ export default function EncryptionManagementPage() {
   const handleRegisterKey = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/keys/register`, registerForm, {
+      await axios.post(`/ops/encryption/keys/register`, registerForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success('Anahtar basariyla kaydedildi');
@@ -150,7 +150,7 @@ export default function EncryptionManagementPage() {
   const handleInitiateRotation = async (keyId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/keys/rotation/initiate`, 
+      await axios.post(`/ops/encryption/keys/rotation/initiate`, 
         { key_id: keyId, reason: 'scheduled' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -164,7 +164,7 @@ export default function EncryptionManagementPage() {
   const handleCompleteRotation = async (keyId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/keys/rotation/complete`, 
+      await axios.post(`/ops/encryption/keys/rotation/complete`, 
         { key_id: keyId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -178,7 +178,7 @@ export default function EncryptionManagementPage() {
   const handleCancelRotation = async (keyId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/keys/rotation/cancel`, 
+      await axios.post(`/ops/encryption/keys/rotation/cancel`, 
         { key_id: keyId, reason: 'manual_cancel' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -196,7 +196,7 @@ export default function EncryptionManagementPage() {
     }
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/keys/emergency-revoke`, 
+      await axios.post(`/ops/encryption/keys/emergency-revoke`, 
         { key_id: selectedKey.key_id, reason: revokeReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -214,7 +214,7 @@ export default function EncryptionManagementPage() {
   const handleCreateJob = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post(`${API_URL}/api/ops/encryption/reencryption/create`, jobForm, {
+      const response = await axios.post(`/ops/encryption/reencryption/create`, jobForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success(`Is olusturuldu: ${response.data.job_id}`);
@@ -229,7 +229,7 @@ export default function EncryptionManagementPage() {
   const handleJobAction = async (jobId, action) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/ops/encryption/reencryption/${action}`, 
+      await axios.post(`/ops/encryption/reencryption/${action}`, 
         { job_id: jobId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

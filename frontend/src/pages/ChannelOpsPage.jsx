@@ -35,7 +35,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
@@ -368,7 +368,7 @@ const ChannelOpsPage = () => {
 
   const fetchEarlyWarningSummary = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/early-warnings/summary`, {
+      const resp = await axios.get(`/ops-events/early-warnings/summary`, {
         headers: getAuthHeaders(),
       });
       setEarlyWarningSummary(resp.data);
@@ -377,7 +377,7 @@ const ChannelOpsPage = () => {
 
   const fetchDashboard = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/dashboard-summary`, {
+      const resp = await axios.get(`/ops-events/dashboard-summary`, {
         headers: getAuthHeaders(),
       });
       setData(resp.data);
@@ -392,7 +392,7 @@ const ChannelOpsPage = () => {
 
   const fetchDlq = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/webhook-dlq`, {
+      const resp = await axios.get(`/ops-events/webhook-dlq`, {
         headers: getAuthHeaders(),
       });
       setDlqItems(resp.data?.items || []);
@@ -401,7 +401,7 @@ const ChannelOpsPage = () => {
 
   const fetchDeliveries = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/webhook-deliveries?limit=50`, {
+      const resp = await axios.get(`/ops-events/webhook-deliveries?limit=50`, {
         headers: getAuthHeaders(),
       });
       setDeliveries(resp.data?.deliveries || []);
@@ -410,7 +410,7 @@ const ChannelOpsPage = () => {
 
   const fetchOpsEvents = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/list?limit=50`, {
+      const resp = await axios.get(`/ops-events/list?limit=50`, {
         headers: getAuthHeaders(),
       });
       setOpsEvents(resp.data?.events || []);
@@ -420,7 +420,7 @@ const ChannelOpsPage = () => {
   // Sprint 2: Fetch prioritized incidents
   const fetchPrioritizedIncidents = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/incidents/prioritized?include_resolved=true`, {
+      const resp = await axios.get(`/ops-events/incidents/prioritized?include_resolved=true`, {
         headers: getAuthHeaders(),
       });
       setPrioritizedIncidents(resp.data);
@@ -430,7 +430,7 @@ const ChannelOpsPage = () => {
   // Sprint 2: Fetch connectors health
   const fetchConnectorsHealth = useCallback(async () => {
     try {
-      const resp = await axios.get(`${API}/api/ops-events/connectors/health`, {
+      const resp = await axios.get(`/ops-events/connectors/health`, {
         headers: getAuthHeaders(),
       });
       setConnectorsHealth(resp.data);
@@ -477,7 +477,7 @@ const ChannelOpsPage = () => {
   const handleDlqRetry = async (dlqId) => {
     setRetryingDlq(dlqId);
     try {
-      await axios.post(`${API}/api/ops-events/webhook-dlq/${dlqId}/retry`, {}, {
+      await axios.post(`/ops-events/webhook-dlq/${dlqId}/retry`, {}, {
         headers: getAuthHeaders(),
       });
       fetchDlq();

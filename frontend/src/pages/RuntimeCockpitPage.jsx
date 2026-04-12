@@ -19,7 +19,7 @@ import {
   ArrowRight, CircleDot, Radio
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const SEVERITY_STYLE = {
   info: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
@@ -204,11 +204,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
   const fetchAll = useCallback(async () => {
     try {
       const [cRes, eRes, sRes, rRes, roRes] = await Promise.allSettled([
-        axios.get(`${API}/api/lockdown/runtime/cockpit`, { headers }),
-        axios.get(`${API}/api/lockdown/notifications/events?limit=10`, { headers }),
-        axios.get(`${API}/api/lockdown/notifications/summary`, { headers }),
-        axios.get(`${API}/api/lockdown/runtime/readiness-score`, { headers }),
-        axios.get(`${API}/api/lockdown/runtime/rollout/dashboard`, { headers }),
+        axios.get(`/lockdown/runtime/cockpit`, { headers }),
+        axios.get(`/lockdown/notifications/events?limit=10`, { headers }),
+        axios.get(`/lockdown/notifications/summary`, { headers }),
+        axios.get(`/lockdown/runtime/readiness-score`, { headers }),
+        axios.get(`/lockdown/runtime/rollout/dashboard`, { headers }),
       ]);
       if (cRes.status === 'fulfilled') setCockpit(cRes.value.data);
       if (eRes.status === 'fulfilled') setEvents(eRes.value.data.events || []);
@@ -229,7 +229,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
   const handleEvaluate = async () => {
     try {
-      const res = await axios.post(`${API}/api/lockdown/notifications/evaluate`, {}, { headers });
+      const res = await axios.post(`/lockdown/notifications/evaluate`, {}, { headers });
       toast.success(`${res.data.events_emitted} event emitted`);
       fetchAll();
     } catch { toast.error('Evaluation failed'); }
@@ -237,7 +237,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
   const handlePushLoopAction = async (action) => {
     try {
-      await axios.post(`${API}/api/lockdown/runtime/push-loop/${action}`, {}, { headers });
+      await axios.post(`/lockdown/runtime/push-loop/${action}`, {}, { headers });
       toast.success(`Push loop: ${action}`);
       setTimeout(fetchAll, 500);
     } catch { toast.error(`Push loop ${action} failed`); }
@@ -246,7 +246,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
   const handleSafeAction = async (actionType, body = {}) => {
     setActionLoading(prev => ({ ...prev, [actionType]: true }));
     try {
-      const res = await axios.post(`${API}/api/lockdown/runtime/actions/${actionType}`, body, { headers });
+      const res = await axios.post(`/lockdown/runtime/actions/${actionType}`, body, { headers });
       const d = res.data;
       if (d.status === 'blocked') {
         toast.error(d.message);
@@ -260,7 +260,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
   const handleRolloutInit = async () => {
     try {
-      await axios.post(`${API}/api/lockdown/runtime/rollout/initialize`, {}, { headers });
+      await axios.post(`/lockdown/runtime/rollout/initialize`, {}, { headers });
       toast.success('Rollout baslatildi');
       fetchAll();
     } catch { toast.error('Rollout baslatilamadi'); }
@@ -268,7 +268,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
   const handleRolloutAdvance = async () => {
     try {
-      const res = await axios.post(`${API}/api/lockdown/runtime/rollout/advance`, {}, { headers });
+      const res = await axios.post(`/lockdown/runtime/rollout/advance`, {}, { headers });
       if (res.data.transitioned) {
         toast.success(res.data.message);
       } else {
@@ -724,7 +724,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               <Button data-testid="action-heal-btn" onClick={async () => {
                 setActionLoading(prev => ({ ...prev, heal: true }));
                 try {
-                  const res = await axios.post(`${API}/api/lockdown/runtime/auto-heal/run`, {}, { headers });
+                  const res = await axios.post(`/lockdown/runtime/auto-heal/run`, {}, { headers });
                   toast.success(`Auto-heal: ${res.data.healed} healed, ${res.data.failed} failed`);
                   fetchAll();
                 } catch { toast.error('Auto-heal calistirilamadi'); }

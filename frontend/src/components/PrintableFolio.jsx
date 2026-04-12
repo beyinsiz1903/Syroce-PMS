@@ -21,7 +21,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
       
       // Fetch guest info
       const guestResponse = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/guests/${folioData.booking.guest_id}`,
+        `/api/guests/${folioData.booking.guest_id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -31,7 +31,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
       
       // Fetch room info
       const roomsResponse = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/api/rooms`,
+        `/api/rooms`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

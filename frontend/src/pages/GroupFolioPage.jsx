@@ -27,7 +27,7 @@ import {
   CreditCard, Banknote, TrendingUp, Layers, Clock
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 const fmtTL = (v) => (v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
 
 // ─── Summary Stats Card ────────────────────────────
@@ -54,7 +54,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await axios.get(`${API}/api/pms/group-folio/${groupId}/booking/${bookingId}`);
+        const res = await axios.get(`/pms/group-folio/${groupId}/booking/${bookingId}`);
         setDetail(res.data);
       } catch {
         toast.error('Folio detayi yuklenemedi');
@@ -157,7 +157,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
   const loadGroups = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/group-bookings`);
+      const res = await axios.get(`/pms/group-bookings`);
       setGroups(res.data?.groups || res.data || []);
     } catch (e) {
       console.error('Load groups error', e);
@@ -168,7 +168,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
   const loadSummary = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/api/pms/group-folio-summary`);
+      const res = await axios.get(`/pms/group-folio-summary`);
       setSummary(res.data);
     } catch (e) {
       console.error('Summary error', e);
@@ -184,7 +184,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
     setDetailLoading(true);
     setExpandedBooking(null);
     try {
-      const res = await axios.get(`${API}/api/pms/group-folio/${groupId}`);
+      const res = await axios.get(`/pms/group-folio/${groupId}`);
       setGroupDetail(res.data);
     } catch {
       toast.error('Grup detay yuklenemedi');
@@ -222,7 +222,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
     setMerging(true);
     try {
-      const res = await axios.post(`${API}/api/pms/group-folio/merge`, {
+      const res = await axios.post(`/pms/group-folio/merge`, {
         group_id: selectedGroup.id,
         master_booking_id: masterBookingId,
         merge_booking_ids: mergeIds,
@@ -248,7 +248,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
     setPaying(true);
     try {
-      await axios.post(`${API}/api/pms/group-folio/payment`, {
+      await axios.post(`/pms/group-folio/payment`, {
         group_id: selectedGroup.id,
         booking_id: paymentBookingId,
         amount: amt,
@@ -277,7 +277,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
     setBulkPaying(true);
     try {
-      const res = await axios.post(`${API}/api/pms/group-folio/bulk-payment`, {
+      const res = await axios.post(`/pms/group-folio/bulk-payment`, {
         group_id: selectedGroup.id,
         total_amount: amt,
         method: bulkMethod,

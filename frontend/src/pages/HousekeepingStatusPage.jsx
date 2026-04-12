@@ -11,7 +11,7 @@ import {
   Eye, Sparkles, Filter, RefreshCw, ChevronDown
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 const STATUS_CONFIG = {
   clean: { label: 'Temiz', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle, dot: 'bg-emerald-500' },
@@ -34,7 +34,7 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
     try {
       const params = {};
       if (filter !== 'all') params.status_filter = filter;
-      const res = await axios.get(`${API}/api/pms/housekeeping/rooms`, { params });
+      const res = await axios.get(`/pms/housekeeping/rooms`, { params });
       setRooms(res.data?.rooms || []);
       setSummary(res.data?.summary || {});
     } catch (e) {
@@ -48,7 +48,7 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
 
   const updateStatus = async (roomId, newStatus) => {
     try {
-      await axios.put(`${API}/api/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus });
+      await axios.put(`/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus });
       toast.success(`Oda durumu "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);
       loadRooms();
     } catch (e) {
@@ -59,7 +59,7 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
   const bulkUpdate = async (newStatus) => {
     if (selectedRooms.length === 0) { toast.error('Oda seciniz'); return; }
     try {
-      await axios.put(`${API}/api/pms/housekeeping/rooms/bulk-status`, null, {
+      await axios.put(`/pms/housekeeping/rooms/bulk-status`, null, {
         params: { room_ids: selectedRooms, status: newStatus }
       });
       toast.success(`${selectedRooms.length} oda "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);

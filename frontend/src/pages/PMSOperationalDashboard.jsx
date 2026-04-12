@@ -18,7 +18,7 @@ import {
   ResponsiveContainer, BarChart, Bar, AreaChart, Area
 } from "recharts";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 /* ─── STAT CARD ─── */
 function StatCard({ title, value, icon: Icon, color = "gray", subtitle, testId }) {
@@ -245,14 +245,14 @@ function NightAuditPanel({ token, onRefresh, t }) {
   const [businessDate, setBusinessDate] = useState("");
 
   useEffect(() => {
-    axios.get(`${API}/api/pms-core/night-audit/business-date`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`/pms-core/night-audit/business-date`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => setBusinessDate(r.data.business_date)).catch(() => {});
   }, [token]);
 
   const runAudit = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/pms-core/night-audit/run`, { business_date: businessDate }, { headers: { Authorization: `Bearer ${token}` } });
+      const { data } = await axios.post(`/pms-core/night-audit/run`, { business_date: businessDate }, { headers: { Authorization: `Bearer ${token}` } });
       setAuditResult(data);
       toast.success(t("pmsOperations.nightAuditCompleted"));
       if (onRefresh) onRefresh();
@@ -294,8 +294,8 @@ function MultiPropertyAuditPanel({ token, t }) {
 
   useEffect(() => {
     const headers = { Authorization: `Bearer ${token}` };
-    axios.get(`${API}/api/pms-core/multi-property/audit-board`, { headers }).then(r => setBoard(r.data)).catch(() => {});
-    axios.get(`${API}/api/pms-core/multi-property/unresolved-blockers`, { headers }).then(r => setBlockers(r.data)).catch(() => {});
+    axios.get(`/pms-core/multi-property/audit-board`, { headers }).then(r => setBoard(r.data)).catch(() => {});
+    axios.get(`/pms-core/multi-property/unresolved-blockers`, { headers }).then(r => setBlockers(r.data)).catch(() => {});
   }, [token]);
 
   const statusColor = (s) => ({
@@ -376,7 +376,7 @@ function AutoHousekeepingPanel({ token, t }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API}/api/pms-core/housekeeping/assignment-suggestions`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`/pms-core/housekeeping/assignment-suggestions`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => setSuggestions(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -443,7 +443,7 @@ function AutoHousekeepingPanel({ token, t }) {
 function AuditTrailPanel({ token, t }) {
   const [trail, setTrail] = useState([]);
   useEffect(() => {
-    axios.get(`${API}/api/pms-core/audit-trail?limit=30`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`/pms-core/audit-trail?limit=30`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => setTrail(r.data.trail || [])).catch(() => {});
   }, [token]);
 
@@ -480,7 +480,7 @@ export default function PMSOperationalDashboard({ user, tenant, onLogout }) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: d } = await axios.get(`${API}/api/pms-core/dashboard/operational`, { headers: { Authorization: `Bearer ${token}` } });
+      const { data: d } = await axios.get(`/pms-core/dashboard/operational`, { headers: { Authorization: `Bearer ${token}` } });
       setData(d);
     } catch { toast.error(t("pmsOperations.failedToLoad")); }
     finally { setLoading(false); }
@@ -502,7 +502,7 @@ export default function PMSOperationalDashboard({ user, tenant, onLogout }) {
       sd = new Date(today - 7 * 86400000).toISOString().slice(0, 10);
     }
     try {
-      const { data: t } = await axios.get(`${API}/api/pms-core/dashboard/trends?start_date=${sd}&end_date=${ed}`, { headers: { Authorization: `Bearer ${token}` } });
+      const { data: t } = await axios.get(`/pms-core/dashboard/trends?start_date=${sd}&end_date=${ed}`, { headers: { Authorization: `Bearer ${token}` } });
       setTrends(t);
     } catch { /* trends optional */ }
   }, [token]);
@@ -517,7 +517,7 @@ export default function PMSOperationalDashboard({ user, tenant, onLogout }) {
 
   const handleResolveException = async (id) => {
     try {
-      await axios.post(`${API}/api/pms-core/night-audit/resolve-exception`,
+      await axios.post(`/pms-core/night-audit/resolve-exception`,
         { exception_id: id, resolution: "Resolved from dashboard" },
         { headers: { Authorization: `Bearer ${token}` } });
       toast.success(t("pmsOperations.exceptionResolved"));

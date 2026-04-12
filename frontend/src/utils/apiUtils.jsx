@@ -5,7 +5,7 @@
 
 import { getCache, setCache } from './cacheUtils';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001/api';
+const API_BASE_URL = '/api';
 
 /**
  * Fetch with cache support

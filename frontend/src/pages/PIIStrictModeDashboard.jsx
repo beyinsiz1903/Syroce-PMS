@@ -25,7 +25,7 @@ import {
   Route,
 } from "lucide-react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = "";
 
 function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
   const navigate = useNavigate();
@@ -44,11 +44,11 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
     setLoading(true);
     try {
       const [cfgRes, sumRes, violRes, encRes, polRes] = await Promise.allSettled([
-        axios.get(`${API}/api/security/pii-strict-mode/config`, { headers }),
-        axios.get(`${API}/api/security/pii-strict-mode/summary`, { headers }),
-        axios.get(`${API}/api/security/pii-strict-mode/violations?limit=20`, { headers }),
-        axios.get(`${API}/api/security/pii-strict-mode/encryption-status`, { headers }),
-        axios.get(`${API}/api/security/pii-strict-mode/policy`, { headers }),
+        axios.get(`/security/pii-strict-mode/config`, { headers }),
+        axios.get(`/security/pii-strict-mode/summary`, { headers }),
+        axios.get(`/security/pii-strict-mode/violations?limit=20`, { headers }),
+        axios.get(`/security/pii-strict-mode/encryption-status`, { headers }),
+        axios.get(`/security/pii-strict-mode/policy`, { headers }),
       ]);
       if (cfgRes.status === "fulfilled") setConfig(cfgRes.value.data.config);
       if (sumRes.status === "fulfilled") setSummary(sumRes.value.data.summary);
@@ -67,7 +67,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
   const handleToggle = async (enabled) => {
     setToggling(true);
     try {
-      const res = await axios.post(`${API}/api/security/pii-strict-mode/toggle`, { enabled }, { headers });
+      const res = await axios.post(`/security/pii-strict-mode/toggle`, { enabled }, { headers });
       setConfig(res.data.config);
       toast.success(enabled ? "Strict Mode AKTIF edildi" : "Strict Mode DEVRE DISI birakildi");
       fetchAll();
