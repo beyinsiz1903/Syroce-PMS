@@ -65,3 +65,8 @@ externalPort = 8000
 deploymentTarget = "static"
 build = ["bash", "-c", "cd frontend && yarn install && yarn build"]
 publicDir = "frontend/build"
+
+[userenv]
+
+[userenv.shared]
+JWT_SECRET = "ZA531NRnb-4uaBVfTK5oiWdck4PfTrmXI6GHjydKuR0CISB2mif9vk5A1cQDvlQy"

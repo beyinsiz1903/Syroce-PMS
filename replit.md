@@ -49,6 +49,8 @@ Vite proxies `/api` requests to backend at `http://localhost:8000`.
 
 Demo login: `demo@hotel.com` / `demo123` (super_admin role)
 
+JWT_SECRET is set as a persistent environment variable (shared). Tokens survive backend restarts and last 7 days (168 hours). Users stay logged in until they explicitly log out or the token expires.
+
 ## Deployment
 
 Configured as a static deployment:
