@@ -672,33 +672,37 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
         })
 
     if push_tasks:
+        async def _single_push(t, prov):
+            try:
+                logger.info("[UNIFIED] HR push: rt=%s tarih=%s→%s rate=%s avail=%s",
+                            t["rt"], t["start_date"], t["end_date"], t["rate"], t["avail"])
+                result = await _push_with_retry(
+                    prov, t["rt"], t["start_date"], t["end_date"],
+                    rate=t["rate"], avail=t["avail"], stop=t["stop"], minstay=t["minstay"], days=t["days"],
+                )
+                logger.info("[UNIFIED] HR push sonucu rt=%s: %s", t["rt"], result)
+                return t, result
+            except Exception as e:
+                logger.error("[UNIFIED] HR push hatasi %s: %s", t["rt"], e)
+                return t, {"success": False, "error": str(e)}
+
         async def _bg(tasks, prov, t_id):
-            await asyncio.sleep(0.2)
-            logger.info("[UNIFIED] HR background push basliyor, %d oda tipi", len(tasks))
-            for i, t in enumerate(tasks):
-                try:
-                    logger.info("[UNIFIED] HR push: rt=%s tarih=%s→%s rate=%s avail=%s",
-                                t["rt"], t["start_date"], t["end_date"], t["rate"], t["avail"])
-                    result = await _push_with_retry(
-                        prov, t["rt"], t["start_date"], t["end_date"],
-                        rate=t["rate"], avail=t["avail"], stop=t["stop"], minstay=t["minstay"], days=t["days"],
+            logger.info("[UNIFIED] HR background push basliyor, %d oda tipi (paralel)", len(tasks))
+            results = await asyncio.gather(*[_single_push(t, prov) for t in tasks], return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.error("[UNIFIED] HR push exception: %s", res)
+                    continue
+                t, result = res
+                if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
+                    await enqueue_failed_push(
+                        t_id, t["rt"], t["start_date"], t["end_date"],
+                        rate=t["rate"], avail=t["avail"],
+                        stop=t["stop"], minstay=t["minstay"],
+                        days=t.get("days"), error=result.get("error", ""),
+                        retry_after_seconds=result.get("retry_after_seconds", 65),
                     )
-                    logger.info("[UNIFIED] HR push sonucu rt=%s: %s", t["rt"], result)
-                    if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
-                        for remaining in tasks[i:]:
-                            await enqueue_failed_push(
-                                t_id, remaining["rt"], remaining["start_date"], remaining["end_date"],
-                                rate=remaining["rate"], avail=remaining["avail"],
-                                stop=remaining["stop"], minstay=remaining["minstay"],
-                                days=remaining.get("days"), error=result.get("error", ""),
-                                retry_after_seconds=result.get("retry_after_seconds", 65),
-                            )
-                        await schedule_auto_retry(t_id, result.get("retry_after_seconds", 65) + 5)
-                        break
-                except Exception as e:
-                    logger.error("[UNIFIED] HR push hatasi %s: %s", t["rt"], e)
-                if i < len(tasks) - 1:
-                    await asyncio.sleep(2)
+                    await schedule_auto_retry(t_id, result.get("retry_after_seconds", 65) + 5)
             logger.info("[UNIFIED] HR background push tamamlandi")
 
         asyncio.create_task(_bg(push_tasks, provider, tenant_id))
