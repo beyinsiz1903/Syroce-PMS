@@ -97,10 +97,19 @@ Two URL patterns coexist in frontend code:
 - `auto_seed.py` includes `_ensure_hr_legacy_connection()` that auto-creates legacy doc from `provider_connections` even when full seed is skipped (DB already has users)
 - `/test` endpoint returns mock success only when `environment` is explicitly `sandbox` or `mock`; connections without an `environment` field go through real API validation
 
-### Exely Sandbox Mode
-- `exely_connections.mode = "sandbox"` → connection test returns mock success (skips real SOAP API call)
-- Demo credentials: `syroce_demo` / `demo_sandbox_2026` / hotel_code `501694`
-- Room types and rate plans pre-seeded in `exely_connections` document (6 room types, 3 rate plans)
+### OTA Room Type Mapping (Real Data)
+- **HotelRunner** has 3 room types: Standart Oda, Deluxe Oda, Corner Süit
+- **Exely** has 3 room types: Standart, Deluxe, Suite
+- PMS has 6 room types: Standard, Deluxe, Superior, Suite, Junior Suite, Family
+- Only Standard, Deluxe, Suite are mapped to OTAs; Superior, Junior Suite, Family are PMS-only
+- Seed data in `auto_seed.py` matches real OTA room types (3 per provider, not 6)
+
+### Connection Modes (Live vs Sandbox)
+- `hotelrunner_connections.environment`: `live` for real API, `sandbox` for mock
+- `exely_connections.mode`: `live` for real SOAP API, `sandbox` for mock
+- Push credential fallback: Exely push reads from `exely_connections` doc when vault is empty
+- Demo Exely credentials: `syroce_demo` / `demo_sandbox_2026` / hotel_code `501694`
+- Room types and rate plans pre-seeded in `exely_connections` document (3 room types, 3 rate plans)
 
 ### Push Providers Endpoint
 - `/api/channel-manager/unified-rate-manager/push-providers` lists ALL active providers independently

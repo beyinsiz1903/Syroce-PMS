@@ -511,12 +511,9 @@ async def auto_seed_if_empty(db):
         "currency": "TRY",
         "is_active": True,
         "room_types": [
-            {"code": "STD", "name": "Standard", "max_occupancy": 2},
-            {"code": "DLX", "name": "Deluxe", "max_occupancy": 2},
-            {"code": "SUP", "name": "Superior", "max_occupancy": 3},
-            {"code": "SUI", "name": "Suite", "max_occupancy": 4},
-            {"code": "JSU", "name": "Junior Suite", "max_occupancy": 3},
-            {"code": "FAM", "name": "Family", "max_occupancy": 5},
+            {"code": "STD", "name": "Standart", "max_occupancy": 2},
+            {"code": "DLX", "name": "Deluxe", "max_occupancy": 5},
+            {"code": "SUI", "name": "Suite", "max_occupancy": 5},
         ],
         "rate_plans": [
             {"code": "BAR", "name": "Best Available Rate"},
@@ -717,15 +714,43 @@ async def auto_seed_if_empty(db):
         {"id": "promo-001", "name": "Promotional Rate", "code": "PROMO"},
     ]
 
-    for cid, prov in [(hr_connector_id, "hotelrunner"), (ex_connector_id, "exely")]:
+    hr_ext_room_defs = [
+        {"id": "std-001", "name": "Standart Oda", "code": "STD", "capacity": 2, "base_price": 4500},
+        {"id": "dlx-001", "name": "Deluxe Oda", "code": "DLX", "capacity": 2, "base_price": 6800},
+        {"id": "sui-001", "name": "Corner Süit", "code": "SUI", "capacity": 4, "base_price": 14000},
+    ]
+    ex_ext_room_defs = [
+        {"id": "std-001", "name": "Standart", "code": "STD", "capacity": 2, "base_price": 4500},
+        {"id": "dlx-001", "name": "Deluxe", "code": "DLX", "capacity": 2, "base_price": 6800},
+        {"id": "sui-001", "name": "Suite", "code": "SUI", "capacity": 4, "base_price": 14000},
+    ]
+
+    hr_pms_to_ext = [
+        ("Standard", "std-001", "Standart Oda"),
+        ("Deluxe", "dlx-001", "Deluxe Oda"),
+        ("Suite", "sui-001", "Corner Süit"),
+    ]
+    ex_pms_to_ext = [
+        ("Standard", "std-001", "Standart"),
+        ("Deluxe", "dlx-001", "Deluxe"),
+        ("Suite", "sui-001", "Suite"),
+    ]
+
+    provider_ext_defs = {
+        hr_connector_id: ("hotelrunner", hr_ext_room_defs, hr_pms_to_ext),
+        ex_connector_id: ("exely", ex_ext_room_defs, ex_pms_to_ext),
+    }
+
+    for cid, (prov, ext_room_defs, pms_to_ext) in provider_ext_defs.items():
+        prefix = prov[:2]
         ext_rooms = []
-        for r in pms_room_defs:
+        for r in ext_room_defs:
             ext_rooms.append({
-                "id": f"ext-room-{prov[:2]}-{r['code'].lower()}",
+                "id": f"ext-room-{prefix}-{r['code'].lower()}",
                 "tenant_id": tenant_id,
                 "connector_id": cid,
                 "provider": prov,
-                "external_id": f"{prov[:2]}-{r['code'].lower()}-001",
+                "external_id": f"{prefix}-{r['code'].lower()}-001",
                 "name": r["name"],
                 "code": r["code"],
                 "max_occupancy": r["capacity"],
@@ -739,11 +764,11 @@ async def auto_seed_if_empty(db):
         ext_rates = []
         for rp in pms_rate_defs:
             ext_rates.append({
-                "id": f"ext-rate-{prov[:2]}-{rp['code'].lower()}",
+                "id": f"ext-rate-{prefix}-{rp['code'].lower()}",
                 "tenant_id": tenant_id,
                 "connector_id": cid,
                 "provider": prov,
-                "external_id": f"{prov[:2]}-{rp['code'].lower()}-001",
+                "external_id": f"{prefix}-{rp['code'].lower()}-001",
                 "name": rp["name"],
                 "code": rp["code"],
                 "is_active": True,
@@ -753,16 +778,16 @@ async def auto_seed_if_empty(db):
             await db.cm_external_rate_plans.insert_many(ext_rates)
 
         room_mappings_v2 = []
-        for r in pms_room_defs:
+        for pms_name, ext_id, ext_name in pms_to_ext:
             room_mappings_v2.append({
-                "id": f"map-room-{prov[:2]}-{r['code'].lower()}",
+                "id": f"map-room-{prefix}-{ext_id}",
                 "tenant_id": tenant_id,
                 "connector_id": cid,
                 "entity_type": "room_type",
-                "pms_entity_id": r["name"],
-                "pms_entity_name": r["name"],
-                "external_entity_id": f"{prov[:2]}-{r['code'].lower()}-001",
-                "external_entity_name": r["name"],
+                "pms_entity_id": pms_name,
+                "pms_entity_name": pms_name,
+                "external_entity_id": f"{prefix}-{ext_id.split('-')[0]}-001",
+                "external_entity_name": ext_name,
                 "status": "active",
                 "validation_status": "valid",
                 "confidence_score": 100,
@@ -776,13 +801,13 @@ async def auto_seed_if_empty(db):
         rate_mappings_v2 = []
         for rp in pms_rate_defs:
             rate_mappings_v2.append({
-                "id": f"map-rate-{prov[:2]}-{rp['code'].lower()}",
+                "id": f"map-rate-{prefix}-{rp['code'].lower()}",
                 "tenant_id": tenant_id,
                 "connector_id": cid,
                 "entity_type": "rate_plan",
                 "pms_entity_id": rp["id"],
                 "pms_entity_name": rp["name"],
-                "external_entity_id": f"{prov[:2]}-{rp['code'].lower()}-001",
+                "external_entity_id": f"{prefix}-{rp['code'].lower()}-001",
                 "external_entity_name": rp["name"],
                 "status": "active",
                 "validation_status": "valid",

@@ -663,7 +663,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         hotel_code = conn.get("hotel_code", "")
         creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
         if not creds:
-            return 0
+            creds = {"username": conn.get("username", ""), "password": conn.get("password", "")}
+            if not creds.get("username"):
+                logger.warning("[UNIFIED] Exely credentials bulunamadi tenant=%s", tenant_id)
+                return 0
         from domains.channel_manager.providers.exely.provider import ExelyProvider
         kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code}
         if conn.get("endpoint_url"):
