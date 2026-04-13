@@ -588,9 +588,18 @@ async def auto_seed_if_empty(db):
         "last_sync_at": None,
         "created_by": "auto_seed",
         "cached_rooms": [
-            {"inv_code": "HR:1271568", "name": "Standart Oda", "id": 1271568, "pms_code": "STD"},
-            {"inv_code": "HR:1271569", "name": "Deluxe Oda", "id": 1271569, "pms_code": "DLX"},
-            {"inv_code": "HR:1271567", "name": "Corner Süit", "id": 1271567, "pms_code": "SUI"},
+            {"inv_code": "HR:1271568", "name": "Standart Oda", "id": 1271568, "pms_code": "STD",
+             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
+             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
+             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
+            {"inv_code": "HR:1271569", "name": "Deluxe Oda", "id": 1271569, "pms_code": "DLX",
+             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
+             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
+             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
+            {"inv_code": "HR:1271567", "name": "Corner Süit", "id": 1271567, "pms_code": "SUI",
+             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
+             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
+             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
         ],
     }
     await db.hotelrunner_connections.update_one(
