@@ -74,13 +74,19 @@ async def _get_provider(tenant_id: str):
             {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"},
         )
         if pc:
+            pc_creds = pc.get("credentials", {})
+            legacy = await db.hotelrunner_connections.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
+            )
             conn = {
                 "tenant_id": tenant_id,
-                "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                "hr_id": pc_creds.get("hr_id", ""),
+                "token": pc_creds.get("token", pc_creds.get("hr_token", "")),
                 "property_name": pc.get("display_name", ""),
-                "environment": pc.get("environment", "sandbox"),
+                "environment": pc.get("environment", "live"),
                 "is_active": True,
                 "channels": [],
+                "cached_rooms": (legacy or {}).get("cached_rooms", []),
             }
         else:
             raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")

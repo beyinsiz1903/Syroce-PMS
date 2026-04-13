@@ -312,6 +312,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
       const agencyIds = selectedAgencies.size > 0 ? Array.from(selectedAgencies) : null;
 
       const { data } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
+        provider,
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,

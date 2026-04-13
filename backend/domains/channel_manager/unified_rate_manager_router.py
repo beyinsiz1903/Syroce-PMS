@@ -62,6 +62,7 @@ class RoomTypeSelection(BaseModel):
 
 
 class UnifiedBulkUpdateRequest(BaseModel):
+    provider: str | None = None
     room_type_codes: list[str] | None = None
     rate_plan_codes: list[str] | None = None
     selections: list[RoomTypeSelection] | None = None
@@ -77,8 +78,7 @@ class UnifiedBulkUpdateRequest(BaseModel):
     cta: bool | None = None
     ctd: bool | None = None
     update_fields: list[str] = []
-    # Agency distribution
-    agency_ids: list[str] | None = None  # Secilen acente ID'leri
+    agency_ids: list[str] | None = None
 
 
 class AgencyRateOverride(BaseModel):
@@ -111,17 +111,25 @@ async def _detect_active_provider(tenant_id: str) -> dict:
     hr_conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
+    if not hr_conn:
+        pc = await db.provider_connections.find_one(
+            {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
+        )
+        if pc:
+            legacy = await db.hotelrunner_connections.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
+            )
+            hr_conn = {"tenant_id": tenant_id, "is_active": True,
+                        "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                        "environment": pc.get("environment", "live"),
+                        "cached_rooms": (legacy or {}).get("cached_rooms", [])}
+
     exely_conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
 
     if hr_conn and exely_conn:
-        # Her ikisi de aktifse, cached_rooms sayisina gore sec
-        hr_rooms = len(hr_conn.get("cached_rooms", []))
-        exely_rooms = len(exely_conn.get("room_types", []))
-        if hr_rooms >= exely_rooms:
-            return {"provider": "hotelrunner", "connection": hr_conn}
-        return {"provider": "exely", "connection": exely_conn}
+        return {"provider": "hotelrunner", "connection": hr_conn}
 
     if hr_conn:
         return {"provider": "hotelrunner", "connection": hr_conn}
@@ -461,7 +469,30 @@ async def unified_bulk_grid_update(
 ):
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
-    detection = await _detect_active_provider(tenant_id)
+
+    if request.provider:
+        if request.provider == "hotelrunner":
+            conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+            if not conn:
+                pc = await db.provider_connections.find_one(
+                    {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
+                )
+                if pc:
+                    legacy = await db.hotelrunner_connections.find_one(
+                        {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
+                    )
+                    conn = {"tenant_id": tenant_id, "is_active": True,
+                            "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                            "environment": pc.get("environment", "live"),
+                            "cached_rooms": (legacy or {}).get("cached_rooms", [])}
+            detection = {"provider": "hotelrunner", "connection": conn} if conn else {"provider": None, "connection": None}
+        elif request.provider == "exely":
+            conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+            detection = {"provider": "exely", "connection": conn} if conn else {"provider": None, "connection": None}
+        else:
+            detection = await _detect_active_provider(tenant_id)
+    else:
+        detection = await _detect_active_provider(tenant_id)
 
     if not detection["provider"]:
         raise HTTPException(status_code=404, detail="Aktif kanal saglayici bulunamadi")
@@ -593,13 +624,24 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
     """HotelRunner'a arka planda push gonder."""
     try:
         from domains.channel_manager.providers.hotelrunner_router import _get_provider
-        provider, _ = await _get_provider(tenant_id)
+        logger.info("[UNIFIED] HR push baslatiliyor tenant=%s", tenant_id)
+        provider, conn = await _get_provider(tenant_id)
         if not provider:
             logger.warning("[UNIFIED] HR provider alinamadi tenant=%s", tenant_id)
             return 0
+        logger.info("[UNIFIED] HR provider alindi, environment=%s", conn.get("environment", "?"))
     except Exception as e:
-        logger.warning("[UNIFIED] HR provider import hatasi: %s", e)
+        logger.error("[UNIFIED] HR provider olusturma hatasi tenant=%s: %s", tenant_id, e)
         return 0
+
+    cached_rooms = conn.get("cached_rooms", [])
+    pms_to_inv = {}
+    for cr in cached_rooms:
+        pms_code = cr.get("pms_code", "")
+        inv = cr.get("inv_code", "")
+        if pms_code and inv:
+            pms_to_inv[pms_code] = inv
+    logger.info("[UNIFIED] HR room mapping: %s", pms_to_inv)
 
     from domains.channel_manager.hr_push_queue_worker import enqueue_failed_push, schedule_auto_retry
     from domains.channel_manager.hr_rate_manager_router import _push_with_retry
@@ -612,6 +654,8 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
             continue
         pushed_room_types.add(rt_code)
 
+        hr_inv_code = pms_to_inv.get(rt_code, rt_code)
+
         rv = per_room_map.get(rt_code)
         push_rate = (rv.rate if rv else request.rate) if "rate" in update_fields else None
         push_avail = (rv.availability if rv else request.availability) if "availability" in update_fields else None
@@ -619,7 +663,8 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
         push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
 
         push_tasks.append({
-            "rt": rt_code,
+            "rt": hr_inv_code,
+            "pms_rt": rt_code,
             "rate": push_rate, "avail": push_avail,
             "stop": push_stop, "minstay": push_min,
             "start_date": request.start_date, "end_date": request.end_date,
@@ -629,12 +674,16 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
     if push_tasks:
         async def _bg(tasks, prov, t_id):
             await asyncio.sleep(0.2)
+            logger.info("[UNIFIED] HR background push basliyor, %d oda tipi", len(tasks))
             for i, t in enumerate(tasks):
                 try:
+                    logger.info("[UNIFIED] HR push: rt=%s tarih=%s→%s rate=%s avail=%s",
+                                t["rt"], t["start_date"], t["end_date"], t["rate"], t["avail"])
                     result = await _push_with_retry(
                         prov, t["rt"], t["start_date"], t["end_date"],
                         rate=t["rate"], avail=t["avail"], stop=t["stop"], minstay=t["minstay"], days=t["days"],
                     )
+                    logger.info("[UNIFIED] HR push sonucu rt=%s: %s", t["rt"], result)
                     if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
                         for remaining in tasks[i:]:
                             await enqueue_failed_push(
@@ -650,6 +699,7 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                     logger.error("[UNIFIED] HR push hatasi %s: %s", t["rt"], e)
                 if i < len(tasks) - 1:
                     await asyncio.sleep(2)
+            logger.info("[UNIFIED] HR background push tamamlandi")
 
         asyncio.create_task(_bg(push_tasks, provider, tenant_id))
 
@@ -667,13 +717,15 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             if not creds.get("username"):
                 logger.warning("[UNIFIED] Exely credentials bulunamadi tenant=%s", tenant_id)
                 return 0
+        logger.info("[UNIFIED] Exely push baslatiliyor tenant=%s hotel_code=%s user=%s",
+                    tenant_id, hotel_code, creds.get("username", "?"))
         from domains.channel_manager.providers.exely.provider import ExelyProvider
         kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code}
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]
         provider = ExelyProvider(**kwargs)
     except Exception as e:
-        logger.warning("[UNIFIED] Exely provider olusturulamadi: %s", e)
+        logger.error("[UNIFIED] Exely provider olusturulamadi: %s", e)
         return 0
 
     push_tasks = []
@@ -686,6 +738,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
         async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
             try:
+                logger.info("[UNIFIED] Exely push: rt=%s rp=%s rate=%s avail=%s", rt, rp, rate, avail)
                 result = await provider.push_ari(
                     room_type_code=rt, rate_plan_code=rp,
                     start_date=request.start_date, end_date=request.end_date,
@@ -693,15 +746,17 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                     currency=conn.get("currency", "TRY"),
                     stop_sell=stop, min_stay=minstay,
                 )
+                logger.info("[UNIFIED] Exely push sonucu rt=%s: %s", rt, result)
                 return result
             except Exception as e:
-                logger.error("[UNIFIED] Exely push hatasi: %s", e)
+                logger.error("[UNIFIED] Exely push hatasi rt=%s: %s", rt, e)
         push_tasks.append(_push())
 
     if push_tasks:
         async def _bg(tasks):
             try:
-                await asyncio.gather(*tasks, return_exceptions=True)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info("[UNIFIED] Exely background push tamamlandi: %d gorev", len(results))
             except Exception as e:
                 logger.error("[UNIFIED] Exely background push hatasi: %s", e)
         asyncio.create_task(_bg(push_tasks))
