@@ -714,14 +714,6 @@ async def auto_seed_if_empty(db):
     }
     await db.cm_connectors.insert_many([hr_connector, ex_connector])
 
-    pms_room_defs = [
-        {"id": "std-001", "name": "Standard", "code": "STD", "capacity": 2, "base_price": 4500},
-        {"id": "dlx-001", "name": "Deluxe", "code": "DLX", "capacity": 2, "base_price": 6800},
-        {"id": "sup-001", "name": "Superior", "code": "SUP", "capacity": 3, "base_price": 9200},
-        {"id": "sui-001", "name": "Suite", "code": "SUI", "capacity": 4, "base_price": 14000},
-        {"id": "jsu-001", "name": "Junior Suite", "code": "JSU", "capacity": 3, "base_price": 10500},
-        {"id": "fam-001", "name": "Family", "code": "FAM", "capacity": 5, "base_price": 7800},
-    ]
     pms_rate_defs = [
         {"id": "bar-001", "name": "Best Available Rate", "code": "BAR"},
         {"id": "rack-001", "name": "Rack Rate", "code": "RACK"},
