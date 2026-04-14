@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.security import get_current_user
-from db import get_db
+from core.database import db
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["PMS / Cashier"])
@@ -26,7 +26,6 @@ def _safe_int(val, default=0):
 
 @router.get("/cashier/current-shift")
 async def get_current_shift(current_user: User = Depends(get_current_user)):
-    db = get_db()
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"},
         sort=[("opened_at", -1)]
@@ -44,7 +43,6 @@ async def get_current_shift(current_user: User = Depends(get_current_user)):
 
 @router.post("/cashier/open-shift")
 async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
-    db = get_db()
     existing = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
@@ -71,7 +69,6 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
 
 @router.post("/cashier/close-shift")
 async def close_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
-    db = get_db()
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
@@ -104,7 +101,6 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
 
 @router.get("/cashier/shift-history")
 async def shift_history(skip: int = 0, limit: int = 20, current_user: User = Depends(get_current_user)):
-    db = get_db()
     cursor = db.cashier_shifts.find(
         {"tenant_id": current_user.tenant_id}
     ).sort("opened_at", -1).skip(skip).limit(limit)
@@ -117,7 +113,6 @@ async def shift_history(skip: int = 0, limit: int = 20, current_user: User = Dep
 
 @router.get("/laundry/orders")
 async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     if status:
         query["status"] = status
@@ -130,7 +125,6 @@ async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None
 
 @router.post("/laundry/orders")
 async def create_laundry_order(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     if not body.get("room_number"):
         raise HTTPException(status_code=400, detail="Oda numarasi gerekli")
     if not body.get("items") or len(body["items"]) == 0:
@@ -158,7 +152,6 @@ async def create_laundry_order(body: dict = Body(...), current_user: User = Depe
 
 @router.patch("/laundry/orders/{order_id}")
 async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     result = await db.laundry_orders.update_one(
@@ -172,7 +165,6 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
 
 @router.delete("/laundry/orders/{order_id}")
 async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.laundry_orders.delete_one(
         {"_id": order_id, "tenant_id": current_user.tenant_id}
     )
@@ -183,7 +175,6 @@ async def delete_laundry_order(order_id: str, current_user: User = Depends(get_c
 
 @router.get("/meeting-rooms")
 async def get_meeting_rooms(current_user: User = Depends(get_current_user)):
-    db = get_db()
     rooms = await db.meeting_rooms.find(
         {"tenant_id": current_user.tenant_id}
     ).sort("name", 1).to_list(100)
@@ -207,7 +198,6 @@ async def get_meeting_rooms(current_user: User = Depends(get_current_user)):
 
 @router.get("/meeting-rooms/reservations")
 async def get_meeting_reservations(skip: int = 0, limit: int = 50, current_user: User = Depends(get_current_user)):
-    db = get_db()
     cursor = db.meeting_reservations.find(
         {"tenant_id": current_user.tenant_id}
     ).sort("date", -1).skip(skip).limit(limit)
@@ -219,7 +209,6 @@ async def get_meeting_reservations(skip: int = 0, limit: int = 50, current_user:
 
 @router.post("/meeting-rooms/reservations")
 async def create_meeting_reservation(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     if not body.get("room_name") and not body.get("room_id"):
         raise HTTPException(status_code=400, detail="Salon secimi gerekli")
     now = datetime.utcnow()
@@ -249,7 +238,6 @@ async def create_meeting_reservation(body: dict = Body(...), current_user: User 
 
 @router.delete("/meeting-rooms/reservations/{reservation_id}")
 async def delete_meeting_reservation(reservation_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.meeting_reservations.delete_one(
         {"_id": reservation_id, "tenant_id": current_user.tenant_id}
     )

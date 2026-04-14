@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.security import get_current_user
-from db import get_db
+from core.database import db
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["PMS / Operations"])
@@ -26,7 +26,6 @@ def _safe_float(val, default=0.0):
 
 @router.get("/concierge/requests")
 async def get_concierge_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.concierge_requests.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -37,7 +36,6 @@ async def get_concierge_requests(skip: int = 0, limit: int = 100, current_user: 
 
 @router.post("/concierge/requests")
 async def create_concierge_request(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -62,7 +60,6 @@ async def create_concierge_request(body: dict = Body(...), current_user: User = 
 
 @router.patch("/concierge/requests/{request_id}")
 async def update_concierge_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     new_status = body.get("status", "updated")
     result = await db.concierge_requests.update_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id},
@@ -75,7 +72,6 @@ async def update_concierge_request(request_id: str, body: dict = Body(...), curr
 
 @router.get("/banquet/events")
 async def get_banquet_events(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.banquet_events.find(query).sort("date", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -86,7 +82,6 @@ async def get_banquet_events(skip: int = 0, limit: int = 100, current_user: User
 
 @router.post("/banquet/events")
 async def create_banquet_event(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -124,7 +119,6 @@ async def create_banquet_event(body: dict = Body(...), current_user: User = Depe
 
 @router.patch("/banquet/events/{event_id}")
 async def update_banquet_event(event_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     result = await db.banquet_events.update_one(
@@ -138,7 +132,6 @@ async def update_banquet_event(event_id: str, body: dict = Body(...), current_us
 
 @router.post("/kbs/send")
 async def send_kbs_notification(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     booking_id = body.get("booking_id")
     kbs_ref = str(uuid.uuid4())[:8].upper()
@@ -163,7 +156,6 @@ async def send_kbs_notification(body: dict = Body(...), current_user: User = Dep
 
 @router.post("/kbs/send-batch")
 async def send_kbs_batch(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     booking_ids = body.get("booking_ids", [])
     results = []
@@ -195,7 +187,6 @@ async def send_kbs_batch(body: dict = Body(...), current_user: User = Depends(ge
 
 @router.get("/kbs/history")
 async def get_kbs_history(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.kbs_notifications.find(query).sort("sent_at", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -206,7 +197,6 @@ async def get_kbs_history(skip: int = 0, limit: int = 100, current_user: User = 
 
 @router.get("/kvkk/requests")
 async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.kvkk_requests.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -217,7 +207,6 @@ async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User 
 
 @router.post("/kvkk/requests")
 async def create_kvkk_request(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -238,7 +227,6 @@ async def create_kvkk_request(body: dict = Body(...), current_user: User = Depen
 
 @router.patch("/kvkk/requests/{request_id}")
 async def update_kvkk_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     if body.get("status") == "completed":
@@ -254,7 +242,6 @@ async def update_kvkk_request(request_id: str, body: dict = Body(...), current_u
 
 @router.get("/kvkk/consents")
 async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.kvkk_consents.find(query).sort("date", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -265,7 +252,6 @@ async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User 
 
 @router.get("/kvkk/audit-log")
 async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User = Depends(get_current_user)):
-    db = get_db()
     docs = await db.kvkk_audit_log.find(
         {"tenant_id": current_user.tenant_id}
     ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
@@ -276,7 +262,6 @@ async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User
 
 @router.patch("/pms/guests/{guest_id}/preferences")
 async def update_guest_preferences(guest_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     update_fields = {}
     if "preferences" in body:
         update_fields["preferences"] = body["preferences"]
@@ -315,7 +300,6 @@ async def update_guest_preferences(guest_id: str, body: dict = Body(...), curren
 
 @router.post("/frontdesk/booking/{booking_id}/routing-rules")
 async def save_routing_rules(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     rules = body.get("rules", [])
     for rule in rules:
         if rule.get("split_type") == "percentage":
@@ -333,7 +317,6 @@ async def save_routing_rules(booking_id: str, body: dict = Body(...), current_us
 
 @router.patch("/pms/rooms/{room_id}/features")
 async def update_room_features(room_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["features_updated_at"] = datetime.utcnow().isoformat()
     result = await db.rooms.update_one(
@@ -347,7 +330,6 @@ async def update_room_features(room_id: str, body: dict = Body(...), current_use
 
 @router.get("/revenue/settings")
 async def get_revenue_settings(current_user: User = Depends(get_current_user)):
-    db = get_db()
     doc = await db.revenue_settings.find_one({"tenant_id": current_user.tenant_id})
     if not doc:
         return {"hurdle_rates": {}, "day_pricing": {}, "overbooking": {"enabled": False, "max_percentage": 5, "walk_compensation": "upgrade_nearby", "walk_amount": 0}}
@@ -357,7 +339,6 @@ async def get_revenue_settings(current_user: User = Depends(get_current_user)):
 
 @router.put("/revenue/settings")
 async def save_revenue_settings(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     await db.revenue_settings.update_one(
         {"tenant_id": current_user.tenant_id},
@@ -376,7 +357,6 @@ async def save_revenue_settings(body: dict = Body(...), current_user: User = Dep
 
 @router.post("/revenue/walk-out")
 async def process_walk_out(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -397,7 +377,6 @@ async def process_walk_out(body: dict = Body(...), current_user: User = Depends(
 
 @router.delete("/concierge/requests/{request_id}")
 async def delete_concierge_request(request_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.concierge_requests.delete_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id}
     )
@@ -408,7 +387,6 @@ async def delete_concierge_request(request_id: str, current_user: User = Depends
 
 @router.delete("/banquet/events/{event_id}")
 async def delete_banquet_event(event_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.banquet_events.delete_one(
         {"_id": event_id, "tenant_id": current_user.tenant_id}
     )
@@ -419,7 +397,6 @@ async def delete_banquet_event(event_id: str, current_user: User = Depends(get_c
 
 @router.delete("/kvkk/requests/{request_id}")
 async def delete_kvkk_request(request_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.kvkk_requests.delete_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id}
     )
@@ -430,7 +407,6 @@ async def delete_kvkk_request(request_id: str, current_user: User = Depends(get_
 
 @router.post("/pms/bookings/{booking_id}/complimentary-approval")
 async def request_complimentary_approval(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     booking = await db.bookings.find_one({"_id": booking_id, "tenant_id": current_user.tenant_id})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -457,7 +433,6 @@ async def request_complimentary_approval(booking_id: str, body: dict = Body(...)
 
 @router.patch("/pms/bookings/{booking_id}/complimentary-approval/{approval_id}")
 async def handle_complimentary_approval(booking_id: str, approval_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     action = body.get("action", "approve")
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
@@ -484,7 +459,6 @@ async def handle_complimentary_approval(booking_id: str, approval_id: str, body:
 
 @router.get("/pms/dayuse-bookings")
 async def get_dayuse_bookings(current_user: User = Depends(get_current_user)):
-    db = get_db()
     today = datetime.utcnow().strftime("%Y-%m-%d")
     docs = await db.bookings.find({
         "tenant_id": current_user.tenant_id,
@@ -499,7 +473,6 @@ async def get_dayuse_bookings(current_user: User = Depends(get_current_user)):
 
 @router.post("/pms/dayuse-auto-checkout")
 async def dayuse_auto_checkout(current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     today = now.strftime("%Y-%m-%d")
     result = await db.bookings.update_many(
@@ -516,7 +489,6 @@ async def dayuse_auto_checkout(current_user: User = Depends(get_current_user)):
 
 @router.get("/pms/loyalty/tiers")
 async def get_loyalty_tiers(current_user: User = Depends(get_current_user)):
-    db = get_db()
     tiers = await db.loyalty_tiers.find({"tenant_id": current_user.tenant_id}).sort("min_points", 1).to_list(20)
     if not tiers:
         defaults = [
@@ -539,7 +511,6 @@ async def get_loyalty_tiers(current_user: User = Depends(get_current_user)):
 
 @router.get("/pms/guest/{guest_id}/loyalty")
 async def get_guest_loyalty(guest_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     guest = await db.guests.find_one({"_id": guest_id, "tenant_id": current_user.tenant_id})
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -555,7 +526,6 @@ async def get_guest_loyalty(guest_id: str, current_user: User = Depends(get_curr
 
 @router.get("/pms/commission/export")
 async def export_commission_report(start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
-    db = get_db()
     query = {"tenant_id": current_user.tenant_id, "commission_pct": {"$gt": 0}}
     if start_date:
         query["check_out"] = {"$gte": start_date}
@@ -584,7 +554,6 @@ async def export_commission_report(start_date: str = None, end_date: str = None,
 
 @router.get("/pms/group-blocks")
 async def get_group_blocks(current_user: User = Depends(get_current_user)):
-    db = get_db()
     docs = await db.group_blocks.find({"tenant_id": current_user.tenant_id}).sort("cutoff_date", 1).to_list(200)
     for d in docs:
         d["id"] = str(d.pop("_id"))
@@ -593,7 +562,6 @@ async def get_group_blocks(current_user: User = Depends(get_current_user)):
 
 @router.post("/pms/group-blocks")
 async def create_group_block(body: dict = Body(...), current_user: User = Depends(get_current_user)):
-    db = get_db()
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -619,7 +587,6 @@ async def create_group_block(body: dict = Body(...), current_user: User = Depend
 
 @router.post("/pms/group-blocks/{block_id}/cutoff")
 async def process_group_cutoff(block_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     block = await db.group_blocks.find_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if not block:
         raise HTTPException(status_code=404, detail="Group block not found")
@@ -647,7 +614,6 @@ async def process_group_cutoff(block_id: str, current_user: User = Depends(get_c
 
 @router.delete("/pms/group-blocks/{block_id}")
 async def delete_group_block(block_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
     result = await db.group_blocks.delete_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Group block not found")

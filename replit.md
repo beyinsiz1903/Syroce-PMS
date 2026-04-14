@@ -399,6 +399,13 @@ All tabs use Lucide icons and Turkish labels:
 - All hidden items retain routes in `routeDefinitions.jsx` — direct URLs still work
 - `hidden: true` flag filtered by `Layout.jsx` line 130: `if (item.hidden) return;`
 
+## Audit Fix: Router Import Corrections
+
+### Backend
+- **`backend/domains/pms/cashier_router.py`** — Fixed broken import (`from db import get_db` → `from core.database import db`). This router was not loading at all, causing 404s for: `/api/cashier/*`, `/api/meeting-rooms/*`, `/api/laundry/*` endpoints.
+- **`backend/domains/pms/operations_router.py`** — Same import fix. Was blocking: `/api/concierge/*`, `/api/banquet/*`, `/api/kbs/*`, `/api/kvkk/*`, `/api/revenue/settings`, guest preferences, room features, complimentary approvals, day-use bookings, loyalty tiers, and routing rules endpoints.
+- **`backend/domains/pms/housekeeping_router.py`** — Added missing `from domains.guest.schemas import LinenInventoryItem` import. The linen-inventory endpoint was returning 500 (NameError) when no inventory data existed and it tried to create defaults.
+
 ## Sprint 6 Changes (B2B Analytics Dashboard)
 
 ### Backend
