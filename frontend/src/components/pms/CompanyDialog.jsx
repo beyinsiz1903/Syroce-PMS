@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-const CompanyDialog = ({ open, onClose, newCompany, setNewCompany, onSubmit }) => {
+const CompanyDialog = ({ open, onClose, newCompany, setNewCompany, onSubmit, loading }) => {
   const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -29,7 +29,7 @@ const CompanyDialog = ({ open, onClose, newCompany, setNewCompany, onSubmit }) =
             <div><Label>{t('common.phone')}</Label><Input value={newCompany.contact_phone} onChange={(e) => setNewCompany({...newCompany, contact_phone: e.target.value})} /></div>
           </div>
           <div className="text-sm text-gray-500 bg-blue-50 p-3 rounded">This company will be created with Pending status.</div>
-          <Button type="submit" className="w-full">{t('common.create')}</Button>
+          <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Olusturuluyor...' : t('common.create')}</Button>
         </form>
       </DialogContent>
     </Dialog>

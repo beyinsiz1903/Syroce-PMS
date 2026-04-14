@@ -50,8 +50,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       toast.success(newVal ? 'DND Aktif' : 'DND Kapatildi');
       onUpdate?.();
     } catch {
-      setDndEnabled(newVal);
-      toast.success(newVal ? 'DND Aktif' : 'DND Kapatildi');
+      toast.error('DND durumu guncellenemedi');
     }
   };
 
@@ -61,7 +60,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       toast.success(`Oda ${room.room_number} → ${connectedRoom} baglandi`);
       onUpdate?.();
     } catch {
-      toast.success(`Oda ${room.room_number} → ${connectedRoom} baglandi`);
+      toast.error('Oda baglama islemi basarisiz');
     }
   };
 
@@ -92,9 +91,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       setMinibarItems([]);
       setShowMinibar(false);
     } catch {
-      toast.success(`Minibar ucreti eklendi: ${total} TL`);
-      setMinibarItems([]);
-      setShowMinibar(false);
+      toast.error('Minibar ucreti eklenemedi');
     }
   };
 

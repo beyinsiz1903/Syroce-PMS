@@ -1461,8 +1461,17 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
           <div className="w-96">
             <GlobalSearch onSelectResult={(result) => {
-              console.log('Search result selected:', result);
-              toast.success(`Selected ${result.type}: ${result.data.name || result.data.room_number || result.data.id}`);
+              const typeTabMap = {
+                guest: 'frontdesk',
+                booking: 'frontdesk',
+                room: 'rooms',
+                company: 'frontdesk',
+                housekeeping: 'housekeeping',
+              };
+              const tab = typeTabMap[result.type] || 'frontdesk';
+              setActiveTab(tab);
+              window.location.hash = tab;
+              toast.info(`${result.data.name || result.data.room_number || result.data.id} - ${tab} sekmesine yonlendirildi`);
             }} />
           </div>
         </div>

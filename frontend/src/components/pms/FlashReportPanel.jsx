@@ -27,11 +27,28 @@ const FlashReportPanel = ({ rooms, bookings, arrivals, departures, inhouse }) =>
       const adr = occupiedRooms > 0 ? totalRevenue / occupiedRooms : 0;
       const revpar = totalRooms > 0 ? totalRevenue / totalRooms : 0;
 
+      const chargesByCategory = {};
+      bookings?.forEach(b => {
+        (b.charges || []).forEach(c => {
+          const cat = c.charge_category || 'other';
+          chargesByCategory[cat] = (chargesByCategory[cat] || 0) + (c.amount || 0);
+        });
+      });
+
+      const hasChargeData = Object.keys(chargesByCategory).length > 0;
+      const roomRevenue = hasChargeData ? (chargesByCategory['room'] || chargesByCategory['accommodation'] || 0) : totalRevenue;
+      const fbRevenue = chargesByCategory['fb'] || chargesByCategory['food'] || chargesByCategory['restaurant'] || 0;
+      const spaRevenue = chargesByCategory['spa'] || 0;
+      const minibarRevenue = chargesByCategory['minibar'] || 0;
+      const laundryRevenue = chargesByCategory['laundry'] || 0;
+      const categorizedTotal = roomRevenue + fbRevenue + spaRevenue + minibarRevenue + laundryRevenue;
+      const otherRevenue = Math.max(0, totalRevenue - categorizedTotal);
+
       setReportData({
         date: new Date().toISOString().split('T')[0],
         occupancy: { rate: occRate, occupied: occupiedRooms, total: totalRooms, available: totalRooms - occupiedRooms },
-        revenue: { total: totalRevenue, room: totalRevenue * 0.7, fb: totalRevenue * 0.2, other: totalRevenue * 0.1, collected: paidRevenue, outstanding: totalRevenue - paidRevenue },
-        kpi: { adr, revpar, avg_los: 2.3 },
+        revenue: { total: totalRevenue, room: roomRevenue, fb: fbRevenue, other: otherRevenue, collected: paidRevenue, outstanding: totalRevenue - paidRevenue },
+        kpi: { adr, revpar, avg_los: 0 },
         operations: {
           arrivals: arrivals?.length || 0,
           departures: departures?.length || 0,
@@ -42,13 +59,14 @@ const FlashReportPanel = ({ rooms, bookings, arrivals, departures, inhouse }) =>
           cancellations: bookings?.filter(b => b.status === 'cancelled').length || 0,
         },
         departments: [
-          { name: 'Oda Geliri', amount: totalRevenue * 0.7, icon: 'bed' },
-          { name: 'Yiyecek & Icecek', amount: totalRevenue * 0.15, icon: 'food' },
-          { name: 'Spa & Wellness', amount: totalRevenue * 0.08, icon: 'spa' },
-          { name: 'Minibar', amount: totalRevenue * 0.04, icon: 'minibar' },
-          { name: 'Camasirhane', amount: totalRevenue * 0.02, icon: 'laundry' },
-          { name: 'Diger', amount: totalRevenue * 0.01, icon: 'other' },
-        ]
+          { name: 'Oda Geliri', amount: roomRevenue, icon: 'bed' },
+          { name: 'Yiyecek & Icecek', amount: fbRevenue, icon: 'food' },
+          { name: 'Spa & Wellness', amount: spaRevenue, icon: 'spa' },
+          { name: 'Minibar', amount: minibarRevenue, icon: 'minibar' },
+          { name: 'Camasirhane', amount: laundryRevenue, icon: 'laundry' },
+          { name: 'Diger', amount: otherRevenue, icon: 'other' },
+        ],
+        _fallback: true,
       });
     }
     setLoading(false);
@@ -124,6 +142,13 @@ const FlashReportPanel = ({ rooms, bookings, arrivals, departures, inhouse }) =>
           </Button>
         </div>
       </div>
+
+      {d?._fallback && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          Rapor sunucudan yuklenemedi. Gosterilen veriler mevcut oda ve rezervasyon bilgilerinden hesaplandi.
+        </div>
+      )}
 
       {d && (
         <>

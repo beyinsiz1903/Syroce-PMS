@@ -52,7 +52,7 @@ async def update_room_service(service_id: str, updates: dict[str, Any], current_
     if 'status' in updates and updates['status'] == 'completed':
         updates['completed_at'] = datetime.now(UTC).isoformat()
     await db.room_services.update_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    service = await db.room_services.find_one({'id': service_id}, {'_id': 0})
+    service = await db.room_services.find_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
     return service
 
 
@@ -64,6 +64,8 @@ async def update_room_service(service_id: str, updates: dict[str, Any], current_
 async def get_staff_tasks(
     department: str | None = None,
     status: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
     current_user: User = Depends(get_current_user)
 ):
     """Get staff tasks (engineering, housekeeping, maintenance)"""
@@ -73,8 +75,10 @@ async def get_staff_tasks(
     if status:
         query['status'] = status
 
-    tasks = await db.staff_tasks.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
-    return tasks
+    total = await db.staff_tasks.count_documents(query)
+    skip = (page - 1) * page_size
+    tasks = await db.staff_tasks.find(query, {'_id': 0}).sort('created_at', -1).skip(skip).limit(page_size).to_list(page_size)
+    return {'tasks': tasks, 'total': total, 'page': page, 'page_size': page_size}
 
 
 @router.post("/pms/staff-tasks")
@@ -148,18 +152,29 @@ async def update_staff_task(
     return updated_task
 
 
+@router.delete("/pms/staff-tasks/{task_id}")
+async def delete_staff_task(task_id: str, current_user: User = Depends(get_current_user)):
+    result = await db.staff_tasks.delete_one({'id': task_id, 'tenant_id': current_user.tenant_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {'success': True, 'message': 'Staff task deleted'}
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Allotment Contracts
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/pms/allotment-contracts")
 async def get_allotment_contracts(
+    page: int = 1,
+    page_size: int = 50,
     current_user: User = Depends(get_current_user)
 ):
     """Get tour operator allotment contracts with dynamic usage count"""
-    contracts = await db.allotment_contracts.find({
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).to_list(1000)
+    query = {'tenant_id': current_user.tenant_id}
+    total = await db.allotment_contracts.count_documents(query)
+    skip = (page - 1) * page_size
+    contracts = await db.allotment_contracts.find(query, {'_id': 0}).skip(skip).limit(page_size).to_list(page_size)
 
     # Dynamically calculate used_rooms from active bookings
     ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
@@ -186,7 +201,7 @@ async def get_allotment_contracts(
                 })
                 contract['used_rooms'] = used
 
-    return contracts
+    return {'contracts': contracts, 'total': total, 'page': page, 'page_size': page_size}
 
 
 @router.post("/pms/allotment-contracts")
@@ -232,7 +247,7 @@ async def release_allotment_rooms(
     available_rooms = contract['allocated_rooms'] - contract.get('used_rooms', 0)
 
     await db.allotment_contracts.update_one(
-        {'id': contract_id},
+        {'id': contract_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'released_rooms': available_rooms,
             'released_at': datetime.now(UTC).isoformat()
@@ -245,14 +260,29 @@ async def release_allotment_rooms(
     }
 
 
+@router.delete("/pms/allotment-contracts/{contract_id}")
+async def delete_allotment_contract(contract_id: str, current_user: User = Depends(get_current_user)):
+    result = await db.allotment_contracts.delete_one({'id': contract_id, 'tenant_id': current_user.tenant_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    return {'success': True, 'message': 'Allotment contract deleted'}
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Group Reservations
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/pms/group-reservations")
-async def get_group_reservations(current_user: User = Depends(get_current_user)):
-    groups = await db.group_reservations.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
-    return {'groups': groups}
+async def get_group_reservations(
+    page: int = 1,
+    page_size: int = 50,
+    current_user: User = Depends(get_current_user)
+):
+    query = {'tenant_id': current_user.tenant_id}
+    total = await db.group_reservations.count_documents(query)
+    skip = (page - 1) * page_size
+    groups = await db.group_reservations.find(query, {'_id': 0}).skip(skip).limit(page_size).to_list(page_size)
+    return {'groups': groups, 'total': total, 'page': page, 'page_size': page_size}
 
 
 @router.post("/pms/group-reservations")
@@ -269,6 +299,14 @@ async def create_group_reservation(
     await db.group_reservations.insert_one(group)
     group.pop('_id', None)
     return group
+
+
+@router.delete("/pms/group-reservations/{group_id}")
+async def delete_group_reservation(group_id: str, current_user: User = Depends(get_current_user)):
+    result = await db.group_reservations.delete_one({'id': group_id, 'tenant_id': current_user.tenant_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Group reservation not found")
+    return {'success': True, 'message': 'Group reservation deleted'}
 
 
 # ═══════════════════════════════════════════════════════════════════

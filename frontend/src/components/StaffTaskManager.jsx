@@ -29,7 +29,7 @@ const StaffTaskManager = () => {
   const loadTasks = async () => {
     try {
       const response = await axios.get('/pms/staff-tasks');
-      setTasks(response.data);
+      setTasks(response.data?.tasks || response.data || []);
     } catch (error) {
       console.error('Failed to load tasks:', error);
     }

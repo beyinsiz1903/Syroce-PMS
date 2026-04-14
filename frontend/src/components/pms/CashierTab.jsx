@@ -35,9 +35,12 @@ const CashierTab = ({ user }) => {
       const res = await axios.get('/cashier/current-shift');
       setShift(res.data.shift || null);
       setTransactions(res.data.transactions || []);
-    } catch {
+    } catch (err) {
       setShift(null);
       setTransactions([]);
+      if (err?.response?.status !== 404) {
+        toast.error('Kasa vardiyasi yuklenemedi');
+      }
     }
   }, []);
 

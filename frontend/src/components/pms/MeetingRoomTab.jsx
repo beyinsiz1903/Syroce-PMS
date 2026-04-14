@@ -45,17 +45,14 @@ const MeetingRoomTab = () => {
         axios.get('/meeting-rooms'),
         axios.get('/meeting-rooms/reservations')
       ]);
-      setRooms(roomsRes.status === 'fulfilled' ? roomsRes.value.data.rooms || [] : [
-        { id: '1', name: 'Balo Salonu', capacity: 500, area: 800, floor: 'Zemin', setup_types: ['theater', 'banquet', 'cocktail'], equipment: ['Projektor', 'Ses Sistemi', 'Sahne'], status: 'available' },
-        { id: '2', name: 'Toplanti Salonu A', capacity: 50, area: 80, floor: '1. Kat', setup_types: ['classroom', 'u_shape', 'boardroom'], equipment: ['Projektor', 'Beyaz Perde', 'Video Konferans'], status: 'available' },
-        { id: '3', name: 'Toplanti Salonu B', capacity: 30, area: 50, floor: '1. Kat', setup_types: ['classroom', 'boardroom'], equipment: ['LED Ekran', 'Ses Sistemi'], status: 'reserved' },
-        { id: '4', name: 'VIP Toplanti Odasi', capacity: 12, area: 30, floor: '2. Kat', setup_types: ['boardroom'], equipment: ['Video Konferans', 'LED Ekran', 'Ses Sistemi'], status: 'available' },
-      ]);
-      setReservations(resRes.status === 'fulfilled' ? resRes.value.data.reservations || [] : [
-        { id: '1', room_name: 'Toplanti Salonu A', company_name: 'ABC Holding', event_name: 'Yillik Toplanti', date: new Date().toISOString().split('T')[0], start_time: '09:00', end_time: '12:00', setup_type: 'u_shape', attendees: 25, status: 'confirmed' },
-        { id: '2', room_name: 'Balo Salonu', company_name: 'XYZ Corp', event_name: 'Gala Yemegi', date: new Date(Date.now() + 86400000).toISOString().split('T')[0], start_time: '19:00', end_time: '23:00', setup_type: 'banquet', attendees: 200, status: 'tentative' },
-      ]);
-    } catch { /* handled above */ }
+      setRooms(roomsRes.status === 'fulfilled' ? roomsRes.value.data.rooms || [] : []);
+      setReservations(resRes.status === 'fulfilled' ? resRes.value.data.reservations || [] : []);
+      if (roomsRes.status === 'rejected' || resRes.status === 'rejected') {
+        toast.error('Toplanti salonu verileri yuklenemedi');
+      }
+    } catch {
+      toast.error('Toplanti salonu verileri yuklenemedi');
+    }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -70,7 +67,7 @@ const MeetingRoomTab = () => {
       await axios.post('/meeting-rooms/reservations', form);
       toast.success('Salon rezervasyonu olusturuldu');
     } catch {
-      toast.success('Salon rezervasyonu olusturuldu');
+      toast.error('Salon rezervasyonu olusturulamadi');
     }
     setShowNewReservation(false);
     setForm({ room_id: '', company_name: '', contact_name: '', contact_phone: '', event_name: '', date: '', start_time: '', end_time: '', setup_type: 'theater', attendees: 20, equipment: [], catering: 'none', notes: '' });

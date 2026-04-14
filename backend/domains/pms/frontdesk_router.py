@@ -64,7 +64,20 @@ async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_cur
 
 @router.post("/frontdesk/kiosk-checkin")
 async def kiosk_checkin(checkin_data: dict, current_user: User = Depends(get_current_user)):
-    return {'success': True, 'message': 'Kiosk check-in (entegrasyon hazir)', 'room_key': 'DIGITAL_KEY_123'}
+    booking_id = checkin_data.get('booking_id')
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="booking_id is required")
+    booking = await db.bookings.find_one({'id': booking_id, 'tenant_id': current_user.tenant_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get('status') not in ('confirmed', 'guaranteed'):
+        raise HTTPException(status_code=400, detail=f"Booking status '{booking.get('status')}' is not eligible for check-in")
+    room_key = f"DK-{booking.get('room_number', 'X')}-{str(uuid.uuid4())[:6].upper()}"
+    await db.bookings.update_one(
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {'status': 'checked_in', 'checked_in_at': datetime.now(UTC).isoformat(), 'kiosk_checkin': True}}
+    )
+    return {'success': True, 'message': f"Kiosk check-in basarili: Oda {booking.get('room_number')}", 'room_key': room_key, 'room_number': booking.get('room_number'), 'note': 'Kiosk entegrasyonu aktif. Dijital anahtar olusturuldu.'}
 
 # ============= ADVANCED LOYALTY =============
 
@@ -184,43 +197,22 @@ async def scan_passport(
         # Example with Google Vision or OCR.space would be:
         # response = await ocr_service.extract_passport(request.image_base64)
 
-        # Simulated response
         extracted_data = PassportScanData(
-            passport_number="P12345678",
-            name="JOHN",
-            surname="DOE",
-            nationality="USA",
-            date_of_birth="1990-05-15",
-            expiry_date="2030-05-15",
-            sex="M"
+            passport_number="",
+            name="",
+            surname="",
+            nationality="",
+            date_of_birth="",
+            expiry_date="",
+            sex=""
         )
-
-        # If booking_id provided, update guest info
-        if request.booking_id:
-            booking = await db.bookings.find_one({
-                'id': request.booking_id,
-                'tenant_id': current_user.tenant_id
-            })
-
-            if booking:
-                guest_id = booking.get('guest_id')
-                if guest_id:
-                    # Update guest with passport info
-                    await db.guests.update_one(
-                        {'id': guest_id, 'tenant_id': current_user.tenant_id},
-                        {'$set': {
-                            'id_number': extracted_data.passport_number,
-                            'nationality': extracted_data.nationality,
-                            'updated_at': datetime.now(UTC).isoformat()
-                        }}
-                    )
 
         return {
             'success': True,
             'extracted_data': extracted_data.model_dump(),
-            'confidence': 0.95,  # OCR confidence score
-            'message': 'Passport scanned successfully. Please verify extracted data.',
-            'note': 'In production, integrate with OCR.space, Google Vision, or Azure Computer Vision for real passport scanning'
+            'confidence': 0,
+            'message': 'Pasaport tarama altyapisi hazir. Lutfen OCR servis entegrasyonunu yapilandiriniz.',
+            'requires_ocr_config': True
         }
 
     except Exception as e:
@@ -399,6 +391,17 @@ async def create_guest_alert(
         'alert_id': alert.id,
         'message': 'Guest alert created successfully'
     }
+
+
+@router.delete("/frontdesk/guest-alerts/{alert_id}")
+async def delete_guest_alert(
+    alert_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    result = await db.guest_alerts.delete_one({'id': alert_id, 'tenant_id': current_user.tenant_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {'success': True, 'message': 'Alert deleted'}
 
 
 # ============= HOUSEKEEPING ENHANCEMENTS =============

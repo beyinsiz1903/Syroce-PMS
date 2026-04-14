@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
-const HKTaskDialog = ({ open, onClose, rooms, newHKTask, setNewHKTask, onSubmit }) => {
+const HKTaskDialog = ({ open, onClose, rooms, newHKTask, setNewHKTask, onSubmit, loading }) => {
   const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -43,7 +43,7 @@ const HKTaskDialog = ({ open, onClose, rooms, newHKTask, setNewHKTask, onSubmit 
             </Select>
           </div>
           <div><Label>{t('common.notes')}</Label><Textarea value={newHKTask.notes} onChange={(e) => setNewHKTask({...newHKTask, notes: e.target.value})} /></div>
-          <Button type="submit" className="w-full">{t('common.create')}</Button>
+          <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Olusturuluyor...' : t('common.create')}</Button>
         </form>
       </DialogContent>
     </Dialog>

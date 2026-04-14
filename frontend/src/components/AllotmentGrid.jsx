@@ -28,7 +28,7 @@ const AllotmentGrid = () => {
   const loadContracts = async () => {
     try {
       const response = await axios.get('/pms/allotment-contracts');
-      setContracts(response.data);
+      setContracts(response.data?.contracts || response.data || []);
     } catch (error) {
       console.error('Failed to load contracts:', error);
     }

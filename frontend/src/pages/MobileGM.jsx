@@ -74,7 +74,7 @@ const MobileGM = ({ user }) => {
       setDailyFlash(flashRes.data);
       setFinanceSnapshot(financeRes.data);
       setRoomStatus(roomsRes.data);
-      setStaffTasks(tasksRes.data);
+      setStaffTasks(tasksRes.data?.tasks || tasksRes.data || []);
     } catch (error) {
       console.error('Failed to load GM data:', error);
       toast.error('Veri yüklenemedi');

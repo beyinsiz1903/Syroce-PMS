@@ -28,7 +28,7 @@ const StaffMobileApp = ({ user }) => {
       }
       
       const response = await axios.get('/pms/staff-tasks', { params });
-      setTasks(response.data);
+      setTasks(response.data?.tasks || response.data || []);
     } catch (error) {
       console.error('Failed to load tasks:', error);
     }

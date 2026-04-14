@@ -306,6 +306,19 @@ async def complete_housekeeping_task(
     return {'message': 'Task completed successfully'}
 
 
+@router.delete("/housekeeping/tasks/{task_id}")
+async def delete_housekeeping_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    task = await db.housekeeping_tasks.find_one({'id': task_id, 'tenant_id': current_user.tenant_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.get('status') == 'in_progress':
+        raise HTTPException(status_code=400, detail="Cannot delete an in-progress task")
+    await db.housekeeping_tasks.delete_one({'id': task_id, 'tenant_id': current_user.tenant_id})
+    return {'success': True, 'message': 'Housekeeping task deleted'}
+
 
 @router.post("/housekeeping/mobile/report-issue")
 async def report_housekeeping_issue(
@@ -388,7 +401,7 @@ async def get_mobile_room_status(
     booking = None
     if room.get('current_booking_id'):
         booking = await db.bookings.find_one(
-            {'id': room['current_booking_id']},
+            {'id': room['current_booking_id'], 'tenant_id': current_user.tenant_id},
             {'_id': 0}
         )
 
@@ -595,8 +608,9 @@ async def get_staff_performance_table(
                 completed = datetime.fromisoformat(task['completed_at'])
                 duration = (completed - started).total_seconds() / 60
                 staff_data[staff]['durations'].append(duration)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("HK duration calc failed for task %s: %s", task.get('id'), e)
 
     # Get inspection results for quality score
     inspection_scores = {}

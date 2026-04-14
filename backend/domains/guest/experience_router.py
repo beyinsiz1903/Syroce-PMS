@@ -171,6 +171,27 @@ async def add_guest_note(
 
     return {'message': 'Note added successfully', 'note': note_obj}
 
+
+@router.delete("/crm/guest/note")
+async def delete_guest_note(
+    guest_id: str,
+    note_index: int,
+    current_user: User = Depends(get_current_user)
+):
+    guest = await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id})
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    notes = guest.get('notes', [])
+    if note_index < 0 or note_index >= len(notes):
+        raise HTTPException(status_code=400, detail="Invalid note index")
+    notes.pop(note_index)
+    await db.guests.update_one(
+        {'id': guest_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {'notes': notes}}
+    )
+    return {'message': 'Note deleted successfully'}
+
+
 @router.post("/ai/upsell/generate")
 async def generate_upsell_offers(
     booking_id: str,

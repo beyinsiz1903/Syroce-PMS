@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
-export const RoomBlockCreateDialog = ({ open, onClose, rooms, selectedRoom, setSelectedRoom, newRoomBlock, setNewRoomBlock, onSubmit }) => {
+export const RoomBlockCreateDialog = ({ open, onClose, rooms, selectedRoom, setSelectedRoom, newRoomBlock, setNewRoomBlock, onSubmit, loading }) => {
   const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -51,7 +51,7 @@ export const RoomBlockCreateDialog = ({ open, onClose, rooms, selectedRoom, setS
             <input type="checkbox" id="allow_sell" checked={newRoomBlock.allow_sell} onChange={(e) => setNewRoomBlock({...newRoomBlock, allow_sell: e.target.checked})} className="h-4 w-4" />
             <Label htmlFor="allow_sell" className="cursor-pointer">Allow room to be sold during block</Label>
           </div>
-          <Button type="submit" className="w-full">{t('common.create')}</Button>
+          <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Olusturuluyor...' : t('common.create')}</Button>
         </form>
       </DialogContent>
     </Dialog>
