@@ -92,18 +92,36 @@ Two URL patterns coexist in frontend code:
 - Multi-tenant architecture
 - 8-language internationalization
 
-## PMS Module Tabs (PMSModule.jsx)
+- **Concierge Desk** (`ConciergeDesk.jsx`) — restoran rez., transfer, tur, bilet, vale parking, paket takibi, kasa kiralama, uyandırma servisi
+- **Banquet & Event Order** (`BanquetEventOrder.jsx`) — BEO oluşturma/yazdırma, salon seçimi, menü, AV ekipman, dekorasyon, faturalama
+- **Guest Preferences** (`GuestPreferences.jsx`) — yastık tipi, oda sıcaklığı, diyet, alerji, VIP seviye, doğum günü/yıldönümü
+- **Routing Instructions** (`RoutingInstructions.jsx`) — otomatik masraf yönlendirme kuralları (oda→şirket, ekstra→misafir)
+- **Manager Daily Report** (`ManagerDailyReport.jsx`) — yazdırılabilir günlük rapor, milliyet dağılımı, konaklama süresi analizi
+- **Revenue Controls** (`RevenueControls.jsx`) — engel fiyat (BAR), gün bazlı fiyatlandırma matrisi, overbooking yönetimi, walk-out tazminat
+- **KBS/GIKS** (`KBSNotification.jsx`) — emniyet/jandarma misafir bildirimi, toplu gönderim, eksik bilgi takibi
+- **KVKK/GDPR** (`KVKKManager.jsx`) — saklama politikaları, veri talepleri (erişim/silme/düzeltme), rıza yönetimi, denetim izi
+
+## PMS Module Tabs (PMSModule.jsx - 23 Tab)
 All tabs use Lucide icons and Turkish labels:
-- Resepsiyon (Front Desk), Kat Hizmetleri (Housekeeping), Odalar (Rooms), Misafirler (Guests), Rezervasyonlar (Bookings)
-- Kasa (Cashier), Upsell, Mesajlar (Messaging), Raporlar (Reports), Flash Rapor
-- Gorevler (Tasks), Geri Bildirim (Feedback), Kontenjan (Allotment), POS
-- Camasirhane (Laundry), Toplanti (Meeting Rooms), Zaman Cizelgesi (Timeline)
+- Resepsiyon, Kat Hizmetleri, Odalar, Misafirler, Rezervasyonlar
+- Kasa, Upsell, Mesajlar, Raporlar, Flash Rapor
+- Gorevler, Geri Bildirim, Kontenjan, POS
+- Camasirhane, Toplanti, Zaman Cizelgesi
+- Concierge, Banket & Etkinlik, Gelir Kontrol, Mudur Raporu, KBS/GIKS, KVKK
 
 ## Backend Endpoints - New Modules
-- `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management (auth required)
-- `GET/POST/PATCH /api/laundry/orders` — Laundry order management (auth required)
-- `GET /api/meeting-rooms` + `GET/POST /api/meeting-rooms/reservations` — Meeting room management (auth required)
-- Router: `backend/domains/pms/cashier_router.py`, registered in `bootstrap/router_registry.py`
+- `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management
+- `GET/POST/PATCH /api/laundry/orders` — Laundry order management
+- `GET /api/meeting-rooms` + `GET/POST /api/meeting-rooms/reservations` — Meeting room management
+- `GET/POST/PATCH /api/concierge/requests` — Concierge desk operations
+- `GET/POST /api/banquet/events` — Banquet event order management
+- `POST /api/kbs/send` + `POST /api/kbs/send-batch` — KBS police notification
+- `GET/POST /api/kvkk/requests` — KVKK/GDPR data requests
+- `PATCH /api/pms/guests/{id}/preferences` — Guest preferences update
+- `POST /api/frontdesk/booking/{id}/routing-rules` — Charge routing rules
+- `PATCH /api/pms/rooms/{id}/features` — Room features (DND, connecting)
+- All endpoints require authentication (`Depends(get_current_user)`)
+- Routers: `backend/domains/pms/cashier_router.py`, `backend/domains/pms/operations_router.py`
 
 ## Complaint Management (Service Recovery)
 

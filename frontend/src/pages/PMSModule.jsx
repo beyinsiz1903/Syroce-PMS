@@ -38,6 +38,14 @@ import LaundryTab from '@/components/pms/LaundryTab';
 import MeetingRoomTab from '@/components/pms/MeetingRoomTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
+import ConciergeDesk from '@/components/pms/ConciergeDesk';
+import BanquetEventOrder from '@/components/pms/BanquetEventOrder';
+import GuestPreferences from '@/components/pms/GuestPreferences';
+import RoutingInstructions from '@/components/pms/RoutingInstructions';
+import ManagerDailyReport from '@/components/pms/ManagerDailyReport';
+import KBSNotification from '@/components/pms/KBSNotification';
+import KVKKManager from '@/components/pms/KVKKManager';
+import RevenueControls from '@/components/pms/RevenueControls';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +59,8 @@ import {
   BedDouble, Users, Calendar, Plus, CheckCircle, DollarSign, 
   ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, 
   Star, Send, MessageSquare, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
-  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt, CalendarRange
+  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt, CalendarRange,
+  MapPin, Shield, Lock, Heart
 } from 'lucide-react';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
@@ -209,6 +218,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'laundry', labelText: 'Camasirhane', icon: Shirt, testId: 'tab-laundry' },
     { key: 'meeting', labelText: 'Toplanti', icon: Building2, testId: 'tab-meeting' },
     { key: 'timeline', labelText: 'Zaman Cizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
+    { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
+    { key: 'banquet', labelText: 'Banket & Etkinlik', icon: Calendar, testId: 'tab-banquet' },
+    { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
+    { key: 'manager_report', labelText: 'Mudur Raporu', icon: FileText, testId: 'tab-manager-report' },
+    { key: 'kbs', labelText: 'KBS / GIKS', icon: Shield, testId: 'tab-kbs' },
+    { key: 'kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
   ];
 
   const visibleTabs = isLite
@@ -2173,6 +2188,36 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               bookings={bookings}
               onBookingClick={(booking) => setReservationDetailId(booking.id)}
             />
+          </TabsContent>
+
+          {/* CONCIERGE TAB */}
+          <TabsContent value="concierge" className="space-y-4">
+            <ConciergeDesk />
+          </TabsContent>
+
+          {/* BANQUET & EVENTS TAB */}
+          <TabsContent value="banquet" className="space-y-4">
+            <BanquetEventOrder />
+          </TabsContent>
+
+          {/* REVENUE CONTROLS TAB */}
+          <TabsContent value="revenue" className="space-y-4">
+            <RevenueControls rooms={rooms} />
+          </TabsContent>
+
+          {/* MANAGER DAILY REPORT TAB */}
+          <TabsContent value="manager_report" className="space-y-4">
+            <ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} />
+          </TabsContent>
+
+          {/* KBS / GIKS TAB */}
+          <TabsContent value="kbs" className="space-y-4">
+            <KBSNotification bookings={bookings} guests={guests} />
+          </TabsContent>
+
+          {/* KVKK TAB */}
+          <TabsContent value="kvkk" className="space-y-4">
+            <KVKKManager />
           </TabsContent>
         </Tabs>
 
