@@ -501,7 +501,7 @@ async def auto_seed_if_empty(db):
         "tenant_id": tenant_id,
         "hotel_code": "501694",
         "credentials_ref": "vault:exely:501694",
-        "endpoint_url": "https://supply-xml.booking.com/hotels/xml/availability",
+        "endpoint_url": "",
         "username": "syroce_demo",
         "password": "demo_sandbox_2026",
         "property_name": "Syroce Demo Hotel (Exely)",
