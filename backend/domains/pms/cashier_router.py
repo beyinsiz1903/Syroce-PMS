@@ -1,149 +1,258 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.security import get_current_user
+from db import get_db
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["PMS / Cashier"])
 
+
+def _safe_float(val, default=0.0):
+    try:
+        return float(val or default)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid numeric value: {val}")
+
+
+def _safe_int(val, default=0):
+    try:
+        return int(val or default)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid integer value: {val}")
+
+
 @router.get("/cashier/current-shift")
 async def get_current_shift(current_user: User = Depends(get_current_user)):
-    return {
-        "shift": None,
-        "transactions": []
-    }
+    db = get_db()
+    shift = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"},
+        sort=[("opened_at", -1)]
+    )
+    if shift:
+        shift["id"] = str(shift.pop("_id"))
+        txns = await db.cashier_transactions.find(
+            {"tenant_id": current_user.tenant_id, "shift_id": shift["id"]}
+        ).sort("created_at", -1).to_list(200)
+        for t in txns:
+            t["id"] = str(t.pop("_id"))
+        return {"shift": shift, "transactions": txns}
+    return {"shift": None, "transactions": []}
+
 
 @router.post("/cashier/open-shift")
-async def open_shift(body: dict = {}, current_user: User = Depends(get_current_user)):
-    return {
-        "shift": {
-            "id": str(uuid.uuid4()),
-            "cashier_name": current_user.name if hasattr(current_user, 'name') else "Kasiyer",
-            "opening_amount": body.get("opening_amount", 0),
-            "cash_in": 0,
-            "cash_out": 0,
-            "status": "open",
-            "opened_at": datetime.utcnow().isoformat()
-        }
+async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
+    db = get_db()
+    existing = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"}
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Zaten acik bir vardiya var")
+    now = datetime.utcnow()
+    opening_amount = _safe_float(body.get("opening_amount", 0))
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "cashier_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+        "cashier_email": current_user.email,
+        "opening_amount": opening_amount,
+        "cash_in": 0,
+        "cash_out": 0,
+        "status": "open",
+        "opened_at": now.isoformat(),
+        "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
+    await db.cashier_shifts.insert_one(doc)
+    doc["id"] = doc.pop("_id")
+    return {"shift": doc}
+
 
 @router.post("/cashier/close-shift")
-async def close_shift(body: dict = {}, current_user: User = Depends(get_current_user)):
+async def close_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
+    db = get_db()
+    shift = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"}
+    )
+    if not shift:
+        raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
+    now = datetime.utcnow()
+    counted_amount = _safe_float(body.get("counted_amount", 0))
+    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    difference = counted_amount - expected
+    await db.cashier_shifts.update_one(
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "status": "closed",
+            "closed_at": now.isoformat(),
+            "closing_amount": counted_amount,
+            "expected_amount": expected,
+            "difference": difference,
+            "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
+            "closed_by": current_user.email,
+        }}
+    )
     return {
         "status": "closed",
-        "counted_amount": body.get("counted_amount", 0),
-        "expected_amount": 0,
-        "difference": 0,
-        "closed_at": datetime.utcnow().isoformat()
+        "counted_amount": counted_amount,
+        "expected_amount": expected,
+        "difference": difference,
+        "closed_at": now.isoformat()
     }
+
 
 @router.get("/cashier/shift-history")
-async def shift_history(limit: int = 20, current_user: User = Depends(get_current_user)):
-    now = datetime.utcnow()
-    return {
-        "shifts": [
-            {
-                "id": str(uuid.uuid4()),
-                "cashier_name": "Ali Yilmaz",
-                "opening_amount": 500,
-                "closing_amount": 2350,
-                "difference": 0,
-                "status": "closed",
-                "opened_at": (now - timedelta(hours=16)).isoformat(),
-                "closed_at": (now - timedelta(hours=8)).isoformat()
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "cashier_name": "Ayse Kaya",
-                "opening_amount": 500,
-                "closing_amount": 1820,
-                "difference": -5,
-                "status": "closed",
-                "opened_at": (now - timedelta(hours=40)).isoformat(),
-                "closed_at": (now - timedelta(hours=32)).isoformat()
-            }
-        ]
-    }
+async def shift_history(skip: int = 0, limit: int = 20, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cashier_shifts.find(
+        {"tenant_id": current_user.tenant_id}
+    ).sort("opened_at", -1).skip(skip).limit(limit)
+    shifts = await cursor.to_list(limit)
+    for s in shifts:
+        s["id"] = str(s.pop("_id"))
+    total = await db.cashier_shifts.count_documents({"tenant_id": current_user.tenant_id})
+    return {"shifts": shifts, "total": total}
+
 
 @router.get("/laundry/orders")
-async def get_laundry_orders(current_user: User = Depends(get_current_user)):
-    now = datetime.utcnow()
-    return {
-        "orders": [
-            {
-                "id": str(uuid.uuid4()),
-                "room_number": "101",
-                "guest_name": "Ahmet Yilmaz",
-                "service_type": "wash_iron",
-                "items": [{"name": "Gomlek", "quantity": 3, "price": 30}],
-                "total": 90,
-                "status": "in_progress",
-                "created_at": now.isoformat(),
-                "estimated_ready": (now + timedelta(hours=3)).isoformat()
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "room_number": "205",
-                "guest_name": "Fatma Demir",
-                "service_type": "dry_clean",
-                "items": [{"name": "Takim Elbise", "quantity": 1, "price": 80}],
-                "total": 120,
-                "status": "ready",
-                "created_at": (now - timedelta(hours=2)).isoformat()
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "room_number": "312",
-                "guest_name": "John Smith",
-                "service_type": "express",
-                "items": [{"name": "Gomlek", "quantity": 2, "price": 30}, {"name": "Pantolon", "quantity": 1, "price": 40}],
-                "total": 200,
-                "status": "delivered",
-                "created_at": (now - timedelta(days=1)).isoformat()
-            }
-        ]
-    }
+async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    query = {"tenant_id": current_user.tenant_id}
+    if status:
+        query["status"] = status
+    cursor = db.laundry_orders.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    orders = await cursor.to_list(limit)
+    for o in orders:
+        o["id"] = str(o.pop("_id"))
+    return {"orders": orders}
+
 
 @router.post("/laundry/orders")
-async def create_laundry_order(body: dict = {}, current_user: User = Depends(get_current_user)):
-    return {
-        "id": str(uuid.uuid4()),
+async def create_laundry_order(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    db = get_db()
+    if not body.get("room_number"):
+        raise HTTPException(status_code=400, detail="Oda numarasi gerekli")
+    if not body.get("items") or len(body["items"]) == 0:
+        raise HTTPException(status_code=400, detail="En az bir urun gerekli")
+    now = datetime.utcnow()
+    total = sum(_safe_float(i.get("total", 0)) for i in body["items"])
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "room_number": body.get("room_number", ""),
+        "guest_name": body.get("guest_name", ""),
+        "service_type": body.get("service_type", "wash_iron"),
+        "items": body.get("items", []),
+        "total": total,
+        "notes": body.get("notes", ""),
+        "priority": body.get("priority", "normal"),
         "status": "pending",
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": now.isoformat(),
+        "created_by": current_user.email,
     }
+    await db.laundry_orders.insert_one(doc)
+    doc["id"] = doc.pop("_id")
+    return doc
+
 
 @router.patch("/laundry/orders/{order_id}")
-async def update_laundry_order(order_id: str, body: dict = {}, current_user: User = Depends(get_current_user)):
-    return {"id": order_id, "status": body.get("status", "updated")}
+async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    db = get_db()
+    update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
+    update_fields["updated_at"] = datetime.utcnow().isoformat()
+    result = await db.laundry_orders.update_one(
+        {"_id": order_id, "tenant_id": current_user.tenant_id},
+        {"$set": update_fields}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Siparis bulunamadi")
+    return {"id": order_id, "status": update_fields.get("status", "updated")}
+
+
+@router.delete("/laundry/orders/{order_id}")
+async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    result = await db.laundry_orders.delete_one(
+        {"_id": order_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Siparis bulunamadi")
+    return {"id": order_id, "status": "deleted"}
+
 
 @router.get("/meeting-rooms")
 async def get_meeting_rooms(current_user: User = Depends(get_current_user)):
-    return {
-        "rooms": [
-            {"id": "1", "name": "Balo Salonu", "capacity": 500, "area": 800, "floor": "Zemin", "setup_types": ["theater", "banquet", "cocktail"], "equipment": ["Projektor", "Ses Sistemi", "Sahne"], "status": "available"},
-            {"id": "2", "name": "Toplanti Salonu A", "capacity": 50, "area": 80, "floor": "1. Kat", "setup_types": ["classroom", "u_shape", "boardroom"], "equipment": ["Projektor", "Beyaz Perde", "Video Konferans"], "status": "available"},
-            {"id": "3", "name": "Toplanti Salonu B", "capacity": 30, "area": 50, "floor": "1. Kat", "setup_types": ["classroom", "boardroom"], "equipment": ["LED Ekran", "Ses Sistemi"], "status": "reserved"},
-            {"id": "4", "name": "VIP Toplanti Odasi", "capacity": 12, "area": 30, "floor": "2. Kat", "setup_types": ["boardroom"], "equipment": ["Video Konferans", "LED Ekran", "Ses Sistemi"], "status": "available"},
+    db = get_db()
+    rooms = await db.meeting_rooms.find(
+        {"tenant_id": current_user.tenant_id}
+    ).sort("name", 1).to_list(100)
+    for r in rooms:
+        r["id"] = str(r.pop("_id"))
+    if not rooms:
+        defaults = [
+            {"name": "Balo Salonu", "capacity": 500, "area": 800, "floor": "Zemin", "setup_types": ["theater", "banquet", "cocktail"], "equipment": ["Projektor", "Ses Sistemi", "Sahne"], "status": "available"},
+            {"name": "Toplanti Salonu A", "capacity": 50, "area": 80, "floor": "1. Kat", "setup_types": ["classroom", "u_shape", "boardroom"], "equipment": ["Projektor", "Beyaz Perde", "Video Konferans"], "status": "available"},
+            {"name": "Toplanti Salonu B", "capacity": 30, "area": 50, "floor": "1. Kat", "setup_types": ["classroom", "boardroom"], "equipment": ["LED Ekran", "Ses Sistemi"], "status": "available"},
+            {"name": "VIP Toplanti Odasi", "capacity": 12, "area": 30, "floor": "2. Kat", "setup_types": ["boardroom"], "equipment": ["Video Konferans", "LED Ekran", "Ses Sistemi"], "status": "available"},
         ]
-    }
+        for d in defaults:
+            d["_id"] = str(uuid.uuid4())
+            d["tenant_id"] = current_user.tenant_id
+            await db.meeting_rooms.insert_one(d)
+            d["id"] = d.pop("_id")
+        rooms = defaults
+    return {"rooms": rooms}
+
 
 @router.get("/meeting-rooms/reservations")
-async def get_meeting_reservations(current_user: User = Depends(get_current_user)):
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
-    return {
-        "reservations": [
-            {"id": "1", "room_name": "Toplanti Salonu A", "company_name": "ABC Holding", "event_name": "Yillik Toplanti", "date": today, "start_time": "09:00", "end_time": "12:00", "setup_type": "u_shape", "attendees": 25, "status": "confirmed"},
-            {"id": "2", "room_name": "Balo Salonu", "company_name": "XYZ Corp", "event_name": "Gala Yemegi", "date": tomorrow, "start_time": "19:00", "end_time": "23:00", "setup_type": "banquet", "attendees": 200, "status": "tentative"},
-        ]
-    }
+async def get_meeting_reservations(skip: int = 0, limit: int = 50, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.meeting_reservations.find(
+        {"tenant_id": current_user.tenant_id}
+    ).sort("date", -1).skip(skip).limit(limit)
+    reservations = await cursor.to_list(limit)
+    for r in reservations:
+        r["id"] = str(r.pop("_id"))
+    return {"reservations": reservations}
+
 
 @router.post("/meeting-rooms/reservations")
-async def create_meeting_reservation(body: dict = {}, current_user: User = Depends(get_current_user)):
-    return {
-        "id": str(uuid.uuid4()),
+async def create_meeting_reservation(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    db = get_db()
+    if not body.get("room_name") and not body.get("room_id"):
+        raise HTTPException(status_code=400, detail="Salon secimi gerekli")
+    now = datetime.utcnow()
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "room_id": body.get("room_id", ""),
+        "room_name": body.get("room_name", ""),
+        "company_name": body.get("company_name", ""),
+        "event_name": body.get("event_name", ""),
+        "contact_name": body.get("contact_name", ""),
+        "contact_phone": body.get("contact_phone", ""),
+        "date": body.get("date", ""),
+        "start_time": body.get("start_time", ""),
+        "end_time": body.get("end_time", ""),
+        "setup_type": body.get("setup_type", ""),
+        "attendees": _safe_int(body.get("attendees", 0)),
         "status": "confirmed",
-        "created_at": datetime.utcnow().isoformat()
+        "notes": body.get("notes", ""),
+        "created_at": now.isoformat(),
+        "created_by": current_user.email,
     }
+    await db.meeting_reservations.insert_one(doc)
+    doc["id"] = doc.pop("_id")
+    return doc
+
+
+@router.delete("/meeting-rooms/reservations/{reservation_id}")
+async def delete_meeting_reservation(reservation_id: str, current_user: User = Depends(get_current_user)):
+    db = get_db()
+    result = await db.meeting_reservations.delete_one(
+        {"_id": reservation_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    return {"id": reservation_id, "status": "deleted"}

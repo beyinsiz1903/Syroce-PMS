@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -9,8 +10,15 @@ import { Textarea } from '@/components/ui/textarea';
 
 const MaintenanceDialog = ({ open, onClose, maintenanceForm, setMaintenanceForm }) => {
   const { t } = useTranslation();
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
+    if (!maintenanceForm.description?.trim()) {
+      toast.error('Lutfen bir aciklama girin');
+      return;
+    }
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const payload = {
         room_id: maintenanceForm.room_id,
@@ -28,6 +36,8 @@ const MaintenanceDialog = ({ open, onClose, maintenanceForm, setMaintenanceForm 
     } catch (error) {
       console.error('Failed to create maintenance work order', error);
       toast.error(t('messages.error.saveFailed'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -76,7 +86,7 @@ const MaintenanceDialog = ({ open, onClose, maintenanceForm, setMaintenanceForm 
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button size="sm" onClick={handleSubmit}>{t('maintenance.createWorkOrder')}</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={submitting}>{submitting ? 'Kaydediliyor...' : t('maintenance.createWorkOrder')}</Button>
         </div>
       </DialogContent>
     </Dialog>

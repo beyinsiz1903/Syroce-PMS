@@ -23,7 +23,19 @@ const HousekeepingTab = ({
   setMaintenanceDialogOpen,
   handleUpdateHKTask,
   toast,
+  loading,
 }) => {
+  if (loading) {
+    return (
+      <TabsContent value="housekeeping" className="space-y-6">
+        <div className="flex items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3" />
+          <span className="text-gray-500">Housekeeping verileri yukleniyor...</span>
+        </div>
+      </TabsContent>
+    );
+  }
+
   return (
     <TabsContent value="housekeeping" className="space-y-6">
       <div className="flex justify-between items-center">

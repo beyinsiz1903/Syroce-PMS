@@ -247,7 +247,7 @@ async def start_housekeeping_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     await db.housekeeping_tasks.update_one(
-        {'id': task_id},
+        {'id': task_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'status': 'in_progress',
@@ -256,7 +256,6 @@ async def start_housekeeping_task(
         }
     )
 
-    # Update room status to cleaning
     if task.get('room_id'):
         await db.rooms.update_one(
             {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
@@ -285,7 +284,7 @@ async def complete_housekeeping_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     await db.housekeeping_tasks.update_one(
-        {'id': task_id},
+        {'id': task_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'status': 'completed',
@@ -627,21 +626,25 @@ async def get_staff_performance_table(
         if staff in inspection_scores:
             quality_score = (inspection_scores[staff]['passed'] / inspection_scores[staff]['total']) * 100
         else:
-            quality_score = 95  # Default assumption
+            quality_score = None
 
         # Calculate performance score (weighted)
         # Speed: 40%, Quality: 40%, Quantity: 20%
         speed_score = max(0, 100 - ((avg_duration - 25) * 2)) if avg_duration > 0 else 0
         quantity_score = min(100, (data['tasks_completed'] / period_days) * 10)
-        overall_score = (speed_score * 0.4) + (quality_score * 0.4) + (quantity_score * 0.2)
+        if quality_score is not None:
+            overall_score = (speed_score * 0.4) + (quality_score * 0.4) + (quantity_score * 0.2)
+        else:
+            overall_score = (speed_score * 0.6) + (quantity_score * 0.4)
 
         performance_table.append({
             'staff_name': staff,
             'tasks_completed': data['tasks_completed'],
             'rooms_cleaned': len(data['room_ids']),
             'avg_duration_minutes': round(avg_duration, 1),
-            'quality_score': round(quality_score, 1),
+            'quality_score': round(quality_score, 1) if quality_score is not None else None,
             'overall_performance_score': round(overall_score, 1),
+            'has_inspection_data': quality_score is not None,
             'rating': '⭐⭐⭐⭐⭐' if overall_score >= 90 else '⭐⭐⭐⭐' if overall_score >= 80 else '⭐⭐⭐' if overall_score >= 70 else '⭐⭐',
             'tasks_per_day': round(data['tasks_completed'] / period_days, 1)
         })

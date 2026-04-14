@@ -25,6 +25,8 @@ const FrontdeskTab = ({
   handleCheckOut,
   loadFolio,
   loadFrontDeskData,
+  loading,
+  error,
 }) => {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
@@ -71,6 +73,27 @@ const FrontdeskTab = ({
     setGroupCheckinIds(new Set());
     setShowGroupCheckin(false);
   };
+
+  if (loading) {
+    return (
+      <TabsContent value="frontdesk" className="space-y-6">
+        <TableLoadingSkeleton />
+      </TabsContent>
+    );
+  }
+
+  if (error) {
+    return (
+      <TabsContent value="frontdesk" className="space-y-6">
+        <div className="text-center py-12">
+          <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <p className="text-red-600 font-medium mb-2">Veriler yuklenemedi</p>
+          <p className="text-sm text-gray-500 mb-4">{error}</p>
+          <Button variant="outline" onClick={loadFrontDeskData}>Tekrar Dene</Button>
+        </div>
+      </TabsContent>
+    );
+  }
 
   return (
     <TabsContent value="frontdesk" className="space-y-6">
@@ -311,8 +334,14 @@ const FrontdeskTab = ({
                     </div>
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       {booking.status === 'confirmed' && (
-                        <Button size="sm" className="bg-[#C09D63] hover:bg-[#B08D55] text-white h-9" onClick={() => handleCheckIn(booking.id)} data-testid={`checkin-${booking.id}`}>
-                          <LogIn className="w-4 h-4 mr-1.5" /> Giris Yap
+                        <Button size="sm" className={`h-9 ${isDirty ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#C09D63] hover:bg-[#B08D55]'} text-white`}
+                          onClick={() => {
+                            if (isDirty) {
+                              if (!window.confirm('Oda kirli/temizleniyor. Yine de giris yapmak istiyor musunuz?')) return;
+                            }
+                            handleCheckIn(booking.id);
+                          }} data-testid={`checkin-${booking.id}`}>
+                          <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? 'Giris (Kirli!)' : 'Giris Yap'}
                         </Button>
                       )}
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>Folyo</Button>
@@ -409,7 +438,12 @@ const FrontdeskTab = ({
               <div><Label>Gece Sayisi</Label><Input type="number" min="1" value={walkInForm.nights} onChange={e => setWalkInForm(p => ({ ...p, nights: parseInt(e.target.value) || 1 }))} /></div>
               <div><Label>Gecelik Fiyat (TL)</Label><Input type="number" value={walkInForm.rate} onChange={e => setWalkInForm(p => ({ ...p, rate: parseFloat(e.target.value) || 0 }))} /></div>
             </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => { setShowWalkIn(false); }}>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => {
+              if (!walkInForm.guest_name?.trim()) { return; }
+              if (!walkInForm.room_number?.trim()) { return; }
+              if (!walkInForm.rate || walkInForm.rate <= 0) { return; }
+              setShowWalkIn(false);
+            }} disabled={!walkInForm.guest_name?.trim() || !walkInForm.room_number?.trim() || !walkInForm.rate || walkInForm.rate <= 0}>
               <LogIn className="w-4 h-4 mr-2" /> Hizli Giris Yap
             </Button>
           </div>

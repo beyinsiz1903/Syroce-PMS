@@ -362,6 +362,12 @@ const RoomsTab = ({
       </div>
 
       {/* Room Grid */}
+      {filteredRooms.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <span className="text-4xl block mb-2">🏨</span>
+          <p className="text-sm">Secili filtreye uygun oda bulunamadi</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {filteredRooms.map(room => {
           const guestInfo = roomGuestMap[String(room.room_number)];
@@ -410,7 +416,7 @@ const RoomsTab = ({
                         <span className={`w-1.5 h-1.5 rounded-full ${room.status === 'cleaning' ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
                         {room.status === 'cleaning' ? 'Temizleniyor' : 'Temizlik bekliyor'}
                       </span>
-                      <span className="font-medium">~{room.status === 'cleaning' ? '8' : '15'} dk</span>
+                      <span className="font-medium">~{room.cleaning_time || (room.status === 'cleaning' ? '8' : '15')} dk</span>
                     </div>
                     {room.status === 'cleaning' && (
                       <div className="w-full h-1 bg-amber-200 rounded-full overflow-hidden">

@@ -99,6 +99,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [rmsSuggestions, setRmsSuggestions] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fdLoading, setFdLoading] = useState(false);
+  const [fdError, setFdError] = useState(null);
+  const [hkLoading, setHkLoading] = useState(false);
   const [aiPrediction, setAiPrediction] = useState(null);
   const [aiPatterns, setAiPatterns] = useState(null);
   const [openDialog, setOpenDialog] = useState(null);
@@ -582,6 +585,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadFrontDeskData = async () => {
+    setFdLoading(true);
+    setFdError(null);
     try {
       const [arrivalsRes, departuresRes, inhouseRes] = await Promise.all([
         axios.get('/frontdesk/arrivals'),
@@ -592,10 +597,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setDepartures(departuresRes.data);
       setInhouse(inhouseRes.data);
       
-      // Load AI insights
       loadAIInsights();
     } catch (error) {
+      const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
+      setFdError(msg);
       toast.error('Failed to load front desk data');
+    } finally {
+      setFdLoading(false);
     }
   };
 
@@ -633,8 +641,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadHousekeepingData = async () => {
+    setHkLoading(true);
     try {
-      // Load essential data first
       const [tasksRes, boardRes] = await Promise.all([
         axios.get('/housekeeping/tasks'),
         axios.get('/housekeeping/room-status')
@@ -642,7 +650,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setHousekeepingTasks(tasksRes.data);
       setRoomStatusBoard(boardRes.data);
       
-      // Load additional data in background
       setTimeout(async () => {
         try {
           const [dueOutRes, stayoverRes, arrivalsRes, blocksRes] = await Promise.all([
@@ -661,6 +668,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       }, 500);
     } catch (error) {
       toast.error('Failed to load housekeeping data');
+    } finally {
+      setHkLoading(false);
     }
   };
 
@@ -1558,6 +1567,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             handleCheckOut={handleCheckOut}
             loadFolio={loadFolio}
             loadFrontDeskData={loadFrontDeskData}
+            loading={fdLoading}
+            error={fdError}
           />
 
           {/* HOUSEKEEPING TAB */}
@@ -1576,6 +1587,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             setMaintenanceDialogOpen={setMaintenanceDialogOpen}
             handleUpdateHKTask={handleUpdateHKTask}
             toast={toast}
+            loading={hkLoading}
           />
 
           {/* ROOMS TAB */}
@@ -3052,7 +3064,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               icon: <FileText className="w-5 h-5" />,
               onClick: async () => {
                 try {
-                  const response = await axios.get('/reports/flash-report');
+                  const response = await axios.get('/reports/daily-flash');
                   toast.success('Flash report generated!');
                   console.log('Flash report:', response.data);
                 } catch (error) {

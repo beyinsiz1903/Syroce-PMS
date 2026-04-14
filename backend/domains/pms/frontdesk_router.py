@@ -407,7 +407,8 @@ async def create_guest_alert(
 
 @router.post("/self-checkin/generate-door-qr")
 async def generate_door_qr_code(
-    booking_id: str
+    booking_id: str,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Generate QR code for door lock
@@ -415,13 +416,11 @@ async def generate_door_qr_code(
     - Time-limited access
     - Room entry tracking
     """
-    booking = await db.bookings.find_one({'id': booking_id})
+    booking = await db.bookings.find_one({'id': booking_id, 'tenant_id': current_user.tenant_id})
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # Generate QR code data
-    # In production: Integrate with door lock system (Assa Abloy, Salto, Dormakaba)
     qr_data = {
         'booking_id': booking_id,
         'room_id': booking.get('room_id'),
@@ -431,13 +430,11 @@ async def generate_door_qr_code(
         'generated_at': datetime.now(UTC).isoformat()
     }
 
-    # Generate QR code image
     import qrcode
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(json.dumps(qr_data))
     qr.make(fit=True)
 
-    # Convert to base64
     img = qr.make_image(fill_color="black", back_color="white")
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
@@ -450,7 +447,6 @@ async def generate_door_qr_code(
         'qr_data': qr_data,
         'valid_from': qr_data['valid_from'],
         'valid_until': qr_data['valid_until'],
-        'note': 'In production: Integrate with door lock system API (Assa Abloy, Salto, Dormakaba)'
     }
 
 
@@ -460,7 +456,8 @@ async def generate_door_qr_code(
 async def capture_digital_signature(
     booking_id: str,
     signature_base64: str,
-    registration_card_data: dict[str, Any]
+    registration_card_data: dict[str, Any],
+    current_user: User = Depends(get_current_user)
 ):
     """
     Capture digital signature
@@ -468,27 +465,26 @@ async def capture_digital_signature(
     - Legally binding
     - Stored with booking
     """
-    booking = await db.bookings.find_one({'id': booking_id})
+    booking = await db.bookings.find_one({'id': booking_id, 'tenant_id': current_user.tenant_id})
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # Store signature
     signature_record = {
         'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
         'booking_id': booking_id,
         'signature_base64': signature_base64,
         'registration_card_data': registration_card_data,
         'signed_at': datetime.now(UTC).isoformat(),
-        'ip_address': None,  # From request in production
+        'ip_address': None,
         'device_type': 'kiosk'
     }
 
     await db.digital_signatures.insert_one(signature_record)
 
-    # Update booking
     await db.bookings.update_one(
-        {'id': booking_id},
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'digital_signature_id': signature_record['id']}}
     )
 
@@ -503,7 +499,8 @@ async def capture_digital_signature(
 
 @router.post("/self-checkin/police-notification")
 async def auto_police_notification(
-    booking_id: str
+    booking_id: str,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Automatic police notification
@@ -511,18 +508,15 @@ async def auto_police_notification(
     - Guest ID information
     - Automated submission
     """
-    booking = await db.bookings.find_one({'id': booking_id})
+    booking = await db.bookings.find_one({'id': booking_id, 'tenant_id': current_user.tenant_id})
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    guest = await db.guests.find_one({'id': booking.get('guest_id')})
+    guest = await db.guests.find_one({'id': booking.get('guest_id'), 'tenant_id': current_user.tenant_id})
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-
-    # In production: Integrate with local police registration system
-    # Turkey: GIYBIS, Italy: Alloggiati Web, etc.
 
     notification_data = {
         'id': str(uuid.uuid4()),

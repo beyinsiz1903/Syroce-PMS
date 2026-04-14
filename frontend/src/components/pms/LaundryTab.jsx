@@ -47,11 +47,8 @@ const LaundryTab = () => {
       const res = await axios.get('/laundry/orders');
       setOrders(res.data.orders || []);
     } catch {
-      setOrders([
-        { id: '1', room_number: '101', guest_name: 'Ahmet Yilmaz', service_type: 'wash_iron', items: [{ name: 'Gomlek', quantity: 3, price: 30 }], total: 90, status: 'in_progress', created_at: new Date().toISOString(), estimated_ready: new Date(Date.now() + 3600000).toISOString() },
-        { id: '2', room_number: '205', guest_name: 'Fatma Demir', service_type: 'dry_clean', items: [{ name: 'Takim Elbise', quantity: 1, price: 80 }], total: 120, status: 'ready', created_at: new Date(Date.now() - 7200000).toISOString() },
-        { id: '3', room_number: '312', guest_name: 'John Smith', service_type: 'express', items: [{ name: 'Gomlek', quantity: 2, price: 30 }, { name: 'Pantolon', quantity: 1, price: 40 }], total: 200, status: 'delivered', created_at: new Date(Date.now() - 86400000).toISOString() },
-      ]);
+      toast.error('Camasir siparisleri yuklenemedi');
+      setOrders([]);
     }
   }, []);
 
@@ -85,9 +82,7 @@ const LaundryTab = () => {
       setOrderForm({ room_number: '', guest_name: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal' });
       loadOrders();
     } catch (e) {
-      const totalAmount = orderForm.items.reduce((s, i) => s + (i.total || 0), 0);
-      toast.success(`Camasir siparisi olusturuldu (${totalAmount.toFixed(2)} TL)`);
-      setShowNewOrder(false);
+      toast.error('Camasir siparisi olusturulamadi');
     }
     setLoading(false);
   };
@@ -98,8 +93,7 @@ const LaundryTab = () => {
       toast.success('Siparis durumu guncellendi');
       loadOrders();
     } catch {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-      toast.success('Siparis durumu guncellendi');
+      toast.error('Siparis durumu guncellenemedi');
     }
   };
 

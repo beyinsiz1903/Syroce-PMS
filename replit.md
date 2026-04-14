@@ -95,7 +95,7 @@ Two URL patterns coexist in frontend code:
 - **Concierge Desk** (`ConciergeDesk.jsx`) — restoran rez., transfer, tur, bilet, vale parking, paket takibi, kasa kiralama, uyandırma servisi
 - **Banquet & Event Order** (`BanquetEventOrder.jsx`) — BEO oluşturma/yazdırma, salon seçimi, menü, AV ekipman, dekorasyon, faturalama
 - **Guest Preferences** (`GuestPreferences.jsx`) — yastık tipi, oda sıcaklığı, diyet, alerji, VIP seviye, doğum günü/yıldönümü
-- **Routing Instructions** (`RoutingInstructions.jsx`) — otomatik masraf yönlendirme kuralları (oda→şirket, ekstra→misafir)
+- **Routing Instructions** (`RoutingInstructions.jsx`) — otomatik masraf yönlendirme kuralları (oda→şirket, ekstra→misafir), percentage-based split validation
 - **Manager Daily Report** (`ManagerDailyReport.jsx`) — yazdırılabilir günlük rapor, milliyet dağılımı, konaklama süresi analizi
 - **Revenue Controls** (`RevenueControls.jsx`) — engel fiyat (BAR), gün bazlı fiyatlandırma matrisi, overbooking yönetimi, walk-out tazminat
 - **KBS/GIKS** (`KBSNotification.jsx`) — emniyet/jandarma misafir bildirimi, toplu gönderim, eksik bilgi takibi
@@ -118,8 +118,14 @@ All tabs use Lucide icons and Turkish labels:
 - `POST /api/kbs/send` + `POST /api/kbs/send-batch` — KBS police notification
 - `GET/POST /api/kvkk/requests` — KVKK/GDPR data requests
 - `PATCH /api/pms/guests/{id}/preferences` — Guest preferences update
-- `POST /api/frontdesk/booking/{id}/routing-rules` — Charge routing rules
+- `POST /api/frontdesk/booking/{id}/routing-rules` — Charge routing rules (with % split validation)
 - `PATCH /api/pms/rooms/{id}/features` — Room features (DND, connecting)
+- `POST /api/pms/bookings/{id}/complimentary-approval` — Complimentary room approval workflow
+- `GET /api/pms/dayuse-bookings` + `POST /api/pms/dayuse-auto-checkout` — Day-use booking management
+- `GET /api/pms/loyalty/tiers` + `GET /api/pms/guest/{id}/loyalty` — Loyalty tier system (auto-seeds Silver/Gold/Platinum/Diamond)
+- `GET /api/pms/commission/export` — Commission report with date filtering
+- `GET/POST /api/pms/group-blocks` + `POST .../cutoff` — Group block CRUD and cutoff/wash processing
+- `DELETE /api/concierge/requests/{id}` + `DELETE /api/banquet/events/{id}` + `DELETE /api/kvkk/requests/{id}` — Resource deletion
 - All endpoints require authentication (`Depends(get_current_user)`)
 - All write endpoints enforce `tenant_id` scoping in MongoDB filters to prevent cross-tenant access (IDOR)
 - Numeric inputs validated via `_safe_int`/`_safe_float` helpers (return 400 on bad input)
