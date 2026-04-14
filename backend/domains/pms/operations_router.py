@@ -3,8 +3,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from core.security import get_current_user
 from core.database import db
+from core.security import get_current_user
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["PMS / Operations"])
@@ -176,7 +176,7 @@ async def send_kbs_batch(body: dict = Body(...), current_user: User = Depends(ge
                 {"_id": bid, "tenant_id": current_user.tenant_id},
                 {"$set": {"kbs_status": "sent", "kbs_sent_at": now.isoformat(), "kbs_reference": kbs_ref}}
             )
-        except Exception as exc:
+        except Exception:
             import logging
             logging.getLogger(__name__).exception("KBS batch send failed for booking %s", bid)
             results.append({"booking_id": bid, "status": "error"})
