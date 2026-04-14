@@ -121,6 +121,10 @@ All tabs use Lucide icons and Turkish labels:
 - `POST /api/frontdesk/booking/{id}/routing-rules` — Charge routing rules
 - `PATCH /api/pms/rooms/{id}/features` — Room features (DND, connecting)
 - All endpoints require authentication (`Depends(get_current_user)`)
+- All write endpoints enforce `tenant_id` scoping in MongoDB filters to prevent cross-tenant access (IDOR)
+- Numeric inputs validated via `_safe_int`/`_safe_float` helpers (return 400 on bad input)
+- BEO print HTML uses textContent-based escaping to prevent stored XSS
+- KBS "Bilgi Guncelle" uses `guest_id` (not booking ID) for guest preference updates
 - Routers: `backend/domains/pms/cashier_router.py`, `backend/domains/pms/operations_router.py`
 
 ## Complaint Management (Service Recovery)

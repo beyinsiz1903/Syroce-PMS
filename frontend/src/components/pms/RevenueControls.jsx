@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,33 +10,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  TrendingUp, DollarSign, Calendar, AlertTriangle, Shield,
-  BarChart3, Lock, Unlock, Save, RefreshCw, Users
+  TrendingUp, AlertTriangle, Lock, Unlock, Save, Users
 } from 'lucide-react';
 
 const DAYS = ['Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma', 'Cumartesi', 'Pazar'];
 const ROOM_TYPES = ['Standart Oda', 'Deluxe Oda', 'Corner Suit', 'Junior Suit', 'Kral Dairesi'];
 
+const defaultHurdle = () => ROOM_TYPES.reduce((acc, rt) => ({ ...acc, [rt]: { min_rate: 0, bar: 0, active: false } }), {});
+const defaultDayPricing = () => ROOM_TYPES.reduce((acc, rt) => ({
+  ...acc, [rt]: DAYS.reduce((d, day) => ({ ...d, [day]: { rate: 0, min_stay: 1 } }), {})
+}), {});
+const defaultOverbooking = (total) => ({ enabled: false, max_percentage: 5, walk_compensation: 'upgrade_nearby', walk_amount: 0, current_overbooked: 0, total_rooms: total });
+
 const RevenueControls = ({ rooms = [] }) => {
   const [activeTab, setActiveTab] = useState('hurdle');
-  const [hurdleRates, setHurdleRates] = useState(
-    ROOM_TYPES.reduce((acc, rt) => ({ ...acc, [rt]: { min_rate: 0, bar: 0, active: false } }), {})
-  );
-  const [dayPricing, setDayPricing] = useState(
-    ROOM_TYPES.reduce((acc, rt) => ({
-      ...acc, [rt]: DAYS.reduce((d, day) => ({ ...d, [day]: { rate: 0, min_stay: 1 } }), {})
-    }), {})
-  );
-  const [overbooking, setOverbooking] = useState({
-    enabled: false,
-    max_percentage: 5,
-    walk_compensation: 'upgrade_nearby',
-    walk_amount: 0,
-    current_overbooked: 0,
-    total_rooms: rooms.length || 30,
-  });
+  const [hurdleRates, setHurdleRates] = useState(defaultHurdle());
+  const [dayPricing, setDayPricing] = useState(defaultDayPricing());
+  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length || 30));
   const [showWalkDialog, setShowWalkDialog] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
+
+  useEffect(() => { loadSettings(); }, []);
+
+  const loadSettings = async () => {
+    try {
+      const res = await axios.get('/revenue/settings');
+      if (res.data.hurdle_rates && Object.keys(res.data.hurdle_rates).length > 0) setHurdleRates(res.data.hurdle_rates);
+      if (res.data.day_pricing && Object.keys(res.data.day_pricing).length > 0) setDayPricing(res.data.day_pricing);
+      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length || prev.total_rooms }));
+    } catch {
+      /* use defaults */
+    }
+  };
 
   const updateHurdle = (rt, field, value) => {
     setHurdleRates(prev => ({ ...prev, [rt]: { ...prev[rt], [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
@@ -47,14 +54,28 @@ const RevenueControls = ({ rooms = [] }) => {
     }));
   };
 
-  const saveHurdleRates = () => { toast.success('Engel fiyatlar kaydedildi'); };
-  const saveDayPricing = () => { toast.success('Gun bazli fiyatlandirma kaydedildi'); };
+  const saveAll = async (section) => {
+    setSaving(true);
+    try {
+      await axios.put('/revenue/settings', { hurdle_rates: hurdleRates, day_pricing: dayPricing, overbooking });
+      toast.success(section === 'hurdle' ? 'Engel fiyatlar kaydedildi' : section === 'daypricing' ? 'Gun bazli fiyatlandirma kaydedildi' : 'Overbooking ayarlari kaydedildi');
+    } catch {
+      toast.error('Ayarlar kaydedilemedi');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const processWalk = () => {
+  const processWalk = async () => {
     if (!walkData.guest_name) return;
-    toast.success(`${walkData.guest_name} walk-out islemi tamamlandi`);
-    setShowWalkDialog(false);
-    setWalkData({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
+    try {
+      await axios.post('/revenue/walk-out', walkData);
+      toast.success(`${walkData.guest_name} walk-out islemi tamamlandi`);
+      setShowWalkDialog(false);
+      setWalkData({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
+    } catch {
+      toast.error('Walk-out islemi basarisiz');
+    }
   };
 
   return (
@@ -77,7 +98,7 @@ const RevenueControls = ({ rooms = [] }) => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Minimum Satis Fiyatlari (Hurdle Rate / BAR)</CardTitle>
-                <Button size="sm" onClick={saveHurdleRates}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
+                <Button size="sm" onClick={() => saveAll('hurdle')} disabled={saving}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -113,7 +134,7 @@ const RevenueControls = ({ rooms = [] }) => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Gun Bazli Fiyatlandirma Matrisi</CardTitle>
-                <Button size="sm" onClick={saveDayPricing}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
+                <Button size="sm" onClick={() => saveAll('daypricing')} disabled={saving}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -145,7 +166,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   {DAYS.map(day => (
                     <div key={day} className="text-center">
                       <div className="text-xs text-muted-foreground">{day.substring(0,3)}</div>
-                      <Input type="number" min="1" max="14" className="w-12 h-7 text-xs" defaultValue="1" />
+                      <Input type="number" min="1" max="14" className="w-12 h-7 text-xs" value={dayPricing[ROOM_TYPES[0]]?.[day]?.min_stay || 1} onChange={e => { ROOM_TYPES.forEach(rt => updateDayPrice(rt, day, 'min_stay', e.target.value)); }} />
                     </div>
                   ))}
                 </div>
@@ -186,6 +207,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <Label>Tazminat Tutari (TL)</Label>
                   <Input type="number" value={overbooking.walk_amount} onChange={e => setOverbooking(p => ({ ...p, walk_amount: parseInt(e.target.value) || 0 }))} />
                 </div>
+                <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving}><Save className="h-4 w-4 mr-1" /> Ayarlari Kaydet</Button>
               </CardContent>
             </Card>
 
@@ -193,7 +215,7 @@ const RevenueControls = ({ rooms = [] }) => {
               <CardHeader className="pb-2"><CardTitle className="text-sm">Walk-Out Islemi</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="p-4 bg-muted rounded-lg text-center">
-                  <div className="text-3xl font-bold">{overbooking.current_overbooked}</div>
+                  <div className="text-3xl font-bold">{overbooking.current_overbooked || 0}</div>
                   <div className="text-sm text-muted-foreground">Mevcut Overbook</div>
                   <div className="text-xs mt-1">Kapasite: {overbooking.total_rooms} + {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} = {overbooking.total_rooms + Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)}</div>
                 </div>

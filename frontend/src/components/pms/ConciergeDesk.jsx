@@ -9,10 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  MapPin, Car, Utensils, Ticket, Clock, Phone, Plus, CheckCircle,
-  AlertCircle, Package, Key, Plane, Coffee, Bell, Search
+  MapPin, Car, Utensils, Ticket, Clock, Plus, CheckCircle,
+  AlertCircle, Package, Key, Coffee, Bell, Search
 } from 'lucide-react';
 
 const REQUEST_TYPES = [
@@ -32,6 +31,7 @@ const STATUS_COLORS = {
   pending: 'bg-yellow-100 text-yellow-800',
   in_progress: 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
+  confirmed: 'bg-emerald-100 text-emerald-800',
   cancelled: 'bg-red-100 text-red-800',
 };
 
@@ -40,6 +40,7 @@ const ConciergeDesk = () => {
   const [showNew, setShowNew] = useState(false);
   const [activeType, setActiveType] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(false);
   const [newReq, setNewReq] = useState({
     type: '', room_number: '', guest_name: '', details: '',
     date: '', time: '', pax: '', notes: '', priority: 'normal'
@@ -48,38 +49,38 @@ const ConciergeDesk = () => {
   useEffect(() => { loadRequests(); }, []);
 
   const loadRequests = async () => {
+    setLoading(true);
     try {
       const res = await axios.get('/concierge/requests');
       setRequests(res.data.requests || []);
-    } catch {
-      setRequests([
-        { id: '1', type: 'restaurant', room_number: '301', guest_name: 'Ahmet Bey', details: 'Nusr-Et Etiler, 20:00, 4 kisi', date: new Date().toISOString().split('T')[0], time: '20:00', pax: 4, status: 'confirmed', priority: 'vip', created_at: new Date().toISOString() },
-        { id: '2', type: 'transfer', room_number: '505', guest_name: 'Mr. Smith', details: 'IST Havalimani, Mercedes VIP', date: new Date().toISOString().split('T')[0], time: '14:00', pax: 2, status: 'pending', priority: 'high', created_at: new Date().toISOString() },
-        { id: '3', type: 'wakeup', room_number: '202', guest_name: 'Fatma Hanim', details: '07:00 uyandirma', date: new Date(Date.now() + 86400000).toISOString().split('T')[0], time: '07:00', pax: 1, status: 'pending', priority: 'normal', created_at: new Date().toISOString() },
-        { id: '4', type: 'parcel', room_number: '101', guest_name: 'Mehmet Bey', details: 'Amazon kargosu teslim alindi', date: new Date().toISOString().split('T')[0], time: '11:30', pax: 1, status: 'completed', priority: 'normal', created_at: new Date().toISOString() },
-        { id: '5', type: 'valet', room_number: '401', guest_name: 'Ali Bey', details: '34 ABC 123 - BMW X5 Siyah', date: new Date().toISOString().split('T')[0], time: '09:00', pax: 1, status: 'in_progress', priority: 'normal', created_at: new Date().toISOString() },
-        { id: '6', type: 'deposit_box', room_number: '603', guest_name: 'Mrs. Johnson', details: 'Kasa #12 - Mucevher', date: new Date().toISOString().split('T')[0], time: '10:00', pax: 1, status: 'completed', priority: 'normal', created_at: new Date().toISOString() },
-        { id: '7', type: 'tour', room_number: '302', guest_name: 'Tanaka-san', details: 'Kapadokya Balon Turu, 2 kisi', date: new Date(Date.now() + 172800000).toISOString().split('T')[0], time: '05:00', pax: 2, status: 'confirmed', priority: 'high', created_at: new Date().toISOString() },
-        { id: '8', type: 'spa', room_number: '701', guest_name: 'Elena Petrova', details: 'Bali Masaji 60dk + Hamam', date: new Date().toISOString().split('T')[0], time: '15:00', pax: 1, status: 'confirmed', priority: 'normal', created_at: new Date().toISOString() },
-      ]);
+    } catch (err) {
+      toast.error('Concierge talepleri yuklenemedi');
+    } finally {
+      setLoading(false);
     }
   };
 
   const createRequest = async () => {
     if (!newReq.type || !newReq.room_number) return;
     try {
-      await axios.post('/concierge/requests', newReq);
+      const res = await axios.post('/concierge/requests', newReq);
+      setRequests(prev => [res.data, ...prev]);
       toast.success('Talep olusturuldu');
-    } catch { /* fallback */ }
-    const typeInfo = REQUEST_TYPES.find(t => t.value === newReq.type);
-    setRequests(prev => [{ id: Date.now().toString(), ...newReq, status: 'pending', created_at: new Date().toISOString() }, ...prev]);
-    setNewReq({ type: '', room_number: '', guest_name: '', details: '', date: '', time: '', pax: '', notes: '', priority: 'normal' });
-    setShowNew(false);
+      setNewReq({ type: '', room_number: '', guest_name: '', details: '', date: '', time: '', pax: '', notes: '', priority: 'normal' });
+      setShowNew(false);
+    } catch {
+      toast.error('Talep olusturulamadi');
+    }
   };
 
-  const updateStatus = (id, status) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    toast.success(`Talep durumu: ${status === 'completed' ? 'Tamamlandi' : status === 'in_progress' ? 'Islemde' : status === 'cancelled' ? 'Iptal' : status}`);
+  const updateStatus = async (id, status) => {
+    try {
+      await axios.patch(`/concierge/requests/${id}`, { status });
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+      toast.success(`Talep durumu: ${status === 'completed' ? 'Tamamlandi' : status === 'in_progress' ? 'Islemde' : status === 'cancelled' ? 'Iptal' : status}`);
+    } catch {
+      toast.error('Durum guncellenemedi');
+    }
   };
 
   const filtered = requests.filter(r => {
@@ -146,6 +147,8 @@ const ConciergeDesk = () => {
       </div>
 
       <div className="space-y-2">
+        {loading && <p className="text-center text-muted-foreground py-4">Yukleniyor...</p>}
+        {!loading && filtered.length === 0 && <p className="text-center text-muted-foreground py-8">Talep bulunamadi</p>}
         {filtered.map(req => {
           const typeInfo = REQUEST_TYPES.find(t => t.value === req.type);
           const Icon = typeInfo?.icon || AlertCircle;

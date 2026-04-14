@@ -1,17 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  Heart, Bed, Thermometer, Newspaper, Building, AlertTriangle,
-  Coffee, Wine, Cigarette, Baby, Accessibility, Save, Gift, Cake, Star, Bell
+  Heart, Bed, Thermometer, AlertTriangle, Coffee, Save, Gift, Cake, Star, Bell
 } from 'lucide-react';
 
 const PREFERENCE_CATEGORIES = {
@@ -65,10 +62,12 @@ const GuestPreferences = ({ guest, onSave }) => {
   const [birthday, setBirthday] = useState(guest?.birthday || '');
   const [anniversary, setAnniversary] = useState(guest?.anniversary || '');
   const [vipLevel, setVipLevel] = useState(guest?.vip_level || '');
+  const [saving, setSaving] = useState(false);
 
   const updatePref = (key, value) => setPrefs(prev => ({ ...prev, [key]: value }));
 
   const savePreferences = async () => {
+    setSaving(true);
     try {
       await axios.patch(`/pms/guests/${guest?.id}/preferences`, {
         preferences: prefs,
@@ -78,8 +77,9 @@ const GuestPreferences = ({ guest, onSave }) => {
       toast.success('Misafir tercihleri kaydedildi');
       onSave?.({ ...prefs, preference_notes: notes, birthday, anniversary, vip_level: vipLevel });
     } catch {
-      toast.success('Misafir tercihleri kaydedildi');
-      onSave?.({ ...prefs, preference_notes: notes, birthday, anniversary, vip_level: vipLevel });
+      toast.error('Tercihler kaydedilemedi');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -89,7 +89,7 @@ const GuestPreferences = ({ guest, onSave }) => {
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <Heart className="h-5 w-5 text-red-500" /> Misafir Tercihleri - {guest?.name}
         </h3>
-        <Button onClick={savePreferences}><Save className="h-4 w-4 mr-1" /> Kaydet</Button>
+        <Button onClick={savePreferences} disabled={saving}><Save className="h-4 w-4 mr-1" /> Kaydet</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

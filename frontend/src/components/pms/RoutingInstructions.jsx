@@ -33,6 +33,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
   const [rules, setRules] = useState(booking?.routing_rules || []);
   const [showAdd, setShowAdd] = useState(false);
   const [newRule, setNewRule] = useState({ category: '', target: '', limit: '', notes: '' });
+  const [saving, setSaving] = useState(false);
 
   const addRule = () => {
     if (!newRule.category || !newRule.target) return;
@@ -55,13 +56,15 @@ const RoutingInstructions = ({ booking, onSave }) => {
   const removeRule = (id) => setRules(prev => prev.filter(r => r.id !== id));
 
   const saveRules = async () => {
+    setSaving(true);
     try {
       await axios.post(`/frontdesk/booking/${booking?.id}/routing-rules`, { rules });
       toast.success('Yonlendirme kurallari kaydedildi');
       onSave?.(rules);
     } catch {
-      toast.success('Yonlendirme kurallari kaydedildi');
-      onSave?.(rules);
+      toast.error('Kurallar kaydedilemedi');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -76,7 +79,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
               <Plus className="h-3 w-3 mr-1" /> Kural Ekle
             </Button>
-            <Button size="sm" onClick={saveRules} disabled={rules.length === 0}>Kaydet</Button>
+            <Button size="sm" onClick={saveRules} disabled={rules.length === 0 || saving}>Kaydet</Button>
           </div>
         </div>
       </CardHeader>

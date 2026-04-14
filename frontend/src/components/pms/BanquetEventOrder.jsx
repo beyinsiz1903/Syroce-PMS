@@ -11,8 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Calendar, Plus, FileText, Users, Clock, Utensils, Projector, Music,
-  Printer, CheckCircle, AlertCircle, Edit, Trash2, ChevronRight
+  Calendar, Plus, Users, Clock, Printer, CheckCircle, AlertCircle
 } from 'lucide-react';
 
 const SETUP_TYPES = [
@@ -41,58 +40,74 @@ const AV_EQUIPMENT = [
   'Simultane Ceviri', 'Kayit Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
 ];
 
+const EMPTY_EVENT = {
+  event_name: '', company: '', contact_name: '', contact_phone: '', contact_email: '',
+  room_name: '', date: '', start_time: '', end_time: '',
+  setup_type: '', attendees: '', guaranteed_pax: '', menu_type: '',
+  menu_details: '', av_equipment: [], special_requests: '', decorations: '',
+  price_per_person: '', total_price: '', deposit_amount: '', status: 'tentative',
+  billing_instructions: '', notes: ''
+};
+
 const BanquetEventOrder = () => {
   const [events, setEvents] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [viewMode, setViewMode] = useState('list');
-  const [newEvent, setNewEvent] = useState({
-    event_name: '', company: '', contact_name: '', contact_phone: '', contact_email: '',
-    room_name: '', date: '', start_time: '', end_time: '',
-    setup_type: '', attendees: '', guaranteed_pax: '', menu_type: '',
-    menu_details: '', av_equipment: [], special_requests: '', decorations: '',
-    price_per_person: '', total_price: '', deposit_amount: '', status: 'tentative',
-    billing_instructions: '', notes: ''
-  });
+  const [loading, setLoading] = useState(false);
+  const [newEvent, setNewEvent] = useState({ ...EMPTY_EVENT });
 
   useEffect(() => { loadEvents(); }, []);
 
   const loadEvents = async () => {
+    setLoading(true);
     try {
       const res = await axios.get('/banquet/events');
       setEvents(res.data.events || []);
     } catch {
-      const today = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      const nextWeek = new Date(Date.now() + 604800000).toISOString().split('T')[0];
-      setEvents([
-        { id: '1', event_name: 'ABC Holding Yillik Toplanti', company: 'ABC Holding A.S.', contact_name: 'Murat Ozturk', contact_phone: '0532 111 2233', room_name: 'Toplanti Salonu A', date: today, start_time: '09:00', end_time: '17:00', setup_type: 'u_shape', attendees: 40, guaranteed_pax: 35, menu_type: 'lunch', menu_details: 'Ogle yemegi + 2 kahve molasi', av_equipment: ['Projektor', 'Ses Sistemi', 'Mikrofon (Kablosuz)'], price_per_person: 350, total_price: 14000, deposit_amount: 7000, status: 'confirmed', billing_instructions: 'Fatura ABC Holding adina kesilecek' },
-        { id: '2', event_name: 'Yilmaz - Kaya Dugun', company: 'Ozel', contact_name: 'Ayse Yilmaz', contact_phone: '0544 555 6677', room_name: 'Balo Salonu', date: tomorrow, start_time: '19:00', end_time: '02:00', setup_type: 'banquet', attendees: 300, guaranteed_pax: 280, menu_type: 'gala', menu_details: '5 cesit meze + ana yemek + tatli + meyve + icecek', av_equipment: ['Ses Sistemi', 'Isik Sistemi', 'DJ Masasi', 'Sahne'], special_requests: 'Canli orkestra alani, cicek dekorasyon', price_per_person: 800, total_price: 240000, deposit_amount: 120000, status: 'confirmed', decorations: 'Beyaz-gold tema, 30 masa cicegi, gelin yolu' },
-        { id: '3', event_name: 'XYZ Tech Lansman', company: 'XYZ Teknoloji', contact_name: 'Can Demir', contact_phone: '0555 999 0011', room_name: 'Toplanti Salonu B', date: nextWeek, start_time: '14:00', end_time: '18:00', setup_type: 'theater', attendees: 80, guaranteed_pax: 60, menu_type: 'cocktail', menu_details: 'Kokteyl resepsiyon', av_equipment: ['LED Ekran', 'Ses Sistemi', 'Mikrofon (Kablosuz)', 'Video Konferans', 'Kayit Sistemi'], price_per_person: 250, total_price: 20000, deposit_amount: 0, status: 'tentative' },
-      ]);
+      toast.error('Etkinlikler yuklenemedi');
+    } finally {
+      setLoading(false);
     }
   };
 
   const createEvent = async () => {
     if (!newEvent.event_name || !newEvent.date) return;
-    const created = { id: Date.now().toString(), ...newEvent, attendees: parseInt(newEvent.attendees) || 0, guaranteed_pax: parseInt(newEvent.guaranteed_pax) || 0, price_per_person: parseFloat(newEvent.price_per_person) || 0, total_price: parseFloat(newEvent.total_price) || 0, deposit_amount: parseFloat(newEvent.deposit_amount) || 0 };
-    setEvents(prev => [created, ...prev]);
-    setNewEvent({ event_name: '', company: '', contact_name: '', contact_phone: '', contact_email: '', room_name: '', date: '', start_time: '', end_time: '', setup_type: '', attendees: '', guaranteed_pax: '', menu_type: '', menu_details: '', av_equipment: [], special_requests: '', decorations: '', price_per_person: '', total_price: '', deposit_amount: '', status: 'tentative', billing_instructions: '', notes: '' });
-    setShowNew(false);
-    toast.success('Etkinlik olusturuldu');
+    try {
+      const payload = {
+        ...newEvent,
+        attendees: parseInt(newEvent.attendees) || 0,
+        guaranteed_pax: parseInt(newEvent.guaranteed_pax) || 0,
+        price_per_person: parseFloat(newEvent.price_per_person) || 0,
+        total_price: parseFloat(newEvent.total_price) || 0,
+        deposit_amount: parseFloat(newEvent.deposit_amount) || 0,
+      };
+      const res = await axios.post('/banquet/events', payload);
+      setEvents(prev => [res.data, ...prev]);
+      setNewEvent({ ...EMPTY_EVENT });
+      setShowNew(false);
+      toast.success('Etkinlik olusturuldu');
+    } catch {
+      toast.error('Etkinlik olusturulamadi');
+    }
   };
 
   const printBEO = (event) => {
+    const esc = (str) => {
+      const div = document.createElement('div');
+      div.textContent = String(str ?? '');
+      return div.innerHTML;
+    };
     const w = window.open('', '_blank');
-    w.document.write(`<html><head><title>BEO - ${event.event_name}</title><style>body{font-family:Arial;padding:40px;font-size:13px}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:15px 0}td,th{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}.header{display:flex;justify-content:space-between;margin-bottom:20px}.section{margin:20px 0}.label{font-weight:bold;color:#555;min-width:150px;display:inline-block}@media print{body{padding:20px}}</style></head><body>`);
+    w.document.write(`<html><head><title>BEO - ${esc(event.event_name)}</title><style>body{font-family:Arial;padding:40px;font-size:13px}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:15px 0}td,th{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}.header{display:flex;justify-content:space-between;margin-bottom:20px}.section{margin:20px 0}.label{font-weight:bold;color:#555;min-width:150px;display:inline-block}@media print{body{padding:20px}}</style></head><body>`);
     w.document.write(`<h1>BANQUET EVENT ORDER (BEO)</h1>`);
-    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${event.event_name}<br><span class="label">Firma:</span> ${event.company || '-'}<br><span class="label">Iletisim:</span> ${event.contact_name} - ${event.contact_phone}</div><div><span class="label">Tarih:</span> ${event.date}<br><span class="label">Saat:</span> ${event.start_time} - ${event.end_time}<br><span class="label">Salon:</span> ${event.room_name}</div></div>`);
-    w.document.write(`<div class="section"><table><tr><th>Duzen</th><th>Katilimci</th><th>Garanti</th><th>Menu</th><th>Kisi Basi</th><th>Toplam</th></tr><tr><td>${SETUP_TYPES.find(s=>s.value===event.setup_type)?.label || event.setup_type}</td><td>${event.attendees}</td><td>${event.guaranteed_pax}</td><td>${MENU_TYPES.find(m=>m.value===event.menu_type)?.label || event.menu_type}</td><td>${event.price_per_person} TL</td><td>${event.total_price} TL</td></tr></table></div>`);
-    if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${event.menu_details}</p></div>`);
-    if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${event.av_equipment.join(', ')}</p></div>`);
-    if (event.decorations) w.document.write(`<div class="section"><span class="label">Dekorasyon:</span><p>${event.decorations}</p></div>`);
-    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Ozel Istekler:</span><p>${event.special_requests}</p></div>`);
-    if (event.billing_instructions) w.document.write(`<div class="section"><span class="label">Faturalama:</span><p>${event.billing_instructions}</p></div>`);
+    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)}<br><span class="label">Firma:</span> ${esc(event.company || '-')}<br><span class="label">Iletisim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
+    w.document.write(`<div class="section"><table><tr><th>Duzen</th><th>Katilimci</th><th>Garanti</th><th>Menu</th><th>Kisi Basi</th><th>Toplam</th></tr><tr><td>${esc(SETUP_TYPES.find(s=>s.value===event.setup_type)?.label || event.setup_type)}</td><td>${esc(event.attendees)}</td><td>${esc(event.guaranteed_pax)}</td><td>${esc(MENU_TYPES.find(m=>m.value===event.menu_type)?.label || event.menu_type)}</td><td>${esc(event.price_per_person)} TL</td><td>${esc(event.total_price)} TL</td></tr></table></div>`);
+    if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${esc(event.menu_details)}</p></div>`);
+    if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${esc(event.av_equipment.join(', '))}</p></div>`);
+    if (event.decorations) w.document.write(`<div class="section"><span class="label">Dekorasyon:</span><p>${esc(event.decorations)}</p></div>`);
+    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Ozel Istekler:</span><p>${esc(event.special_requests)}</p></div>`);
+    if (event.billing_instructions) w.document.write(`<div class="section"><span class="label">Faturalama:</span><p>${esc(event.billing_instructions)}</p></div>`);
     w.document.write(`<div style="margin-top:40px;display:flex;justify-content:space-between"><div>Satis Md: _______________</div><div>Mutfak Sefi: _______________</div><div>Banket Md: _______________</div></div>`);
     w.document.write('</body></html>');
     w.document.close();
@@ -147,6 +162,8 @@ const BanquetEventOrder = () => {
       </div>
 
       <div className="space-y-2">
+        {loading && <p className="text-center text-muted-foreground py-4">Yukleniyor...</p>}
+        {!loading && events.length === 0 && <p className="text-center text-muted-foreground py-8">Henuz etkinlik yok</p>}
         {events.map(event => (
           <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedEvent(event)}>
             <CardContent className="p-4">

@@ -1,31 +1,28 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Shield, Send, CheckCircle, AlertTriangle, Clock, Users,
-  FileText, Download, RefreshCw, Search, Eye
+  Shield, Send, CheckCircle, AlertTriangle, Clock,
+  Download, Search
 } from 'lucide-react';
 
 const KBSNotification = ({ bookings = [], guests = [] }) => {
-  const [notifications, setNotifications] = useState([]);
   const [pendingGuests, setPendingGuests] = useState([]);
   const [sentHistory, setSentHistory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showDetail, setShowDetail] = useState(null);
   const [activeTab, setActiveTab] = useState('pending');
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     const checkedIn = bookings.filter(b => b.status === 'checked_in');
     const pending = checkedIn.map(b => ({
       id: b.id,
+      guest_id: b.guest_id || b.guestId || b.id,
       guest_name: b.guest_name || b.guestName || 'Bilinmiyor',
       room_number: b.room_number || b.roomNumber || '-',
       check_in: b.check_in || b.checkIn,
@@ -42,34 +39,86 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
   }, [bookings]);
 
   const sendToKBS = async (guest) => {
+    setSending(true);
     try {
-      await axios.post('/kbs/send', { booking_id: guest.id });
-      toast.success(`${guest.guest_name} - KBS bildirimi gonderildi`);
-    } catch { /* fallback */ }
-    setPendingGuests(prev => prev.filter(p => p.id !== guest.id));
-    setSentHistory(prev => [{ ...guest, kbs_status: 'sent', kbs_sent_at: new Date().toISOString() }, ...prev]);
+      const res = await axios.post('/kbs/send', { booking_id: guest.id, guest_data: { guest_name: guest.guest_name, nationality: guest.nationality, id_number: guest.id_number } });
+      toast.success(`${guest.guest_name} - KBS bildirimi gonderildi (Ref: ${res.data.kbs_reference})`);
+      setPendingGuests(prev => prev.filter(p => p.id !== guest.id));
+      setSentHistory(prev => [{ ...guest, kbs_status: 'sent', kbs_sent_at: res.data.sent_at, kbs_reference: res.data.kbs_reference }, ...prev]);
+    } catch {
+      toast.error('KBS bildirimi gonderilemedi');
+    } finally {
+      setSending(false);
+    }
   };
 
   const sendAllToKBS = async () => {
     const toSend = pendingGuests.filter(p => p.id_number);
-    if (toSend.length === 0) { toast.error('Gonderilecek gecerli kayit yok'); return; }
+    if (toSend.length === 0) { toast.error('Gonderilecek gecerli kayit yok (kimlik no eksik)'); return; }
+    setSending(true);
     try {
-      await axios.post('/kbs/send-batch', { booking_ids: toSend.map(p => p.id) });
-      toast.success(`${toSend.length} misafir bildirimi gonderildi`);
-    } catch { /* fallback */ }
-    const sentIds = new Set(toSend.map(p => p.id));
-    setPendingGuests(prev => prev.filter(p => !sentIds.has(p.id)));
-    setSentHistory(prev => [...toSend.map(g => ({ ...g, kbs_status: 'sent', kbs_sent_at: new Date().toISOString() })), ...prev]);
+      const res = await axios.post('/kbs/send-batch', { booking_ids: toSend.map(p => p.id) });
+      toast.success(`${res.data.count} misafir bildirimi gonderildi`);
+      const sentIds = new Set(toSend.map(p => p.id));
+      const sentResults = res.data.results || [];
+      setPendingGuests(prev => prev.filter(p => !sentIds.has(p.id)));
+      setSentHistory(prev => [
+        ...toSend.map(g => {
+          const r = sentResults.find(sr => sr.booking_id === g.id);
+          return { ...g, kbs_status: 'sent', kbs_sent_at: res.data.sent_at, kbs_reference: r?.kbs_reference || '' };
+        }),
+        ...prev
+      ]);
+    } catch {
+      toast.error('Toplu gonderim basarisiz');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const downloadXML = () => {
+    const xmlLines = ['<?xml version="1.0" encoding="UTF-8"?>', '<KBSBildirimler>'];
+    pendingGuests.filter(g => g.id_number).forEach(g => {
+      xmlLines.push(`  <Misafir>`);
+      xmlLines.push(`    <AdSoyad>${g.guest_name}</AdSoyad>`);
+      xmlLines.push(`    <KimlikNo>${g.id_number}</KimlikNo>`);
+      xmlLines.push(`    <Uyruk>${g.nationality}</Uyruk>`);
+      xmlLines.push(`    <OdaNo>${g.room_number}</OdaNo>`);
+      xmlLines.push(`    <GirisTarihi>${g.check_in || ''}</GirisTarihi>`);
+      xmlLines.push(`    <CikisTarihi>${g.check_out || ''}</CikisTarihi>`);
+      xmlLines.push(`  </Misafir>`);
+    });
+    xmlLines.push('</KBSBildirimler>');
+    const blob = new Blob([xmlLines.join('\n')], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kbs_bildirim_${new Date().toISOString().split('T')[0]}.xml`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('XML dosyasi indirildi');
+  };
+
+  const updateGuestInfo = async (guest) => {
+    const idNumber = prompt('Kimlik Numarasi:', guest.id_number || '');
+    if (idNumber === null) return;
+    const birthDate = prompt('Dogum Tarihi (YYYY-MM-DD):', guest.birth_date || '');
+    if (birthDate === null) return;
+    try {
+      await axios.patch(`/pms/guests/${guest.guest_id}/preferences`, { id_number: idNumber, birth_date: birthDate });
+      setPendingGuests(prev => prev.map(p => p.id === guest.id ? { ...p, id_number: idNumber, birth_date: birthDate } : p));
+      toast.success('Bilgiler guncellendi');
+    } catch {
+      toast.error('Bilgi guncellenemedi');
+    }
   };
 
   const filteredPending = pendingGuests.filter(g =>
     !searchTerm || g.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || g.room_number?.includes(searchTerm)
   );
-
   const filteredSent = sentHistory.filter(g =>
     !searchTerm || g.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || g.room_number?.includes(searchTerm)
   );
-
   const missingData = pendingGuests.filter(g => !g.id_number || !g.birth_date);
 
   return (
@@ -79,38 +128,18 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
           <Shield className="h-5 w-5" /> KBS / GIKS Bildirim Sistemi
         </h2>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1" /> XML Indir</Button>
-          <Button onClick={sendAllToKBS} disabled={pendingGuests.length === 0}>
+          <Button variant="outline" size="sm" onClick={downloadXML} disabled={pendingGuests.filter(p => p.id_number).length === 0}><Download className="h-4 w-4 mr-1" /> XML Indir</Button>
+          <Button onClick={sendAllToKBS} disabled={pendingGuests.length === 0 || sending}>
             <Send className="h-4 w-4 mr-1" /> Toplu Gonder ({pendingGuests.filter(p => p.id_number).length})
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <Card className="border-yellow-200">
-          <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold text-yellow-600">{pendingGuests.length}</div>
-            <div className="text-xs text-muted-foreground">Bekleyen Bildirim</div>
-          </CardContent>
-        </Card>
-        <Card className="border-green-200">
-          <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold text-green-600">{sentHistory.length}</div>
-            <div className="text-xs text-muted-foreground">Gonderilen</div>
-          </CardContent>
-        </Card>
-        <Card className="border-red-200">
-          <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold text-red-600">{missingData.length}</div>
-            <div className="text-xs text-muted-foreground">Eksik Bilgi</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold">{pendingGuests.filter(g => g.nationality !== 'TC').length}</div>
-            <div className="text-xs text-muted-foreground">Yabanci Uyruk</div>
-          </CardContent>
-        </Card>
+        <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{pendingGuests.length}</div><div className="text-xs text-muted-foreground">Bekleyen Bildirim</div></CardContent></Card>
+        <Card className="border-green-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{sentHistory.length}</div><div className="text-xs text-muted-foreground">Gonderilen</div></CardContent></Card>
+        <Card className="border-red-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-red-600">{missingData.length}</div><div className="text-xs text-muted-foreground">Eksik Bilgi</div></CardContent></Card>
+        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{pendingGuests.filter(g => g.nationality !== 'TC').length}</div><div className="text-xs text-muted-foreground">Yabanci Uyruk</div></CardContent></Card>
       </div>
 
       <div className="relative">
@@ -141,7 +170,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     Cikis: {guest.check_out ? new Date(guest.check_out).toLocaleDateString('tr-TR') : '-'}
                   </div>
                 </div>
-                <Button size="sm" onClick={() => sendToKBS(guest)} disabled={!guest.id_number}>
+                <Button size="sm" onClick={() => sendToKBS(guest)} disabled={!guest.id_number || sending}>
                   <Send className="h-3 w-3 mr-1" /> Gonder
                 </Button>
               </CardContent>
@@ -159,6 +188,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     <CheckCircle className="h-4 w-4 text-green-500" />
                     <span className="font-medium">{guest.guest_name}</span>
                     <Badge variant="outline">Oda {guest.room_number}</Badge>
+                    {guest.kbs_reference && <Badge variant="secondary">Ref: {guest.kbs_reference}</Badge>}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
                     Gonderilme: {guest.kbs_sent_at ? new Date(guest.kbs_sent_at).toLocaleString('tr-TR') : '-'}
@@ -184,7 +214,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     Eksik: {!guest.id_number ? 'Kimlik No' : ''} {!guest.birth_date ? 'Dogum Tarihi' : ''}
                   </div>
                 </div>
-                <Button size="sm" variant="outline">Bilgi Guncelle</Button>
+                <Button size="sm" variant="outline" onClick={() => updateGuestInfo(guest)}>Bilgi Guncelle</Button>
               </CardContent>
             </Card>
           ))}
