@@ -405,6 +405,7 @@ All tabs use Lucide icons and Turkish labels:
 - **`backend/domains/pms/cashier_router.py`** — Fixed broken import (`from db import get_db` → `from core.database import db`). This router was not loading at all, causing 404s for: `/api/cashier/*`, `/api/meeting-rooms/*`, `/api/laundry/*` endpoints.
 - **`backend/domains/pms/operations_router.py`** — Same import fix. Was blocking: `/api/concierge/*`, `/api/banquet/*`, `/api/kbs/*`, `/api/kvkk/*`, `/api/revenue/settings`, guest preferences, room features, complimentary approvals, day-use bookings, loyalty tiers, and routing rules endpoints.
 - **`backend/domains/pms/housekeeping_router.py`** — Added missing `from domains.guest.schemas import LinenInventoryItem` import. The linen-inventory endpoint was returning 500 (NameError) when no inventory data existed and it tried to create defaults.
+- **`backend/routers/reports.py`** — Fixed `get_daily_flash_report_data is not defined` error in PDF and email endpoints. Both now call the existing `get_daily_flash_report()` function with correct response field names (`occupied_rooms`, `total_rooms`, `occupancy_rate` instead of `occupied`, `total`, `percentage`).
 
 ## Sprint 6 Changes (B2B Analytics Dashboard)
 
