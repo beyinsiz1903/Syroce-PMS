@@ -99,25 +99,28 @@ Two URL patterns coexist in frontend code:
 
 ### OTA Room Type Mapping (Real Data)
 - **HotelRunner** has 3 room types: Standart Oda (`HR:1271568`), Deluxe Oda (`HR:1271569`), Corner Süit (`HR:1271567`)
-- **Exely** has 3 room types: Standart, Deluxe, Suite
+- **Exely** has 3 room types: Standart (`5001574`), Deluxe (`5001575`), Suite (`5001576`)
+- **Exely** has 5 rate plans: Base rate USD (`10003870`), Dynamic Rate USD (`10003541`), Non-ref rate USD (`10003869`), Mixed rate USD (`10003186`), Best daily rate (`10003182`)
 - PMS has 6 room types: Standard (STD), Deluxe (DLX), Superior (SUP), Suite (SUI), Junior Suite (JSU), Family (FAM)
 - Only STD, DLX, SUI are mapped to OTAs; SUP, JSU, FAM are PMS-only
-- Seed data in `auto_seed.py` matches real OTA room types (3 per provider, not 6)
+- Seed data in `auto_seed.py` matches real OTA room types and rate plans
 - `hotelrunner_connections.cached_rooms` stores PMS code → HR `inv_code` mapping (e.g. STD → HR:1271568)
 - Push converts PMS codes to HR `inv_code` via `cached_rooms[].pms_code` → `cached_rooms[].inv_code`
 
 ### Connection Modes (Live vs Sandbox)
 - `hotelrunner_connections.environment`: `live` for real API, `sandbox` for mock
-- `exely_connections.mode`: `live` for real SOAP API, `sandbox` for mock
+- `exely_connections.mode`: `sandbox` for test SOAP API
 - Push credential fallback: Exely push reads from `exely_connections` doc when vault is empty
-- Demo Exely credentials: `syroce_demo` / `demo_sandbox_2026` / hotel_code `501694` — **rejected by real Exely API (401)**; need real credentials
-- Room types and rate plans pre-seeded in `exely_connections` document (3 room types, 3 rate plans)
+- Exely credentials: `PMSConnect.501694` / hotel_code `501694` — test environment via HopenAPI PMSConnect
+- Exely endpoint: `https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode=501694`
+- Exely rates are in **USD** (not TRY)
 
 ### ARI Push Status
-- **HotelRunner**: ✅ Working — rate, availability, restrictions push successfully via real API (`app.hotelrunner.com`)
-- **Exely**: ❌ 401 Unauthorized — demo credentials rejected by real Exely SOAP API; needs valid Exely credentials
+- **HotelRunner**: ✅ Working — rate, availability, restrictions push successfully via real API (`app.hotelrunner.com`), parallelized
+- **Exely**: ✅ Working — rate + availability push successfully via HopenAPI PMSConnect SOAP API (test environment)
 - `bulk-grid-update` accepts optional `provider` field to force target provider (otherwise auto-detects)
 - Frontend `UnifiedRateManager.jsx` sends detected `provider` in bulk update requests
+- Both providers push in parallel (asyncio.gather) for fast execution
 
 ### Push Providers Endpoint
 - `/api/channel-manager/unified-rate-manager/push-providers` lists ALL active providers independently

@@ -219,6 +219,18 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
         return envelope
 
     body = envelope["body"]
+
+    errors_el = body.find(_ns("Errors"))
+    if errors_el is not None:
+        error_msgs = []
+        for err in errors_el.findall(_ns("Error")):
+            code = _attr(err, "Code", "")
+            msg = _text(err, "Unknown error")
+            error_msgs.append(f"OTA Error [{code}]: {msg}")
+        if error_msgs:
+            logger.warning("OTA_HotelAvailRS returned errors: %s", "; ".join(error_msgs))
+            return {"success": False, "error": "; ".join(error_msgs), "room_types": [], "rate_plans": []}
+
     room_types = []
     rate_plans = []
 
