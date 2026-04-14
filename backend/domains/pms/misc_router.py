@@ -44,16 +44,183 @@ class PingTestRequest(BaseModel):
 @router.get("/service/complaints")
 async def get_complaints(
     status: str | None = None,
+    category: str | None = None,
+    severity: str | None = None,
+    room_number: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
-    """Şikayetleri listele"""
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status
+    if category:
+        query['category'] = category
+    if severity:
+        query['severity'] = severity
+    if room_number:
+        query['room_number'] = room_number
 
-    complaints = await db.service_complaints.find(query, {'_id': 0}).sort('created_at', -1).to_list(100)
+    complaints = await db.service_complaints.find(query, {'_id': 0}).sort('created_at', -1).to_list(200)
 
-    return {'complaints': complaints, 'total': len(complaints)}
+    stats = {
+        "total": len(complaints),
+        "open": sum(1 for c in complaints if c.get("status") == "open"),
+        "in_progress": sum(1 for c in complaints if c.get("status") == "in_progress"),
+        "resolved": sum(1 for c in complaints if c.get("status") == "resolved"),
+        "escalated": sum(1 for c in complaints if c.get("status") == "escalated"),
+        "critical": sum(1 for c in complaints if c.get("severity") == "critical"),
+        "high": sum(1 for c in complaints if c.get("severity") == "high"),
+    }
+
+    return {'complaints': complaints, 'total': len(complaints), 'stats': stats}
+
+
+@router.get("/service/complaints/{complaint_id}")
+async def get_complaint_detail(
+    complaint_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    complaint = await db.service_complaints.find_one(
+        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Sikayet bulunamadi")
+
+    tid = current_user.tenant_id
+    result = {**complaint}
+    if complaint.get("room_id"):
+        room = await db.rooms.find_one({"id": complaint["room_id"], "tenant_id": tid}, {"_id": 0})
+        if room:
+            result["room_detail"] = {"room_number": room.get("room_number"), "room_type": room.get("room_type"), "floor": room.get("floor")}
+    if complaint.get("guest_id"):
+        guest = await db.guests.find_one({"id": complaint["guest_id"], "tenant_id": tid}, {"_id": 0})
+        if guest:
+            result["guest_detail"] = {"name": guest.get("name"), "email": guest.get("email"), "phone": guest.get("phone"), "vip_status": guest.get("vip_status")}
+    if complaint.get("booking_id"):
+        booking = await db.bookings.find_one({"id": complaint["booking_id"], "tenant_id": tid}, {"_id": 0})
+        if booking:
+            result["booking_detail"] = {"check_in": booking.get("check_in"), "check_out": booking.get("check_out"), "room_type": booking.get("room_type"), "status": booking.get("status")}
+
+    return result
+
+
+@router.put("/service/complaints/{complaint_id}")
+async def update_complaint(
+    complaint_id: str,
+    update_data: dict,
+    current_user: User = Depends(get_current_user)
+):
+    update_data.pop("id", None)
+    update_data.pop("tenant_id", None)
+    update_data["updated_at"] = datetime.now(UTC).isoformat()
+    update_data["updated_by"] = current_user.id
+
+    result = await db.service_complaints.update_one(
+        {"id": complaint_id, "tenant_id": current_user.tenant_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Sikayet bulunamadi")
+    return {"success": True, "message": "Sikayet guncellendi"}
+
+
+@router.post("/service/complaints/{complaint_id}/resolve")
+async def resolve_complaint(
+    complaint_id: str,
+    resolve_data: dict,
+    current_user: User = Depends(get_current_user)
+):
+    now = datetime.now(UTC).isoformat()
+    update = {
+        "status": "resolved",
+        "resolution_notes": resolve_data.get("resolution_notes", ""),
+        "compensation_offered": resolve_data.get("compensation_offered"),
+        "compensation_amount": resolve_data.get("compensation_amount", 0),
+        "resolved_at": now,
+        "resolved_by": current_user.id,
+        "updated_at": now,
+    }
+    result = await db.service_complaints.update_one(
+        {"id": complaint_id, "tenant_id": current_user.tenant_id},
+        {"$set": update}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Sikayet bulunamadi")
+    return {"success": True, "message": "Sikayet cozuldu"}
+
+
+@router.post("/service/complaints/{complaint_id}/escalate")
+async def escalate_complaint(
+    complaint_id: str,
+    escalate_data: dict,
+    current_user: User = Depends(get_current_user)
+):
+    now = datetime.now(UTC).isoformat()
+    update = {
+        "status": "escalated",
+        "escalated_to": escalate_data.get("escalated_to", "management"),
+        "escalation_notes": escalate_data.get("notes", ""),
+        "escalated_at": now,
+        "escalated_by": current_user.id,
+        "updated_at": now,
+    }
+    result = await db.service_complaints.update_one(
+        {"id": complaint_id, "tenant_id": current_user.tenant_id},
+        {"$set": update}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Sikayet bulunamadi")
+    return {"success": True, "message": "Sikayet eskalasyon edildi"}
+
+
+@router.delete("/service/complaints/{complaint_id}")
+async def delete_complaint(
+    complaint_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    result = await db.service_complaints.delete_one(
+        {"id": complaint_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sikayet bulunamadi")
+    return {"success": True, "message": "Sikayet silindi"}
+
+
+@router.get("/service/complaints-rooms")
+async def get_rooms_for_complaints(
+    current_user: User = Depends(get_current_user)
+):
+    rooms = await db.rooms.find(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1}
+    ).sort("room_number", 1).to_list(500)
+    return {"rooms": rooms}
+
+
+@router.get("/service/complaints-guests")
+async def get_guests_for_complaints(
+    q: str | None = None,
+    current_user: User = Depends(get_current_user)
+):
+    query = {"tenant_id": current_user.tenant_id}
+    if q:
+        query["name"] = {"$regex": q, "$options": "i"}
+    guests = await db.guests.find(
+        query,
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}
+    ).sort("name", 1).to_list(100)
+    return {"guests": guests}
+
+
+@router.get("/service/complaints-bookings")
+async def get_active_bookings_for_complaints(
+    current_user: User = Depends(get_current_user)
+):
+    bookings = await db.bookings.find(
+        {"tenant_id": current_user.tenant_id, "status": {"$in": ["checked_in", "confirmed"]}},
+        {"_id": 0, "id": 1, "guest_name": 1, "guest_id": 1, "room_number": 1, "room_id": 1,
+         "room_type": 1, "check_in": 1, "check_out": 1, "status": 1}
+    ).sort("check_in", -1).to_list(200)
+    return {"bookings": bookings}
 
 
 # ============= MULTI-PROPERTY MANAGEMENT =============

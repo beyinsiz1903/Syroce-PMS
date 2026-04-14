@@ -138,6 +138,15 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "operations",
   },
+  {
+    key: "service_recovery",
+    label: "Sikayet Yonetimi",
+    path: "/service-recovery",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+  },
 
   // ──── RESERVATIONS GROUP ───────────────────────────
   {

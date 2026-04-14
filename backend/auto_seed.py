@@ -69,12 +69,94 @@ async def _ensure_hr_legacy_connection(db):
     print("✅ hotelrunner_connections legacy doc created from provider_connections")
 
 
+async def _ensure_complaints_seeded(db):
+    """Ensure service_complaints exist even when full seed is skipped."""
+    count = await db.service_complaints.count_documents({})
+    if count > 0:
+        return
+    user = await db.users.find_one({})
+    if not user:
+        return
+    tid = user.get("tenant_id")
+    if not tid:
+        return
+
+    bookings_list = await db.bookings.find(
+        {"tenant_id": tid, "status": {"$in": ["checked_in", "checked_out"]}},
+        {"_id": 0}
+    ).to_list(30)
+    if not bookings_list:
+        return
+
+    complaint_categories = ["room", "service", "cleanliness", "fnb", "noise", "maintenance"]
+    complaint_subjects = {
+        "room": ["Klima calismiyor", "Sicak su yok", "TV bozuk", "Oda kokuyor", "Yatak rahatsiz"],
+        "service": ["Check-in cok yavas", "Personel ilgisiz", "Room service gec geldi", "Bilgi yanlis verildi", "Bagaj kayboldu"],
+        "cleanliness": ["Oda kirli", "Banyo temiz degil", "Havlu degismemis", "Hali lekeli", "Cop bosaltilmamis"],
+        "fnb": ["Yemek soguk geldi", "Kahvalti cesidi az", "Garson kaba davranıyor", "Alerjene dikkat edilmedi", "Menu fiyatlari yanlis"],
+        "noise": ["Yan oda gurultulu", "Insaat sesi var", "Gece muzik sesi", "Koridor gurultusu", "Asansor sesi"],
+        "maintenance": ["Dustan su akiyor", "Kapı kilidi bozuk", "Priz calismiyor", "Pencere acilmiyor", "Tuvalet tıkanmıs"],
+    }
+    departments = ["front_office", "housekeeping", "fnb", "maintenance", "management"]
+    severities = ["low", "medium", "high", "critical"]
+
+    checked_in = [b for b in bookings_list if b.get("status") == "checked_in"]
+    checked_out = [b for b in bookings_list if b.get("status") == "checked_out"]
+    selected = checked_in + checked_out[:5]
+
+    complaints = []
+    for bk in selected:
+        cat = random.choice(complaint_categories)
+        sev = random.choices(severities, weights=[3, 4, 2, 1])[0]
+        subj = random.choice(complaint_subjects[cat])
+        days_ago = random.randint(0, 5) if bk.get("status") == "checked_in" else random.randint(5, 30)
+        created = (_now() - timedelta(days=days_ago, hours=random.randint(0, 12))).isoformat()
+        is_resolved = bk.get("status") == "checked_out" and random.random() < 0.7
+        status = "resolved" if is_resolved else random.choice(["open", "in_progress", "escalated"])
+
+        comp = {
+            "id": _uuid(),
+            "tenant_id": tid,
+            "guest_id": bk.get("guest_id"),
+            "guest_name": bk.get("guest_name"),
+            "booking_id": bk.get("id"),
+            "room_id": bk.get("room_id"),
+            "room_number": bk.get("room_number"),
+            "room_type": bk.get("room_type"),
+            "category": cat,
+            "severity": sev,
+            "subject": subj,
+            "description": f"{subj}. Misafir {bk.get('guest_name', '')} (Oda {bk.get('room_number', '')}) sikayet etti.",
+            "status": status,
+            "assigned_department": random.choice(departments),
+            "assigned_to": None,
+            "created_at": created,
+            "updated_at": created,
+        }
+        if is_resolved:
+            comp["resolved_at"] = (_now() - timedelta(days=max(0, days_ago - 1))).isoformat()
+            comp["resolved_by"] = "system"
+            comp["resolution_notes"] = random.choice([
+                "Oda degistirildi", "Teknik ekip sorunu giderdi",
+                "Misafire ozur dilendi ve indirim uygulandi",
+                "Housekeeping tekrar temizlik yapti",
+                "Yonetici ile gorusuldu ve cozuldu"])
+            comp["compensation_offered"] = random.choice([None, "room_upgrade", "fnb_credit", "discount"])
+            comp["compensation_amount"] = random.choice([0, 50, 100, 200]) if comp["compensation_offered"] else 0
+        complaints.append(comp)
+
+    if complaints:
+        await db.service_complaints.insert_many(complaints)
+        print(f"✅ {len(complaints)} service complaints seeded")
+
+
 async def auto_seed_if_empty(db):
     """Main entry point: seeds demo data only when users collection is empty."""
     user_count = await db.users.count_documents({})
     if user_count > 0:
         print("ℹ️  Database already has users — skipping auto-seed.")
         await _ensure_hr_legacy_connection(db)
+        await _ensure_complaints_seeded(db)
         return False
 
     print("🌱 Empty database detected — seeding demo data...")
@@ -405,6 +487,67 @@ async def auto_seed_if_empty(db):
         new_status = random.choice(["dirty", "cleaning"])
         await db.rooms.update_one({"id": room["id"]}, {"$set": {"status": new_status}})
         room["status"] = new_status
+
+    # ── 5b. Service Complaints (linked to rooms/guests/bookings) ────
+    complaint_categories = ["room", "service", "cleanliness", "fnb", "noise", "maintenance"]
+    complaint_severities = ["low", "medium", "high", "critical"]
+    complaint_subjects = {
+        "room": ["Klima calismiyor", "Sicak su yok", "TV bozuk", "Oda kokuyor", "Yatak rahatsiz"],
+        "service": ["Check-in cok yavas", "Personel ilgisiz", "Room service gec geldi", "Bilgi yanlis verildi", "Bagaj kayboldu"],
+        "cleanliness": ["Oda kirli", "Banyo temiz degil", "Havlu degismemis", "Hali lekeli", "Cop bosaltilmamis"],
+        "fnb": ["Yemek soguk geldi", "Kahvalti cesidi az", "Garson kaba davranıyor", "Alerjene dikkat edilmedi", "Menu fiyatlari yanlis"],
+        "noise": ["Yan oda gurultulu", "Insaat sesi var", "Gece muzik sesi", "Koridor gurultusu", "Asansor sesi"],
+        "maintenance": ["Dustan su akiyor", "Kapı kilidi bozuk", "Priz calismiyor", "Pencere acilmiyor", "Tuvalet tıkanmıs"],
+    }
+    complaint_departments = ["front_office", "housekeeping", "fnb", "maintenance", "management"]
+
+    checked_in_bks = [b for b in bookings if b["status"] == "checked_in"]
+    past_bks = [b for b in bookings if b["status"] == "checked_out"]
+    all_complaint_bks = checked_in_bks + random.sample(past_bks, min(5, len(past_bks)))
+
+    service_complaints = []
+    for idx, bk in enumerate(all_complaint_bks):
+        cat = random.choice(complaint_categories)
+        sev = random.choices(complaint_severities, weights=[3, 4, 2, 1])[0]
+        subj = random.choice(complaint_subjects[cat])
+        days_ago = random.randint(0, 5) if bk["status"] == "checked_in" else random.randint(5, 30)
+        created = (_now() - timedelta(days=days_ago, hours=random.randint(0, 12))).isoformat()
+
+        is_resolved = bk["status"] == "checked_out" and random.random() < 0.7
+        status = "resolved" if is_resolved else random.choice(["open", "in_progress", "escalated"])
+
+        comp = {
+            "id": _uuid(),
+            "tenant_id": tenant_id,
+            "guest_id": bk["guest_id"],
+            "guest_name": bk["guest_name"],
+            "booking_id": bk["id"],
+            "room_id": bk.get("room_id"),
+            "room_number": bk["room_number"],
+            "room_type": bk["room_type"],
+            "category": cat,
+            "severity": sev,
+            "subject": subj,
+            "description": f"{subj}. Misafir {bk['guest_name']} (Oda {bk['room_number']}) sikayet etti.",
+            "status": status,
+            "assigned_department": random.choice(complaint_departments),
+            "assigned_to": None,
+            "created_at": created,
+            "updated_at": created,
+        }
+        if is_resolved:
+            comp["resolved_at"] = (_now() - timedelta(days=max(0, days_ago - 1))).isoformat()
+            comp["resolved_by"] = "system"
+            comp["resolution_notes"] = random.choice([
+                "Oda degistirildi", "Teknik ekip sorunu giderdi", "Misafire ozur dilendi ve indirim uygulandi",
+                "Housekeeping tekrar temizlik yapti", "Yonetici ile gorusuldu ve cozuldu"])
+            comp["compensation_offered"] = random.choice([None, "room_upgrade", "fnb_credit", "discount", "free_night"])
+            comp["compensation_amount"] = random.choice([0, 50, 100, 200]) if comp["compensation_offered"] else 0
+
+        service_complaints.append(comp)
+
+    if service_complaints:
+        await db.service_complaints.insert_many(service_complaints)
 
     # ── 6. Folios (for checked-in bookings) ───────────────
     folio_counter = 1

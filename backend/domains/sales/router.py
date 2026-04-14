@@ -138,12 +138,21 @@ async def create_complaint(
     complaint_data: dict, current_user: User = Depends(get_current_user)
 ):
     """Sikayet kaydi olustur"""
+    allowed_fields = {
+        "booking_id", "guest_id", "guest_name", "room_id", "room_number",
+        "room_type", "category", "severity", "subject", "description",
+        "assigned_department", "assigned_to",
+    }
+    safe_data = {k: v for k, v in complaint_data.items() if k in allowed_fields}
+    now = datetime.now(UTC).isoformat()
     complaint = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        **complaint_data,
+        **safe_data,
         "status": "open",
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
+        "created_at": now,
+        "updated_at": now,
     }
     await db.service_complaints.insert_one(complaint)
     return {"success": True, "message": "Sikayet kaydedildi", "complaint_id": complaint["id"]}

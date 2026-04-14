@@ -76,12 +76,32 @@ Two URL patterns coexist in frontend code:
 - Front desk management and reservations
 - Housekeeping module
 - Financial folios
+- **Complaint Management** (Service Recovery) — full CRUD + resolve/escalate, integrated with rooms/guests/bookings
 - Channel Manager (OTA sync with Exely, HotelRunner)
 - Control Plane for operational monitoring
 - AI-driven dynamic pricing and forecasting
 - WebSocket real-time updates
 - Multi-tenant architecture
 - 8-language internationalization
+
+## Complaint Management (Service Recovery)
+
+- **Route**: `/service-recovery` — accessible from Operasyon menu in navigation
+- **Backend Endpoints** (all in `backend/domains/pms/misc_router.py` + `backend/domains/sales/router.py`):
+  - `GET /api/service/complaints` — list with filters (status, category, severity, room_number) + stats
+  - `GET /api/service/complaints/{id}` — detail with room/guest/booking joins (tenant-scoped)
+  - `POST /api/service/complaints` — create (field-whitelisted, tenant injection protected)
+  - `PUT /api/service/complaints/{id}` — update
+  - `POST /api/service/complaints/{id}/resolve` — resolve with compensation
+  - `POST /api/service/complaints/{id}/escalate` — escalate to management
+  - `DELETE /api/service/complaints/{id}` — delete
+  - `GET /api/service/complaints-rooms` — rooms dropdown data
+  - `GET /api/service/complaints-guests` — guests dropdown data
+  - `GET /api/service/complaints-bookings` — active bookings for auto-fill
+- **Seed Data**: `_ensure_complaints_seeded()` in `auto_seed.py` creates 15+ complaints linked to real bookings/rooms/guests
+- **DB Collection**: `service_complaints`
+- **Frontend**: `frontend/src/pages/ServiceRecovery.jsx` — stats, filters, create/detail/resolve dialogs
+- **Integration**: Selecting a booking auto-fills guest, room, room_type; rooms and guests also selectable independently
 
 ## Channel Manager Connection State & Sandbox Mode
 
