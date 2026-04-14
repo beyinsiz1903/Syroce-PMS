@@ -31,6 +31,13 @@ import GuestsTab from '@/components/pms/GuestsTab';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
+import CashierTab from '@/components/pms/CashierTab';
+import FlashReportPanel from '@/components/pms/FlashReportPanel';
+import RoomTimelineView from '@/components/pms/RoomTimelineView';
+import LaundryTab from '@/components/pms/LaundryTab';
+import MeetingRoomTab from '@/components/pms/MeetingRoomTab';
+import { printRegistrationCard } from '@/components/pms/PrintTemplates';
+import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,7 +50,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { 
   BedDouble, Users, Calendar, Plus, CheckCircle, DollarSign, 
   ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, 
-  Star, Send, MessageSquare, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown
+  Star, Send, MessageSquare, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
+  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt, CalendarRange
 } from 'lucide-react';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
@@ -189,13 +197,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'rooms', labelKey: 'pms.rooms', icon: BedDouble, testId: 'tab-rooms' },
     { key: 'guests', labelKey: 'pms.guests', icon: Users, testId: 'tab-guests' },
     { key: 'bookings', labelKey: 'pms.bookings', icon: Calendar, testId: 'tab-bookings' },
-    { key: 'upsell', labelText: '🤖 Upsell', icon: TrendingUp, testId: 'tab-upsell' },
-    { key: 'messaging', labelText: '💬 Messages', icon: null, testId: 'tab-messaging' },
+    { key: 'cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
+    { key: 'upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
+    { key: 'messaging', labelText: 'Mesajlar', icon: MessageSquare, testId: 'tab-messaging' },
     { key: 'reports', labelKey: 'pms.reports', icon: FileText, testId: 'tab-reports' },
-    { key: 'tasks', labelText: '🔧 Tasks', icon: null, testId: 'tab-tasks' },
-    { key: 'feedback', labelText: '⭐ Feedback', icon: null, testId: 'tab-feedback' },
-    { key: 'allotment', labelText: '🏢 Allotment', icon: null, testId: 'tab-allotment' },
-    { key: 'pos', labelText: '🍽️ POS', icon: null, testId: 'tab-pos' },
+    { key: 'flash', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
+    { key: 'tasks', labelText: 'Gorevler', icon: Wrench, testId: 'tab-tasks' },
+    { key: 'feedback', labelText: 'Geri Bildirim', icon: ThumbsUp, testId: 'tab-feedback' },
+    { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
+    { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
+    { key: 'laundry', labelText: 'Camasirhane', icon: Shirt, testId: 'tab-laundry' },
+    { key: 'meeting', labelText: 'Toplanti', icon: Building2, testId: 'tab-meeting' },
+    { key: 'timeline', labelText: 'Zaman Cizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
   ];
 
   const visibleTabs = isLite
@@ -1523,6 +1536,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             arrivals={arrivals}
             departures={departures}
             inhouse={inhouse}
+            bookings={bookings}
             aiPrediction={aiPrediction}
             aiPatterns={aiPatterns}
             handleCheckIn={handleCheckIn}
@@ -1573,6 +1587,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               }}
               onDataRefresh={loadData}
             />
+            {selectedRoom && (
+              <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />
+            )}
           </TabsContent>
 
           {/* GUESTS TAB */}
@@ -1608,10 +1625,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             activeTab={activeTab}
           />
 
+          {/* CASHIER TAB */}
+          <TabsContent value="cashier" className="space-y-4">
+            <CashierTab user={user} />
+          </TabsContent>
+
           {/* UPSELL TAB */}
           <TabsContent value="upsell" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">🤖 AI Upsell & Revenue Optimization</h2>
+              <h2 className="text-2xl font-semibold">AI Upsell & Gelir Optimizasyonu</h2>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2012,6 +2034,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             )}
           </TabsContent>
 
+          {/* FLASH REPORT TAB */}
+          <TabsContent value="flash" className="space-y-4">
+            <FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} />
+          </TabsContent>
+
           {/* TASKS TAB */}
           <TabsContent value="tasks" className="space-y-4">
             <StaffTaskManager />
@@ -2030,7 +2057,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {/* POS TAB */}
           <TabsContent value="pos" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">🍽️ Point of Sale Integration</h2>
+              <h2 className="text-2xl font-semibold">POS Entegrasyonu</h2>
               <Button onClick={async () => {
                 try {
                   const response = await axios.get('/pos/orders/today');
@@ -2128,13 +2155,32 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* LAUNDRY TAB */}
+          <TabsContent value="laundry" className="space-y-4">
+            <LaundryTab />
+          </TabsContent>
+
+          {/* MEETING ROOMS TAB */}
+          <TabsContent value="meeting" className="space-y-4">
+            <MeetingRoomTab />
+          </TabsContent>
+
+          {/* ROOM TIMELINE TAB */}
+          <TabsContent value="timeline" className="space-y-4">
+            <RoomTimelineView
+              rooms={rooms}
+              bookings={bookings}
+              onBookingClick={(booking) => setReservationDetailId(booking.id)}
+            />
+          </TabsContent>
         </Tabs>
 
         {/* Dialogs and Modals */}
         <Dialog open={openDialog === 'folio'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Guest Folio</DialogTitle>
+              <DialogTitle>Misafir Folyosu</DialogTitle>
             </DialogHeader>
             {folio && (
               <div className="space-y-6">
@@ -2980,7 +3026,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       </div>
 
         <GuestInfoDialog
-          open={openDialog === 'guestinfo'}
+          open={openDialog === 'guestInfo'}
           onClose={() => setOpenDialog(null)}
           selectedGuest={selectedGuest}
           setSelectedGuest={setSelectedGuest}

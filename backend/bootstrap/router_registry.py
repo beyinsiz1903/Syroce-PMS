@@ -200,6 +200,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # B2B Analytics Dashboard — Acente & API Kullanım Analitikleri
     ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
+    # PMS Cashier, Laundry, Meeting Rooms
+    ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
 ]
 
 # Optional routers with special import paths

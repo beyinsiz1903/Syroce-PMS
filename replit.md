@@ -73,9 +73,17 @@ Two URL patterns coexist in frontend code:
 
 ## Key Features
 
-- Front desk management and reservations
+- Front desk management and reservations (overstay warnings, no-show list, walk-in quick form, group batch check-in)
 - Housekeeping module
-- Financial folios
+- Financial folios (direct charge posting, folio print, proforma invoice)
+- **Cashier Module** (`CashierTab.jsx`) — shift open/close, cash count, Z-report, shift history
+- **Flash Report** (`FlashReportPanel.jsx`) — daily KPIs: occupancy, ADR, RevPAR, dept revenue, print support
+- **Room Timeline** (`RoomTimelineView.jsx`) — Gantt/timeline view with rooms on Y-axis, booking bars colored by status
+- **Laundry Management** (`LaundryTab.jsx`) — order tracking, status updates, room-based laundry orders
+- **Meeting Room Booking** (`MeetingRoomTab.jsx`) — room inventory, reservations, setup types, equipment tracking
+- **Print Templates** (`PrintTemplates.jsx`) — registration card, folio print, proforma invoice with hotel header
+- **Room Features** (`RoomFeaturesPanel.jsx`) — DND toggle, connecting rooms, minibar quick entry, early/late checkout rules
+- **Guest Management** — Turkish UI, multi-field search (name/phone/email/ID), guest merge, preference editing
 - **Complaint Management** (Service Recovery) — full CRUD + resolve/escalate, integrated with rooms/guests/bookings
 - Channel Manager (OTA sync with Exely, HotelRunner)
 - Control Plane for operational monitoring
@@ -83,6 +91,19 @@ Two URL patterns coexist in frontend code:
 - WebSocket real-time updates
 - Multi-tenant architecture
 - 8-language internationalization
+
+## PMS Module Tabs (PMSModule.jsx)
+All tabs use Lucide icons and Turkish labels:
+- Resepsiyon (Front Desk), Kat Hizmetleri (Housekeeping), Odalar (Rooms), Misafirler (Guests), Rezervasyonlar (Bookings)
+- Kasa (Cashier), Upsell, Mesajlar (Messaging), Raporlar (Reports), Flash Rapor
+- Gorevler (Tasks), Geri Bildirim (Feedback), Kontenjan (Allotment), POS
+- Camasirhane (Laundry), Toplanti (Meeting Rooms), Zaman Cizelgesi (Timeline)
+
+## Backend Endpoints - New Modules
+- `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management (auth required)
+- `GET/POST/PATCH /api/laundry/orders` — Laundry order management (auth required)
+- `GET /api/meeting-rooms` + `GET/POST /api/meeting-rooms/reservations` — Meeting room management (auth required)
+- Router: `backend/domains/pms/cashier_router.py`, registered in `bootstrap/router_registry.py`
 
 ## Complaint Management (Service Recovery)
 

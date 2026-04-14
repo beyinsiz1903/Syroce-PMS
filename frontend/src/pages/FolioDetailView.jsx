@@ -10,8 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import {
   ArrowRightLeft, FileText, DollarSign, CreditCard, AlertTriangle,
   ShieldCheck, RefreshCw, Ban, Receipt, ArrowUpRight,
-  Clock, Building2
+  Clock, Building2, Plus, Printer
 } from "lucide-react";
+import { printFolio, printProformaInvoice } from "@/components/pms/PrintTemplates";
 import { toast } from "sonner";
 
 const API = "";
@@ -172,6 +173,9 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("timeline");
   const token = localStorage.getItem("token");
+  const [showChargeForm, setShowChargeForm] = useState(false);
+  const [chargeForm, setChargeForm] = useState({ description: "", amount: "", category: "room", quantity: 1 });
+  const [chargeLoading, setChargeLoading] = useState(false);
 
   const fetchDetail = useCallback(async (id) => {
     if (!id) return;
@@ -226,9 +230,20 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
                 <span className="text-xs text-gray-500">{t("folio.booking")}: {folio?.booking_id?.slice(0, 8)}...</span>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => fetchDetail(propFolioId || folioId)} className="border-gray-200">
-              <RefreshCw className="w-4 h-4 mr-2" /> {t("folio.refresh")}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowChargeForm(true)} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                <Plus className="w-4 h-4 mr-2" /> Masraf Ekle
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => printFolio(data)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
+                <Printer className="w-4 h-4 mr-2" /> Yazdir
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => printProformaInvoice({ ...folio, total_amount: summary?.total_charges }, null, [])} className="border-purple-200 text-purple-700 hover:bg-purple-50">
+                <FileText className="w-4 h-4 mr-2" /> Proforma
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => fetchDetail(propFolioId || folioId)} className="border-gray-200">
+                <RefreshCw className="w-4 h-4 mr-2" /> {t("folio.refresh")}
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -380,8 +395,70 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
     </div>
   );
 
+  const postCharge = async () => {
+    if (!chargeForm.description || !chargeForm.amount) { toast.error("Aciklama ve tutar zorunludur"); return; }
+    setChargeLoading(true);
+    try {
+      await axios.post(`/frontdesk/folio/${folio?.booking_id}/charge`, {
+        charge_category: chargeForm.category,
+        description: chargeForm.description,
+        amount: parseFloat(chargeForm.amount) * (parseInt(chargeForm.quantity) || 1),
+        quantity: parseInt(chargeForm.quantity) || 1,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("Masraf eklendi");
+      setShowChargeForm(false);
+      setChargeForm({ description: "", amount: "", category: "room", quantity: 1 });
+      fetchDetail(propFolioId || folioId);
+    } catch (e) { toast.error(e.response?.data?.detail || "Masraf eklenemedi"); }
+    setChargeLoading(false);
+  };
+
+  const chargeFormPanel = showChargeForm && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <h3 className="text-lg font-semibold flex items-center gap-2"><Plus className="w-5 h-5" /> Folioya Masraf Ekle</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-500">Kategori</label>
+            <select className="w-full border rounded-md p-2 text-sm" value={chargeForm.category} onChange={e => setChargeForm(p => ({ ...p, category: e.target.value }))}>
+              <option value="room">Oda</option>
+              <option value="food">Yiyecek & Icecek</option>
+              <option value="minibar">Minibar</option>
+              <option value="laundry">Camasirhane</option>
+              <option value="spa">Spa</option>
+              <option value="phone">Telefon</option>
+              <option value="parking">Otopark</option>
+              <option value="other">Diger</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Aciklama</label>
+            <input className="w-full border rounded-md p-2 text-sm" value={chargeForm.description} onChange={e => setChargeForm(p => ({ ...p, description: e.target.value }))} placeholder="Minibar - Kola vb." />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500">Tutar (TL)</label>
+              <input type="number" className="w-full border rounded-md p-2 text-sm" value={chargeForm.amount} onChange={e => setChargeForm(p => ({ ...p, amount: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Adet</label>
+              <input type="number" min="1" className="w-full border rounded-md p-2 text-sm" value={chargeForm.quantity} onChange={e => setChargeForm(p => ({ ...p, quantity: e.target.value }))} />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="ghost" onClick={() => setShowChargeForm(false)}>Iptal</Button>
+          <Button onClick={postCharge} disabled={chargeLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            {chargeLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+            Masraf Ekle
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (user && tenant) {
-    return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="folio_detail">{content}</Layout>;
+    return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="folio_detail">{content}{chargeFormPanel}</Layout>;
   }
-  return content;
+  return <>{content}{chargeFormPanel}</>;
 }
