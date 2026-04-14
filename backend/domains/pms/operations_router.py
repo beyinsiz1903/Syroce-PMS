@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.security import get_current_user
 from db import get_db
