@@ -1,0 +1,49 @@
+Run pip install pip-audit
+Requirement already satisfied: pip-audit in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (2.10.0)
+Requirement already satisfied: CacheControl>=0.13.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from CacheControl[filecache]>=0.13.0->pip-audit) (0.14.4)
+Requirement already satisfied: cyclonedx-python-lib<12,>=5 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (11.7.0)
+Requirement already satisfied: packaging>=23.0.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (26.0)
+Requirement already satisfied: pip-api>=0.0.28 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (0.0.34)
+Requirement already satisfied: pip-requirements-parser>=32.0.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (32.0.1)
+Requirement already satisfied: requests>=2.31.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (2.33.0)
+Requirement already satisfied: rich>=12.4 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (14.2.0)
+Requirement already satisfied: tomli>=2.2.1 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (2.4.0)
+Requirement already satisfied: tomli-w>=1.2.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (1.2.0)
+Requirement already satisfied: platformdirs>=4.2.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-audit) (4.5.0)
+Requirement already satisfied: license-expression<31,>=30 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (30.4.4)
+Requirement already satisfied: packageurl-python<2,>=0.11 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (0.17.6)
+Requirement already satisfied: py-serializable<3.0.0,>=2.1.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (2.1.0)
+Requirement already satisfied: sortedcontainers<3.0.0,>=2.4.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (2.4.0)
+Requirement already satisfied: typing_extensions<5.0,>=4.6 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (4.15.0)
+Requirement already satisfied: boolean.py>=4.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from license-expression<31,>=30->cyclonedx-python-lib<12,>=5->pip-audit) (5.0)
+Requirement already satisfied: defusedxml<0.8.0,>=0.7.1 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from py-serializable<3.0.0,>=2.1.0->cyclonedx-python-lib<12,>=5->pip-audit) (0.7.1)
+Requirement already satisfied: msgpack<2.0.0,>=0.5.2 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from CacheControl>=0.13.0->CacheControl[filecache]>=0.13.0->pip-audit) (1.1.2)
+Requirement already satisfied: filelock>=3.8.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from CacheControl[filecache]>=0.13.0->pip-audit) (3.24.3)
+Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-api>=0.0.28->pip-audit) (26.0.1)
+Requirement already satisfied: pyparsing in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from pip-requirements-parser>=32.0.0->pip-audit) (3.3.2)
+Requirement already satisfied: charset_normalizer<4,>=2 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from requests>=2.31.0->pip-audit) (3.4.4)
+Requirement already satisfied: idna<4,>=2.5 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from requests>=2.31.0->pip-audit) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from requests>=2.31.0->pip-audit) (2.6.3)
+Requirement already satisfied: certifi>=2023.5.7 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from requests>=2.31.0->pip-audit) (2025.10.5)
+Requirement already satisfied: markdown-it-py>=2.2.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from rich>=12.4->pip-audit) (4.0.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from rich>=12.4->pip-audit) (2.20.0)
+Requirement already satisfied: mdurl~=0.1 in /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages (from markdown-it-py>=2.2.0->rich>=12.4->pip-audit) (0.1.2)
+Found 2 known vulnerabilities in 2 packages
+Name   Version ID             Fix Versions Description
+------ ------- -------------- ------------ -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+pillow 12.1.1  CVE-2026-40192 12.2.0       ### Impact Pillow did not limit the amount of GZIP-compressed data read when decoding a FITS image, making it vulnerable to decompression bomb attacks. A specially crafted FITS file could cause unbounded memory consumption, leading to denial of service (OOM crash or severe performance degradation).  ### Patches The amount of data read is now limited to the necessary amount. Fixed in Pillow 12.2.0 (PR #9521).  ### Workarounds Avoid Pillow >= 10.3.0, < 12.2.0 Only open [specific image formats](https://pillow.readthedocs.io/en/stable/releasenotes/8.0.0.html#image-open-add-formats-parameter), excluding FITS.
+pytest 8.4.2   CVE-2025-71176 9.0.3        pytest through 9.0.2 on UNIX relies on directories with the `/tmp/pytest-of-{user}` name pattern, which allows local users to cause a denial of service or possibly gain privileges.
+Name                 Skip Reason
+-------------------- -----------------------------------------------------------------------------------
+emergentintegrations Dependency not found on PyPI and could not be audited: emergentintegrations (0.1.0)
+--- Checking for CRITICAL/HIGH vulnerabilities ---
+Found 2 known vulnerabilities in 2 packages
+Name   Version ID             Fix Versions
+------ ------- -------------- ------------
+pillow 12.1.1  CVE-2026-40192 12.2.0
+pytest 8.4.2   CVE-2025-71176 9.0.3
+Name                 Skip Reason
+-------------------- -----------------------------------------------------------------------------------
+emergentintegrations Dependency not found on PyPI and could not be audited: emergentintegrations (0.1.0)
+Error: CRITICAL vulnerabilities found — see security-report.txt
+Error: Process completed with exit code 1.
