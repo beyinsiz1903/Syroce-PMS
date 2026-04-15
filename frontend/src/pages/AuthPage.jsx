@@ -54,9 +54,6 @@ const AuthPage = ({ onLogin }) => {
     try {
       const response = await axios.post('/auth/login', hotelLoginData);
       
-      toast.success(t('auth.loginSuccess'));
-      
-      // PostAuthRedirect in App.js handles final navigation after auth state updates
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
