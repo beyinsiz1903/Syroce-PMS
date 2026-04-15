@@ -1341,7 +1341,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-gray-700">Quick Actions:</div>
+                <div className="text-sm font-semibold text-gray-700">Hızlı Aksiyonlar:</div>
               </div>
               <div className="flex gap-2">
                 <Button 
@@ -2427,14 +2427,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               label: 'Yeni Rezervasyon',
               icon: <Plus className="w-5 h-5" />,
               onClick: () => {
-                setOpenDialog('newbooking');
+                setOpenDialog('booking');
                 toast.info('Yeni rezervasyon formu açılıyor...');
               }
             },
             {
               label: 'Yeni Misafir',
               icon: <UserPlus className="w-5 h-5" />,
-              onClick: () => setOpenDialog('newguest')
+              onClick: () => setOpenDialog('guest')
             },
             {
               label: 'Flash Rapor',
