@@ -74,9 +74,9 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Shield className="w-6 h-6 text-rose-400" />
-            Guvenlik & Guclendirme
+            Güvenlik & Güçlendirme
           </h1>
-          <p className="text-sm text-slate-400 mt-1">Tenant izolasyon, PII koruma ve altyapi guclendirme</p>
+          <p className="text-sm text-slate-400 mt-1">Tenant izolasyon, PII koruma ve altyapı güçlendirme</p>
         </div>
         {mainTab === "security" && (
           <Button data-testid="refresh-security-btn" onClick={fetchData} size="sm" className="bg-rose-600 hover:bg-rose-700 text-white">
@@ -89,7 +89,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
       <Tabs value={mainTab} onValueChange={setMainTab}>
         <TabsList className="bg-slate-800/80 border-slate-700 grid w-full grid-cols-3 max-w-xl" data-testid="main-tabs">
           <TabsTrigger value="security" data-testid="main-tab-security" className="data-[state=active]:bg-rose-600 flex items-center gap-2">
-            <Lock className="w-4 h-4" /> Guvenlik
+            <Lock className="w-4 h-4" /> Güvenlik
           </TabsTrigger>
           <TabsTrigger value="pii" data-testid="main-tab-pii" className="data-[state=active]:bg-rose-600 flex items-center gap-2">
             <Eye className="w-4 h-4" /> PII Koruma
@@ -109,7 +109,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card data-testid="card-isolation" className="bg-slate-900/60 border-slate-700/50">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Tenant Izolasyon</p>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider">Tenant İzolasyon</p>
                     <div className="flex items-center gap-2 mt-2">
                       <p className="text-2xl font-bold text-white">{(isoScore * 100).toFixed(0)}%</p>
                       <ScoreBadge score={isoScore} />
@@ -119,7 +119,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                 </Card>
                 <Card data-testid="card-audit" className="bg-slate-900/60 border-slate-700/50">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Audit Tamligi</p>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider">Audit Tamlığı</p>
                     <div className="flex items-center gap-2 mt-2">
                       <p className="text-2xl font-bold text-white">{(auditScore * 100).toFixed(0)}%</p>
                       <ScoreBadge score={auditScore} />
@@ -148,7 +148,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
 
               <Tabs value={secTab} onValueChange={setSecTab} className="space-y-4">
                 <TabsList className="bg-slate-800/80 border-slate-700">
-                  <TabsTrigger value="isolation" data-testid="tab-isolation" className="data-[state=active]:bg-rose-600">Izolasyon</TabsTrigger>
+                  <TabsTrigger value="isolation" data-testid="tab-isolation" className="data-[state=active]:bg-rose-600">İzolasyon</TabsTrigger>
                   <TabsTrigger value="permissions" data-testid="tab-permissions" className="data-[state=active]:bg-rose-600">RBAC</TabsTrigger>
                   <TabsTrigger value="vault" data-testid="tab-vault" className="data-[state=active]:bg-rose-600">Vault</TabsTrigger>
                   <TabsTrigger value="audit" data-testid="tab-audit" className="data-[state=active]:bg-rose-600">Audit</TabsTrigger>
@@ -156,7 +156,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
 
                 <TabsContent value="isolation">
                   <Card className="bg-slate-900/60 border-slate-700/50">
-                    <CardHeader><CardTitle className="text-white text-base">Tenant Veri Izolasyonu</CardTitle></CardHeader>
+                    <CardHeader><CardTitle className="text-white text-base">Tenant Veri İzolasyonu</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-2">
                         {(isolation?.details || []).map((d, i) => (
@@ -222,7 +222,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                           {vault.needs_rotation.map((c, i) => (
                             <div key={i} className="flex items-center justify-between p-2 rounded bg-amber-900/20 border border-amber-700/30">
                               <span className="text-sm text-amber-300">{c.type}/{c.key}</span>
-                              <span className="text-xs text-amber-500">{c.days_overdue} gun geçmiş</span>
+                              <span className="text-xs text-amber-500">{c.days_overdue} gün geçmiş</span>
                             </div>
                           ))}
                         </div>
@@ -233,7 +233,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
 
                 <TabsContent value="audit">
                   <Card className="bg-slate-900/60 border-slate-700/50">
-                    <CardHeader><CardTitle className="text-white text-base">Audit Tamligi (24 Saat)</CardTitle></CardHeader>
+                    <CardHeader><CardTitle className="text-white text-base">Audit Tamlığı (24 Saat)</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-3">
                         {(audit?.categories || []).map((cat, i) => (
@@ -250,7 +250,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                               </div>
                             )}
                             {cat.missing_actions.length === 0 && (
-                              <p className="text-xs text-emerald-400">Tum aksiyonlar audit edilmis</p>
+                              <p className="text-xs text-emerald-400">Tüm aksiyonlar audit edilmiş</p>
                             )}
                           </div>
                         ))}

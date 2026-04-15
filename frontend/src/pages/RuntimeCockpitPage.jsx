@@ -261,9 +261,9 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
   const handleRolloutInit = async () => {
     try {
       await axios.post(`/lockdown/runtime/rollout/initialize`, {}, { headers });
-      toast.success('Rollout baslatildi');
+      toast.success('Rollout başlatıldı');
       fetchAll();
-    } catch { toast.error('Rollout baslatilamadi'); }
+    } catch { toast.error('Rollout başlatılamadı'); }
   };
 
   const handleRolloutAdvance = async () => {
@@ -321,7 +321,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               <h1 data-testid="cockpit-title" className="text-xl font-bold text-zinc-100">
                 Runtime Cockpit
               </h1>
-              <p className="text-xs text-zinc-500">Operasyonel Ucus Paneli</p>
+              <p className="text-xs text-zinc-500">Operasyonel Uçuş Paneli</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -676,8 +676,8 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Retry Safe */}
             <Section title="Retry Safe" icon={RotateCw} iconColor="text-blue-400" testId="action-retry-section">
               <p className="text-xs text-zinc-400 mb-3">
-                Basarisiz (retryable) push change set'lerini yeniden deneme için kuyruga al.
-                Idempotent: tekrar calistirmak zarar vermez.
+                Başarısız (retryable) push change set'lerini yeniden deneme için kuyruğa al.
+                Idempotent: tekrar çalıştırmak zarar vermez.
               </p>
               <Button data-testid="action-retry-btn" onClick={() => handleSafeAction('retry-safe')}
                 disabled={actionLoading['retry-safe']}
@@ -705,7 +705,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             <Section title="Bildirim Susturma" icon={VolumeX} iconColor="text-amber-400" testId="action-suppress-section">
               <p className="text-xs text-zinc-400 mb-3">
                 Operasyonel bildirim akisini gecici olarak sustur. Max 120 dakika.
-                Idempotent: tekrar calistirmak sureyi uzatir.
+                Idempotent: tekrar çalıştırmak süreyi uzatır.
               </p>
               <Button data-testid="action-suppress-btn" onClick={() => handleSafeAction('suppress-noise', { duration_minutes: 30 })}
                 disabled={actionLoading['suppress-noise']}
@@ -718,7 +718,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Auto-Heal */}
             <Section title="Auto-Heal Calistir" icon={HeartPulse} iconColor="text-violet-400" testId="action-heal-section">
               <p className="text-xs text-zinc-400 mb-3">
-                Guvenli auto-heal dongusu calistir. Sadece whitelist'teki drift tipleri heal edilir.
+                Güvenli auto-heal döngüsü çalıştır. Sadece whitelist'teki drift tipleri heal edilir.
                 Her heal evidence kaydi uretir.
               </p>
               <Button data-testid="action-heal-btn" onClick={async () => {
@@ -727,7 +727,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                   const res = await axios.post(`/lockdown/runtime/auto-heal/run`, {}, { headers });
                   toast.success(`Auto-heal: ${res.data.healed} healed, ${res.data.failed} failed`);
                   fetchAll();
-                } catch { toast.error('Auto-heal calistirilamadi'); }
+                } catch { toast.error('Auto-heal çalıştırılamadı'); }
                 finally { setActionLoading(prev => ({ ...prev, heal: false })); }
               }}
                 disabled={actionLoading.heal}
@@ -753,7 +753,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     {!ro.is_active && (
                       <Button data-testid="rollout-init-btn" size="sm" onClick={handleRolloutInit}
                         className="bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25">
-                        <Play className="w-3 h-3 mr-1" /> Rollout Baslat
+                        <Play className="w-3 h-3 mr-1" /> Rollout Başlat
                       </Button>
                     )}
                   </div>

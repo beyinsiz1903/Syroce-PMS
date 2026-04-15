@@ -157,7 +157,7 @@ export default function EncryptionManagementPage() {
       toast.success('Rotasyon baslatildi');
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rotasyon baslatilamadi');
+      toast.error(error.response?.data?.detail || 'Rotasyon başlatılamadı');
     }
   };
 
@@ -265,10 +265,10 @@ export default function EncryptionManagementPage() {
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Key className="h-6 w-6 text-emerald-400" />
-              Sifreleme Yonetimi
+              Şifreleme Yönetimi
             </h1>
             <p className="text-slate-400 mt-1">
-              Anahtar yasam dongusu, rotasyon ve yeniden sifreleme işlemleri
+              Anahtar yaşam döngüsü, rotasyon ve yeniden sifreleme işlemleri
             </p>
           </div>
           <div className="flex gap-2">
@@ -371,7 +371,7 @@ export default function EncryptionManagementPage() {
                   <Database className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Isler</p>
+                  <p className="text-sm text-slate-400">İşler</p>
                   <p className="text-2xl font-bold text-white">{jobsSummary.total_jobs || 0}</p>
                 </div>
               </div>
@@ -393,7 +393,7 @@ export default function EncryptionManagementPage() {
                   className="ml-auto bg-red-600 hover:bg-red-700"
                   onClick={() => handleInitiateRotation(key.key_id)}
                 >
-                  Rotasyon Baslat
+                  Rotasyon Başlat
                 </Button>
               </div>
             ))}
@@ -412,13 +412,13 @@ export default function EncryptionManagementPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="bg-slate-800 border border-slate-700">
             <TabsTrigger value="overview" className="data-[state=active]:bg-slate-700">
-              Genel Bakis
+              Genel Bakış
             </TabsTrigger>
             <TabsTrigger value="keys" className="data-[state=active]:bg-slate-700">
               Anahtarlar
             </TabsTrigger>
             <TabsTrigger value="jobs" className="data-[state=active]:bg-slate-700">
-              Yeniden Sifreleme
+              Yeniden Şifreleme
             </TabsTrigger>
             <TabsTrigger value="audit" className="data-[state=active]:bg-slate-700">
               Denetim Gunlugu
@@ -467,7 +467,7 @@ export default function EncryptionManagementPage() {
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <RefreshCw className="h-5 w-5 text-blue-400" />
-                    Aktif Isler
+                    Aktif İşler
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -485,7 +485,7 @@ export default function EncryptionManagementPage() {
                       </div>
                     ))}
                     {jobs.filter(j => j.state === 'running').length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Calisan is yok</p>
+                      <p className="text-slate-400 text-center py-4">Çalışan iş yok</p>
                     )}
                   </div>
                 </CardContent>
@@ -591,7 +591,7 @@ export default function EncryptionManagementPage() {
           <TabsContent value="jobs" className="space-y-4">
             <Card className="bg-slate-800/50 border-slate-700">
               <CardHeader>
-                <CardTitle className="text-white">Yeniden Sifreleme Isleri</CardTitle>
+                <CardTitle className="text-white">Yeniden Şifreleme İşleri</CardTitle>
                 <CardDescription className="text-slate-400">
                   Anahtar rotasyonu sonrasi veri migrasyonu isleri
                 </CardDescription>
@@ -623,7 +623,7 @@ export default function EncryptionManagementPage() {
                       <div className="flex gap-2 mt-3">
                         {job.state === 'pending' && (
                           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleJobAction(job.job_id, 'start')}>
-                            <Play className="h-3 w-3 mr-1" /> Baslat
+                            <Play className="h-3 w-3 mr-1" /> Başlat
                           </Button>
                         )}
                         {job.state === 'running' && (
@@ -837,7 +837,7 @@ export default function EncryptionManagementPage() {
         <Dialog open={showJobDialog} onOpenChange={setShowJobDialog}>
           <DialogContent className="bg-slate-800 border-slate-700">
             <DialogHeader>
-              <DialogTitle className="text-white">Yeniden Sifreleme Isi Olustur</DialogTitle>
+              <DialogTitle className="text-white">Yeniden Şifreleme Isi Olustur</DialogTitle>
               <DialogDescription className="text-slate-400">
                 Veri migrasyonu için yeni bir is oluşturun
               </DialogDescription>

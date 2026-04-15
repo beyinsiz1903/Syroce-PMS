@@ -530,7 +530,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "security_hardening",
-    label: "Guvenlik & Guclendirme",
+    label: "Güvenlik & Güçlendirme",
     path: "/security-hardening",
     moduleKey: "advanced_analytics",
     tier: "enterprise",
@@ -539,7 +539,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "encryption_management",
-    label: "Sifreleme Yonetimi",
+    label: "Şifreleme Yönetimi",
     path: "/encryption-management",
     moduleKey: "advanced_analytics",
     tier: "enterprise",

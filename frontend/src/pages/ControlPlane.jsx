@@ -61,7 +61,7 @@ function ReservationLookup() {
       }
       toast.error("Sonuç bulunamadı", { description: `"${q}" için timeline kaydı yok.` });
     } catch (err) {
-      toast.error("Arama hatasi", { description: err.response?.data?.detail || err.message });
+      toast.error("Arama hatası", { description: err.response?.data?.detail || err.message });
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ function ReservationLookup() {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    toast.success("Kopyalandi");
+    toast.success("Kopyalandı");
   };
 
   return (
@@ -145,8 +145,8 @@ function ReservationLookup() {
       {!traceResult && !loading && (
         <div className="text-center py-16 text-zinc-500" data-testid="lookup-empty-state">
           <Search className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">OTA Reservation ID veya Correlation ID girerek trace baslatin</p>
-          <p className="text-xs mt-1 text-zinc-600">Ornek: HR-12345, EX-67890, veya UUID</p>
+          <p className="text-sm">OTA Reservation ID veya Correlation ID girerek trace başlatın</p>
+          <p className="text-xs mt-1 text-zinc-600">Örnek: HR-12345, EX-67890, veya UUID</p>
         </div>
       )}
     </div>
@@ -331,7 +331,7 @@ function GapWarnings({ warnings }) {
     <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3" data-testid="gap-warnings">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
-        <span className="text-xs font-medium text-yellow-400">Gap Uyarilari</span>
+        <span className="text-xs font-medium text-yellow-400">Gap Uyarıları</span>
       </div>
       <ul className="space-y-1">
         {warnings.map((w, i) => (
@@ -424,21 +424,21 @@ function SystemHealth() {
         </div>
         <div>
           <div className="text-3xl font-bold text-zinc-100 font-mono">{score}</div>
-          <div className="text-xs text-zinc-500 mt-1">Health Score · Son guncelleme: {formatTime(dashboard.timestamp)}</div>
+          <div className="text-xs text-zinc-500 mt-1">Health Score · Son güncelleme: {formatTime(dashboard.timestamp)}</div>
         </div>
       </div>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard
-          label="Import Basari"
+          label="Import Başarı"
           value={`${m.import_success_rate_24h ?? 100}%`}
           sub="24 saat"
           ok={m.import_success_rate_24h >= 95}
           testId="metric-import-success"
         />
         <MetricCard
-          label="Sync Basari"
+          label="Sync Başarı"
           value={`${m.sync_success_rate_24h ?? 100}%`}
           sub="24 saat"
           ok={m.sync_success_rate_24h >= 95}

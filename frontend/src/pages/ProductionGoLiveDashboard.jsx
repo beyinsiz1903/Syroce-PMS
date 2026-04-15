@@ -228,7 +228,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <h1 data-testid="golive-title" className="text-2xl font-bold text-zinc-100 tracking-tight">{t("techDashboards.productionGoLive")}</h1>
-              <p className="text-sm text-zinc-400 mt-1">Sistem hazirlik durumu ve production dogrulama</p>
+              <p className="text-sm text-zinc-400 mt-1">Sistem hazırlık durumu ve production doğrulama</p>
             </div>
             <div className="flex items-center gap-5">
               <div className="text-right">
@@ -270,7 +270,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
                     {React.createElement((LAUNCH_COLORS[prelaunchResult.recommendation] || LAUNCH_COLORS.NOT_READY).icon, { size: 20, className: (LAUNCH_COLORS[prelaunchResult.recommendation] || LAUNCH_COLORS.NOT_READY).text })}
                     <div>
                       <div className={`text-lg font-bold ${(LAUNCH_COLORS[prelaunchResult.recommendation] || LAUNCH_COLORS.NOT_READY).text}`}>{prelaunchResult.recommendation?.replace(/_/g, " ")}</div>
-                      <div className="text-[11px] text-zinc-500">Son dogrulama: {prelaunchResult.started_at ? new Date(prelaunchResult.started_at).toLocaleString() : "N/A"}</div>
+                      <div className="text-[11px] text-zinc-500">Son doğrulama: {prelaunchResult.started_at ? new Date(prelaunchResult.started_at).toLocaleString() : "N/A"}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -676,7 +676,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
             {!prelaunchResult?.steps && (
               <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-10 text-center">
                 <Rocket size={32} className="text-zinc-600 mx-auto mb-3" />
-                <div className="text-sm text-zinc-500">Henüz dogrulama calistirilmadi. "Run Validation" ile baslatin.</div>
+                <div className="text-sm text-zinc-500">Henüz doğrulama çalıştırılmadı. "Run Validation" ile başlatın.</div>
               </div>
             )}
 

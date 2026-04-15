@@ -24,9 +24,9 @@ import { CICDPipelineDashboard } from "./CICDPipelineDashboard";
 // ─── Style Maps ─────────────────────────────────────────────────
 const RATING_STYLES = {
   elite: { label: "ELITE", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-  high: { label: "YUKSEK", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  high: { label: "YÜKSEK", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   medium: { label: "ORTA", cls: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
-  low: { label: "DUSUK", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
+  low: { label: "DÜŞÜK", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
   no_data: { label: "VERI YOK", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
 };
 
@@ -47,10 +47,10 @@ const DRIFT_SEVERITY_STYLES = {
 const CORRELATION_INFERENCE = {
   positive_correlation: { label: "Pozitif Korelasyon", icon: TrendingUp, cls: "text-emerald-400" },
   inverse_correlation: { label: "Ters Korelasyon", icon: TrendingDown, cls: "text-yellow-400" },
-  co_declining: { label: "Birlikte Dususte", icon: TrendingDown, cls: "text-red-400" },
+  co_declining: { label: "Birlikte Düşüşte", icon: TrendingDown, cls: "text-red-400" },
   insufficient_data: { label: "Yetersiz Veri", icon: Minus, cls: "text-zinc-500" },
   no_correlation: { label: "Korelasyon Yok", icon: Minus, cls: "text-zinc-500" },
-  improving: { label: "Iyilesiyor", icon: TrendingUp, cls: "text-emerald-400" },
+  improving: { label: "İyileşiyor", icon: TrendingUp, cls: "text-emerald-400" },
   stable: { label: "Stabil", icon: Minus, cls: "text-blue-400" },
   degrading: { label: "Kotulesiyor", icon: TrendingDown, cls: "text-red-400" },
 };
@@ -238,7 +238,7 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
               data-testid="drift-evaluate-btn"
             >
               {evaluating ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
-              Degerlendir
+              Değerlendir
             </Button>
           </div>
         </div>
@@ -462,7 +462,7 @@ function KpiDashboard({ kpiData, dora, correlation, onDrillDown }) {
         {/* Active alerts summary */}
         <div className="flex items-center justify-between text-[10px] text-zinc-600">
           <span>Aktif alarm: <span className="text-zinc-400 font-mono">{driftAlerts.active_count || 0}</span></span>
-          <span>En yuksek: <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-orange-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
+          <span>En yüksek: <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-orange-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
           <span>Auto-heal basari: <span className="text-zinc-400 font-mono">{autoActions.success_rate ?? 100}%</span></span>
         </div>
       </CardContent>
