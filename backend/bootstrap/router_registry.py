@@ -48,6 +48,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.pms_hardening", "router", ["pms-core"], None, None),
     ("routers.revenue_management", "router", ["revenue-engine"], None, None),
     ("routers.displacement_analysis", "router", ["displacement-analysis"], None, None),
+    ("routers.travel_agent_arap", "router", ["travel-agent-arap"], None, None),
     ("routers.event_system", "router", ["event-system"], None, None),
     ("routers.guest_journey", "router", ["guest-journey"], None, None),
     ("routers.platform_scaling", "router", ["platform-scaling"], None, None),

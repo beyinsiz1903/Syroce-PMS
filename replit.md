@@ -93,6 +93,7 @@ Two URL patterns coexist in frontend code:
 - Channel Manager (OTA sync with Exely, HotelRunner)
 - Control Plane for operational monitoring
 - **Displacement Analysis** (`DisplacementAnalysis.jsx`) — 4-tab UI: Market Overview (occupancy forecast, channel mix, risk indicators), Scenario Builder (group booking analysis with displaced/proposed/ancillary revenue, ROI, RevPAR delta, daily breakdown), Compare Scenarios (side-by-side up to 5 scenarios), History (saved analyses). Backend: `displacement_engine.py` (live MongoDB queries for occupancy, ADR, cancellation rate, DOW pricing) + `displacement_analysis.py` router (5 endpoints: `/analyze`, `/market-overview`, `/compare`, `/save`, `/history`). 72 i18n keys across all 10 languages.
+- **Travel Agent AR/AP** (`TravelAgentARAP.jsx`) — 4-tab UI: Overview (KPIs: total receivable/payable/paid, collection rate, overdue counts, agency summary table), Agency Ledger (expandable per-agency view with commission entries, payment history, record payment, account statement, create payment plan), Payment Plans (installment tracking with mark-paid), Aging Report (current/30/60/90/90+ day buckets). Backend: `travel_agent_arap.py` router (6 endpoints: `/summary`, `/aging`, `/transactions/{id}`, `/payment`, `/payment-plans`, `/statement/{id}`). Demo seed: 5 agencies with ~50 bookings and payment transactions. 83 i18n keys across all 10 languages.
 - AI-driven dynamic pricing and forecasting
 - WebSocket real-time updates
 - Multi-tenant architecture

@@ -262,6 +262,15 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
+    key: "travel_agent_arap",
+    label: "Acenta AR/AP",
+    path: "/travel-agent-arap",
+    moduleKey: "channel_manager",
+    tier: "basic",
+    group: "core",
+    navGroup: "channels",
+  },
+  {
     key: "agency_management",
     label: "Acente Yonetimi",
     path: "/agency-management",

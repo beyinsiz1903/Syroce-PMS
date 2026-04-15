@@ -150,6 +150,129 @@ async def _ensure_complaints_seeded(db):
         print(f"✅ {len(complaints)} service complaints seeded")
 
 
+async def _ensure_agencies_seeded(db):
+    """Seed demo travel agencies, agency bookings, and transactions if not present."""
+    count = await db.agencies.count_documents({})
+    if count > 0:
+        return
+    user = await db.users.find_one({})
+    if not user:
+        return
+    tid = user.get("tenant_id")
+    if not tid:
+        return
+
+    print("🌱 Seeding travel agencies and AR/AP data...")
+
+    agency_defs = [
+        {"name": "Antalya Sun Tours", "contact_name": "Mehmet Yılmaz", "contact_email": "mehmet@antsunsuntours.com", "contact_phone": "+905551001001", "commission_rate": 12, "notes": "Premium partner since 2020"},
+        {"name": "Blue Horizon Travel", "contact_name": "Elena Popov", "contact_email": "elena@bluehorizon.eu", "contact_phone": "+442071234567", "commission_rate": 15, "notes": "UK market specialist"},
+        {"name": "Deutsche Reisen GmbH", "contact_name": "Hans Müller", "contact_email": "mueller@deutschereisen.de", "contact_phone": "+4930123456", "commission_rate": 10, "notes": "German market, high volume"},
+        {"name": "Orient Express Tours", "contact_name": "Ayşe Demir", "contact_email": "ayse@orientexpress.com.tr", "contact_phone": "+905552002002", "commission_rate": 8, "notes": "Domestic tours, corporate groups"},
+        {"name": "Riviera Holiday Agency", "contact_name": "Pierre Dubois", "contact_email": "pierre@rivieraholiday.fr", "contact_phone": "+33142123456", "commission_rate": 14, "notes": "French Riviera clientele"},
+    ]
+
+    guests_list = await db.guests.find({"tenant_id": tid}).to_list(50)
+    rooms_list = await db.rooms.find({"tenant_id": tid}).to_list(50)
+    if not guests_list or not rooms_list:
+        return
+
+    agencies = []
+    all_bookings = []
+    all_transactions = []
+    now = _now()
+
+    for idx, adef in enumerate(agency_defs):
+        agency_id = _uuid()
+        agency = {
+            "id": agency_id,
+            "tenant_id": tid,
+            **adef,
+            "status": "active",
+            "created_at": (now - timedelta(days=180 + idx * 30)).isoformat(),
+        }
+        agencies.append(agency)
+
+        num_bookings = random.randint(5, 15)
+        agency_total_commission = 0
+        for bi in range(num_bookings):
+            guest = random.choice(guests_list)
+            room = random.choice(rooms_list)
+            days_ago = random.randint(5, 120)
+            ci = now - timedelta(days=days_ago)
+            nights = random.randint(2, 7)
+            co = ci + timedelta(days=nights)
+            rate = random.choice([8000, 10000, 12000, 15000, 18000, 22000, 25000])
+            total = rate * nights
+            commission_amount = round(total * adef["commission_rate"] / 100, 2)
+            agency_total_commission += commission_amount
+
+            status_options = ["checked_out"] * 6 + ["confirmed"] * 2 + ["checked_in"] * 2
+            bk_status = random.choice(status_options)
+
+            booking = {
+                "id": _uuid(),
+                "tenant_id": tid,
+                "agency_id": agency_id,
+                "guest_id": guest.get("id"),
+                "guest_name": guest.get("name", guest.get("first_name", "Guest")),
+                "room_id": room.get("id"),
+                "room_number": room.get("number", room.get("room_number", "101")),
+                "room_type": room.get("type", room.get("room_type", "standard")),
+                "check_in": ci.strftime("%Y-%m-%d"),
+                "check_out": co.strftime("%Y-%m-%d"),
+                "nights": nights,
+                "adults": random.randint(1, 3),
+                "children": random.randint(0, 2),
+                "base_rate": rate,
+                "total_amount": total,
+                "status": bk_status,
+                "source": "agency",
+                "channel": "agency",
+                "source_channel": f"agency:{adef['name']}",
+                "rate_plan": "agency_negotiated",
+                "paid_amount": total if bk_status == "checked_out" else 0,
+                "created_at": ci.isoformat(),
+            }
+            all_bookings.append(booking)
+
+        paid_pct = random.uniform(0.3, 0.85)
+        paid_amount = round(agency_total_commission * paid_pct, 2)
+
+        num_payments = random.randint(1, 4)
+        remaining = paid_amount
+        for pi in range(num_payments):
+            if remaining <= 0:
+                break
+            pmt = round(remaining / (num_payments - pi), 2) if pi < num_payments - 1 else remaining
+            pmt = min(pmt, remaining)
+            payment_date = now - timedelta(days=random.randint(2, 90))
+            txn = {
+                "id": _uuid(),
+                "tenant_id": tid,
+                "agency_id": agency_id,
+                "type": "payment",
+                "amount": pmt,
+                "payment_method": random.choice(["bank_transfer", "check", "credit_card", "wire_transfer"]),
+                "reference": f"PAY-{random.randint(10000, 99999)}",
+                "notes": f"Commission payment for {adef['name']}",
+                "recorded_by": "demo@hotel.com",
+                "created_at": payment_date.isoformat(),
+            }
+            all_transactions.append(txn)
+            remaining = round(remaining - pmt, 2)
+
+    await db.agencies.insert_many(agencies)
+    if all_bookings:
+        await db.bookings.insert_many(all_bookings)
+    if all_transactions:
+        await db.agency_transactions.insert_many(all_transactions)
+
+    print(f"  ✅ Agencies: {len(agencies)}")
+    print(f"  ✅ Agency bookings: {len(all_bookings)}")
+    print(f"  ✅ Agency transactions: {len(all_transactions)}")
+
+
 async def auto_seed_if_empty(db):
     """Main entry point: seeds demo data only when users collection is empty."""
     user_count = await db.users.count_documents({})
@@ -157,6 +280,7 @@ async def auto_seed_if_empty(db):
         print("ℹ️  Database already has users — skipping auto-seed.")
         await _ensure_hr_legacy_connection(db)
         await _ensure_complaints_seeded(db)
+        await _ensure_agencies_seeded(db)
         return False
 
     print("🌱 Empty database detected — seeding demo data...")

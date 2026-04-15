@@ -59,6 +59,7 @@ const ICON_BY_KEY = {
   wake_up_calls: Calendar,
   lost_found: ShoppingCart,
   group_folio: FileText,
+  travel_agent_arap: DollarSign,
   agency_management: Building2,
   agency_content: FileText,
   data_intelligence: BrainCircuit,

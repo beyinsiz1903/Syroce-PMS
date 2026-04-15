@@ -108,6 +108,7 @@ const GuestJourney = lazy(() => import("@/pages/GuestJourney"));
 const ArrivalList = lazy(() => import("@/pages/ArrivalList"));
 const AIWhatsAppConcierge = lazy(() => import("@/pages/AIWhatsAppConcierge"));
 const PredictiveAnalytics = lazy(() => import("@/pages/PredictiveAnalytics"));
+const TravelAgentARAP = lazy(() => import("@/pages/TravelAgentARAP"));
 const AgencyRequests = lazy(() => import("@/pages/AgencyRequests"));
 const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
 const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
@@ -341,6 +342,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/ota-messaging-hub", ...p(OTAMessagingHub) },
     { path: "/messaging-center", ...p(MessagingCenter) },
     { path: "/sales", ...p(SalesModule) },
+    { path: "/travel-agent-arap", ...p(TravelAgentARAP) },
+    { path: "/app/travel-agent-arap", ...p(TravelAgentARAP) },
     { path: "/agency-requests", ...p(AgencyRequests) },
     { path: "/agency-management", ...p(AgencyManagement) },
     { path: "/agency-content", ...p(AgencyContentDistribution) },
