@@ -28,6 +28,21 @@ import pytest
 
 API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
+
+def _backend_reachable():
+    try:
+        import requests
+        resp = requests.get(f"{API_URL}/api/health", timeout=3)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_reachable(),
+    reason=f"Backend not reachable at {API_URL}"
+)
+
 _RUN_TAG = random.randint(2100, 9999)
 
 # ── Auth Helper ─────────────────────────────────────────────────

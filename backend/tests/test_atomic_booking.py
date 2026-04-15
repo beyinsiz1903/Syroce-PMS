@@ -10,14 +10,30 @@ Tests:
   6. Different rooms both succeed
 """
 import asyncio
+import os
 import random
 import uuid
 
 import pytest
 import httpx
 
-API_URL = "http://localhost:8001"
+API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
+
+
+def _backend_reachable():
+    try:
+        import requests
+        resp = requests.get(f"{API_URL}/api/health", timeout=3)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_reachable(),
+    reason=f"Backend not reachable at {API_URL}"
+)
 
 # Use unique year range per run to avoid collisions with leftover data
 _RUN_TAG = random.randint(2040, 2090)
