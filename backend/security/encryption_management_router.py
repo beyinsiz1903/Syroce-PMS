@@ -119,7 +119,7 @@ async def register_key(
     )
 
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Kayit basarisiz"))
+        raise HTTPException(status_code=400, detail=result.get("error", "Kayıt başarısız"))
 
     return {**result, "timestamp": datetime.now(UTC).isoformat()}
 
@@ -283,7 +283,7 @@ async def emergency_revoke(
     )
 
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Iptal basarisiz"))
+        raise HTTPException(status_code=400, detail=result.get("error", "İptal başarısız"))
 
     return {**result, "timestamp": datetime.now(UTC).isoformat()}
 

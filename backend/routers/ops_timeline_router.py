@@ -775,7 +775,7 @@ async def recover_connector(
     result = await manually_recover_connector(tenant_id, connector_id)
 
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Recovery basarisiz"))
+        raise HTTPException(status_code=400, detail=result.get("error", "Recovery başarısız"))
 
     return result
 
@@ -793,6 +793,6 @@ async def degrade_connector(
     result = await manually_degrade_connector(tenant_id, connector_id, reason)
 
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Degrade basarisiz"))
+        raise HTTPException(status_code=400, detail=result.get("error", "Degrade başarısız"))
 
     return result

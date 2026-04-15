@@ -159,7 +159,7 @@ async def retry_webhook_dlq_item(
     """DLQ'daki bir webhook teslimini manuel olarak retry et."""
     result = await retry_dlq_item(dlq_id)
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Retry basarisiz"))
+        raise HTTPException(status_code=400, detail=result.get("error", "Retry başarısız"))
     return result
 
 

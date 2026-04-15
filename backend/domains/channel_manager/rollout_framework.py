@@ -177,7 +177,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
             "current_phase": gate_result["current_phase"],
             "reason": "Gate kontrolleri gecmedi",
             "failed_checks": failed,
-            "message": f"Gecis engellendi: {len(failed)} kontrol basarisiz",
+            "message": f"Geçiş engellendi: {len(failed)} kontrol başarısız",
         }
 
     if gate_result["next_phase"] is None:

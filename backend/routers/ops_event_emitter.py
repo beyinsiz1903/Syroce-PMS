@@ -45,12 +45,12 @@ SEVERITY_SUCCESS = "success"
 
 # Events that should generate in-app notifications
 NOTIFIABLE_EVENTS = {
-    "webhook.delivery.terminal_failure": (SEVERITY_CRITICAL, "Webhook teslimati basarisiz (tum denemeler tukendi)"),
+    "webhook.delivery.terminal_failure": (SEVERITY_CRITICAL, "Webhook teslimatı başarısız (tum denemeler tükendi)"),
     "webhook.delivery.dlq": (SEVERITY_CRITICAL, "Webhook DLQ'ya tasinidi"),
-    "push.failed_terminal": (SEVERITY_CRITICAL, "Kanal push islemi basarisiz"),
-    "push.throttled": (SEVERITY_WARNING, "Kanal push islemi throttle edildi"),
+    "push.failed_terminal": (SEVERITY_CRITICAL, "Kanal push işlemi başarısız"),
+    "push.throttled": (SEVERITY_WARNING, "Kanal push işlemi throttle edildi"),
     "rate_limit.active": (SEVERITY_WARNING, "Rate limit aktif"),
-    "import.failed": (SEVERITY_WARNING, "Kanal import islemi basarisiz"),
+    "import.failed": (SEVERITY_WARNING, "Kanal import işlemi başarısız"),
     "channel.health_changed": (SEVERITY_WARNING, "Kanal sagligi degisti"),
     # Early Warning / Predictive events (Sprint 4)
     "predictive.warning.degradation_likely": (SEVERITY_WARNING, "Bozulma riski tespit edildi"),
@@ -137,7 +137,7 @@ def _build_notification_message(
         url = details.get("url", "bilinmeyen URL")
         attempts = details.get("attempt_count", "?")
         last_error = details.get("last_error", "")
-        return f"Webhook ({url}) {attempts} deneme sonrasi basarisiz oldu. Son hata: {last_error[:150]}"
+        return f"Webhook ({url}) {attempts} deneme sonrası başarısız oldu. Son hata: {last_error[:150]}"
 
     if event_type == "webhook.delivery.dlq":
         url = details.get("url", "bilinmeyen URL")
@@ -145,7 +145,7 @@ def _build_notification_message(
 
     if event_type == "push.failed_terminal":
         error = details.get("error", "bilinmeyen hata")
-        return f"{ch}: Push islemi basarisiz — {error[:150]}"
+        return f"{ch}: Push işlemi başarısız — {error[:150]}"
 
     if event_type == "push.throttled":
         cooldown = details.get("cooldown_until", "bilinmiyor")
@@ -158,7 +158,7 @@ def _build_notification_message(
 
     if event_type == "import.failed":
         error = details.get("error", "bilinmeyen hata")
-        return f"{ch}: Import basarisiz — {error[:150]}"
+        return f"{ch}: Import başarısız — {error[:150]}"
 
     if event_type == "channel.health_changed":
         old_state = details.get("old_status", "?")

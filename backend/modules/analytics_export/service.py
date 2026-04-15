@@ -35,6 +35,17 @@ REPORT_TYPES = [
     "management_summary",
 ]
 
+REPORT_LABELS_TR = {
+    "revenue_ml_outputs": "Gelir ML Çıktıları",
+    "operational_ai_forecasts": "Operasyonel AI Tahminleri",
+    "guest_intelligence_summary": "Misafir Zekası Özeti",
+    "messaging_delivery_performance": "Mesajlaşma Teslimat Performansı",
+    "autopilot_decisions": "Autopilot Kararları",
+    "audit_summary": "Denetim Özeti",
+    "property_comparison": "Tesis Karşılaştırma",
+    "management_summary": "Yönetim Özeti",
+}
+
 
 def new_export_job(
     tenant_id: str,
@@ -242,6 +253,6 @@ class AnalyticsExportService:
 
     async def get_available_reports(self) -> list:
         return [
-            {"type": rt, "label": rt.replace("_", " ").title()}
+            {"type": rt, "label": REPORT_LABELS_TR.get(rt, rt.replace("_", " ").title())}
             for rt in REPORT_TYPES
         ]

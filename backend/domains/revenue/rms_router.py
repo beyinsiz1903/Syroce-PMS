@@ -2188,7 +2188,8 @@ async def get_rms_dashboard_kpis(
     current_user: User = Depends(get_current_user)
 ):
     """Comprehensive RMS dashboard KPIs based on internal hotel data only."""
-    days = int(period)
+    clean = period.rstrip("dDmM").strip()
+    days = int(clean) if clean else 30
     now = datetime.now(UTC)
     period_start = (now - timedelta(days=days)).isoformat()
     prev_period_start = (now - timedelta(days=days * 2)).isoformat()

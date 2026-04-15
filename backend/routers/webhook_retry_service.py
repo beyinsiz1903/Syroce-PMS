@@ -138,7 +138,7 @@ async def deliver_webhook_with_retry(
         tenant_id,
         channel="b2b_webhook",
         severity=SEVERITY_INFO,
-        title=f"Webhook teslimati baslatildi: {event}",
+        title=f"Webhook teslimatı baslatildi: {event}",
         details={
             "delivery_id": delivery_id,
             "webhook_id": webhook_doc["id"],
@@ -329,7 +329,7 @@ async def deliver_webhook_with_retry(
         tenant_id,
         channel="b2b_webhook",
         severity=SEVERITY_CRITICAL,
-        title=f"Webhook teslimati tamamen basarisiz: {event}",
+        title=f"Webhook teslimatı tamamen başarısız: {event}",
         details={
             "delivery_id": delivery_id,
             "dlq_id": dlq_id,
@@ -442,7 +442,7 @@ async def retry_dlq_item(dlq_id: str) -> dict[str, Any]:
         else:
             await sysdb.webhook_dlq.update_one(
                 {"id": dlq_id},
-                {"$set": {"status": "pending", "last_error": result.get("error", "Retry basarisiz")}},
+                {"$set": {"status": "pending", "last_error": result.get("error", "Retry başarısız")}},
             )
             return {"ok": False, "result": result}
     except Exception as exc:

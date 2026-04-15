@@ -62,7 +62,7 @@ async def retry_safe(tenant_id: str, operator_id: str = "system") -> dict[str, A
 
     if not retryable:
         return _result(action_id, "retry_safe", "no_action",
-                       "Yeniden denenecek basarisiz change set yok", 0,
+                       "Yeniden denenecek başarısız change set yok", 0,
                        tenant_id, operator_id)
 
     # Execute: move to pending for re-processing

@@ -50,12 +50,12 @@ const STATUS_COLORS = {
 };
 
 const STATUS_LABELS = {
-  sent: 'Gonderildi',
+  sent: 'Gönderildi',
   delivered: 'Teslim Edildi',
-  failed: 'Basarisiz',
+  failed: 'Başarısız',
   queued: 'Kuyrukta',
-  sending: 'Gonderiliyor',
-  bounced: 'Geri Dondu',
+  sending: 'Gönderiliyor',
+  bounced: 'Geri Döndü',
 };
 
 const CHANNEL_ICONS = { email: Mail, whatsapp: MessageSquare };
@@ -524,7 +524,7 @@ function SendTab() {
     };
     const res = await post('/api/messaging-center/send', payload);
     if (res.success) {
-      toast.success(`Mesaj gonderildi (${form.channel})`);
+      toast.success(`Mesaj gönderildi (${form.channel})`);
       setForm(p => ({ ...p, recipient: '', body: '', template_id: '', subject: '' }));
       setVariables({});
       setSelectedTemplate(null);
@@ -634,7 +634,7 @@ function DeliveryLogsTab() {
 
   const retry = async (id) => {
     const res = await post(`/api/messaging-center/retry/${id}`, {});
-    if (res.success) toast.success('Yeniden gonderildi');
+    if (res.success) toast.success('Yeniden gönderildi');
     else toast.error(res.error || 'Yeniden gonderim hatasi');
     load();
   };
@@ -731,7 +731,7 @@ function MetricsTab() {
         <Card>
           <CardContent className="py-4 text-center">
             <p className="text-2xl font-bold text-red-600">{totalFailed}</p>
-            <p className="text-xs text-muted-foreground">Basarisiz</p>
+            <p className="text-xs text-muted-foreground">Başarısız</p>
           </CardContent>
         </Card>
         <Card>
@@ -758,11 +758,11 @@ function MetricsTab() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="bg-emerald-50 rounded p-2">
                     <p className="text-sm font-bold text-emerald-700">{(stats.sent || 0) + (stats.delivered || 0)}</p>
-                    <p className="text-[10px] text-emerald-600">Gonderildi</p>
+                    <p className="text-[10px] text-emerald-600">Gönderildi</p>
                   </div>
                   <div className="bg-red-50 rounded p-2">
                     <p className="text-sm font-bold text-red-700">{stats.failed || 0}</p>
-                    <p className="text-[10px] text-red-600">Basarisiz</p>
+                    <p className="text-[10px] text-red-600">Başarısız</p>
                   </div>
                   <div className="bg-amber-50 rounded p-2">
                     <p className="text-sm font-bold text-amber-700">{stats.queued || 0}</p>
@@ -786,8 +786,8 @@ function MetricsTab() {
 const TRIGGER_LABELS = {
   booking_confirmed: 'Rezervasyon Onaylandi',
   pre_arrival: 'Check-in Oncesi',
-  checked_in: 'Check-in Yapildi',
-  checked_out: 'Check-out Yapildi',
+  checked_in: 'Check-in Yapıldı',
+  checked_out: 'Check-out Yapıldı',
 };
 const TRIGGER_COLORS = {
   booking_confirmed: 'bg-blue-50 text-blue-700',
@@ -886,7 +886,7 @@ function AutomationTab() {
         </CardContent></Card>
         <Card><CardContent className="py-4 text-center">
           <p className="text-2xl font-bold text-red-600">{rules.reduce((a, r) => a + (r.total_failed || 0), 0)}</p>
-          <p className="text-xs text-muted-foreground">Basarisiz</p>
+          <p className="text-xs text-muted-foreground">Başarısız</p>
         </CardContent></Card>
       </div>
 
@@ -1218,7 +1218,7 @@ function ActivityTab() {
         <Card><CardContent className="py-8 text-center text-muted-foreground">
           <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p>Henüz aktivite yok.</p>
-          <p className="text-xs mt-1">Otomasyon tetiklendikce ve mesajlar gonderildikce burada gorunecek.</p>
+          <p className="text-xs mt-1">Otomasyon tetiklendikçe ve mesajlar gönderildikce burada görünecek.</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-1.5">

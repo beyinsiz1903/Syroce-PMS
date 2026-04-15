@@ -779,7 +779,7 @@ async def get_messaging_activity(
             title = f"{channel_label} Gonderildi"
             priority = "normal"
         elif status == "failed":
-            title = f"{channel_label} Basarisiz"
+            title = f"{channel_label} Başarısız"
             priority = "high"
         else:
             title = f"{channel_label} {status.title()}"

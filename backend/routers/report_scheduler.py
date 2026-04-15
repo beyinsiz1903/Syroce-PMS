@@ -3,15 +3,15 @@ Report Email Scheduler — Otomatik Rapor E-posta Zamanlayici
 ============================================================
 Endpoints:
   POST   /api/report-scheduler/schedules          — Yeni zamanlama olustur
-  GET    /api/report-scheduler/schedules          — Tum zamanlamalari listele
+  GET    /api/report-scheduler/schedules          — Tüm zamanlamalari listele
   GET    /api/report-scheduler/schedules/{id}     — Tek zamanlama detayi
   PUT    /api/report-scheduler/schedules/{id}     — Zamanlama guncelle
   DELETE /api/report-scheduler/schedules/{id}     — Zamanlama sil
   POST   /api/report-scheduler/schedules/{id}/toggle — Aktif/pasif toggle
   POST   /api/report-scheduler/schedules/{id}/send-now — Manuel tetikleme
-  GET    /api/report-scheduler/history            — Gonderim gecmisi
-  GET    /api/report-scheduler/history/{id}       — Tek gonderim detayi
-  POST   /api/report-scheduler/history/{id}/retry — Basarisiz gonderimleri tekrar dene
+  GET    /api/report-scheduler/history            — Gönderim gecmisi
+  GET    /api/report-scheduler/history/{id}       — Tek gönderim detayi
+  POST   /api/report-scheduler/history/{id}/retry — Başarısız gönderimleri tekrar dene
   GET    /api/report-scheduler/report-types       — Mevcut rapor tipleri
 """
 import logging
@@ -125,7 +125,7 @@ async def _get_history_for_tenant(history_id: str, user: User) -> dict:
         "tenant_id": _get_tenant_id(user),
     })
     if not entry:
-        raise HTTPException(status_code=404, detail="Gonderim kaydi bulunamadi")
+        raise HTTPException(status_code=404, detail="Gönderim kaydi bulunamadi")
     return entry
 
 
@@ -327,7 +327,7 @@ async def retry_send(history_id: str, current_user: User = Depends(get_current_u
     entry = await _get_history_for_tenant(history_id, current_user)
 
     if entry.get("status") != "failed":
-        raise HTTPException(status_code=400, detail="Sadece basarisiz gonderimler tekrar denenebilir")
+        raise HTTPException(status_code=400, detail="Sadece başarısız gönderimler tekrar denenebilir")
 
     schedule = await _get_schedule_for_tenant(entry["schedule_id"], current_user)
 
@@ -394,10 +394,10 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
         if failed_recipients and sent_count == 0:
             status = "failed"
-            error_msg = f"Tum alicilara gonderim basarisiz: {', '.join(failed_recipients)}"
+            error_msg = f"Tüm alıcılara gönderim başarısız: {', '.join(failed_recipients)}"
         elif failed_recipients:
             status = "partial"
-            error_msg = f"Bazi alicilara gonderilemedi: {', '.join(failed_recipients)}"
+            error_msg = f"Bazi alıcılara gonderilemedi: {', '.join(failed_recipients)}"
         else:
             status = "sent"
             error_msg = None
@@ -429,7 +429,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         )
 
         return {
-            "message": f"Rapor gonderimi tamamlandi ({status})",
+            "message": f"Rapor gönderimi tamamlandi ({status})",
             "status": status,
             "sent_count": sent_count,
             "failed_count": len(failed_recipients),
@@ -437,7 +437,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         }
 
     except Exception as e:
-        error_msg = f"Rapor gonderim hatasi: {str(e)}"
+        error_msg = f"Rapor gönderim hatasi: {str(e)}"
         logger.error(f"Schedule execution failed: {e}\n{traceback.format_exc()}")
 
         await db.report_schedule_history.update_one(
