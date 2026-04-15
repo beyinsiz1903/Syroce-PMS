@@ -54,17 +54,17 @@ def _require_manager_role(user: User):
 
 
 REPORT_TYPES = [
-    {"key": "daily_summary", "label": "Gunluk Ozet Raporu", "description": "Gunluk doluluk, gelir ve operasyon ozeti"},
-    {"key": "revenue", "label": "Gelir Raporu", "description": "Detayli gelir analizi ve kiyaslama"},
-    {"key": "occupancy", "label": "Doluluk Raporu", "description": "Oda doluluk oranlari ve trendler"},
+    {"key": "daily_summary", "label": "Günlük Özet Raporu", "description": "Günlük doluluk, gelir ve operasyon özeti"},
+    {"key": "revenue", "label": "Gelir Raporu", "description": "Detaylı gelir analizi ve kıyaslama"},
+    {"key": "occupancy", "label": "Doluluk Raporu", "description": "Oda doluluk oranları ve trendler"},
     {"key": "reservations", "label": "Rezervasyon Raporu", "description": "Rezervasyon listesi ve istatistikler"},
-    {"key": "guest_analytics", "label": "Misafir Analitik", "description": "Misafir profili ve dagilim raporlari"},
-    {"key": "adr_revpar", "label": "ADR / RevPAR", "description": "Ortalama gunluk fiyat ve oda basina gelir"},
-    {"key": "channel_performance", "label": "Kanal Performansi", "description": "OTA ve satis kanali bazli analiz"},
-    {"key": "b2b_analytics", "label": "B2B Analitik", "description": "Acente ve API kullanim analitikleri"},
+    {"key": "guest_analytics", "label": "Misafir Analitik", "description": "Misafir profili ve dağılım raporları"},
+    {"key": "adr_revpar", "label": "ADR / RevPAR", "description": "Ortalama günlük fiyat ve oda başına gelir"},
+    {"key": "channel_performance", "label": "Kanal Performansı", "description": "OTA ve satış kanalı bazlı analiz"},
+    {"key": "b2b_analytics", "label": "B2B Analitik", "description": "Acente ve API kullanım analitikleri"},
     {"key": "housekeeping", "label": "Housekeeping Raporu", "description": "Kat hizmetleri performans raporu"},
-    {"key": "financial", "label": "Finansal Rapor", "description": "Genel muhasebe ve folio ozeti"},
-    {"key": "flash_report", "label": "Flash Report", "description": "Anlik operasyon durum raporu"},
+    {"key": "financial", "label": "Finansal Rapor", "description": "Genel muhasebe ve folio özeti"},
+    {"key": "flash_report", "label": "Flash Report", "description": "Anlık operasyon durum raporu"},
 ]
 
 FREQUENCY_OPTIONS = ["daily", "weekly", "monthly"]
@@ -454,7 +454,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
 def _build_report_email_html(schedule: dict, report_label: str, now: datetime) -> str:
     fmt = schedule.get("format", "pdf").upper()
-    freq_labels = {"daily": "Gunluk", "weekly": "Haftalik", "monthly": "Aylik"}
+    freq_labels = {"daily": "Günlük", "weekly": "Haftalık", "monthly": "Aylık"}
     freq_label = freq_labels.get(schedule.get("frequency", ""), schedule.get("frequency", ""))
 
     return f"""

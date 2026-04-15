@@ -28,7 +28,7 @@ const headers = () => ({
   Authorization: "Bearer " + localStorage.getItem("token"),
 });
 
-const FREQ_LABELS = { daily: "Gunluk", weekly: "Haftalik", monthly: "Aylik" };
+const FREQ_LABELS = { daily: "Günlük", weekly: "Haftalık", monthly: "Aylık" };
 const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", link: "Link" };
 const DAY_LABELS = {
   monday: "Pazartesi", tuesday: "Sali", wednesday: "Carsamba",
@@ -489,7 +489,7 @@ export default function ReportScheduler() {
             <div>
               <label className="text-sm font-medium text-gray-700">Zamanlama Adi *</label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="ornegin: Gunluk Doluluk Raporu" className="mt-1" />
+                placeholder="ornegin: Günlük Doluluk Raporu" className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -521,7 +521,7 @@ export default function ReportScheduler() {
                 <Select value={form.frequency} onValueChange={(v) => setForm((f) => ({ ...f, frequency: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="daily">Gunluk</SelectItem>
+                    <SelectItem value="daily">Günlük</SelectItem>
                     <SelectItem value="weekly">Haftalik</SelectItem>
                     <SelectItem value="monthly">Aylik</SelectItem>
                   </SelectContent>
