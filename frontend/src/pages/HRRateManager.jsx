@@ -68,7 +68,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('HotelRunner verileri yuklenemedi');
+      toast.error('HotelRunner verileri yüklenemedi');
     }
     setLoading(false);
   }, [startDate, endDate]);
@@ -98,7 +98,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   }, [queueStatus?.total_in_queue, fetchQueueStatus]);
 
   const handleCancelAllQueue = async () => {
-    if (!confirm('Kuyruktaki tum bekleyen push islemleri iptal edilsin mi?')) return;
+    if (!confirm('Kuyruktaki tum bekleyen push işlemleri iptal edilsin mi?')) return;
     setCancellingQueue(true);
     try {
       const { data } = await axios.delete(`${API}${HR_API_PREFIX}/queue-cancel-all`, { headers });
@@ -201,7 +201,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
-      toast.error('Fiyatlandirma ayari guncellenemedi');
+      toast.error('Fiyatlandırma ayarı güncellenemedi');
     }
   };
 
@@ -212,10 +212,10 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
   };
 
   const handleBulkUpdate = async () => {
-    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi secin'); return; }
-    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani secin'); return; }
-    if (enabledFields.size === 0) { toast.error('Lutfen guncellenecek en az bir alan secin'); return; }
-    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi secin'); return; }
+    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi seçin'); return; }
+    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani seçin'); return; }
+    if (enabledFields.size === 0) { toast.error('Lütfen güncellenecek en az bir alan seçin'); return; }
+    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi seçin'); return; }
 
     const selectedRoomCodes = Object.keys(selections);
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
@@ -225,7 +225,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         (enabledFields.has('min_stay') && rv.min_stay) || (enabledFields.has('max_stay') && rv.max_stay) ||
         (enabledFields.has('stop_sell') && rv.stop_sell) || (enabledFields.has('cta') && rv.cta) || (enabledFields.has('ctd') && rv.ctd);
     });
-    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi icin deger girin'); return; }
+    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi için deger girin'); return; }
 
     // Check permission warnings before push
     if (enabledFields.has('availability')) {
@@ -235,7 +235,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
       });
       if (noAvailPerms.length > 0) {
         const names = noAvailPerms.map(code => roomTypes.find(r => r.code === code)?.name || code).join(', ');
-        toast.warning(`Dikkat: ${names} icin HotelRunner musaitlik guncelleme izni yok. Fiyat gidecek ama musaitlik HotelRunner tarafindan reddedilecek.`, { duration: 8000 });
+        toast.warning(`Dikkat: ${names} için HotelRunner musaitlik guncelleme izni yok. Fiyat gidecek ama musaitlik HotelRunner tarafindan reddedilecek.`, { duration: 8000 });
       }
     }
 
@@ -260,7 +260,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
         { headers }
       );
 
-      toast.success(`${data.saved} kayit guncellendi`);
+      toast.success(`${data.saved} kayıt güncellendi`);
       if (data.background_push) {
         toast.success(`${data.total_room_types} oda tipi HotelRunner'a arka planda gonderiliyor`);
       }
@@ -355,7 +355,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
                     : 'Arka plan worker tarafindan otomatik islenecek'
                   }
                   {queueStatus.completed > 0 && ` | ${queueStatus.completed} tamamlandi`}
-                  {queueStatus.failed > 0 && ` | ${queueStatus.failed} basarisiz`}
+                  {queueStatus.failed > 0 && ` | ${queueStatus.failed} başarısız`}
                 </p>
               </div>
             </div>
@@ -366,7 +366,7 @@ const HRRateManager = ({ user, tenant, onLogout }) => {
               data-testid="hr-queue-cancel-all-btn"
             >
               {cancellingQueue ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              {cancellingQueue ? 'Iptal ediliyor...' : 'Tumunu Iptal Et'}
+              {cancellingQueue ? 'İptal ediliyor...' : 'Tumunu İptal Et'}
             </button>
           </div>
         )}

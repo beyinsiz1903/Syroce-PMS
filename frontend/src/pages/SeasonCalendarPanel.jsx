@@ -33,7 +33,7 @@ export default function SeasonCalendarPanel() {
     try {
       const res = await axios.get('/rms/seasonal-calendar');
       setSeasons(res.data.seasons || []);
-    } catch { toast.error('Sezon takvimi yuklenemedi'); }
+    } catch { toast.error('Sezon takvimi yüklenemedi'); }
     finally { setLoading(false); }
   };
 
@@ -63,7 +63,7 @@ export default function SeasonCalendarPanel() {
       };
       if (editId) {
         await axios.put(`/rms/seasonal-calendar/${editId}`, payload);
-        toast.success('Sezon guncellendi');
+        toast.success('Sezon güncellendi');
       } else {
         await axios.post('/rms/seasonal-calendar', payload);
         toast.success('Sezon eklendi');
@@ -74,7 +74,7 @@ export default function SeasonCalendarPanel() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bu sezonu silmek istediginize emin misiniz?')) return;
+    if (!window.confirm('Bu sezonu silmek istediğinize emin misiniz?')) return;
     try {
       await axios.delete(`/rms/seasonal-calendar/${id}`);
       toast.success('Sezon silindi');
@@ -191,7 +191,7 @@ export default function SeasonCalendarPanel() {
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Iptal</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>İptal</Button>
               <Button size="sm" onClick={handleSave} data-testid="save-season-btn">{editId ? 'Guncelle' : 'Kaydet'}</Button>
             </div>
           </CardContent>
@@ -201,7 +201,7 @@ export default function SeasonCalendarPanel() {
       {/* Seasons List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {seasons.length === 0 ? (
-          <Card className="md:col-span-2"><CardContent className="py-8 text-center text-sm text-slate-400">Henuz sezon tanimlanmamis.</CardContent></Card>
+          <Card className="md:col-span-2"><CardContent className="py-8 text-center text-sm text-slate-400">Henüz sezon tanimlanmamis.</CardContent></Card>
         ) : (
           seasons.map(s => {
             const info = getTypeInfo(s.season_type);

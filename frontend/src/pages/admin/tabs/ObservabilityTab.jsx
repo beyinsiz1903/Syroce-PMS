@@ -115,7 +115,7 @@ const ObservabilityTab = () => {
               </CardContent>
             </Card>
           ))}
-          {metrics.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Metrik bulunamadi</CardContent></Card>}
+          {metrics.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Metrik bulunamadı</CardContent></Card>}
         </div>
       ) : (
         <div className="space-y-1">

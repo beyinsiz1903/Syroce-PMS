@@ -50,7 +50,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       toast.success(newVal ? 'DND Aktif' : 'DND Kapatildi');
       onUpdate?.();
     } catch {
-      toast.error('DND durumu guncellenemedi');
+      toast.error('DND durumu güncellenemedi');
     }
   };
 
@@ -60,7 +60,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       toast.success(`Oda ${room.room_number} → ${connectedRoom} baglandi`);
       onUpdate?.();
     } catch {
-      toast.error('Oda baglama islemi basarisiz');
+      toast.error('Oda baglama işlemi başarısız');
     }
   };
 
@@ -192,7 +192,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
             <div className="flex gap-2">
               <Select value={selectedMinibarItem} onValueChange={setSelectedMinibarItem}>
                 <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Urun secin..." />
+                  <SelectValue placeholder="Urun seçin..." />
                 </SelectTrigger>
                 <SelectContent>
                   {MINIBAR_ITEMS.map(item => (

@@ -207,7 +207,7 @@ const ReportsTab = () => {
               </Card>
             </div>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Gunluk ozet yuklenemedi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">Gunluk ozet yüklenemedi</CardContent></Card>
           )}
 
           {dailyFlash?.revenue && (
@@ -296,7 +296,7 @@ const ReportsTab = () => {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">7 Gunluk Doluluk Tahmini</CardTitle>
-                <CardDescription>Onumuzdeki 7 gun icin beklenen doluluk ve rezervasyon sayisi</CardDescription>
+                <CardDescription>Onumuzdeki 7 gun için beklenen doluluk ve rezervasyon sayisi</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -314,14 +314,14 @@ const ReportsTab = () => {
               </CardContent>
             </Card>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Tahmin verisi bulunamadi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">Tahmin verisi bulunamadı</CardContent></Card>
           )}
 
           {forecast30.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">30 Gunluk Doluluk Trendi</CardTitle>
-                <CardDescription>Onumuzdeki 30 gun icin doluluk tahmini</CardDescription>
+                <CardDescription>Onumuzdeki 30 gun için doluluk tahmini</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
@@ -427,7 +427,7 @@ const ReportsTab = () => {
               )}
             </>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Pazar segmenti verisi bulunamadi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">Pazar segmenti verisi bulunamadı</CardContent></Card>
           )}
         </TabsContent>
 
@@ -519,7 +519,7 @@ const ReportsTab = () => {
               )}
             </>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Kat hizmetleri verisi bulunamadi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">Kat hizmetleri verisi bulunamadı</CardContent></Card>
           )}
         </TabsContent>
       </Tabs>

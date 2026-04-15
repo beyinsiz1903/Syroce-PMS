@@ -182,8 +182,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setGroupBookings(groupSummary);
     } catch (error) {
-      console.error('Failed to load calendar data:', error);
-      toast.error('Failed to load calendar data');
+      console.error('Takvim verileri yüklenemedi:', error);
+      toast.error('Takvim verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -229,16 +229,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         }
       } catch (e) { if (e.response?.status !== 404) console.warn('v2 connector sync error:', e); }
 
-      if (!synced) { toast.info('Aktif kanal baglantisi bulunamadi'); setSyncing(false); return; }
+      if (!synced) { toast.info('Aktif kanal bağlantısı bulunamadı'); setSyncing(false); return; }
       if (totalImported > 0 || totalCancelled > 0) {
         toast.success(`Senkronizasyon tamamlandi: ${totalImported} yeni, ${totalCancelled} iptal`);
       } else {
-        toast.info('Yeni rezervasyon degisikligi bulunamadi');
+        toast.info('Yeni rezervasyon değişikliği bulunamadı');
       }
       await loadCalendarData();
     } catch (error) {
       console.error('Sync failed:', error);
-      toast.error('Senkronizasyon basarisiz');
+      toast.error('Senkronizasyon başarısız');
     } finally { setSyncing(false); }
   };
 
@@ -338,7 +338,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
     const clickedDateStr = new Date(date).toISOString().split('T')[0];
     if (clickedDateStr < minDate) {
-      toast.error(`Gecmis tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
+      toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
     }
 
@@ -369,7 +369,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const today = new Date().toISOString().split('T')[0];
     const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
     if (newBooking.check_in < minDate) {
-      toast.error(`Gecmis tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
+      toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
     }
 
@@ -383,23 +383,23 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         };
         await axios.post('/pms/guests', newGuest);
         guestId = newGuest.id;
-        toast.success('Yeni misafir olusturuldu!');
+        toast.success('Yeni misafir oluşturuldu!');
       } catch (error) {
-        toast.error('Misafir olusturulamadi: ' + (error.response?.data?.detail || error.message));
+        toast.error('Misafir oluşturulamadı: ' + (error.response?.data?.detail || error.message));
         return;
       }
     }
-    if (!guestId) { toast.error('Lutfen bir misafir secin veya yeni misafir ekleyin'); return; }
+    if (!guestId) { toast.error('Lutfen bir misafir seçin veya yeni misafir ekleyin'); return; }
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-create-${Date.now()}-${Math.random()}`;
       await axios.post('/pms/bookings', { ...newBooking, guest_id: guestId }, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Rezervasyon basariyla olusturuldu!');
+      toast.success('Rezervasyon başarıyla oluşturuldu!');
       setShowNewBookingDialog(false);
       loadCalendarData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon olusturulamadi');
+      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
     }
   };
 
@@ -426,7 +426,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.success(`Rezervasyon ${newRoom?.room_number || ''} numarali odaya atandi`);
       loadCalendarData();
     } catch (error) {
-      toast.error('Oda atamasi basarisiz');
+      toast.error('Oda ataması başarısız');
       console.error('Room assignment error:', error);
     }
   };
@@ -501,7 +501,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setMoveData(null);
       loadCalendarData();
     } catch (error) {
-      toast.error('Failed to move booking');
+      toast.error('Rezervasyon taşınamadı');
       console.error('Move booking error:', error);
     }
   };
@@ -540,10 +540,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setFolioPanelId(folioRes.data[0].id);
         setShowFolioPanel(true);
       } else {
-        toast.info('Bu rezervasyon icin henuz folyo olusturulmamis');
+        toast.info('Bu rezervasyon için henüz folyo olusturulmamis');
       }
     } catch (error) {
-      toast.error('Folyo yuklenemedi');
+      toast.error('Folyo yüklenemedi');
     }
   };
 
@@ -559,9 +559,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     } catch (error) {
       const detail = error.response?.data?.detail;
       if (detail && detail.includes('telefon')) {
-        toast.error('Misafir telefon numarasi bulunamadi');
+        toast.error('Misafir telefon numarası bulunamadı');
       } else {
-        toast.info('Onay mesaji gondermek icin WhatsApp entegrasyonu gereklidir');
+        toast.info('Onay mesaji gondermek için WhatsApp entegrasyonu gereklidir');
       }
     }
   };
@@ -576,13 +576,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         charge_first_night: false,
         no_show_reason: noShowReason,
       });
-      toast.success('No-show islemi tamamlandi, sanal odaya atandi');
+      toast.success('No-show işlemi tamamlandi, sanal odaya atandi');
       setShowNoShowDialog(false);
       setNoShowBookingId(null);
       setNoShowReason('misafir_gelmedi');
       loadCalendarData();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'No-show islemi basarisiz');
+      toast.error(err.response?.data?.detail || 'No-show işlemi başarısız');
     } finally {
       setNoShowProcessing(false);
     }
@@ -689,11 +689,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }}></div>
-                <span>Gecmis / Check-out</span>
+                <span>Geçmiş / Check-out</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span>Musait</span>
+                <span>Müsait</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-500"></div>
@@ -854,7 +854,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yukleniyor...</div>}>
+            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor...</div>}>
               <FolioDetailView folioId={folioPanelId} onClose={() => setShowFolioPanel(false)} />
             </Suspense>
           </div>
@@ -863,7 +863,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Reservation Detail Modal */}
       {showDetailModal && detailModalBookingId && (
-        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yukleniyor...</div></div>}>
+        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
           <ReservationDetailModal
             bookingId={detailModalBookingId}
             onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
@@ -1039,7 +1039,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                     toast.success(`${booking.guest_name || 'Misafir'} odaya atandi`);
                                     loadCalendarData();
                                   } catch (err) {
-                                    toast.error(err.response?.data?.detail || 'Atama basarisiz');
+                                    toast.error(err.response?.data?.detail || 'Atama başarısız');
                                   }
                                 }}
                               >
@@ -1050,10 +1050,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   </option>
                                 ))}
                               </select>
-                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} musait</span>
+                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} müsait</span>
                             </div>
                           ) : (
-                            <span className="text-[10px] text-red-500 font-medium">Musait oda yok</span>
+                            <span className="text-[10px] text-red-500 font-medium">Müsait oda yok</span>
                           )}
                           <Button
                             size="sm"
@@ -1092,17 +1092,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-gray-500">
-              Rezervasyonu no-show olarak isaretlemek ve sanal odaya atamak icin bir sebep secin.
+              Rezervasyonu no-show olarak isaretlemek ve sanal odaya atamak için bir sebep seçin.
             </p>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Sebep</Label>
               <Select value={noShowReason} onValueChange={setNoShowReason}>
                 <SelectTrigger data-testid="noshow-reason-select">
-                  <SelectValue placeholder="Sebep secin..." />
+                  <SelectValue placeholder="Sebep seçin..." />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="misafir_gelmedi">Misafir Gelmedi</SelectItem>
-                  <SelectItem value="iptal_gec_islendi">Iptal Edildi ama Gec Islendi</SelectItem>
+                  <SelectItem value="iptal_gec_islendi">İptal Edildi ama Gec Islendi</SelectItem>
                   <SelectItem value="overbooking">Overbooking</SelectItem>
                 </SelectContent>
               </Select>

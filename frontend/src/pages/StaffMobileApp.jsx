@@ -47,7 +47,7 @@ const StaffMobileApp = ({ user }) => {
       loadTasks();
       setSelectedTask(null);
     } catch (error) {
-      toast.error('Failed to update task');
+      toast.error('Görev güncellenemedi');
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ const StaffMobileApp = ({ user }) => {
       setSelectedTask(null);
       loadTasks();
     } catch (error) {
-      toast.error('Failed to add notes');
+      toast.error('Notlar eklenemedi');
     }
   };
 

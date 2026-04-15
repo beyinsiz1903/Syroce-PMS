@@ -237,7 +237,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-[10px] text-gray-400 font-normal uppercase tracking-wider px-2">
-                      Teknik Yonetim
+                      Teknik Yönetim
                     </DropdownMenuLabel>
                     {adminItems.map((item) => {
                       const Icon = ICON_BY_KEY[item.key] || Home;

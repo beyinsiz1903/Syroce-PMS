@@ -111,7 +111,7 @@ const OTAMessagingHub = () => {
       setNewMessage('');
       loadMessages(selectedConversation.id);
     } catch (error) {
-      toast.error('Failed to send message');
+      toast.error('Mesaj gönderilemedi');
     } finally {
       setLoading(false);
     }

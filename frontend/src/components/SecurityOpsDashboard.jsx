@@ -283,7 +283,7 @@ function RotationPlanCard({ data }) {
 
         {items.length === 0 && (
           <div className="text-xs text-zinc-600 py-1">
-            Henuz yonetilen secret yok
+            Henüz yonetilen secret yok
           </div>
         )}
       </CardContent>
@@ -312,7 +312,7 @@ export function SecurityOpsDashboard() {
       if (cutRes.status === "fulfilled") setCutoverMetrics(cutRes.value.data);
       if (rotRes.status === "fulfilled") setRotationPlan(rotRes.value.data);
     } catch {
-      toast.error("Guvenlik verisi yuklenemedi");
+      toast.error("Guvenlik verisi yüklenemedi");
     } finally {
       setLoading(false);
     }

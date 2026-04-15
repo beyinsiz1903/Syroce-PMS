@@ -54,7 +54,7 @@ const EnhancedFrontDesk = () => {
       return response.data.extracted_data;
     } catch (error) {
       console.error('Error scanning passport:', error);
-      alert('Failed to scan passport');
+      alert('Pasaport taranamadı');
     }
   };
 
@@ -71,7 +71,7 @@ const EnhancedFrontDesk = () => {
       fetchTodayArrivals();
     } catch (error) {
       console.error('Error creating walk-in:', error);
-      alert('Failed to create walk-in booking');
+      alert('Walk-in rezervasyon oluşturulamadı');
     }
   };
 
@@ -87,7 +87,7 @@ const EnhancedFrontDesk = () => {
       fetchTodayArrivals();
     } catch (error) {
       console.error('Error checking in:', error);
-      alert('Failed to check in guest');
+      alert('Misafir giriş yapılamadı');
     }
   };
 

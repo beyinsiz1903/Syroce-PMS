@@ -30,7 +30,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
       setData(res.data);
     } catch (e) {
-      toast.error('Rezervasyon detayi yuklenemedi');
+      toast.error('Rezervasyon detayı yüklenemedi');
       console.error(e);
     }
     setLoading(false);
@@ -45,7 +45,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   if (loading) return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /><span className="text-sm text-gray-500">Yukleniyor...</span></div>
+      <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /><span className="text-sm text-gray-500">Yükleniyor...</span></div>
     </div>
   );
 
@@ -56,18 +56,18 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const tabs = [
     { id: 'general', label: 'Genel Bilgiler', icon: FileText },
     { id: 'guests', label: `Misafirler (${guests?.length || 0})`, icon: Users },
-    { id: 'online_payment', label: 'Online Odeme', icon: CreditCard },
+    { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
     { id: 'folios', label: 'Folyolar', icon: DollarSign },
     { id: 'daily_rates', label: 'Gunluk Fiyatlar', icon: Calendar },
     { id: 'extras', label: 'Ek Ucretler', icon: Receipt },
     { id: 'room_change', label: 'Oda Degistir', icon: Repeat2 },
-    { id: 'cancel', label: 'Iptal', icon: AlertTriangle },
+    { id: 'cancel', label: 'İptal', icon: AlertTriangle },
     { id: 'voucher', label: 'Voucher', icon: FileText },
     { id: 'invoice', label: 'Fatura', icon: Receipt },
     { id: 'deposits', label: `Depozito ${deposits?.length ? `(${deposits.length})` : ''}`, icon: Shield },
-    { id: 'communication', label: `Iletisim ${communication_logs?.length ? `(${communication_logs.length})` : ''}`, icon: Mail },
+    { id: 'communication', label: `İletişim ${communication_logs?.length ? `(${communication_logs.length})` : ''}`, icon: Mail },
     { id: 'notes', label: `Notlar ${notes?.length ? `(${notes.length})` : ''}`, icon: MessageSquare },
-    { id: 'history', label: 'Gecmis', icon: History },
+    { id: 'history', label: 'Geçmiş', icon: History },
   ];
 
   return (
@@ -111,13 +111,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {(summary?.balance || 0) > 0 && (
                   <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
-                    <span className="text-[11px] text-red-700 font-medium">Odeme bekleniyor: {fmtTL(summary?.balance)} TL</span>
+                    <span className="text-[11px] text-red-700 font-medium">Ödeme bekleniyor: {fmtTL(summary?.balance)} TL</span>
                   </div>
                 )}
                 {(summary?.balance || 0) <= 0 && (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">Odeme tamam</span>
+                    <span className="text-[11px] text-emerald-700">Ödeme tamam</span>
                   </div>
                 )}
                 {/* Room status */}
@@ -172,40 +172,40 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <Button size="sm" variant="outline" onClick={async () => {
                     try {
                       await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
-                      toast.success('Giris yapildi'); loadData();
+                      toast.success('Giriş yapıldı'); loadData();
                     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
-                  }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giris Yap</Button>
+                  }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giriş Yap</Button>
                 )}
                 {booking?.status === 'checked_in' && (
                   <Button size="sm" variant="outline" onClick={async () => {
-                    if (!window.confirm('Cikis yapilsin mi?')) return;
+                    if (!window.confirm('Çıkış yapılsın mı?')) return;
                     try {
                       const res = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
                       if (res.data.total_balance > 0.01) {
-                        toast.warning(`Acik bakiye ile cikis yapildi: ${res.data.total_balance.toFixed(2)}`);
+                        toast.warning(`Açık bakiye ile çıkış yapıldı: ${res.data.total_balance.toFixed(2)}`);
                       } else {
-                        toast.success('Cikis yapildi');
+                        toast.success('Çıkış yapıldı');
                       }
                       loadData();
                     } catch (e) {
                       const detail = e.response?.data?.detail || e.message;
                       if (e.response?.status === 402) {
-                        toast.error(`Acik bakiye var: ${detail}. Lutfen once odeme aliniz.`);
+                        toast.error(`Açık bakiye var: ${detail}. Lütfen önce ödeme alınız.`);
                       } else {
                         toast.error('Hata: ' + detail);
                       }
                     }
-                  }} className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"><LogOut className="w-3 h-3 mr-2" /> Cikis Yap</Button>
+                  }} className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"><LogOut className="w-3 h-3 mr-2" /> Çıkış Yap</Button>
                 )}
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giris yapildi')} className="w-full h-8 text-xs justify-start"><LogIn className="w-3 h-3 mr-2" /> Erken Giris</Button>
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Gec cikis kaydedildi')} className="w-full h-8 text-xs justify-start"><LogOut className="w-3 h-3 mr-2" /> Gec Cikis</Button>
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start"><LogIn className="w-3 h-3 mr-2" /> Erken Giriş</Button>
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start"><LogOut className="w-3 h-3 mr-2" /> Geç Çıkış</Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   const vip = data?.guest?.vip_status || false;
-                  try { await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldirildi' : 'VIP yapildi'); loadData(); }
+                  try { await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı'); loadData(); }
                   catch (e) { toast.error('Hata'); }
-                }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldir' : 'VIP Yap'}</Button>
-                <Button size="sm" variant="outline" onClick={() => { if (window.confirm('No-show olarak isaretlensin mi?')) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show isaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-cancel-reservation"><X className="w-3 h-3 mr-2" /> Iptal Et</Button>
+                }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}</Button>
+                <Button size="sm" variant="outline" onClick={() => { if (window.confirm('No-show olarak işaretlensin mi?')) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-cancel-reservation"><X className="w-3 h-3 mr-2" /> İptal Et</Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start text-teal-600 border-teal-200 hover:bg-teal-50" data-testid="btn-voucher"><FileText className="w-3 h-3 mr-2" /> Voucher</Button>
               </div>
             </div>

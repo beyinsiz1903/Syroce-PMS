@@ -104,7 +104,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
       if (cRes.status === 'fulfilled') setCapabilities(cRes.value.data);
       if (tRes.status === 'fulfilled') setTruthTable(tRes.value.data);
     } catch {
-      toast.error('Lockdown verileri yuklenemedi');
+      toast.error('Lockdown verileri yüklenemedi');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -225,7 +225,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
                     )}
                     {key === 'reconciliation' && (
                       <>
-                        <div className="flex justify-between"><span>Acik Vakalar</span><span className={check.open_cases > 0 ? 'text-amber-400' : 'text-emerald-400'}>{check.open_cases ?? 0}</span></div>
+                        <div className="flex justify-between"><span>Açık Vakalar</span><span className={check.open_cases > 0 ? 'text-amber-400' : 'text-emerald-400'}>{check.open_cases ?? 0}</span></div>
                         <div className="flex justify-between"><span>Kritik Vakalar</span><span className={check.critical_cases > 0 ? 'text-red-400' : 'text-emerald-400'}>{check.critical_cases ?? 0}</span></div>
                         <div className="flex justify-between"><span>Eslesmemis</span><span className="text-zinc-300">{check.unreconciled_lineages ?? 0}</span></div>
                       </>
@@ -442,7 +442,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
                 <p className={`text-lg font-bold ${(recon.open_cases ?? 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                   {recon.open_cases ?? 0}
                 </p>
-                <p className="text-[10px] text-zinc-500">Acik</p>
+                <p className="text-[10px] text-zinc-500">Açık</p>
               </div>
               <div className="text-center p-2 rounded-lg bg-zinc-800/50">
                 <p className="text-lg font-bold text-emerald-400">{recon.resolved_cases ?? 0}</p>
@@ -452,7 +452,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
                 <p className={`text-lg font-bold ${recon.oldest_unresolved_age_hours ? 'text-red-400' : 'text-zinc-400'}`}>
                   {recon.oldest_unresolved_age_hours ? `${recon.oldest_unresolved_age_hours}s` : '-'}
                 </p>
-                <p className="text-[10px] text-zinc-500">En Eski Acik (saat)</p>
+                <p className="text-[10px] text-zinc-500">En Eski Açık (saat)</p>
               </div>
             </div>
           </CardContent>

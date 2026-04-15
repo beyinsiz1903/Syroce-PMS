@@ -70,7 +70,7 @@ const CATEGORY_LABELS = {
   puan_degerlendirme: 'Degerlendirme',
   checkout: 'Check-out',
   rezervasyon_onay: 'Rezervasyon Onay',
-  iletisim: 'Iletisim',
+  iletişim: 'İletişim',
   genel: 'Genel',
 };
 
@@ -122,7 +122,7 @@ function SettingsTab() {
   const saveEmail = async () => {
     setSaving(true);
     const res = await post('/api/messaging-center/settings/email', emailForm);
-    if (res.success) toast.success(`Email ayarlari ${res.action === 'created' ? 'olusturuldu' : 'guncellendi'}`);
+    if (res.success) toast.success(`Email ayarları ${res.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
     else toast.error('Kaydetme hatasi');
     setSaving(false);
     load();
@@ -131,7 +131,7 @@ function SettingsTab() {
   const saveWhatsApp = async () => {
     setSaving(true);
     const res = await post('/api/messaging-center/settings/whatsapp', waForm);
-    if (res.success) toast.success(`WhatsApp ayarlari ${res.action === 'created' ? 'olusturuldu' : 'guncellendi'}`);
+    if (res.success) toast.success(`WhatsApp ayarları ${res.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
     else toast.error('Kaydetme hatasi');
     setSaving(false);
     load();
@@ -318,7 +318,7 @@ function TemplatesTab() {
     const vars = form.body_template.match(/\{\{(\w+)\}\}/g)?.map(v => v.replace(/\{\{|\}\}/g, '')) || [];
     const res = await post('/api/messaging-center/templates', { ...form, variables: vars });
     if (res.id) {
-      toast.success('Sablon olusturuldu');
+      toast.success('Şablon oluşturuldu');
       setShowCreate(false);
       setForm({ name: '', category: 'genel', channel: 'whatsapp', subject: '', body_template: '', variables: [] });
       load();
@@ -331,7 +331,7 @@ function TemplatesTab() {
     await put(`/api/messaging-center/templates/${editTemplate.id}`, {
       name: form.name, subject: form.subject, body_template: form.body_template, variables: vars, category: form.category,
     });
-    toast.success('Sablon guncellendi');
+    toast.success('Şablon güncellendi');
     setEditTemplate(null);
     load();
   };
@@ -339,7 +339,7 @@ function TemplatesTab() {
   const handleDelete = async (id) => {
     if (!confirm('Bu sablonu silmek istediginizden emin misiniz?')) return;
     await del(`/api/messaging-center/templates/${id}`);
-    toast.success('Sablon silindi');
+    toast.success('Şablon silindi');
     load();
   };
 
@@ -367,14 +367,14 @@ function TemplatesTab() {
           ))}
         </div>
         <Button data-testid="create-template-btn" size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1" /> Yeni Sablon
+          <Plus className="h-4 w-4 mr-1" /> Yeni Şablon
         </Button>
       </div>
 
       {templates.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">
           <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>Sablon bulunamadi.</p>
+          <p>Şablon bulunamadı.</p>
         </CardContent></Card>
       ) : (
         <div className="grid gap-3">
@@ -420,11 +420,11 @@ function TemplatesTab() {
       <Dialog open={showCreate || !!editTemplate} onOpenChange={v => { if (!v) { setShowCreate(false); setEditTemplate(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editTemplate ? 'Sablonu Duzenle' : 'Yeni Sablon Olustur'}</DialogTitle>
+            <DialogTitle>{editTemplate ? 'Şablonu Duzenle' : 'Yeni Şablon Olustur'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Sablon Adi</Label>
+              <Label>Şablon Adi</Label>
               <Input data-testid="template-name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Hos Geldiniz Mesaji" />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -465,7 +465,7 @@ function TemplatesTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreate(false); setEditTemplate(null); }}>Iptal</Button>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditTemplate(null); }}>İptal</Button>
             <Button data-testid="template-save-btn" onClick={editTemplate ? handleUpdate : handleCreate}>
               {editTemplate ? 'Guncelle' : 'Olustur'}
             </Button>
@@ -511,7 +511,7 @@ function SendTab() {
 
   const handleSend = async () => {
     if (!form.recipient) { toast.error('Alici gerekli'); return; }
-    if (!form.body && !form.template_id) { toast.error('Mesaj icerigi veya sablon secin'); return; }
+    if (!form.body && !form.template_id) { toast.error('Mesaj icerigi veya sablon seçin'); return; }
     setSending(true);
     const payload = {
       channel: form.channel,
@@ -558,11 +558,11 @@ function SendTab() {
           </div>
 
           <div>
-            <Label>Sablon (Opsiyonel)</Label>
+            <Label>Şablon (Opsiyonel)</Label>
             <Select value={form.template_id} onValueChange={selectTemplate}>
-              <SelectTrigger data-testid="send-template"><SelectValue placeholder="Sablon secin veya serbest yazin" /></SelectTrigger>
+              <SelectTrigger data-testid="send-template"><SelectValue placeholder="Şablon seçin veya serbest yazin" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sablon kullanma</SelectItem>
+                <SelectItem value="none">Şablon kullanma</SelectItem>
                 {filteredTemplates.map(t => (
                   <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>
                 ))}
@@ -660,7 +660,7 @@ function DeliveryLogsTab() {
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : logs.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-muted-foreground">Kayit yok</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-muted-foreground">Kayıt yok</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {logs.map(l => {
@@ -827,13 +827,13 @@ function AutomationTab() {
   const handleCreate = async () => {
     if (!form.name || !form.template_id) { toast.error('Ad ve sablon gerekli'); return; }
     const res = await post('/api/messaging-center/automation/rules', form);
-    if (res.id) { toast.success('Otomasyon kurali olusturuldu'); setShowCreate(false); load(); }
+    if (res.id) { toast.success('Otomasyon kurali oluşturuldu'); setShowCreate(false); load(); }
   };
 
   const handleUpdate = async () => {
     if (!editRule) return;
     await put(`/api/messaging-center/automation/rules/${editRule.id}`, form);
-    toast.success('Kural guncellendi');
+    toast.success('Kural güncellendi');
     setEditRule(null);
     load();
   };
@@ -900,7 +900,7 @@ function AutomationTab() {
       {rules.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">
           <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>Henuz otomasyon kurali yok.</p>
+          <p>Henüz otomasyon kurali yok.</p>
           <p className="text-xs mt-1">Yeni kural ekleyerek check-in/check-out olaylarinda otomatik mesaj gonderimi baslatin.</p>
         </CardContent></Card>
       ) : (
@@ -924,14 +924,14 @@ function AutomationTab() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{r.name}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        Sablon: {tmpl?.name || 'Bilinmiyor'}
+                        Şablon: {tmpl?.name || 'Bilinmiyor'}
                         {r.delay_minutes > 0 && ` · ${r.delay_minutes} dk gecikme`}
                       </p>
                     </div>
                     {/* Stats */}
                     <div className="text-right text-xs text-muted-foreground hidden md:block">
                       <span className="text-emerald-600 font-medium">{r.total_sent || 0}</span> gonderim
-                      {(r.total_failed || 0) > 0 && <span className="text-red-500 ml-2">{r.total_failed} basarisiz</span>}
+                      {(r.total_failed || 0) > 0 && <span className="text-red-500 ml-2">{r.total_failed} başarısız</span>}
                     </div>
                     {/* Actions */}
                     <div className="flex items-center gap-1">
@@ -1015,9 +1015,9 @@ function AutomationTab() {
               </div>
             </div>
             <div>
-              <Label>Sablon</Label>
+              <Label>Şablon</Label>
               <Select value={form.template_id} onValueChange={v => setForm(p => ({ ...p, template_id: v }))}>
-                <SelectTrigger data-testid="automation-template"><SelectValue placeholder="Sablon secin" /></SelectTrigger>
+                <SelectTrigger data-testid="automation-template"><SelectValue placeholder="Şablon seçin" /></SelectTrigger>
                 <SelectContent>
                   {filteredTemplates.map(t => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>
@@ -1033,7 +1033,7 @@ function AutomationTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreate(false); setEditRule(null); }}>Iptal</Button>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditRule(null); }}>İptal</Button>
             <Button data-testid="automation-save-btn" onClick={editRule ? handleUpdate : handleCreate}>
               {editRule ? 'Guncelle' : 'Olustur'}
             </Button>
@@ -1217,7 +1217,7 @@ function ActivityTab() {
       {activities.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">
           <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>Henuz aktivite yok.</p>
+          <p>Henüz aktivite yok.</p>
           <p className="text-xs mt-1">Otomasyon tetiklendikce ve mesajlar gonderildikce burada gorunecek.</p>
         </CardContent></Card>
       ) : (
@@ -1279,7 +1279,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
       <div data-testid="messaging-dashboard" className="p-4 lg:p-6 space-y-4 max-w-7xl mx-auto">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Mesajlasma Merkezi</h1>
-          <p className="text-sm text-muted-foreground">Email (SMTP) ve WhatsApp Business ile misafir iletisimi</p>
+          <p className="text-sm text-muted-foreground">Email (SMTP) ve WhatsApp Business ile misafir iletişimi</p>
         </div>
         <Tabs defaultValue="send">
           <TabsList className="grid w-full grid-cols-7 max-w-5xl" data-testid="messaging-tabs">
@@ -1287,7 +1287,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
               <Send className="h-3.5 w-3.5" /> Mesaj Gonder
             </TabsTrigger>
             <TabsTrigger data-testid="tab-templates" value="templates" className="flex items-center gap-1.5">
-              <FileText className="h-3.5 w-3.5" /> Sablonlar
+              <FileText className="h-3.5 w-3.5" /> Şablonlar
             </TabsTrigger>
             <TabsTrigger data-testid="tab-automation" value="automation" className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5" /> Otomasyon

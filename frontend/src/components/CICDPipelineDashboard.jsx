@@ -235,7 +235,7 @@ function TrendChart({ data }) {
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
-        Trend icin en az 2 calistirma gerekli
+        Trend için en az 2 calistirma gerekli
       </div>
     );
   }
@@ -291,7 +291,7 @@ export function CICDPipelineDashboard() {
       if (runsRes.status === "fulfilled") setRuns(runsRes.value.data?.runs || []);
       if (trendRes.status === "fulfilled") setTrends(trendRes.value.data);
     } catch {
-      toast.error("CI/CD verisi yuklenemedi");
+      toast.error("CI/CD verisi yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -314,7 +314,7 @@ export function CICDPipelineDashboard() {
       }
       await fetchAll();
     } catch {
-      toast.error(`${TIER_LABELS[tier]?.name || tier} pipeline basarisiz`);
+      toast.error(`${TIER_LABELS[tier]?.name || tier} pipeline başarısız`);
     } finally {
       setRunning(null);
     }
@@ -375,7 +375,7 @@ export function CICDPipelineDashboard() {
         ))}
         {badgeList.length === 0 && (
           <div className="col-span-3 text-xs text-zinc-600 text-center py-3">
-            Henuz pipeline calistirilmadi
+            Henüz pipeline calistirilmadi
           </div>
         )}
       </div>
@@ -425,7 +425,7 @@ export function CICDPipelineDashboard() {
           <Card className="bg-zinc-900 border-zinc-800">
             <CardContent className="p-6 text-center">
               <GitBranch className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-              <p className="text-sm text-zinc-400">Henuz CI/CD pipeline calistirilmadi</p>
+              <p className="text-sm text-zinc-400">Henüz CI/CD pipeline calistirilmadi</p>
               <p className="text-xs text-zinc-600 mt-1">
                 Yukaridaki butonlardan bir tier secip calistirabilirsiniz
               </p>

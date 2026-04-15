@@ -71,7 +71,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
     if (!code) return;
     try {
       await axios.post(`/security/2fa/disable`, { code }, { headers });
-      setMessage('2FA devre disi birakildi');
+      setMessage('2FA devre dışı bırakıldı');
       fetch2FAStatus();
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
   };
@@ -107,7 +107,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Guvenlik Merkezi</h1>
-            <p className="text-gray-500">2FA, IP erisim kontrolu ve guvenlik ayarlari</p>
+            <p className="text-gray-500">2FA, IP erisim kontrolu ve guvenlik ayarları</p>
           </div>
         </div>
 
@@ -255,7 +255,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                         </tr>
                       ))}
                       {ipRules.length === 0 && (
-                        <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henuz kural eklenmemis</td></tr>
+                        <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kural eklenmemis</td></tr>
                       )}
                     </tbody>
                   </table>

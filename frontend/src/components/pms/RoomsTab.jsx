@@ -214,12 +214,12 @@ const RoomsTab = ({
         method: paymentMethod,
         payment_type: 'interim',
       });
-      toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} odeme basariyla alindi`);
+      toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ödeme başarıyla alindi`);
       setPaymentDialog(false);
       setPaymentTarget(null);
       onDataRefresh?.();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Odeme islemi basarisiz');
+      toast.error(error.response?.data?.detail || 'Ödeme işlemi başarısız');
     } finally {
       setPaymentLoading(false);
     }
@@ -307,12 +307,12 @@ const RoomsTab = ({
         payload.guest_id = selectedGuest.id;
       }
       await axios.post('/pms/quick-booking', payload, { headers: { 'Idempotency-Key': idempotencyKey } });
-      toast.success(`Oda ${quickResRoom.room_number} icin rezervasyon olusturuldu`);
+      toast.success(`Oda ${quickResRoom.room_number} için rezervasyon oluşturuldu`);
       setQuickResDialog(false);
       setQuickResRoom(null);
       onDataRefresh?.();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon olusturulamadi');
+      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
     } finally {
       setQuickResLoading(false);
     }
@@ -365,7 +365,7 @@ const RoomsTab = ({
       {filteredRooms.length === 0 && (
         <div className="text-center py-12 text-gray-400">
           <span className="text-4xl block mb-2">🏨</span>
-          <p className="text-sm">Secili filtreye uygun oda bulunamadi</p>
+          <p className="text-sm">Secili filtreye uygun oda bulunamadı</p>
         </div>
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -441,13 +441,13 @@ const RoomsTab = ({
                     className={`mt-2 p-2 rounded-md border ${guestBg}`}
                     data-testid={`room-guest-${room.room_number}`}
                     onDoubleClick={(e) => handleGuestNameClick(e, guestInfo)}
-                    title="Tikla: Rezervasyon detayi"
+                    title="Tikla: Rezervasyon detayı"
                   >
                     <div
                       className={`flex items-center gap-1.5 cursor-pointer ${gText.hoverBg} rounded px-1 -mx-1 transition-colors`}
                       onClick={(e) => handleGuestNameClick(e, guestInfo)}
                       data-testid={`guest-name-click-${room.room_number}`}
-                      title="Tikla: Rezervasyon detayi"
+                      title="Tikla: Rezervasyon detayı"
                     >
                       <User className={`w-3.5 h-3.5 ${gText.icon} flex-shrink-0`} />
                       <span className={`text-sm font-medium ${gText.name} truncate underline decoration-dotted underline-offset-2`}>
@@ -502,7 +502,7 @@ const RoomsTab = ({
                           data-testid={`room-payment-btn-${room.room_number}`}
                         >
                           <CreditCard className="w-3 h-3 mr-1" />
-                          Odeme
+                          Ödeme
                         </Button>
                       )}
                     </div>
@@ -539,7 +539,7 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700">
               <AlertTriangle className="w-5 h-5" />
-              Acik Bakiye Uyarisi
+              Açık Bakiye Uyarisi
             </DialogTitle>
             <DialogDescription>
               Misafirin acik bakiyesi bulunmaktadir
@@ -565,7 +565,7 @@ const RoomsTab = ({
                 </div>
               </div>
               <p className="text-sm text-gray-600">
-                Bakiyeyi sifirlamadan check-out yapilamaz. Lutfen once odeme aliniz.
+                Bakiyeyi sifirlamadan check-out yapilamaz. Lutfen once ödeme aliniz.
               </p>
               <div className="flex gap-2">
                 <Button
@@ -577,7 +577,7 @@ const RoomsTab = ({
                   data-testid="checkout-pay-btn"
                 >
                   <CreditCard className="w-4 h-4 mr-1" />
-                  Odeme Al
+                  Ödeme Al
                 </Button>
                 <Button
                   variant="outline"
@@ -600,7 +600,7 @@ const RoomsTab = ({
               Kirli Oda — Karar Paneli
             </DialogTitle>
             <DialogDescription>
-              Misafir check-in bekliyor, oda henuz hazir degil
+              Misafir check-in bekliyor, oda henüz hazir degil
             </DialogDescription>
           </DialogHeader>
           {dirtyRoomInfo && (
@@ -631,10 +631,10 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-blue-600" />
-              Hizli Odeme
+              Hizli Ödeme
             </DialogTitle>
             <DialogDescription>
-              Odeme bilgilerini girin
+              Ödeme bilgilerini girin
             </DialogDescription>
           </DialogHeader>
           {paymentTarget && (
@@ -660,7 +660,7 @@ const RoomsTab = ({
 
               {/* Payment amount */}
               <div>
-                <Label className="text-sm font-medium">Odeme Tutari</Label>
+                <Label className="text-sm font-medium">Ödeme Tutari</Label>
                 <div className="flex gap-2 mt-1">
                   <Input
                     type="number"
@@ -688,7 +688,7 @@ const RoomsTab = ({
 
               {/* Payment method */}
               <div>
-                <Label className="text-sm font-medium">Odeme Yontemi</Label>
+                <Label className="text-sm font-medium">Ödeme Yontemi</Label>
                 <div className="grid grid-cols-3 gap-2 mt-1">
                   <Button
                     variant={paymentMethod === 'cash' ? 'default' : 'outline'}
@@ -735,7 +735,7 @@ const RoomsTab = ({
                 ) : (
                   <span className="flex items-center gap-2">
                     <Wallet className="w-4 h-4" />
-                    Odeme Al
+                    Ödeme Al
                   </span>
                 )}
               </Button>

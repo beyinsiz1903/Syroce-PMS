@@ -27,8 +27,8 @@ const StaffAssignment = () => {
         avgEfficiency: response.data.avg_efficiency
       });
     } catch (error) {
-      console.error('Failed to load staff:', error);
-      toast.error('Failed to load staff');
+      console.error('Personel yüklenemedi:', error);
+      toast.error('Personel yüklenemedi');
     } finally {
       setLoading(false);
     }

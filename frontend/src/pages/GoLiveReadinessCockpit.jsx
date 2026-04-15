@@ -132,7 +132,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
       if (data?.success) {
         toast.success('Baglanti testi basarili');
       } else {
-        toast.error(data?.detail || 'Baglanti testi basarisiz');
+        toast.error(data?.detail || 'Bağlantı testi başarısız');
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Baglanti testi sirasinda hata');
@@ -149,9 +149,9 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
       const { data } = await axios.post('/channel/hotelrunner-v2/dry-run/ari-push', { simulate_failure: false }, { headers });
       setDryRunResult(data);
       if (data?.success) {
-        toast.success('Dry run basarili');
+        toast.success('Dry run başarılı');
       } else {
-        toast.error('Dry run basarisiz');
+        toast.error('Dry run başarısız');
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Dry run sirasinda hata');
@@ -216,7 +216,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
         {fetchErrors.length > 0 && (
           <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm" data-testid="fetch-errors">
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="text-amber-700">Bazi veriler yuklenemedi: {fetchErrors.join(', ')}. Sayfa kismi veriyle gosteriliyor.</span>
+            <span className="text-amber-700">Bazi veriler yüklenemedi: {fetchErrors.join(', ')}. Sayfa kismi veriyle gosteriliyor.</span>
           </div>
         )}
 
@@ -241,7 +241,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   status={hasCredentials && hasActiveConnectors ? 'pass' : hasCredentials ? 'warn' : 'fail'}
                   detail={hasActiveConnectors
                     ? `${connectedProviders.length} aktif baglanti (${connectedProviders.map(p => p.display_name || p.provider).join(', ')})`
-                    : hasCredentials ? 'Connector aktif degil' : 'Baglanti bulunamadi'
+                    : hasCredentials ? 'Connector aktif değil' : 'Bağlantı bulunamadı'
                   }
                   action={isSuperAdmin ? () => navigate('/channel-connections') : undefined}
                   actionLabel="Baglantilari Yonet"
@@ -250,7 +250,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   label="Provider Dogrulama"
                   icon={Signal}
                   status={hasActiveConnectors ? 'pass' : 'fail'}
-                  detail={hasActiveConnectors ? 'Provider baglantisi dogrulandi' : 'Henuz dogrulanmadi'}
+                  detail={hasActiveConnectors ? 'Provider baglantisi dogrulandi' : 'Henüz dogrulanmadi'}
                   action={connectors[0] ? () => handleTestConnection(connectors[0].id) : undefined}
                   actionLabel={testingConnector ? 'Test ediliyor...' : 'Test Et'}
                 />
@@ -278,8 +278,8 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   icon={AlertTriangle}
                   status={noRecentFailures ? 'pass' : 'fail'}
                   detail={noRecentFailures
-                    ? 'Son 24 saatte basarisiz islem yok'
-                    : `${kpis.failed_imports || 0} basarisiz import, ${kpis.wire_failures_24h || 0} wire hatasi`
+                    ? 'Son 24 saatte başarısız işlem yok'
+                    : `${kpis.failed_imports || 0} başarısız import, ${kpis.wire_failures_24h || 0} wire hatası`
                   }
                   action={!noRecentFailures && isSuperAdmin ? () => navigate('/channel-ops') : undefined}
                   actionLabel="Detay"
@@ -330,7 +330,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   >
                     <Layers className="w-5 h-5 text-amber-500" />
                     <span className="text-xs font-medium">Mapping Sihirbazi</span>
-                    <span className="text-[10px] text-slate-400">Oda eslestirmesi</span>
+                    <span className="text-[10px] text-slate-400">Oda eşleştirmesi</span>
                   </Button>
                 </div>
 
@@ -338,7 +338,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   <div className={`mt-3 p-3 rounded-lg border text-sm ${dryRunResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`} data-testid="dry-run-result">
                     <div className="flex items-center gap-2">
                       {dryRunResult.success ? <CheckCircle className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                      <span className="font-medium">{dryRunResult.success ? 'Dry run basarili' : 'Dry run basarisiz'}</span>
+                      <span className="font-medium">{dryRunResult.success ? 'Dry run başarılı' : 'Dry run başarısız'}</span>
                     </div>
                     {dryRunResult.message && <p className="text-xs mt-1 opacity-75">{dryRunResult.message}</p>}
                   </div>
@@ -384,7 +384,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                     {score === null ? 'Hesaplanamadi' : goliveScore?.maturity_name || 'Bilinmiyor'}
                   </p>
                   <Badge className={`mt-1 text-xs ${goLiveReady ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {goLiveReady ? 'Canli Yayina Hazir' : 'Henuz Hazir Degil'}
+                    {goLiveReady ? 'Canli Yayina Hazir' : 'Henüz Hazir Degil'}
                   </Badge>
                 </div>
 
@@ -417,7 +417,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                 {connectors.length === 0 ? (
                   <div className="text-center py-4">
                     <WifiOff className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs text-slate-400">Aktif connector bulunamadi</p>
+                    <p className="text-xs text-slate-400">Aktif connector bulunamadı</p>
                     <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => navigate('/channel-connections')}>
                       Baglanti Ekle <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </Button>

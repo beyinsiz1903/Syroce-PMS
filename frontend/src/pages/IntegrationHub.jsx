@@ -268,7 +268,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       toast.success(`Dogrulama tamamlandi: ${data.validated || data.total || 0} mapping kontrol edildi`);
       fetchMappings(selectedConnector);
       fetchMappingReadiness(selectedConnector);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Dogrulama basarisiz'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Doğrulama başarısız'); }
   };
 
   const handleValidateMapping = async (mappingId) => {
@@ -279,7 +279,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       toast.success('Mapping dogrulandi');
       fetchMappings(selectedConnector);
       fetchMappingReadiness(selectedConnector);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Dogrulama basarisiz'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Doğrulama başarısız'); }
   };
 
   const handleDeactivateMapping = async (mappingId) => {
@@ -805,14 +805,14 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardContent className="p-8 text-center">
                     <Unlink className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                    <p className="text-slate-400 text-sm">Bu connector icin mapping yok</p>
+                    <p className="text-slate-400 text-sm">Bu connector için mapping yok</p>
                   </CardContent>
                 </Card>
               ) : (
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardContent className="p-8 text-center">
                     <Map className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                    <p className="text-slate-400 text-sm">Connector secin</p>
+                    <p className="text-slate-400 text-sm">Connector seçin</p>
                   </CardContent>
                 </Card>
               )}

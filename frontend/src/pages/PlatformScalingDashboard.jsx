@@ -271,7 +271,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="text-sm text-slate-400 text-center py-8">Henuz olay yok</p>
+              <p className="text-sm text-slate-400 text-center py-8">Henüz olay yok</p>
             )}
           </CardContent>
         </Card>
@@ -403,7 +403,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
                   <Badge variant="outline" className="text-xs shrink-0">{e.priority}</Badge>
                 </div>
               ))}
-              {events.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Henuz olay yok</p>}
+              {events.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Henüz olay yok</p>}
             </div>
           </CardContent>
         </Card>
@@ -469,7 +469,7 @@ function MultiPropertyPanel({ data }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard label="Portfolio Doluluk" value={`${portfolio.portfolio_occupancy_pct || 0}%`} icon={Building2} color="bg-teal-50 text-teal-700" />
         <KPICard label="Toplam Oda" value={portfolio.total_rooms || 0} icon={Layers} color="bg-blue-50 text-blue-700" />
-        <KPICard label="Musait Oda" value={portfolio.total_available || 0} icon={Eye} color="bg-green-50 text-green-700" />
+        <KPICard label="Müsait Oda" value={portfolio.total_available || 0} icon={Eye} color="bg-green-50 text-green-700" />
         <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={DollarSign} color="bg-purple-50 text-purple-700" />
       </div>
 

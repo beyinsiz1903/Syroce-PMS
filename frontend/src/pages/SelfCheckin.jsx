@@ -45,7 +45,7 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
         phone: response.data.guest?.phone || ''
       }));
     } catch (error) {
-      toast.error('Failed to load booking');
+      toast.error('Rezervasyon yüklenemedi');
     }
   };
 

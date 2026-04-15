@@ -311,10 +311,10 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                             const newCurrency = e.target.value;
                             try {
                               await axios.patch(`/channel-manager/exely/currency`, { currency: newCurrency }, { headers });
-                              toast.success(`Para birimi ${newCurrency} olarak guncellendi`);
+                              toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
                               fetchConnection();
                             } catch (err) {
-                              toast.error(err.response?.data?.detail || 'Para birimi guncellenemedi');
+                              toast.error(err.response?.data?.detail || 'Para birimi güncellenemedi');
                             }
                           }}
                           className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -370,7 +370,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="space-y-6">
                 {roomTypes.length === 0 && ratePlans.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz oda/rate kesfedilmedi. "Kesfet" butonu ile Exely'den yukleyin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz oda/rate kesfedilmedi. "Kesfet" butonu ile Exely'den yukleyin.</p>
                 ) : (
                   <>
                     {roomTypes.length > 0 && (
@@ -442,7 +442,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {reservations.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz rezervasyon yok. "Rezervasyonlari Cek" ile Exely'den aktarin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz rezervasyon yok. "Rezervasyonlari Cek" ile Exely'den aktarin.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="exely-reservations-table">
@@ -564,7 +564,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 {mappings.length === 0 ? (
                   <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">Henuz oda eslemesi yok</p>
+                    <p className="text-sm text-slate-500">Henüz oda eslemesi yok</p>
                     <p className="text-xs text-slate-400 mt-1">Odalar kesfedildikten sonra esleme yapilabilir</p>
                   </div>
                 ) : (
@@ -614,7 +614,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                       <div>
                         <p className="text-sm font-medium text-amber-800">{mappingStatus.unmapped_count} PMS oda tipi eslenmemis</p>
                         <p className="text-xs text-amber-600 mt-1">
-                          Eslenmemis oda tipleri Exely'ye fiyat/musaitlik push edilemez. Provider'da karsilik gelen oda tipleri yoksa, Exely panelinden oda tipi olusturun.
+                          Eslenmemis oda tipleri Exely'ye fiyat/musaitlik push edilemez. Provider'da karsilik gelen oda tipleri yoksa, Exely panelinden oda tipi oluşturun.
                         </p>
                       </div>
                     </div>
@@ -662,7 +662,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     ) : (
                       <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                        <p className="text-sm text-slate-600">Otomatik eslestirilecek yeni oda tipi bulunamadi.</p>
+                        <p className="text-sm text-slate-600">Otomatik eşleştirilecek yeni oda tipi bulunamadı.</p>
                       </div>
                     )}
 
@@ -706,7 +706,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Senkronizasyon Loglari</CardTitle>
-                  <CardDescription>Exely SOAP islem gecmisi</CardDescription>
+                  <CardDescription>Exely SOAP işlem geçmişi</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAll}>
                   <RefreshCw className="w-4 h-4 mr-1" /> Yenile
@@ -714,7 +714,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {syncLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz log kaydı yok</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz log kaydı yok</p>
                 ) : (
                   <div className="space-y-2" data-testid="exely-sync-logs">
                     {syncLogs.map((log, i) => (

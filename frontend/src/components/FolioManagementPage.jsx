@@ -179,7 +179,7 @@ const FolioManagementPage = () => {
         );
         
         if (!createFolioResponse.ok) {
-          throw new Error('Failed to create folio');
+          throw new Error('Folio oluşturulamadı');
         }
         
         const newFolioData = await createFolioResponse.json();
@@ -207,7 +207,7 @@ const FolioManagementPage = () => {
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting charge:', error);
-      alert('Failed to post charge');
+      alert('Masraf kaydedilemedi');
     }
   };
 
@@ -250,7 +250,7 @@ const FolioManagementPage = () => {
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting payment:', error);
-      alert('Failed to post payment');
+      alert('Ödeme kaydedilemedi');
     }
   };
 

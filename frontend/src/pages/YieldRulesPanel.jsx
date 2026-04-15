@@ -41,7 +41,7 @@ export default function YieldRulesPanel() {
     try {
       const res = await axios.get('/rms/yield-rules');
       setRules(res.data.rules || []);
-    } catch { toast.error('Kurallar yuklenemedi'); }
+    } catch { toast.error('Kurallar yüklenemedi'); }
     finally { setLoading(false); }
   };
 
@@ -72,7 +72,7 @@ export default function YieldRulesPanel() {
       };
       if (editId) {
         await axios.put(`/rms/yield-rules/${editId}`, payload);
-        toast.success('Kural guncellendi');
+        toast.success('Kural güncellendi');
       } else {
         await axios.post('/rms/yield-rules', payload);
         toast.success('Kural eklendi');
@@ -83,7 +83,7 @@ export default function YieldRulesPanel() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bu kurali silmek istediginize emin misiniz?')) return;
+    if (!window.confirm('Bu kuralı silmek istediğinize emin misiniz?')) return;
     try {
       await axios.delete(`/rms/yield-rules/${id}`);
       toast.success('Kural silindi');
@@ -161,7 +161,7 @@ export default function YieldRulesPanel() {
               <Label className="text-xs">Aktif</Label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Iptal</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>İptal</Button>
               <Button size="sm" onClick={handleSave} data-testid="save-rule-btn">{editId ? 'Guncelle' : 'Kaydet'}</Button>
             </div>
           </CardContent>
@@ -171,7 +171,7 @@ export default function YieldRulesPanel() {
       {/* Rules List */}
       <div className="space-y-2">
         {rules.length === 0 ? (
-          <Card><CardContent className="py-8 text-center text-sm text-slate-400">Henuz kural tanimlanmamis.</CardContent></Card>
+          <Card><CardContent className="py-8 text-center text-sm text-slate-400">Henüz kural tanimlanmamis.</CardContent></Card>
         ) : (
           rules.map(r => (
             <Card key={r.id} className={`transition-opacity ${r.is_active ? '' : 'opacity-50'}`} data-testid={`yield-rule-${r.id}`}>

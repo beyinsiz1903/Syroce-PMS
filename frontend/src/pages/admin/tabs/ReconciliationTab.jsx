@@ -87,7 +87,7 @@ const ReconciliationTab = () => {
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : issues.length === 0 ? (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sorun bulunamadi</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sorun bulunamadı</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {issues.map(issue => (

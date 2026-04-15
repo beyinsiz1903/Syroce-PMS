@@ -43,7 +43,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard label="Bakiye" value={summary?.balance} color={(summary?.balance || 0) > 0 ? 'red' : 'green'} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Odeme Al</Button>
+        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-ödeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
@@ -54,17 +54,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       </div>
 
       {showPayment && (
-        <FormPanel color="emerald" title="Odeme Kaydet" testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
+        <FormPanel color="emerald" title="Ödeme Kaydet" testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, { ...payForm, amount: parseFloat(payForm.amount) });
-            toast.success('Odeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
+            toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
-            <SelectField label="Odeme Yontemi" value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
+            <SelectField label="Ödeme Yontemi" value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Karti'],['bank_transfer','Havale/EFT'],['online','Online']]} />
-            <SelectField label="Odeme Tipi" value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
-              options={[['prepayment','On Odeme'],['deposit','Depozito'],['interim','Ara Odeme'],['final','Final']]} />
+            <SelectField label="Ödeme Tipi" value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
+              options={[['prepayment','On Ödeme'],['deposit','Depozito'],['interim','Ara Ödeme'],['final','Final']]} />
             <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
           </div>
         </FormPanel>
@@ -147,7 +147,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               setLoading(true);
               try {
                 await axios.post(`/pms/cari-accounts/create`, newCariForm);
-                toast.success('Yeni cari hesap olusturuldu');
+                toast.success('Yeni cari hesap oluşturuldu');
                 setShowNewCari(false);
                 setNewCariForm({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
                 loadCari();
@@ -156,13 +156,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             }} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="create-cari-btn">
               {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Olustur'}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowNewCari(false)} className="h-8 text-xs">Iptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowNewCari(false)} className="h-8 text-xs">İptal</Button>
           </div>
         </div>
       )}
 
       {showReconcile && (
-        <FormPanel color="teal" title="Mahsuplastirma (Cari Odeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
+        <FormPanel color="teal" title="Mahsuplastirma (Cari Ödeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seciniz'); return; }
             await axios.post(`/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
@@ -183,8 +183,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">Islem Gecmisi</div>
-        {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henuz islem bulunmuyor</div> : (
+        <div className="text-xs font-semibold text-gray-500 uppercase">Islem Geçmişi</div>
+        {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
           allItems.map((item, i) => (
             <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${item._type === 'payment' ? 'bg-emerald-100' : 'bg-amber-100'}`}>

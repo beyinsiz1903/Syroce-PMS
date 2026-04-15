@@ -34,7 +34,7 @@ const TRIGGER_LABELS = {
   pre_arrival: 'Check-in Oncesi',
   checked_in: 'Check-in Yapildi',
   checked_out: 'Check-out Yapildi',
-  booking_cancelled: 'Rezervasyon Iptal',
+  booking_cancelled: 'Rezervasyon İptal',
 };
 
 const MessagingTab = ({ guests = [] }) => {
@@ -63,7 +63,7 @@ const MessagingTab = ({ guests = [] }) => {
       const res = await axios.get('/messaging-center/templates');
       setTemplates(res.data.templates || []);
     } catch {
-      toast.error('Sablonlar yuklenemedi');
+      toast.error('Şablonlar yüklenemedi');
     }
   }, []);
 
@@ -72,7 +72,7 @@ const MessagingTab = ({ guests = [] }) => {
       const res = await axios.get('/messaging-center/delivery-logs?limit=50');
       setDeliveryLogs(res.data.logs || []);
     } catch {
-      toast.error('Gonderim gecmisi yuklenemedi');
+      toast.error('Gonderim geçmişi yüklenemedi');
     }
   }, []);
 
@@ -81,7 +81,7 @@ const MessagingTab = ({ guests = [] }) => {
       const res = await axios.get('/messaging-center/automation/rules');
       setAutomationRules(res.data.rules || []);
     } catch {
-      toast.error('Otomasyon kurallari yuklenemedi');
+      toast.error('Otomasyon kurallari yüklenemedi');
     }
   }, []);
 
@@ -107,10 +107,10 @@ const MessagingTab = ({ guests = [] }) => {
     try {
       const res = await axios.post('/messaging-center/seed-demo');
       const d = res.data;
-      toast.success(`Demo veri olusturuldu: ${d.templates} sablon, ${d.automation_rules} kural`);
+      toast.success(`Demo veri oluşturuldu: ${d.templates} sablon, ${d.automation_rules} kural`);
       loadAll();
     } catch {
-      toast.error('Demo veri olusturulamadi');
+      toast.error('Demo veri oluşturulamadı');
     }
     setSeeding(false);
   };
@@ -158,10 +158,10 @@ const MessagingTab = ({ guests = [] }) => {
   const toggleRule = async (rule) => {
     try {
       await axios.put(`/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled });
-      toast.success(rule.enabled ? 'Kural devre disi birakildi' : 'Kural aktif edildi');
+      toast.success(rule.enabled ? 'Kural devre dışı bırakıldı' : 'Kural aktif edildi');
       loadAutomationRules();
     } catch {
-      toast.error('Kural guncellenemedi');
+      toast.error('Kural güncellenemedi');
     }
   };
 
@@ -180,7 +180,7 @@ const MessagingTab = ({ guests = [] }) => {
       await axios.post(`/messaging-center/automation/test/${ruleId}`);
       toast.success('Test tetiklendi');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Test basarisiz');
+      toast.error(err.response?.data?.detail || 'Test başarısız');
     }
   };
 
@@ -224,7 +224,7 @@ const MessagingTab = ({ guests = [] }) => {
               <Send className="w-4 h-4" /> Toplam Gonderim
             </div>
             <p className="text-2xl font-bold">{deliveryLogs.length}</p>
-            <p className="text-xs text-gray-400">{totalSent} basarili, {totalFailed} basarisiz</p>
+            <p className="text-xs text-gray-400">{totalSent} basarili, {totalFailed} başarısız</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-indigo-500">
@@ -259,8 +259,8 @@ const MessagingTab = ({ guests = [] }) => {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="send">Mesaj Gonder</TabsTrigger>
-          <TabsTrigger value="templates">Sablonlar ({templates.length})</TabsTrigger>
-          <TabsTrigger value="history">Gonderim Gecmisi ({deliveryLogs.length})</TabsTrigger>
+          <TabsTrigger value="templates">Şablonlar ({templates.length})</TabsTrigger>
+          <TabsTrigger value="history">Gonderim Geçmişi ({deliveryLogs.length})</TabsTrigger>
           <TabsTrigger value="automation">Otomasyon ({automationRules.length})</TabsTrigger>
         </TabsList>
 
@@ -311,7 +311,7 @@ const MessagingTab = ({ guests = [] }) => {
                     <Label>Mesaj *</Label>
                     {selectedTemplate && (
                       <Badge variant="secondary" className="text-xs">
-                        Sablon: {selectedTemplate.name}
+                        Şablon: {selectedTemplate.name}
                       </Badge>
                     )}
                   </div>
@@ -329,7 +329,7 @@ const MessagingTab = ({ guests = [] }) => {
                     {CHANNEL_INFO[message.channel]?.label || message.channel} Gonder
                   </Button>
                   <Button variant="outline" onClick={() => setShowTemplateDialog(true)}>
-                    <FileText className="w-4 h-4 mr-2" /> Sablon Sec
+                    <FileText className="w-4 h-4 mr-2" /> Şablon Sec
                   </Button>
                 </div>
               </CardContent>
@@ -340,7 +340,7 @@ const MessagingTab = ({ guests = [] }) => {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Search className="w-4 h-4" /> Misafir Ara
                 </CardTitle>
-                <CardDescription>Alici bilgisini misafirden secin</CardDescription>
+                <CardDescription>Alici bilgisini misafirden seçin</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
@@ -351,7 +351,7 @@ const MessagingTab = ({ guests = [] }) => {
                 />
                 <div className="max-h-[300px] overflow-y-auto space-y-2">
                   {guestSearch && filteredGuests.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">Misafir bulunamadi</p>
+                    <p className="text-sm text-gray-400 text-center py-4">Misafir bulunamadı</p>
                   ) : (
                     filteredGuests.slice(0, 15).map(g => (
                       <div
@@ -377,7 +377,7 @@ const MessagingTab = ({ guests = [] }) => {
                     ))
                   )}
                   {!guestSearch && (
-                    <p className="text-sm text-gray-400 text-center py-4">Misafir aramak icin yazin</p>
+                    <p className="text-sm text-gray-400 text-center py-4">Misafir aramak için yazin</p>
                   )}
                 </div>
               </CardContent>
@@ -390,7 +390,7 @@ const MessagingTab = ({ guests = [] }) => {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Mail className="w-4 h-4" /> Email Sablonlari
+                  <Mail className="w-4 h-4" /> Email Şablonlari
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -420,7 +420,7 @@ const MessagingTab = ({ guests = [] }) => {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4" /> WhatsApp Sablonlari
+                  <MessageSquare className="w-4 h-4" /> WhatsApp Şablonlari
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -452,12 +452,12 @@ const MessagingTab = ({ guests = [] }) => {
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Gonderim Gecmisi</CardTitle>
+              <CardTitle className="text-base">Gonderim Geçmişi</CardTitle>
               <CardDescription>Son 50 mesaj gonderimi</CardDescription>
             </CardHeader>
             <CardContent>
               {deliveryLogs.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">Henuz gonderim yok</p>
+                <p className="text-sm text-gray-400 text-center py-8">Henüz gonderim yok</p>
               ) : (
                 <div className="max-h-[500px] overflow-y-auto space-y-2">
                   {deliveryLogs.map(log => {
@@ -560,11 +560,11 @@ const MessagingTab = ({ guests = [] }) => {
       <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Sablon Sec</DialogTitle>
+            <DialogTitle>Şablon Sec</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {templates.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">Sablon bulunamadi. Demo veri olusturun.</p>
+              <p className="text-sm text-gray-400 text-center py-6">Şablon bulunamadı. Demo veri oluşturun.</p>
             ) : (
               templates.map(t => {
                 const ch = CHANNEL_INFO[t.channel] || { label: t.channel, icon: Send };

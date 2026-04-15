@@ -44,7 +44,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
     if (remaining <= 0) return;
 
     if (!window.confirm(
-      `Kart bilgilerini goruntulemek istediginize emin misiniz?\n\nKalan hak: ${remaining}/${vcc.max_views}\nBu islem geri alinamaz.`
+      `Kart bilgilerini görüntülemek istediğinize emin misiniz?\n\nKalan hak: ${remaining}/${vcc.max_views}\nBu işlem geri alınamaz.`
     )) return;
 
     setRevealing(true);
@@ -60,16 +60,16 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
           locked: res.data.locked,
         },
       }));
-      toast.success(`Kart bilgileri goruntulendi (${res.data.view_count}/${res.data.max_views})`);
+      toast.success(`Kart bilgileri görüntülendi (${res.data.view_count}/${res.data.max_views})`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Kart bilgileri goruntulenemiyor');
+      toast.error(e.response?.data?.detail || 'Kart bilgileri görüntülenemiyor');
     }
     setRevealing(false);
   };
 
   const handleStore = async () => {
     if (!form.card_holder || !form.card_number || !form.expiry) {
-      toast.error('Kart sahibi, kart numarasi ve son kullanim tarihi zorunludur');
+      toast.error('Kart sahibi, kart numarası ve son kullanım tarihi zorunludur');
       return;
     }
     setSaving(true);
@@ -87,7 +87,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Kart bilgileri kalici olarak silinecek. Emin misiniz?')) return;
+    if (!window.confirm('Kart bilgileri kalıcı olarak silinecek. Emin misiniz?')) return;
     setDeleting(true);
     try {
       await axios.delete(`/pms/reservations/${booking.id}/vcc`);
@@ -120,7 +120,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CreditCard className="w-5 h-5 text-indigo-600" />
-          <h3 className="text-sm font-semibold text-gray-800">Online Odeme / Sanal Kart</h3>
+          <h3 className="text-sm font-semibold text-gray-800">Online Ödeme / Sanal Kart</h3>
         </div>
         {!hasCard && !showAddForm && (
           <Button
@@ -139,7 +139,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
         <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-xs text-blue-700">
           OTA ve acente sanal kart bilgileri sifrelenerek saklanir.
-          Guvenlik nedeniyle kart detaylari <strong>en fazla 3 kez</strong> goruntulenebilir.
+          Guvenlik nedeniyle kart detayları <strong>en fazla 3 kez</strong> goruntulenebilir.
         </p>
       </div>
 
@@ -220,7 +220,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               onClick={() => setShowAddForm(false)}
               className="h-8 text-xs"
             >
-              Iptal
+              İptal
             </Button>
           </div>
         </div>
@@ -400,7 +400,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       {!hasCard && !showAddForm && (
         <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl" data-testid="vcc-empty-state">
           <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-500 mb-1">Kayitli kart bilgisi bulunamadi</p>
+          <p className="text-sm text-gray-500 mb-1">Kayıtlı kart bilgisi bulunamadı</p>
           <p className="text-xs text-gray-400">OTA veya acente tarafindan gonderilen sanal kart bilgilerini ekleyebilirsiniz</p>
         </div>
       )}

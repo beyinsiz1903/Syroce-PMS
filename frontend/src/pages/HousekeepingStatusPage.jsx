@@ -49,10 +49,10 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
   const updateStatus = async (roomId, newStatus) => {
     try {
       await axios.put(`/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus });
-      toast.success(`Oda durumu "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);
+      toast.success(`Oda durumu "${STATUS_CONFIG[newStatus]?.label}" olarak güncellendi`);
       loadRooms();
     } catch (e) {
-      toast.error('Durum guncellenemedi: ' + (e.response?.data?.detail || e.message));
+      toast.error('Durum güncellenemedi: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -62,7 +62,7 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
       await axios.put(`/pms/housekeeping/rooms/bulk-status`, null, {
         params: { room_ids: selectedRooms, status: newStatus }
       });
-      toast.success(`${selectedRooms.length} oda "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);
+      toast.success(`${selectedRooms.length} oda "${STATUS_CONFIG[newStatus]?.label}" olarak güncellendi`);
       setSelectedRooms([]);
       setBulkMenuOpen(false);
       loadRooms();
@@ -168,9 +168,9 @@ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
 
         {/* Room Grid */}
         {loading ? (
-          <div className="text-center py-12 text-gray-400">Yukleniyor...</div>
+          <div className="text-center py-12 text-gray-400">Yükleniyor...</div>
         ) : filteredRooms.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">Oda bulunamadi</div>
+          <div className="text-center py-12 text-gray-400">Oda bulunamadı</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {filteredRooms.map(room => {

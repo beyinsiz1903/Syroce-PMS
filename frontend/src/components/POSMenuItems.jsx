@@ -25,8 +25,8 @@ const POSMenuItems = ({ outletId = 'main_restaurant', onItemSelect }) => {
       setMenuItems(response.data.items || []);
       setByCategory(response.data.by_category || {});
     } catch (error) {
-      console.error('Failed to load menu:', error);
-      toast.error('Failed to load menu');
+      console.error('Menü yüklenemedi:', error);
+      toast.error('Menü yüklenemedi');
     } finally {
       setLoading(false);
     }

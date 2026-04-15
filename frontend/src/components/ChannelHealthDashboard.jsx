@@ -271,9 +271,9 @@ export function ChannelHealth() {
       setData(healthRes.data);
       setTrends(trendsRes.data);
       setFieldKpis(kpisRes.data);
-      if (showToast) toast.success("Kanal sagligi guncellendi");
+      if (showToast) toast.success("Kanal sağlığı güncellendi");
     } catch (err) {
-      toast.error("Kanal sagligi yuklenemedi", { description: err.response?.data?.detail || err.message });
+      toast.error("Kanal sağlığı yüklenemedi", { description: err.response?.data?.detail || err.message });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -303,7 +303,7 @@ export function ChannelHealth() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="channel-health-empty">
         <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Kanal sagligi verisi bulunamadi</p>
+        <p className="text-sm">Kanal sağlığı verisi bulunamadı</p>
       </div>
     );
   }

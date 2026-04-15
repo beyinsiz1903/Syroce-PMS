@@ -80,7 +80,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
       const { data: d } = await axios.get('/channel-manager/v2/dashboard/overview', { headers });
       setData(d);
     } catch {
-      toast.error('Dashboard verileri yuklenemedi');
+      toast.error('Dashboard verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -95,7 +95,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
       const { data: d } = await axios.get(`/channel-manager/v2/dashboard/connector/${connectorId}`, { headers });
       setDrilldownData(d);
     } catch {
-      toast.error('Connector detaylari yuklenemedi');
+      toast.error('Connector detayları yüklenemedi');
     } finally {
       setDrilldownLoading(false);
     }
@@ -215,7 +215,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
                     </thead>
                     <tbody>
                       {connectors.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">Connector bulunamadi</td></tr>
+                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">Connector bulunamadı</td></tr>
                       ) : connectors.map((c, i) => (
                         <tr key={c.id || i} className="border-b last:border-0 hover:bg-slate-50 transition-colors" data-testid={`connector-row-${i}`}>
                           <td className="px-4 py-3">
@@ -264,7 +264,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {recentRes.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-6">Henuz ithal edilen rezervasyon yok</p>
+                  <p className="text-sm text-slate-400 text-center py-6">Henüz ithal edilen rezervasyon yok</p>
                 ) : (
                   <div className="space-y-2">
                     {recentRes.map((r, i) => {

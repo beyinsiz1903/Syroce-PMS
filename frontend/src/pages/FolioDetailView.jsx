@@ -447,7 +447,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
           </div>
         </div>
         <div className="flex gap-2 justify-end">
-          <Button variant="ghost" onClick={() => setShowChargeForm(false)}>Iptal</Button>
+          <Button variant="ghost" onClick={() => setShowChargeForm(false)}>İptal</Button>
           <Button onClick={postCharge} disabled={chargeLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             {chargeLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
             Masraf Ekle

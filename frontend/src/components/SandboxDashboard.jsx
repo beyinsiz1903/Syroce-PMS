@@ -169,7 +169,7 @@ function TrendChart({ data }) {
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
-        Trend icin en az 2 calistirma gerekli
+        Trend için en az 2 calistirma gerekli
       </div>
     );
   }
@@ -224,7 +224,7 @@ export function SandboxDashboard() {
       if (regRes.status === "fulfilled") setRegressions(regRes.value.data);
       if (corrRes.status === "fulfilled") setCorrelation(corrRes.value.data);
     } catch {
-      toast.error("Sandbox verisi yuklenemedi");
+      toast.error("Sandbox verisi yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -242,7 +242,7 @@ export function SandboxDashboard() {
       }
       await fetchAll();
     } catch {
-      toast.error("Sandbox simulasyonu basarisiz");
+      toast.error("Sandbox simulasyonu başarısız");
     } finally {
       setRunning(false);
     }
@@ -320,7 +320,7 @@ export function SandboxDashboard() {
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="p-8 text-center">
             <Shield className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-sm text-zinc-400">Henuz sandbox simulasyonu calistirilmadi</p>
+            <p className="text-sm text-zinc-400">Henüz sandbox simulasyonu calistirilmadi</p>
             <p className="text-xs text-zinc-600 mt-1">
               Yukaridaki butonu kullanarak ilk simulasyonu baslatabilirsiniz
             </p>

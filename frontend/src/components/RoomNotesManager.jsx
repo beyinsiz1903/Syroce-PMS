@@ -33,7 +33,7 @@ const RoomNotesManager = ({ roomId, roomNumber }) => {
       setNewNote('');
       toast.success('Note added');
     } catch (error) {
-      toast.error('Failed to add note');
+      toast.error('Not eklenemedi');
     }
   };
 

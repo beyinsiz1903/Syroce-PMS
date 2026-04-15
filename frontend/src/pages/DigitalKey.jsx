@@ -63,7 +63,7 @@ const DigitalKey = ({ bookingId }) => {
       
       setQrCodeUrl(qrUrl);
     } catch (error) {
-      toast.error('Failed to load digital key');
+      toast.error('Dijital anahtar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -76,7 +76,7 @@ const DigitalKey = ({ bookingId }) => {
       await loadDigitalKey();
       toast.success('Digital key refreshed');
     } catch (error) {
-      toast.error('Failed to refresh key');
+      toast.error('Anahtar yenilenemedi');
     } finally {
       setLoading(false);
     }

@@ -74,7 +74,7 @@ function LoadingState() {
   return (
     <div data-testid="loading-state" className="flex items-center justify-center py-20">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      <span className="ml-3 text-muted-foreground">Veriler yukleniyor...</span>
+      <span className="ml-3 text-muted-foreground">Veriler yükleniyor...</span>
     </div>
   );
 }
@@ -93,7 +93,7 @@ function EmptyState({ message }) {
   return (
     <div data-testid="empty-state" className="flex flex-col items-center justify-center py-16">
       <BarChart3 className="h-10 w-10 text-muted-foreground/40 mb-3" />
-      <p className="text-sm text-muted-foreground">{message || 'Henuz veri bulunmuyor'}</p>
+      <p className="text-sm text-muted-foreground">{message || 'Henüz veri bulunmuyor'}</p>
     </div>
   );
 }
@@ -142,7 +142,7 @@ function RevenueTab() {
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadData} />;
-  if (!data) return <EmptyState message="Revenue verisi bulunamadi" />;
+  if (!data) return <EmptyState message="Revenue verisi bulunamadı" />;
 
   const forecast = data.demand_forecast || {};
   const forecastList = forecast.forecast || [];
@@ -338,7 +338,7 @@ function OperationalTab() {
         <StatCard testId="expected-arrivals" title="Beklenen Varis" value={checkin.total_expected_arrivals || 0} subtitle={`Peak: ${checkin.peak_hour || '-'}`} icon={Users} color="blue" />
         <StatCard testId="hk-rooms" title="Temizlenecek Oda" value={hkWorkload.total_rooms_to_clean || 0} subtitle={`${hkWorkload.total_hours || 0} saat is yuku`} icon={Activity} color="amber" />
         <StatCard testId="rooms-pending" title="Hazirlik Bekleyen" value={readiness.total_rooms_pending || 0} subtitle={`Ort. ${readiness.avg_eta_minutes || 0} dk`} icon={Clock} color="purple" />
-        <StatCard testId="maint-risk" title="Bakim Riski" value={maint.at_risk_rooms || 0} subtitle={`${maint.high_risk_count || 0} yuksek risk`} icon={Shield} color="red" />
+        <StatCard testId="maint-risk" title="Bakım Riski" value={maint.at_risk_rooms || 0} subtitle={`${maint.high_risk_count || 0} yuksek risk`} icon={Shield} color="red" />
       </div>
 
       {/* Staffing Recommendations */}
@@ -426,7 +426,7 @@ function OperationalTab() {
       {(maint.risk_items || []).length > 0 && (
         <Card data-testid="maintenance-risk-table">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Bakim Ariza Risk Tablosu</CardTitle>
+            <CardTitle className="text-base">Bakım Ariza Risk Tablosu</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">

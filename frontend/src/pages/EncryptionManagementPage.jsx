@@ -86,7 +86,7 @@ export default function EncryptionManagementPage() {
       setDashboard(response.data);
     } catch (error) {
       console.error('Failed to fetch dashboard:', error);
-      toast.error('Dashboard yuklenemedi');
+      toast.error('Dashboard yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -138,7 +138,7 @@ export default function EncryptionManagementPage() {
       await axios.post(`/ops/encryption/keys/register`, registerForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      toast.success('Anahtar basariyla kaydedildi');
+      toast.success('Anahtar başarıyla kaydedildi');
       setShowRegisterDialog(false);
       setRegisterForm({ key_id: '', key_type: 'master', description: '', rotation_policy_days: 90 });
       fetchDashboard();
@@ -206,7 +206,7 @@ export default function EncryptionManagementPage() {
       setSelectedKey(null);
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Iptal islemi basarisiz');
+      toast.error(error.response?.data?.detail || 'İptal işlemi başarısız');
     }
   };
 
@@ -217,12 +217,12 @@ export default function EncryptionManagementPage() {
       const response = await axios.post(`/ops/encryption/reencryption/create`, jobForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      toast.success(`Is olusturuldu: ${response.data.job_id}`);
+      toast.success(`Is oluşturuldu: ${response.data.job_id}`);
       setShowJobDialog(false);
       setJobForm({ key_id: '', collections: ['guests', 'bookings'], batch_size: 100, description: '' });
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Is olusturulamadi');
+      toast.error(error.response?.data?.detail || 'Is oluşturulamadı');
     }
   };
 
@@ -236,7 +236,7 @@ export default function EncryptionManagementPage() {
       toast.success(`Is ${action === 'start' ? 'baslatildi' : action === 'pause' ? 'durduruldu' : 'iptal edildi'}`);
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Islem basarisiz');
+      toast.error(error.response?.data?.detail || 'İşlem başarısız');
     }
   };
 
@@ -268,7 +268,7 @@ export default function EncryptionManagementPage() {
               Sifreleme Yonetimi
             </h1>
             <p className="text-slate-400 mt-1">
-              Anahtar yasam dongusu, rotasyon ve yeniden sifreleme islemleri
+              Anahtar yasam dongusu, rotasyon ve yeniden sifreleme işlemleri
             </p>
           </div>
           <div className="flex gap-2">
@@ -343,7 +343,7 @@ export default function EncryptionManagementPage() {
                   <XCircle className="h-5 w-5 text-red-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Iptal</p>
+                  <p className="text-sm text-slate-400">İptal</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.revoked || 0}</p>
                 </div>
               </div>
@@ -499,7 +499,7 @@ export default function EncryptionManagementPage() {
               <CardHeader>
                 <CardTitle className="text-white">Tum Anahtarlar</CardTitle>
                 <CardDescription className="text-slate-400">
-                  Kayitli sifreleme anahtarlari ve durumlari
+                  Kayıtlı sifreleme anahtarlari ve durumlari
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -571,7 +571,7 @@ export default function EncryptionManagementPage() {
                                 onClick={() => handleCancelRotation(key.key_id)}
                               >
                                 <XCircle className="h-3 w-3 mr-1" />
-                                Iptal
+                                İptal
                               </Button>
                             </>
                           )}
@@ -580,7 +580,7 @@ export default function EncryptionManagementPage() {
                     );
                   })}
                   {keys.length === 0 && (
-                    <p className="text-slate-400 text-center py-8">Henuz anahtar kaydedilmemis</p>
+                    <p className="text-slate-400 text-center py-8">Henüz anahtar kaydedilmemis</p>
                   )}
                 </div>
               </CardContent>
@@ -616,7 +616,7 @@ export default function EncryptionManagementPage() {
                           ({job.progress_percent?.toFixed(1) || 0}%)
                         </span>
                         {job.failed_documents > 0 && (
-                          <span className="text-red-400">{job.failed_documents} basarisiz</span>
+                          <span className="text-red-400">{job.failed_documents} başarısız</span>
                         )}
                       </div>
                       
@@ -638,14 +638,14 @@ export default function EncryptionManagementPage() {
                         )}
                         {['pending', 'running', 'paused'].includes(job.state) && (
                           <Button size="sm" variant="outline" className="border-red-600 text-red-400" onClick={() => handleJobAction(job.job_id, 'cancel')}>
-                            <Trash2 className="h-3 w-3 mr-1" /> Iptal
+                            <Trash2 className="h-3 w-3 mr-1" /> İptal
                           </Button>
                         )}
                       </div>
                     </div>
                   ))}
                   {jobs.length === 0 && (
-                    <p className="text-slate-400 text-center py-8">Henuz is olusturulmamis</p>
+                    <p className="text-slate-400 text-center py-8">Henüz is olusturulmamis</p>
                   )}
                 </div>
               </CardContent>
@@ -683,7 +683,7 @@ export default function EncryptionManagementPage() {
                       </div>
                     ))}
                     {keyAudit.length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Kayit yok</p>
+                      <p className="text-slate-400 text-center py-4">Kayıt yok</p>
                     )}
                   </div>
                 </CardContent>
@@ -716,7 +716,7 @@ export default function EncryptionManagementPage() {
                       </div>
                     ))}
                     {jobAudit.length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Kayit yok</p>
+                      <p className="text-slate-400 text-center py-4">Kayıt yok</p>
                     )}
                   </div>
                 </CardContent>
@@ -780,7 +780,7 @@ export default function EncryptionManagementPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-slate-600">Iptal</Button>
+                <Button variant="outline" className="border-slate-600">İptal</Button>
               </DialogClose>
               <Button onClick={handleRegisterKey} className="bg-emerald-600 hover:bg-emerald-700">
                 Kaydet
@@ -798,7 +798,7 @@ export default function EncryptionManagementPage() {
                 Acil Anahtar Iptali
               </DialogTitle>
               <DialogDescription className="text-slate-400">
-                Bu islem geri alinamaz. Anahtar hemen kullanilmaz hale gelir.
+                Bu işlem geri alınamaz. Anahtar hemen kullanilmaz hale gelir.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -807,7 +807,7 @@ export default function EncryptionManagementPage() {
                 <p className="text-sm text-red-400">{selectedKey?.description}</p>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Iptal Sebebi (min 10 karakter)</Label>
+                <Label className="text-slate-300">İptal Sebebi (min 10 karakter)</Label>
                 <Textarea 
                   value={revokeReason}
                   onChange={e => setRevokeReason(e.target.value)}
@@ -827,7 +827,7 @@ export default function EncryptionManagementPage() {
                 disabled={revokeReason.length < 10}
               >
                 <AlertOctagon className="h-4 w-4 mr-2" />
-                Acil Iptal Et
+                Acil İptal Et
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -839,7 +839,7 @@ export default function EncryptionManagementPage() {
             <DialogHeader>
               <DialogTitle className="text-white">Yeniden Sifreleme Isi Olustur</DialogTitle>
               <DialogDescription className="text-slate-400">
-                Veri migrasyonu icin yeni bir is olusturun
+                Veri migrasyonu için yeni bir is oluşturun
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -847,7 +847,7 @@ export default function EncryptionManagementPage() {
                 <Label className="text-slate-300">Anahtar ID</Label>
                 <Select value={jobForm.key_id} onValueChange={v => setJobForm({...jobForm, key_id: v})}>
                   <SelectTrigger className="bg-slate-900 border-slate-600 text-white">
-                    <SelectValue placeholder="Anahtar secin" />
+                    <SelectValue placeholder="Anahtar seçin" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
                     {keys.map(k => (
@@ -897,7 +897,7 @@ export default function EncryptionManagementPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-slate-600">Iptal</Button>
+                <Button variant="outline" className="border-slate-600">İptal</Button>
               </DialogClose>
               <Button 
                 onClick={handleCreateJob} 

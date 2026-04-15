@@ -18,16 +18,16 @@ import {
 import { toast } from "sonner";
 
 const statusConfig = {
-  completed: { label: "Tamamlandi", color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-  completed_with_exceptions: { label: "Istisnali Tamamlandi", color: "bg-amber-100 text-amber-700 border-amber-200", icon: AlertTriangle },
-  running: { label: "Calisiyor", color: "bg-blue-100 text-blue-700 border-blue-200", icon: Loader2 },
-  failed: { label: "Basarisiz", color: "bg-red-100 text-red-700 border-red-200", icon: XCircle },
+  completed: { label: "Tamamlandı", color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  completed_with_exceptions: { label: "İstisnalı Tamamlandı", color: "bg-amber-100 text-amber-700 border-amber-200", icon: AlertTriangle },
+  running: { label: "Çalışıyor", color: "bg-blue-100 text-blue-700 border-blue-200", icon: Loader2 },
+  failed: { label: "Başarısız", color: "bg-red-100 text-red-700 border-red-200", icon: XCircle },
   pending: { label: "Bekliyor", color: "bg-gray-100 text-gray-600 border-gray-200", icon: Clock },
 };
 
 const severityConfig = {
   info: { label: "Bilgi", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  warning: { label: "Uyari", color: "bg-amber-50 text-amber-700 border-amber-200" },
+  warning: { label: "Uyarı", color: "bg-amber-50 text-amber-700 border-amber-200" },
   error: { label: "Hata", color: "bg-red-50 text-red-700 border-red-200" },
   critical: { label: "Kritik", color: "bg-red-100 text-red-800 border-red-300" },
 };
@@ -65,10 +65,10 @@ const StatCard = ({ icon: Icon, label, value, subValue, color = "text-gray-600" 
 
 const IntegrityBadge = ({ status }) => {
   const cfg = {
-    pass: { label: "Gecti", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    warning: { label: "Uyari", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    pass: { label: "Geçti", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    warning: { label: "Uyarı", cls: "bg-amber-50 text-amber-700 border-amber-200" },
     error: { label: "Hata", cls: "bg-red-50 text-red-700 border-red-200" },
-    fail: { label: "Basarisiz", cls: "bg-red-50 text-red-700 border-red-200" },
+    fail: { label: "Başarısız", cls: "bg-red-50 text-red-700 border-red-200" },
   }[status] || { label: status, cls: "bg-gray-50 text-gray-600 border-gray-200" };
   return <Badge className={`${cfg.cls} border text-[11px]`}>{cfg.label}</Badge>;
 };
@@ -80,19 +80,19 @@ const categoryLabels = {
   minibar: "Minibar",
   restaurant: "Restoran",
   spa: "Spa",
-  laundry: "Camasir",
+  laundry: "Çamaşır",
   parking: "Park",
-  other: "Diger",
+  other: "Diğer",
 };
 
 const paymentMethodLabels = {
   cash: "Nakit",
-  credit_card: "Kredi Karti",
-  debit_card: "Banka Karti",
+  credit_card: "Kredi Kartı",
+  debit_card: "Banka Kartı",
   bank_transfer: "Havale/EFT",
   city_ledger: "Cari Hesap",
   agency: "Acente",
-  other: "Diger",
+  other: "Diğer",
 };
 
 const NightAuditDashboard = ({ user, tenant, onLogout }) => {
@@ -220,7 +220,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       });
       setFinancialReport(res.data);
     } catch (err) {
-      toast.error("Finansal rapor yuklenemedi");
+      toast.error("Finansal rapor yüklenemedi");
     } finally {
       setFinLoading(false);
     }
@@ -258,8 +258,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const result = res.data;
       toast.success(
         runOptions.dry_run
-          ? `Simuelasyon tamamlandi: ${result.rooms_processed} oda islendi`
-          : `Gece denetimi tamamlandi: ${result.charges_posted} masraf kaydedildi`
+          ? `Simülasyon tamamlandı: ${result.rooms_processed} oda işlendi`
+          : `Gece denetimi tamamlandı: ${result.charges_posted} masraf kaydedildi`
       );
       setShowRunDialog(false);
       setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
@@ -271,7 +271,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       } else if (typeof detail === "string") {
         toast.error(detail);
       } else {
-        toast.error("Gece denetimi basarisiz oldu");
+        toast.error("Gece denetimi başarısız oldu");
       }
     } finally {
       setRunning(false);
@@ -282,7 +282,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     setScheduleLoading(true);
     try {
       await axios.put("/night-audit/schedule", schedule);
-      toast.success(schedule.enabled ? "Otomatik zamanlama aktif edildi" : "Otomatik zamanlama devre disi birakildi");
+      toast.success(schedule.enabled ? "Otomatik zamanlama aktif edildi" : "Otomatik zamanlama devre dışı bırakıldı");
       setShowScheduleDialog(false);
       await fetchScheduleStatus();
     } catch (err) {
@@ -297,10 +297,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     try {
       await axios.put("/night-audit/schedule", { ...schedule, enabled: newEnabled });
       setSchedule((prev) => ({ ...prev, enabled: newEnabled }));
-      toast.success(newEnabled ? "Otomatik zamanlama aktif" : "Otomatik zamanlama devre disi");
+      toast.success(newEnabled ? "Otomatik zamanlama aktif" : "Otomatik zamanlama devre dışı");
       await fetchScheduleStatus();
     } catch (err) {
-      toast.error("Durum degistirilemedi");
+      toast.error("Durum değiştirilemedi");
     }
   };
 
@@ -327,7 +327,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               Gece Denetimi (Night Audit)
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Gun sonu islemleri: oda masrafi kaydi, no-show isleme, folio bakiye kontrolu, finansal raporlama
+              Gün sonu işlemleri: oda masrafı kaydı, no-show işleme, folio bakiye kontrolü, finansal raporlama
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -349,7 +349,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               <Play className="w-4 h-4 mr-1" />
-              Denetim Baslat
+              Denetim Başlat
             </Button>
           </div>
         </div>
@@ -358,16 +358,16 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
             icon={Calendar}
-            label="Is Gunu (Business Date)"
+            label="İş Günü (Business Date)"
             value={businessDate || "-"}
-            subValue={previousDate ? `Onceki: ${previousDate}` : undefined}
+            subValue={previousDate ? `Önceki: ${previousDate}` : undefined}
             color="text-indigo-600"
           />
           <StatCard
             icon={BarChart3}
             label="Toplam Denetim"
             value={historyTotal}
-            subValue={todayCompleted ? "Bugun tamamlandi" : "Bugun bekliyor"}
+            subValue={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
             color="text-emerald-600"
           />
           <StatCard
@@ -381,7 +381,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             icon={Users}
             label="Son No-Show"
             value={lastRun?.no_shows_processed ?? "-"}
-            subValue={lastRun ? `${lastRun.rooms_processed || 0} oda islendi` : undefined}
+            subValue={lastRun ? `${lastRun.rooms_processed || 0} oda işlendi` : undefined}
             color="text-amber-600"
           />
         </div>
@@ -390,16 +390,16 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="bg-gray-100/80 p-1">
             <TabsTrigger data-testid="tab-overview" value="overview" className="text-xs gap-1.5">
-              <Moon className="w-3.5 h-3.5" /> Genel Bakis
+              <Moon className="w-3.5 h-3.5" /> Genel Bakış
             </TabsTrigger>
             <TabsTrigger data-testid="tab-financial" value="financial" className="text-xs gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" /> Finansal Ozet
+              <TrendingUp className="w-3.5 h-3.5" /> Finansal Özet
             </TabsTrigger>
             <TabsTrigger data-testid="tab-reconciliation" value="reconciliation" className="text-xs gap-1.5">
               <Scale className="w-3.5 h-3.5" /> Mutabakat
             </TabsTrigger>
             <TabsTrigger data-testid="tab-integrity" value="integrity" className="text-xs gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" /> Butunluk
+              <ShieldCheck className="w-3.5 h-3.5" /> Bütünlük
             </TabsTrigger>
             <TabsTrigger data-testid="tab-report" value="report" className="text-xs gap-1.5">
               <FileText className="w-3.5 h-3.5" /> Rapor
@@ -424,7 +424,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                         onCheckedChange={handleQuickToggleSchedule}
                       />
                       <span className={`text-xs font-medium ${schedule.enabled ? "text-emerald-600" : "text-gray-400"}`}>
-                        {schedule.enabled ? "Aktif" : "Devre Disi"}
+                        {schedule.enabled ? "Aktif" : "Devre Dışı"}
                       </span>
                     </div>
                     <Button
@@ -469,9 +469,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                       <p className="text-sm font-semibold text-gray-900">
                         {scheduleStatus?.last_auto_run
                           ? new Date(scheduleStatus.last_auto_run).toLocaleString("tr-TR")
-                          : "Henuz calistirilmadi"}
+                          : "Henüz çalıştırılmadı"}
                       </p>
-                      <p className="text-xs text-gray-500">Son otomatik calistirma</p>
+                      <p className="text-xs text-gray-500">Son otomatik çalıştırma</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -487,7 +487,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                         )}
                         {schedule.skip_validations && (
                           <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
-                            Dogrulama Atla
+                            Doğrulama Atla
                           </Badge>
                         )}
                         {!schedule.auto_retry && !schedule.skip_validations && (
@@ -496,13 +496,13 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">Ozellikler</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Özellikler</p>
                     </div>
                   </div>
                 </div>
                 {scheduleStatus?.recent_logs?.length > 0 && (
                   <div className="mt-3 border-t pt-3">
-                    <p className="text-xs font-semibold text-gray-600 mb-2">Son Otomatik Calistirma Loglari</p>
+                    <p className="text-xs font-semibold text-gray-600 mb-2">Son Otomatik Çalıştırma Loglari</p>
                     <div className="space-y-1.5 max-h-32 overflow-y-auto">
                       {scheduleStatus.recent_logs.map((log) => (
                         <div key={log.id} className="flex items-center justify-between text-xs p-1.5 bg-gray-50 rounded">
@@ -533,11 +533,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <FileText className="w-4 h-4 text-gray-500" />
-                    Son Denetim Ozeti
+                    Son Denetim Özeti
                     <StatusBadge status={lastRun.status} />
                     {lastRun.is_dry_run && (
                       <Badge className="bg-purple-100 text-purple-700 border-purple-200 border text-[11px]">
-                        Simuelasyon
+                        Simülasyon
                       </Badge>
                     )}
                   </CardTitle>
@@ -573,12 +573,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <div className="mt-3 flex flex-wrap gap-2">
                       {lastRun.arrivals_pending > 0 && (
                         <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs">
-                          {lastRun.arrivals_pending} bekleyen giris
+                          {lastRun.arrivals_pending} bekleyen giriş
                         </Badge>
                       )}
                       {lastRun.departures_pending > 0 && (
                         <Badge className="bg-orange-50 text-orange-700 border border-orange-200 text-xs">
-                          {lastRun.departures_pending} bekleyen cikis
+                          {lastRun.departures_pending} bekleyen çıkış
                         </Badge>
                       )}
                       {lastRun.folios_unbalanced > 0 && (
@@ -597,19 +597,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Clock className="w-4 h-4 text-gray-500" />
-                  Denetim Gecmisi ({historyTotal})
+                  Denetim Geçmişi ({historyTotal})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
                     <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                    Yukleniyor...
+                    Yükleniyor...
                   </div>
                 ) : history.length === 0 ? (
                   <div data-testid="no-history" className="py-10 text-center text-gray-500 text-sm">
                     <Moon className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                    Henuz gece denetimi yapilmamis
+                    Henüz gece denetimi yapılmamış
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -632,7 +632,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-gray-900">
                                   {run.business_date}
-                                  {run.is_dry_run && <span className="ml-1.5 text-purple-600 text-xs font-normal">(Simuelasyon)</span>}
+                                  {run.is_dry_run && <span className="ml-1.5 text-purple-600 text-xs font-normal">(Simülasyon)</span>}
                                   {run.is_rerun && <span className="ml-1.5 text-orange-600 text-xs font-normal">(Tekrar)</span>}
                                 </p>
                                 <p className="text-xs text-gray-500">
@@ -682,7 +682,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                               {runExceptions.length > 0 ? (
                                 <div>
                                   <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                                    <AlertTriangle className="w-3.5 h-3.5" /> Istisnalar ({runExceptions.length})
+                                    <AlertTriangle className="w-3.5 h-3.5" /> İstisnalar ({runExceptions.length})
                                   </p>
                                   <div className="space-y-1.5 max-h-60 overflow-y-auto">
                                     {runExceptions.map((exc) => (
@@ -702,10 +702,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                               ) : run.exceptions_count === 0 ? (
                                 <p className="text-xs text-gray-400 flex items-center gap-1">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                                  Istisna yok - denetim temiz tamamlandi
+                                  İstisna yok - denetim temiz tamamlandı
                                 </p>
                               ) : (
-                                <p className="text-xs text-gray-400">Istisnalar yukleniyor...</p>
+                                <p className="text-xs text-gray-400">Istisnalar yükleniyor...</p>
                               )}
                             </div>
                           )}
@@ -733,23 +733,23 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <StatCard
                     icon={Receipt}
-                    label="Vergi Toplami"
+                    label="Vergi Toplamı"
                     value={`${financialSummary.tax?.total?.toFixed(2) || "0.00"} TL`}
                     subValue={`KDV: ${financialSummary.tax?.breakdown?.vat?.toFixed(2) || "0"} TL`}
                     color="text-blue-600"
                   />
                   <StatCard
                     icon={CreditCard}
-                    label="Toplam Odeme"
+                    label="Toplam Ödeme"
                     value={`${financialSummary.payments?.total?.toFixed(2) || "0.00"} TL`}
-                    subValue={`${financialSummary.payments?.payments_count || 0} odeme`}
+                    subValue={`${financialSummary.payments?.payments_count || 0} ödeme`}
                     color="text-indigo-600"
                   />
                   <StatCard
                     icon={ArrowUpDown}
                     label="Net Pozisyon"
                     value={`${financialSummary.net_position?.toFixed(2) || "0.00"} TL`}
-                    subValue={financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla odeme" : "Dengeli"}
+                    subValue={financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla ödeme" : "Dengeli"}
                     color={financialSummary.net_position > 0 ? "text-amber-600" : financialSummary.net_position < 0 ? "text-red-600" : "text-emerald-600"}
                   />
                 </div>
@@ -760,12 +760,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <PieChart className="w-4 h-4 text-emerald-500" />
-                        Gelir Dagilimi (Kategori)
+                        Gelir Dağılımı (Kategori)
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       {Object.keys(financialSummary.revenue?.by_category || {}).length === 0 ? (
-                        <p className="text-xs text-gray-400 py-6 text-center">Bugun icin masraf kaydedilmemis</p>
+                        <p className="text-xs text-gray-400 py-6 text-center">Bugün için masraf kaydedilmemiş</p>
                       ) : (
                         <div className="space-y-2">
                           {Object.entries(financialSummary.revenue.by_category).map(([cat, data]) => {
@@ -795,12 +795,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <Banknote className="w-4 h-4 text-indigo-500" />
-                        Odeme Yontemleri
+                        Ödeme Yöntemleri
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       {Object.keys(financialSummary.payments?.by_method || {}).length === 0 ? (
-                        <p className="text-xs text-gray-400 py-6 text-center">Bugun icin odeme kaydedilmemis</p>
+                        <p className="text-xs text-gray-400 py-6 text-center">Bugün için ödeme kaydedilmemiş</p>
                       ) : (
                         <div className="space-y-2">
                           {Object.entries(financialSummary.payments.by_method).map(([method, data]) => (
@@ -824,14 +824,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <FileText className="w-4 h-4 text-amber-500" />
-                      Acik Folyolar
+                      Açık Folyolar
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div className="p-3 bg-gray-50 rounded-lg">
                         <p className="text-2xl font-bold text-gray-900">{financialSummary.open_folios?.count || 0}</p>
-                        <p className="text-xs text-gray-500">Toplam Acik Folyo</p>
+                        <p className="text-xs text-gray-500">Toplam Açık Folyo</p>
                       </div>
                       <div className="p-3 bg-gray-50 rounded-lg">
                         <p className="text-2xl font-bold text-gray-900">{financialSummary.open_folios?.balance?.total?.toFixed(2) || "0.00"} TL</p>
@@ -843,7 +843,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                       </div>
                       <div className="p-3 bg-blue-50 rounded-lg">
                         <p className="text-2xl font-bold text-blue-700">{financialSummary.open_folios?.balance?.overpayment?.toFixed(2) || "0.00"} TL</p>
-                        <p className="text-xs text-blue-600">Fazla Odeme</p>
+                        <p className="text-xs text-blue-600">Fazla Ödeme</p>
                       </div>
                     </div>
                   </CardContent>
@@ -851,7 +851,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               </>
             ) : (
               <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Finansal ozet yukleniyor...
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Finansal ozet yükleniyor...
               </div>
             )}
           </TabsContent>
@@ -871,9 +871,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <StatCard
                     icon={CreditCard}
-                    label="Odeme Toplami"
+                    label="Ödeme Toplamı"
                     value={`${reconciliation.payments_total?.toFixed(2) || "0.00"} TL`}
-                    subValue={`${reconciliation.payments_count || 0} odeme`}
+                    subValue={`${reconciliation.payments_count || 0} ödeme`}
                     color="text-emerald-600"
                   />
                   <StatCard
@@ -885,9 +885,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <StatCard
                     icon={AlertOctagon}
-                    label="Tutarsizlik"
+                    label="Tutarsızlık"
                     value={reconciliation.discrepancy_count || 0}
-                    subValue={`${reconciliation.high_balance_count || 0} yuksek bakiye`}
+                    subValue={`${reconciliation.high_balance_count || 0} yüksek bakiye`}
                     color={reconciliation.discrepancy_count > 0 ? "text-red-600" : "text-emerald-600"}
                   />
                 </div>
@@ -897,14 +897,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-amber-500" />
-                      Tutarsizliklar ({reconciliation.discrepancy_count || 0})
+                      Tutarsızlıklar ({reconciliation.discrepancy_count || 0})
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {(reconciliation.discrepancies || []).length === 0 ? (
                       <div className="py-8 text-center">
                         <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400 mb-2" />
-                        <p className="text-sm text-gray-500">Tutarsizlik bulunamadi - mutabakat temiz</p>
+                        <p className="text-sm text-gray-500">Tutarsızlık bulunamadı - mutabakat temiz</p>
                       </div>
                     ) : (
                       <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -929,8 +929,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                                     : "bg-gray-50 text-gray-600 border-gray-200"
                                 } border`}>
                                   {d.type === "duplicate_charge" ? "Tekrar Masraf"
-                                    : d.type === "rate_discrepancy" ? "Oran Tutarsizligi"
-                                    : d.type === "high_balance" ? "Yuksek Bakiye"
+                                    : d.type === "rate_discrepancy" ? "Oran Tutarsızlığı"
+                                    : d.type === "high_balance" ? "Yüksek Bakiye"
                                     : d.type === "orphan_charge" ? "Sahipsiz Masraf"
                                     : d.type}
                                 </Badge>
@@ -950,7 +950,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <AlertOctagon className="w-4 h-4 text-red-500" />
-                        Yuksek Bakiyeli Folyolar ({reconciliation.high_balance_count})
+                        Yüksek Bakiyeli Folyolar ({reconciliation.high_balance_count})
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -973,7 +973,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               </>
             ) : (
               <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Mutabakat yukleniyor...
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Mutabakat yükleniyor...
               </div>
             )}
           </TabsContent>
@@ -1004,7 +1004,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <StatCard
                     icon={XCircle}
-                    label="Basarisiz"
+                    label="Başarısız"
                     value={integrityCheck.summary?.failures || 0}
                     color="text-red-600"
                   />
@@ -1026,9 +1026,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     )}
                     <div>
                       <p className="text-sm font-bold text-gray-900">
-                        {integrityCheck.summary?.overall_status === "pass" ? "Finansal Butunluk Kontrolu Gecti"
+                        {integrityCheck.summary?.overall_status === "pass" ? "Finansal Bütünlük Kontrolu Gecti"
                           : integrityCheck.summary?.overall_status === "warning" ? "Uyarilarla Gecti"
-                          : "Butunluk Sorunlari Tespit Edildi"}
+                          : "Bütünlük Sorunlari Tespit Edildi"}
                       </p>
                       <p className="text-xs text-gray-600">
                         {integrityCheck.business_date} tarihli kontrol sonuclari
@@ -1079,7 +1079,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               </>
             ) : (
               <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Butunluk kontrolu yukleniyor...
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Bütünlük kontrolu yükleniyor...
               </div>
             )}
           </TabsContent>
@@ -1090,13 +1090,13 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Search className="w-4 h-4 text-indigo-500" />
-                  Tarih Araligi Finansal Rapor
+                  Tarih Aralığı Finansal Rapor
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col sm:flex-row items-end gap-3 mb-4">
                   <div className="flex-1">
-                    <label className="text-xs text-gray-600 mb-1 block">Baslangic Tarihi</label>
+                    <label className="text-xs text-gray-600 mb-1 block">Başlangıç Tarihi</label>
                     <input
                       data-testid="report-start-date"
                       type="date"
@@ -1106,7 +1106,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-gray-600 mb-1 block">Bitis Tarihi</label>
+                    <label className="text-xs text-gray-600 mb-1 block">Bitiş Tarihi</label>
                     <input
                       data-testid="report-end-date"
                       type="date"
@@ -1123,7 +1123,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     className="bg-indigo-600 hover:bg-indigo-700 text-white"
                   >
                     {finLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-1" />}
-                    Rapor Olustur
+                    Rapor Oluştur
                   </Button>
                 </div>
 
@@ -1145,7 +1145,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                       </div>
                       <div className="p-3 bg-gray-50 rounded-lg">
                         <p className="text-lg font-bold text-gray-700">{financialReport.summary?.total_payments?.toFixed(2)} TL</p>
-                        <p className="text-[11px] text-gray-600">Toplam Odeme</p>
+                        <p className="text-[11px] text-gray-600">Toplam Ödeme</p>
                       </div>
                       <div className="p-3 bg-amber-50 rounded-lg">
                         <p className="text-lg font-bold text-amber-700">{financialReport.summary?.net_position?.toFixed(2)} TL</p>
@@ -1162,7 +1162,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Card>
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-sm">Kategori Bazli Gelir</CardTitle>
+                            <CardTitle className="text-sm">Kategori Bazlı Gelir</CardTitle>
                           </CardHeader>
                           <CardContent>
                             <div className="space-y-2">
@@ -1181,11 +1181,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
                         <Card>
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-sm">Odeme Yontem Dagilimi</CardTitle>
+                            <CardTitle className="text-sm">Ödeme Yöntem Dağılımı</CardTitle>
                           </CardHeader>
                           <CardContent>
                             {Object.keys(financialReport.payments_by_method || {}).length === 0 ? (
-                              <p className="text-xs text-gray-400 py-4 text-center">Odeme kaydedilmemis</p>
+                              <p className="text-xs text-gray-400 py-4 text-center">Ödeme kaydedilmemiş</p>
                             ) : (
                               <div className="space-y-2">
                                 {Object.entries(financialReport.payments_by_method).map(([method, data]) => (
@@ -1210,7 +1210,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm flex items-center gap-2">
                             <BarChart3 className="w-4 h-4 text-emerald-500" />
-                            Gunluk Gelir Trendi
+                            Günlük Gelir Trendi
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -1254,7 +1254,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm flex items-center gap-2">
                             <Moon className="w-4 h-4 text-indigo-500" />
-                            Donem Denetim Gecmisi ({financialReport.audit_runs.length})
+                            Donem Denetim Geçmişi ({financialReport.audit_runs.length})
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -1291,7 +1291,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 ) : (
                   <div className="py-12 text-center">
                     <BarChart3 className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                    <p className="text-sm text-gray-500">Tarih araligi secip "Rapor Olustur" butonuna tiklayin</p>
+                    <p className="text-sm text-gray-500">Tarih aralığı seçip "Rapor Oluştur" butonuna tıklayın</p>
                   </div>
                 )}
               </CardContent>
@@ -1305,18 +1305,18 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Timer className="w-5 h-5 text-indigo-600" />
-                Otomatik Zamanlama Ayarlari
+                Otomatik Zamanlama Ayarları
               </DialogTitle>
               <DialogDescription>
-                Gece denetiminin otomatik olarak calistirilacagi saat ve secenekleri yapilandir.
+                Gece denetiminin otomatik olarak çalıştırılacağı saat ve seçenekleri yapılandır.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {/* Enable/Disable */}
               <div className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-indigo-800">Otomatik Calistirma</p>
-                  <p className="text-xs text-indigo-600">Belirlenen saatte otomatik olarak calistirilir</p>
+                  <p className="text-sm font-medium text-indigo-800">Otomatik Çalıştırma</p>
+                  <p className="text-xs text-indigo-600">Belirlenen saatte otomatik olarak çalıştırılır</p>
                 </div>
                 <Switch
                   data-testid="schedule-enable-switch"
@@ -1378,7 +1378,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <RotateCcw className="w-4 h-4 text-blue-500" />
                     <div>
                       <p className="text-sm font-medium text-gray-800">Otomatik Yeniden Deneme</p>
-                      <p className="text-xs text-gray-500">Basarisiz olursa tekrar dener</p>
+                      <p className="text-xs text-gray-500">Başarısız olursa tekrar dener</p>
                     </div>
                   </div>
                   <Switch
@@ -1390,7 +1390,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
                 {schedule.auto_retry && (
                   <div className="ml-8">
-                    <label className="text-xs text-gray-600 mb-1 block">Maks. Deneme Sayisi</label>
+                    <label className="text-xs text-gray-600 mb-1 block">Maks. Deneme Sayısı</label>
                     <select
                       data-testid="schedule-max-retries-select"
                       value={schedule.max_retries}
@@ -1408,8 +1408,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-500" />
                     <div>
-                      <p className="text-sm font-medium text-gray-800">Dogrulamalari Atla</p>
-                      <p className="text-xs text-gray-500">On kontrolleri atlayarak calistir</p>
+                      <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
+                      <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır</p>
                     </div>
                   </div>
                   <Switch
@@ -1424,14 +1424,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-red-700">
-                    Otomatik calistirmada dogrulama atlama veri tutarsizliklarina yol acabilir.
+                    Otomatik çalıştırmada doğrulama atlama veri tutarsızlıklarına yol açabilir.
                   </p>
                 </div>
               )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowScheduleDialog(false)} disabled={scheduleLoading}>
-                  Iptal
+                  İptal
                 </Button>
                 <Button
                   data-testid="schedule-save-btn"
@@ -1462,19 +1462,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Moon className="w-5 h-5 text-indigo-600" />
-                Gece Denetimi Baslat
+                Gece Denetimi Başlat
               </DialogTitle>
               <DialogDescription>
-                Secili is gunu icin gece denetimi islemini baslatir.
+                Seçili iş günü için gece denetimi işlemini başlatır.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
                 <p className="text-sm text-indigo-800">
-                  <strong>Is Gunu:</strong> {businessDate || "-"}
+                  <strong>İş Günü:</strong> {businessDate || "-"}
                 </p>
                 <p className="text-xs text-indigo-600 mt-1">
-                  Bu tarih icin gece denetimi calistirilacak
+                  Bu tarih için gece denetimi çalıştırılacak
                 </p>
               </div>
 
@@ -1489,7 +1489,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     className="w-4 h-4 rounded border-gray-300 text-indigo-600"
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Simuelasyon (Dry Run)</p>
+                    <p className="text-sm font-medium text-gray-800">Simülasyon (Dry Run)</p>
                     <p className="text-xs text-gray-500">Degisiklik yapmadan test et</p>
                   </div>
                 </label>
@@ -1517,8 +1517,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     className="w-4 h-4 rounded border-gray-300 text-red-600"
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Dogrulamalari Atla</p>
-                    <p className="text-xs text-gray-500">On kontrolleri atlayarak calistir (dikkatli kullanin)</p>
+                    <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
+                    <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır (dikkatli kullanin)</p>
                   </div>
                 </label>
 
@@ -1539,14 +1539,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-red-700">
-                    Dogrulama atlama sadece acil durumlarda kullanilmalidir. On kontrolsuz denetim veri tutarsizliklarina neden olabilir.
+                    Doğrulama atlama sadece acil durumlarda kullanılmalıdır. Ön kontrolsüz denetim veri tutarsızlıklarına neden olabilir.
                   </p>
                 </div>
               )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowRunDialog(false)} disabled={running}>
-                  Iptal
+                  İptal
                 </Button>
                 <Button
                   data-testid="confirm-run-btn"
@@ -1562,12 +1562,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   ) : runOptions.dry_run ? (
                     <>
                       <Eye className="w-4 h-4 mr-1" />
-                      Simuelasyon Baslat
+                      Simülasyon Baslat
                     </>
                   ) : (
                     <>
                       <Play className="w-4 h-4 mr-1" />
-                      Denetimi Baslat
+                      Denetimi Başlat
                     </>
                   )}
                 </Button>

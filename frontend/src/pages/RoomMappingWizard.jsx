@@ -84,7 +84,7 @@ const STEPS = [
   { id: 'connector', label: 'Kanal Secimi', icon: '1' },
   { id: 'rooms', label: 'Oda Eslestirme', icon: '2' },
   { id: 'rates', label: 'Fiyat Plani', icon: '3' },
-  { id: 'confirm', label: 'Onay & Kayit', icon: '4' },
+  { id: 'confirm', label: 'Onay & Kayıt', icon: '4' },
 ];
 
 const RoomMappingWizard = ({ user, tenant, onLogout }) => {
@@ -116,7 +116,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         const { data } = await axios.get('/channel-manager/v2/connectors', { headers });
         setConnectors(data.connectors || []);
       } catch {
-        toast.error('Kanal listesi yuklenemedi');
+        toast.error('Kanal listesi yüklenemedi');
       }
     })();
   }, []);
@@ -149,7 +149,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         })),
       );
     } catch {
-      toast.error('Oda eslestirme onerileri yuklenemedi');
+      toast.error('Oda eşleştirme onerileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -177,7 +177,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         })),
       );
     } catch {
-      toast.error('Fiyat plani onerileri yuklenemedi');
+      toast.error('Fiyat plani onerileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -195,7 +195,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         { headers },
       );
       setFetchResult(data);
-      toast.success(`${data.room_types_count} oda tipi ve ${data.rate_plans_count} fiyat plani basariyla cekildi`);
+      toast.success(`${data.room_types_count} oda tipi ve ${data.rate_plans_count} fiyat planı başarıyla çekildi`);
       return true;
     } catch (e) {
       const msg = e?.response?.data?.detail || 'Kanaldan veri cekilemedi';
@@ -210,7 +210,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
   const goNext = async () => {
     if (step === 0) {
       if (!selectedConnectorId) {
-        toast.warning('Lutfen bir kanal secin');
+        toast.warning('Lutfen bir kanal seçin');
         return;
       }
       // First fetch external data from channel, then load suggestions
@@ -288,12 +288,12 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
       const totalCreated = (res.rooms?.created || 0) + (res.rates?.created || 0);
       const totalFailed = (res.rooms?.failed || 0) + (res.rates?.failed || 0);
       if (totalFailed === 0) {
-        toast.success(`${totalCreated} eslestirme basariyla olusturuldu`);
+        toast.success(`${totalCreated} eşleştirme başarıyla oluşturuldu`);
       } else {
-        toast.warning(`${totalCreated} basarili, ${totalFailed} basarisiz`);
+        toast.warning(`${totalCreated} başarılı, ${totalFailed} başarısız`);
       }
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'Eslestirme olusturulamadi');
+      toast.error(e?.response?.data?.detail || 'Eslestirme oluşturulamadı');
     } finally {
       setSaving(false);
     }
@@ -350,11 +350,11 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-slate-600">
-                Eslestirme yapmak istediginiz kanal baglantisinii secin. Sistem, PMS oda tiplerinizi kanal oda tipleriyle otomatik olarak eslestirmeye calisacaktir.
+                Eslestirme yapmak istediginiz kanal baglantisinii seçin. Sistem, PMS oda tiplerinizi kanal oda tipleriyle otomatik olarak eşleştirmeye calisacaktir.
               </p>
               <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId}>
                 <SelectTrigger className="w-full max-w-md" data-testid="connector-select">
-                  <SelectValue placeholder="Kanal secin..." />
+                  <SelectValue placeholder="Kanal seçin..." />
                 </SelectTrigger>
                 <SelectContent>
                   {connectors.map((c) => (
@@ -405,7 +405,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   Oda Tipi Eslestirme
                 </CardTitle>
                 <p className="text-sm text-slate-500 mt-1">
-                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine gore otomatik eslestirme onerdi. Dusuk guvenli oneriler inceleme bolumunde listelenir.
+                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine gore otomatik eşleştirme onerdi. Dusuk guvenli oneriler inceleme bolumunde listelenir.
                 </p>
               </div>
               {roomData?.summary && (
@@ -465,7 +465,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   )}
 
                   {roomSelections.length === 0 && !loading && (
-                    <p className="text-center text-slate-400 py-8">Eslestirme onerisi bulunamadi</p>
+                    <p className="text-center text-slate-400 py-8">Eşleştirme önerisi bulunamadı</p>
                   )}
 
                   {roomData?.conflicts?.length > 0 && (
@@ -527,7 +527,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                                 disabled={!sel.enabled}
                               >
                                 <SelectTrigger className="w-full text-sm" data-testid={`room-ext-select-${idx}`}>
-                                  <SelectValue placeholder="Kanal oda tipi secin..." />
+                                  <SelectValue placeholder="Kanal oda tipi seçin..." />
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
@@ -589,7 +589,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <XCircle className="w-4 h-4 text-red-500" />
                               <span className="text-sm font-semibold text-red-700">Eslesmedi ({unmatchedItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Kanal oda tipi bulunamadi — manuel secim yapin</span>
+                              <span className="text-[10px] text-slate-400">Kanal oda tipi bulunamadı — manuel seçim yapın</span>
                             </div>
                             {unmatchedItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -648,7 +648,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   )}
 
                   {rateSelections.length === 0 && !loading && (
-                    <p className="text-center text-slate-400 py-8">Fiyat plani onerisi bulunamadi</p>
+                    <p className="text-center text-slate-400 py-8">Fiyat planı önerisi bulunamadı</p>
                   )}
                   {rateSelections.map((sel, idx) => (
                     <div
@@ -676,7 +676,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                           disabled={!sel.enabled}
                         >
                           <SelectTrigger className="w-full text-sm" data-testid={`rate-ext-select-${idx}`}>
-                            <SelectValue placeholder="Kanal fiyat plani secin..." />
+                            <SelectValue placeholder="Kanal fiyat plani seçin..." />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
@@ -710,9 +710,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div>
                       <p className="font-semibold text-emerald-900">Eslestirmeler Tamamlandi</p>
                       <p className="text-sm text-emerald-700">
-                        {(results.rooms?.created || 0) + (results.rates?.created || 0)} eslestirme olusturuldu
+                        {(results.rooms?.created || 0) + (results.rates?.created || 0)} eşleştirme oluşturuldu
                         {((results.rooms?.failed || 0) + (results.rates?.failed || 0)) > 0 &&
-                          `, ${(results.rooms?.failed || 0) + (results.rates?.failed || 0)} basarisiz`
+                          `, ${(results.rooms?.failed || 0) + (results.rates?.failed || 0)} başarısız`
                         }
                       </p>
                     </div>
@@ -721,7 +721,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-3 bg-white rounded-lg border">
                       <p className="text-sm font-medium mb-1">Oda Tipi Eslestirmeleri</p>
                       <p className="text-sm text-slate-600">
-                        {results.rooms.created} olusturuldu / {results.rooms.failed} basarisiz
+                        {results.rooms.created} oluşturuldu / {results.rooms.failed} başarısız
                       </p>
                       {results.rooms.errors?.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -738,7 +738,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-3 bg-white rounded-lg border">
                       <p className="text-sm font-medium mb-1">Fiyat Plani Eslestirmeleri</p>
                       <p className="text-sm text-slate-600">
-                        {results.rates.created} olusturuldu / {results.rates.failed} basarisiz
+                        {results.rates.created} oluşturuldu / {results.rates.failed} başarısız
                       </p>
                       {results.rates.errors?.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -767,7 +767,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-4 bg-slate-50 rounded-lg border">
                       <p className="text-sm font-medium text-slate-700 mb-3">Oda Tipi Eslestirmeleri</p>
                       {roomSelections.filter((s) => s.enabled && s.external_entity_id).length === 0 ? (
-                        <p className="text-sm text-slate-400">Secili eslestirme yok</p>
+                        <p className="text-sm text-slate-400">Secili eşleştirme yok</p>
                       ) : (
                         <div className="space-y-2">
                           {roomSelections.filter((s) => s.enabled && s.external_entity_id).map((s, i) => (
@@ -785,7 +785,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-4 bg-slate-50 rounded-lg border">
                       <p className="text-sm font-medium text-slate-700 mb-3">Fiyat Plani Eslestirmeleri</p>
                       {rateSelections.filter((s) => s.enabled && s.external_entity_id).length === 0 ? (
-                        <p className="text-sm text-slate-400">Secili eslestirme yok</p>
+                        <p className="text-sm text-slate-400">Secili eşleştirme yok</p>
                       ) : (
                         <div className="space-y-2">
                           {rateSelections.filter((s) => s.enabled && s.external_entity_id).map((s, i) => (
@@ -804,9 +804,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                     <p className="text-sm text-amber-800">
-                      Toplam <strong>{enabledRooms + enabledRates}</strong> eslestirme olusturulacak
+                      Toplam <strong>{enabledRooms + enabledRates}</strong> eşleştirme olusturulacak
                       ({enabledRooms} oda tipi + {enabledRates} fiyat plani).
-                      Onayladiktan sonra eslestirmeler aktif olarak kaydedilecektir.
+                      Onayladiktan sonra eşleştirmeler aktif olarak kaydedilecektir.
                     </p>
                   </div>
                 </>

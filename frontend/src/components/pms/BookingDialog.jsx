@@ -191,7 +191,7 @@ const BookingDialog = ({
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
                   <div className="flex items-center gap-2 text-gray-500">
                     <UserPlus className="w-3.5 h-3.5" />
-                    <span className="text-sm">Sonuc bulunamadi. Yeni misafir kaydedin.</span>
+                    <span className="text-sm">Sonuç bulunamadı. Yeni misafir kaydedin.</span>
                   </div>
                 </div>
               )}

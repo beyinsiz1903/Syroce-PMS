@@ -216,7 +216,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
       if (rRes.status === 'fulfilled') setReadiness(rRes.value.data);
       if (roRes.status === 'fulfilled') setRollout(roRes.value.data);
     } catch {
-      toast.error('Runtime verileri yuklenemedi');
+      toast.error('Runtime verileri yüklenemedi');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -275,7 +275,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
         toast.error(res.data.message);
       }
       fetchAll();
-    } catch { toast.error('Faz gecisi basarisiz'); }
+    } catch { toast.error('Faz geçişi başarısız'); }
   };
 
   if (loading) {
@@ -676,7 +676,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Retry Safe */}
             <Section title="Retry Safe" icon={RotateCw} iconColor="text-blue-400" testId="action-retry-section">
               <p className="text-xs text-zinc-400 mb-3">
-                Basarisiz (retryable) push change set'lerini yeniden deneme icin kuyruga al.
+                Basarisiz (retryable) push change set'lerini yeniden deneme için kuyruga al.
                 Idempotent: tekrar calistirmak zarar vermez.
               </p>
               <Button data-testid="action-retry-btn" onClick={() => handleSafeAction('retry-safe')}
@@ -691,7 +691,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             <Section title="Mapping Dogrulama" icon={ClipboardCheck} iconColor="text-emerald-400" testId="action-revalidate-section">
               <p className="text-xs text-zinc-400 mb-3">
                 Tum provider mapping'lerini bastan dogrula. Hatalilari ve nedenlerini detayli goster.
-                Salt okunur islem — hicbir seyi degistirmez.
+                Salt okunur işlem — hicbir seyi değiştirmez.
               </p>
               <Button data-testid="action-revalidate-btn" onClick={() => handleSafeAction('revalidate-mapping', {})}
                 disabled={actionLoading['revalidate-mapping']}
@@ -800,7 +800,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
                 {/* Phase History */}
                 {ro.phase_history?.length > 0 && (
-                  <Section title="Faz Gecmisi" icon={Clock} iconColor="text-zinc-400" testId="rollout-history-section">
+                  <Section title="Faz Geçmişi" icon={Clock} iconColor="text-zinc-400" testId="rollout-history-section">
                     <div className="space-y-1.5">
                       {ro.phase_history.map((ph, i) => (
                         <div key={i} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/30 last:border-0">

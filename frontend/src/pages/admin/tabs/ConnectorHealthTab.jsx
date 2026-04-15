@@ -83,7 +83,7 @@ const ConnectorHealthTab = () => {
       const { data: json } = await axios.get(`${API}/health-dashboard/connectors`);
       setData(json);
     } catch (e) {
-      toast.error('Failed to load health data');
+      toast.error('Sağlık verileri yüklenemedi');
     } finally {
       setLoading(false);
     }

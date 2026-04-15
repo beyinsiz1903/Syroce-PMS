@@ -17,7 +17,7 @@ export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
 
 export function statusLabel(s) {
-  return s === 'checked_in' ? 'Giris Yapildi' : s === 'confirmed' ? 'Onaylandi' : s === 'checked_out' ? 'Cikis Yapildi' : s === 'cancelled' ? 'Iptal' : s === 'no_show' ? 'No-Show' : s || 'Beklemede';
+  return s === 'checked_in' ? 'Giris Yapildi' : s === 'confirmed' ? 'Onaylandi' : s === 'checked_out' ? 'Cikis Yapildi' : s === 'cancelled' ? 'İptal' : s === 'no_show' ? 'No-Show' : s || 'Beklemede';
 }
 
 export function InfoField({ label, value, className = '' }) {
@@ -65,7 +65,7 @@ export function FormPanel({ color, title, testid, children, onClose, onSubmit, l
         <Button size="sm" onClick={onSubmit} disabled={loading} className={`bg-${color}-600 hover:bg-${color}-700 text-white h-8 text-xs`}>
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} Kaydet
         </Button>
-        <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">Iptal</Button>
+        <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">İptal</Button>
       </div>
     </div>
   );

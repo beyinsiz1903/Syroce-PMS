@@ -33,9 +33,9 @@ const GroupRevenueByCompany = () => {
       const res = await axios.get('/deluxe/group-bookings', { params });
       setGroups(res.data?.groups || []);
     } catch (err) {
-      console.error('Failed to load group bookings', err);
-      setError(err.response?.data?.detail || 'Failed to load group bookings');
-      toast.error('Failed to load group bookings');
+      console.error('Grup rezervasyonları yüklenemedi', err);
+      setError(err.response?.data?.detail || 'Grup rezervasyonları yüklenemedi');
+      toast.error('Grup rezervasyonları yüklenemedi');
     } finally {
       setLoading(false);
     }

@@ -95,7 +95,7 @@ const AlertDeliveryTab = () => {
 
   const saveChannel = async (d) => {
     try { await axios.post(`${API}/delivery/channels`, d); toast.success('Channel saved'); setShowForm(false); fetchChannels(); }
-    catch { toast.error('Failed to save'); }
+    catch { toast.error('Kaydedilemedi'); }
   };
   const deleteChannel = async (id) => {
     try { await axios.delete(`${API}/delivery/channels/${id}`); toast.success('Deleted'); fetchChannels(); }

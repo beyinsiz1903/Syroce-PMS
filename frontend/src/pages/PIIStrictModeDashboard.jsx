@@ -69,7 +69,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
     try {
       const res = await axios.post(`/security/pii-strict-mode/toggle`, { enabled }, { headers });
       setConfig(res.data.config);
-      toast.success(enabled ? "Strict Mode AKTIF edildi" : "Strict Mode DEVRE DISI birakildi");
+      toast.success(enabled ? "Strict Mode AKTIF edildi" : "Strict Mode DEVRE DIŞI bırakıldı");
       fetchAll();
     } catch {
       toast.error("Degisiklik kaydedilemedi");

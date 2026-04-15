@@ -86,7 +86,7 @@ const AIRMSDashboard = () => {
       alert(`Success! ${response.data.rates_published} rates published. Avg rate: $${response.data.avg_rate}`);
     } catch (error) {
       console.error('Error publishing rates:', error);
-      alert('Failed to publish rates');
+      alert('Fiyatlar yayınlanamadı');
     } finally {
       setLoading(false);
     }

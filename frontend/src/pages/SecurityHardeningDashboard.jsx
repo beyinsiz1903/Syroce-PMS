@@ -24,7 +24,7 @@ function TabLoader() {
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
-      <span className="ml-3 text-zinc-400">Yukleniyor...</span>
+      <span className="ml-3 text-zinc-400">Yükleniyor...</span>
     </div>
   );
 }
@@ -180,7 +180,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                     <CardHeader><CardTitle className="text-white text-base">Property Bazli Izinler</CardTitle></CardHeader>
                     <CardContent>
                       {Object.keys(properties).length === 0 ? (
-                        <p className="text-slate-500 text-sm">Kullanici bilgisi bulunamadi</p>
+                        <p className="text-slate-500 text-sm">Kullanıcı bilgisi bulunamadı</p>
                       ) : (
                         <div className="space-y-3">
                           {Object.entries(properties).map(([pid, pdata]) => (
@@ -222,7 +222,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                           {vault.needs_rotation.map((c, i) => (
                             <div key={i} className="flex items-center justify-between p-2 rounded bg-amber-900/20 border border-amber-700/30">
                               <span className="text-sm text-amber-300">{c.type}/{c.key}</span>
-                              <span className="text-xs text-amber-500">{c.days_overdue} gun gecmis</span>
+                              <span className="text-xs text-amber-500">{c.days_overdue} gun geçmiş</span>
                             </div>
                           ))}
                         </div>

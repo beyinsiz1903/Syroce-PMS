@@ -88,7 +88,7 @@ const GuestPortal = ({ user, onLogout }) => {
       setNotificationPrefs(prefsRes.data);
       setCleaningRequests(cleaningRes.data.requests || []);
     } catch (error) {
-      toast.error('Failed to load data');
+      toast.error('Veriler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -137,7 +137,7 @@ const GuestPortal = ({ user, onLogout }) => {
       loadRoomServices(roomServiceRequest.booking_id);
       setRoomServiceRequest({ booking_id: '', service_type: 'housekeeping', description: '', notes: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to submit request');
+      toast.error(error.response?.data?.detail || 'İstek gönderilemedi');
     }
   };
 
@@ -147,7 +147,7 @@ const GuestPortal = ({ user, onLogout }) => {
       setNotificationPrefs(prev => ({ ...prev, [key]: value }));
       toast.success('Preference updated');
     } catch (error) {
-      toast.error('Failed to update preference');
+      toast.error('Tercih güncellenemedi');
     }
   };
 
@@ -953,7 +953,7 @@ const GuestPortal = ({ user, onLogout }) => {
                                     });
                                     toast.success(`${offer.title} added to your booking!`);
                                   } catch (error) {
-                                    toast.error('Failed to add offer. Please try again.');
+                                    toast.error('Teklif eklenemedi. Lütfen tekrar deneyin.');
                                   }
                                 }}
                               >

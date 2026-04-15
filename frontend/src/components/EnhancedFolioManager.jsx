@@ -46,7 +46,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
       fetchFolio();
     } catch (error) {
       console.error('Error posting charge:', error);
-      alert('Failed to post charge');
+      alert('Masraf kaydedilemedi');
     }
   };
 
@@ -63,12 +63,12 @@ const EnhancedFolioManager = ({ bookingId }) => {
       fetchFolio();
     } catch (error) {
       console.error('Error posting payment:', error);
-      alert('Failed to post payment');
+      alert('Ödeme kaydedilemedi');
     }
   };
 
   const handleCheckout = async () => {
-    if (!window.confirm('Are you sure you want to checkout this guest?')) return;
+    if (!window.confirm('Bu misafirin çıkışını yapmak istediğinize emin misiniz?')) return;
     
     try {
       const token = localStorage.getItem('token');
@@ -81,14 +81,14 @@ const EnhancedFolioManager = ({ bookingId }) => {
       fetchFolio();
     } catch (error) {
       console.error('Error checking out:', error);
-      alert('Failed to checkout');
+      alert('Çıkış yapılamadı');
     }
   };
 
   if (!folio) {
     return (
       <div className="p-6 bg-white">
-        <p>Loading folio...</p>
+        <p>Folio yükleniyor...</p>
       </div>
     );
   }
@@ -102,13 +102,13 @@ const EnhancedFolioManager = ({ bookingId }) => {
             onClick={() => setShowChargeModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            ➕ Post Charge
+            ➕ Masraf Ekle
           </button>
           <button
             onClick={() => setShowPaymentModal(true)}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
-            💳 Post Payment
+            💳 Ödeme Kaydet
           </button>
           <button
             onClick={() => setShowSplitModal(true)}
@@ -121,7 +121,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
             onClick={handleCheckout}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            🚪 Checkout
+            🚪 Çıkış Yap
           </button>
         </div>
       </div>
@@ -214,7 +214,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
       {showChargeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">Post Charge</h3>
+            <h3 className="text-xl font-bold mb-4">Masraf Ekle</h3>
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.target);
@@ -253,7 +253,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowChargeModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Post Charge</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Masraf Ekle</button>
               </div>
             </form>
           </div>
@@ -264,7 +264,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">Post Payment</h3>
+            <h3 className="text-xl font-bold mb-4">Ödeme Kaydet</h3>
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.target);
@@ -294,7 +294,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowPaymentModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Post Payment</button>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Ödeme Kaydet</button>
               </div>
             </form>
           </div>

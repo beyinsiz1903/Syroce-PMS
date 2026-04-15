@@ -152,27 +152,27 @@ const translations = {
   },
   tr: {
     title: 'Syroce B2B API',
-    subtitle: 'Acente otomasyon sistemleri icin entegrasyon dokumantasyonu',
+    subtitle: 'Acente otomasyon sistemleri için entegrasyon dokumantasyonu',
     nav: {
       overview: 'Genel Bakis',
       auth: 'Kimlik Dogrulama',
       content: 'Icerik',
-      availability: 'Musaitlik',
+      availability: 'Müsaitlik',
       rates: 'Fiyatlar',
       reservations: 'Rezervasyonlar',
       webhooks: 'Webhook\'lar',
     },
     overview: {
       heading: 'Baslangic',
-      desc: 'Syroce B2B API, seyahat acentelerinin otel PMS sistemleriyle dogrudan entegre olmasini saglar. Gercek zamanli musaitlik sorgulama, fiyat cekme, rezervasyon olusturma ve webhook bildirimleri — hepsi tek bir API uzerinden.',
+      desc: 'Syroce B2B API, seyahat acentelerinin otel PMS sistemleriyle dogrudan entegre olmasini saglar. Gercek zamanli müsaitlik sorgulama, fiyat cekme, rezervasyon olusturma ve webhook bildirimleri — hepsi tek bir API uzerinden.',
       baseUrl: 'Temel URL',
       features: 'Temel Ozellikler',
       featureList: [
-        'Gercek zamanli oda musaitlik kontrolu',
+        'Gercek zamanli oda müsaitlik kontrolu',
         'Acenteye ozel ve temel fiyat sorgulari',
         'Otomatik PMS senkronizasyonlu dogrudan rezervasyon olusturma',
         'Rezervasyon yonetimi (listeleme, detay, iptal)',
-        'Durum degisiklikleri icin webhook bildirimleri',
+        'Durum değişiklikleri için webhook bildirimleri',
       ],
       responseFormat: 'Yanit Formati',
       responseDesc: 'Tum yanitlar JSON formatinda doner. Basarili yanitlar ilgili veri alanlarini icerir. Hata yanitlari bir detail mesaji icerir.',
@@ -183,7 +183,7 @@ const translations = {
       headerName: 'Baslik Adi',
       headerValue: 'Baslik Degeri',
       obtaining: 'API Key Edinme',
-      obtainingDesc: 'API key\'ler otel yoneticisi tarafindan Acente Yonetimi panelinden verilir. Erisim talep etmek icin otel ortaginizla iletisime gecin.',
+      obtainingDesc: 'API key\'ler otel yoneticisi tarafindan Acente Yonetimi panelinden verilir. Erisim talep etmek için otel ortaginizla iletisime gecin.',
       security: 'Guvenlik Notlari',
       securityList: [
         'Key\'ler sunucuda SHA-256 ile hashlenir — asla duz metin olarak saklanmaz',
@@ -204,8 +204,8 @@ const translations = {
       notPublished: 'Icerik yayinlanmadiginda',
     },
     availability: {
-      heading: 'Musaitlik API',
-      desc: 'Belirtilen tarihler icin gercek zamanli oda musaitligini kontrol edin. Kapasite ve fiyat detaylariyla birlikte tip bazinda musait oda sayisini dondurur.',
+      heading: 'Müsaitlik API',
+      desc: 'Belirtilen tarihler için gercek zamanli oda müsaitligini kontrol edin. Kapasite ve fiyat detaylariyla birlikte tip bazinda müsait oda sayisini dondurur.',
       endpoint: 'Endpoint',
       params: 'Sorgu Parametreleri',
       paramList: [
@@ -217,7 +217,7 @@ const translations = {
     },
     rates: {
       heading: 'Fiyat API',
-      desc: 'Belirtilen tarih araligi icin fiyatlari cekin. Yapilandirilmissa acenteye ozel fiyatlari, aksi halde temel otel fiyatlarini dondurur.',
+      desc: 'Belirtilen tarih araligi için fiyatlari cekin. Yapilandirilmissa acenteye ozel fiyatlari, aksi halde temel otel fiyatlarini dondurur.',
       endpoint: 'Endpoint',
       params: 'Sorgu Parametreleri',
       paramList: [
@@ -229,9 +229,9 @@ const translations = {
     },
     reservations: {
       heading: 'Rezervasyon API',
-      desc: 'Rezervasyon olusturun, listeleyin, goruntuleyin ve iptal edin. Tum rezervasyonlar otomatik olarak otel PMS\'i ile senkronize edilir.',
+      desc: 'Rezervasyon oluşturun, listeleyin, goruntuleyin ve iptal edin. Tum rezervasyonlar otomatik olarak otel PMS\'i ile senkronize edilir.',
       createTitle: 'Rezervasyon Olustur',
-      createDesc: 'Yeni bir rezervasyon olusturur ve otomatik olarak musait bir oda atar.',
+      createDesc: 'Yeni bir rezervasyon olusturur ve otomatik olarak müsait bir oda atar.',
       bodyParams: 'Istek Govdesi',
       createParams: [
         { name: 'room_type', type: 'string', required: true, desc: 'Oda tipi adi' },
@@ -239,7 +239,7 @@ const translations = {
         { name: 'check_out', type: 'string', required: true, desc: 'Cikis tarihi (YYYY-MM-DD)' },
         { name: 'guest_name', type: 'string', required: true, desc: 'Misafir tam adi' },
         { name: 'guest_email', type: 'string', required: false, desc: 'Misafir e-posta adresi' },
-        { name: 'guest_phone', type: 'string', required: false, desc: 'Misafir telefon numarasi' },
+        { name: 'guest_phone', type: 'string', required: false, desc: 'Misafir telefon numarası' },
         { name: 'adults', type: 'integer', required: false, desc: 'Yetiskin sayisi (varsayilan: 2)' },
         { name: 'children', type: 'integer', required: false, desc: 'Cocuk sayisi (varsayilan: 0)' },
         { name: 'special_requests', type: 'string', required: false, desc: 'Ozel istekler' },
@@ -264,7 +264,7 @@ const translations = {
       desc: 'Rezervasyon durumlari degistiginde gercek zamanli bildirimler alin. Bir webhook URL\'si kaydedin ve Syroce olay verilerini endpoint\'inize POST edecektir.',
       events: 'Desteklenen Olaylar',
       eventList: [
-        { name: 'reservation.created', desc: 'Yeni bir rezervasyon olusturuldugunda' },
+        { name: 'reservation.created', desc: 'Yeni bir rezervasyon oluşturuldugunda' },
         { name: 'reservation.cancelled', desc: 'Bir rezervasyon iptal edildiginde' },
         { name: 'reservation.updated', desc: 'Bir rezervasyon durumu degistiginde (giris, cikis)' },
       ],
@@ -272,7 +272,7 @@ const translations = {
       registerBody: [
         { name: 'url', type: 'string', required: true, desc: 'HTTPS endpoint URL\'niz' },
         { name: 'events', type: 'array', required: true, desc: 'Abone olunacak olay tipleri listesi' },
-        { name: 'secret', type: 'string', required: false, desc: 'Payload dogrulamasi icin imzalama anahtari' },
+        { name: 'secret', type: 'string', required: false, desc: 'Payload dogrulamasi için imzalama anahtari' },
       ],
       listTitle: 'Webhook\'lari Listele',
       deleteTitle: 'Webhook Sil',
@@ -531,7 +531,7 @@ export default function B2BApiDocs() {
 
 // Error
 {
-  "detail": "Gecersiz veya devre disi API key"
+  "detail": "Gecersiz veya devre dışı API key"
 }`} />
               </div>
             </section>
@@ -572,10 +572,10 @@ export default function B2BApiDocs() {
               <div className="mt-6">
                 <h4 className="font-semibold text-slate-700 text-sm mb-3">{t.auth.errors}</h4>
                 <CodeBlock lang="json" code={`// 401 Unauthorized
-{ "detail": "Gecersiz veya devre disi API key" }
+{ "detail": "Gecersiz veya devre dışı API key" }
 
 // 403 Forbidden
-{ "detail": "Acente hesabi aktif degil" }`} />
+{ "detail": "Acente hesabi aktif değil" }`} />
               </div>
             </section>
 
@@ -603,7 +603,7 @@ export default function B2BApiDocs() {
 // ${t.content.notPublished}
 {
   "published": false,
-  "message": "Bu acente icin henuz icerik yayinlanmamis",
+  "message": "Bu acente için henüz icerik yayinlanmamis",
   "hotel_content": null
 }`} />
                 </EndpointBlock>
@@ -701,7 +701,7 @@ export default function B2BApiDocs() {
     "commission_amount": 75.00,
     "created_at": "2026-03-10T14:30:00+00:00"
   },
-  "message": "Rezervasyon olusturuldu: B2B-A1B2C3D4"
+  "message": "Rezervasyon oluşturuldu: B2B-A1B2C3D4"
 }`} />
                   </EndpointBlock>
                 </div>

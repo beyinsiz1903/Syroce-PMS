@@ -90,7 +90,7 @@ export default function RuntimeInfrastructureDashboard() {
       const res = await axios.get(`/runtime/alerts/evaluate`, { headers });
       toast.success(`Alert taramasi tamamlandi: ${res.data.count} alert`);
       fetchData();
-    } catch { toast.error("Alert taramasi basarisiz"); }
+    } catch { toast.error("Alert taraması başarısız"); }
     finally { setEvaluating(false); }
   };
 
@@ -99,7 +99,7 @@ export default function RuntimeInfrastructureDashboard() {
       await axios.post(`/runtime/alerts/${alertId}/acknowledge`, {}, { headers });
       toast.success("Alert onaylandi");
       fetchData();
-    } catch { toast.error("Alert onaylama basarisiz"); }
+    } catch { toast.error("Alert onaylama başarısız"); }
   };
 
   if (loading) {
@@ -245,7 +245,7 @@ export default function RuntimeInfrastructureDashboard() {
                 </div>
               ))
             ) : (
-              <p className="text-xs text-zinc-500">Provider konfigurasyonu bulunamadi</p>
+              <p className="text-xs text-zinc-500">Provider konfigürasyonu bulunamadı</p>
             )}
             {messaging?.retry_queue_size > 0 && (
               <div className="mt-2 p-2 bg-amber-950/30 rounded-lg border border-amber-900/30">

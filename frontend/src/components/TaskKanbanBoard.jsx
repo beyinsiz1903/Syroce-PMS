@@ -75,7 +75,7 @@ const TaskKanbanBoard = () => {
 
       toast.success('Task moved successfully');
     } catch (error) {
-      toast.error('Failed to move task');
+      toast.error('Görev taşınamadı');
     }
   };
 

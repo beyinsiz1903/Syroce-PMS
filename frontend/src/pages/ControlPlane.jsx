@@ -59,7 +59,7 @@ function ReservationLookup() {
         });
         return;
       }
-      toast.error("Sonuc bulunamadi", { description: `"${q}" icin timeline kaydi yok.` });
+      toast.error("Sonuç bulunamadı", { description: `"${q}" için timeline kaydı yok.` });
     } catch (err) {
       toast.error("Arama hatasi", { description: err.response?.data?.detail || err.message });
     } finally {
@@ -78,10 +78,10 @@ function ReservationLookup() {
         setRawPayload(res.data);
         setShowRaw(true);
       } else {
-        toast.info("Raw payload bulunamadi");
+        toast.info("Raw payload bulunamadı");
       }
     } catch {
-      toast.error("Raw payload yuklenemedi");
+      toast.error("Raw payload yüklenemedi");
     }
   };
 
@@ -388,7 +388,7 @@ function SystemHealth() {
       const res = await axios.get("/ops/dashboard");
       setDashboard(res.data);
     } catch (err) {
-      toast.error("Dashboard yuklenemedi");
+      toast.error("Dashboard yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -523,7 +523,7 @@ function LiveFeed() {
       setEvents(res.data.events || []);
       setTotal(res.data.total || 0);
     } catch {
-      toast.error("Event feed yuklenemedi");
+      toast.error("Event feed yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -632,7 +632,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Ops merkezi · Kanal sagligi · Deploy · DORA · Envanter hizalama</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Ops merkezi · Kanal sağlığı · Deploy · DORA · Envanter hizalama</p>
             </div>
           </div>
 

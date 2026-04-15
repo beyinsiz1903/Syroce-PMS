@@ -676,7 +676,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
             {!prelaunchResult?.steps && (
               <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-xl p-10 text-center">
                 <Rocket size={32} className="text-zinc-600 mx-auto mb-3" />
-                <div className="text-sm text-zinc-500">Henuz dogrulama calistirilmadi. "Run Validation" ile baslatin.</div>
+                <div className="text-sm text-zinc-500">Henüz dogrulama calistirilmadi. "Run Validation" ile baslatin.</div>
               </div>
             )}
 
@@ -748,7 +748,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
                 </div>
               )}
               {(!alertsSummary.total_alerts || alertsSummary.total_alerts === 0) && (
-                <div className="text-sm text-zinc-500 text-center py-6">Henuz alert olusturulmadi. Pre-launch validation calismasi sirasinda otomatik alert uretilir.</div>
+                <div className="text-sm text-zinc-500 text-center py-6">Henüz alert olusturulmadi. Pre-launch validation calismasi sirasinda otomatik alert uretilir.</div>
               )}
             </Panel>
 

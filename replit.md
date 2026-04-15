@@ -417,6 +417,25 @@ All tabs use Lucide icons and Turkish labels:
 - **`backend/domains/pms/housekeeping_router.py`** — Added missing `from domains.guest.schemas import LinenInventoryItem` import. The linen-inventory endpoint was returning 500 (NameError) when no inventory data existed and it tried to create defaults.
 - **`backend/routers/reports.py`** — Fixed `get_daily_flash_report_data is not defined` error in PDF and email endpoints. Both now call the existing `get_daily_flash_report()` function with correct response field names (`occupied_rooms`, `total_rooms`, `occupancy_rate` instead of `occupied`, `total`, `percentage`).
 
+## Turkish Localization Sweep (Comprehensive)
+
+All frontend PMS modules systematically fixed for proper Turkish character encoding and English-to-Turkish translation:
+
+### Fixes Applied Across 60+ Files
+- **Broken Turkish characters**: All ASCII approximations fixed (basarisiz→başarısız, bulunamadi→bulunamadı, guncellendi→güncellendi, yapildi→yapıldı, istediginize→istediğinize, yuklenemedi→yüklenemedi, etc.)
+- **English error messages**: All `Failed to ...` toast/alert messages translated to Turkish
+- **window.confirm dialogs**: All confirmation dialogs use proper Turkish characters (ş, ç, ğ, ı, ö, ü, İ)
+- **Currency**: All monetary displays use ₺ (TRY), no $ symbols
+- **Key files fixed**: ServiceRecovery, ReservationDetailModal, GovernancePanel, OperationTabs, OnlinePaymentTab, PMSModule, ReservationCalendar, EnhancedFolioManager, TemplateManager, all admin tabs, rate managers, channel manager modules, housekeeping, POS, and many more
+
+### Session Plan T001-T006 (All Pre-completed)
+- T001: StaffTaskManager — Full Turkish UI with KPI cards, Dialog components
+- T002: POSTab — Turkish UI, ₺ currency, correct API mappings
+- T003: FeedbackSystem — Turkish UI, Dialog instead of window.prompt
+- T004: AllotmentGrid — Turkish UI, validation, Dialog components
+- T005: KBSNotification — Dialog, XML escaping, Turkish UI
+- T006: ConciergeDesk, RevenueControls, ManagerDailyReport, KVKKManager — All complete
+
 ## Sprint 6 Changes (B2B Analytics Dashboard)
 
 ### Backend

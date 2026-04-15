@@ -41,7 +41,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
       setPrograms(programsRes.data);
       setGuests(guestsRes.data);
     } catch (error) {
-      toast.error('Failed to load loyalty data');
+      toast.error('Sadakat verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -65,7 +65,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
       loadData();
       setNewTransaction({ guest_id: '', points: 0, transaction_type: 'earned', description: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create transaction');
+      toast.error(error.response?.data?.detail || 'İşlem oluşturulamadı');
     }
   };
 
@@ -80,7 +80,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
       toast.success('Guest enrolled in loyalty program');
       loadData();
     } catch (error) {
-      toast.error('Failed to enroll guest');
+      toast.error('Misafir kaydedilemedi');
     }
   };
 

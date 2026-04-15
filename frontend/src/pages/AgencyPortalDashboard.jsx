@@ -101,7 +101,7 @@ const AgencyPortalDashboard = () => {
       const { data } = await axios.get(`${API_BASE}/agency-portal/content`, authHeaders());
       setContent(data);
     } catch {
-      toast.error('Icerik yuklenemedi');
+      toast.error('Icerik yüklenemedi');
     } finally {
       setContentLoading(false);
     }
@@ -109,7 +109,7 @@ const AgencyPortalDashboard = () => {
 
   // Search availability
   const handleSearch = async () => {
-    if (!searchForm.check_in || !searchForm.check_out) return toast.error('Tarih secin');
+    if (!searchForm.check_in || !searchForm.check_out) return toast.error('Tarih seçin');
     setSearchLoading(true);
     try {
       const { data } = await axios.get(`${API_BASE}/agency-portal/availability`, {
@@ -148,7 +148,7 @@ const AgencyPortalDashboard = () => {
         check_out: searchForm.check_out,
         ...bookingForm,
       }, authHeaders());
-      toast.success(data.message || 'Rezervasyon olusturuldu');
+      toast.success(data.message || 'Rezervasyon oluşturuldu');
       setShowBookingForm(false);
       setAvailability(null);
       loadReservations();
@@ -166,7 +166,7 @@ const AgencyPortalDashboard = () => {
       const { data } = await axios.get(`${API_BASE}/agency-portal/reservations`, authHeaders());
       setReservations(data);
     } catch {
-      toast.error('Rezervasyonlar yuklenemedi');
+      toast.error('Rezervasyonlar yüklenemedi');
     } finally {
       setReservationsLoading(false);
     }
@@ -174,7 +174,7 @@ const AgencyPortalDashboard = () => {
 
   const statusLabels = {
     confirmed: 'Onaylandi', pending: 'Beklemede', checked_in: 'Giris Yapti',
-    checked_out: 'Cikis Yapti', cancelled: 'Iptal',
+    checked_out: 'Cikis Yapti', cancelled: 'İptal',
   };
   const statusColors = {
     confirmed: 'bg-emerald-100 text-emerald-800', pending: 'bg-amber-100 text-amber-800',
@@ -248,7 +248,7 @@ const AgencyPortalDashboard = () => {
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         <Tabs defaultValue="search" className="w-full">
           <TabsList className="grid w-full grid-cols-3 max-w-md">
-            <TabsTrigger value="search" data-testid="tab-search">Musaitlik Ara</TabsTrigger>
+            <TabsTrigger value="search" data-testid="tab-search">Müsaitlik Ara</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations">Rezervasyonlarim</TabsTrigger>
             <TabsTrigger value="content" onClick={loadContent} data-testid="tab-content">Otel Bilgileri</TabsTrigger>
           </TabsList>
@@ -282,10 +282,10 @@ const AgencyPortalDashboard = () => {
             {availability && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-slate-600">
-                  {availability.check_in} - {availability.check_out} icin musait odalar
+                  {availability.check_in} - {availability.check_out} için müsait odalar
                 </h3>
                 {availability.room_types.length === 0 ? (
-                  <Card><CardContent className="py-8 text-center text-slate-400">Bu tarihler icin musait oda bulunamadi</CardContent></Card>
+                  <Card><CardContent className="py-8 text-center text-slate-400">Bu tarihler için müsait oda bulunamadı</CardContent></Card>
                 ) : (
                   availability.room_types.map(rt => (
                     <Card key={rt.room_type} className="hover:shadow-sm transition" data-testid={`result-${rt.room_type}`}>
@@ -299,7 +299,7 @@ const AgencyPortalDashboard = () => {
                               <div className="font-semibold text-slate-800">{rt.room_type}</div>
                               <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
                                 <span><Users size={10} className="inline mr-1" />{rt.capacity} kisi</span>
-                                <span>{rt.available_rooms} musait / {rt.total_rooms} toplam</span>
+                                <span>{rt.available_rooms} müsait / {rt.total_rooms} toplam</span>
                               </div>
                             </div>
                           </div>
@@ -333,7 +333,7 @@ const AgencyPortalDashboard = () => {
             ) : reservations.length === 0 ? (
               <Card><CardContent className="py-12 text-center text-slate-400">
                 <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
-                <p>Henuz rezervasyonunuz yok</p>
+                <p>Henüz rezervasyonunuz yok</p>
               </CardContent></Card>
             ) : (
               reservations.map(r => (
@@ -369,7 +369,7 @@ const AgencyPortalDashboard = () => {
             ) : !content?.published ? (
               <Card><CardContent className="py-12 text-center text-slate-400">
                 <Eye size={40} className="mx-auto mb-3 opacity-40" />
-                <p>Otel henuz size icerik yayinlamamis</p>
+                <p>Otel henüz size icerik yayinlamamis</p>
               </CardContent></Card>
             ) : (
               <div className="space-y-4">
@@ -481,7 +481,7 @@ const AgencyPortalDashboard = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBookingForm(false)}>Iptal</Button>
+            <Button variant="outline" onClick={() => setShowBookingForm(false)}>İptal</Button>
             <Button onClick={handleBooking} disabled={bookingLoading} data-testid="confirm-booking-btn">
               {bookingLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Rezervasyonu Olustur

@@ -547,7 +547,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setBookings(bookingsRes?.data || []);
       setCompanies(companiesRes?.data || []);
     } catch (error) {
-      toast.error('Failed to load data');
+      toast.error('Veriler yüklenemedi');
       console.error('PMS data load error:', error);
     } finally {
       setLoading(false);
@@ -569,9 +569,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       
       loadAIInsights();
     } catch (error) {
-      const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
+      const msg = error?.response?.data?.detail || error.message || 'Ön büro verileri yüklenemedi';
       setFdError(msg);
-      toast.error('Failed to load front desk data');
+      toast.error('Ön büro verileri yüklenemedi');
     } finally {
       setFdLoading(false);
     }
@@ -637,7 +637,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         }
       }, 500);
     } catch (error) {
-      toast.error('Failed to load housekeeping data');
+      toast.error('Kat hizmetleri verileri yüklenemedi');
     } finally {
       setHkLoading(false);
     }
@@ -661,7 +661,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setPackages(pkgRes.data || []);
     } catch (error) {
       console.error('Failed to load rate plans/packages', error);
-      toast.error('Failed to load rate plans');
+      toast.error('Fiyat planları yüklenemedi');
     }
   };
 
@@ -710,7 +710,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       toast.success(`✅ ${response.data.message}`);
       loadChannelManagerData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to apply suggestion');
+      toast.error(error.response?.data?.detail || 'Öneri uygulanamadı');
     }
   };
 
@@ -722,7 +722,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       toast.success(`✅ ${response.data.message}`);
       loadChannelManagerData();
     } catch (error) {
-      toast.error('Failed to generate suggestions');
+      toast.error('Öneriler oluşturulamadı');
     }
   };
 
@@ -775,7 +775,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setSelectedBooking(bookingId);
       setOpenDialog('folio');
     } catch (error) {
-      toast.error('Failed to load folio');
+      toast.error('Folio yüklenemedi');
     }
   };
 
@@ -791,7 +791,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadFolio(selectedBooking);
       setNewCharge({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
     } catch (error) {
-      toast.error('Failed to add charge');
+      toast.error('Masraf eklenemedi');
     }
   };
 
@@ -807,7 +807,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadFolio(selectedBooking);
       setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
     } catch (error) {
-      toast.error('Failed to process payment');
+      toast.error('Ödeme işlenemedi');
     }
   };
 
@@ -820,7 +820,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
     } catch (error) {
-      toast.error('Failed to create task');
+      toast.error('Görev oluşturulamadı');
     }
   };
 
@@ -831,7 +831,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       loadData();
     } catch (error) {
-      toast.error('Failed to update task');
+      toast.error('Görev güncellenemedi');
     }
   };
 
@@ -857,7 +857,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         bed_type: ''
       });
     } catch (error) {
-      toast.error('Failed to create room');
+      toast.error('Oda oluşturulamadı');
     }
   };
 
@@ -870,7 +870,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadData();
       setNewGuest({ name: '', email: '', phone: '', id_number: '', address: '' });
     } catch (error) {
-      toast.error('Failed to create guest');
+      toast.error('Misafir oluşturulamadı');
     }
   };
 
@@ -900,7 +900,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         status: 'pending'
       });
     } catch (error) {
-      toast.error('Failed to create company');
+      toast.error('Şirket oluşturulamadı');
     }
   };
 
@@ -1092,7 +1092,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         }
       ]);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create booking');
+      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
     }
   };
 
@@ -1110,7 +1110,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         loadFolioDetails(guestFolio.id);
       }
     } catch (error) {
-      toast.error('Failed to load folios');
+      toast.error('Foliolar yüklenemedi');
     }
   };
 
@@ -1121,7 +1121,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setFolioCharges(response.data.charges || []);
       setFolioPayments(response.data.payments || []);
     } catch (error) {
-      toast.error('Failed to load folio details');
+      toast.error('Folio detayları yüklenemedi');
     }
   };
 
@@ -1142,7 +1142,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       });
       setOpenDialog('folio-view');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to post charge');
+      toast.error(error.response?.data?.detail || 'Masraf kaydedilemedi');
     }
   };
 
@@ -1163,7 +1163,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       });
       setOpenDialog('folio-view');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to post payment');
+      toast.error(error.response?.data?.detail || 'Ödeme kaydedilemedi');
     }
   };
 
@@ -1174,7 +1174,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadData();
       loadHousekeepingData();
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error('Durum güncellenemedi');
     }
   };
 
@@ -1185,7 +1185,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to update status');
+      toast.error(error.response?.data?.detail || 'Durum güncellenemedi');
     }
   };
 
@@ -1230,7 +1230,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create room block');
+      toast.error(error.response?.data?.detail || 'Oda bloğu oluşturulamadı');
     }
   };
 
@@ -1246,7 +1246,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to cancel block');
+      toast.error(error.response?.data?.detail || 'Blok iptal edilemedi');
     }
   };
 
@@ -1262,7 +1262,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (error.code === 'ECONNABORTED') {
         toast.error('Request timeout - Guest profile has too much data. Please try again.');
       } else {
-        toast.error(error.response?.data?.detail || 'Failed to load guest profile. Please try again later.');
+        toast.error(error.response?.data?.detail || 'Misafir profili yüklenemedi. Lütfen tekrar deneyin.');
       }
     } finally {
       setLoadingGuest360(false);
@@ -1277,7 +1277,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setGuestTag('');
       loadGuest360(selectedGuest360);
     } catch (error) {
-      toast.error('Failed to add tag');
+      toast.error('Etiket eklenemedi');
     }
   };
 
@@ -1289,7 +1289,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setGuestNote('');
       loadGuest360(selectedGuest360);
     } catch (error) {
-      toast.error('Failed to add note');
+      toast.error('Not eklenemedi');
     }
   };
 
@@ -1379,7 +1379,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                         toast.info('No flash report data available');
                       }
                     } catch (error) {
-                      toast.error('Failed to generate report');
+                      toast.error('Rapor oluşturulamadı');
                     }
                   }}
                 >
@@ -2402,7 +2402,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
         {/* Reservation Detail Modal (same as Calendar double-click) */}
         {reservationDetailId && (
-          <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yukleniyor...</div></div>}>
+          <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
             <ReservationDetailModal
               bookingId={reservationDetailId}
               onClose={() => { setReservationDetailId(null); loadData(); }}
@@ -2445,7 +2445,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   toast.success('Flash report generated!');
                   console.log('Flash report:', response.data);
                 } catch (error) {
-                  toast.error('Failed to generate report');
+                  toast.error('Rapor oluşturulamadı');
                 }
               }
             },

@@ -267,7 +267,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
             <Card className="border-slate-200">
               <CardContent className="p-8 text-center">
                 <WifiOff className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henuz bagli kanal yok</h3>
+                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henüz bagli kanal yok</h3>
                 <p className="text-sm text-slate-500 max-w-md mx-auto">
                   Satis kanallari (Booking.com, Expedia vb.) uzerinden rezervasyon alabilmek icin
                   lutfen otel yoneticinize basvurun.
@@ -288,7 +288,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Kanal Yonetimi</h1>
+            <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Kanal Yönetimi</h1>
             <p className="text-sm text-slate-500 mt-1">
               Kanal saglayicilarinizin baglanti durumunu yonetin ve yeni baglanti kurun
             </p>
@@ -320,7 +320,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
                   <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden baglanir</li>
                 </ol>
                 <p className="text-xs text-blue-600 mt-2">
-                  <strong>Not:</strong> Her otel icin ayri token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafindan verilir.
+                  <strong>Not:</strong> Her otel için ayri token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafindan verilir.
                 </p>
               </div>
             </div>
@@ -456,7 +456,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
                   placeholder="ornek: 12345"
                   data-testid="hr-id-input"
                 />
-                <p className="text-xs text-slate-400 mt-1">HotelRunner panelindeki otel kimlik numarasi</p>
+                <p className="text-xs text-slate-400 mt-1">HotelRunner panelindeki otel kimlik numarası</p>
               </div>
               <div>
                 <Label htmlFor="hr-name">Otel Adi</Label>
@@ -478,7 +478,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>Iptal</Button>
+              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>İptal</Button>
               <Button onClick={connectHR} disabled={connecting} data-testid="hr-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
                 Baglan ve Test Et
@@ -571,7 +571,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>Iptal</Button>
+              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>İptal</Button>
               <Button onClick={connectExely} disabled={connecting} data-testid="exely-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
                 Baglan ve Test Et
@@ -653,7 +653,7 @@ function ProviderCard({
                   {mappings > 0 ? (
                     <span className="text-green-600">{mappings} esleme</span>
                   ) : (
-                    <span className="text-amber-600">Henuz yok</span>
+                    <span className="text-amber-600">Henüz yok</span>
                   )}
                 </p>
               </div>
@@ -694,7 +694,7 @@ function ProviderCard({
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-medium">Oda eslemesi gerekli</p>
-                  <p>Musaitlik senkronizasyonu icin PMS oda tiplerini kanal oda tipleriyle eslestirin.</p>
+                  <p>Musaitlik senkronizasyonu için PMS oda tiplerini kanal oda tipleriyle eslestirin.</p>
                 </div>
               </div>
             )}
@@ -718,7 +718,7 @@ function ProviderCard({
               >
                 <a href={detailsPath} data-testid={`${provider}-details-link`}>
                   <Settings2 className="w-3 h-3 mr-1.5" />
-                  Detayli Yonetim
+                  Detayli Yönetim
                 </a>
               </Button>
               <Button
@@ -742,7 +742,7 @@ function ProviderCard({
                 {displayName} baglantisi kurulmamis
               </p>
               <p className="text-xs text-slate-400 mb-4">
-                Baglanmak icin {displayName} API kimlik bilgilerinizi girin
+                Baglanmak için {displayName} API kimlik bilgilerinizi girin
               </p>
               <Button onClick={onConnect} data-testid={`${provider}-connect-btn`}>
                 <Link2 className="w-4 h-4 mr-2" />

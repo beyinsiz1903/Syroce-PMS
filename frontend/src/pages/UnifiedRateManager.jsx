@@ -102,7 +102,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('Veriler yuklenemedi');
+      toast.error('Veriler yüklenemedi');
     }
     setLoading(false);
   }, [startDate, endDate, provider]);
@@ -217,7 +217,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
-      toast.error('Fiyatlandirma ayari guncellenemedi');
+      toast.error('Fiyatlandırma ayarı güncellenemedi');
     }
   };
 
@@ -278,10 +278,10 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
 
   // Unified bulk update
   const handleBulkUpdate = async () => {
-    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi secin'); return; }
-    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani secin'); return; }
-    if (enabledFields.size === 0) { toast.error('Lutfen guncellenecek en az bir alan secin'); return; }
-    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi secin'); return; }
+    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi seçin'); return; }
+    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani seçin'); return; }
+    if (enabledFields.size === 0) { toast.error('Lütfen güncellenecek en az bir alan seçin'); return; }
+    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi seçin'); return; }
 
     const selectedRoomCodes = Object.keys(selections);
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
@@ -291,7 +291,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
         (enabledFields.has('min_stay') && rv.min_stay) || (enabledFields.has('max_stay') && rv.max_stay) ||
         (enabledFields.has('stop_sell') && rv.stop_sell) || (enabledFields.has('cta') && rv.cta) || (enabledFields.has('ctd') && rv.ctd);
     });
-    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi icin deger girin'); return; }
+    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi için deger girin'); return; }
 
     setSaving(true);
     try {
@@ -321,7 +321,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
         agency_ids: agencyIds,
       }, { headers });
 
-      toast.success(data.message || `${data.saved} kayit guncellendi`);
+      toast.success(data.message || `${data.saved} kayıt güncellendi`);
       if (data.agency_push_count > 0) {
         toast.success(`${data.agency_push_count} acenteye fiyat iletildi`, { duration: 5000 });
       }
@@ -382,7 +382,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
           <Building2 className="w-16 h-16 text-zinc-300" />
           <h2 className="text-xl font-semibold text-zinc-600">Aktif Kanal Saglayici Bulunamadi</h2>
           <p className="text-sm text-zinc-500 text-center max-w-md">
-            Fiyat ve musaitlik yonetimi icin once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
+            Fiyat ve musaitlik yonetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
           </p>
         </div>
       </Layout>
@@ -504,7 +504,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
                 <CardContent className="px-4 pb-4 space-y-3">
                   {agencies.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-3">
-                      Henuz aktif acente tanimlanmamis.
+                      Henüz aktif acente tanimlanmamis.
                     </p>
                   ) : (
                     <>
@@ -569,11 +569,11 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
                       {/* Summary */}
                       {selectedAgencies.size > 0 && (
                         <div className="text-[10px] text-zinc-500 pt-2 border-t border-zinc-100">
-                          Guncelleme yapildiginda secili {selectedAgencies.size} acenteye
+                          Güncelleme yapıldığında seçili {selectedAgencies.size} acenteye
                           afise fiyat iletilecektir.
                           {agencies.some(a => selectedAgencies.has(a.id) && a.has_custom_rates) && (
                             <span className="block text-teal-600 mt-0.5">
-                              Ozel fiyat tanimli acentelerde indirimli fiyat uygulanir.
+                              Ozel fiyat tanımlı acentelerde indirimli fiyat uygulanir.
                             </span>
                           )}
                         </div>
@@ -655,7 +655,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
             className="h-5 text-[10px] px-2"
             onClick={onCancel}
           >
-            Iptal
+            İptal
           </Button>
         </div>
         {agency.has_custom_rates && (

@@ -327,7 +327,7 @@ export default function HRv2OpsDashboard({ tenant }) {
       if (res.data?.success) {
         toast.success("Baglanti testi basarili", { description: `Latency: ${res.data.total_latency_ms}ms` });
       } else {
-        toast.error("Baglanti testi basarisiz");
+        toast.error("Bağlantı testi başarısız");
       }
       // Refresh dashboard after test
       fetchDashboard();
@@ -393,7 +393,7 @@ export default function HRv2OpsDashboard({ tenant }) {
           description: `Correlation: ${res.data.correlation_id} | ${res.data.duration_ms}ms`,
         });
       } else {
-        toast.error("Dry-run ARI push basarisiz", {
+        toast.error("Dry-run ARI push başarısız", {
           description: res.data?.noop_response?.error || "",
         });
       }
@@ -416,8 +416,8 @@ export default function HRv2OpsDashboard({ tenant }) {
           description: `${res.data.success_count}/${res.data.step_count} basarili | ${res.data.correlation_id}`,
         });
       } else {
-        toast.error("Dry-run zincir basarisiz", {
-          description: `${res.data?.failure_count || 0} adim basarisiz`,
+        toast.error("Dry-run zincir başarısız", {
+          description: `${res.data?.failure_count || 0} adım başarısız`,
         });
       }
       fetchDashboard();
@@ -471,7 +471,7 @@ export default function HRv2OpsDashboard({ tenant }) {
       <div className="flex items-center justify-center h-[80vh]" data-testid="ops-dashboard-loading">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
-          <p className="text-sm text-slate-500 font-medium">Ops Dashboard yukleniyor...</p>
+          <p className="text-sm text-slate-500 font-medium">Ops Dashboard yükleniyor...</p>
         </div>
       </div>
     );
@@ -926,13 +926,13 @@ export default function HRv2OpsDashboard({ tenant }) {
                     label="Islem Basari"
                     value={m24.overall_success_rate ? `%${m24.overall_success_rate}` : "—"}
                     color={m24.overall_success_rate >= 90 ? "text-emerald-600" : "text-amber-600"}
-                    subtext={`${m24.total_operations ?? 0} islem (24s)`}
+                    subtext={`${m24.total_operations ?? 0} işlem (24s)`}
                   />
                   <MetricCard
                     icon={Timer}
                     label="Son Reconciliation"
                     value={formatTime(sync.last_reconciliation?.timestamp)}
-                    subtext={sync.last_reconciliation?.mismatch_count != null ? `${sync.last_reconciliation.mismatch_count} mismatch` : "Henuz calismadi"}
+                    subtext={sync.last_reconciliation?.mismatch_count != null ? `${sync.last_reconciliation.mismatch_count} mismatch` : "Henüz calismadi"}
                   />
                   <MetricCard
                     icon={BarChart3}
@@ -1009,7 +1009,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {events.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Activity className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henuz olay kaydedilmedi</p>
+                    <p className="text-sm text-slate-500">Henüz olay kaydedilmedi</p>
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100">
@@ -1081,7 +1081,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(m24.operations || {}).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <BarChart3 className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henuz islem verisi yok</p>
+                    <p className="text-sm text-slate-500">Henüz işlem verisi yok</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1155,8 +1155,8 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(obsAlerts).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Calendar className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henuz snapshot verisi yok</p>
-                    <p className="text-xs text-slate-400 mt-1">Ilk snapshot'i toplamak icin "Gunluk Snapshot Topla" butonunu kullanin</p>
+                    <p className="text-sm text-slate-500">Henüz snapshot verisi yok</p>
+                    <p className="text-xs text-slate-400 mt-1">Ilk snapshot'i toplamak için "Gunluk Snapshot Topla" butonunu kullanin</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1175,7 +1175,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   <div className="flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-slate-500" />
                     <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
-                      Gozlem Gecmisi
+                      Gozlem Geçmişi
                     </CardTitle>
                   </div>
                   {obsReport?.observation_day > 0 && (
@@ -1189,7 +1189,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {(!obsReport?.history_summary || obsReport.history_summary.length === 0) ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <BarChart3 className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henuz gozlem verisi yok</p>
+                    <p className="text-sm text-slate-500">Henüz gozlem verisi yok</p>
                     <p className="text-xs text-slate-400 mt-1">7 gunluk gozlem sureci baslatilmadi</p>
                   </div>
                 ) : (
@@ -1310,7 +1310,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   </div>
                 ) : (
                   <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center">
-                    <p className="text-xs text-slate-400">Henuz snapshot yok</p>
+                    <p className="text-xs text-slate-400">Henüz snapshot yok</p>
                   </div>
                 )}
                 {autoStatus.last_daily_summary && (

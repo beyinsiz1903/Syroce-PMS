@@ -75,7 +75,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       setRecommendations(recRes.data.recommendations || []);
     } catch (e) {
       console.error('RMS data load error:', e);
-      toast.error('RMS verileri yuklenemedi');
+      toast.error('RMS verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -239,7 +239,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
         <Card className="bg-gradient-to-br from-red-50 to-white border-red-100">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-red-600 uppercase tracking-wide">Iptal Orani</span>
+              <span className="text-xs font-medium text-red-600 uppercase tracking-wide">İptal Orani</span>
               <Ban className="w-4 h-4 text-red-400" />
             </div>
             <p data-testid="kpi-cancel" className="text-2xl font-bold text-slate-800">%{k.cancel_rate || 0}</p>

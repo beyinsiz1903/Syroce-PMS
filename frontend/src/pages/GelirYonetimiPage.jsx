@@ -12,7 +12,7 @@ function TabLoading() {
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      <span className="ml-3 text-muted-foreground">Yukleniyor...</span>
+      <span className="ml-3 text-muted-foreground">Yükleniyor...</span>
     </div>
   );
 }

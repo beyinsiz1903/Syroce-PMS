@@ -40,7 +40,7 @@ const POSAutoPostSettings = () => {
       });
       toast.success('Auto-post settings saved!');
     } catch (error) {
-      toast.error('Failed to save settings');
+      toast.error('Ayarlar kaydedilemedi');
     } finally {
       setLoading(false);
     }

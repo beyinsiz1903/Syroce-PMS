@@ -155,7 +155,7 @@ const EntitlementsTab = () => {
                 </div>
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yukleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -213,7 +213,7 @@ const MeteringTab = () => {
               <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Bugun</CardTitle></CardHeader>
               <CardContent>
                 {Object.keys(overview.today || {}).length === 0 ? (
-                  <p className="text-sm text-slate-400">Henuz veri yok</p>
+                  <p className="text-sm text-slate-400">Henüz veri yok</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(overview.today).map(([event, count]) => (
@@ -230,7 +230,7 @@ const MeteringTab = () => {
               <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Bu Ay</CardTitle></CardHeader>
               <CardContent>
                 {Object.keys(overview.this_month || {}).length === 0 ? (
-                  <p className="text-sm text-slate-400">Henuz veri yok</p>
+                  <p className="text-sm text-slate-400">Henüz veri yok</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(overview.this_month).map(([event, count]) => (
@@ -311,7 +311,7 @@ const MeteringTab = () => {
                 )}
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yukleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -360,7 +360,7 @@ const FeatureFlagsTab = () => {
   };
 
   const handleDelete = async (flagKey) => {
-    if (!window.confirm(`"${flagKey}" flagini silmek istediginize emin misiniz?`)) return;
+    if (!window.confirm(`"${flagKey}" flagını silmek istediğinize emin misiniz?`)) return;
     try {
       await axios.delete(`/admin/feature-flags/${flagKey}`);
       await loadFlags();
@@ -386,14 +386,14 @@ const FeatureFlagsTab = () => {
   return (
     <div className="space-y-6" data-testid="feature-flags-tab">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{flags.length} flag tanimli</p>
+        <p className="text-sm text-slate-500">{flags.length} flag tanımlı</p>
         <Button size="sm" onClick={() => setShowCreate(true)} data-testid="create-flag-btn"><Plus className="w-4 h-4 mr-1" /> Yeni Flag</Button>
       </div>
 
       {flags.length === 0 ? (
         <Card><CardContent className="py-12 text-center">
           <Flag className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-400">Henuz feature flag tanimlanmamis</p>
+          <p className="text-sm text-slate-400">Henüz feature flag tanimlanmamis</p>
           <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowCreate(true)}>Ilk Flagini Olustur</Button>
         </CardContent></Card>
       ) : (
@@ -591,7 +591,7 @@ const OnboardingTab = () => {
                 ))}
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yukleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
         </DialogContent>
       </Dialog>
     </div>

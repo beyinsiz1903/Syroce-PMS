@@ -49,7 +49,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
             <p className="text-gray-500">Veri koruma, onay yonetimi, veri silme/export/anonimize</p>
           </div>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
-            {loading ? 'Yukleniyor...' : 'Yenile'}
+            {loading ? 'Yükleniyor...' : 'Yenile'}
           </Button>
         </div>
 
@@ -150,7 +150,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
               <Card>
                 <CardHeader>
                   <CardTitle>Veri Saklama Politikasi</CardTitle>
-                  <CardDescription>Her veri kategorisi icin saklama suresi</CardDescription>
+                  <CardDescription>Her veri kategorisi için saklama suresi</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
@@ -191,7 +191,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
               </CardHeader>
               <CardContent>
                 {dpas.length === 0 ? (
-                  <p className="text-center py-8 text-gray-400">Henuz sozlesme eklenmemis</p>
+                  <p className="text-center py-8 text-gray-400">Henüz sozlesme eklenmemis</p>
                 ) : (
                   <div className="space-y-3">
                     {dpas.map((dpa, i) => (

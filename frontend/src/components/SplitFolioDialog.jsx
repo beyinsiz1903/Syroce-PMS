@@ -38,7 +38,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
       if (onSuccess) onSuccess();
       if (onClose) onClose();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to split folio');
+      toast.error(error.response?.data?.detail || 'Folio bölünemedi');
     } finally {
       setProcessing(false);
     }

@@ -257,7 +257,7 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
               <div className="bg-zinc-900 border border-zinc-800 rounded overflow-hidden">
                 <div className="px-3 py-1.5 border-b border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider font-medium flex items-center gap-1.5">
                   <Activity className="h-3 w-3" />
-                  Smoke Test Sonuclari
+                  Smoke Test Sonuçlari
                 </div>
                 <table className="w-full text-xs font-mono">
                   <thead>
@@ -265,7 +265,7 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
                       <th className="text-left px-3 py-1.5">Endpoint</th>
                       <th className="text-left px-3 py-1.5">Status</th>
                       <th className="text-left px-3 py-1.5">Latency</th>
-                      <th className="text-left px-3 py-1.5">Sonuc</th>
+                      <th className="text-left px-3 py-1.5">Sonuç</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -324,7 +324,7 @@ export function DeployDashboard() {
       setStats(statsRes.data);
       setTrend(trendRes.data.trend || []);
     } catch (err) {
-      toast.error("Deploy verileri yuklenemedi", {
+      toast.error("Deploy verileri yüklenemedi", {
         description: err.response?.data?.detail || err.message,
       });
     } finally {
@@ -362,7 +362,7 @@ export function DeployDashboard() {
         <StatCard
           label="Toplam Deploy"
           value={overall.total_deploys || 0}
-          sub={envStats.map((e) => `${e.environment}: ${e.total}`).join(" | ") || "Henuz veri yok"}
+          sub={envStats.map((e) => `${e.environment}: ${e.total}`).join(" | ") || "Henüz veri yok"}
           icon={Rocket}
           color="blue"
           testId="stat-total-deploys"
@@ -370,7 +370,7 @@ export function DeployDashboard() {
         <StatCard
           label="Basari Orani"
           value={`${overall.overall_success_rate || 0}%`}
-          sub={`${overall.total_success || 0} basarili / ${overall.total_failure || 0} basarisiz`}
+          sub={`${overall.total_success || 0} basarili / ${overall.total_failure || 0} başarısız`}
           icon={CheckCircle}
           color={
             (overall.overall_success_rate || 0) >= 95
@@ -401,7 +401,7 @@ export function DeployDashboard() {
                 })
               : "--"
           }
-          sub={history[0] ? `${history[0].short_sha} → ${history[0].environment}` : "Henuz deploy yok"}
+          sub={history[0] ? `${history[0].short_sha} → ${history[0].environment}` : "Henüz deploy yok"}
           icon={Clock}
           color="zinc"
           testId="stat-last-deploy"
@@ -450,7 +450,7 @@ export function DeployDashboard() {
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono text-red-400">{env.failure}</div>
-                    <div className="text-[10px] text-zinc-600">basarisiz</div>
+                    <div className="text-[10px] text-zinc-600">başarısız</div>
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono text-amber-400">
@@ -471,7 +471,7 @@ export function DeployDashboard() {
           <div className="flex items-center gap-2">
             <GitBranch className="h-3.5 w-3.5 text-zinc-500" />
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-              Deploy Gecmisi
+              Deploy Geçmişi
             </span>
             <span className="text-[10px] text-zinc-600">
               (son {history.length})
@@ -491,7 +491,7 @@ export function DeployDashboard() {
         {history.length === 0 ? (
           <div className="text-center py-12 text-zinc-500" data-testid="deploy-empty-state">
             <Rocket className="h-10 w-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Henuz deploy kaydi yok</p>
+            <p className="text-sm">Henüz deploy kaydi yok</p>
             <p className="text-xs mt-1 text-zinc-600">
               CI/CD pipeline deploy sonuclarini buraya raporlar
             </p>

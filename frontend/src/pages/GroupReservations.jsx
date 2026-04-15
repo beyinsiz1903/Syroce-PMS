@@ -60,7 +60,7 @@ const GroupReservations = () => {
       resetForm();
       loadGroups();
     } catch (error) {
-      toast.error('Failed to create group');
+      toast.error('Grup oluşturulamadı');
     }
   };
 
@@ -72,7 +72,7 @@ const GroupReservations = () => {
       resetForm();
       loadBlocks();
     } catch (error) {
-      toast.error('Failed to create block');
+      toast.error('Blok oluşturulamadı');
     }
   };
 

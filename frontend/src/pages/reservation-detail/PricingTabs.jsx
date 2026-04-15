@@ -16,7 +16,7 @@ export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
     setSaving(true);
     try {
       await axios.put(`/pms/reservations/${booking.id}/daily-rates`, { rates });
-      toast.success('Gunluk fiyatlar guncellendi'); setEditMode(false); onRefresh?.();
+      toast.success('Günlük fiyatlar güncellendi'); setEditMode(false); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setSaving(false);
   };
@@ -71,7 +71,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
   };
 
   const handleSplit = async (chargeId) => {
-    if (!splitForm.split_amount || !splitForm.target_booking_id) { toast.error('Tutar ve hedef secimi zorunlu'); return; }
+    if (!splitForm.split_amount || !splitForm.target_booking_id) { toast.error('Tutar ve hedef seçimi zorunlu'); return; }
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/split-charge`, { charge_id: chargeId, target_booking_id: splitForm.target_booking_id, split_amount: parseFloat(splitForm.split_amount), reason: splitForm.reason });
@@ -96,7 +96,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">Iptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">İptal</Button>
           </div>
         </div>
       )}

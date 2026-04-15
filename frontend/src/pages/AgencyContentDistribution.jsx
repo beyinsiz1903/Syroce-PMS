@@ -42,7 +42,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
         const published = agenciesRes.data.filter(a => a.published_content).map(a => a.id);
         setSelectedAgencies(published);
       } catch {
-        toast.error('Veriler yuklenemedi');
+        toast.error('Veriler yüklenemedi');
       } finally {
         setLoading(false);
       }
@@ -64,7 +64,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
   };
 
   const handleDistribute = async () => {
-    if (selectedAgencies.length === 0) return toast.error('En az bir acente secin');
+    if (selectedAgencies.length === 0) return toast.error('En az bir acente seçin');
     setDistributing(true);
     try {
       const res = await axios.post('/hotel-content/distribute', { agency_ids: selectedAgencies });
@@ -229,7 +229,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Oda Tipini Siliyorsunuz</AlertDialogTitle>
                               <AlertDialogDescription>
-                                <strong>{rt.name || rt.room_type || `Oda Tipi ${idx + 1}`}</strong> oda tipini silmek istediginize emin misiniz? Bu islem geri alinamaz.
+                                <strong>{rt.name || rt.room_type || `Oda Tipi ${idx + 1}`}</strong> oda tipini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -308,7 +308,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Hizmeti Siliyorsunuz</AlertDialogTitle>
                               <AlertDialogDescription>
-                                <strong>{svc.name || `Hizmet ${idx + 1}`}</strong> hizmetini silmek istediginize emin misiniz? Bu islem geri alinamaz.
+                                <strong>{svc.name || `Hizmet ${idx + 1}`}</strong> hizmetini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -332,7 +332,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                       </div>
                       <div>
                         <Label className="text-xs">Aciklama</Label>
-                        <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Acik havuz, 08:00-20:00" />
+                        <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Açık havuz, 08:00-20:00" />
                       </div>
                     </div>
                   </CardContent>
@@ -393,7 +393,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
             <ul className="space-y-1 text-xs">
               <li>1. Otel bilgilerini, oda tiplerini ve hizmetleri duzenleyin</li>
               <li>2. "Kaydet" ile icerigi kaydedin</li>
-              <li>3. Sagdaki listeden acenteleri secin</li>
+              <li>3. Sagdaki listeden acenteleri seçin</li>
               <li>4. "Secili Acentelere Gonder" ile dagitimi yapin</li>
               <li>5. Secilen acenteler portallarinda bu icerigi gorur</li>
             </ul>

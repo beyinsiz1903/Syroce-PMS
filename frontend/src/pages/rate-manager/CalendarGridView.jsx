@@ -143,7 +143,7 @@ export const CalendarGridView = ({
               {filteredGrid.length === 0 && (
                 <tr>
                   <td colSpan={dates.length + 1} className="py-12 text-center text-gray-400">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </td>
                 </tr>
               )}

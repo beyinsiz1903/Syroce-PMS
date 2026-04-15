@@ -39,7 +39,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
       
       setOrders(ordersRes.data);
     } catch (error) {
-      toast.error('Failed to load marketplace data');
+      toast.error('Pazar yeri verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -117,7 +117,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
       setCart([]);
       loadData();
     } catch (error) {
-      toast.error('Failed to place order');
+      toast.error('Sipariş verilemedi');
     }
   };
 

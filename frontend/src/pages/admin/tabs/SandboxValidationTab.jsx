@@ -23,7 +23,7 @@ const SandboxValidationTab = () => {
   useState(() => { fetchConnectors(); });
 
   const runValidation = async () => {
-    if (!selectedConnector) { toast.error('Connector secin'); return; }
+    if (!selectedConnector) { toast.error('Connector seçin'); return; }
     setLoading(true); setReport(null);
     try {
       const { data } = await axios.post(`${API}/sandbox/validate/${selectedConnector}/full`);
@@ -41,7 +41,7 @@ const SandboxValidationTab = () => {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Select value={selectedConnector} onValueChange={setSelectedConnector}>
-          <SelectTrigger data-testid="sandbox-connector-select" className="w-64 bg-slate-800 border-slate-700 text-white"><SelectValue placeholder="Connector secin..." /></SelectTrigger>
+          <SelectTrigger data-testid="sandbox-connector-select" className="w-64 bg-slate-800 border-slate-700 text-white"><SelectValue placeholder="Connector seçin..." /></SelectTrigger>
           <SelectContent>
             {connectors.map(c => <SelectItem key={c.id} value={c.id}>{c.display_name} ({c.provider})</SelectItem>)}
           </SelectContent>
@@ -117,7 +117,7 @@ const SandboxValidationTab = () => {
       )}
 
       {!loading && !report && (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sandbox validation calistirmak icin connector secin</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sandbox validation calistirmak için connector seçin</CardContent></Card>
       )}
     </div>
   );

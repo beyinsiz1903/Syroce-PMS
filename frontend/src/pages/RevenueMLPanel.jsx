@@ -186,7 +186,7 @@ export default function RevenueMLPanel() {
       <Card data-testid="at-risk-bookings-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" /> Iptal Riski Yuksek Rezervasyonlar
+            <AlertTriangle className="w-4 h-4 text-red-500" /> İptal Riski Yuksek Rezervasyonlar
             <Badge variant="destructive" className="ml-2">{atRisk.length}</Badge>
           </CardTitle>
         </CardHeader>

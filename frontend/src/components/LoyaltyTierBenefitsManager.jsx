@@ -80,7 +80,7 @@ const LoyaltyTierBenefitsManager = () => {
       await axios.post('/loyalty/tier-benefits/update', { tiers });
       toast.success('Loyalty tier benefits saved!');
     } catch (error) {
-      toast.error('Failed to save benefits');
+      toast.error('Avantajlar kaydedilemedi');
     } finally {
       setLoading(false);
     }

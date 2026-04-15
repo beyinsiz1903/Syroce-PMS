@@ -68,7 +68,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="wire-failure-title">Wire Failure Takibi</h1>
-            <p className="text-sm text-slate-500 mt-1">Kanal yoneticisi hata ve basarisiz islem takibi</p>
+            <p className="text-sm text-slate-500 mt-1">Kanal yöneticisi hata ve başarısız işlem takibi</p>
           </div>
           <Button variant="outline" size="sm" onClick={refreshAll} disabled={loading} data-testid="wire-refresh-btn">
             {loading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
@@ -124,7 +124,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
                 <div className="flex items-center gap-3">
                   <Shield className="w-5 h-5 text-purple-500" />
                   <div>
-                    <p className="text-xs text-slate-500 uppercase">Acik Recon Sorunu</p>
+                    <p className="text-xs text-slate-500 uppercase">Açık Recon Sorunu</p>
                     <p className="text-lg font-bold">{summary.breakdown.reconciliation_issues}</p>
                   </div>
                 </div>
@@ -176,7 +176,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500 text-center py-8">Trend verisi yukleniyor...</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Trend verisi yükleniyor...</p>
                 )}
               </CardContent>
             </Card>
@@ -206,7 +206,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
                 {failures.length === 0 ? (
                   <div className="text-center py-8">
                     <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">Bu filtrede hata bulunamadi</p>
+                    <p className="text-sm text-slate-500">Bu filtrede hata bulunamadı</p>
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[500px] overflow-y-auto" data-testid="wire-failures-list">
@@ -225,7 +225,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
                         </div>
                         <div className="text-right flex-shrink-0 ml-4">
                           <p className="text-xs text-slate-500">{f.timestamp ? new Date(f.timestamp).toLocaleString('tr-TR') : '-'}</p>
-                          {f.resolved && <Badge className="bg-emerald-100 text-emerald-700 text-[10px] mt-1">Cozuldu</Badge>}
+                          {f.resolved && <Badge className="bg-emerald-100 text-emerald-700 text-[10px] mt-1">Çözüldü</Badge>}
                         </div>
                       </div>
                     ))}

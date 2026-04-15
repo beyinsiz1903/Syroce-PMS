@@ -84,7 +84,7 @@ const EnhancedReservationCalendar = () => {
       fetchRooms();
     } catch (error) {
       console.error('Error overriding rate:', error);
-      alert('Failed to override rate');
+      alert('Fiyat geçersiz kılınamadı');
     }
   };
 

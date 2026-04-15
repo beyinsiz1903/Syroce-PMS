@@ -51,7 +51,7 @@ export default function EventBusDashboard() {
       await axios.post(`/event-bus/publish?event_type=test_event&priority=normal`, {}, { headers });
       toast.success("Test event yayinlandi");
       fetchData();
-    } catch { toast.error("Event yayin basarisiz"); }
+    } catch { toast.error("Event yayın başarısız"); }
   };
 
   if (loading) return <div className="flex justify-center p-12" data-testid="event-bus-loading"><RefreshCw className="w-8 h-8 animate-spin text-zinc-400" /></div>;
@@ -183,7 +183,7 @@ export default function EventBusDashboard() {
                 </div>
               ))
             ) : (
-              <p className="text-xs text-zinc-500">Henuz event yayinlanmadi</p>
+              <p className="text-xs text-zinc-500">Henüz event yayinlanmadi</p>
             )}
           </CardContent>
         </Card>

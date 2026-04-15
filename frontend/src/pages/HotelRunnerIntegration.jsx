@@ -177,7 +177,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     const draft = mappingDraft[key];
     const pmsType = draft?.pms_room_type;
     if (!pmsType) {
-      toast.error('Lutfen bir PMS oda tipi secin');
+      toast.error('Lutfen bir PMS oda tipi seçin');
       return;
     }
     setSavingMapping(key);
@@ -211,7 +211,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       return d?.pms_room_type;
     });
     if (toSave.length === 0) {
-      toast.error('Kaydedilecek esleme yok. Her oda icin PMS tipi secin.');
+      toast.error('Kaydedilecek esleme yok. Her oda için PMS tipi seçin.');
       return;
     }
     setLoading(true);
@@ -397,7 +397,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {rooms.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz oda verisi yok. "Odalari Cek" ile HotelRunner'dan yukleyin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz oda verisi yok. "Odalari Cek" ile HotelRunner'dan yukleyin.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="hr-rooms-table">
@@ -456,7 +456,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {reservations.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz rezervasyon yok. "Senkronize Et" ile HotelRunner'dan cekin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz rezervasyon yok. "Senkronize Et" ile HotelRunner'dan cekin.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="hr-reservations-table">
@@ -557,7 +557,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                 {rooms.length === 0 ? (
                   <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">Henuz HotelRunner odasi cekilmedi</p>
+                    <p className="text-sm text-slate-500">Henüz HotelRunner odasi cekilmedi</p>
                     <p className="text-xs text-slate-400 mt-1">Oncelikle "Odalar" sekmesinden odalari cekin</p>
                     <Button
                       variant="outline"
@@ -710,11 +710,11 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
                     {/* Summary */}
                     <div className="flex items-center justify-between pt-2 border-t text-sm text-slate-500">
-                      <span>{rooms.length} HR oda, {mappings.length} esleme yapildi</span>
+                      <span>{rooms.length} HR oda, {mappings.length} eşleme yapıldı</span>
                       {mappings.length > 0 && rooms.length > mappings.length && (
                         <Badge variant="outline" className="text-amber-600 border-amber-300">
                           <AlertTriangle className="w-3 h-3 mr-1" />
-                          {rooms.length - mappings.length} oda henuz eslenmedi
+                          {rooms.length - mappings.length} oda henüz eslenmedi
                         </Badge>
                       )}
                       {mappings.length > 0 && mappings.length >= rooms.length && (
@@ -767,7 +767,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                     ) : (
                       <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                        <p className="text-sm text-slate-600">Otomatik eslestirilecek yeni oda tipi bulunamadi.</p>
+                        <p className="text-sm text-slate-600">Otomatik eşleştirilecek yeni oda tipi bulunamadı.</p>
                       </div>
                     )}
 
@@ -808,7 +808,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Senkronizasyon Loglari</CardTitle>
-                  <CardDescription>HotelRunner API islem gecmisi</CardDescription>
+                  <CardDescription>HotelRunner API işlem geçmişi</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAll}>
                   <RefreshCw className="w-4 h-4 mr-1" /> Yenile
@@ -816,7 +816,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {syncLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henuz log kaydı yok</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Henüz log kaydı yok</p>
                 ) : (
                   <div className="space-y-2" data-testid="hr-sync-logs">
                     {syncLogs.map((log, i) => (

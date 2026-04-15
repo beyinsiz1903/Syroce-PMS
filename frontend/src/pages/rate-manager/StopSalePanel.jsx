@@ -72,7 +72,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       );
       setActiveStopSales(data.stops || []);
     } catch {
-      console.error('Stop sale durumu yuklenemedi');
+      console.error('Stop sale durumu yüklenemedi');
     }
     setLoadingActive(false);
   }, [today, nextMonth]);
@@ -82,7 +82,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       const { data } = await axios.get(`/rates/stop-sale/status`, { headers });
       setOperatorStatus(data.operators || {});
     } catch {
-      console.error('Operator stop-sale durumu yuklenemedi');
+      console.error('Operator stop-sale durumu yüklenemedi');
     }
   }, []);
 
@@ -92,7 +92,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       const { data } = await axios.get(`${API}${apiPrefix}/holidays`, { headers });
       setHolidays(data.holidays || []);
     } catch {
-      console.error('Tatil verileri yuklenemedi');
+      console.error('Tatil verileri yüklenemedi');
     }
     setLoadingHolidays(false);
   }, []);
@@ -103,7 +103,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       const { data } = await axios.get(`${API}${apiPrefix}/stop-sale-schedules`, { headers });
       setSchedules(data.schedules || []);
     } catch {
-      console.error('Zamanlayicilar yuklenemedi');
+      console.error('Zamanlayicilar yüklenemedi');
     }
     setLoadingSchedules(false);
   }, []);
@@ -146,11 +146,11 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
 
   const applyStopSale = async (stopSell) => {
     if (selectedRoomTypes.size === 0) {
-      toast.error('Lutfen en az bir oda tipi secin');
+      toast.error('Lutfen en az bir oda tipi seçin');
       return;
     }
     if (!dateFrom || !dateTo) {
-      toast.error('Lutfen tarih araligi secin');
+      toast.error('Lutfen tarih araligi seçin');
       return;
     }
 
@@ -175,9 +175,9 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       );
 
       if (stopSell) {
-        toast.success(`${data.saved} kayit icin satis durduruldu`);
+        toast.success(`${data.saved} kayit için satis durduruldu`);
       } else {
-        toast.success(`${data.saved} kayit icin satis acildi`);
+        toast.success(`${data.saved} kayit için satis acildi`);
       }
       if (data.all_pushed) {
         toast.success(isHotelRunner ? 'HotelRunner push basarili' : 'Exely push basarili');
@@ -185,7 +185,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         const failed = data.push_results?.filter(r => !r.success) || [];
         const succeeded = data.push_results?.filter(r => r.success) || [];
         if (succeeded.length > 0) {
-          toast.success(`${succeeded.length} oda tipi ${isHotelRunner ? 'HotelRunner' : 'Exely'}'a basariyla gonderildi`);
+          toast.success(`${succeeded.length} oda tipi ${isHotelRunner ? 'HotelRunner' : 'Exely'}'a başarıyla gönderildi`);
         }
         if (data.queued_count > 0) {
           toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, { duration: 10000 });
@@ -204,7 +204,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       loadActiveStopSales();
       if (fetchGrid) setTimeout(() => fetchGrid(), 500);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Stop sale isleminde hata olustu');
+      toast.error(e.response?.data?.detail || 'Stop sale işleminde hata olustu');
     }
     setSaving(false);
   };
@@ -223,23 +223,23 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       setOperatorStatus(prev => ({ ...prev, [operatorId]: newStatus }));
 
       if (newStatus) {
-        toast.success(`${operatorName} icin stop-sale aktif edildi`);
+        toast.success(`${operatorName} için stop-sale aktif edildi`);
       } else {
-        toast.success(`${operatorName} icin stop-sale kaldirildi`);
+        toast.success(`${operatorName} için stop-sale kaldirildi`);
       }
     } catch {
-      toast.error('Stop-sale durumu degistirilemedi');
+      toast.error('Stop-sale durumu değiştirilemedi');
     }
     setOperatorLoading(prev => ({ ...prev, [operatorId]: false }));
   };
 
   const saveSchedule = async () => {
     if (selectedRoomTypes.size === 0) {
-      toast.error('Lutfen en az bir oda tipi secin');
+      toast.error('Lutfen en az bir oda tipi seçin');
       return;
     }
     if (!dateFrom || !dateTo) {
-      toast.error('Lutfen tarih araligi secin');
+      toast.error('Lutfen tarih araligi seçin');
       return;
     }
     const name = scheduleName.trim() || `Stop Sale ${dateFrom} - ${dateTo}`;
@@ -254,13 +254,13 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         room_type_codes: Array.from(selectedRoomTypes),
         auto_apply: true,
       }, { headers });
-      toast.success('Zamanlayici olusturuldu ve stop sale uygulandi');
+      toast.success('Zamanlayici oluşturuldu ve stop sale uygulandi');
       loadSchedules();
       loadActiveStopSales();
       setScheduleName('');
       if (fetchGrid) setTimeout(() => fetchGrid(), 500);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Zamanlayici olusturulamadi');
+      toast.error(e.response?.data?.detail || 'Zamanlayici oluşturulamadı');
     }
     setSavingSchedule(false);
   };
@@ -313,7 +313,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             Tatil Donemi Hizli Secim
           </CardTitle>
           <CardDescription className="text-xs">
-            Tatil donemi secin, tarihler otomatik dolsun. Isterseniz tarihleri manuel duzenleyebilirsiniz.
+            Tatil donemi seçin, tarihler otomatik dolsun. Isterseniz tarihleri manuel duzenleyebilirsiniz.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -409,7 +409,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               <span>
                 <strong>{holidays.find(h => h.key === selectedHoliday)?.name}</strong> tarihleri secildi. 
-                Tarihleri manuel olarak degistirebilirsiniz.
+                Tarihleri manuel olarak değiştirebilirsiniz.
               </span>
             </div>
           )}
@@ -426,7 +426,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               Oda Tipi Sec
             </CardTitle>
             <CardDescription className="text-xs">
-              Stop sale uygulanacak oda tiplerini secin
+              Stop sale uygulanacak oda tiplerini seçin
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -454,7 +454,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 </label>
               ))}
               {roomTypes.length === 0 && (
-                <p className="text-xs text-gray-400 py-4 text-center">Oda tipi bulunamadi</p>
+                <p className="text-xs text-gray-400 py-4 text-center">Oda tipi bulunamadı</p>
               )}
             </div>
           </CardContent>
@@ -533,8 +533,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{isHotelRunner
-                ? 'Stop sale islemleri HotelRunner uzerinden tum kanallara anlik yansitilir.'
-                : 'Stop sale islemleri Exely uzerinden tum kanallara anlik yansitilir.'
+                ? 'Stop sale işlemleri HotelRunner uzerinden tum kanallara anlik yansitilir.'
+                : 'Stop sale işlemleri Exely uzerinden tum kanallara anlik yansitilir.'
               }</span>
             </div>
           </CardContent>
@@ -548,7 +548,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               Kanal Bazli Stop Sale
             </CardTitle>
             <CardDescription className="text-xs">
-              Belirli kanallar icin satisi tek tikla durdurun
+              Belirli kanallar için satisi tek tikla durdurun
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -597,7 +597,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-500" />
-                Kayitli Zamanlayicilar
+                Kayıtlı Zamanlayicilar
               </CardTitle>
               <CardDescription className="text-xs">
                 Olusturulmus stop sale zamanlayicilari
@@ -623,8 +623,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           ) : schedules.length === 0 ? (
             <div className="text-center py-6 text-gray-400">
               <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">Henuz zamanlayici yok</p>
-              <p className="text-xs mt-1">Tatil donemi secip zamanlayici olusturun</p>
+              <p className="text-sm">Henüz zamanlayici yok</p>
+              <p className="text-xs mt-1">Tatil donemi secip zamanlayici oluşturun</p>
             </div>
           ) : (
             <div className="space-y-2" data-testid="schedules-list">
@@ -645,7 +645,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                           <Badge className="bg-green-100 text-green-700 border-0 text-[10px]">Uygulandi</Badge>
                         )}
                         {isPast && (
-                          <Badge variant="outline" className="text-[10px]">Gecmis</Badge>
+                          <Badge variant="outline" className="text-[10px]">Geçmiş</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
@@ -724,7 +724,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="text-center py-8 text-gray-400">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-emerald-300" />
               <p className="text-sm font-medium">Aktif stop sale yok</p>
-              <p className="text-xs mt-1">Tum odalar satis icin acik</p>
+              <p className="text-xs mt-1">Tum odalar satis için acik</p>
             </div>
           ) : (
             <div className="space-y-3" data-testid="active-stop-sales-list">

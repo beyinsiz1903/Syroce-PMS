@@ -86,7 +86,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
       <CardContent>
         {rules.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            Henuz yonlendirme kurali tanimlanmadi. Tum masraflar misafir folyosuna yansiyacak.
+            Henüz yonlendirme kurali tanimlanmadi. Tum masraflar misafir folyosuna yansiyacak.
           </p>
         ) : (
           <div className="space-y-2">
@@ -115,7 +115,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
               <div>
                 <Label>Masraf Kategorisi</Label>
                 <Select value={newRule.category} onValueChange={v => setNewRule(p => ({ ...p, category: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Kategori secin..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Kategori seçin..." /></SelectTrigger>
                   <SelectContent>
                     {CHARGE_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
@@ -124,7 +124,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
               <div>
                 <Label>Hedef Folyo</Label>
                 <Select value={newRule.target} onValueChange={v => setNewRule(p => ({ ...p, target: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Hedef secin..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Hedef seçin..." /></SelectTrigger>
                   <SelectContent>
                     {ROUTING_TARGETS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                   </SelectContent>

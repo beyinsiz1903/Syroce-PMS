@@ -110,7 +110,7 @@ export const NewBookingDialog = ({
                 }}
                 data-testid="new-booking-room-type"
               >
-                <option value="">Oda tipi secin...</option>
+                <option value="">Oda tipi seçin...</option>
                 {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
@@ -122,7 +122,7 @@ export const NewBookingDialog = ({
                 onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
                 data-testid="new-booking-room-select"
               >
-                <option value="">Oda secin...</option>
+                <option value="">Oda seçin...</option>
                 {(rooms || [])
                   .filter(r => !newBooking.room_type || r.room_type === newBooking.room_type)
                   .map(r => (
@@ -305,7 +305,7 @@ export const NewBookingDialog = ({
         </div>
         <div className="flex space-x-2 pt-4">
           <Button type="submit" className="flex-1" data-testid="new-booking-submit">Rezervasyon Olustur</Button>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Iptal</Button>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
         </div>
       </form>
     </DialogContent>
@@ -511,7 +511,7 @@ export const FindRoomDialog = ({
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl">
       <DialogHeader>
-        <DialogTitle>Musaitlik Kontrolu</DialogTitle>
+        <DialogTitle>Müsaitlik Kontrolu</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
@@ -568,13 +568,13 @@ export const FindRoomDialog = ({
         </div>
         <Button onClick={onFindRoom} className="w-full" data-testid="find-room-search-btn">
           <Search className="w-4 h-4 mr-2" />
-          Musait Odalari Ara
+          Müsait Odalari Ara
         </Button>
         {availableRooms.length > 0 && (
           <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
             <h3 className="font-semibold mb-3 flex items-center">
               <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-              {availableRooms.length} Musait Oda
+              {availableRooms.length} Müsait Oda
             </h3>
             <div className="space-y-2">
               {availableRooms.map(room => (
@@ -595,7 +595,7 @@ export const FindRoomDialog = ({
         {findRoomCriteria.check_in && findRoomCriteria.check_out && availableRooms.length === 0 && (
           <div className="text-center py-8 text-red-600">
             <AlertCircle className="w-12 h-12 mx-auto mb-3" />
-            <p className="font-semibold">Secilen tarihler icin musait oda bulunamadi</p>
+            <p className="font-semibold">Seçilen tarihler için müsait oda bulunamadı</p>
             <p className="text-sm">Farkli tarih veya oda tipi deneyin</p>
           </div>
         )}

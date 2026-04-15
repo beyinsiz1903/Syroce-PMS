@@ -148,7 +148,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
 
                 {selectedGuest.stay_history?.length > 0 && (
                   <Card>
-                    <CardHeader><CardTitle>Konaklama Gecmisi</CardTitle></CardHeader>
+                    <CardHeader><CardTitle>Konaklama Geçmişi</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-2">
                         {selectedGuest.stay_history.map((s, i) => (
@@ -171,7 +171,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
             ) : (
               <Card>
                 <CardContent className="py-12 text-center text-gray-400">
-                  Bir misafir secin veya arama yapin
+                  Bir misafir seçin veya arama yapin
                 </CardContent>
               </Card>
             )}
@@ -200,7 +200,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-center py-8 text-gray-400">Cross-property misafir bulunamadi</p>
+                  <p className="text-center py-8 text-gray-400">Cross-property misafir bulunamadı</p>
                 )}
               </CardContent>
             </Card>

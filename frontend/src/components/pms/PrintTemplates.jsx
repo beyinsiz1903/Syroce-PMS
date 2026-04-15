@@ -1,7 +1,7 @@
 export function printRegistrationCard(booking, guest, room, hotelName = 'Syroce Hotel') {
   const w = window.open('', '_blank');
   if (!w) return;
-  w.document.write(`<html><head><title>Kayit Karti - ${guest?.name || ''}</title>
+  w.document.write(`<html><head><title>Kayıt Karti - ${guest?.name || ''}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:12px;color:#333}
     h1{font-size:16px;text-align:center;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:16px}
@@ -48,7 +48,7 @@ export function printRegistrationCard(booking, guest, room, hotelName = 'Syroce 
     <div class="field"><div class="value" style="min-height:40px">${booking?.special_requests || guest?.notes || ''}</div></div>
   </div>
   <div class="kvkk">
-    KVKK AYDINLATMA METNI: Kisisel verileriniz, 6698 sayili Kisisel Verilerin Korunmasi Kanunu kapsaminda, konaklama hizmetlerinin sunulmasi, yasal yukumluluklerin yerine getirilmesi ve guvenlik amaciyla islenmektedir. Detayli bilgi icin resepsiyondan KVKK aydinlatma metnini talep edebilirsiniz.
+    KVKK AYDINLATMA METNI: Kisisel verileriniz, 6698 sayili Kisisel Verilerin Korunmasi Kanunu kapsaminda, konaklama hizmetlerinin sunulmasi, yasal yukumluluklerin yerine getirilmesi ve guvenlik amaciyla islenmektedir. Detayli bilgi için resepsiyondan KVKK aydinlatma metnini talep edebilirsiniz.
     <br/><br/>
     PERSONAL DATA NOTICE: Your personal data is processed in accordance with applicable data protection regulations for the purpose of providing accommodation services, fulfilling legal obligations, and security purposes.
   </div>
@@ -120,7 +120,7 @@ export function printFolio(folioData, hotelName = 'Syroce Hotel') {
   </table>
   <div class="totals">
     <div class="total-row"><span>Toplam Masraf / Total Charges:</span><span>${(summary?.total_charges || 0).toFixed(2)} TL</span></div>
-    <div class="total-row"><span>Toplam Odeme / Total Payments:</span><span>${(summary?.total_payments || 0).toFixed(2)} TL</span></div>
+    <div class="total-row"><span>Toplam Ödeme / Total Payments:</span><span>${(summary?.total_payments || 0).toFixed(2)} TL</span></div>
     <div class="total-row final"><span>BAKIYE / BALANCE:</span><span>${(summary?.balance || 0).toFixed(2)} TL</span></div>
   </div>
   <div class="footer">
@@ -205,7 +205,7 @@ export function printProformaInvoice(booking, guest, charges, hotelName = 'Syroc
   <div style="clear:both"></div>
   <div class="note">
     <p><strong>NOT:</strong> Bu belge proforma nitelikte olup, kesin fatura yerine gecmez. Konaklama sonrasinda kesin fatura duzenlenecektir.</p>
-    <p>Odeme kosullari: Giris aninda tam odeme veya kredi karti garantisi gerekmektedir.</p>
+    <p>Ödeme kosullari: Giris aninda tam ödeme veya kredi karti garantisi gerekmektedir.</p>
   </div>
   </body></html>`);
   w.document.close();

@@ -47,7 +47,7 @@ const LaundryTab = () => {
       const res = await axios.get('/laundry/orders');
       setOrders(res.data.orders || []);
     } catch {
-      toast.error('Camasir siparisleri yuklenemedi');
+      toast.error('Camasir siparisleri yüklenemedi');
       setOrders([]);
     }
   }, []);
@@ -71,18 +71,18 @@ const LaundryTab = () => {
 
   const submitOrder = async () => {
     if (!orderForm.room_number || orderForm.items.length === 0) {
-      toast.error('Oda numarasi ve en az bir urun gerekli');
+      toast.error('Oda numarası ve en az bir urun gerekli');
       return;
     }
     setLoading(true);
     try {
       await axios.post('/laundry/orders', orderForm);
-      toast.success('Camasir siparisi olusturuldu');
+      toast.success('Camasir siparisi oluşturuldu');
       setShowNewOrder(false);
       setOrderForm({ room_number: '', guest_name: '', service_type: 'wash_iron', items: [], notes: '', priority: 'normal' });
       loadOrders();
     } catch (e) {
-      toast.error('Camasir siparisi olusturulamadi');
+      toast.error('Camasir siparisi oluşturulamadı');
     }
     setLoading(false);
   };
@@ -90,10 +90,10 @@ const LaundryTab = () => {
   const updateStatus = async (orderId, newStatus) => {
     try {
       await axios.patch(`/laundry/orders/${orderId}`, { status: newStatus });
-      toast.success('Siparis durumu guncellendi');
+      toast.success('Sipariş durumu güncellendi');
       loadOrders();
     } catch {
-      toast.error('Siparis durumu guncellenemedi');
+      toast.error('Sipariş durumu güncellenemedi');
     }
   };
 
@@ -123,7 +123,7 @@ const LaundryTab = () => {
         </h2>
         <div className="flex gap-2">
           <Button onClick={() => setShowNewOrder(true)} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="w-4 h-4 mr-2" /> Yeni Siparis
+            <Plus className="w-4 h-4 mr-2" /> Yeni Sipariş
           </Button>
           <Button variant="outline" onClick={loadOrders}>
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile
@@ -168,7 +168,7 @@ const LaundryTab = () => {
         {filteredOrders.length === 0 ? (
           <Card className="border-dashed"><CardContent className="py-8 text-center text-gray-400">
             <Shirt className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p>Siparis bulunamadi</p>
+            <p>Sipariş bulunamadı</p>
           </CardContent></Card>
         ) : filteredOrders.map(order => {
           const sc = statusConfig[order.status] || statusConfig.pending;
@@ -212,7 +212,7 @@ const LaundryTab = () => {
       <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> Yeni Camasir Siparisi</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> Yeni Camasir Siparişi</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -274,7 +274,7 @@ const LaundryTab = () => {
             <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))} placeholder="Ozel talimatlar..." /></div>
             <Button onClick={submitOrder} disabled={loading} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Siparis Olustur ({orderTotal.toFixed(2)} TL)
+              Sipariş Olustur ({orderTotal.toFixed(2)} TL)
             </Button>
           </div>
         </DialogContent>

@@ -59,13 +59,13 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleDeposit} disabled={loading} className="bg-blue-600 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kaydet'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowDeposit(false)} className="h-8 text-xs">Iptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowDeposit(false)} className="h-8 text-xs">İptal</Button>
           </div>
         </div>
       )}
 
       <div className="space-y-2">
-        {(!deposits || deposits.length === 0) ? <EmptyState icon={Shield} text="Henuz depozito yok" /> : (
+        {(!deposits || deposits.length === 0) ? <EmptyState icon={Shield} text="Henüz depozito yok" /> : (
           deposits.map((d, i) => (
             <div key={d.id || i} className="border rounded-lg p-3 relative">
               <div className="flex items-center gap-3">
@@ -116,7 +116,7 @@ export function VoucherTab({ booking, bookingId }) {
     try {
       const res = await axios.get(`/pms/reservations/${bookingId}/voucher`);
       setVoucherHtml(res.data?.voucher_html || '');
-    } catch (e) { toast.error('Voucher olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('Voucher oluşturulamadı: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -149,7 +149,7 @@ export function VoucherTab({ booking, bookingId }) {
       {!voucherHtml && !loading && (
         <div className="text-center py-12 text-gray-400">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Voucher olusturmak icin yukaridaki butona tiklayin</p>
+          <p className="text-sm">Voucher oluşturmak için yukaridaki butona tiklayin</p>
         </div>
       )}
     </div>
@@ -201,8 +201,8 @@ export function InvoiceTab({ booking, bookingId }) {
         invoice_note: billingInfo.note || null,
       });
       setInvoiceHtml(res.data?.invoice_html || '');
-      toast.success('Fatura olusturuldu');
-    } catch (e) { toast.error('Fatura olusturulamadi: ' + (e.response?.data?.detail || e.message)); }
+      toast.success('Fatura oluşturuldu');
+    } catch (e) { toast.error('Fatura oluşturulamadı: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -237,7 +237,7 @@ export function InvoiceTab({ booking, bookingId }) {
             <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} secili | Toplam: {fmtTL(selectedTotal)} TL</span>
           </div>
           {loadingCharges ? (
-            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Yukleniyor...</div>
+            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Yükleniyor...</div>
           ) : (
             <div className="space-y-1 border rounded-lg overflow-hidden">
               {charges.map(c => (

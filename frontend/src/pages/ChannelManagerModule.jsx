@@ -230,8 +230,8 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
       toast.success('Room mapping created');
       loadRoomMappings();
     } catch (error) {
-      console.error('Failed to create room mapping:', error);
-      toast.error(error.response?.data?.detail || 'Failed to create room mapping');
+      console.error('Oda eşleştirmesi oluşturulamadı:', error);
+      toast.error(error.response?.data?.detail || 'Oda eşleştirmesi oluşturulamadı');
     }
   };
 
@@ -241,8 +241,8 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
       toast.success('Room mapping deleted');
       loadRoomMappings();
     } catch (error) {
-      console.error('Failed to delete room mapping:', error);
-      toast.error(error.response?.data?.detail || 'Failed to delete room mapping');
+      console.error('Oda eşleştirmesi silinemedi:', error);
+      toast.error(error.response?.data?.detail || 'Oda eşleştirmesi silinemedi');
     }
   };
 
@@ -308,8 +308,8 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
       const response = await axios.post('/channel-manager/update-rates', payload);
       toast.success(response.data?.message || 'Rates updated successfully');
     } catch (error) {
-      console.error('Failed to update rates:', error);
-      toast.error(error.response?.data?.detail || 'Failed to update rates');
+      console.error('Fiyatlar güncellenemedi:', error);
+      toast.error(error.response?.data?.detail || 'Fiyatlar güncellenemedi');
     } finally {
       setLoading(false);
     }

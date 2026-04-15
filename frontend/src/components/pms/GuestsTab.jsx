@@ -83,7 +83,7 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
         <Card className="border-dashed">
           <CardContent className="py-8 text-center text-gray-400">
             <User className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p>{searchQuery ? 'Aramanizla eslesen misafir bulunamadi' : 'Henuz misafir kaydedilmemis'}</p>
+            <p>{searchQuery ? 'Aramanizla eslesen misafir bulunamadı' : 'Henüz misafir kaydedilmemiş'}</p>
           </CardContent>
         </Card>
       ) : (
@@ -161,16 +161,16 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
             <DialogTitle className="flex items-center gap-2"><Merge className="w-5 h-5" /> Misafir Birlestir</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-sm text-gray-500">Ayni misafirin farkli kayitlarini birlestirin. Tum konaklama gecmisi ve notlar ana kayda aktarilir.</p>
+            <p className="text-sm text-gray-500">Ayni misafirin farkli kayitlarini birlestirin. Tum konaklama geçmişi ve notlar ana kayda aktarilir.</p>
             <div>
-              <Label>Ana Kayit (Korunacak)</Label>
+              <Label>Ana Kayıt (Korunacak)</Label>
               <select className="w-full border rounded-md p-2 text-sm" value={mergeGuest1} onChange={e => setMergeGuest1(e.target.value)}>
                 <option value="">Misafir seciniz...</option>
                 {guests.map(g => <option key={g.id} value={g.id}>{g.name} - {g.email || g.phone || 'Bilgi yok'}</option>)}
               </select>
             </div>
             <div>
-              <Label>Birlestirilecek Kayit (Silinecek)</Label>
+              <Label>Birlestirilecek Kayıt (Silinecek)</Label>
               <select className="w-full border rounded-md p-2 text-sm" value={mergeGuest2} onChange={e => setMergeGuest2(e.target.value)}>
                 <option value="">Misafir seciniz...</option>
                 {guests.filter(g => g.id !== mergeGuest1).map(g => <option key={g.id} value={g.id}>{g.name} - {g.email || g.phone || 'Bilgi yok'}</option>)}

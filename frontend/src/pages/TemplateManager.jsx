@@ -36,7 +36,7 @@ const TemplateManager = ({ user, tenant, onLogout }) => {
       setTemplates(response.data);
     } catch (error) {
       console.error('Failed to load templates:', error);
-      toast.error('Failed to load templates');
+      toast.error('Şablonlar yüklenemedi');
     }
   };
 
@@ -44,27 +44,27 @@ const TemplateManager = ({ user, tenant, onLogout }) => {
     try {
       if (editingTemplate) {
         await axios.put(`/messages/templates/${editingTemplate.id}`, formData);
-        toast.success('Template updated successfully');
+        toast.success('Şablon güncellendi');
       } else {
         await axios.post('/messages/templates', formData);
-        toast.success('Template created successfully');
+        toast.success('Şablon oluşturuldu');
       }
       loadTemplates();
       setShowDialog(false);
       resetForm();
     } catch (error) {
-      toast.error('Failed to save template');
+      toast.error('Şablon kaydedilemedi');
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this template?')) return;
+    if (!window.confirm('Bu şablonu silmek istediğinize emin misiniz?')) return;
     try {
       await axios.delete(`/messages/templates/${id}`);
-      toast.success('Template deleted');
+      toast.success('Şablon silindi');
       loadTemplates();
     } catch (error) {
-      toast.error('Failed to delete template');
+      toast.error('Şablon silinemedi');
     }
   };
 

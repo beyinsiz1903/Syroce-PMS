@@ -23,7 +23,7 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/communication`, form);
-      toast.success('Iletisim kaydedildi'); setShowForm(false); setForm({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' }); onRefresh?.();
+      toast.success('İletişim kaydedildi'); setShowForm(false); setForm({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
@@ -35,8 +35,8 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
   return (
     <div data-testid="communication-tab" className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-700">Iletisim Gecmisi</span>
-        <Button size="sm" onClick={() => setShowForm(!showForm)} className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"><Plus className="w-3 h-3 mr-1" /> Kayit Ekle</Button>
+        <span className="text-sm font-semibold text-gray-700">İletişim Geçmişi</span>
+        <Button size="sm" onClick={() => setShowForm(!showForm)} className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"><Plus className="w-3 h-3 mr-1" /> Kayıt Ekle</Button>
       </div>
 
       {showForm && (
@@ -57,13 +57,13 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-sky-600 hover:bg-sky-700 text-white h-8 text-xs">
               {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3 mr-1" />} Kaydet
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)} className="h-8 text-xs">Iptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)} className="h-8 text-xs">İptal</Button>
           </div>
         </div>
       )}
 
       <div className="space-y-2">
-        {logs.length === 0 ? <EmptyState icon={Mail} text="Henuz iletisim kaydi yok" /> : (
+        {logs.length === 0 ? <EmptyState icon={Mail} text="Henüz iletişim kaydi yok" /> : (
           logs.map((log, i) => {
             const Icon = channelIcons[log.channel] || Mail;
             return (
@@ -121,7 +121,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
         </div>
       </div>
       <div className="space-y-2">
-        {(!notes || notes.length === 0) ? <EmptyState icon={MessageSquare} text="Henuz not yok" /> : (
+        {(!notes || notes.length === 0) ? <EmptyState icon={MessageSquare} text="Henüz not yok" /> : (
           notes.map((n, i) => (
             <div key={n.id || i} className="border rounded-lg p-3 space-y-1">
               <div className="flex items-center justify-between">
@@ -145,12 +145,12 @@ export function HistoryTab({ history, roomMoves }) {
   ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
   const labels = {
-    payment_recorded: 'Odeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente odemesi',
-    charge_split: 'Masraf bolundu', note_added: 'Not eklendi', room_changed: 'Oda degistirildi',
+    payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente odemesi',
+    charge_split: 'Masraf bolundu', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
     early_checkin: 'Erken giris', late_checkout: 'Gec cikis', marked_noshow: 'No-show',
     vip_status_changed: 'VIP durumu', deposit_recorded: 'Depozito', deposit_refunded: 'Depozito iade',
     extra_charge_added: 'Ekstra ucret', daily_rates_updated: 'Fiyat guncelleme', guest_updated: 'Misafir guncelleme',
-    communication_logged: 'Iletisim', group_checkin: 'Grup giris', group_checkout: 'Grup cikis',
+    communication_logged: 'İletişim', group_checkin: 'Grup giris', group_checkout: 'Grup cikis',
   };
   const colors = {
     payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-orange-100 text-orange-700',
@@ -162,8 +162,8 @@ export function HistoryTab({ history, roomMoves }) {
 
   return (
     <div data-testid="history-tab" className="space-y-3">
-      <div className="text-sm font-semibold text-gray-700">Islem Gecmisi</div>
-      {allEvents.length === 0 ? <EmptyState icon={History} text="Henuz islem gecmisi yok" /> : (
+      <div className="text-sm font-semibold text-gray-700">Islem Geçmişi</div>
+      {allEvents.length === 0 ? <EmptyState icon={History} text="Henüz işlem geçmişi yok" /> : (
         <div className="relative">
           <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-200" />
           {allEvents.map((ev, i) => (

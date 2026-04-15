@@ -166,7 +166,7 @@ export const DepartmentsSection = ({ s, hk, maint, finance }) => (
       </Card>
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Wrench className="w-4 h-4 text-orange-500" />Teknik Servis</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
-          <StatBox label="Acik" value={maint.open || 0} color="amber" />
+          <StatBox label="Açık" value={maint.open || 0} color="amber" />
           <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />
         </div></CardContent>
       </Card>

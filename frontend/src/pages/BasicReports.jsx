@@ -83,7 +83,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       const res = await fetch(BACKEND_URL + '/api/reports/basic-dashboard', {
         headers: { 'Authorization': 'Bearer ' + token }
       });
-      if (!res.ok) throw new Error('Veri yuklenemedi');
+      if (!res.ok) throw new Error('Veri yüklenemedi');
       setData(await res.json());
     } catch (err) { setError(err.message); } finally { setLoading(false); }
   }, []);

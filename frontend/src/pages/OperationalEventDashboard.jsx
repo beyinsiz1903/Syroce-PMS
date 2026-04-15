@@ -197,7 +197,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
                 {(liveFeed?.events || []).length === 0 ? (
                   <div className="text-center py-12 text-slate-400" data-testid="no-events">
                     <Radio className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>Henuz olay yok</p>
+                    <p>Henüz olay yok</p>
                   </div>
                 ) : (
                   <div className="space-y-2" data-testid="event-list">

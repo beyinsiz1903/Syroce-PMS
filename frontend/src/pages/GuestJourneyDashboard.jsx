@@ -115,7 +115,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4" data-testid="journey-kpi-cards">
           <Card className="border-l-4 border-l-red-500">
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase">Acik Talepler</p>
+              <p className="text-xs text-slate-500 uppercase">Açık Talepler</p>
               <p className="text-2xl font-bold" data-testid="kpi-open-requests">{dashboard?.open_requests || 0}</p>
             </CardContent>
           </Card>
@@ -177,7 +177,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                     </div>
                   ))}
                   {Object.keys(dashboard?.avg_resolution_by_type || {}).length === 0 && (
-                    <p className="text-slate-400 text-sm col-span-3 text-center py-4">Henuz veri yok</p>
+                    <p className="text-slate-400 text-sm col-span-3 text-center py-4">Henüz veri yok</p>
                   )}
                 </div>
               </CardContent>
@@ -287,7 +287,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                         </tr>
                       ))}
                       {(requests?.requests || []).length === 0 && (
-                        <tr><td colSpan={7} className="text-center py-8 text-slate-400">Talep bulunamadi</td></tr>
+                        <tr><td colSpan={7} className="text-center py-8 text-slate-400">Talep bulunamadı</td></tr>
                       )}
                     </tbody>
                   </table>

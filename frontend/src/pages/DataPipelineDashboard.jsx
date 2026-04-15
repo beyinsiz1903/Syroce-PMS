@@ -117,7 +117,7 @@ export default function DataPipelineDashboard() {
       {/* Top Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard testId="metric-feature-sets" title="Feature Sets" value={featureSets.length || "0"} subtitle={`${health?.feature_store?.available_sets?.length || 3} mevcut`} />
-        <MetricCard testId="metric-models" title="Modeller" value={Object.keys(modelTypes).length || "0"} subtitle="Kayitli model tipi" />
+        <MetricCard testId="metric-models" title="Modeller" value={Object.keys(modelTypes).length || "0"} subtitle="Kayıtlı model tipi" />
         <MetricCard testId="metric-stale" title="Stale Uyarilar" value={(staleModels.length + stalePredictions.length) || "0"} subtitle="Dikkat gerektiren" />
         <MetricCard testId="metric-runs" title="Pipeline Runs" value={runs.length || "0"} subtitle="Son calistirmalar" />
       </div>
@@ -135,7 +135,7 @@ export default function DataPipelineDashboard() {
             <CardHeader><CardTitle className="text-white text-base">Son Pipeline Calistirmalari</CardTitle></CardHeader>
             <CardContent>
               {runs.length === 0 ? (
-                <p className="text-slate-500 text-sm">Henuz pipeline calistirilmamis</p>
+                <p className="text-slate-500 text-sm">Henüz pipeline calistirilmamis</p>
               ) : (
                 <div className="space-y-3">
                   {runs.map((run, i) => (
@@ -161,7 +161,7 @@ export default function DataPipelineDashboard() {
             <CardHeader><CardTitle className="text-white text-base">Prediction Guven Ozeti</CardTitle></CardHeader>
             <CardContent>
               {predModels.length === 0 ? (
-                <p className="text-slate-500 text-sm">Henuz tahmin uretilmemis</p>
+                <p className="text-slate-500 text-sm">Henüz tahmin uretilmemis</p>
               ) : (
                 <div className="space-y-3">
                   {predModels.map((m, i) => (
@@ -197,7 +197,7 @@ export default function DataPipelineDashboard() {
             <CardHeader><CardTitle className="text-white text-base">Feature Store</CardTitle></CardHeader>
             <CardContent>
               {featureSets.length === 0 ? (
-                <p className="text-slate-500 text-sm">Feature extraction henuz yapilmamis. Pipeline calistirin.</p>
+                <p className="text-slate-500 text-sm">Feature extraction henüz yapilmamis. Pipeline calistirin.</p>
               ) : (
                 <div className="space-y-3">
                   {featureSets.map((fs, i) => (

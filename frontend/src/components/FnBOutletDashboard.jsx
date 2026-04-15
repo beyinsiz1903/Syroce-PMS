@@ -27,8 +27,8 @@ const FnBOutletDashboard = () => {
       const res = await axios.get('/pos/outlets');
       setOutlets(res.data?.outlets || []);
     } catch (err) {
-      console.error('Failed to load outlets', err);
-      toast.error('Failed to load outlets');
+      console.error('Satış noktaları yüklenemedi', err);
+      toast.error('Satış noktaları yüklenemedi');
     }
   };
 
@@ -44,8 +44,8 @@ const FnBOutletDashboard = () => {
       });
       setMenuData(res.data);
     } catch (err) {
-      console.error('Failed to load F&B sales', err);
-      toast.error('Failed to load F&B sales');
+      console.error('F&B satışları yüklenemedi', err);
+      toast.error('F&B satışları yüklenemedi');
     } finally {
       setLoading(false);
     }

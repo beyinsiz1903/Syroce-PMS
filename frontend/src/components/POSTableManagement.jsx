@@ -23,8 +23,8 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       setTables(response.data.tables || []);
       setStatusCounts(response.data.status_counts || {});
     } catch (error) {
-      console.error('Failed to load tables:', error);
-      toast.error('Failed to load tables');
+      console.error('Masalar yüklenemedi:', error);
+      toast.error('Masalar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -37,7 +37,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       toast.success('Table status updated');
       loadTables();
     } catch (error) {
-      toast.error('Failed to update table status');
+      toast.error('Masa durumu güncellenemedi');
     } finally {
       setUpdating(null);
     }

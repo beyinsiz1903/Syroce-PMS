@@ -65,7 +65,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('Veriler yuklenemedi');
+      toast.error('Veriler yüklenemedi');
     }
     setLoading(false);
   }, [startDate, endDate]);
@@ -170,7 +170,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
     } catch {
       setPricingSettings(prev => ({ ...prev, [roomTypeCode]: current }));
-      toast.error('Fiyatlandirma ayari guncellenemedi');
+      toast.error('Fiyatlandırma ayarı güncellenemedi');
     }
   };
 
@@ -181,10 +181,10 @@ const RateManager = ({ user, tenant, onLogout }) => {
   };
 
   const handleBulkUpdate = async () => {
-    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi secin'); return; }
-    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani secin'); return; }
-    if (enabledFields.size === 0) { toast.error('Lutfen guncellenecek en az bir alan secin'); return; }
-    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi secin'); return; }
+    if (totalSelectedRoomTypes === 0) { toast.error('Lutfen en az bir oda tipi seçin'); return; }
+    if (totalSelectedPlans === 0) { toast.error('Lutfen en az bir fiyat plani seçin'); return; }
+    if (enabledFields.size === 0) { toast.error('Lütfen güncellenecek en az bir alan seçin'); return; }
+    if (!dateFrom || !dateTo) { toast.error('Lutfen tarih araligi seçin'); return; }
 
     const selectedRoomCodes = Object.keys(selections);
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
@@ -194,7 +194,7 @@ const RateManager = ({ user, tenant, onLogout }) => {
         (enabledFields.has('min_stay') && rv.min_stay) || (enabledFields.has('max_stay') && rv.max_stay) ||
         (enabledFields.has('stop_sell') && rv.stop_sell) || (enabledFields.has('cta') && rv.cta) || (enabledFields.has('ctd') && rv.ctd);
     });
-    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi icin deger girin'); return; }
+    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi için deger girin'); return; }
 
     setSaving(true);
     try {
@@ -217,9 +217,9 @@ const RateManager = ({ user, tenant, onLogout }) => {
         { headers }
       );
 
-      if (data.all_pushed) { toast.success(`${data.saved} kayit guncellendi ve Exely'ye gonderildi`); }
+      if (data.all_pushed) { toast.success(`${data.saved} kayıt güncellendi ve Exely'ye gönderildi`); }
       else {
-        toast.success(`${data.saved} kayit guncellendi`);
+        toast.success(`${data.saved} kayıt güncellendi`);
         const failed = data.push_results?.filter(r => !r.success) || [];
         if (failed.length > 0) { toast.warning(`${failed.length} Exely push hatasi olustu`); }
       }

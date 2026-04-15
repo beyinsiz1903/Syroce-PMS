@@ -46,7 +46,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
         ...bulkForm,
         new_rate: parseFloat(bulkForm.new_rate)
       }, { headers });
-      setMessage(`${res.data.total_updated} otelde fiyat guncellendi`);
+      setMessage(`${res.data.total_updated} otelde fiyat güncellendi`);
       fetchData();
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
   };
@@ -60,7 +60,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
             <p className="text-gray-500">Zincir genelinde fiyat push ve bulk guncelleme</p>
           </div>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
-            {loading ? 'Yukleniyor...' : 'Yenile'}
+            {loading ? 'Yükleniyor...' : 'Yenile'}
           </Button>
         </div>
 
@@ -71,7 +71,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
             <TabsTrigger value="rates">Guncel Fiyatlar</TabsTrigger>
             <TabsTrigger value="bulk">Toplu Guncelleme</TabsTrigger>
             <TabsTrigger value="templates">Sablonlar</TabsTrigger>
-            <TabsTrigger value="history">Fiyat Gecmisi</TabsTrigger>
+            <TabsTrigger value="history">Fiyat Geçmişi</TabsTrigger>
           </TabsList>
 
           <TabsContent value="rates" className="space-y-4">
@@ -90,7 +90,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
                       </div>
                     ))}
                     {(!prop.room_rates || prop.room_rates.length === 0) && (
-                      <p className="text-gray-400 col-span-4">Fiyat bilgisi bulunamadi</p>
+                      <p className="text-gray-400 col-span-4">Fiyat bilgisi bulunamadı</p>
                     )}
                   </div>
                 </CardContent>
@@ -102,7 +102,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
             <Card>
               <CardHeader>
                 <CardTitle>Toplu Fiyat Guncelleme</CardTitle>
-                <CardDescription>Tum otellerde secilen oda tipi icin fiyat degisikligi yapin</CardDescription>
+                <CardDescription>Tum otellerde secilen oda tipi için fiyat degisikligi yapin</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +137,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
               <CardHeader><CardTitle>Fiyat Sablonlari</CardTitle></CardHeader>
               <CardContent>
                 {templates.length === 0 ? (
-                  <p className="text-center py-8 text-gray-400">Henuz sablon olusturulmamis</p>
+                  <p className="text-center py-8 text-gray-400">Henüz sablon olusturulmamis</p>
                 ) : (
                   <div className="space-y-3">
                     {templates.map((t, i) => (
@@ -159,10 +159,10 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
 
           <TabsContent value="history" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Fiyat Degisiklik Gecmisi</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Fiyat Degisiklik Geçmişi</CardTitle></CardHeader>
               <CardContent>
                 {history.length === 0 ? (
-                  <p className="text-center py-8 text-gray-400">Fiyat gecmisi bulunamadi</p>
+                  <p className="text-center py-8 text-gray-400">Fiyat geçmişi bulunamadı</p>
                 ) : (
                   <div className="space-y-2">
                     {history.map((h, i) => (

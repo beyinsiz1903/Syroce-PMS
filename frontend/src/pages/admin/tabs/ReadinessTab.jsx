@@ -82,7 +82,7 @@ const ReadinessTab = () => {
           </CardContent>
         </Card>
       ))}
-      {reports.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Connector bulunamadi</CardContent></Card>}
+      {reports.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Connector bulunamadı</CardContent></Card>}
     </div>
   );
 };

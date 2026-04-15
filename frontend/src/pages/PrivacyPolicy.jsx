@@ -25,8 +25,8 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Hesap Bilgileri / Account Info:</strong> Ad, soyad, e-posta adresi, sifre (sifrelenmis / encrypted)</li>
               <li><strong>Otel Bilgileri / Hotel Info:</strong> Otel adi, oda bilgileri, rezervasyon verileri</li>
-              <li><strong>Misafir Bilgileri / Guest Info:</strong> Misafir adi, iletisim bilgileri, kimlik numarasi, konaklama gecmisi</li>
-              <li><strong>Finansal Veriler / Financial Data:</strong> Fatura bilgileri, odeme kayitlari, folio detaylari</li>
+              <li><strong>Misafir Bilgileri / Guest Info:</strong> Misafir adi, iletişim bilgileri, kimlik numarası, konaklama geçmişi</li>
+              <li><strong>Finansal Veriler / Financial Data:</strong> Fatura bilgileri, ödeme kayitlari, folio detayları</li>
               <li><strong>Kullanim Verileri / Usage Data:</strong> Uygulama kullanim istatistikleri, cihaz bilgileri, IP adresi</li>
             </ul>
           </section>
@@ -51,13 +51,13 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-6 space-y-1 mt-2">
               <li>Yasal zorunluluklar gerektirdiginde / When required by law</li>
               <li>Hizmet saglayicilarimiz ile (sunucu, veritabani) / With our service providers (servers, database)</li>
-              <li>Acik izniniz ile / With your explicit consent</li>
+              <li>Açık izniniz ile / With your explicit consent</li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Veri Guvenligi / Data Security</h2>
-            <p>Verilerinizi korumak icin asagidaki onlemleri aliyoruz / We take the following measures to protect your data:</p>
+            <p>Verilerinizi korumak için asagidaki onlemleri aliyoruz / We take the following measures to protect your data:</p>
             <ul className="list-disc pl-6 space-y-1 mt-2">
               <li>SSL/TLS sifreleme ile veri iletimi / Data transmission with SSL/TLS encryption</li>
               <li>Sifreler bcrypt ile hashlenir / Passwords are hashed with bcrypt</li>
@@ -87,7 +87,7 @@ export default function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Cerezler / Cookies</h2>
-            <p>Uygulamamiz, oturum yonetimi icin gerekli cerezleri kullanir. Analitik veya ucuncu taraf cerezleri kullanilmaz.</p>
+            <p>Uygulamamiz, oturum yonetimi için gerekli cerezleri kullanir. Analitik veya ucuncu taraf cerezleri kullanilmaz.</p>
             <p className="mt-1">Our app uses essential cookies for session management. No analytics or third-party cookies are used.</p>
           </section>
 
@@ -98,8 +98,8 @@ export default function PrivacyPolicy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">10. Iletisim / Contact</h2>
-            <p>Gizlilik politikamiz hakkinda sorulariniz icin bize ulasin:</p>
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">10. İletişim / Contact</h2>
+            <p>Gizlilik politikamiz hakkinda sorulariniz için bize ulasin:</p>
             <p className="mt-1">For questions about our privacy policy, contact us:</p>
             <div className="mt-3 p-4 bg-gray-50 rounded-lg">
               <p className="font-medium">Syroce Hotel Management</p>

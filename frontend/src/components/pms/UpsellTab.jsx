@@ -57,7 +57,7 @@ const UpsellTab = ({ bookings = [] }) => {
       setAllOffers(res.data.offers || []);
       setOfferSummary(res.data.summary || null);
     } catch {
-      toast.error('Teklif gecmisi yuklenemedi');
+      toast.error('Teklif geçmişi yüklenemedi');
     }
   }, []);
 
@@ -66,7 +66,7 @@ const UpsellTab = ({ bookings = [] }) => {
       const res = await axios.get('/ai/upsell/revenue-insights');
       setRevenueInsights(res.data);
     } catch {
-      toast.error('Gelir analizi yuklenemedi');
+      toast.error('Gelir analizi yüklenemedi');
     }
   }, []);
 
@@ -106,9 +106,9 @@ const UpsellTab = ({ bookings = [] }) => {
       loadInsights();
     } catch (err) {
       if (err.response?.status === 404) {
-        toast.error('Rezervasyon bulunamadi');
+        toast.error('Rezervasyon bulunamadı');
       } else {
-        toast.error(err.response?.data?.detail || 'Teklif uretme basarisiz');
+        toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
       }
     }
     setLoading(false);
@@ -124,7 +124,7 @@ const UpsellTab = ({ bookings = [] }) => {
       loadAllOffers();
       loadInsights();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Teklif uretme basarisiz');
+      toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
     }
     setLoading(false);
   };
@@ -138,7 +138,7 @@ const UpsellTab = ({ bookings = [] }) => {
       loadAllOffers();
       loadInsights();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Islem basarisiz');
+      toast.error(err.response?.data?.detail || 'Islem başarısız');
     }
     setLoadingAction(null);
   };
@@ -208,7 +208,7 @@ const UpsellTab = ({ bookings = [] }) => {
             <CardTitle className="text-base flex items-center gap-2">
               <Search className="w-4 h-4" /> Rezervasyon Sec
             </CardTitle>
-            <CardDescription>Upsell teklifi uretmek icin bir rezervasyon secin</CardDescription>
+            <CardDescription>Upsell teklifi uretmek için bir rezervasyon seçin</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
@@ -219,7 +219,7 @@ const UpsellTab = ({ bookings = [] }) => {
             />
             <div className="max-h-[400px] overflow-y-auto space-y-2">
               {filteredBookings.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">Aktif rezervasyon bulunamadi</p>
+                <p className="text-sm text-gray-400 text-center py-4">Aktif rezervasyon bulunamadı</p>
               ) : (
                 filteredBookings.slice(0, 20).map(b => (
                   <div
@@ -260,7 +260,7 @@ const UpsellTab = ({ bookings = [] }) => {
                 <CardDescription>
                   {selectedBooking
                     ? `${selectedBooking.guest_name} - Oda ${selectedBooking.room_number}`
-                    : 'Sol taraftan bir rezervasyon secin'}
+                    : 'Sol taraftan bir rezervasyon seçin'}
                 </CardDescription>
               </div>
               {selectedBooking && (
@@ -275,7 +275,7 @@ const UpsellTab = ({ bookings = [] }) => {
             {!selectedBooking && offers.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">Henuz teklif yok</p>
+                <p className="font-medium">Henüz teklif yok</p>
                 <p className="text-sm">Bir rezervasyon sectiginizde AI otomatik teklif uretecek</p>
               </div>
             ) : (
@@ -354,7 +354,7 @@ const UpsellTab = ({ bookings = [] }) => {
           <CardHeader className="pb-3">
             <div className="flex justify-between items-center">
               <CardTitle className="text-base flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" /> Teklif Gecmisi
+                <BarChart3 className="w-4 h-4" /> Teklif Geçmişi
               </CardTitle>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="w-[140px] h-8 text-xs">
@@ -371,7 +371,7 @@ const UpsellTab = ({ bookings = [] }) => {
           </CardHeader>
           <CardContent>
             {displayOffers.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">Henuz teklif gecmisi yok</p>
+              <p className="text-sm text-gray-400 text-center py-6">Henüz teklif geçmişi yok</p>
             ) : (
               <div className="max-h-[350px] overflow-y-auto space-y-2">
                 {displayOffers.slice(0, 50).map(offer => {
@@ -409,7 +409,7 @@ const UpsellTab = ({ bookings = [] }) => {
           </CardHeader>
           <CardContent>
             {!revenueInsights?.insights?.length ? (
-              <p className="text-sm text-gray-400 text-center py-6">Analiz icin yeterli veri yok</p>
+              <p className="text-sm text-gray-400 text-center py-6">Analiz için yeterli veri yok</p>
             ) : (
               <div className="space-y-3">
                 {revenueInsights.insights.map((insight, i) => (

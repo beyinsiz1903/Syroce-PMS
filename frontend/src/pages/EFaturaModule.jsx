@@ -44,7 +44,7 @@ const EFaturaModule = () => {
       toast.success('E-Fatura sent successfully');
       loadData();
     } catch (error) {
-      toast.error('Failed to send e-fatura');
+      toast.error('E-fatura gönderilemedi');
     }
   };
 
@@ -54,7 +54,7 @@ const EFaturaModule = () => {
       toast.success(`Daily closure completed: ${response.data.total_sales} TL`);
       loadData();
     } catch (error) {
-      toast.error('Failed to complete closure');
+      toast.error('Kapanış tamamlanamadı');
     }
   };
 

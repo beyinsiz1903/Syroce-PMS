@@ -505,7 +505,7 @@ export function UnifiedOpsView() {
       if (driftAlertsRes.status === "fulfilled") setDriftAlerts(driftAlertsRes.value.data?.alerts || []);
       if (kpiRes.status === "fulfilled") setKpiData(kpiRes.value.data);
     } catch (err) {
-      toast.error("Ops verisi yuklenemedi");
+      toast.error("Ops verisi yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -531,7 +531,7 @@ export function UnifiedOpsView() {
       if (alertsRes.status === "fulfilled") setDriftAlerts(alertsRes.value.data?.alerts || []);
       if (kpiRes.status === "fulfilled") setKpiData(kpiRes.value.data);
     } catch (err) {
-      toast.error("Drift degerlendirmesi basarisiz");
+      toast.error("Drift degerlendirmesi başarısız");
     } finally {
       setEvaluating(false);
     }
@@ -565,7 +565,7 @@ export function UnifiedOpsView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-zinc-200">Unified Ops View</h2>
-          <p className="text-[10px] text-zinc-600 mt-0.5">Tek ekran: kanal sagligi + deploy + drift alert + KPI</p>
+          <p className="text-[10px] text-zinc-600 mt-0.5">Tek ekran: kanal sağlığı + deploy + drift alert + KPI</p>
         </div>
         <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" onClick={fetchAll} disabled={loading} data-testid="ops-refresh">
           <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile

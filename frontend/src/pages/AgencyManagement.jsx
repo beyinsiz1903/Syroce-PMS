@@ -46,7 +46,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get('/agencies');
       setAgencies(data);
     } catch {
-      toast.error('Acenteler yuklenemedi');
+      toast.error('Acenteler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/agencies/${agencyId}/users`);
       setAgencyUsers(prev => ({ ...prev, [agencyId]: data }));
     } catch {
-      toast.error('Kullanicilar yuklenemedi');
+      toast.error('Kullanicilar yüklenemedi');
     }
   };
 
@@ -87,10 +87,10 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.post(`/b2b/api-keys?agency_id=${agencyId}`);
       setGeneratedKey({ agencyId, key: data.api_key });
-      toast.success('API key olusturuldu');
+      toast.success('API key oluşturuldu');
       fetchApiKeyInfo(agencyId);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'API key olusturulamadi');
+      toast.error(err.response?.data?.detail || 'API key oluşturulamadı');
     } finally {
       setApiKeyLoading(prev => ({ ...prev, [agencyId]: false }));
     }
@@ -152,10 +152,10 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     try {
       if (editingAgency) {
         await axios.put(`/agencies/${editingAgency.id}`, agencyForm);
-        toast.success('Acente guncellendi');
+        toast.success('Acente güncellendi');
       } else {
         await axios.post('/agencies', agencyForm);
-        toast.success('Acente olusturuldu');
+        toast.success('Acente oluşturuldu');
       }
       setShowAgencyForm(false);
       fetchAgencies();
@@ -170,15 +170,15 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     const newStatus = agency.status === 'active' ? 'inactive' : 'active';
     try {
       await axios.put(`/agencies/${agency.id}`, { status: newStatus });
-      toast.success(newStatus === 'active' ? 'Acente aktif edildi' : 'Acente devre disi birakildi');
+      toast.success(newStatus === 'active' ? 'Acente aktif edildi' : 'Acente devre dışı bırakıldı');
       fetchAgencies();
     } catch {
-      toast.error('Durum degistirilemedi');
+      toast.error('Durum değiştirilemedi');
     }
   };
 
   const handleDeleteAgency = async (agency) => {
-    if (!confirm(`"${agency.name}" acentesini silmek istediginize emin misiniz?`)) return;
+    if (!confirm(`"${agency.name}" acentesini silmek istediğinize emin misiniz?`)) return;
     try {
       await axios.delete(`/agencies/${agency.id}`);
       toast.success('Acente silindi');
@@ -201,7 +201,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     setSaving(true);
     try {
       await axios.post(`/agencies/${userFormAgencyId}/users`, userForm);
-      toast.success('Kullanici olusturuldu');
+      toast.success('Kullanici oluşturuldu');
       setShowUserForm(false);
       fetchAgencyUsers(userFormAgencyId);
     } catch (err) {
@@ -212,7 +212,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteUser = async (userId, agencyId) => {
-    if (!confirm('Bu kullaniciyi silmek istediginize emin misiniz?')) return;
+    if (!confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')) return;
     try {
       await axios.delete(`/agencies/users/${userId}`);
       toast.success('Kullanici silindi');
@@ -242,8 +242,8 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
         <Card>
           <CardContent className="py-16 text-center text-slate-400">
             <Building2 size={48} className="mx-auto mb-4 opacity-40" />
-            <p className="text-lg font-medium">Henuz acente eklenmemis</p>
-            <p className="text-sm mt-1">Yeni bir bolgesel acente eklemek icin butona tiklayin</p>
+            <p className="text-lg font-medium">Henüz acente eklenmemis</p>
+            <p className="text-sm mt-1">Yeni bir bolgesel acente eklemek için butona tiklayin</p>
           </CardContent>
         </Card>
       ) : (
@@ -332,7 +332,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                       const isLoading = apiKeyLoading[agency.id];
                       const showKey = generatedKey?.agencyId === agency.id;
 
-                      if (!info) return <p className="text-xs text-slate-400">Yukleniyor...</p>;
+                      if (!info) return <p className="text-xs text-slate-400">Yükleniyor...</p>;
 
                       return (
                         <div className="bg-white rounded-lg border p-3 space-y-2">
@@ -366,13 +366,13 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                                   <RefreshCw size={12} className="mr-1" /> Yenile
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleRevokeApiKey(agency.id); }} disabled={isLoading} data-testid={`revoke-key-${agency.id}`}>
-                                  <XCircle size={12} className="mr-1" /> Iptal
+                                  <XCircle size={12} className="mr-1" /> İptal
                                 </Button>
                               </div>
                             </div>
                           ) : (
                             <div className="flex items-center justify-between">
-                              <p className="text-xs text-slate-400">Henuz API key olusturulmamis</p>
+                              <p className="text-xs text-slate-400">Henüz API key olusturulmamis</p>
                               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); handleCreateApiKey(agency.id); }} disabled={isLoading} data-testid={`create-key-${agency.id}`}>
                                 {isLoading ? <Loader2 size={12} className="animate-spin mr-1" /> : <Key size={12} className="mr-1" />}
                                 API Key Olustur
@@ -390,7 +390,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                       <Users size={14} /> Kullanicilar
                     </h4>
                     {(agencyUsers[agency.id] || []).length === 0 ? (
-                      <p className="text-xs text-slate-400">Henuz kullanici eklenmemis</p>
+                      <p className="text-xs text-slate-400">Henüz kullanici eklenmemis</p>
                     ) : (
                       <div className="space-y-2">
                         {(agencyUsers[agency.id] || []).map(u => (
@@ -457,7 +457,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAgencyForm(false)}>Iptal</Button>
+            <Button variant="outline" onClick={() => setShowAgencyForm(false)}>İptal</Button>
             <Button onClick={handleSaveAgency} disabled={saving} data-testid="save-agency-btn">
               {saving ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               {editingAgency ? 'Guncelle' : 'Olustur'}
@@ -498,7 +498,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUserForm(false)}>Iptal</Button>
+            <Button variant="outline" onClick={() => setShowUserForm(false)}>İptal</Button>
             <Button onClick={handleSaveUser} disabled={saving} data-testid="save-user-btn">
               {saving ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Olustur

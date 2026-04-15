@@ -67,7 +67,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
       toast.success(`${ratePeriods.length} rate periods saved for ${operatorName}`);
       loadRatePeriods();
     } catch (error) {
-      toast.error('Failed to save rate periods');
+      toast.error('Fiyat dönemleri kaydedilemedi');
     } finally {
       setLoading(false);
     }

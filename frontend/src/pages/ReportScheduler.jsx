@@ -159,7 +159,7 @@ export default function ReportScheduler() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Bu zamanlamayi silmek istediginize emin misiniz?")) return;
+    if (!confirm("Bu zamanlamayı silmek istediğinize emin misiniz?")) return;
     setActionLoading((p) => ({ ...p, [id]: "delete" }));
     try {
       await api(`/api/report-scheduler/schedules/${id}`, { method: "DELETE" });
@@ -212,7 +212,7 @@ export default function ReportScheduler() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-        <span className="ml-3 text-gray-500">Yukleniyor...</span>
+        <span className="ml-3 text-gray-500">Yükleniyor...</span>
       </div>
     );
   }
@@ -275,7 +275,7 @@ export default function ReportScheduler() {
             <Calendar className="h-4 w-4" /> Zamanlamalar
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
-            <FileText className="h-4 w-4" /> Gonderim Gecmisi
+            <FileText className="h-4 w-4" /> Gonderim Geçmişi
           </TabsTrigger>
         </TabsList>
 
@@ -284,7 +284,7 @@ export default function ReportScheduler() {
             <Card>
               <CardContent className="p-12 text-center">
                 <Mail className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-gray-700 mb-2">Henuz zamanlama yok</h3>
+                <h3 className="font-semibold text-gray-700 mb-2">Henüz zamanlama yok</h3>
                 <p className="text-sm text-gray-500 mb-4">Yeni bir rapor zamanlama olusturarak baslayin</p>
                 <Button size="sm" onClick={openCreate}>
                   <Plus className="h-4 w-4 mr-1" /> Olustur
@@ -330,7 +330,7 @@ export default function ReportScheduler() {
                           )}
                           {s.total_failed > 0 && (
                             <span className="flex items-center gap-1">
-                              <XCircle className="h-3 w-3 text-red-500" /> {s.total_failed} basarisiz
+                              <XCircle className="h-3 w-3 text-red-500" /> {s.total_failed} başarısız
                             </span>
                           )}
                         </div>
@@ -407,7 +407,7 @@ export default function ReportScheduler() {
             <Card>
               <CardContent className="p-12 text-center">
                 <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-gray-700">Gonderim gecmisi bos</h3>
+                <h3 className="font-semibold text-gray-700">Gonderim geçmişi bos</h3>
                 <p className="text-sm text-gray-500 mt-1">Zamanlamalar calistiginda burada gorunecek</p>
               </CardContent>
             </Card>
@@ -495,7 +495,7 @@ export default function ReportScheduler() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Rapor Tipi *</label>
                 <Select value={form.report_type} onValueChange={(v) => setForm((f) => ({ ...f, report_type: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Rapor secin" /></SelectTrigger>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Rapor seçin" /></SelectTrigger>
                   <SelectContent>
                     {reportTypes.map((rt) => (
                       <SelectItem key={rt.key} value={rt.key}>{rt.label}</SelectItem>
@@ -558,7 +558,7 @@ export default function ReportScheduler() {
               <Input value={form.recipients}
                 onChange={(e) => setForm((f) => ({ ...f, recipients: e.target.value }))}
                 placeholder="ad@otel.com, yonetici@otel.com" className="mt-1" />
-              <p className="text-xs text-gray-400 mt-1">Birden fazla alici icin virgul ile ayirin</p>
+              <p className="text-xs text-gray-400 mt-1">Birden fazla alici için virgul ile ayirin</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700">Notlar</label>
@@ -567,7 +567,7 @@ export default function ReportScheduler() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>Iptal</Button>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>İptal</Button>
             <Button onClick={handleSave} disabled={saving || !form.name || !form.report_type || !form.recipients}>
               {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Kaydediliyor</> : (editingId ? "Guncelle" : "Olustur")}
             </Button>

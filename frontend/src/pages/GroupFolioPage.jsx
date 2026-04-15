@@ -86,7 +86,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
   if (allItems.length === 0) {
     return (
       <div className="py-4 px-3 text-center text-sm text-gray-400 bg-gray-50/50 rounded-lg">
-        Henuz folio girisi yok
+        Henüz folio girisi yok
       </div>
     );
   }

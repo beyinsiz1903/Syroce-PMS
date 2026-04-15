@@ -56,9 +56,9 @@ const PickupPaceReport = () => {
       });
       setData(res.data);
     } catch (err) {
-      console.error('Failed to load pickup pace analytics', err);
-      setError(err.response?.data?.detail || 'Failed to load pickup pace analytics');
-      toast.error('Failed to load pickup pace analytics');
+      console.error('Pickup pace analizi yüklenemedi', err);
+      setError(err.response?.data?.detail || 'Pickup pace analizi yüklenemedi');
+      toast.error('Pickup pace analizi yüklenemedi');
     } finally {
       setLoading(false);
     }

@@ -38,7 +38,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
     try {
       const res = await axios.post(`/ml/${type}/train`, {}, { headers });
       setTrainingResult({ type, ...res.data });
-      setMessage(`${type} modeli basariyla egitildi!`);
+      setMessage(`${type} modeli başarıyla eğitildi!`);
       fetchStatus();
     } catch (e) {
       setTrainingResult({ type, error: e.response?.data?.detail || 'Hata' });

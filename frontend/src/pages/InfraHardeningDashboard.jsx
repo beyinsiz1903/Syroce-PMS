@@ -108,11 +108,11 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
   };
 
   if (loading) {
-    if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yukleniyor...</div></div>;
+    if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div></div>;
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
         <div data-testid="infra-loading" className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yukleniyor...</div>
+          <div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div>
         </div>
       </Layout>
     );

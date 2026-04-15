@@ -98,9 +98,9 @@ export function TechDebtDashboard() {
     try {
       const res = await axios.get("/ops/dashboard/tech-debt");
       setData(res.data);
-      if (showToast) toast.success("Teknik borc guncellendi");
+      if (showToast) toast.success("Teknik borc güncellendi");
     } catch (err) {
-      toast.error("Teknik borc yuklenemedi", { description: err.message });
+      toast.error("Teknik borc yüklenemedi", { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -125,7 +125,7 @@ export function TechDebtDashboard() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="tech-debt-empty">
         <Bug className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Teknik borc verisi bulunamadi</p>
+        <p className="text-sm">Teknik borc verisi bulunamadı</p>
       </div>
     );
   }

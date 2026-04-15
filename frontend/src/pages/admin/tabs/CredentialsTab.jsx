@@ -28,7 +28,7 @@ const CredentialsTab = () => {
 
   const handleDisable = async (cid) => {
     setActionLoading(`disable-${cid}`);
-    try { await axios.post(`${API}/admin/credentials/${cid}/disable`); toast.success('Connector devre disi birakildi'); fetchCreds(); } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
+    try { await axios.post(`${API}/admin/credentials/${cid}/disable`); toast.success('Connector devre dışı bırakıldı'); fetchCreds(); } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
     setActionLoading(null);
   };
 
@@ -69,7 +69,7 @@ const CredentialsTab = () => {
                 <Button data-testid={`test-cred-${c.connector_id}`} size="sm" variant="ghost" className="text-emerald-400 h-7 px-2" disabled={actionLoading === `test-${c.connector_id}`} onClick={() => handleTest(c.connector_id)}>
                   {actionLoading === `test-${c.connector_id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
                 </Button>
-                <Button size="sm" variant="ghost" className="text-blue-400 h-7 px-2" onClick={() => toast.info('Credential rotation icin yeni degerler gerekli')}><RotateCcw className="w-3 h-3" /></Button>
+                <Button size="sm" variant="ghost" className="text-blue-400 h-7 px-2" onClick={() => toast.info('Credential rotation için yeni degerler gerekli')}><RotateCcw className="w-3 h-3" /></Button>
                 <Button data-testid={`disable-${c.connector_id}`} size="sm" variant="ghost" className="text-red-400 h-7 px-2" disabled={actionLoading === `disable-${c.connector_id}`} onClick={() => handleDisable(c.connector_id)}>
                   {actionLoading === `disable-${c.connector_id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
                 </Button>
@@ -78,7 +78,7 @@ const CredentialsTab = () => {
           </CardContent>
         </Card>
       ))}
-      {creds.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Credential bulunamadi</CardContent></Card>}
+      {creds.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Credential bulunamadı</CardContent></Card>}
     </div>
   );
 };

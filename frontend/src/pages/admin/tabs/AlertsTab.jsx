@@ -41,7 +41,7 @@ const AlertsTab = () => {
     setActionLoading('evaluate');
     try {
       const { data } = await axios.post(`${API}/alerts/evaluate`);
-      toast.success(`${data.alerts_created} yeni alarm olusturuldu`);
+      toast.success(`${data.alerts_created} yeni alarm oluşturuldu`);
       fetchAlerts();
     } catch { toast.error('Degerlendirme hatasi'); }
     setActionLoading(null);
@@ -51,7 +51,7 @@ const AlertsTab = () => {
     setActionLoading(`${alertId}-${action}`);
     try {
       await axios.post(`${API}/alerts/${alertId}/${action}`, { reason: 'Admin action', hours: 24 });
-      toast.success(`Alarm ${action} yapildi`);
+      toast.success(`Alarm ${action} yapıldı`);
       fetchAlerts();
     } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
     setActionLoading(null);
@@ -127,7 +127,7 @@ const AlertsTab = () => {
       ) : loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : alerts.length === 0 ? (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Alarm bulunamadi</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Alarm bulunamadı</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {alerts.map(alert => (

@@ -78,7 +78,7 @@ const SchedulerTab = () => {
         </Card>
       ))}
       {(!status?.connectors || status.connectors.length === 0) && (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Aktif connector bulunamadi</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Aktif connector bulunamadı</CardContent></Card>
       )}
     </div>
   );

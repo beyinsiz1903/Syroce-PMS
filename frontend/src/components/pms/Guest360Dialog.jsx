@@ -41,7 +41,7 @@ const Guest360Dialog = ({
       setNewNote('');
       loadGuest360(selectedGuest360);
     } catch {
-      toast.error('Failed to add note');
+      toast.error('Not eklenemedi');
     }
   };
 
@@ -53,7 +53,7 @@ const Guest360Dialog = ({
       setGuestTag('');
       loadGuest360(selectedGuest360);
     } catch {
-      toast.error('Failed to add tag');
+      toast.error('Etiket eklenemedi');
     }
   };
 
@@ -65,7 +65,7 @@ const Guest360Dialog = ({
       setGuestNote('');
       loadGuest360(selectedGuest360);
     } catch {
-      toast.error('Failed to add note');
+      toast.error('Not eklenemedi');
     }
   };
 
@@ -119,7 +119,7 @@ const Guest360Dialog = ({
                   loadGuest360(selectedGuest360);
                 }
               } catch (error) {
-                toast.error('Failed to save preference');
+                toast.error('Tercih kaydedilemedi');
               }
             }}
             variant="outline"

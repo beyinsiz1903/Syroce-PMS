@@ -79,7 +79,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     bank_name: '',
     account_number: '',
     iban: '',
-    currency: 'USD',
+    currency: 'TRY',
     balance: 0
   });
 
@@ -116,8 +116,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
       } catch (error) {
         if (!mounted) return;
         console.error('InvoiceModule loadData error:', error);
-        setFatal(error?.message || 'Failed to load accounting data');
-        toast.error('Failed to load accounting data');
+        setFatal(error?.message || 'Muhasebe verileri yüklenemedi');
+        toast.error('Muhasebe verileri yüklenemedi');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -134,7 +134,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
       const response = await axios.get('/accounting/cash-flow');
       setCashFlow(response.data);
     } catch (error) {
-      toast.error('Failed to load cash flow');
+      toast.error('Nakit akışı yüklenemedi');
     }
   };
 
@@ -156,7 +156,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         balanceSheet: bsRes.data
       });
     } catch (error) {
-      toast.error('Failed to load reports');
+      toast.error('Raporlar yüklenemedi');
     }
   };
 
@@ -241,11 +241,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     try {
       await axios.post('/accounting/invoices', null, { params: newInvoice });
-      toast.success('Invoice created successfully');
+      toast.success('Fatura oluşturuldu');
       setOpenDialog(null);
       // Refresh handled by main effect or page reload
     } catch (error) {
-      toast.error('Failed to create invoice');
+      toast.error('Fatura oluşturulamadı');
     }
   };
 
@@ -253,12 +253,12 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     try {
       await axios.post('/accounting/expenses', null, { params: newExpense });
-      toast.success('Expense recorded');
+      toast.success('Gider kaydedildi');
       setOpenDialog(null);
       // Refresh handled by main effect
       setNewExpense({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: '' });
     } catch (error) {
-      toast.error('Failed to create expense');
+      toast.error('Gider oluşturulamadı');
     }
   };
 
@@ -266,12 +266,12 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     try {
       await axios.post('/accounting/suppliers', null, { params: newSupplier });
-      toast.success('Supplier added');
+      toast.success('Tedarikçi eklendi');
       setOpenDialog(null);
       // Refresh handled by main effect
       setNewSupplier({ name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general' });
     } catch (error) {
-      toast.error('Failed to create supplier');
+      toast.error('Tedarikçi oluşturulamadı');
     }
   };
 
@@ -279,12 +279,12 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     try {
       await axios.post('/accounting/bank-accounts', null, { params: newBankAccount });
-      toast.success('Bank account added');
+      toast.success('Banka hesabı eklendi');
       setOpenDialog(null);
       // Refresh handled by main effect
-      setNewBankAccount({ name: '', bank_name: '', account_number: '', iban: '', currency: 'USD', balance: 0 });
+      setNewBankAccount({ name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0 });
     } catch (error) {
-      toast.error('Failed to create bank account');
+      toast.error('Banka hesabı oluşturulamadı');
     }
   };
 
@@ -292,22 +292,22 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     e.preventDefault();
     try {
       await axios.post('/accounting/inventory', null, { params: newInventoryItem });
-      toast.success('Inventory item added');
+      toast.success('Stok kalemi eklendi');
       setOpenDialog(null);
       // Refresh handled by main effect
       setNewInventoryItem({ name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: '' });
     } catch (error) {
-      toast.error('Failed to create item');
+      toast.error('Stok kalemi oluşturulamadı');
     }
   };
 
   const updateInvoiceStatus = async (invoiceId, newStatus) => {
     try {
       await axios.put(`/accounting/invoices/${invoiceId}`, { status: newStatus });
-      toast.success('Invoice status updated');
+      toast.success('Fatura durumu güncellendi');
       // Refresh handled by main effect or manual reload
     } catch (error) {
-      toast.error('Failed to update');
+      toast.error('Güncelleme başarısız');
     }
   };
 
@@ -483,7 +483,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           {/* INVOICES TAB */}
           <TabsContent value="invoices" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Invoices ({invoices.length})</h2>
+              <h2 className="text-2xl font-semibold">Faturalar ({invoices.length})</h2>
               <Button onClick={() => setOpenDialog('invoice')} data-testid="create-invoice-btn">
                 <Plus className="w-4 h-4 mr-2" />
                 New Invoice
@@ -499,13 +499,13 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <div className="font-bold text-lg">{invoice.invoice_number}</div>
                         <div className="text-sm text-gray-600">{invoice.customer_name}</div>
                         {invoice.customer_tax_number && (
-                          <div className="text-xs text-gray-500">Tax#: {invoice.customer_tax_number}</div>
+                          <div className="text-xs text-gray-500">VKN: {invoice.customer_tax_number}</div>
                         )}
                         <div className="text-sm text-gray-500 mt-1">
-                          Issue: {new Date(invoice.issue_date).toLocaleDateString()} | 
-                          Due: {new Date(invoice.due_date).toLocaleDateString()}
+                          Düzenleme: {new Date(invoice.issue_date).toLocaleDateString()} | 
+                          Vade: {new Date(invoice.due_date).toLocaleDateString()}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 capitalize">Type: {invoice.invoice_type}</div>
+                        <div className="text-xs text-gray-400 mt-1 capitalize">Tür: {invoice.invoice_type}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-blue-600">${invoice.total.toFixed(2)}</div>
@@ -516,10 +516,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="paid">Paid</SelectItem>
-                              <SelectItem value="partial">Partial</SelectItem>
-                              <SelectItem value="overdue">Overdue</SelectItem>
+                              <SelectItem value="pending">Bekliyor</SelectItem>
+                              <SelectItem value="paid">Ödendi</SelectItem>
+                              <SelectItem value="partial">Kısmi</SelectItem>
+                              <SelectItem value="overdue">Vadesi Geçmiş</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -534,7 +534,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           {/* EXPENSES TAB */}
           <TabsContent value="expenses" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Expenses ({expenses.length})</h2>
+              <h2 className="text-2xl font-semibold">Giderler ({expenses.length})</h2>
               <Button onClick={() => setOpenDialog('expense')} data-testid="create-expense-btn">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Expense
@@ -549,9 +549,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       <div>
                         <div className="font-bold">{expense.expense_number}</div>
                         <div className="text-sm text-gray-600 capitalize">{expense.category} - {expense.description}</div>
-                        <div className="text-sm text-gray-500">Date: {new Date(expense.date).toLocaleDateString()}</div>
+                        <div className="text-sm text-gray-500">Tarih: {new Date(expense.date).toLocaleDateString()}</div>
                         {expense.payment_method && (
-                          <div className="text-xs text-gray-400 capitalize mt-1">Payment: {expense.payment_method}</div>
+                          <div className="text-xs text-gray-400 capitalize mt-1">Ödeme: {expense.payment_method}</div>
                         )}
                       </div>
                       <div className="text-right">
@@ -571,7 +571,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           {/* SUPPLIERS TAB */}
           <TabsContent value="suppliers" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Suppliers ({suppliers.length})</h2>
+              <h2 className="text-2xl font-semibold">Tedarikçiler ({suppliers.length})</h2>
               <Button onClick={() => setOpenDialog('supplier')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Supplier
@@ -587,24 +587,24 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                   <CardContent className="space-y-2 text-sm">
                     {supplier.tax_number && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Tax Number:</span>
+                        <span className="text-gray-600">Vergi No:</span>
                         <span className="font-medium">{supplier.tax_number}</span>
                       </div>
                     )}
                     {supplier.email && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Email:</span>
+                        <span className="text-gray-600">E-posta:</span>
                         <span className="font-medium">{supplier.email}</span>
                       </div>
                     )}
                     {supplier.phone && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Phone:</span>
+                        <span className="text-gray-600">Telefon:</span>
                         <span className="font-medium">{supplier.phone}</span>
                       </div>
                     )}
                     <div className="flex justify-between pt-2 border-t">
-                      <span className="text-gray-600">Balance:</span>
+                      <span className="text-gray-600">Bakiye:</span>
                       <span className="font-bold text-red-600">${supplier.account_balance.toFixed(2)}</span>
                     </div>
                   </CardContent>
@@ -616,7 +616,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           {/* BANKS TAB */}
           <TabsContent value="banks" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Bank Accounts ({bankAccounts.length})</h2>
+              <h2 className="text-2xl font-semibold">Banka Hesapları ({bankAccounts.length})</h2>
               <Button onClick={() => setOpenDialog('bank')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Account
@@ -632,7 +632,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Account:</span>
+                      <span className="text-gray-600">Hesap No:</span>
                       <span className="font-medium">{account.account_number}</span>
                     </div>
                     {account.iban && (
@@ -642,7 +642,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       </div>
                     )}
                     <div className="flex justify-between pt-2 border-t">
-                      <span className="text-gray-600">Balance:</span>
+                      <span className="text-gray-600">Bakiye:</span>
                       <span className="text-xl font-bold text-green-600">${account.balance.toFixed(2)}</span>
                     </div>
                     <div className="text-xs text-gray-500">{account.currency}</div>
@@ -655,7 +655,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           {/* INVENTORY TAB */}
           <TabsContent value="inventory" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Inventory ({inventory.length})</h2>
+              <h2 className="text-2xl font-semibold">Stok ({inventory.length})</h2>
               <Button onClick={() => setOpenDialog('inventory')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Item
@@ -684,19 +684,19 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Quantity:</span>
+                      <span className="text-gray-600">Miktar:</span>
                       <span className="font-bold">{item.quantity} {item.unit}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Unit Cost:</span>
+                      <span className="text-gray-600">Birim Fiyat:</span>
                       <span className="font-medium">${item.unit_cost}</span>
                     </div>
                     <div className="flex justify-between pt-2 border-t">
-                      <span className="text-gray-600">Total Value:</span>
+                      <span className="text-gray-600">Toplam Değer:</span>
                       <span className="font-bold text-blue-600">${(item.quantity * item.unit_cost).toFixed(2)}</span>
                     </div>
                     {item.quantity <= item.reorder_level && (
-                      <div className="text-xs text-orange-600 font-medium">Low stock - Reorder needed</div>
+                      <div className="text-xs text-orange-600 font-medium">Düşük stok - Yeniden sipariş gerekli</div>
                     )}
                   </CardContent>
                 </Card>
@@ -706,40 +706,40 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
           {/* REPORTS TAB */}
           <TabsContent value="reports" className="space-y-6">
-            <h2 className="text-2xl font-bold">Financial Reports</h2>
+            <h2 className="text-2xl font-bold">Finansal Raporlar</h2>
 
             {/* Profit & Loss */}
             {reports.profitLoss && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Profit & Loss Statement</CardTitle>
-                  <div className="text-sm text-gray-500">This Month</div>
+                  <CardTitle>Kâr Profit & Loss Statement Zarar Tablosu</CardTitle>
+                  <div className="text-sm text-gray-500">Bu Ay</div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <div className="text-sm text-gray-600">Total Revenue</div>
+                        <div className="text-sm text-gray-600">Toplam Gelir</div>
                         <div className="text-3xl font-bold text-green-600">${reports.profitLoss.total_revenue}</div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Total Expenses</div>
+                        <div className="text-sm text-gray-600">Toplam Gider</div>
                         <div className="text-3xl font-bold text-red-600">${reports.profitLoss.total_expenses}</div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Gross Profit</div>
+                        <div className="text-sm text-gray-600">Brüt Kâr</div>
                         <div className="text-3xl font-bold text-blue-600">${reports.profitLoss.gross_profit}</div>
                       </div>
                     </div>
                     
                     <div className="pt-4 border-t">
-                      <div className="text-sm font-medium mb-2">Profit Margin</div>
+                      <div className="text-sm font-medium mb-2">Kâr Marjı</div>
                       <div className="text-2xl font-bold">{reports.profitLoss.profit_margin}%</div>
                     </div>
 
                     {reports.profitLoss.expense_breakdown && Object.keys(reports.profitLoss.expense_breakdown).length > 0 && (
                       <div className="pt-4 border-t">
-                        <div className="text-sm font-medium mb-3">Expense Breakdown</div>
+                        <div className="text-sm font-medium mb-3">Gider Dağılımı</div>
                         <div className="space-y-2">
                           {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amount]) => (
                             <div key={cat} className="flex justify-between text-sm">
@@ -759,21 +759,21 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             {reports.vat && (
               <Card>
                 <CardHeader>
-                  <CardTitle>VAT Report</CardTitle>
-                  <div className="text-sm text-gray-500">This Month</div>
+                  <CardTitle>KDV Raporu</CardTitle>
+                  <div className="text-sm text-gray-500">Bu Ay</div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <div className="text-sm text-gray-600">Sales VAT (Collected)</div>
+                      <div className="text-sm text-gray-600">Satış KDV (Tahsil Edilen)</div>
                       <div className="text-2xl font-bold text-green-600">${reports.vat.sales_vat}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600">Purchase VAT (Paid)</div>
+                      <div className="text-sm text-gray-600">Alış KDV (Ödenen)</div>
                       <div className="text-2xl font-bold text-blue-600">${reports.vat.purchase_vat}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600">VAT Payable</div>
+                      <div className="text-sm text-gray-600">Ödenecek KDV</div>
                       <div className="text-2xl font-bold text-red-600">${reports.vat.vat_payable}</div>
                     </div>
                   </div>
@@ -785,51 +785,51 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             {reports.balanceSheet && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Balance Sheet</CardTitle>
+                  <CardTitle>Bilanço</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                      <div className="font-semibold mb-3">Assets</div>
+                      <div className="font-semibold mb-3">Varlıklar</div>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Cash:</span>
+                          <span className="text-gray-600">Nakit:</span>
                           <span className="font-medium">${reports.balanceSheet.assets.cash}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Inventory:</span>
+                          <span className="text-gray-600">Stok:</span>
                           <span className="font-medium">${reports.balanceSheet.assets.inventory}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Receivables:</span>
+                          <span className="text-gray-600">Alacaklar:</span>
                           <span className="font-medium">${reports.balanceSheet.assets.receivables}</span>
                         </div>
                         <div className="flex justify-between pt-2 border-t font-bold">
-                          <span>Total Assets:</span>
+                          <span>Toplam Varlıklar:</span>
                           <span className="text-blue-600">${reports.balanceSheet.assets.total}</span>
                         </div>
                       </div>
                     </div>
                     
                     <div>
-                      <div className="font-semibold mb-3">Liabilities</div>
+                      <div className="font-semibold mb-3">Yükümlülükler</div>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Payables:</span>
+                          <span className="text-gray-600">Borçlar:</span>
                           <span className="font-medium">${reports.balanceSheet.liabilities.payables}</span>
                         </div>
                         <div className="flex justify-between pt-2 border-t font-bold">
-                          <span>Total Liabilities:</span>
+                          <span>Toplam Yükümlülükler:</span>
                           <span className="text-red-600">${reports.balanceSheet.liabilities.total}</span>
                         </div>
                       </div>
                     </div>
                     
                     <div>
-                      <div className="font-semibold mb-3">Equity</div>
+                      <div className="font-semibold mb-3">Öz Kaynak</div>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between pt-2 border-t font-bold">
-                          <span>Total Equity:</span>
+                          <span>Toplam Öz Kaynak:</span>
                           <span className="text-green-600">${reports.balanceSheet.equity.total}</span>
                         </div>
                       </div>
@@ -920,7 +920,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                           {item.additional_taxes.map((tax, taxIndex) => (
                             <div key={taxIndex} className="flex items-center justify-between text-sm bg-blue-50 px-2 py-1 rounded">
                               <span className="text-blue-700">
-                                {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : `$${tax.amount}`}
+                                {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : `₺${tax.amount}`}
                                 {tax.withholding_rate && ` (${tax.withholding_rate})`}
                               </span>
                               <Button 
@@ -1023,7 +1023,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     value={newAdditionalTax.withholding_rate || ''} 
                     onValueChange={(v) => setNewAdditionalTax({...newAdditionalTax, withholding_rate: v})}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select rate" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Oran seçin" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="10/10">Tümüne Tevkifat Uygula (All)</SelectItem>
                       <SelectItem value="9/10">9/10 Tevkifat Uygula (90%)</SelectItem>
@@ -1093,37 +1093,37 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'expense'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Record Expense</DialogTitle>
+              <DialogTitle>Gider Kaydet</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateExpense} className="space-y-4">
               <div>
-                <Label>Category</Label>
+                <Label>Kategori</Label>
                 <Select value={newExpense.category} onValueChange={(v) => setNewExpense({...newExpense, category: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="salaries">Salaries</SelectItem>
-                    <SelectItem value="utilities">Utilities</SelectItem>
-                    <SelectItem value="supplies">Supplies</SelectItem>
-                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="rent">Rent</SelectItem>
-                    <SelectItem value="insurance">Insurance</SelectItem>
-                    <SelectItem value="taxes">Taxes</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="salaries">Maaşlar</SelectItem>
+                    <SelectItem value="utilities">Faturalar</SelectItem>
+                    <SelectItem value="supplies">Malzemeler</SelectItem>
+                    <SelectItem value="maintenance">Bakım</SelectItem>
+                    <SelectItem value="marketing">Pazarlama</SelectItem>
+                    <SelectItem value="rent">Kira</SelectItem>
+                    <SelectItem value="insurance">Sigorta</SelectItem>
+                    <SelectItem value="taxes">Vergiler</SelectItem>
+                    <SelectItem value="other">Diğer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Description</Label>
+                <Label>Açıklama</Label>
                 <Input value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Amount (excl. VAT)</Label>
+                  <Label>Tutar (KDV Hariç)</Label>
                   <Input type="number" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: parseFloat(e.target.value)})} required />
                 </div>
                 <div>
-                  <Label>VAT Rate %</Label>
+                  <Label>KDV Oranı %</Label>
                   <Select value={newExpense.vat_rate.toString()} onValueChange={(v) => setNewExpense({...newExpense, vat_rate: parseFloat(v)})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -1138,37 +1138,37 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
               <div>
-                <Label>Date</Label>
+                <Label>Tarih</Label>
                 <Input type="date" value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})} required />
               </div>
               <div>
-                <Label>Supplier (Optional)</Label>
+                <Label>Tedarikçi (Opsiyonel)</Label>
                 <Select value={newExpense.supplier_id} onValueChange={(v) => setNewExpense({...newExpense, supplier_id: v})}>
-                  <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Tedarikçi seçin" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="none">Yok</SelectItem>
                     {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Payment Method</Label>
+                <Label>Ödeme Yöntemi</Label>
                 <Select value={newExpense.payment_method} onValueChange={(v) => setNewExpense({...newExpense, payment_method: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="cash">Nakit</SelectItem>
+                    <SelectItem value="card">Kart</SelectItem>
+                    <SelectItem value="bank_transfer">Havale/EFT</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="pt-4 border-t">
                 <div className="flex justify-between text-lg font-bold">
-                  <span>Total (incl. VAT):</span>
-                  <span>${(newExpense.amount * (1 + newExpense.vat_rate / 100)).toFixed(2)}</span>
+                  <span>Toplam (KDV Dahil):</span>
+                  <span>₺{(newExpense.amount * (1 + newExpense.vat_rate / 100)).toFixed(2)}</span>
                 </div>
               </div>
-              <Button type="submit" className="w-full">Record Expense</Button>
+              <Button type="submit" className="w-full">Gider Kaydet</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -1177,38 +1177,38 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'supplier'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Supplier</DialogTitle>
+              <DialogTitle>Tedarikçi Ekle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateSupplier} className="space-y-4">
               <div>
-                <Label>Name *</Label>
+                <Label>Ad *</Label>
                 <Input value={newSupplier.name} onChange={(e) => setNewSupplier({...newSupplier, name: e.target.value})} required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Tax Office</Label>
+                  <Label>Vergi Dairesi</Label>
                   <Input value={newSupplier.tax_office} onChange={(e) => setNewSupplier({...newSupplier, tax_office: e.target.value})} />
                 </div>
                 <div>
-                  <Label>Tax Number</Label>
+                  <Label>Vergi No</Label>
                   <Input value={newSupplier.tax_number} onChange={(e) => setNewSupplier({...newSupplier, tax_number: e.target.value})} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Email</Label>
+                  <Label>E-posta</Label>
                   <Input type="email" value={newSupplier.email} onChange={(e) => setNewSupplier({...newSupplier, email: e.target.value})} />
                 </div>
                 <div>
-                  <Label>Phone</Label>
+                  <Label>Telefon</Label>
                   <Input value={newSupplier.phone} onChange={(e) => setNewSupplier({...newSupplier, phone: e.target.value})} />
                 </div>
               </div>
               <div>
-                <Label>Address</Label>
+                <Label>Adres</Label>
                 <Textarea value={newSupplier.address} onChange={(e) => setNewSupplier({...newSupplier, address: e.target.value})} rows={2} />
               </div>
-              <Button type="submit" className="w-full">Add Supplier</Button>
+              <Button type="submit" className="w-full">Tedarikçi Ekle</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -1217,19 +1217,19 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'bank'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Bank Account</DialogTitle>
+              <DialogTitle>Banka Hesabı Ekle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateBankAccount} className="space-y-4">
               <div>
-                <Label>Account Name *</Label>
+                <Label>Hesap Adı *</Label>
                 <Input value={newBankAccount.name} onChange={(e) => setNewBankAccount({...newBankAccount, name: e.target.value})} required />
               </div>
               <div>
-                <Label>Bank Name *</Label>
+                <Label>Banka Adı *</Label>
                 <Input value={newBankAccount.bank_name} onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})} required />
               </div>
               <div>
-                <Label>Account Number *</Label>
+                <Label>Hesap No *</Label>
                 <Input value={newBankAccount.account_number} onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})} required />
               </div>
               <div>
@@ -1238,7 +1238,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Currency</Label>
+                  <Label>Para Birimi</Label>
                   <Select value={newBankAccount.currency} onValueChange={(v) => setNewBankAccount({...newBankAccount, currency: v})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -1249,11 +1249,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                   </Select>
                 </div>
                 <div>
-                  <Label>Initial Balance</Label>
+                  <Label>Başlangıç Bakiyesi</Label>
                   <Input type="number" step="0.01" value={newBankAccount.balance} onChange={(e) => setNewBankAccount({...newBankAccount, balance: parseFloat(e.target.value)})} />
                 </div>
               </div>
-              <Button type="submit" className="w-full">Add Bank Account</Button>
+              <Button type="submit" className="w-full">Banka Hesabı Ekle</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -1262,42 +1262,42 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'inventory'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Inventory Item</DialogTitle>
+              <DialogTitle>Stok Kalemi Ekle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateInventoryItem} className="space-y-4">
               <div>
-                <Label>Item Name *</Label>
+                <Label>Kalem Adı *</Label>
                 <Input value={newInventoryItem.name} onChange={(e) => setNewInventoryItem({...newInventoryItem, name: e.target.value})} required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Category</Label>
+                  <Label>Kategori</Label>
                   <Input value={newInventoryItem.category} onChange={(e) => setNewInventoryItem({...newInventoryItem, category: e.target.value})} required />
                 </div>
                 <div>
-                  <Label>SKU</Label>
+                  <Label>Stok Kodu</Label>
                   <Input value={newInventoryItem.sku} onChange={(e) => setNewInventoryItem({...newInventoryItem, sku: e.target.value})} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label>Quantity</Label>
+                  <Label>Miktar</Label>
                   <Input type="number" step="0.01" value={newInventoryItem.quantity} onChange={(e) => setNewInventoryItem({...newInventoryItem, quantity: parseFloat(e.target.value)})} required />
                 </div>
                 <div>
-                  <Label>Unit</Label>
+                  <Label>Birim</Label>
                   <Input value={newInventoryItem.unit} onChange={(e) => setNewInventoryItem({...newInventoryItem, unit: e.target.value})} required />
                 </div>
                 <div>
-                  <Label>Unit Cost</Label>
+                  <Label>Birim Fiyat</Label>
                   <Input type="number" step="0.01" value={newInventoryItem.unit_cost} onChange={(e) => setNewInventoryItem({...newInventoryItem, unit_cost: parseFloat(e.target.value)})} required />
                 </div>
               </div>
               <div>
-                <Label>Reorder Level</Label>
+                <Label>Yeniden Sipariş Seviyesi</Label>
                 <Input type="number" value={newInventoryItem.reorder_level} onChange={(e) => setNewInventoryItem({...newInventoryItem, reorder_level: parseFloat(e.target.value)})} />
               </div>
-              <Button type="submit" className="w-full">Add Item</Button>
+              <Button type="submit" className="w-full">Kalem Ekle</Button>
             </form>
           </DialogContent>
         </Dialog>

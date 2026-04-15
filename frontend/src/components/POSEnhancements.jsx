@@ -135,7 +135,7 @@ const POSEnhancements = () => {
         setBookingId('');
         setFolioId('');
       } else {
-        alert('Failed to create order');
+        alert('Sipariş oluşturulamadı');
       }
     } catch (error) {
       console.error('Error creating order:', error);

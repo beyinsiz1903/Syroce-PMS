@@ -84,7 +84,7 @@ function StatusBadge({ status }) {
 // ── WebSocket Live Panel ──
 
 function LiveOperationsPanel({ data, wsConnected, onRefresh }) {
-  if (!data) return <p className="text-slate-400 text-sm p-4">Veri yukleniyor...</p>;
+  if (!data) return <p className="text-slate-400 text-sm p-4">Veri yükleniyor...</p>;
   const { front_desk_queue, housekeeping_board, vip_arrivals, audit_exceptions, occupancy, overbooking_risk } = data;
 
   return (
@@ -268,7 +268,7 @@ function AutoPricingPanel() {
     setLoading(false);
   };
 
-  if (!dashboard) return <p className="text-slate-400 text-sm p-4">Yukleniyor...</p>;
+  if (!dashboard) return <p className="text-slate-400 text-sm p-4">Yükleniyor...</p>;
 
   return (
     <div className="space-y-4">
@@ -325,7 +325,7 @@ function AutoPricingPanel() {
       {/* History */}
       <Card className="bg-slate-800/60 border-slate-700">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-slate-300">Oneri Gecmisi</CardTitle>
+          <CardTitle className="text-sm text-slate-300">Oneri Geçmişi</CardTitle>
         </CardHeader>
         <CardContent className="p-3 space-y-1 max-h-64 overflow-y-auto">
           {history.map((rec, i) => (
@@ -374,7 +374,7 @@ function CrossModulePanel() {
   }, []);
 
   const integrationLabels = {
-    cancellation_to_overbooking: { label: "Iptal Tahmini -> Overbooking", icon: AlertTriangle },
+    cancellation_to_overbooking: { label: "İptal Tahmini -> Overbooking", icon: AlertTriangle },
     booking_prob_to_revenue: { label: "Rezervasyon Olasiligi -> Gelir Guveni", icon: TrendingUp },
     compset_to_adr: { label: "Rakip Fark -> ADR Onerisi", icon: DollarSign },
     guest_requests_to_hk: { label: "Misafir Talep -> HK Oncelik", icon: Users },

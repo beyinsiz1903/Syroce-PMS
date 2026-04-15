@@ -45,7 +45,7 @@ const PERIOD_OPTIONS = [
 const EVENT_TYPE_LABELS = {
   api_call: 'API Cagrisi',
   reservation_created: 'Rezervasyon',
-  reservation_cancelled: 'Iptal',
+  reservation_cancelled: 'İptal',
   channel_sync: 'Kanal Senk.',
   webhook_received: 'Webhook',
   guest_created: 'Misafir',
@@ -86,9 +86,9 @@ export default function B2BAnalyticsDashboard() {
 
       const failedCount = [sumRes, agRes, trendRes, usageRes, topRes].filter(r => !r).length;
       if (failedCount === 5) {
-        setError('Analitik verileri yuklenemedi. Lutfen tekrar deneyin.');
+        setError('Analitik verileri yüklenemedi. Lutfen tekrar deneyin.');
       } else if (failedCount > 0) {
-        setError('Bazi veriler yuklenemedi. Eksik bolumler olabilir.');
+        setError('Bazi veriler yüklenemedi. Eksik bolumler olabilir.');
       }
 
       if (sumRes) setSummary(sumRes);
@@ -97,7 +97,7 @@ export default function B2BAnalyticsDashboard() {
       if (usageRes) setApiUsage({ timeline: usageRes.timeline || [], totals: usageRes.totals || [] });
       if (topRes) setTopEndpoints(topRes.endpoints || []);
     } catch {
-      setError('Analitik verileri yuklenemedi. Lutfen tekrar deneyin.');
+      setError('Analitik verileri yüklenemedi. Lutfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -215,7 +215,7 @@ export default function B2BAnalyticsDashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </div>
                 )}
               </CardContent>
@@ -244,7 +244,7 @@ export default function B2BAnalyticsDashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </div>
                 )}
               </CardContent>
@@ -299,7 +299,7 @@ export default function B2BAnalyticsDashboard() {
                     )) : (
                       <tr>
                         <td colSpan="8" className="py-8 text-center text-gray-400">
-                          Acente verisi bulunamadi
+                          Acente verisi bulunamadı
                         </td>
                       </tr>
                     )}
@@ -400,7 +400,7 @@ export default function B2BAnalyticsDashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </div>
                 )}
               </CardContent>
@@ -433,7 +433,7 @@ export default function B2BAnalyticsDashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </div>
                 )}
               </CardContent>
@@ -466,7 +466,7 @@ export default function B2BAnalyticsDashboard() {
                   </div>
                 )) : (
                   <div className="py-8 text-center text-gray-400 text-sm">
-                    Veri bulunamadi
+                    Veri bulunamadı
                   </div>
                 )}
               </div>

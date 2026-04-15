@@ -37,7 +37,7 @@ const ErrorQueueTab = () => {
     try {
       for (const [errorType, ids] of Object.entries(groups)) { await axios.post(`${API}/admin/error-queue/bulk-${action}`, { item_ids: ids, error_type: errorType, reason: 'Bulk admin action' }); }
       toast.success(`Toplu ${action}: ${selected.size} oge`); setSelected(new Set()); fetchQueue();
-    } catch { toast.error('Toplu islem hatasi'); }
+    } catch { toast.error('Toplu işlem hatasi'); }
   };
 
   const summary = queue.summary || {};

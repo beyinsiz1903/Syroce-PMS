@@ -74,7 +74,7 @@ export function FieldEncryptionPanel() {
       if (progressRes.status === "fulfilled") setProgress(progressRes.value.data?.progress || []);
       if (auditRes.status === "fulfilled") setAudit(auditRes.value.data?.audit || []);
     } catch {
-      toast.error("Alan sifreleme verileri yuklenemedi");
+      toast.error("Alan sifreleme verileri yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -113,7 +113,7 @@ export function FieldEncryptionPanel() {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success(`${res.data?.indexes_created?.length || 0} index olusturuldu`);
+      toast.success(`${res.data?.indexes_created?.length || 0} index oluşturuldu`);
     } catch (err) {
       toast.error(`Index hatasi: ${err.response?.data?.detail || err.message}`);
     }

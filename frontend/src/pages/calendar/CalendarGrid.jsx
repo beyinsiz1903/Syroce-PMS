@@ -156,7 +156,7 @@ const CalendarGrid = ({
           {rooms.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Oda bulunamadi</p>
+              <p>Oda bulunamadı</p>
             </div>
           ) : (
             sortedTypes.map((roomType) => {

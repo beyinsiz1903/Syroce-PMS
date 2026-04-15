@@ -37,7 +37,7 @@ const HousekeepingMobileApp = ({ user }) => {
       setChecklistItems(checklistRes.data.items || []);
       toast.success(`Started cleaning Room ${room.room_number}`);
     } catch (error) {
-      toast.error('Failed to start cleaning');
+      toast.error('Temizlik başlatılamadı');
     }
   };
 
@@ -68,7 +68,7 @@ const HousekeepingMobileApp = ({ user }) => {
       setChecklistItems([]);
       loadRooms();
     } catch (error) {
-      toast.error('Failed to complete cleaning');
+      toast.error('Temizlik tamamlanamadı');
     } finally {
       setLoading(false);
     }
@@ -80,7 +80,7 @@ const HousekeepingMobileApp = ({ user }) => {
       toast.success(`Room ${roomNumber} status updated to ${newStatus}!`);
       loadRooms();
     } catch (error) {
-      toast.error('Failed to update room status');
+      toast.error('Oda durumu güncellenemedi');
     }
   };
 

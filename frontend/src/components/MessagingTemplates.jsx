@@ -36,8 +36,8 @@ const MessagingTemplates = () => {
       const response = await axios.get('/messaging/templates');
       setTemplates(response.data.templates || []);
     } catch (error) {
-      console.error('Failed to load templates:', error);
-      toast.error('Failed to load templates');
+      console.error('Şablonlar yüklenemedi:', error);
+      toast.error('Şablonlar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ const MessagingTemplates = () => {
       setSelectedTemplate(null);
       setSendData({ recipient: '', variables: {} });
     } catch (error) {
-      toast.error('Failed to send message');
+      toast.error('Mesaj gönderilemedi');
     }
   };
 

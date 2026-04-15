@@ -53,7 +53,7 @@ export default function ObservabilityDashboard() {
     try {
       await axios.post(`/observability/metrics/flush`, {}, { headers });
       toast.success("Metrikler flush edildi");
-    } catch { toast.error("Flush basarisiz"); }
+    } catch { toast.error("Flush başarısız"); }
   };
 
   const flushTraces = async () => {
@@ -61,7 +61,7 @@ export default function ObservabilityDashboard() {
       await axios.post(`/observability/traces/flush`, {}, { headers });
       toast.success("Trace'ler flush edildi");
       fetchData();
-    } catch { toast.error("Flush basarisiz"); }
+    } catch { toast.error("Flush başarısız"); }
   };
 
   if (loading) return <div className="flex justify-center p-12" data-testid="obs-loading"><RefreshCw className="w-8 h-8 animate-spin text-zinc-400" /></div>;
@@ -163,7 +163,7 @@ export default function ObservabilityDashboard() {
                 </div>
               ))
             ) : (
-              <p className="text-xs text-zinc-500">Henuz trace verisi yok. Flush yaparak veri toplayin.</p>
+              <p className="text-xs text-zinc-500">Henüz trace verisi yok. Flush yaparak veri toplayin.</p>
             )}
           </CardContent>
         </Card>
@@ -232,7 +232,7 @@ export default function ObservabilityDashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-zinc-500">Henuz trace verisi yok. Trace flush yaparak veritabanina kaydedin.</p>
+            <p className="text-xs text-zinc-500">Henüz trace verisi yok. Trace flush yaparak veritabanina kaydedin.</p>
           )}
         </CardContent>
       </Card>

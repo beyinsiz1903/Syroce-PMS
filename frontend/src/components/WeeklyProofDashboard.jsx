@@ -71,9 +71,9 @@ export function WeeklyProof() {
     try {
       const res = await axios.get(`/ops/dashboard/channel-health/weekly-proof?weeks=${weeks}`);
       setData(res.data);
-      if (showToast) toast.success("Haftalik veriler guncellendi");
+      if (showToast) toast.success("Haftalik veriler güncellendi");
     } catch (err) {
-      toast.error("Haftalik veri yuklenemedi", { description: err.message });
+      toast.error("Haftalik veri yüklenemedi", { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -99,7 +99,7 @@ export function WeeklyProof() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="weekly-proof-empty">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Haftalik veri bulunamadi</p>
+        <p className="text-sm">Haftalik veri bulunamadı</p>
       </div>
     );
   }

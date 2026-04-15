@@ -81,7 +81,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="payment-partial-warning">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-700">
-                  Kismi odeme. Kalan bakiye: {(balance - paymentForm.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
+                  Kismi ödeme. Kalan bakiye: {(balance - paymentForm.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
                 </p>
               </div>
             )}

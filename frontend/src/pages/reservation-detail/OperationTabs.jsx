@@ -37,14 +37,14 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
   const priceDiff = selectedTypeData ? (selectedTypeData.base_price - (room?.base_price || 0)) : 0;
 
   const handleChange = async () => {
-    if (!selectedRoomId || !reason) { toast.error('Oda ve sebep secimi zorunlu'); return; }
+    if (!selectedRoomId || !reason) { toast.error('Oda ve sebep seçimi zorunlu'); return; }
     setLoading(true);
     try {
       const extraCharge = pricingOption === 'upgrade' ? Math.max(0, priceDiff) : pricingOption === 'custom' ? parseFloat(customPrice) || 0 : 0;
       await axios.post(`/pms/reservations/${booking.id}/room-change`, {
         new_room_id: selectedRoomId, reason, transfer_folio: true, extra_charge: extraCharge
       });
-      toast.success('Oda degistirildi');
+      toast.success('Oda değiştirildi');
       setSelectedRoomId(''); setSelectedType(''); setReason(''); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -66,17 +66,17 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       <div className="border rounded-lg p-4 space-y-3">
         <div className="text-sm font-semibold text-gray-700">Yeni Oda Sec</div>
         {loadingRooms ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Musait odalar yukleniyor...</div>
+          <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Müsait odalar yükleniyor...</div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Oda Tipi</Label>
                 <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
-                  <option value="">Oda tipi seciniz...</option>
+                  <option value="">Oda tipi seçiniz...</option>
                   {roomTypes.map(rt => (
                     <option key={rt.type} value={rt.type}>
-                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} musait) - {fmtTL(rt.base_price)} TL
+                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} müsait) - {fmtTL(rt.base_price)} TL
                     </option>
                   ))}
                 </select>
@@ -138,8 +138,8 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">Oda Degisiklik Gecmisi</div>
-        {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">Gecmis oda degisikligi yok</div> : (
+        <div className="text-xs font-semibold text-gray-500 uppercase">Oda Degisiklik Geçmişi</div>
+        {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">Geçmiş oda değişikliği yok</div> : (
           roomMoves.map((rm, i) => (
             <div key={rm.id || i} className="border rounded-lg p-3 flex items-center gap-3">
               <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center"><Home className="w-4 h-4 text-indigo-600" /></div>
@@ -166,7 +166,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
   const cancelTypes = {
     guest_request: 'Misafir Talebi', no_suitable_room: 'Uygun Oda Yok',
     force_majeure: 'Mucbir Sebep', overbooking: 'Overbooking',
-    payment_issue: 'Odeme Sorunu', other: 'Diger'
+    payment_issue: 'Ödeme Sorunu', other: 'Diger'
   };
 
   const nights = booking ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
@@ -178,7 +178,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
   }, [noshowChargeType, nightlyRate, booking]);
 
   const handleCancel = async () => {
-    if (!reason) { toast.error('Iptal nedeni giriniz'); return; }
+    if (!reason) { toast.error('İptal nedeni giriniz'); return; }
     if (!window.confirm(applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?')) return;
     setLoading(true);
     try {
@@ -199,14 +199,14 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
         <div className="text-sm font-semibold text-red-800 mb-3">Rezervasyon Iptali</div>
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">Iptal Nedeni *</Label>
+            <Label className="text-xs">İptal Nedeni *</Label>
             <select value={cancelType} onChange={e => setCancelType(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="cancel-type-select">
               {Object.entries(cancelTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
             <Label className="text-xs">Aciklama *</Label>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="Iptal aciklamasi..." data-testid="cancel-reason-input" />
+            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="İptal aciklamasi..." data-testid="cancel-reason-input" />
           </div>
 
           <div className="border-t pt-3">
@@ -239,7 +239,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
           <Button onClick={handleCancel} disabled={loading || !reason} className="bg-red-600 hover:bg-red-700 text-white h-9 text-sm w-full" data-testid="cancel-submit-btn">
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <AlertTriangle className="w-4 h-4 mr-1" />}
-            {applyNoshow ? 'No-Show Olarak Iptal Et' : 'Rezervasyonu Iptal Et'}
+            {applyNoshow ? 'No-Show Olarak İptal Et' : 'Rezervasyonu İptal Et'}
           </Button>
         </div>
       </div>

@@ -20,8 +20,8 @@ const CATEGORIES = [
   { value: 'service', label: 'Hizmet', color: 'bg-purple-100 text-purple-800' },
   { value: 'cleanliness', label: 'Temizlik', color: 'bg-green-100 text-green-800' },
   { value: 'fnb', label: 'F&B', color: 'bg-orange-100 text-orange-800' },
-  { value: 'noise', label: 'Gurultu', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'maintenance', label: 'Bakim', color: 'bg-gray-100 text-gray-800' },
+  { value: 'noise', label: 'Gürültü', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'maintenance', label: 'Bakım', color: 'bg-gray-100 text-gray-800' },
 ];
 
 const SEVERITIES = [
@@ -32,10 +32,10 @@ const SEVERITIES = [
 ];
 
 const STATUSES = [
-  { value: 'open', label: 'Acik', color: 'bg-red-100 text-red-700', icon: Clock },
-  { value: 'in_progress', label: 'Islemde', color: 'bg-yellow-100 text-yellow-700', icon: ArrowUpCircle },
+  { value: 'open', label: 'Açık', color: 'bg-red-100 text-red-700', icon: Clock },
+  { value: 'in_progress', label: 'İşlemde', color: 'bg-yellow-100 text-yellow-700', icon: ArrowUpCircle },
   { value: 'escalated', label: 'Eskalasyon', color: 'bg-purple-100 text-purple-700', icon: AlertTriangle },
-  { value: 'resolved', label: 'Cozuldu', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  { value: 'resolved', label: 'Çözüldü', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
 ];
 
 const DEPARTMENTS = [
@@ -43,7 +43,7 @@ const DEPARTMENTS = [
   { value: 'housekeeping', label: 'Housekeeping' },
   { value: 'fnb', label: 'F&B' },
   { value: 'maintenance', label: 'Teknik' },
-  { value: 'management', label: 'Yonetim' },
+  { value: 'management', label: 'Yönetim' },
 ];
 
 const COMPENSATIONS = [
@@ -110,7 +110,7 @@ const ServiceRecovery = () => {
       setGuests(guestsRes.data.guests || []);
       setBookings(bookingsRes.data.bookings || []);
     } catch (error) {
-      toast.error('Veriler yuklenemedi');
+      toast.error('Veriler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -165,7 +165,7 @@ const ServiceRecovery = () => {
     setSubmitting(true);
     try {
       await axios.post('/service/complaints', newComplaint);
-      toast.success('Sikayet basariyla kaydedildi');
+      toast.success('Şikayet başarıyla kaydedildi');
       setShowCreateDialog(false);
       setNewComplaint({
         booking_id: '', guest_id: '', guest_name: '', room_id: '', room_number: '',
@@ -174,7 +174,7 @@ const ServiceRecovery = () => {
       });
       loadData();
     } catch {
-      toast.error('Sikayet kaydedilemedi');
+      toast.error('Şikayet kaydedilemedi');
     } finally {
       setSubmitting(false);
     }
@@ -192,13 +192,13 @@ const ServiceRecovery = () => {
         compensation_offered: resolveData.compensation_offered === 'none' ? null : resolveData.compensation_offered,
       };
       await axios.post(`/service/complaints/${selectedComplaint.id}/resolve`, payload);
-      toast.success('Sikayet basariyla cozuldu');
+      toast.success('Şikayet başarıyla çözüldü');
       setShowResolveDialog(false);
       setShowDetailDialog(false);
       setResolveData({ resolution_notes: '', compensation_offered: 'none', compensation_amount: 0 });
       loadData();
     } catch {
-      toast.error('Islem basarisiz');
+      toast.error('İşlem başarısız');
     } finally {
       setSubmitting(false);
     }
@@ -208,34 +208,34 @@ const ServiceRecovery = () => {
     try {
       await axios.post(`/service/complaints/${complaint.id}/escalate`, {
         escalated_to: 'management',
-        notes: 'Yonetim tarafindan incelenmesi gerekiyor',
+        notes: 'Yönetim tarafindan incelenmesi gerekiyor',
       });
-      toast.success('Sikayet yonetime eskalasyon edildi');
+      toast.success('Şikayet yönetime eskalasyon edildi');
       loadData();
     } catch {
-      toast.error('Eskalasyon basarisiz');
+      toast.error('Eskalasyon başarısız');
     }
   };
 
   const handleStatusChange = async (complaint, newStatus) => {
     try {
       await axios.put(`/service/complaints/${complaint.id}`, { status: newStatus });
-      toast.success('Durum guncellendi');
+      toast.success('Durum güncellendi');
       loadData();
     } catch {
-      toast.error('Guncelleme basarisiz');
+      toast.error('Güncelleme başarısız');
     }
   };
 
   const handleDelete = async (complaint) => {
-    if (!window.confirm('Bu sikayeti silmek istediginize emin misiniz?')) return;
+    if (!window.confirm('Bu şikayeti silmek istediğinize emin misiniz?')) return;
     try {
       await axios.delete(`/service/complaints/${complaint.id}`);
-      toast.success('Sikayet silindi');
+      toast.success('Şikayet silindi');
       setShowDetailDialog(false);
       loadData();
     } catch {
-      toast.error('Silme basarisiz');
+      toast.error('Silme başarısız');
     }
   };
 
@@ -265,7 +265,7 @@ const ServiceRecovery = () => {
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
-          <p className="text-gray-500">Yukleniyor...</p>
+          <p className="text-gray-500">Yükleniyor...</p>
         </div>
       </div>
     );
@@ -280,12 +280,12 @@ const ServiceRecovery = () => {
             <Home className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Sikayet Yonetimi</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Şikayet Yönetimi</h1>
             <p className="text-sm text-gray-500">Misafir sikayetleri ve cozum takibi</p>
           </div>
         </div>
         <Button onClick={() => setShowCreateDialog(true)} className="bg-red-600 hover:bg-red-700">
-          <Plus className="w-4 h-4 mr-2" /> Yeni Sikayet
+          <Plus className="w-4 h-4 mr-2" /> Yeni Şikayet
         </Button>
       </div>
 
@@ -293,9 +293,9 @@ const ServiceRecovery = () => {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: 'Toplam', value: stats.total || 0, icon: MessageSquare, color: 'text-gray-600', bg: 'bg-gray-50' },
-          { label: 'Acik', value: stats.open || 0, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
-          { label: 'Islemde', value: stats.in_progress || 0, icon: ArrowUpCircle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-          { label: 'Cozuldu', value: stats.resolved || 0, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50' },
+          { label: 'Açık', value: stats.open || 0, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
+          { label: 'İşlemde', value: stats.in_progress || 0, icon: ArrowUpCircle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { label: 'Çözüldü', value: stats.resolved || 0, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50' },
           { label: 'Kritik', value: stats.critical || 0, icon: AlertTriangle, color: 'text-red-700', bg: 'bg-red-50' },
         ].map((s, i) => (
           <Card key={i} className={s.bg}>
@@ -364,8 +364,8 @@ const ServiceRecovery = () => {
           <Card>
             <CardContent className="py-12 text-center">
               <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">Sikayet bulunamadi</p>
-              <p className="text-sm text-gray-400 mt-1">Filtreleri degistirmeyi deneyin</p>
+              <p className="text-gray-500 font-medium">Şikayet bulunamadı</p>
+              <p className="text-sm text-gray-400 mt-1">Filtreleri değiştirmeyi deneyin</p>
             </CardContent>
           </Card>
         ) : (
@@ -390,7 +390,7 @@ const ServiceRecovery = () => {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-semibold text-gray-900 truncate">{complaint.subject || 'Sikayet'}</h3>
+                        <h3 className="font-semibold text-gray-900 truncate">{complaint.subject || 'Şikayet'}</h3>
                         <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${statusBadge.color}`}>
                           {statusBadge.label}
                         </span>
@@ -434,7 +434,7 @@ const ServiceRecovery = () => {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Yeni Sikayet Kaydi</DialogTitle>
+            <DialogTitle>Yeni Şikayet Kaydi</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateComplaint} className="space-y-4 mt-2">
             <div>
@@ -444,7 +444,7 @@ const ServiceRecovery = () => {
                 onValueChange={handleBookingSelect}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Rezervasyon secin..." />
+                  <SelectValue placeholder="Rezervasyon seçin..." />
                 </SelectTrigger>
                 <SelectContent>
                   {bookings.map(b => (
@@ -461,7 +461,7 @@ const ServiceRecovery = () => {
                 <Label className="text-sm font-medium">Oda</Label>
                 <Select value={newComplaint.room_id} onValueChange={handleRoomSelect}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Oda secin..." />
+                    <SelectValue placeholder="Oda seçin..." />
                   </SelectTrigger>
                   <SelectContent>
                     {rooms.map(r => (
@@ -476,7 +476,7 @@ const ServiceRecovery = () => {
                 <Label className="text-sm font-medium">Misafir</Label>
                 <Select value={newComplaint.guest_id} onValueChange={handleGuestSelect}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Misafir secin..." />
+                    <SelectValue placeholder="Misafir seçin..." />
                   </SelectTrigger>
                   <SelectContent>
                     {guests.map(g => (
@@ -495,7 +495,7 @@ const ServiceRecovery = () => {
                 value={newComplaint.subject}
                 onChange={e => setNewComplaint(p => ({ ...p, subject: e.target.value }))}
                 required
-                placeholder="Sikayet konusu..."
+                placeholder="Şikayet konusu..."
               />
             </div>
 
@@ -536,12 +536,12 @@ const ServiceRecovery = () => {
                 onChange={e => setNewComplaint(p => ({ ...p, description: e.target.value }))}
                 required
                 rows={3}
-                placeholder="Sikayet detaylarini yazin..."
+                placeholder="Şikayet detaylarını yazın..."
               />
             </div>
 
             <Button type="submit" className="w-full bg-red-600 hover:bg-red-700" disabled={submitting}>
-              {submitting ? 'Kaydediliyor...' : 'Sikayeti Kaydet'}
+              {submitting ? 'Kaydediliyor...' : 'Şikayeti Kaydet'}
             </Button>
           </form>
         </DialogContent>
@@ -551,7 +551,7 @@ const ServiceRecovery = () => {
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Sikayet Detayi</DialogTitle>
+            <DialogTitle>Şikayet Detayı</DialogTitle>
           </DialogHeader>
           {selectedComplaint && (
             <div className="space-y-4 mt-2">
@@ -669,7 +669,7 @@ const ServiceRecovery = () => {
       <Dialog open={showResolveDialog} onOpenChange={setShowResolveDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Sikayeti Coz</DialogTitle>
+            <DialogTitle>Şikayeti Çöz</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>

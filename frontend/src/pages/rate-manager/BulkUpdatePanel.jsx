@@ -110,7 +110,7 @@ export const BulkUpdatePanel = ({
             {loading && roomTypes.length === 0 ? (
               <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
             ) : roomTypes.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-sm px-4">Exely baglantisi bulunamadi veya oda tipi tanimli degil</div>
+              <div className="text-center py-12 text-gray-400 text-sm px-4">Exely bağlantısı bulunamadı veya oda tipi tanımlı değil</div>
             ) : (
               <RoomTypeList
                 roomTypeTree={roomTypeTree} enabledFields={enabledFields} selections={selections}
@@ -217,12 +217,12 @@ const RoomTypeList = ({
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-sm text-gray-900">{rt.name}</span>
                     {rt.availability_update === false && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi icin musaitlik guncellemeye izin vermiyor">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için musaitlik guncellemeye izin vermiyor">
                         <AlertTriangle className="w-2.5 h-2.5" /> Musaitlik kapali
                       </span>
                     )}
                     {rt.price_update === false && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi icin fiyat guncellemeye izin vermiyor">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için fiyat guncellemeye izin vermiyor">
                         <AlertTriangle className="w-2.5 h-2.5" /> Fiyat kapali
                       </span>
                     )}

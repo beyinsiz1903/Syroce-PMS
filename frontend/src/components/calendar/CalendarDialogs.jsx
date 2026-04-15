@@ -31,7 +31,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
                     }
                   }}
                 >
-                  <option value="">Misafir secin...</option>
+                  <option value="">Misafir seçin...</option>
                   <option value="NEW" className="font-bold text-blue-600">+ Yeni Misafir Ekle</option>
                   {guests.map(guest => (
                     <option key={guest.id} value={guest.id}>{guest.name}</option>
@@ -77,7 +77,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
             <Input value={newBooking.special_requests || ''} onChange={(e) => setNewBooking({...newBooking, special_requests: e.target.value})} placeholder="Opsiyonel" />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>Iptal</Button>
+            <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>İptal</Button>
             <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white">Rezervasyon Olustur</Button>
           </div>
         </form>
@@ -106,7 +106,7 @@ export function MoveReasonDialog({ open, onOpenChange, moveData, moveReason, set
             <div>
               <Label>Tasima Sebebi *</Label>
               <select className="w-full border rounded-md p-2 mb-2" value={moveReason} onChange={(e) => setMoveReason(e.target.value)}>
-                <option value="">Sebep seciniz...</option>
+                <option value="">Sebep seçiniz...</option>
                 <option value="Guest Request">Misafir Istegi</option>
                 <option value="Room Maintenance">Oda Bakimi</option>
                 <option value="Upgrade">Upgrade</option>
@@ -120,11 +120,11 @@ export function MoveReasonDialog({ open, onOpenChange, moveData, moveReason, set
               {moveReason === 'Other' && <Input placeholder="Aciklama..." onChange={(e) => setMoveReason(e.target.value)} />}
             </div>
             <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
-              <strong>Not:</strong> Bu islem gecmise kaydedilecektir.
+              <strong>Not:</strong> Bu işlem geçmişe kaydedilecektir.
             </div>
             <div className="flex space-x-2">
               <Button onClick={handleConfirmMove} className="flex-1">Onayla</Button>
-              <Button variant="outline" onClick={() => { onOpenChange(false); setMoveReason(''); }}>Iptal</Button>
+              <Button variant="outline" onClick={() => { onOpenChange(false); setMoveReason(''); }}>İptal</Button>
             </div>
           </div>
         )}
@@ -139,7 +139,7 @@ export function FindRoomDialog({ open, onOpenChange, findRoomCriteria, setFindRo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Musait Oda Ara</DialogTitle>
+          <DialogTitle>Müsait Oda Ara</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-4">
@@ -179,7 +179,7 @@ export function FindRoomDialog({ open, onOpenChange, findRoomCriteria, setFindRo
                       <td className="p-2 font-semibold">{r.room_number}</td>
                       <td className="p-2">{r.room_type}</td>
                       <td className="p-2">{r.floor || '-'}</td>
-                      <td className="p-2"><Badge className="bg-emerald-100 text-emerald-700 text-xs">Musait</Badge></td>
+                      <td className="p-2"><Badge className="bg-emerald-100 text-emerald-700 text-xs">Müsait</Badge></td>
                     </tr>
                   ))}
                 </tbody>

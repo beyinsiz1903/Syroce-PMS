@@ -50,7 +50,7 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
             <p className="text-gray-500">Zincir genelinde konsolide raporlama ve KPI</p>
           </div>
           <Button variant="outline" onClick={fetchAll} disabled={loading}>
-            {loading ? 'Yukleniyor...' : 'Yenile'}
+            {loading ? 'Yükleniyor...' : 'Yenile'}
           </Button>
         </div>
 

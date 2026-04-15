@@ -19,7 +19,7 @@ const SETUP_TYPES = [
   { code: 'boardroom', name: 'Toplanti Masasi', icon: '🪑', factor: 0.25 },
   { code: 'banquet', name: 'Ziyafet', icon: '🍽️', factor: 0.7 },
   { code: 'cocktail', name: 'Kokteyl', icon: '🥂', factor: 0.9 },
-  { code: 'hollow_square', name: 'Acik Kare', icon: '⬜', factor: 0.3 },
+  { code: 'hollow_square', name: 'Açık Kare', icon: '⬜', factor: 0.3 },
 ];
 
 const DEFAULT_EVENT_TYPES = [
@@ -48,14 +48,14 @@ const MENU_TYPES = [
   { code: 'dinner', name: 'Aksam Yemegi' },
   { code: 'cocktail', name: 'Kokteyl' },
   { code: 'gala', name: 'Gala Yemegi' },
-  { code: 'buffet', name: 'Acik Bufe' },
+  { code: 'buffet', name: 'Açık Bufe' },
   { code: 'full_day', name: 'Tam Gun Paket' },
 ];
 
 const AV_EQUIPMENT = [
   'Projektor', 'LED Ekran', 'Ses Sistemi', 'Mikrofon (Kablosuz)', 'Mikrofon (Yakali)',
   'Video Konferans', 'Sahne', 'Isik Sistemi', 'Flipchart', 'Beyaz Tahta',
-  'Simultane Ceviri', 'Kayit Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
+  'Simultane Ceviri', 'Kayıt Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
 ];
 
 const PAYMENT_METHODS = [
@@ -69,13 +69,13 @@ const DAYS_TR = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS_TR = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
 
 const STATUS_MAP = {
-  available: { label: 'Musait', color: 'bg-emerald-100 text-emerald-700' },
+  available: { label: 'Müsait', color: 'bg-emerald-100 text-emerald-700' },
   reserved: { label: 'Rezerveli', color: 'bg-blue-100 text-blue-700' },
   in_use: { label: 'Kullaniliyor', color: 'bg-purple-100 text-purple-700' },
-  maintenance: { label: 'Bakim', color: 'bg-amber-100 text-amber-700' },
+  maintenance: { label: 'Bakım', color: 'bg-amber-100 text-amber-700' },
   confirmed: { label: 'Onaylandi', color: 'bg-emerald-100 text-emerald-700' },
   tentative: { label: 'Opsiyonel', color: 'bg-yellow-100 text-yellow-700' },
-  cancelled: { label: 'Iptal', color: 'bg-red-100 text-red-700' },
+  cancelled: { label: 'İptal', color: 'bg-red-100 text-red-700' },
 };
 
 const EMPTY_FORM = {
@@ -118,7 +118,7 @@ const MeetingRoomTab = () => {
       setRooms(roomsRes.status === 'fulfilled' ? roomsRes.value.data.rooms || [] : []);
       setReservations(resRes.status === 'fulfilled' ? resRes.value.data.reservations || [] : []);
     } catch {
-      toast.error('Veriler yuklenemedi');
+      toast.error('Veriler yüklenemedi');
     }
   }, []);
 
@@ -142,12 +142,12 @@ const MeetingRoomTab = () => {
         guaranteed_pax: parseInt(form.guaranteed_pax) || 0,
       };
       await axios.post('/meeting-rooms/reservations', payload);
-      toast.success('Organizasyon olusturuldu');
+      toast.success('Organizasyon oluşturuldu');
       setShowNewReservation(false);
       setForm({ ...EMPTY_FORM });
       loadData();
     } catch {
-      toast.error('Organizasyon olusturulamadi');
+      toast.error('Organizasyon oluşturulamadı');
     }
     setLoading(false);
   };
@@ -202,11 +202,11 @@ const MeetingRoomTab = () => {
         guaranteed_pax: parseInt(editForm.guaranteed_pax) || 0,
       };
       await axios.put(`/meeting-rooms/reservations/${selectedReservation.id}`, payload);
-      toast.success('Organizasyon guncellendi');
+      toast.success('Organizasyon güncellendi');
       closeDetailDialog();
       loadData();
     } catch {
-      toast.error('Guncelleme basarisiz');
+      toast.error('Guncelleme başarısız');
     }
     setSaving(false);
   };
@@ -220,7 +220,7 @@ const MeetingRoomTab = () => {
       closeDetailDialog();
       loadData();
     } catch {
-      toast.error('Iptal islemi basarisiz');
+      toast.error('İptal işlemi başarısız');
     }
     setSaving(false);
   };
@@ -264,7 +264,7 @@ const MeetingRoomTab = () => {
     const w = window.open('', '_blank');
     w.document.write(`<html><head><title>BEO - ${esc(event.event_name)}</title><style>body{font-family:Arial;padding:40px;font-size:13px}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:15px 0}td,th{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}.header{display:flex;justify-content:space-between;margin-bottom:20px}.section{margin:20px 0}.label{font-weight:bold;color:#555;min-width:150px;display:inline-block}@media print{body{padding:20px}}</style></head><body>`);
     w.document.write(`<h1>BANQUET EVENT ORDER (BEO)</h1>`);
-    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)} ${evType ? `(${esc(evType.name)})` : ''}<br><span class="label">Firma:</span> ${esc(event.company_name || '-')}<br><span class="label">Iletisim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
+    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)} ${evType ? `(${esc(evType.name)})` : ''}<br><span class="label">Firma:</span> ${esc(event.company_name || '-')}<br><span class="label">İletişim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
     w.document.write(`<div class="section"><table><tr><th>Duzen</th><th>Katilimci</th><th>Garanti</th><th>Menu</th><th>Kisi Basi</th><th>Toplam</th><th>Kapora</th></tr><tr><td>${esc(setup?.name || event.setup_type)}</td><td>${esc(event.attendees)}</td><td>${esc(event.guaranteed_pax || '-')}</td><td>${esc(menu?.name || event.menu_type || '-')}</td><td>${esc(event.price_per_person || '-')} TL</td><td>${esc(event.total_price || 0)} TL</td><td>${esc(event.deposit_amount || 0)} TL ${event.deposit_paid ? '(Alindi)' : '(Bekliyor)'}</td></tr></table></div>`);
     if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${esc(event.menu_details)}</p></div>`);
     if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${esc(event.av_equipment.join(', '))}</p></div>`);
@@ -363,7 +363,7 @@ const MeetingRoomTab = () => {
           <div>
             <Label>Durum</Label>
             {isEdit && f.status === 'cancelled' ? (
-              <div className="mt-1"><Badge className="bg-red-100 text-red-700">Iptal Edildi</Badge></div>
+              <div className="mt-1"><Badge className="bg-red-100 text-red-700">İptal Edildi</Badge></div>
             ) : (
               <Select value={f.status} onValueChange={v => setter(p => ({ ...p, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -420,20 +420,20 @@ const MeetingRoomTab = () => {
             <Select value={f.deposit_paid ? 'paid' : 'pending'} onValueChange={v => setter(p => ({ ...p, deposit_paid: v === 'paid' }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="pending">Henuz Alinmadi</SelectItem>
+                <SelectItem value="pending">Henüz Alinmadi</SelectItem>
                 <SelectItem value="paid">Kapora Alindi</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Odeme Yontemi</Label>
+            <Label>Ödeme Yontemi</Label>
             <Select value={f.payment_method || ''} onValueChange={v => setter(p => ({ ...p, payment_method: v }))}>
               <SelectTrigger><SelectValue placeholder="Seciniz" /></SelectTrigger>
               <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m.code} value={m.code}>{m.icon} {m.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
-        <div><Label>Odeme Notu</Label><Input value={f.payment_notes || ''} onChange={e => setter(p => ({ ...p, payment_notes: e.target.value }))} placeholder="Ornek: 2 taksit ile odenecek" /></div>
+        <div><Label>Ödeme Notu</Label><Input value={f.payment_notes || ''} onChange={e => setter(p => ({ ...p, payment_notes: e.target.value }))} placeholder="Ornek: 2 taksit ile odenecek" /></div>
         <div><Label>Faturalama Talimatlari</Label><Textarea value={f.billing_instructions || ''} onChange={e => setter(p => ({ ...p, billing_instructions: e.target.value }))} placeholder="Fatura kime kesilecek, ozel notlar..." rows={2} /></div>
       </TabsContent>
     </Tabs>
@@ -443,7 +443,7 @@ const MeetingRoomTab = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <Building2 className="w-6 h-6" /> Organizasyon & Salon Yonetimi
+          <Building2 className="w-6 h-6" /> Organizasyon & Salon Yönetimi
         </h2>
         <div className="flex gap-2">
           <Button onClick={() => handleOpenNewReservation(null)} className="bg-blue-600 hover:bg-blue-700">
@@ -512,7 +512,7 @@ const MeetingRoomTab = () => {
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> Salon Musaitlik Takvimi</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> Salon Müsaitlik Takvimi</CardTitle>
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
               <span className="text-sm font-medium min-w-[120px] text-center">{MONTHS_TR[calendarMonth.month]} {calendarMonth.year}</span>
@@ -547,7 +547,7 @@ const MeetingRoomTab = () => {
             })}
           </div>
           <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-500">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" /> Musait salon var</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" /> Müsait salon var</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 inline-block" /> Tum salonlar dolu</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-100 inline-block" /> Etkinlik var</span>
           </div>
@@ -562,7 +562,7 @@ const MeetingRoomTab = () => {
               </div>
               {selectedDateFreeRooms.length > 0 && (
                 <div className="mb-2">
-                  <p className="text-xs text-gray-500 mb-1">Musait Salonlar:</p>
+                  <p className="text-xs text-gray-500 mb-1">Müsait Salonlar:</p>
                   <div className="flex flex-wrap gap-1">{selectedDateFreeRooms.map(r => (<Badge key={r.id} className="bg-emerald-100 text-emerald-700 text-[10px]">{r.name} ({r.capacity} kisi)</Badge>))}</div>
                 </div>
               )}
@@ -593,7 +593,7 @@ const MeetingRoomTab = () => {
                 </div>
               )}
               {selectedDateReservations.length === 0 && selectedDateFreeRooms.length === rooms.length && (
-                <p className="text-xs text-gray-400">Bu tarihte henuz organizasyon yok. Tum salonlar musait.</p>
+                <p className="text-xs text-gray-400">Bu tarihte henüz organizasyon yok. Tum salonlar müsait.</p>
               )}
             </div>
           )}
@@ -606,7 +606,7 @@ const MeetingRoomTab = () => {
         </CardHeader>
         <CardContent>
           {reservations.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Henuz organizasyon yok</p>
+            <p className="text-sm text-gray-400 py-4 text-center">Henüz organizasyon yok</p>
           ) : (
             <div className="space-y-2">
               {reservations.map(res => {
@@ -702,7 +702,7 @@ const MeetingRoomTab = () => {
               {editForm.status !== 'cancelled' && !showCancelConfirm && (
                 <div className="border-t pt-3">
                   <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 text-xs" onClick={() => setShowCancelConfirm(true)}>
-                    Organizasyonu Iptal Et
+                    Organizasyonu İptal Et
                   </Button>
                 </div>
               )}
@@ -710,10 +710,10 @@ const MeetingRoomTab = () => {
               {showCancelConfirm && (
                 <div className="border border-red-200 bg-red-50 rounded-lg p-3 space-y-2">
                   <p className="text-sm font-medium text-red-800">Organizasyonu iptal etmek istediginizden emin misiniz?</p>
-                  <p className="text-xs text-red-600">Bu islem geri alinamaz. Durum "Iptal" olarak guncellenecektir.</p>
+                  <p className="text-xs text-red-600">Bu işlem geri alınamaz. Durum "İptal" olarak güncellenecektir.</p>
                   <div className="flex gap-2">
                     <Button variant="destructive" size="sm" onClick={cancelReservation} disabled={saving}>
-                      {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}Evet, Iptal Et
+                      {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}Evet, İptal Et
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setShowCancelConfirm(false)}>Vazgec</Button>
                   </div>

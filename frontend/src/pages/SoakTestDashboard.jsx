@@ -403,7 +403,7 @@ export default function SoakTestDashboard() {
         {!loading && !fr && !sm && !isRunning && (
           <div data-testid="no-data-state" className="text-center py-16 text-slate-500">
             <Activity size={48} className="mx-auto mb-4 opacity-30" />
-            <p className="text-lg">Henuz soak test sonucu yok</p>
+            <p className="text-lg">Henüz soak test sonucu yok</p>
             <p className="text-sm mt-1">Yukaridaki kontrollerden bir test baslatin</p>
           </div>
         )}

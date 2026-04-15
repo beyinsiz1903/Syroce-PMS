@@ -31,13 +31,13 @@ const MENU_TYPES = [
   { value: 'coffee_break', label: 'Kahve Molasi' },
   { value: 'cocktail', label: 'Kokteyl' },
   { value: 'gala', label: 'Gala Yemegi' },
-  { value: 'buffet', label: 'Acik Bufe' },
+  { value: 'buffet', label: 'Açık Bufe' },
 ];
 
 const AV_EQUIPMENT = [
   'Projektor', 'LED Ekran', 'Ses Sistemi', 'Mikrofon (Kablosuz)', 'Mikrofon (Yakalı)',
   'Video Konferans', 'Sahne', 'Isik Sistemi', 'Flipchart', 'Beyaz Tahta',
-  'Simultane Ceviri', 'Kayit Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
+  'Simultane Ceviri', 'Kayıt Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
 ];
 
 const EMPTY_EVENT = {
@@ -65,7 +65,7 @@ const BanquetEventOrder = () => {
       const res = await axios.get('/banquet/events');
       setEvents(res.data.events || []);
     } catch {
-      toast.error('Etkinlikler yuklenemedi');
+      toast.error('Etkinlikler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -86,9 +86,9 @@ const BanquetEventOrder = () => {
       setEvents(prev => [res.data, ...prev]);
       setNewEvent({ ...EMPTY_EVENT });
       setShowNew(false);
-      toast.success('Etkinlik olusturuldu');
+      toast.success('Etkinlik oluşturuldu');
     } catch {
-      toast.error('Etkinlik olusturulamadi');
+      toast.error('Etkinlik oluşturulamadı');
     }
   };
 
@@ -101,7 +101,7 @@ const BanquetEventOrder = () => {
     const w = window.open('', '_blank');
     w.document.write(`<html><head><title>BEO - ${esc(event.event_name)}</title><style>body{font-family:Arial;padding:40px;font-size:13px}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:15px 0}td,th{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}.header{display:flex;justify-content:space-between;margin-bottom:20px}.section{margin:20px 0}.label{font-weight:bold;color:#555;min-width:150px;display:inline-block}@media print{body{padding:20px}}</style></head><body>`);
     w.document.write(`<h1>BANQUET EVENT ORDER (BEO)</h1>`);
-    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)}<br><span class="label">Firma:</span> ${esc(event.company || '-')}<br><span class="label">Iletisim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
+    w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)}<br><span class="label">Firma:</span> ${esc(event.company || '-')}<br><span class="label">İletişim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
     w.document.write(`<div class="section"><table><tr><th>Duzen</th><th>Katilimci</th><th>Garanti</th><th>Menu</th><th>Kisi Basi</th><th>Toplam</th></tr><tr><td>${esc(SETUP_TYPES.find(s=>s.value===event.setup_type)?.label || event.setup_type)}</td><td>${esc(event.attendees)}</td><td>${esc(event.guaranteed_pax)}</td><td>${esc(MENU_TYPES.find(m=>m.value===event.menu_type)?.label || event.menu_type)}</td><td>${esc(event.price_per_person)} TL</td><td>${esc(event.total_price)} TL</td></tr></table></div>`);
     if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${esc(event.menu_details)}</p></div>`);
     if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${esc(event.av_equipment.join(', '))}</p></div>`);
@@ -123,7 +123,7 @@ const BanquetEventOrder = () => {
     }));
   };
 
-  const statusLabel = (s) => s === 'confirmed' ? 'Kesin' : s === 'tentative' ? 'Opsiyonel' : s === 'cancelled' ? 'Iptal' : s;
+  const statusLabel = (s) => s === 'confirmed' ? 'Kesin' : s === 'tentative' ? 'Opsiyonel' : s === 'cancelled' ? 'İptal' : s;
   const statusVariant = (s) => s === 'confirmed' ? 'default' : s === 'tentative' ? 'secondary' : 'destructive';
 
   return (
@@ -162,8 +162,8 @@ const BanquetEventOrder = () => {
       </div>
 
       <div className="space-y-2">
-        {loading && <p className="text-center text-muted-foreground py-4">Yukleniyor...</p>}
-        {!loading && events.length === 0 && <p className="text-center text-muted-foreground py-8">Henuz etkinlik yok</p>}
+        {loading && <p className="text-center text-muted-foreground py-4">Yükleniyor...</p>}
+        {!loading && events.length === 0 && <p className="text-center text-muted-foreground py-8">Henüz etkinlik yok</p>}
         {events.map(event => (
           <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedEvent(event)}>
             <CardContent className="p-4">
@@ -203,7 +203,7 @@ const BanquetEventOrder = () => {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label className="text-xs text-muted-foreground">Firma</Label><p className="font-medium">{selectedEvent.company || '-'}</p></div>
-                  <div><Label className="text-xs text-muted-foreground">Iletisim</Label><p className="font-medium">{selectedEvent.contact_name} - {selectedEvent.contact_phone}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">İletişim</Label><p className="font-medium">{selectedEvent.contact_name} - {selectedEvent.contact_phone}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Salon</Label><p className="font-medium">{selectedEvent.room_name}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Duzen</Label><p className="font-medium">{SETUP_TYPES.find(s=>s.value===selectedEvent.setup_type)?.label || selectedEvent.setup_type}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Tarih/Saat</Label><p className="font-medium">{selectedEvent.date} / {selectedEvent.start_time} - {selectedEvent.end_time}</p></div>
@@ -239,7 +239,7 @@ const BanquetEventOrder = () => {
               <div><Label>Etkinlik Adi</Label><Input value={newEvent.event_name} onChange={e => setNewEvent(p => ({ ...p, event_name: e.target.value }))} placeholder="Yillik Toplanti, Dugun..." /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Firma/Kurum</Label><Input value={newEvent.company} onChange={e => setNewEvent(p => ({ ...p, company: e.target.value }))} /></div>
-                <div><Label>Salon</Label><Select value={newEvent.room_name} onValueChange={v => setNewEvent(p => ({ ...p, room_name: v }))}><SelectTrigger><SelectValue placeholder="Salon secin..." /></SelectTrigger><SelectContent><SelectItem value="Balo Salonu">Balo Salonu</SelectItem><SelectItem value="Toplanti Salonu A">Toplanti Salonu A</SelectItem><SelectItem value="Toplanti Salonu B">Toplanti Salonu B</SelectItem><SelectItem value="VIP Toplanti Odasi">VIP Toplanti Odasi</SelectItem></SelectContent></Select></div>
+                <div><Label>Salon</Label><Select value={newEvent.room_name} onValueChange={v => setNewEvent(p => ({ ...p, room_name: v }))}><SelectTrigger><SelectValue placeholder="Salon seçin..." /></SelectTrigger><SelectContent><SelectItem value="Balo Salonu">Balo Salonu</SelectItem><SelectItem value="Toplanti Salonu A">Toplanti Salonu A</SelectItem><SelectItem value="Toplanti Salonu B">Toplanti Salonu B</SelectItem><SelectItem value="VIP Toplanti Odasi">VIP Toplanti Odasi</SelectItem></SelectContent></Select></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div><Label>Tarih</Label><Input type="date" value={newEvent.date} onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))} /></div>
@@ -247,7 +247,7 @@ const BanquetEventOrder = () => {
                 <div><Label>Bitis</Label><Input type="time" value={newEvent.end_time} onChange={e => setNewEvent(p => ({ ...p, end_time: e.target.value }))} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Iletisim Adi</Label><Input value={newEvent.contact_name} onChange={e => setNewEvent(p => ({ ...p, contact_name: e.target.value }))} /></div>
+                <div><Label>İletişim Adi</Label><Input value={newEvent.contact_name} onChange={e => setNewEvent(p => ({ ...p, contact_name: e.target.value }))} /></div>
                 <div><Label>Telefon</Label><Input value={newEvent.contact_phone} onChange={e => setNewEvent(p => ({ ...p, contact_phone: e.target.value }))} /></div>
                 <div><Label>E-posta</Label><Input value={newEvent.contact_email} onChange={e => setNewEvent(p => ({ ...p, contact_email: e.target.value }))} /></div>
               </div>

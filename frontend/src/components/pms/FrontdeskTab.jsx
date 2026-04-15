@@ -87,7 +87,7 @@ const FrontdeskTab = ({
       <TabsContent value="frontdesk" className="space-y-6">
         <div className="text-center py-12">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-red-600 font-medium mb-2">Veriler yuklenemedi</p>
+          <p className="text-red-600 font-medium mb-2">Veriler yüklenemedi</p>
           <p className="text-sm text-gray-500 mb-4">{error}</p>
           <Button variant="outline" onClick={loadFrontDeskData}>Tekrar Dene</Button>
         </div>
@@ -337,17 +337,17 @@ const FrontdeskTab = ({
                         <Button size="sm" className={`h-9 ${isDirty ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#C09D63] hover:bg-[#B08D55]'} text-white`}
                           onClick={() => {
                             if (isDirty) {
-                              if (!window.confirm('Oda kirli/temizleniyor. Yine de giris yapmak istiyor musunuz?')) return;
+                              if (!window.confirm('Oda kirli/temizleniyor. Yine de giriş yapmak istiyor musunuz?')) return;
                             }
                             handleCheckIn(booking.id);
                           }} data-testid={`checkin-${booking.id}`}>
-                          <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? 'Giris (Kirli!)' : 'Giris Yap'}
+                          <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? 'Giriş (Kirli!)' : 'Giriş Yap'}
                         </Button>
                       )}
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>Folyo</Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500"
                         onClick={() => printRegistrationCard(booking, booking.guest, booking.room)}>
-                        <Printer className="w-3 h-3 mr-1" /> Kayit Karti
+                        <Printer className="w-3 h-3 mr-1" /> Kayıt Karti
                       </Button>
                     </div>
                   </div>
@@ -375,7 +375,7 @@ const FrontdeskTab = ({
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
                           <span className="font-semibold">Bakiye: {booking.balance?.toFixed(2)} TL</span>
-                          — Cikis icin once tahsil edin
+                          — Cikis için once tahsil edin
                         </div>
                       )}
                     </div>
@@ -456,7 +456,7 @@ const FrontdeskTab = ({
             <DialogTitle className="flex items-center gap-2"><CheckSquare className="w-5 h-5" /> Toplu Giris (Grup)</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-gray-500">Gruba ait rezervasyonlari secin ve toplu giris yapin.</p>
+            <p className="text-sm text-gray-500">Gruba ait rezervasyonlari seçin ve toplu giris yapin.</p>
             <div className="max-h-[300px] overflow-y-auto space-y-1">
               {groupArrivals.map(b => (
                 <label key={b.id} className="flex items-center gap-3 p-2 rounded border hover:bg-gray-50 cursor-pointer text-xs">

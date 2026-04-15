@@ -38,7 +38,7 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria, setFindRoomCriteria, 
         toast.success(`Found ${response.data.available_rooms.length} available rooms`);
       }
     } catch (error) {
-      toast.error('Failed to search for rooms');
+      toast.error('Oda arama başarısız');
       console.error(error);
     } finally {
       setLoading(false);
