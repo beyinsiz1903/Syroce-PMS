@@ -60,6 +60,8 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
         "cash_out": 0,
         "status": "open",
         "opened_at": now.isoformat(),
+        "opened_by": current_user.email,
+        "opened_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
         "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
     await db.cashier_shifts.insert_one(doc)
@@ -88,6 +90,7 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
             "difference": difference,
             "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
             "closed_by": current_user.email,
+            "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
         }}
     )
     return {
@@ -95,7 +98,67 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
         "counted_amount": counted_amount,
         "expected_amount": expected,
         "difference": difference,
-        "closed_at": now.isoformat()
+        "closed_at": now.isoformat(),
+        "closed_by": current_user.email,
+        "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+    }
+
+
+@router.post("/cashier/handover-shift")
+async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    shift = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"}
+    )
+    if not shift:
+        raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
+    target_email = body.get("target_email", "").strip()
+    target_name = body.get("target_name", "").strip()
+    if not target_email:
+        raise HTTPException(status_code=400, detail="Devir yapilacak kullanici e-postasi gerekli")
+    now = datetime.utcnow()
+    counted_amount = _safe_float(body.get("counted_amount", 0))
+    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    difference = counted_amount - expected
+    await db.cashier_shifts.update_one(
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "status": "handed_over",
+            "closed_at": now.isoformat(),
+            "closing_amount": counted_amount,
+            "expected_amount": expected,
+            "difference": difference,
+            "closed_by": current_user.email,
+            "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+            "handover_to_email": target_email,
+            "handover_to_name": target_name or target_email,
+            "handover_at": now.isoformat(),
+            "handover_note": body.get("note", ""),
+        }}
+    )
+    new_doc = {
+        "_id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "cashier_name": target_name or target_email,
+        "cashier_email": target_email,
+        "opening_amount": counted_amount,
+        "cash_in": 0,
+        "cash_out": 0,
+        "status": "open",
+        "opened_at": now.isoformat(),
+        "opened_by": target_email,
+        "opened_by_name": target_name or target_email,
+        "previous_shift_id": str(shift["_id"]),
+        "handover_from_email": current_user.email,
+        "handover_from_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+    }
+    await db.cashier_shifts.insert_one(new_doc)
+    new_doc["id"] = new_doc.pop("_id")
+    return {
+        "status": "handed_over",
+        "previous_shift_closed": True,
+        "new_shift": new_doc,
+        "counted_amount": counted_amount,
+        "difference": difference,
     }
 
 

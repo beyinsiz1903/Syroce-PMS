@@ -6,13 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Wallet, DollarSign, CreditCard, ArrowRightLeft, Clock,
-  LogIn, LogOut, Receipt, FileText, RefreshCw, AlertTriangle,
-  CheckCircle, Banknote, Calculator, Printer
+  Wallet, DollarSign, ArrowRightLeft, Clock,
+  LogIn, LogOut, Receipt, RefreshCw,
+  Calculator, UserCheck, Users
 } from 'lucide-react';
 
 const CashierTab = ({ user }) => {
@@ -22,13 +20,18 @@ const CashierTab = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [showHandoverDialog, setShowHandoverDialog] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('');
   const [closingCounts, setClosingCounts] = useState({
     cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0,
     coin_1: 0, coin_050: 0, coin_025: 0
   });
   const [closingNote, setClosingNote] = useState('');
-  const [activeView, setActiveView] = useState('current');
+  const [handoverTarget, setHandoverTarget] = useState({ email: '', name: '', note: '' });
+  const [handoverCounts, setHandoverCounts] = useState({
+    cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0,
+    coin_1: 0, coin_050: 0, coin_025: 0
+  });
 
   const loadShift = useCallback(async () => {
     try {
@@ -65,15 +68,16 @@ const CashierTab = ({ user }) => {
     setLoading(false);
   };
 
+  const calcTotal = (counts) =>
+    (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
+    (counts.cash_20 * 20) + (counts.cash_10 * 10) + (counts.cash_5 * 5) +
+    (counts.cash_1 * 1) + (counts.coin_1 * 1) + (counts.coin_050 * 0.5) + (counts.coin_025 * 0.25);
+
   const closeShift = async () => {
     setLoading(true);
-    const countedTotal = (closingCounts.cash_200 * 200) + (closingCounts.cash_100 * 100) +
-      (closingCounts.cash_50 * 50) + (closingCounts.cash_20 * 20) + (closingCounts.cash_10 * 10) +
-      (closingCounts.cash_5 * 5) + (closingCounts.cash_1 * 1) +
-      (closingCounts.coin_1 * 1) + (closingCounts.coin_050 * 0.5) + (closingCounts.coin_025 * 0.25);
     try {
       await axios.post('/cashier/close-shift', {
-        counted_amount: countedTotal,
+        counted_amount: calcTotal(closingCounts),
         denomination_counts: closingCounts,
         notes: closingNote
       });
@@ -87,19 +91,63 @@ const CashierTab = ({ user }) => {
     setLoading(false);
   };
 
-  const countedTotal = (closingCounts.cash_200 * 200) + (closingCounts.cash_100 * 100) +
-    (closingCounts.cash_50 * 50) + (closingCounts.cash_20 * 20) + (closingCounts.cash_10 * 10) +
-    (closingCounts.cash_5 * 5) + (closingCounts.cash_1 * 1) +
-    (closingCounts.coin_1 * 1) + (closingCounts.coin_050 * 0.5) + (closingCounts.coin_025 * 0.25);
+  const handoverShift = async () => {
+    if (!handoverTarget.email.trim()) {
+      toast.error('Devir yapilacak kullanici e-postasi gerekli');
+      return;
+    }
+    setLoading(true);
+    try {
+      await axios.post('/cashier/handover-shift', {
+        target_email: handoverTarget.email.trim(),
+        target_name: handoverTarget.name.trim(),
+        counted_amount: calcTotal(handoverCounts),
+        note: handoverTarget.note
+      });
+      toast.success(`Vardiya ${handoverTarget.name || handoverTarget.email} adli kullaniciya devredildi`);
+      setShowHandoverDialog(false);
+      setHandoverTarget({ email: '', name: '', note: '' });
+      setHandoverCounts({ cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0, coin_1: 0, coin_050: 0, coin_025: 0 });
+      loadShift();
+      loadHistory();
+    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    setLoading(false);
+  };
 
+  const countedTotal = calcTotal(closingCounts);
+  const handoverTotal = calcTotal(handoverCounts);
   const expectedCash = shift ? (shift.opening_amount || 0) + (shift.cash_in || 0) - (shift.cash_out || 0) : 0;
   const difference = countedTotal - expectedCash;
+  const handoverDifference = handoverTotal - expectedCash;
 
   const cashStats = {
     totalIn: transactions.filter(t => t.direction === 'in').reduce((s, t) => s + (t.amount || 0), 0),
     totalOut: transactions.filter(t => t.direction === 'out').reduce((s, t) => s + (t.amount || 0), 0),
     cashCount: transactions.filter(t => t.method === 'cash').length,
     cardCount: transactions.filter(t => t.method === 'card').length,
+  };
+
+  const DenominationGrid = ({ counts, setCounts }) => (
+    <div className="grid grid-cols-2 gap-3">
+      {[
+        ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
+        ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
+        ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
+        ['coin_050', '50 Krs'], ['coin_025', '25 Krs']
+      ].map(([key, label]) => (
+        <div key={key} className="flex items-center gap-2">
+          <Label className="w-24 text-xs">{label}</Label>
+          <Input type="number" min="0" className="h-8 text-xs"
+            value={counts[key]} onChange={e => setCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
+        </div>
+      ))}
+    </div>
+  );
+
+  const statusLabel = (s) => {
+    if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">Acik</Badge>;
+    if (s === 'handed_over') return <Badge className="bg-blue-100 text-blue-700">Devredildi</Badge>;
+    return <Badge className="bg-gray-100 text-gray-600">Kapali</Badge>;
   };
 
   return (
@@ -114,9 +162,14 @@ const CashierTab = ({ user }) => {
               <LogIn className="w-4 h-4 mr-2" /> Vardiya Ac
             </Button>
           ) : (
-            <Button onClick={() => setShowCloseDialog(true)} variant="destructive">
-              <LogOut className="w-4 h-4 mr-2" /> Vardiya Kapat
-            </Button>
+            <>
+              <Button onClick={() => setShowHandoverDialog(true)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+                <Users className="w-4 h-4 mr-2" /> Devret
+              </Button>
+              <Button onClick={() => setShowCloseDialog(true)} variant="destructive">
+                <LogOut className="w-4 h-4 mr-2" /> Vardiya Kapat
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile
@@ -126,6 +179,27 @@ const CashierTab = ({ user }) => {
 
       {shift ? (
         <>
+          <Card className="border-emerald-200 bg-emerald-50/30">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 text-sm">
+                <UserCheck className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <span className="font-medium text-emerald-800">Aktif Vardiya</span>
+                  <span className="text-emerald-600 mx-2">|</span>
+                  <span className="text-emerald-700">Acan: <strong>{shift.opened_by_name || shift.cashier_name || shift.cashier_email}</strong></span>
+                  <span className="text-emerald-600 mx-2">|</span>
+                  <span className="text-emerald-700">Baslangic: {shift.opened_at?.slice(0, 16).replace('T', ' ')}</span>
+                  {shift.handover_from_name && (
+                    <>
+                      <span className="text-emerald-600 mx-2">|</span>
+                      <span className="text-blue-600">Devreden: <strong>{shift.handover_from_name}</strong></span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card className="bg-emerald-50 border-emerald-200">
               <CardContent className="p-3">
@@ -215,23 +289,38 @@ const CashierTab = ({ user }) => {
           ) : (
             <div className="space-y-2">
               {shiftHistory.map((s, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-gray-200 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${s.status === 'closed' ? 'bg-gray-400' : 'bg-emerald-500'}`} />
-                    <div>
-                      <span className="text-gray-700 font-medium">{s.cashier_name || 'Kasiyer'}</span>
-                      <p className="text-gray-400">{s.opened_at?.slice(0, 16).replace('T', ' ')} - {s.closed_at?.slice(11, 16) || 'Acik'}</p>
+                <div key={i} className="p-3 rounded-lg border border-gray-200 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${s.status === 'open' ? 'bg-emerald-500' : s.status === 'handed_over' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-700 font-medium">{s.cashier_name || s.cashier_email || 'Kasiyer'}</span>
+                          {statusLabel(s.status)}
+                        </div>
+                        <p className="text-gray-400 mt-0.5">{s.opened_at?.slice(0, 16).replace('T', ' ')} - {s.closed_at?.slice(11, 16) || 'Acik'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-gray-500">Acilis: {(s.opening_amount || 0).toFixed(2)}</p>
+                        <p className="text-gray-500">Kapanis: {(s.closing_amount || 0).toFixed(2)}</p>
+                      </div>
+                      {s.difference != null && (
+                        <Badge className={Math.abs(s.difference) < 0.01 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
+                          {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${s.difference.toFixed(2)}`}
+                        </Badge>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-gray-500">Acilis: {(s.opening_amount || 0).toFixed(2)}</p>
-                      <p className="text-gray-500">Kapanis: {(s.closing_amount || 0).toFixed(2)}</p>
-                    </div>
-                    {s.difference != null && (
-                      <Badge className={Math.abs(s.difference) < 0.01 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
-                        {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${s.difference.toFixed(2)}`}
-                      </Badge>
+                  <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
+                    {s.opened_by_name && <span>Acan: <strong className="text-gray-700">{s.opened_by_name}</strong></span>}
+                    {s.closed_by_name && <span>Kapatan: <strong className="text-gray-700">{s.closed_by_name}</strong></span>}
+                    {s.handover_to_name && (
+                      <span className="text-blue-600">Devredilen: <strong>{s.handover_to_name}</strong></span>
+                    )}
+                    {s.handover_from_name && (
+                      <span className="text-blue-600">Devreden: <strong>{s.handover_from_name}</strong></span>
                     )}
                   </div>
                 </div>
@@ -266,20 +355,7 @@ const CashierTab = ({ user }) => {
             <DialogTitle className="flex items-center gap-2"><Calculator className="w-5 h-5" /> Vardiya Kapat - Kasa Sayimi</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                ['cash_200', '200 TL'], ['cash_100', '100 TL'], ['cash_50', '50 TL'],
-                ['cash_20', '20 TL'], ['cash_10', '10 TL'], ['cash_5', '5 TL'],
-                ['cash_1', '1 TL'], ['coin_1', '1 TL (Bozuk)'],
-                ['coin_050', '50 Krs'], ['coin_025', '25 Krs']
-              ].map(([key, label]) => (
-                <div key={key} className="flex items-center gap-2">
-                  <Label className="w-24 text-xs">{label}</Label>
-                  <Input type="number" min="0" className="h-8 text-xs"
-                    value={closingCounts[key]} onChange={e => setClosingCounts(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))} />
-                </div>
-              ))}
-            </div>
+            <DenominationGrid counts={closingCounts} setCounts={setClosingCounts} />
             <div className="bg-gray-50 rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Sayilan Tutar:</span>
@@ -301,6 +377,52 @@ const CashierTab = ({ user }) => {
             <Button onClick={closeShift} disabled={loading} className="w-full" variant="destructive">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />}
               Vardiyayi Kapat
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHandoverDialog} onOpenChange={setShowHandoverDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Vardiya Devret</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
+              Mevcut vardiyayi baska bir kullaniciya devrediyorsunuz. Kasa sayimi yapilacak ve yeni vardiya otomatik acilacak.
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Devir Yapilacak Kisi Adi</Label>
+                <Input value={handoverTarget.name} onChange={e => setHandoverTarget(p => ({ ...p, name: e.target.value }))} placeholder="Ad Soyad" />
+              </div>
+              <div>
+                <Label>E-posta *</Label>
+                <Input type="email" value={handoverTarget.email} onChange={e => setHandoverTarget(p => ({ ...p, email: e.target.value }))} placeholder="kullanici@hotel.com" />
+              </div>
+            </div>
+            <DenominationGrid counts={handoverCounts} setCounts={setHandoverCounts} />
+            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Sayilan Tutar:</span>
+                <span className="font-bold">{handoverTotal.toFixed(2)} TL</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Beklenen Tutar:</span>
+                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
+              </div>
+              <div className={`flex justify-between text-sm pt-1 border-t ${Math.abs(handoverDifference) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
+                <span>Fark:</span>
+                <span className="font-bold">{handoverDifference.toFixed(2)} TL</span>
+              </div>
+            </div>
+            <div>
+              <Label>Devir Notu</Label>
+              <Input value={handoverTarget.note} onChange={e => setHandoverTarget(p => ({ ...p, note: e.target.value }))} placeholder="Devir notu (opsiyonel)" />
+            </div>
+            <Button onClick={handoverShift} disabled={loading || !handoverTarget.email.trim()} className="w-full bg-blue-600 hover:bg-blue-700">
+              {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
+              Vardiyayi Devret
             </Button>
           </div>
         </DialogContent>
