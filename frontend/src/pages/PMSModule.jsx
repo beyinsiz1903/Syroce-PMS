@@ -1550,7 +1550,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             window.location.hash = v;
           }}
         >
-          <TabsList className="grid w-full grid-cols-12 gap-1">
+          <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1">
             {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
