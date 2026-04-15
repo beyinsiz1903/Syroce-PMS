@@ -98,10 +98,8 @@ async def get_flash_report(
     today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = target_date.replace(hour=23, minute=59, second=59)
 
-    # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
-    # Occupancy today
     occupied_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in',
@@ -109,10 +107,9 @@ async def get_flash_report(
         'check_out': {'$gte': today_start.isoformat()}
     })
 
-    (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
+    occupancy_rate = (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
 
-    # Arrivals today
-    await db.bookings.count_documents({
+    arrivals_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today_start.isoformat(),
@@ -121,8 +118,7 @@ async def get_flash_report(
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     })
 
-    # Departures today
-    await db.bookings.count_documents({
+    departures_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_out': {
             '$gte': today_start.isoformat(),
@@ -130,31 +126,26 @@ async def get_flash_report(
         }
     })
 
-    # In-house guests
-    await db.bookings.count_documents({
+    inhouse_count = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'checked_in'
     })
 
-    # Revenue today
     today_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today_start.isoformat(),
             '$lte': today_end.isoformat()
         }
-    }, {'_id': 0, 'total_amount': 1, 'base_rate': 1}).to_list(1000)
+    }, {'_id': 0, 'total_amount': 1, 'base_rate': 1, 'paid_amount': 1,
+        'charges': 1, 'channel': 1, 'status': 1}).to_list(1000)
 
-    total_revenue = sum([b.get('total_amount', 0) for b in today_bookings])
+    total_revenue = sum(b.get('total_amount', 0) for b in today_bookings)
+    collected = sum(b.get('paid_amount', 0) for b in today_bookings)
+    adr = total_revenue / occupied_today if occupied_today > 0 else 0
+    revpar = total_revenue / total_rooms if total_rooms > 0 else 0
 
-    # Calculate ADR (Average Daily Rate)
-    total_revenue / occupied_today if occupied_today > 0 else 0
-
-    # Calculate RevPAR (Revenue Per Available Room)
-    total_revenue / total_rooms if total_rooms > 0 else 0
-
-    # No-shows today
-    await db.bookings.count_documents({
+    no_shows = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today_start.isoformat(),
@@ -163,8 +154,7 @@ async def get_flash_report(
         'status': 'no_show'
     })
 
-    # Cancellations today
-    await db.bookings.count_documents({
+    cancellations = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': 'cancelled',
         'created_at': {
@@ -173,7 +163,10 @@ async def get_flash_report(
         }
     })
 
-    # F&B Revenue (from POS)
+    walk_ins = sum(1 for b in today_bookings if b.get('channel') == 'walk_in')
+    overstays = 0
+
+    fnb_revenue = 0
     try:
         fnb_orders = await db.pos_orders.find({
             'tenant_id': current_user.tenant_id,
@@ -182,9 +175,67 @@ async def get_flash_report(
                 '$lte': today_end.isoformat()
             }
         }, {'_id': 0, 'total_amount': 1}).to_list(1000)
-        sum([o.get('total_amount', 0) for o in fnb_orders])
+        fnb_revenue = sum(o.get('total_amount', 0) for o in fnb_orders)
     except Exception:
         pass
+
+    charges_by_cat = {}
+    for b in today_bookings:
+        for c in b.get('charges', []):
+            cat = c.get('charge_category', 'other')
+            charges_by_cat[cat] = charges_by_cat.get(cat, 0) + c.get('amount', 0)
+
+    room_revenue = charges_by_cat.get('room', charges_by_cat.get('accommodation', 0))
+    if not charges_by_cat:
+        room_revenue = total_revenue
+    spa_revenue = charges_by_cat.get('spa', 0)
+    minibar_revenue = charges_by_cat.get('minibar', 0)
+    laundry_revenue = charges_by_cat.get('laundry', 0)
+
+    grand_total = total_revenue + fnb_revenue
+    other_revenue = max(0, grand_total - room_revenue - fnb_revenue - spa_revenue - minibar_revenue - laundry_revenue)
+
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "occupancy": {
+            "rate": round(occupancy_rate, 2),
+            "occupied": occupied_today,
+            "total": total_rooms,
+            "available": total_rooms - occupied_today,
+        },
+        "kpi": {
+            "adr": round(adr, 2),
+            "revpar": round(revpar, 2),
+        },
+        "revenue": {
+            "total": round(grand_total, 2),
+            "room": round(room_revenue, 2),
+            "fb": round(fnb_revenue, 2),
+            "spa": round(spa_revenue, 2),
+            "minibar": round(minibar_revenue, 2),
+            "laundry": round(laundry_revenue, 2),
+            "other": round(other_revenue, 2),
+            "collected": round(collected, 2),
+            "outstanding": round(grand_total - collected, 2),
+        },
+        "operations": {
+            "arrivals": arrivals_today,
+            "departures": departures_today,
+            "inhouse": inhouse_count,
+            "no_shows": no_shows,
+            "walk_ins": walk_ins,
+            "cancellations": cancellations,
+            "overstays": overstays,
+        },
+        "departments": [
+            {"name": "Oda Geliri", "amount": round(room_revenue, 2)},
+            {"name": "Yiyecek & İçecek", "amount": round(fnb_revenue, 2)},
+            {"name": "Spa & Wellness", "amount": round(spa_revenue, 2)},
+            {"name": "Minibar", "amount": round(minibar_revenue, 2)},
+            {"name": "Çamaşırhane", "amount": round(laundry_revenue, 2)},
+            {"name": "Diğer", "amount": round(other_revenue, 2)},
+        ],
+    }
 
 
 
