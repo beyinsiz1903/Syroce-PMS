@@ -1,8 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { InfoField, Avatar, EmptyState, SummaryCard, FormField } from '../helpers';
 
-// Mock lucide-react icons
-jest.mock('lucide-react', () => ({
+vi.mock('lucide-react', () => ({
   Loader2: (props) => <div data-testid="icon-loader" {...props} />,
   Check: (props) => <div data-testid="icon-check" {...props} />,
   FileText: (props) => <div data-testid="icon-filetext" {...props} />,
@@ -73,7 +72,7 @@ describe('reservation-detail helper components', () => {
 
   describe('FormField', () => {
     it('renders label and input', () => {
-      const onChange = jest.fn();
+      const onChange = vi.fn();
       render(<FormField label="Ad" value="Mehmet" onChange={onChange} />);
       expect(screen.getByText('Ad')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Mehmet')).toBeInTheDocument();

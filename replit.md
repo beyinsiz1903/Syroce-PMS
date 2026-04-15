@@ -13,12 +13,14 @@ Enterprise-grade multi-tenant Hotel Property Management System (PMS) with AI-pow
 - **Routing**: React Router v7
 - **i18n**: i18next (10 languages: EN, TR, DE, FR, ES, IT, AR, PT, RU, ZH) with RTL support for Arabic. Full i18n coverage on all PMS components + Migration Observability panel.
 - **Package Manager**: Yarn 1.22.22
+- **Testing**: Vitest + @testing-library/react + jsdom (vitest.config.js, `yarn test`)
 
 ### Backend (FastAPI - Port 8000)
 - **Framework**: FastAPI (Python 3.11+)
 - **Database**: MongoDB 7.0+ (motor for async, local mongod on /tmp/mongodb-data)
 - **Cache**: Redis (local redis-server on port 6379)
 - **Tasks**: Celery with Redis
+- **Testing**: pytest + pytest-asyncio (tests/ directory, `python -m pytest`)
 - **Auth**: JWT + AES-256-GCM + RBAC
 - **Startup**: `bash backend/start.sh` (starts MongoDB, Redis, then uvicorn)
 

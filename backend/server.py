@@ -42,8 +42,8 @@ try:
     for handler in logging.root.handlers:
         handler.addFilter(SanitizedLogFilter())
     logger.info("Log sanitization filter attached to all handlers")
-except Exception:
-    pass
+except Exception as _log_err:
+    logger.warning("Log sanitization filter skipped: %s", _log_err)
 
 # ── Core (single-instance DB, auth) ────────────────────────────────
 from core.database import client, db  # noqa: E402
@@ -140,8 +140,8 @@ except Exception as _ent_err:
 try:
     from modules.observability.request_tracing_middleware import RequestTracingMiddleware
     app.add_middleware(RequestTracingMiddleware)
-except Exception:
-    pass
+except Exception as _trace_err:
+    logger.warning("Request tracing middleware skipped: %s", _trace_err)
 
 # PII masking disabled at middleware level to avoid GZip conflicts.
 # Masking is applied at the application layer via security/sensitive_output.py
@@ -157,7 +157,7 @@ try:
 
     @app.exception_handler(ExelyError)
     async def exely_error_handler(request: Request, exc: ExelyError):
-        return JSONResponse(status_code=502, content={"detail": f"Exely provider hatasi: {exc.message}"})
+        return JSONResponse(status_code=502, content={"detail": f"Exely provider error: {exc.message}"})
 except ImportError:
     pass
 
@@ -170,8 +170,8 @@ try:
     from domains.ai.endpoints import api_router as ai_ai_router
     api_router.include_router(ai_ai_router, tags=["AI Intelligence"])
     logger.info("  ✅ AI Intelligence endpoints loaded")
-except Exception:
-    pass
+except Exception as _ai_err:
+    logger.warning("AI Intelligence endpoints skipped: %s", _ai_err)
 
 # Mount the main API router
 app.include_router(api_router)
@@ -201,6 +201,7 @@ _optional_factory_routers = [
     ("pci_dss_compliance", "create_pci_dss_routes", "PCI DSS Compliance"),
 ]
 
+_failed_routers = []
 for mod_name, factory_name, tag in _optional_factory_routers:
     try:
         mod = __import__(mod_name)
@@ -208,8 +209,11 @@ for mod_name, factory_name, tag in _optional_factory_routers:
         router = factory(db, get_current_user)
         app.include_router(router, tags=[tag])
         logger.info(f"  ✅ {tag}")
-    except Exception:
-        pass
+    except Exception as _fac_err:
+        _failed_routers.append(tag)
+        logger.warning("Factory router '%s' skipped: %s", tag, _fac_err)
+if _failed_routers:
+    logger.warning("⚠️ %d factory router(s) failed to load: %s", len(_failed_routers), ", ".join(_failed_routers))
 
 # Report Builder & Guest Messaging (init pattern)
 try:
@@ -217,16 +221,16 @@ try:
     from routers.report_builder import router as report_builder_router
     init_report_builder(db, get_current_user)
     app.include_router(report_builder_router, tags=["Report Builder"])
-except Exception:
-    pass
+except Exception as _rb_err:
+    logger.warning("Report Builder router skipped: %s", _rb_err)
 
 try:
     from routers.guest_messaging import init_guest_messaging
     from routers.guest_messaging import router as guest_messaging_router
     init_guest_messaging(db, get_current_user)
     app.include_router(guest_messaging_router, tags=["Guest Messaging"])
-except Exception:
-    pass
+except Exception as _gm_err:
+    logger.warning("Guest Messaging router skipped: %s", _gm_err)
 
 # GraphQL
 try:
@@ -236,47 +240,47 @@ try:
 
     graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])
-except Exception:
-    pass
+except Exception as _gql_err:
+    logger.warning("GraphQL router skipped: %s", _gql_err)
 
 # WebSocket
 try:
     from websocket_server import socket_app
     app.mount("/ws", socket_app)
-except Exception:
-    pass
+except Exception as _ws_sock_err:
+    logger.warning("WebSocket server skipped: %s", _ws_sock_err)
 
 # Channel Manager — Hardening (runtime status, drift, reconciliation, etc.)
 try:
     from domains.channel_manager.hardening_router import router as cm_hardening_router
     app.include_router(cm_hardening_router)
-    print("✅ Channel Manager hardening router included")
-except Exception:
-    pass
+    logger.info("  ✅ Channel Manager hardening router loaded")
+except Exception as _cmh_err:
+    logger.warning("Channel Manager hardening router skipped: %s", _cmh_err)
 
 # Channel Manager v2
 try:
     from channel_manager.interfaces.router_registry import router as cm_v2_router
     app.include_router(cm_v2_router, tags=["Channel Manager v2"])
-    print("✅ Channel Manager v2 router included (connector-first architecture)")
-except Exception:
-    pass
+    logger.info("  ✅ Channel Manager v2 router loaded (connector-first architecture)")
+except Exception as _cmv2_err:
+    logger.warning("Channel Manager v2 router skipped: %s", _cmv2_err)
 
 # OTA-002: Outbox Admin endpoints (requeue, replay, status)
 try:
     from routers.outbox_admin import outbox_admin_router
     app.include_router(outbox_admin_router, prefix="/api", tags=["Outbox Admin"])
-    print("OTA Outbox Admin router included (requeue/replay/status)")
-except Exception:
-    pass
+    logger.info("  ✅ OTA Outbox Admin router loaded (requeue/replay/status)")
+except Exception as _outbox_err:
+    logger.warning("Outbox Admin router skipped: %s", _outbox_err)
 
 # DATA-001: Import Admin endpoints (review queue, retry, approve, dismiss)
 try:
     from routers.import_admin import import_admin_router
     app.include_router(import_admin_router, prefix="/api", tags=["Import Admin"])
-    print("Import Admin router included (DATA-001 review queue/retry)")
-except Exception:
-    pass
+    logger.info("  ✅ Import Admin router loaded (DATA-001 review queue/retry)")
+except Exception as _import_err:
+    logger.warning("Import Admin router skipped: %s", _import_err)
 
 # Entitlement, Metering & Feature Flags Admin API
 try:

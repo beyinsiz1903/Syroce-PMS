@@ -61,7 +61,7 @@ describe('reservation-detail/helpers', () => {
       expect(statusLabel('checked_in')).toBe('Giris Yapildi');
       expect(statusLabel('confirmed')).toBe('Onaylandi');
       expect(statusLabel('checked_out')).toBe('Cikis Yapildi');
-      expect(statusLabel('cancelled')).toBe('Iptal');
+      expect(statusLabel('cancelled')).toBe('İptal');
       expect(statusLabel('no_show')).toBe('No-Show');
     });
 

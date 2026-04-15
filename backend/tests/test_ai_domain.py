@@ -1,0 +1,244 @@
+"""
+Tests for AI Domain — Dynamic Pricing, Predictive Engine, Reputation Manager
+Covers K5 critical gap: AI domain had zero test coverage.
+"""
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+
+
+class FakeCollection:
+    def __init__(self, data=None):
+        self._data = data or []
+
+    async def count_documents(self, query):
+        return len([d for d in self._data if all(d.get(k) == v for k, v in query.items() if not isinstance(v, dict))])
+
+    def find(self, query, projection=None):
+        self._last_query = query
+        return self
+
+    async def to_list(self, limit):
+        return self._data[:limit]
+
+
+class FakeDB:
+    def __init__(self, rooms=None, bookings=None, reviews=None, service_complaints=None):
+        self.rooms = FakeCollection(rooms or [])
+        self.bookings = FakeCollection(bookings or [])
+        self.reviews = FakeCollection(reviews or [])
+        self.service_complaints = FakeCollection(service_complaints or [])
+
+
+class TestDynamicPricingEngine:
+    def setup_method(self):
+        from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
+        self.db = FakeDB(
+            rooms=[{"tenant_id": "t1"} for _ in range(100)],
+            bookings=[{"tenant_id": "t1", "status": "confirmed"} for _ in range(70)],
+        )
+        self.engine = DynamicPricingEngine(self.db)
+
+    def test_base_prices_exist(self):
+        assert "Standard" in self.engine.base_prices
+        assert "Deluxe" in self.engine.base_prices
+        assert "Suite" in self.engine.base_prices
+        assert self.engine.base_prices["Standard"] < self.engine.base_prices["Deluxe"]
+        assert self.engine.base_prices["Deluxe"] < self.engine.base_prices["Suite"]
+
+    @pytest.mark.asyncio
+    async def test_get_competitor_rates_structure(self):
+        result = await self.engine.get_competitor_rates("2026-04-20", "Standard")
+        assert "competitors" in result
+        assert "average" in result
+        assert "min" in result
+        assert "max" in result
+        assert len(result["competitors"]) == 3
+        assert result["min"] <= result["average"] <= result["max"]
+
+    @pytest.mark.asyncio
+    async def test_competitor_rates_vary_by_room_type(self):
+        std = await self.engine.get_competitor_rates("2026-04-20", "Standard")
+        suite = await self.engine.get_competitor_rates("2026-04-20", "Suite")
+        assert suite["average"] > std["average"] * 1.5
+
+    @pytest.mark.asyncio
+    async def test_calculate_demand_factors_structure(self):
+        result = await self.engine.calculate_demand_factors("t1", "2026-04-20")
+        assert "weekend_factor" in result
+        assert "demand_factor" in result
+        assert "urgency_factor" in result
+        assert "event_factor" in result
+        assert "occupancy_forecast" in result
+        assert result["weekend_factor"] >= 1.0
+        assert result["demand_factor"] >= 0.9
+
+    @pytest.mark.asyncio
+    async def test_weekend_factor_higher(self):
+        friday = datetime(2026, 4, 17, tzinfo=UTC)
+        monday = datetime(2026, 4, 20, tzinfo=UTC)
+        result_fri = await self.engine.calculate_demand_factors("t1", friday.isoformat())
+        result_mon = await self.engine.calculate_demand_factors("t1", monday.isoformat())
+        assert result_fri["weekend_factor"] >= result_mon["weekend_factor"]
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_structure(self):
+        result = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
+        assert "recommended_price" in result
+        assert "min_price" in result
+        assert "max_price" in result
+        assert "confidence_score" in result
+        assert "competitor_data" in result
+        assert "demand_factors" in result
+        assert "current_price" in result
+        assert "price_change_pct" in result
+        assert result["min_price"] <= result["recommended_price"] <= result["max_price"]
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_positive(self):
+        result = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
+        assert result["recommended_price"] > 0
+        assert result["confidence_score"] > 0
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_not_deviate_too_much(self):
+        result = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
+        competitor_avg = result["competitor_data"]["average"]
+        assert result["recommended_price"] < competitor_avg * 1.5
+        assert result["recommended_price"] > competitor_avg * 0.5
+
+
+class TestPredictiveEngine:
+    def setup_method(self):
+        from domains.ai.predictive_engine import PredictiveEngine
+        self.db = FakeDB(
+            bookings=[
+                {
+                    "id": "b1", "tenant_id": "t1", "guest_id": "g1",
+                    "check_in": "2026-04-20T14:00:00", "status": "confirmed",
+                    "channel": "booking_com", "payment_method": None,
+                    "total_amount": 50, "last_contact_date": None, "created_at": datetime.now(UTC).isoformat()
+                },
+                {
+                    "id": "b2", "tenant_id": "t1", "guest_id": "g2",
+                    "check_in": "2026-04-20T14:00:00", "status": "confirmed",
+                    "channel": "direct", "payment_method": "credit_card",
+                    "total_amount": 200, "last_contact_date": "2026-04-19", "created_at": datetime.now(UTC).isoformat()
+                },
+            ],
+            reviews=[],
+            service_complaints=[],
+        )
+        self.engine = PredictiveEngine(self.db)
+
+    @pytest.mark.asyncio
+    async def test_predict_no_shows_returns_list(self):
+        result = await self.engine.predict_no_shows("t1", "2026-04-20")
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_high_risk_booking_detected(self):
+        result = await self.engine.predict_no_shows("t1", "2026-04-20")
+        high_risk = [p for p in result if p["risk_level"] == "high"]
+        assert len(high_risk) >= 1
+        assert high_risk[0]["booking_id"] == "b1"
+
+    @pytest.mark.asyncio
+    async def test_risk_factors_populated(self):
+        result = await self.engine.predict_no_shows("t1", "2026-04-20")
+        if result:
+            assert "factors" in result[0]
+            assert isinstance(result[0]["factors"], list)
+
+    def test_get_risk_factors_no_payment(self):
+        factors = self.engine._get_risk_factors({"channel": "direct"})
+        assert "No payment method" in factors
+
+    def test_get_risk_factors_ota(self):
+        factors = self.engine._get_risk_factors({"payment_method": "cc", "channel": "booking_com"})
+        assert "OTA booking" in factors
+
+    @pytest.mark.asyncio
+    async def test_predict_demand_returns_30_days(self):
+        result = await self.engine.predict_demand("t1", 30)
+        assert len(result) == 30
+        for day in result:
+            assert "date" in day
+            assert "occupancy_forecast" in day
+            assert "demand_level" in day
+            assert "recommended_price" in day
+            assert 20 <= day["occupancy_forecast"] <= 95
+
+    @pytest.mark.asyncio
+    async def test_predict_demand_levels_valid(self):
+        result = await self.engine.predict_demand("t1", 7)
+        valid_levels = {"very_high", "high", "medium", "low"}
+        for day in result:
+            assert day["demand_level"] in valid_levels
+
+
+class TestReputationManager:
+    def setup_method(self):
+        from domains.ai.reputation_manager import ReputationManager
+        self.db = FakeDB(
+            reviews=[
+                {"tenant_id": "t1", "rating": 5, "created_at": datetime.now(UTC).isoformat()},
+                {"tenant_id": "t1", "rating": 4, "created_at": datetime.now(UTC).isoformat()},
+                {"tenant_id": "t1", "rating": 2, "created_at": (datetime.now(UTC) - timedelta(days=60)).isoformat()},
+            ]
+        )
+        self.manager = ReputationManager(self.db)
+
+    @pytest.mark.asyncio
+    async def test_aggregate_reviews_structure(self):
+        result = await self.manager.aggregate_reviews("t1")
+        assert "platforms" in result
+        assert "overall_rating" in result
+        assert "total_reviews" in result
+        assert result["overall_rating"] > 0
+        assert result["total_reviews"] > 0
+
+    @pytest.mark.asyncio
+    async def test_sentiment_positive(self):
+        result = await self.manager.analyze_sentiment("This hotel is amazing and excellent!")
+        assert result["sentiment"] == "positive"
+        assert result["score"] > 0
+
+    @pytest.mark.asyncio
+    async def test_sentiment_negative(self):
+        result = await self.manager.analyze_sentiment("This place is terrible and awful")
+        assert result["sentiment"] == "negative"
+        assert result["score"] < 0
+
+    @pytest.mark.asyncio
+    async def test_sentiment_neutral(self):
+        result = await self.manager.analyze_sentiment("The room was okay")
+        assert result["sentiment"] == "neutral"
+        assert result["score"] == 0
+
+    @pytest.mark.asyncio
+    async def test_suggest_response_positive(self):
+        response = await self.manager.suggest_response("Amazing hotel, excellent service!", 5)
+        assert len(response) > 0
+
+    @pytest.mark.asyncio
+    async def test_suggest_response_negative(self):
+        response = await self.manager.suggest_response("Terrible experience, awful room", 1)
+        assert len(response) > 0
+        assert response != await self.manager.suggest_response("Amazing!", 5)
+
+    @pytest.mark.asyncio
+    async def test_reputation_trends_structure(self):
+        result = await self.manager.get_reputation_trends("t1", 30)
+        assert "trend" in result
+        assert result["trend"] in {"improving", "declining", "stable"}
+        assert "avg_rating" in result
+        assert "total_reviews" in result
+
+    @pytest.mark.asyncio
+    async def test_reputation_trends_empty_db(self):
+        from domains.ai.reputation_manager import ReputationManager as RM
+        empty_mgr = RM(FakeDB())
+        result = await empty_mgr.get_reputation_trends("t1", 30)
+        assert result["trend"] == "stable"
+        assert result["total_reviews"] == 0

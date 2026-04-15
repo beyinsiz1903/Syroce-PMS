@@ -88,7 +88,7 @@ async def _timeline_event(tenant_id: str, stage: str, status: str,
             metadata=metadata or {},
         )
     except Exception as exc:
-        logger.debug("Timeline write failed for %s: %s", stage, exc)
+        logger.error("Timeline write failed for %s/%s (booking=%s): %s", stage, status, booking_id, exc)
 
 
 async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
@@ -107,8 +107,17 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     try:
         from security.encrypted_lookup import encrypt_booking_doc
         booking_doc = encrypt_booking_doc(booking_doc)
-    except Exception:
-        pass
+    except ImportError:
+        logger.warning(
+            "PII encryption module not available — booking %s stored without field-level encryption",
+            booking_doc.get("id", "unknown"),
+        )
+    except Exception as enc_err:
+        logger.error(
+            "PII encryption failed for booking %s — aborting to prevent unencrypted storage: %s",
+            booking_doc.get("id", "unknown"), enc_err,
+        )
+        raise RuntimeError(f"PII encryption failed, booking not saved: {enc_err}") from enc_err
     tenant_id = booking_doc.get("tenant_id")
     room_id = booking_doc.get("room_id")
     check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date")
