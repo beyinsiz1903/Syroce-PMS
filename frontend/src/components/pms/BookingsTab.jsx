@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TabsContent } from '@/components/ui/tabs';
@@ -7,9 +8,6 @@ import VirtualizedBookingList from '@/components/VirtualizedBookingList';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 import { useNavigate } from 'react-router-dom';
 
-/**
- * Bookings tab content extracted from PMSModule.
- */
 const BookingsTab = ({
   bookingStats,
   bookings,
@@ -21,42 +19,45 @@ const BookingsTab = ({
   roomsCount,
   activeTab,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  const tc = (k) => t(`pmsComponents.bookings.${k}`);
+  const cur = t('pmsComponents.common.currency');
+
   return (
     <TabsContent value="bookings" className="space-y-4">
       {isLite && roomsCount === 0 && activeTab === 'bookings' && (
         <LiteSetupBanner
-          title="Rezervasyon için önce odaları ekleyin"
-          desc="Önce odaları ekleyin, ardından rezervasyon oluşturabilirsiniz."
-          actionLabel="Odalara Git"
+          title={tc('addRoomsFirst')}
+          desc={tc('addRoomsDesc')}
+          actionLabel={tc('goToRooms')}
           onAction={() => navigate('/app/pms#rooms')}
         />
       )}
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Rezervasyonlar ({bookingStats?.total ?? 0})</h2>
+        <h2 className="text-2xl font-semibold">{tc('title')} ({bookingStats?.total ?? 0})</h2>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setOpenDialog('findroom')}>
             <Home className="w-4 h-4 mr-2" />
-            Müsait Oda Bul
+            {tc('findRoom')}
           </Button>
           <Button onClick={() => setOpenDialog('booking')}>
             <Plus className="w-4 h-4 mr-2" />
-            Yeni Rezervasyon
+            {tc('newBooking')}
           </Button>
         </div>
       </div>
 
-      {/* Booking Stats */}
       <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Toplam Rezervasyon</div>
+            <div className="text-xs text-gray-600">{tc('totalBookings')}</div>
             <div className="text-2xl font-bold">{bookingStats?.total ?? 0}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Onaylı</div>
+            <div className="text-xs text-gray-600">{tc('confirmed')}</div>
             <div className="text-2xl font-bold text-blue-600">
               {bookingStats?.confirmed ?? 0}
             </div>
@@ -64,7 +65,7 @@ const BookingsTab = ({
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Giriş Yapan</div>
+            <div className="text-xs text-gray-600">{tc('checkedIn')}</div>
             <div className="text-2xl font-bold text-green-600">
               {bookingStats?.checkedIn ?? 0}
             </div>
@@ -72,17 +73,17 @@ const BookingsTab = ({
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Toplam Gelir</div>
+            <div className="text-xs text-gray-600">{tc('totalRevenue')}</div>
             <div className="text-2xl font-bold text-green-600">
-              ₺{(bookingStats?.totalRevenue ?? 0).toFixed(0)}
+              {cur}{(bookingStats?.totalRevenue ?? 0).toFixed(0)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Ort. ADR</div>
+            <div className="text-xs text-gray-600">{tc('avgAdr')}</div>
             <div className="text-2xl font-bold text-purple-600">
-              ₺{(bookingStats?.avgAdr ?? 0).toFixed(0)}
+              {cur}{(bookingStats?.avgAdr ?? 0).toFixed(0)}
             </div>
           </CardContent>
         </Card>
@@ -94,7 +95,7 @@ const BookingsTab = ({
           onSelectBooking={(booking) => {
             setSelectedBookingDetail(booking);
             setOpenDialog('bookingDetail');
-            toast.info('Rezervasyon detayları açılıyor...');
+            toast.info(tc('openingDetails'));
           }}
           height={600}
         />

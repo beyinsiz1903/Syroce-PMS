@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,18 +15,15 @@ import {
   Shield, CheckCircle, Database, UserX
 } from 'lucide-react';
 
-const RETENTION_POLICIES = [
-  { category: 'Misafir Kimlik Bilgileri', retention: '10 yıl', legal_basis: 'Yasal Zorunluluk (KBS)', status: 'active' },
-  { category: 'Folyo / Fatura Bilgileri', retention: '10 yıl', legal_basis: 'Vergi Mevzuatı', status: 'active' },
-  { category: 'İletişim Bilgileri', retention: '3 yıl', legal_basis: 'Açık Rıza / Meşru Menfaat', status: 'active' },
-  { category: 'Tercihler & Notlar', retention: '5 yıl', legal_basis: 'Meşru Menfaat', status: 'active' },
-  { category: 'Kamera Kayıtları', retention: '30 gün', legal_basis: 'Güvenlik', status: 'active' },
-  { category: 'Pazarlama İzinleri', retention: 'İptal Edilene Kadar', legal_basis: 'Açık Rıza', status: 'active' },
-  { category: 'Şikâyet Kayıtları', retention: '5 yıl', legal_basis: 'Yasal Zorunluluk', status: 'active' },
-  { category: 'Çalışma Kayıtları', retention: '15 yıl', legal_basis: 'İş Mevzuatı', status: 'active' },
-];
+const CATEGORY_KEYS = ['guestId', 'folioInvoice', 'contactInfo', 'preferencesNotes', 'cameraRecords', 'marketingConsents', 'complaintRecords', 'employeeRecords'];
+const RETENTION_KEYS = ['tenYears', 'tenYears', 'threeYears', 'fiveYears', 'thirtyDays', 'untilRevoked', 'fiveYears', 'fifteenYears'];
+const LEGAL_KEYS = ['kbs', 'tax', 'consent', 'legitimate', 'security', 'explicitConsent', 'legal', 'labor'];
+const REQUEST_TYPE_KEYS = ['access', 'erasure', 'rectification', 'portability', 'objection'];
 
 const KVKKManager = () => {
+  const { t } = useTranslation();
+  const tv = (k) => t(`pmsComponents.kvkk.${k}`);
+
   const [activeTab, setActiveTab] = useState('policies');
   const [requests, setRequests] = useState([]);
   const [showNewRequest, setShowNewRequest] = useState(false);
@@ -48,7 +46,7 @@ const KVKKManager = () => {
       if (consentRes.status === 'fulfilled') setConsents(consentRes.value.data.consents || []);
       if (auditRes.status === 'fulfilled') setAuditLogs(auditRes.value.data.logs || []);
     } catch {
-      toast.error('KVKK verileri yüklenemedi');
+      toast.error(tv('loadError'));
     } finally {
       setLoading(false);
     }
@@ -61,9 +59,9 @@ const KVKKManager = () => {
       setRequests(prev => [res.data, ...prev]);
       setNewRequest({ guest_name: '', type: '', details: '' });
       setShowNewRequest(false);
-      toast.success('KVKK talebi oluşturuldu');
+      toast.success(tv('requestCreated'));
     } catch {
-      toast.error('Talep oluşturulamadı');
+      toast.error(tv('createError'));
     }
   };
 
@@ -71,36 +69,34 @@ const KVKKManager = () => {
     try {
       await axios.patch(`/kvkk/requests/${id}`, { status: 'completed' });
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'completed', response_date: new Date().toISOString().split('T')[0] } : r));
-      toast.success('Talep tamamlandı');
+      toast.success(tv('requestCompleted'));
     } catch {
-      toast.error('Talep tamamlanamadı');
+      toast.error(tv('completeError'));
     }
   };
-
-  const typeLabel = (t) => t === 'access' ? 'Erişim' : t === 'erasure' ? 'Silme' : t === 'rectification' ? 'Düzeltme' : t === 'portability' ? 'Taşınabilirlik' : t === 'objection' ? 'İtiraz' : t;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          <Shield className="h-5 w-5" /> KVKK / GDPR Veri Yönetimi
+          <Shield className="h-5 w-5" /> {tv('title')}
         </h2>
-        <Button onClick={() => setShowNewRequest(true)}>Yeni Talep</Button>
+        <Button onClick={() => setShowNewRequest(true)}>{tv('newRequest')}</Button>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">Toplam Talep</div></CardContent></Card>
-        <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">Bekleyen</div></CardContent></Card>
-        <Card className="border-green-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{requests.filter(r => r.status === 'completed').length}</div><div className="text-xs text-muted-foreground">Tamamlanan</div></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{RETENTION_POLICIES.length}</div><div className="text-xs text-muted-foreground">Saklama Politikası</div></CardContent></Card>
+        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">{tv('totalRequests')}</div></CardContent></Card>
+        <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">{tv('pending')}</div></CardContent></Card>
+        <Card className="border-green-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{requests.filter(r => r.status === 'completed').length}</div><div className="text-xs text-muted-foreground">{tv('completed')}</div></CardContent></Card>
+        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{CATEGORY_KEYS.length}</div><div className="text-xs text-muted-foreground">{tv('retentionPolicyCount')}</div></CardContent></Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="policies">Saklama Politikaları</TabsTrigger>
-          <TabsTrigger value="requests">Veri Talepleri ({requests.length})</TabsTrigger>
-          <TabsTrigger value="consents">Rıza Yönetimi ({consents.length})</TabsTrigger>
-          <TabsTrigger value="audit">Denetim İzi ({auditLogs.length})</TabsTrigger>
+          <TabsTrigger value="policies">{tv('policiesTab')}</TabsTrigger>
+          <TabsTrigger value="requests">{tv('requestsTab')} ({requests.length})</TabsTrigger>
+          <TabsTrigger value="consents">{tv('consentsTab')} ({consents.length})</TabsTrigger>
+          <TabsTrigger value="audit">{tv('auditTab')} ({auditLogs.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="policies">
@@ -108,14 +104,14 @@ const KVKKManager = () => {
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted"><tr><th className="p-3 text-left">Veri Kategorisi</th><th className="p-3 text-left">Saklama Süresi</th><th className="p-3 text-left">Hukuki Dayanak</th><th className="p-3 text-left">Durum</th></tr></thead>
+                  <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('dataCategory')}</th><th className="p-3 text-left">{tv('retentionPeriod')}</th><th className="p-3 text-left">{tv('legalBasis')}</th><th className="p-3 text-left">{tv('statusLabel')}</th></tr></thead>
                   <tbody>
-                    {RETENTION_POLICIES.map((p, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-3 font-medium">{p.category}</td>
-                        <td className="p-3"><Badge variant="outline">{p.retention}</Badge></td>
-                        <td className="p-3 text-muted-foreground">{p.legal_basis}</td>
-                        <td className="p-3"><Badge className="bg-green-100 text-green-800">Aktif</Badge></td>
+                    {CATEGORY_KEYS.map((catKey, i) => (
+                      <tr key={catKey} className="border-t">
+                        <td className="p-3 font-medium">{tv(`categories.${catKey}`)}</td>
+                        <td className="p-3"><Badge variant="outline">{tv(`retentions.${RETENTION_KEYS[i]}`)}</Badge></td>
+                        <td className="p-3 text-muted-foreground">{tv(`legalBases.${LEGAL_KEYS[i]}`)}</td>
+                        <td className="p-3"><Badge className="bg-green-100 text-green-800">{tv('active')}</Badge></td>
                       </tr>
                     ))}
                   </tbody>
@@ -126,24 +122,26 @@ const KVKKManager = () => {
         </TabsContent>
 
         <TabsContent value="requests" className="space-y-2">
-          {loading && <p className="text-center text-muted-foreground py-4">Yükleniyor...</p>}
-          {!loading && requests.length === 0 && <p className="text-center text-muted-foreground py-8">Henüz veri talebi yok</p>}
+          {loading && <p className="text-center text-muted-foreground py-4">{tv('loading')}</p>}
+          {!loading && requests.length === 0 && <p className="text-center text-muted-foreground py-8">{tv('noRequests')}</p>}
           {requests.map(req => (
             <Card key={req.id}>
               <CardContent className="p-3 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{req.guest_name}</span>
-                    <Badge variant="outline">{typeLabel(req.type)}</Badge>
+                    <Badge variant="outline">{tv(`requestTypes.${req.type}`)}</Badge>
                     <Badge variant={req.status === 'completed' ? 'default' : req.status === 'pending' ? 'secondary' : 'outline'}>
-                      {req.status === 'completed' ? 'Tamamlandı' : req.status === 'pending' ? 'Bekliyor' : 'İşlemde'}
+                      {req.status === 'completed' ? tv('completed') : req.status === 'pending' ? tv('pending') : tv('processing')}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{req.details}</p>
-                  <div className="text-xs text-muted-foreground">Talep: {req.date} {req.response_date ? `| Yanıt: ${req.response_date}` : '| 30 gün içinde yanıtlanmalı'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {tv('requestDate')} {req.date} {req.response_date ? `| ${tv('responseDate')} ${req.response_date}` : `| ${tv('mustRespond')}`}
+                  </div>
                 </div>
                 {req.status !== 'completed' && (
-                  <Button size="sm" onClick={() => completeRequest(req.id)}><CheckCircle className="h-3 w-3 mr-1" />Tamamla</Button>
+                  <Button size="sm" onClick={() => completeRequest(req.id)}><CheckCircle className="h-3 w-3 mr-1" />{tv('completeRequest')}</Button>
                 )}
               </CardContent>
             </Card>
@@ -154,9 +152,9 @@ const KVKKManager = () => {
           <Card>
             <CardContent className="p-0">
               <table className="w-full text-sm">
-                <thead className="bg-muted"><tr><th className="p-3 text-left">Misafir</th><th className="p-3 text-center">E-posta</th><th className="p-3 text-center">SMS</th><th className="p-3 text-center">Veri Paylaşımı</th><th className="p-3 text-left">Tarih</th></tr></thead>
+                <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('guestLabel')}</th><th className="p-3 text-center">{tv('emailMarketing')}</th><th className="p-3 text-center">{tv('smsMarketing')}</th><th className="p-3 text-center">{tv('dataSharing')}</th><th className="p-3 text-left">{tv('date')}</th></tr></thead>
                 <tbody>
-                  {consents.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-muted-foreground">Henüz rıza kaydı yok</td></tr>}
+                  {consents.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-muted-foreground">{tv('noConsents')}</td></tr>}
                   {consents.map(c => (
                     <tr key={c.id} className="border-t">
                       <td className="p-3 font-medium">{c.guest_name}</td>
@@ -176,7 +174,7 @@ const KVKKManager = () => {
           <Card>
             <CardContent className="p-4">
               <div className="space-y-3">
-                {auditLogs.length === 0 && <p className="text-center text-muted-foreground py-4">Henüz denetim izi yok</p>}
+                {auditLogs.length === 0 && <p className="text-center text-muted-foreground py-4">{tv('noAuditLogs')}</p>}
                 {auditLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between border-b pb-2 last:border-0">
                     <div>
@@ -184,9 +182,9 @@ const KVKKManager = () => {
                         <Database className="h-3 w-3 text-muted-foreground" />
                         <span className="text-sm font-medium">{log.action}</span>
                       </div>
-                      <div className="text-xs text-muted-foreground">Kullanıcı: {log.user} | Hedef: {log.target}</div>
+                      <div className="text-xs text-muted-foreground">{tv('user')} {log.user} | {tv('target')} {log.target}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{log.timestamp ? new Date(log.timestamp).toLocaleString('tr-TR') : ''}</div>
+                    <div className="text-xs text-muted-foreground">{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</div>
                   </div>
                 ))}
               </div>
@@ -197,23 +195,21 @@ const KVKKManager = () => {
 
       <Dialog open={showNewRequest} onOpenChange={setShowNewRequest}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Yeni KVKK Talebi</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{tv('newRequestTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>Misafir Adı</Label><Input value={newRequest.guest_name} onChange={e => setNewRequest(p => ({ ...p, guest_name: e.target.value }))} /></div>
-            <div><Label>Talep Tipi</Label>
+            <div><Label>{tv('guestName')}</Label><Input value={newRequest.guest_name} onChange={e => setNewRequest(p => ({ ...p, guest_name: e.target.value }))} /></div>
+            <div><Label>{tv('requestType')}</Label>
               <Select value={newRequest.type} onValueChange={v => setNewRequest(p => ({ ...p, type: v }))}>
-                <SelectTrigger><SelectValue placeholder="Talep tipi..." /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={tv('requestTypePlaceholder')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="access">Erişim Hakkı (Verilerimi Göster)</SelectItem>
-                  <SelectItem value="erasure">Silme Hakkı (Unutulma)</SelectItem>
-                  <SelectItem value="rectification">Düzeltme Hakkı</SelectItem>
-                  <SelectItem value="portability">Taşınabilirlik</SelectItem>
-                  <SelectItem value="objection">İtiraz Hakkı</SelectItem>
+                  {REQUEST_TYPE_KEYS.map(k => (
+                    <SelectItem key={k} value={k}>{tv(`requestTypes.${k}`)}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Detaylar</Label><Textarea value={newRequest.details} onChange={e => setNewRequest(p => ({ ...p, details: e.target.value }))} placeholder="Talep detayları..." /></div>
-            <Button className="w-full" onClick={createRequest}>Talep Oluştur</Button>
+            <div><Label>{tv('details')}</Label><Textarea value={newRequest.details} onChange={e => setNewRequest(p => ({ ...p, details: e.target.value }))} placeholder={tv('detailsPlaceholder')} /></div>
+            <Button className="w-full" onClick={createRequest}>{tv('createRequest')}</Button>
           </div>
         </DialogContent>
       </Dialog>

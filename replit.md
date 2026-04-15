@@ -11,7 +11,7 @@ Enterprise-grade multi-tenant Hotel Property Management System (PMS) with AI-pow
 - **Styling**: Tailwind CSS + shadcn/ui
 - **State**: TanStack Query (React Query) v5
 - **Routing**: React Router v7
-- **i18n**: i18next (8 languages including Turkish)
+- **i18n**: i18next (10 languages: EN, TR, DE, FR, ES, IT, AR, PT, RU, ZH) with RTL support for Arabic
 - **Package Manager**: Yarn 1.22.22
 
 ### Backend (FastAPI - Port 8000)

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,9 @@ import {
 } from 'lucide-react';
 
 const FeedbackSystem = () => {
+  const { t } = useTranslation();
+  const tf = (k) => t(`pmsComponents.feedback.${k}`);
+
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ avgRating: 0, totalReviews: 0, satisfaction: 0 });
@@ -31,10 +35,10 @@ const FeedbackSystem = () => {
         setStats({ avgRating: 0, totalReviews: 0, satisfaction: 0 });
       }
     } catch {
-      toast.error('Değerlendirmeler yüklenemedi');
+      toast.error(tf('loadError'));
     }
     setLoading(false);
-  }, []);
+  }, [tf]);
 
   useEffect(() => { loadReviews(); }, [loadReviews]);
 
@@ -50,19 +54,19 @@ const FeedbackSystem = () => {
     if (!responseText.trim() || !respondDialog) return;
     try {
       await axios.post(`/crm/reviews/${respondDialog}/respond`, { response: responseText });
-      toast.success('Yanıt gönderildi');
+      toast.success(tf('responseSent'));
       setRespondDialog(null);
       setResponseText('');
       loadReviews();
     } catch {
-      toast.error('Yanıt gönderilemedi');
+      toast.error(tf('responseError'));
     }
   };
 
   const getRatingBadge = (rating) => {
-    if (rating >= 4) return <Badge className="bg-green-100 text-green-700">Memnun</Badge>;
-    if (rating >= 3) return <Badge className="bg-yellow-100 text-yellow-700">Orta</Badge>;
-    return <Badge className="bg-red-100 text-red-700">Memnun Değil</Badge>;
+    if (rating >= 4) return <Badge className="bg-green-100 text-green-700">{tf('satisfied')}</Badge>;
+    if (rating >= 3) return <Badge className="bg-yellow-100 text-yellow-700">{tf('moderate')}</Badge>;
+    return <Badge className="bg-red-100 text-red-700">{tf('dissatisfied')}</Badge>;
   };
 
   return (
@@ -70,12 +74,12 @@ const FeedbackSystem = () => {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-2xl font-bold flex items-center gap-2">
-            <MessageCircle className="w-6 h-6" /> Misafir Geri Bildirimleri
+            <MessageCircle className="w-6 h-6" /> {tf('title')}
           </h3>
-          <p className="text-gray-600 text-sm">Misafir değerlendirmelerini takip edin ve yanıtlayın</p>
+          <p className="text-gray-600 text-sm">{tf('subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" onClick={loadReviews} disabled={loading}>
-          <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Yenile
+          <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {tf('refresh')}
         </Button>
       </div>
 
@@ -83,7 +87,7 @@ const FeedbackSystem = () => {
         <Card className="bg-yellow-50 border-yellow-200">
           <CardContent className="p-5 text-center">
             <Star className="w-6 h-6 mx-auto mb-1 text-yellow-500 fill-yellow-500" />
-            <p className="text-xs text-yellow-600">Ortalama Puan</p>
+            <p className="text-xs text-yellow-600">{tf('avgRating')}</p>
             <p className="text-3xl font-bold text-yellow-700">{stats.avgRating}</p>
             <div className="flex justify-center mt-1">{renderStars(Math.round(stats.avgRating))}</div>
           </CardContent>
@@ -91,16 +95,16 @@ const FeedbackSystem = () => {
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-5 text-center">
             <MessageCircle className="w-6 h-6 mx-auto mb-1 text-blue-500" />
-            <p className="text-xs text-blue-600">Toplam Değerlendirme</p>
+            <p className="text-xs text-blue-600">{tf('totalReviews')}</p>
             <p className="text-3xl font-bold text-blue-700">{stats.totalReviews}</p>
           </CardContent>
         </Card>
         <Card className="bg-green-50 border-green-200">
           <CardContent className="p-5 text-center">
             <TrendingUp className="w-6 h-6 mx-auto mb-1 text-green-500" />
-            <p className="text-xs text-green-600">Memnuniyet Oranı</p>
+            <p className="text-xs text-green-600">{tf('satisfactionRate')}</p>
             <p className="text-3xl font-bold text-green-700">%{stats.satisfaction}</p>
-            <p className="text-xs text-green-500">(4+ yıldız)</p>
+            <p className="text-xs text-green-500">{tf('fourPlusStar')}</p>
           </CardContent>
         </Card>
       </div>
@@ -109,8 +113,8 @@ const FeedbackSystem = () => {
         <Card>
           <CardContent className="py-12 text-center text-gray-500">
             <MessageCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="font-medium">Henüz değerlendirme yok</p>
-            <p className="text-sm mt-1">Misafir değerlendirmeleri burada görünecek</p>
+            <p className="font-medium">{tf('noReviews')}</p>
+            <p className="text-sm mt-1">{tf('reviewsWillAppear')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -120,30 +124,28 @@ const FeedbackSystem = () => {
               <CardHeader className="pb-2">
                 <div className="flex justify-between items-start">
                   <div>
-                    <CardTitle className="text-lg">{review.guest_name || 'Misafir'}</CardTitle>
+                    <CardTitle className="text-lg">{review.guest_name || tf('guest')}</CardTitle>
                     <div className="flex items-center gap-2 mt-1">
                       {renderStars(review.rating)}
                       {getRatingBadge(review.rating)}
                     </div>
                   </div>
                   <span className="text-xs text-gray-500">
-                    {review.created_at ? new Date(review.created_at).toLocaleDateString('tr-TR') : ''}
+                    {review.created_at ? new Date(review.created_at).toLocaleDateString() : ''}
                   </span>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-gray-700 mb-3">{review.comment}</p>
-                {review.category && (
-                  <Badge variant="outline" className="mb-3">{review.category}</Badge>
-                )}
+                {review.category && <Badge variant="outline" className="mb-3">{review.category}</Badge>}
                 {review.response ? (
                   <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
-                    <p className="text-xs font-semibold text-blue-700 mb-1">Yönetim Yanıtı:</p>
+                    <p className="text-xs font-semibold text-blue-700 mb-1">{tf('managementResponse')}</p>
                     <p className="text-sm text-gray-700">{review.response}</p>
                   </div>
                 ) : (
                   <Button size="sm" variant="outline" onClick={() => { setRespondDialog(review.id); setResponseText(''); }}>
-                    <Send className="w-4 h-4 mr-2" /> Yanıtla
+                    <Send className="w-4 h-4 mr-2" /> {tf('respond')}
                   </Button>
                 )}
               </CardContent>
@@ -155,19 +157,14 @@ const FeedbackSystem = () => {
       <Dialog open={!!respondDialog} onOpenChange={(o) => { if (!o) setRespondDialog(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Değerlendirmeye Yanıt Ver</DialogTitle>
+            <DialogTitle>{tf('respondTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <Textarea
-              value={responseText}
-              onChange={e => setResponseText(e.target.value)}
-              rows={4}
-              placeholder="Yanıtınızı yazın..."
-            />
+            <Textarea value={responseText} onChange={e => setResponseText(e.target.value)} rows={4} placeholder={tf('responsePlaceholder')} />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setRespondDialog(null)}>İptal</Button>
+              <Button variant="outline" onClick={() => setRespondDialog(null)}>{tf('cancel')}</Button>
               <Button onClick={respondToReview} disabled={!responseText.trim()}>
-                <Send className="w-4 h-4 mr-2" /> Gönder
+                <Send className="w-4 h-4 mr-2" /> {tf('send')}
               </Button>
             </div>
           </div>

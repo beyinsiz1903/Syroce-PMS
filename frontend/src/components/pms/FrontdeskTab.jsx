@@ -1,4 +1,5 @@
 import React, { memo, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,6 @@ import {
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
 const FrontdeskTab = ({
-  t,
   arrivals,
   departures,
   inhouse,
@@ -28,6 +28,8 @@ const FrontdeskTab = ({
   loading,
   error,
 }) => {
+  const { t } = useTranslation();
+  const tf = (k) => t(`pmsComponents.frontdesk.${k}`);
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
   const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
@@ -87,9 +89,9 @@ const FrontdeskTab = ({
       <TabsContent value="frontdesk" className="space-y-6">
         <div className="text-center py-12">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-red-600 font-medium mb-2">Veriler yüklenemedi</p>
+          <p className="text-red-600 font-medium mb-2">{tf('dataLoadError')}</p>
           <p className="text-sm text-gray-500 mb-4">{error}</p>
-          <Button variant="outline" onClick={loadFrontDeskData}>Tekrar Dene</Button>
+          <Button variant="outline" onClick={loadFrontDeskData}>{tf('retry')}</Button>
         </div>
       </TabsContent>
     );
@@ -134,7 +136,7 @@ const FrontdeskTab = ({
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-red-700">{overstays.length}</div>
-              <p className="text-xs text-red-500">Gecikmis cikis</p>
+              <p className="text-xs text-red-500">{tf('lateCheckout')}</p>
             </CardContent>
           </Card>
         )}
@@ -147,7 +149,7 @@ const FrontdeskTab = ({
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-amber-700">{noShows.length}</div>
-              <p className="text-xs text-amber-500">Gelmedi</p>
+              <p className="text-xs text-amber-500">{tf('didntCome')}</p>
             </CardContent>
           </Card>
         )}
@@ -155,11 +157,11 @@ const FrontdeskTab = ({
 
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={() => setShowWalkIn(true)}>
-          <UserPlus className="w-4 h-4 mr-1" /> Walk-In
+          <UserPlus className="w-4 h-4 mr-1" /> {tf('walkIn')}
         </Button>
         {groupArrivals.length > 0 && (
           <Button variant="outline" size="sm" onClick={() => setShowGroupCheckin(true)}>
-            <CheckSquare className="w-4 h-4 mr-1" /> Toplu Giris ({groupArrivals.length})
+            <CheckSquare className="w-4 h-4 mr-1" /> {tf('batchCheckin')} ({groupArrivals.length})
           </Button>
         )}
       </div>
@@ -168,7 +170,7 @@ const FrontdeskTab = ({
         <Card className="border-red-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-red-700 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" /> Gecikmis Cikislar (Overstay)
+              <AlertTriangle className="w-4 h-4" /> {tf('overstayList')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -176,12 +178,12 @@ const FrontdeskTab = ({
               {overstays.map(b => (
                 <div key={b.id} className="flex items-center justify-between p-2 bg-red-50 rounded border border-red-100 text-xs">
                   <div>
-                    <span className="font-medium text-gray-800">{b.guest_name || 'Misafir'}</span>
-                    <span className="text-gray-500 ml-2">Oda {b.room_number}</span>
-                    <span className="text-red-500 ml-2">Planlanan cikis: {b.check_out?.slice(0, 10)}</span>
+                    <span className="font-medium text-gray-800">{b.guest_name || tf('guest')}</span>
+                    <span className="text-gray-500 ml-2">{tf('room')} {b.room_number}</span>
+                    <span className="text-red-500 ml-2">{tf('plannedCheckout')}: {b.check_out?.slice(0, 10)}</span>
                   </div>
                   <Button size="sm" variant="outline" className="h-6 text-xs border-red-300 text-red-700" onClick={() => handleCheckOut(b.id)}>
-                    <LogOut className="w-3 h-3 mr-1" /> Cikis Yap
+                    <LogOut className="w-3 h-3 mr-1" /> {tf('checkout')}
                   </Button>
                 </div>
               ))}
@@ -194,7 +196,7 @@ const FrontdeskTab = ({
         <Card className="border-amber-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-amber-700 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> No-Show Listesi
+              <Clock className="w-4 h-4" /> {tf('noShowList')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -202,9 +204,9 @@ const FrontdeskTab = ({
               {noShows.map(b => (
                 <div key={b.id} className="flex items-center justify-between p-2 bg-amber-50 rounded border border-amber-100 text-xs">
                   <div>
-                    <span className="font-medium text-gray-800">{b.guest_name || 'Misafir'}</span>
-                    <span className="text-gray-500 ml-2">Oda {b.room_number}</span>
-                    <span className="text-amber-500 ml-2">Beklenen giris: {b.check_in?.slice(0, 10)}</span>
+                    <span className="font-medium text-gray-800">{b.guest_name || tf('guest')}</span>
+                    <span className="text-gray-500 ml-2">{tf('room')} {b.room_number}</span>
+                    <span className="text-amber-500 ml-2">{tf('expectedCheckin')}: {b.check_in?.slice(0, 10)}</span>
                   </div>
                   <Badge className="bg-amber-100 text-amber-700">No-Show</Badge>
                 </div>
@@ -227,11 +229,11 @@ const FrontdeskTab = ({
               <CardContent>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Mevcut Doluluk:</span>
+                    <span className="text-gray-600">{tf('currentOccupancy')}:</span>
                     <span className="font-semibold">{aiPrediction.current_occupancy?.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Gelecek Rezervasyonlar:</span>
+                    <span className="text-gray-600">{tf('upcomingBookings')}:</span>
                     <span className="font-semibold">{aiPrediction.upcoming_bookings}</span>
                   </div>
                   {aiPrediction.prediction && (
@@ -242,7 +244,7 @@ const FrontdeskTab = ({
                         <>
                           {aiPrediction.prediction.tomorrow_prediction != null && (
                             <p className="text-xs text-gray-700">
-                              Yarin: <span className="font-semibold">
+                              {tf('tomorrow')}: <span className="font-semibold">
                                 {typeof aiPrediction.prediction.tomorrow_prediction === 'object'
                                   ? `${aiPrediction.prediction.tomorrow_prediction.predicted_occupancy_percentage ?? aiPrediction.prediction.tomorrow_prediction.occupancy_percentage ?? '?'}%`
                                   : `${aiPrediction.prediction.tomorrow_prediction}%`}
@@ -251,7 +253,7 @@ const FrontdeskTab = ({
                           )}
                           {aiPrediction.prediction.next_week_prediction != null && (
                             <p className="text-xs text-gray-700">
-                              Gelecek 7 gun: <span className="font-semibold">
+                              {tf('next7days')}: <span className="font-semibold">
                                 {typeof aiPrediction.prediction.next_week_prediction === 'object'
                                   ? `${aiPrediction.prediction.next_week_prediction.predicted_average_occupancy_percentage ?? aiPrediction.prediction.next_week_prediction.occupancy_percentage ?? '?'}%`
                                   : `${aiPrediction.prediction.next_week_prediction}%`}
@@ -284,7 +286,7 @@ const FrontdeskTab = ({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-700">Misafir analizi mevcut</p>
+                  <p className="text-sm text-gray-700">{tf('guestAnalysis')}</p>
                 )}
                 <div className="text-xs text-gray-500 mt-2">{t('ai.poweredBy')}</div>
               </CardContent>
@@ -302,7 +304,7 @@ const FrontdeskTab = ({
 
         <TabsContent value="arrivals" className="space-y-3">
           {arrivals.length === 0 && (
-            <div className="text-center py-8 text-slate-400 text-sm">Bugun beklenen gelis yok</div>
+            <div className="text-center py-8 text-slate-400 text-sm">{tf('noArrivalsToday')}</div>
           )}
           {arrivals.map((booking) => {
             const isDirty = booking.room?.status === 'dirty' || booking.room?.status === 'cleaning';
@@ -317,17 +319,17 @@ const FrontdeskTab = ({
                         <span className="font-bold text-base text-slate-800">{booking.guest?.name}</span>
                         {isVip && <Badge className="bg-purple-100 text-purple-700 text-[10px]"><Star className="w-3 h-3 mr-0.5" />VIP</Badge>}
                       </div>
-                      <div className="text-sm text-slate-500">Oda {booking.room?.room_number} — {booking.room?.room_type}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">{new Date(booking.check_in).toLocaleDateString('tr-TR')} - {new Date(booking.check_out).toLocaleDateString('tr-TR')}</div>
+                      <div className="text-sm text-slate-500">{tf('room')} {booking.room?.room_number} — {booking.room?.room_type}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{new Date(booking.check_in).toLocaleDateString()} - {new Date(booking.check_out).toLocaleDateString()}</div>
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {isDirty && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-amber-50 border border-amber-200 text-amber-700 rounded-md px-2 py-0.5">
-                            <Calendar className="w-3 h-3" /> Oda kirli
+                            <Calendar className="w-3 h-3" /> {tf('roomDirty')}
                           </span>
                         )}
                         {booking.balance > 0 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                            Bakiye: {booking.balance?.toFixed(2)} TL
+                            {tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}
                           </span>
                         )}
                       </div>
@@ -337,17 +339,17 @@ const FrontdeskTab = ({
                         <Button size="sm" className={`h-9 ${isDirty ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#C09D63] hover:bg-[#B08D55]'} text-white`}
                           onClick={() => {
                             if (isDirty) {
-                              if (!window.confirm('Oda kirli/temizleniyor. Yine de giriş yapmak istiyor musunuz?')) return;
+                              if (!window.confirm(tf('dirtyWarning'))) return;
                             }
                             handleCheckIn(booking.id);
                           }} data-testid={`checkin-${booking.id}`}>
-                          <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? 'Giriş (Kirli!)' : 'Giriş Yap'}
+                          <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? tf('checkinDirty') : tf('checkin')}
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>Folyo</Button>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>{tf('folio')}</Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500"
                         onClick={() => printRegistrationCard(booking, booking.guest, booking.room)}>
-                        <Printer className="w-3 h-3 mr-1" /> Kayıt Karti
+                        <Printer className="w-3 h-3 mr-1" /> {tf('regCard')}
                       </Button>
                     </div>
                   </div>
@@ -359,7 +361,7 @@ const FrontdeskTab = ({
 
         <TabsContent value="departures" className="space-y-3">
           {departures.length === 0 && (
-            <div className="text-center py-8 text-slate-400 text-sm">Bugun beklenen cikis yok</div>
+            <div className="text-center py-8 text-slate-400 text-sm">{tf('noDeparturesToday')}</div>
           )}
           {departures.map((booking) => {
             const hasBalance = booking.balance > 0;
@@ -370,22 +372,22 @@ const FrontdeskTab = ({
                   <div className="flex justify-between items-start gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-base text-slate-800">{booking.guest?.name}</div>
-                      <div className="text-sm text-slate-500">Oda {booking.room?.room_number}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Cikis: {new Date(booking.check_out).toLocaleDateString('tr-TR')}</div>
+                      <div className="text-sm text-slate-500">{tf('room')} {booking.room?.room_number}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{tf('checkout')}: {new Date(booking.check_out).toLocaleDateString()}</div>
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                          <span className="font-semibold">Bakiye: {booking.balance?.toFixed(2)} TL</span>
-                          — Cikis için once tahsil edin
+                          <span className="font-semibold">{tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}</span>
+                          — {tf('collectFirst')}
                         </div>
                       )}
                     </div>
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
-                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>Folyo</Button>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>{tf('folio')}</Button>
                       <Button size="sm"
                         className={`h-9 ${hasBalance ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
                         onClick={() => handleCheckOut(booking.id)} disabled={hasBalance}
                         data-testid={`checkout-${booking.id}`}>
-                        <LogOut className="w-4 h-4 mr-1.5" /> Cikis
+                        <LogOut className="w-4 h-4 mr-1.5" /> {tf('checkout')}
                       </Button>
                     </div>
                   </div>
@@ -397,7 +399,7 @@ const FrontdeskTab = ({
 
         <TabsContent value="inhouse" className="space-y-3">
           {inhouse.length === 0 && (
-            <div className="text-center py-8 text-slate-400 text-sm">Su an iceride misafir yok</div>
+            <div className="text-center py-8 text-slate-400 text-sm">{tf('noInhouseGuests')}</div>
           )}
           {inhouse.map((booking) => (
             <Card key={booking.id} className="transition-all hover:shadow-md" data-testid={`inhouse-card-${booking.id}`}>
@@ -405,13 +407,13 @@ const FrontdeskTab = ({
                 <div className="flex justify-between items-start gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-base text-slate-800">{booking.guest?.name}</div>
-                    <div className="text-sm text-slate-500">Oda {booking.room?.room_number} — {booking.room?.room_type}</div>
+                    <div className="text-sm text-slate-500">{tf('room')} {booking.room?.room_number} — {booking.room?.room_type}</div>
                     <div className="text-xs text-slate-400 mt-0.5">
                       {new Date(booking.check_in).toLocaleDateString('tr-TR')} - {new Date(booking.check_out).toLocaleDateString('tr-TR')}
                     </div>
                   </div>
                   <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>
-                    Folyo Yonet
+                    {tf('manageFolio')}
                   </Button>
                 </div>
               </CardContent>
@@ -423,20 +425,20 @@ const FrontdeskTab = ({
       <Dialog open={showWalkIn} onOpenChange={setShowWalkIn}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><UserPlus className="w-5 h-5" /> Walk-In Giris</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><UserPlus className="w-5 h-5" /> {tf('walkInTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Misafir Adi</Label><Input value={walkInForm.guest_name} onChange={e => setWalkInForm(p => ({ ...p, guest_name: e.target.value }))} /></div>
-              <div><Label>Telefon</Label><Input value={walkInForm.phone} onChange={e => setWalkInForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div><Label>{tf('guestName')}</Label><Input value={walkInForm.guest_name} onChange={e => setWalkInForm(p => ({ ...p, guest_name: e.target.value }))} /></div>
+              <div><Label>{t('pmsComponents.guests.phone')}</Label><Input value={walkInForm.phone} onChange={e => setWalkInForm(p => ({ ...p, phone: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>TC/Pasaport No</Label><Input value={walkInForm.id_number} onChange={e => setWalkInForm(p => ({ ...p, id_number: e.target.value }))} /></div>
-              <div><Label>Oda No</Label><Input value={walkInForm.room_number} onChange={e => setWalkInForm(p => ({ ...p, room_number: e.target.value }))} /></div>
+              <div><Label>{tf('idPassport')}</Label><Input value={walkInForm.id_number} onChange={e => setWalkInForm(p => ({ ...p, id_number: e.target.value }))} /></div>
+              <div><Label>{tf('roomNo')}</Label><Input value={walkInForm.room_number} onChange={e => setWalkInForm(p => ({ ...p, room_number: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Gece Sayisi</Label><Input type="number" min="1" value={walkInForm.nights} onChange={e => setWalkInForm(p => ({ ...p, nights: parseInt(e.target.value) || 1 }))} /></div>
-              <div><Label>Gecelik Fiyat (TL)</Label><Input type="number" value={walkInForm.rate} onChange={e => setWalkInForm(p => ({ ...p, rate: parseFloat(e.target.value) || 0 }))} /></div>
+              <div><Label>{tf('nights')}</Label><Input type="number" min="1" value={walkInForm.nights} onChange={e => setWalkInForm(p => ({ ...p, nights: parseInt(e.target.value) || 1 }))} /></div>
+              <div><Label>{tf('nightlyRate')}</Label><Input type="number" value={walkInForm.rate} onChange={e => setWalkInForm(p => ({ ...p, rate: parseFloat(e.target.value) || 0 }))} /></div>
             </div>
             <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => {
               if (!walkInForm.guest_name?.trim()) { return; }
@@ -444,7 +446,7 @@ const FrontdeskTab = ({
               if (!walkInForm.rate || walkInForm.rate <= 0) { return; }
               setShowWalkIn(false);
             }} disabled={!walkInForm.guest_name?.trim() || !walkInForm.room_number?.trim() || !walkInForm.rate || walkInForm.rate <= 0}>
-              <LogIn className="w-4 h-4 mr-2" /> Hizli Giris Yap
+              <LogIn className="w-4 h-4 mr-2" /> {tf('quickCheckin')}
             </Button>
           </div>
         </DialogContent>
@@ -453,22 +455,22 @@ const FrontdeskTab = ({
       <Dialog open={showGroupCheckin} onOpenChange={setShowGroupCheckin}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><CheckSquare className="w-5 h-5" /> Toplu Giris (Grup)</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><CheckSquare className="w-5 h-5" /> {tf('batchTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-gray-500">Gruba ait rezervasyonlari seçin ve toplu giris yapin.</p>
+            <p className="text-sm text-gray-500">{tf('batchDesc')}</p>
             <div className="max-h-[300px] overflow-y-auto space-y-1">
               {groupArrivals.map(b => (
                 <label key={b.id} className="flex items-center gap-3 p-2 rounded border hover:bg-gray-50 cursor-pointer text-xs">
                   <input type="checkbox" checked={groupCheckinIds.has(b.id)} onChange={() => toggleGroupCheckin(b.id)} />
                   <span className="font-medium">{b.guest?.name || b.guest_name}</span>
-                  <span className="text-gray-400">Oda {b.room?.room_number || b.room_number}</span>
+                  <span className="text-gray-400">{tf('room')} {b.room?.room_number || b.room_number}</span>
                   <Badge variant="outline" className="ml-auto text-[9px]">{b.status}</Badge>
                 </label>
               ))}
             </div>
             <Button className="w-full" disabled={groupCheckinIds.size === 0} onClick={handleBatchCheckin}>
-              <CheckSquare className="w-4 h-4 mr-2" /> {groupCheckinIds.size} Misafiri Giris Yap
+              <CheckSquare className="w-4 h-4 mr-2" /> {t('pmsComponents.frontdesk.checkinCount', { count: groupCheckinIds.size })}
             </Button>
           </div>
         </DialogContent>

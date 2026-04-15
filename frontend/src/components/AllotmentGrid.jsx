@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,27 +13,19 @@ import {
   Building2, Plus, RefreshCw, Calendar, BedDouble, Percent, AlertTriangle
 } from 'lucide-react';
 
-const ROOM_TYPES = [
-  { value: 'standard', label: 'Standart' },
-  { value: 'superior', label: 'Superior' },
-  { value: 'deluxe', label: 'Deluxe' },
-  { value: 'suite', label: 'Süit' },
-  { value: 'family', label: 'Aile' },
-  { value: 'king', label: 'King' },
-];
+const ROOM_TYPE_KEYS = ['standard', 'superior', 'deluxe', 'suite', 'family', 'king'];
 
 const AllotmentGrid = () => {
+  const { t, i18n } = useTranslation();
+  const ta = (k) => t(`pmsComponents.allotment.${k}`);
+  const cur = t('pmsComponents.common.currency');
+
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({
-    tour_operator: '',
-    room_type: 'standard',
-    allocated_rooms: '',
-    start_date: '',
-    end_date: '',
-    rate: '',
-    release_days: '7'
+    tour_operator: '', room_type: 'standard', allocated_rooms: '',
+    start_date: '', end_date: '', rate: '', release_days: '7'
   });
 
   const loadContracts = useCallback(async () => {
@@ -41,30 +34,18 @@ const AllotmentGrid = () => {
       const response = await axios.get('/pms/allotment-contracts');
       setContracts(response.data?.contracts || response.data || []);
     } catch {
-      toast.error('Kontenjan sözleşmeleri yüklenemedi');
+      toast.error(ta('loadError'));
     }
     setLoading(false);
-  }, []);
+  }, [ta]);
 
   useEffect(() => { loadContracts(); }, [loadContracts]);
 
   const createContract = async () => {
-    if (!formData.tour_operator.trim()) {
-      toast.error('Tur operatörü adı gerekli');
-      return;
-    }
-    if (!formData.start_date || !formData.end_date) {
-      toast.error('Başlangıç ve bitiş tarihi gerekli');
-      return;
-    }
-    if (new Date(formData.end_date) <= new Date(formData.start_date)) {
-      toast.error('Bitiş tarihi başlangıçtan sonra olmalı');
-      return;
-    }
-    if (!formData.allocated_rooms || parseInt(formData.allocated_rooms) <= 0) {
-      toast.error('Oda sayısı 0\'dan büyük olmalı');
-      return;
-    }
+    if (!formData.tour_operator.trim()) { toast.error(ta('operatorRequired')); return; }
+    if (!formData.start_date || !formData.end_date) { toast.error(ta('datesRequired')); return; }
+    if (new Date(formData.end_date) <= new Date(formData.start_date)) { toast.error(ta('endAfterStart')); return; }
+    if (!formData.allocated_rooms || parseInt(formData.allocated_rooms) <= 0) { toast.error(ta('roomCountRequired')); return; }
     try {
       await axios.post('/pms/allotment-contracts', {
         ...formData,
@@ -72,28 +53,26 @@ const AllotmentGrid = () => {
         rate: parseFloat(formData.rate) || 0,
         release_days: parseInt(formData.release_days) || 7,
       });
-      toast.success('Sözleşme oluşturuldu');
+      toast.success(ta('contractCreated'));
       loadContracts();
       setShowDialog(false);
       setFormData({ tour_operator: '', room_type: 'standard', allocated_rooms: '', start_date: '', end_date: '', rate: '', release_days: '7' });
     } catch {
-      toast.error('Sözleşme oluşturulamadı');
+      toast.error(ta('createError'));
     }
   };
 
   const releaseRooms = async (contractId) => {
     try {
       await axios.post(`/pms/allotment-contracts/${contractId}/release`);
-      toast.success('Boş odalar serbest bırakıldı');
+      toast.success(ta('roomsReleased'));
       loadContracts();
     } catch {
-      toast.error('Odalar serbest bırakılamadı');
+      toast.error(ta('releaseError'));
     }
   };
 
-  const getRoomTypeLabel = (val) => ROOM_TYPES.find(r => r.value === val)?.label || val;
-
-  const fmt = (v) => (v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (v) => (v || 0).toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const totalAllocated = contracts.reduce((s, c) => s + (c.allocated_rooms || 0), 0);
   const totalUsed = contracts.reduce((s, c) => s + (c.used_rooms || 0), 0);
@@ -104,16 +83,16 @@ const AllotmentGrid = () => {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-2xl font-bold flex items-center gap-2">
-            <Building2 className="w-6 h-6" /> Kontenjan Yönetimi
+            <Building2 className="w-6 h-6" /> {ta('title')}
           </h3>
-          <p className="text-gray-600 text-sm">Tur operatörü kontenjan sözleşmeleri</p>
+          <p className="text-gray-600 text-sm">{ta('subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadContracts} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {ta('refresh')}
           </Button>
           <Button onClick={() => setShowDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Yeni Sözleşme
+            <Plus className="w-4 h-4 mr-2" /> {ta('newContract')}
           </Button>
         </div>
       </div>
@@ -122,28 +101,28 @@ const AllotmentGrid = () => {
         <Card className="bg-purple-50 border-purple-200">
           <CardContent className="p-4 text-center">
             <Building2 className="w-5 h-5 mx-auto mb-1 text-purple-600" />
-            <p className="text-xs text-purple-600">Sözleşme Sayısı</p>
+            <p className="text-xs text-purple-600">{ta('contractCount')}</p>
             <p className="text-2xl font-bold text-purple-700">{contracts.length}</p>
           </CardContent>
         </Card>
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-4 text-center">
             <BedDouble className="w-5 h-5 mx-auto mb-1 text-blue-600" />
-            <p className="text-xs text-blue-600">Toplam Kontenjan</p>
+            <p className="text-xs text-blue-600">{ta('totalAllotment')}</p>
             <p className="text-2xl font-bold text-blue-700">{totalAllocated}</p>
           </CardContent>
         </Card>
         <Card className="bg-amber-50 border-amber-200">
           <CardContent className="p-4 text-center">
             <Percent className="w-5 h-5 mx-auto mb-1 text-amber-600" />
-            <p className="text-xs text-amber-600">Kullanılan</p>
+            <p className="text-xs text-amber-600">{ta('used')}</p>
             <p className="text-2xl font-bold text-amber-700">{totalUsed}</p>
           </CardContent>
         </Card>
         <Card className="bg-green-50 border-green-200">
           <CardContent className="p-4 text-center">
             <Calendar className="w-5 h-5 mx-auto mb-1 text-green-600" />
-            <p className="text-xs text-green-600">Müsait</p>
+            <p className="text-xs text-green-600">{ta('available')}</p>
             <p className="text-2xl font-bold text-green-700">{totalAvailable}</p>
           </CardContent>
         </Card>
@@ -153,8 +132,8 @@ const AllotmentGrid = () => {
         <Card>
           <CardContent className="py-12 text-center text-gray-500">
             <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="font-medium">Henüz kontenjan sözleşmesi yok</p>
-            <p className="text-sm mt-1">"Yeni Sözleşme" butonuyla tur operatörü kontenjanlarını tanımlayın</p>
+            <p className="font-medium">{ta('noContracts')}</p>
+            <p className="text-sm mt-1">{ta('noContractsHint')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -173,7 +152,7 @@ const AllotmentGrid = () => {
                     </div>
                     {isExpiring && (
                       <Badge className="bg-red-100 text-red-700">
-                        <AlertTriangle className="w-3 h-3 mr-1" /> Süresi Doluyor
+                        <AlertTriangle className="w-3 h-3 mr-1" /> {ta('expiring')}
                       </Badge>
                     )}
                   </div>
@@ -181,49 +160,41 @@ const AllotmentGrid = () => {
                 <CardContent>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Oda Tipi:</span>
-                      <span className="font-semibold">{getRoomTypeLabel(contract.room_type)}</span>
+                      <span className="text-gray-600">{ta('roomType')}</span>
+                      <span className="font-semibold">{ta(`roomTypes.${contract.room_type}`) || contract.room_type}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Kontenjan:</span>
-                      <span className="font-semibold">{contract.allocated_rooms} oda</span>
+                      <span className="text-gray-600">{ta('allotment')}</span>
+                      <span className="font-semibold">{contract.allocated_rooms} {ta('rooms')}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Kullanılan:</span>
-                      <span className="font-semibold">{contract.used_rooms || 0} oda</span>
+                      <span className="text-gray-600">{ta('usedRooms')}</span>
+                      <span className="font-semibold">{contract.used_rooms || 0} {ta('rooms')}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Müsait:</span>
-                      <span className={`font-semibold ${available > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {available} oda
-                      </span>
+                      <span className="text-gray-600">{ta('availableRooms')}</span>
+                      <span className={`font-semibold ${available > 0 ? 'text-green-600' : 'text-red-600'}`}>{available} {ta('rooms')}</span>
                     </div>
                     <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
                       <div className="bg-purple-500 h-full rounded-full" style={{ width: `${Math.min(usagePct, 100)}%` }} />
                     </div>
-                    <p className="text-xs text-gray-400 text-center">Kullanım: %{usagePct}</p>
+                    <p className="text-xs text-gray-400 text-center">{ta('usage')} %{usagePct}</p>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Fiyat:</span>
-                      <span className="font-semibold">{fmt(contract.rate)} ₺/gece</span>
+                      <span className="text-gray-600">{ta('price')}</span>
+                      <span className="font-semibold">{fmt(contract.rate)} {cur}{ta('perNight')}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Dönem:</span>
+                      <span className="text-gray-600">{ta('period')}</span>
                       <span className="text-xs">
-                        {contract.start_date ? new Date(contract.start_date).toLocaleDateString('tr-TR') : '-'} - {contract.end_date ? new Date(contract.end_date).toLocaleDateString('tr-TR') : '-'}
+                        {contract.start_date ? new Date(contract.start_date).toLocaleDateString() : '-'} - {contract.end_date ? new Date(contract.end_date).toLocaleDateString() : '-'}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Release:</span>
-                      <span className="font-semibold">{contract.release_days} gün</span>
+                      <span className="text-gray-600">{ta('releaseDays')}</span>
+                      <span className="font-semibold">{contract.release_days} {ta('days')}</span>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full mt-2"
-                      onClick={() => releaseRooms(contract.id)}
-                      disabled={available === 0}
-                    >
-                      Boş Odaları Serbest Bırak
+                    <Button size="sm" variant="outline" className="w-full mt-2" onClick={() => releaseRooms(contract.id)} disabled={available === 0}>
+                      {ta('releaseRooms')}
                     </Button>
                   </div>
                 </CardContent>
@@ -236,81 +207,51 @@ const AllotmentGrid = () => {
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Yeni Kontenjan Sözleşmesi</DialogTitle>
+            <DialogTitle>{ta('newContractTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Tur Operatörü *</Label>
-              <Input
-                value={formData.tour_operator}
-                onChange={(e) => setFormData({ ...formData, tour_operator: e.target.value })}
-                placeholder="Tur operatörü adı"
-              />
+              <Label>{ta('tourOperator')}</Label>
+              <Input value={formData.tour_operator} onChange={(e) => setFormData({ ...formData, tour_operator: e.target.value })} placeholder={ta('tourOperatorPlaceholder')} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Oda Tipi</Label>
+                <Label>{ta('roomTypeLabel')}</Label>
                 <Select value={formData.room_type} onValueChange={(v) => setFormData({ ...formData, room_type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {ROOM_TYPES.map(r => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    {ROOM_TYPE_KEYS.map(r => (
+                      <SelectItem key={r} value={r}>{ta(`roomTypes.${r}`)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Oda Sayısı *</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={formData.allocated_rooms}
-                  onChange={(e) => setFormData({ ...formData, allocated_rooms: e.target.value })}
-                  placeholder="10"
-                />
+                <Label>{ta('roomCount')}</Label>
+                <Input type="number" min="1" value={formData.allocated_rooms} onChange={(e) => setFormData({ ...formData, allocated_rooms: e.target.value })} placeholder="10" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Başlangıç Tarihi *</Label>
-                <Input
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                />
+                <Label>{ta('startDate')}</Label>
+                <Input type="date" value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} />
               </div>
               <div>
-                <Label>Bitiş Tarihi *</Label>
-                <Input
-                  type="date"
-                  value={formData.end_date}
-                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                />
+                <Label>{ta('endDate')}</Label>
+                <Input type="date" value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Gecelik Fiyat (₺)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.rate}
-                  onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
-                  placeholder="500.00"
-                />
+                <Label>{ta('nightlyRate')} ({cur})</Label>
+                <Input type="number" min="0" step="0.01" value={formData.rate} onChange={(e) => setFormData({ ...formData, rate: e.target.value })} placeholder="500.00" />
               </div>
               <div>
-                <Label>Release Süresi (gün)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={formData.release_days}
-                  onChange={(e) => setFormData({ ...formData, release_days: e.target.value })}
-                />
+                <Label>{ta('releasePeriod')}</Label>
+                <Input type="number" min="0" value={formData.release_days} onChange={(e) => setFormData({ ...formData, release_days: e.target.value })} />
               </div>
             </div>
-            <Button onClick={createContract} className="w-full">Sözleşme Oluştur</Button>
+            <Button onClick={createContract} className="w-full">{ta('createContract')}</Button>
           </div>
         </DialogContent>
       </Dialog>
