@@ -8,34 +8,31 @@ class WhatsAppService:
 
     def __init__(self):
         self.mode = "mock"  # mock or production
-        # Production needs: WHATSAPP_API_KEY, WHATSAPP_PHONE_NUMBER
 
     async def send_booking_confirmation(self, phone: str, booking_details: dict) -> bool:
-        """Rezervasyon onay mesajı gönder"""
+        """Send booking confirmation message"""
         message = f"""
-🏨 *Syroce - Rezervasyon Onayı*
+🏨 *Syroce - Booking Confirmation*
 
-Sayın {booking_details['guest_name']},
+Dear {booking_details['guest_name']},
 
-Rezervasyon numaranız: *{booking_details['booking_id'][:8].upper()}*
+Your reservation number: *{booking_details['booking_id'][:8].upper()}*
 
 📅 Check-in: {booking_details['check_in']}
 📅 Check-out: {booking_details['check_out']}
-🛏️ Oda: {booking_details['room_type']}
-💰 Tutar: €{booking_details['total_amount']}
+🛏️ Room: {booking_details['room_type']}
+💰 Total: €{booking_details['total_amount']}
 
-✅ Online check-in yapabilirsiniz: https://syroce.com/checkin/{booking_details['booking_id']}
+✅ Online check-in available at: https://syroce.com/checkin/{booking_details['booking_id']}
 
-Görüşmek üzere!
+See you soon!
 """
 
         if self.mode == "production":
-            # WhatsApp Business API call
-            # Example: requests.post(whatsapp_api_url, ...)
             pass
         else:
             print("\n" + "="*60)
-            print("📱 WHATSAPP MESAJI (MOCK)")
+            print("📱 WHATSAPP MESSAGE (MOCK)")
             print("="*60)
             print(f"To: {phone}")
             print(f"Message:\n{message}")
@@ -44,24 +41,23 @@ Görüşmek üzere!
         return True
 
     async def send_pre_arrival_message(self, phone: str, guest_name: str, checkin_date: str) -> bool:
-        """Pre-arrival mesajı"""
+        """Send pre-arrival message"""
         message = f"""
-✨ Merhaba {guest_name}!
+✨ Hello {guest_name}!
 
-Yarın sizi otelimizde ağırlamaktan mutluluk duyacağız.
+We look forward to welcoming you to our hotel tomorrow.
 
-🎁 *Özel Teklifler:*
-- 🛏️ Deluxe Upgrade - Sadece €75
-- ⏰ Erken Check-in - Sadece €35
-- 💆 Spa Paketi - %20 İndirim
+🎁 *Special Offers:*
+- 🛏️ Deluxe Upgrade - Only €75
+- ⏰ Early Check-in - Only €35
+- 💆 Spa Package - 20% Discount
 
-Teklif almak için yanıtlayın!
+Reply to claim an offer!
 
-Syroce Ekibi 🌟
+Syroce Team 🌟
 """
 
         if self.mode == "production":
-            # API call
             pass
         else:
             print(f"\n📱 WhatsApp Pre-Arrival to {phone}\n{message}\n")
@@ -69,9 +65,9 @@ Syroce Ekibi 🌟
         return True
 
     async def send_upsell_offer(self, phone: str, offer_details: dict) -> bool:
-        """Upsell teklifi gönder"""
+        """Send upsell offer"""
         message = f"""
-💎 *Özel Teklif - Sadece Size!*
+💎 *Special Offer - Just for You!*
 
 {offer_details['title']}
 
@@ -79,9 +75,9 @@ Syroce Ekibi 🌟
 
 ~~€{offer_details['original_price']}~~ ➡️ *€{offer_details['discounted_price']}*
 
-💚 €{offer_details['savings']} tasarruf!
+💚 Save €{offer_details['savings']}!
 
-Kabul etmek için 'EVET' yazın.
+Reply 'YES' to accept.
 """
 
         if self.mode == "production":
@@ -91,5 +87,4 @@ Kabul etmek için 'EVET' yazın.
 
         return True
 
-# Global instance
 whatsapp_service = WhatsAppService()

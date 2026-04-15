@@ -1014,7 +1014,7 @@ async def push_rates_to_channels(
         })
 
     return {
-        'message': 'Fiyatlar kanallara gönderildi',
+        'message': 'Rates pushed to channels',
         'room_type': room_type,
         'date': date,
         'rate': rate,
@@ -1023,7 +1023,7 @@ async def push_rates_to_channels(
 
 
 # ============================================================================
-# CORPORATE CONTRACTS MOBILE - Kurumsal Anlaşmalar
+# CORPORATE CONTRACTS MOBILE
 # ============================================================================
 
 # 1. GET /api/corporate/contracts - Corporate contracts

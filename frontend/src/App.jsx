@@ -18,6 +18,22 @@ import {
   ProtectedRoute, ProtectedRouteWithMemory, ModuleGuardedRoute, LoadingFallback,
 } from "@/routes/ProtectedRoute";
 
+const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function clearAuthStorage() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("token_ts");
+  localStorage.removeItem("user");
+  localStorage.removeItem("tenant");
+  localStorage.removeItem("modules");
+}
+
+function isTokenExpiredLocally() {
+  const ts = localStorage.getItem("token_ts");
+  if (!ts) return true;
+  return Date.now() - Number(ts) > TOKEN_MAX_AGE_MS;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
@@ -33,7 +49,7 @@ function App() {
     const storedTenant = localStorage.getItem("tenant");
     const storedModules = localStorage.getItem("modules");
 
-    if (token && storedUser) {
+    if (token && storedUser && !isTokenExpiredLocally()) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       axios.get("/auth/me")
         .then((meResponse) => {
@@ -52,24 +68,20 @@ function App() {
           setIsAuthenticated(true);
         })
         .catch(() => {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          localStorage.removeItem("tenant");
-          localStorage.removeItem("modules");
+          clearAuthStorage();
           setIsAuthenticated(false);
         })
         .finally(() => setLoading(false));
     } else {
+      if (token) clearAuthStorage();
       setLoading(false);
     }
   }, []);
 
   const handleLogin = (token, userData, tenantData) => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("tenant");
-    localStorage.removeItem("modules");
+    clearAuthStorage();
     localStorage.setItem("token", token);
+    localStorage.setItem("token_ts", String(Date.now()));
     localStorage.setItem("user", JSON.stringify(userData));
     localStorage.setItem("tenant", tenantData ? JSON.stringify(tenantData) : "null");
 
@@ -95,10 +107,7 @@ function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("tenant");
-    localStorage.removeItem("modules");
+    clearAuthStorage();
     delete axios.defaults.headers.common["Authorization"];
     setUser(null);
     setTenant(null);

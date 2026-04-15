@@ -2407,19 +2407,19 @@ async def get_rate_recommendations(
         if occupancy_pct > 80:
             recommended_rate = base_rate * 1.3
             strategy = 'maximize'
-            reason = 'Yüksek doluluk - fiyat artırımı önerilir'
+            reason = 'High occupancy - price increase recommended'
         elif occupancy_pct > 60:
             recommended_rate = base_rate * 1.1
             strategy = 'optimize'
-            reason = 'Orta doluluk - hafif fiyat artırımı'
+            reason = 'Medium occupancy - slight price increase'
         elif occupancy_pct > 40:
             recommended_rate = base_rate
             strategy = 'maintain'
-            reason = 'Normal doluluk - mevcut fiyat uygun'
+            reason = 'Normal occupancy - current price is appropriate'
         else:
             recommended_rate = base_rate * 0.85
             strategy = 'stimulate'
-            reason = 'Düşük doluluk - talep artırıcı fiyat'
+            reason = 'Low occupancy - demand-stimulating price'
 
         recommendations.append({
             'date': date_str,
@@ -2538,8 +2538,8 @@ async def detect_anomalies(
                 'id': str(uuid.uuid4()),
                 'type': 'occupancy_drop',
                 'severity': 'high',
-                'title': 'Ani Doluluk Düşüşü',
-                'message': f'Doluluk %{yesterday_occ_pct:.1f}\'den %{today_occ_pct:.1f}\'e düştü',
+                'title': 'Sudden Occupancy Drop',
+                'message': f'Occupancy dropped from {yesterday_occ_pct:.1f}% to {today_occ_pct:.1f}%',
                 'metric': 'occupancy',
                 'current_value': round(today_occ_pct, 1),
                 'previous_value': round(yesterday_occ_pct, 1),
@@ -2565,8 +2565,8 @@ async def detect_anomalies(
             'id': str(uuid.uuid4()),
             'type': 'cancellation_spike',
             'severity': 'high',
-            'title': 'İptal Artışı Tespit Edildi',
-            'message': f'Bugün {today_cancellations} iptal (hafta ortalaması: {week_avg_cancellations:.1f})',
+            'title': 'Cancellation Increase Detected',
+            'message': f'{today_cancellations} cancellations today (weekly avg: {week_avg_cancellations:.1f})',
             'metric': 'cancellations',
             'current_value': today_cancellations,
             'previous_value': round(week_avg_cancellations, 1),
@@ -2598,8 +2598,8 @@ async def detect_anomalies(
             'id': str(uuid.uuid4()),
             'type': 'revpar_deviation',
             'severity': severity,
-            'title': 'Gelir Sapması Tespit Edildi',
-            'message': f'Günlük gelir beklentiden %{abs(today_revenue - avg_daily_revenue) / avg_daily_revenue * 100:.1f} sapma gösteriyor',
+            'title': 'Revenue Deviation Detected',
+            'message': f'Daily revenue deviates {abs(today_revenue - avg_daily_revenue) / avg_daily_revenue * 100:.1f}% from expected',
             'metric': 'revenue',
             'current_value': round(today_revenue, 2),
             'previous_value': round(avg_daily_revenue, 2),
@@ -2620,8 +2620,8 @@ async def detect_anomalies(
             'id': str(uuid.uuid4()),
             'type': 'maintenance_spike',
             'severity': 'medium',
-            'title': 'Bakım Talepleri Artışı',
-            'message': f'{urgent_maintenance} acil bakım talebi bekliyor',
+            'title': 'Maintenance Requests Increase',
+            'message': f'{urgent_maintenance} urgent maintenance request(s) pending',
             'metric': 'maintenance',
             'current_value': urgent_maintenance,
             'previous_value': 2,
@@ -2677,7 +2677,7 @@ async def get_anomaly_alerts(
 
 
 # ============================================================================
-# GM ENHANCED DASHBOARD - GM Gelişmiş Dashboard
+# GM ENHANCED DASHBOARD
 # ============================================================================
 
 # 1. GET /api/gm/team-performance - Team performance metrics
@@ -2699,8 +2699,8 @@ async def get_active_campaigns(
     campaigns = [
         {
             'id': str(uuid.uuid4()),
-            'name': 'Erken Rezervasyon İndirimi',
-            'description': '30 gün öncesi rezervasyonlarda %20 indirim',
+            'name': 'Early Booking Discount',
+            'description': '20% discount for reservations 30+ days in advance',
             'discount_type': 'percentage',
             'discount_value': 20,
             'start_date': (today - timedelta(days=10)).isoformat(),
@@ -2711,8 +2711,8 @@ async def get_active_campaigns(
         },
         {
             'id': str(uuid.uuid4()),
-            'name': 'Hafta Sonu Özel',
-            'description': 'Cuma-Pazar konaklamada sabit fiyat',
+            'name': 'Weekend Special',
+            'description': 'Fixed rate for Friday-Sunday stays',
             'discount_type': 'fixed',
             'discount_value': 1500,
             'start_date': today.isoformat(),
@@ -2723,8 +2723,8 @@ async def get_active_campaigns(
         },
         {
             'id': str(uuid.uuid4()),
-            'name': 'Uzun Konaklama',
-            'description': '7 gece ve üzeri konaklamalarda %25 indirim',
+            'name': 'Extended Stay',
+            'description': '25% discount for stays of 7 nights or more',
             'discount_type': 'percentage',
             'discount_value': 25,
             'start_date': (today - timedelta(days=30)).isoformat(),
@@ -2764,7 +2764,7 @@ async def get_discount_codes(
         {
             'id': str(uuid.uuid4()),
             'code': 'WELCOME20',
-            'description': 'İlk rezervasyon indirimi',
+            'description': 'First booking discount',
             'discount_type': 'percentage',
             'discount_value': 20,
             'usage_count': 156,
@@ -2776,7 +2776,7 @@ async def get_discount_codes(
         {
             'id': str(uuid.uuid4()),
             'code': 'SUMMER50',
-            'description': 'Yaz kampanyası',
+            'description': 'Summer campaign',
             'discount_type': 'fixed',
             'discount_value': 500,
             'usage_count': 89,
@@ -2838,7 +2838,7 @@ async def create_rate_override(
         await db.approvals.insert_one(approval)
 
         return {
-            'message': 'Fiyat değişikliği onaya gönderildi',
+            'message': 'Price change sent for approval',
             'override_id': override['id'],
             'approval_id': approval['id'],
             'status': 'pending_approval'
@@ -2846,7 +2846,7 @@ async def create_rate_override(
     else:
         await db.rate_overrides.insert_one(override)
         return {
-            'message': 'Fiyat değişikliği uygulandı',
+            'message': 'Price change applied',
             'override_id': override['id'],
             'status': 'applied'
         }
@@ -2879,7 +2879,7 @@ async def get_promotional_rates(
             'promo_rate': 1620,
             'discount_pct': 10,
             'valid_dates': f"{datetime.now().date().isoformat()} - {(datetime.now().date() + timedelta(days=14)).isoformat()}",
-            'conditions': 'Hafta içi rezervasyonlar'
+            'conditions': 'Weekday reservations'
         }
     ]
 
@@ -2890,7 +2890,7 @@ async def get_promotional_rates(
 
 
 # ============================================================================
-# CHANNEL MANAGER MOBILE - Kanal Yönetimi
+# CHANNEL MANAGER MOBILE
 # ============================================================================
 
 # 1. GET /api/channels/status - Channel connection status

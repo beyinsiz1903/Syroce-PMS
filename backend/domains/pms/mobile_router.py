@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 
 
 # ============================================================================
-# MOBILE ENDPOINTS - Departman Bazlı Mobile Dashboard API'leri
+# MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
 # ============================================================================
 
 # Mobile Endpoint Pydantic Models
@@ -105,8 +105,8 @@ async def get_critical_issues_mobile(
         if room:
             overbookings.append({
                 'id': booking.get('id'),
-                'title': f"Overbooking - Oda {booking.get('room_number')}",
-                'description': f"Misafir: {booking.get('guest_name')}",
+                'title': f"Overbooking - Room {booking.get('room_number')}",
+                'description': f"Guest: {booking.get('guest_name')}",
                 'room_number': booking.get('room_number'),
                 'priority': 'urgent',
                 'created_at': booking.get('created_at'),
@@ -187,8 +187,8 @@ async def get_gm_notifications_mobile(
             notifications.append({
                 'id': str(uuid.uuid4()),
                 'type': 'vip_checkin',
-                'title': 'VIP Check-in Bugün',
-                'message': f"{booking.get('guest_name')} - Oda {booking.get('room_number')}",
+                'title': 'VIP Check-in Today',
+                'message': f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
@@ -206,8 +206,8 @@ async def get_gm_notifications_mobile(
             notifications.append({
                 'id': str(uuid.uuid4()),
                 'type': 'low_inventory',
-                'title': 'Düşük Envanter Uyarısı',
-                'message': f"Doluluk %{occupancy_pct:.1f} - Sadece {total_rooms - occupied_rooms} oda kaldı",
+                'title': 'Low Inventory Warning',
+                'message': f"Occupancy {occupancy_pct:.1f}% - Only {total_rooms - occupied_rooms} room(s) left",
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
@@ -226,8 +226,8 @@ async def get_gm_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'high_risk_review',
-            'title': 'Riskli İncelemeler',
-            'message': f"Son 24 saatte {risk_reviews} adet düşük puanlı değerlendirme alındı",
+            'title': 'High Risk Reviews',
+            'message': f"{risk_reviews} low-rated review(s) received in the last 24 hours",
             'priority': 'medium',
             'created_at': today.isoformat()
         })
@@ -527,8 +527,8 @@ async def get_frontdesk_notifications_mobile(
             notifications.append({
                 'id': str(uuid.uuid4()),
                 'type': 'vip_arrival',
-                'title': 'VIP Geliş',
-                'message': f"{booking.get('guest_name')} - Oda {booking.get('room_number')}",
+                'title': 'VIP Arrival',
+                'message': f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
                 'priority': 'high',
                 'created_at': today.isoformat()
             })
@@ -552,8 +552,8 @@ async def get_frontdesk_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'overbooking_risk',
-            'title': 'Overbooking Riski',
-            'message': f"{arrivals_today} geliş, sadece {available_rooms} oda hazır",
+            'title': 'Overbooking Risk',
+            'message': f"{arrivals_today} arrivals, only {available_rooms} room(s) available",
             'priority': 'urgent',
             'created_at': today.isoformat()
         })
@@ -573,8 +573,8 @@ async def get_frontdesk_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'room_ready',
-            'title': 'Odalar Hazır',
-            'message': f"Son 1 saatte {recently_cleaned} oda temizlendi",
+            'title': 'Rooms Ready',
+            'message': f"{recently_cleaned} room(s) cleaned in the last hour",
             'priority': 'info',
             'created_at': today.isoformat()
         })
@@ -1372,8 +1372,8 @@ async def get_housekeeping_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'damage_report',
-            'title': 'Hasar Raporu',
-            'message': f"Oda {room.get('room_number') if room else 'N/A'}: {report.get('description', 'Hasar bildirildi')}",
+            'title': 'Damage Report',
+            'message': f"Room {room.get('room_number') if room else 'N/A'}: {report.get('description', 'Damage reported')}",
             'priority': 'high',
             'created_at': report.get('created_at').isoformat()
         })
@@ -1398,8 +1398,8 @@ async def get_housekeeping_notifications_mobile(
             notifications.append({
                 'id': str(uuid.uuid4()),
                 'type': 'rush_room',
-                'title': 'Acil Temizlik',
-                'message': f"Oda {booking.get('room_number')} - Erken check-in {booking.get('early_checkin_time', 'talebi')}",
+                'title': 'Rush Cleaning',
+                'message': f"Room {booking.get('room_number')} - Early check-in {booking.get('early_checkin_time', 'request')}",
                 'priority': 'urgent',
                 'created_at': datetime.now(UTC).isoformat()
             })
@@ -1414,8 +1414,8 @@ async def get_housekeeping_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'clean_now_request',
-            'title': 'Misafir Temizlik Talebi',
-            'message': f"Oda {request.get('room_number')} - Şimdi temizlenmesini istiyor",
+            'title': 'Guest Cleaning Request',
+            'message': f"Room {request.get('room_number')} - Immediate cleaning requested",
             'priority': 'medium',
             'created_at': request.get('created_at').isoformat()
         })
@@ -1506,7 +1506,7 @@ async def create_quick_issue_mobile(
         'room_id': room_id,
         'room_number': room.get('room_number'),
         'department': 'maintenance',
-        'title': f"{issue_type} - Oda {room.get('room_number')}",
+        'title': f"{issue_type} - Room {room.get('room_number')}",
         'description': description,
         'issue_type': issue_type,
         'priority': priority,
@@ -2108,8 +2108,8 @@ async def get_maintenance_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'critical_issue',
-            'title': 'Kritik Arıza',
-            'message': f"Oda {task.get('room_number', 'N/A')}: {task.get('issue_type', 'Bilinmeyen')} - {task.get('description', '')}",
+            'title': 'Critical Issue',
+            'message': f"Room {task.get('room_number', 'N/A')}: {task.get('issue_type', 'Unknown')} - {task.get('description', '')}",
             'priority': 'urgent',
             'created_at': task.get('created_at').isoformat()
         })
@@ -2140,8 +2140,8 @@ async def get_maintenance_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'critical_room',
-            'title': 'Oda Hizmet Dışı',
-            'message': f"Oda {room.get('room_number')} hizmet dışı - Acil müdahale gerekli",
+            'title': 'Room Out of Service',
+            'message': f"Room {room.get('room_number')} out of service - Urgent attention required",
             'priority': 'high',
             'created_at': room.get('updated_at').isoformat()
         })

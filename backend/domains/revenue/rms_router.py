@@ -234,7 +234,7 @@ async def get_price_adjustments(
             {
                 'id': a.get('id', ''),
                 'date': a.get('date', ''),
-                'reason': a.get('reasoning', a.get('reason', 'Otomatik fiyat önerisi uygulandı')),
+                'reason': a.get('reasoning', a.get('reason', 'Automatic pricing recommendation applied')),
                 'old_rate': a.get('current_rate', 0),
                 'new_rate': a.get('suggested_rate', 0),
                 'room_type': a.get('room_type', ''),
@@ -255,7 +255,7 @@ async def apply_all_recommendations(current_user: User = Depends(get_current_use
     ).to_list(100)
 
     if not pending:
-        return {'message': 'Uygulanacak öneri bulunamadı', 'applied_count': 0}
+        return {'message': 'No pending recommendations to apply', 'applied_count': 0}
 
     applied_count = 0
     now = datetime.now(UTC).isoformat()
@@ -287,7 +287,7 @@ async def apply_all_recommendations(current_user: User = Depends(get_current_use
             'id': str(uuid.uuid4()),
             'tenant_id': current_user.tenant_id,
             'date': rec.get('date', now),
-            'reason': rec.get('reasoning', 'Toplu öneri uygulaması'),
+            'reason': rec.get('reasoning', 'Bulk recommendation applied'),
             'old_rate': rec.get('current_rate', 0),
             'new_rate': rec.get('suggested_rate', 0),
             'room_type': rec.get('room_type', ''),
@@ -297,7 +297,7 @@ async def apply_all_recommendations(current_user: User = Depends(get_current_use
 
         applied_count += 1
 
-    return {'message': f'{applied_count} öneri uygulandı', 'applied_count': applied_count}
+    return {'message': f'{applied_count} recommendation(s) applied', 'applied_count': applied_count}
 
 
 @router.post("/rms/auto-pricing")
@@ -1902,8 +1902,8 @@ async def get_finance_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'overdue_receivables',
-            'title': 'Vadesi Geçen Alacaklar',
-            'message': f"{overdue_count} adet gecikmiş alacak - Toplam: ₺{overdue_amount:.2f}",
+            'title': 'Overdue Receivables',
+            'message': f"{overdue_count} overdue receivable(s) - Total: ₺{overdue_amount:.2f}",
             'priority': 'high',
             'created_at': today.isoformat()
         })
@@ -1917,8 +1917,8 @@ async def get_finance_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'large_payment_approval',
-            'title': 'Büyük Ödeme Onayı',
-            'message': f"₺{payment.get('amount', 0):.2f} tutarında ödeme onay bekliyor",
+            'title': 'Large Payment Approval',
+            'message': f"Payment of ₺{payment.get('amount', 0):.2f} awaiting approval",
             'priority': 'medium',
             'created_at': payment.get('created_at').isoformat()
         })
@@ -2066,8 +2066,8 @@ async def get_security_alerts_mobile(
         alerts.append({
             'id': str(uuid.uuid4()),
             'type': 'unauthorized_access',
-            'title': 'Yetkisiz Erişim Denemesi',
-            'message': f"Son 1 saatte {failed_logins} başarısız giriş denemesi",
+            'title': 'Unauthorized Access Attempt',
+            'message': f"{failed_logins} failed login attempts in the last hour",
             'severity': 'high',
             'timestamp': datetime.now(UTC).isoformat()
         })
@@ -2081,8 +2081,8 @@ async def get_security_alerts_mobile(
         alerts.append({
             'id': str(uuid.uuid4()),
             'type': 'data_access',
-            'title': 'Olağandışı Veri Erişimi',
-            'message': f"{log.get('user_name')} tarafından {log.get('action')}",
+            'title': 'Unusual Data Access',
+            'message': f"{log.get('action')} by {log.get('user_name')}",
             'severity': 'medium',
             'timestamp': log.get('timestamp').isoformat()
         })
@@ -2100,8 +2100,8 @@ async def get_security_alerts_mobile(
         alerts.append({
             'id': str(uuid.uuid4()),
             'type': 'gdpr_compliance',
-            'title': 'GDPR Uyarısı',
-            'message': f"{old_guest_count} misafirin verileri saklama süresini aştı",
+            'title': 'GDPR Warning',
+            'message': f"{old_guest_count} guest(s) data exceeded retention period",
             'severity': 'low',
             'timestamp': datetime.now(UTC).isoformat()
         })
@@ -2132,8 +2132,8 @@ async def get_security_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'system_error',
-            'title': 'Sistem Hataları',
-            'message': f"Son 1 saatte {error_count} sistem hatası kaydedildi",
+            'title': 'System Errors',
+            'message': f"{error_count} system error(s) recorded in the last hour",
             'priority': 'high',
             'created_at': datetime.now(UTC).isoformat()
         })
@@ -2147,8 +2147,8 @@ async def get_security_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'connection_failure',
-            'title': 'Bağlantı Hatası',
-            'message': error.get('message', 'Bağlantı sorunu tespit edildi'),
+            'title': 'Connection Error',
+            'message': error.get('message', 'Connection issue detected'),
             'priority': 'medium',
             'created_at': error.get('created_at').isoformat()
         })
@@ -2164,8 +2164,8 @@ async def get_security_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'security_alert',
-            'title': 'Güvenlik Uyarısı',
-            'message': f"Çok sayıda başarısız giriş denemesi ({failed_logins})",
+            'title': 'Security Alert',
+            'message': f"Multiple failed login attempts ({failed_logins})",
             'priority': 'urgent',
             'created_at': datetime.now(UTC).isoformat()
         })

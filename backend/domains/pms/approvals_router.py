@@ -107,7 +107,7 @@ async def create_approval_request(
     await db.approvals.insert_one(approval)
 
     return {
-        'message': 'Onay isteği oluşturuldu',
+        'message': 'Approval request created',
         'approval_id': approval['id'],
         'status': approval['status'],
         'approval_type': approval['approval_type']
@@ -172,8 +172,8 @@ async def approve_request(
         'tenant_id': current_user.tenant_id,
         'user_id': approval['requested_by_id'],
         'type': 'approval_approved',
-        'title': 'Onay İsteği Onaylandı',
-        'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
+        'title': 'Approval Request Approved',
+        'message': f"{approval['approval_type']} approval request has been approved",
         'priority': 'normal',
         'read': False,
         'created_at': datetime.now(UTC).isoformat()
@@ -181,7 +181,7 @@ async def approve_request(
     await db.notifications.insert_one(notification)
 
     return {
-        'message': 'Onay isteği onaylandı',
+        'message': 'Approval request approved',
         'approval_id': approval_id,
         'approved_by': current_user.name,
         'approval_date': datetime.now(UTC).isoformat()
@@ -245,8 +245,8 @@ async def approve_request_v2(
         'tenant_id': current_user.tenant_id,
         'user_id': approval['requested_by_id'],
         'type': 'approval_approved',
-        'title': 'Onay İsteği Onaylandı',
-        'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
+        'title': 'Approval Request Approved',
+        'message': f"{approval['approval_type']} approval request has been approved",
         'priority': 'normal',
         'read': False,
         'created_at': datetime.now(UTC).isoformat()
@@ -254,7 +254,7 @@ async def approve_request_v2(
     await db.notifications.insert_one(notification)
 
     return {
-        'message': 'Onay isteği onaylandı',
+        'message': 'Approval request approved',
         'approval_id': approval_id,
         'approved_by': current_user.name,
         'approval_date': datetime.now(UTC).isoformat()
@@ -317,8 +317,8 @@ async def approve_request_v3(
         'tenant_id': current_user.tenant_id,
         'user_id': approval['requested_by_id'],
         'type': 'approval_approved',
-        'title': 'Onay İsteği Onaylandı',
-        'message': f"{approval['approval_type']} türünde onay isteğiniz onaylandı",
+        'title': 'Approval Request Approved',
+        'message': f"{approval['approval_type']} approval request has been approved",
         'priority': 'normal',
         'read': False,
         'created_at': datetime.now(UTC).isoformat()
@@ -326,7 +326,7 @@ async def approve_request_v3(
     await db.notifications.insert_one(notification)
 
     return {
-        'message': 'Onay isteği onaylandı',
+        'message': 'Approval request approved',
         'approval_id': approval_id,
         'approved_by': current_user.name,
         'approval_date': datetime.now(UTC).isoformat()
@@ -393,8 +393,8 @@ async def reject_request(
         'tenant_id': current_user.tenant_id,
         'user_id': approval['requested_by_id'],
         'type': 'approval_rejected',
-        'title': 'Onay İsteği Reddedildi',
-        'message': f"{approval['approval_type']} türünde onay isteğiniz reddedildi: {request.rejection_reason}",
+        'title': 'Approval Request Rejected',
+        'message': f"{approval['approval_type']} approval request has been rejected: {request.rejection_reason}",
         'priority': 'high',
         'read': False,
         'created_at': datetime.now(UTC).isoformat()
@@ -402,7 +402,7 @@ async def reject_request(
     await db.notifications.insert_one(notification)
 
     return {
-        'message': 'Onay isteği reddedildi',
+        'message': 'Approval request rejected',
         'approval_id': approval_id,
         'rejected_by': current_user.name,
         'rejection_reason': request.rejection_reason

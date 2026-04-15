@@ -136,6 +136,14 @@ try:
 except Exception as _ent_err:
     logger.warning(f"Entitlement middleware skipped: {_ent_err}")
 
+# Error response normalizer (O2 — standardize all errors to {"detail": ...})
+try:
+    from middleware.error_normalizer import ErrorNormalizerMiddleware
+    app.add_middleware(ErrorNormalizerMiddleware)
+    logger.info("Error response normalizer middleware activated")
+except Exception as _norm_err:
+    logger.warning("Error normalizer middleware skipped: %s", _norm_err)
+
 # Request tracing
 try:
     from modules.observability.request_tracing_middleware import RequestTracingMiddleware

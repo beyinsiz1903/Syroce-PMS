@@ -65,7 +65,7 @@ async def predict_cleaning_time(
     schedule_data: dict,
     current_user: User = Depends(get_current_user)
 ):
-    """Flash report otomatik gönderim ayarla"""
+    """Configure automatic flash report delivery"""
     from modules.analytics_export.report_automation import get_report_automation
     from modules.messaging.email_service import email_service
 
@@ -78,7 +78,7 @@ async def predict_cleaning_time(
 
     return {
         'success': True,
-        'message': 'Flash report otomatik gönderim ayarlandı',
+        'message': 'Flash report auto-delivery configured',
         'send_time': schedule['send_time'],
         'recipients': schedule['recipients']
     }
@@ -92,7 +92,7 @@ async def get_ai_room_assignment(
     staff_data: dict,
     current_user: User = Depends(get_current_user)
 ):
-    """AI ile oda dağılımı optimizasyonu"""
+    """AI-powered room assignment optimization"""
     from domains.pms.housekeeping_ai import get_housekeeping_ai
 
     ai = get_housekeeping_ai(db)
@@ -116,7 +116,7 @@ async def predict_cleaning_time_simple(
     staff_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Temizlik süresi tahmini"""
+    """Predict cleaning time"""
     from domains.pms.housekeeping_ai import get_housekeeping_ai
 
     ai = get_housekeeping_ai(db)
@@ -1139,8 +1139,8 @@ async def update_cleaning_request_status(
                 'id': str(uuid.uuid4()),
                 'tenant_id': current_user.tenant_id,
                 'user_id': request['guest_id'],
-                'title': 'Oda Temizliği Tamamlandı',
-                'message': f'Oda {request["room_number"]} temizliği tamamlandı',
+                'title': 'Room Cleaning Completed',
+                'message': f'Room {request["room_number"]} cleaning completed',
                 'type': 'cleaning_completed',
                 'priority': 'normal',
                 'related_id': request_id,
@@ -1154,7 +1154,7 @@ async def update_cleaning_request_status(
         )
 
         return {
-            'message': f'Temizlik talebi {update_data.status} olarak güncellendi',
+            'message': f'Cleaning request updated to {update_data.status}',
             'request_id': request_id,
             'status': update_data.status,
             'room_number': request['room_number']

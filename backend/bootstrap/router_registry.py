@@ -98,6 +98,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
     ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
+    # Accounting (migrated from _legacy)
+    ("domains.accounting.router", "router", ["Accounting"], None, None),
     # Phase C/D/E — Hardening routers
     ("domains.channel_manager.hardening_router", "router", ["Channel Manager / Hardening"], None, None),
     ("workers.hardening_router", "router", ["Workers / Hardening"], None, None),

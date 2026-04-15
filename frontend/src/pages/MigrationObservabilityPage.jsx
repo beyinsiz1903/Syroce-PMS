@@ -88,9 +88,9 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
 
   const tm = useCallback((key) => t(`migrationObs.${key}`), [t]);
 
-  const translateReason = useCallback((reason) => {
+  const translateReason = useCallback((reason, params) => {
     const reasonKey = `migrationObs.reason_${reason}`;
-    const translated = t(reasonKey);
+    const translated = t(reasonKey, params || {});
     return translated !== reasonKey ? translated : reason;
   }, [t]);
 
@@ -170,7 +170,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   const guidanceText = useMemo(() => {
     const key = healthScore?.operational_guidance_key;
     if (key) return tm(`${key}Guidance`);
-    return healthScore?.operational_guidance || tm('greenGuidance');
+    return tm('greenGuidance');
   }, [healthScore, tm]);
 
   const outboxBreakdown = overview?.event_breakdown || [];
@@ -286,7 +286,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
                         {(healthScore?.reasons || []).map((reason, index) => (
                           <li key={`${reason}-${index}`} className="flex items-start gap-3" data-testid={`migration-health-score-reason-${index}`}>
                             <span className="mt-1 h-2 w-2 rounded-full bg-slate-900" />
-                            <span>{translateReason(reason)}</span>
+                            <span>{translateReason(reason, healthScore?.reason_params)}</span>
                           </li>
                         ))}
                       </ul>

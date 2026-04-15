@@ -17,7 +17,7 @@ async def list_notifications(
     limit: int = 20,
     current_user: User = Depends(get_current_user),
 ):
-    """Kullanıcının bildirimlerini listele."""
+    """List notifications for the current user."""
     tenant_id = current_user.tenant_id
     notifications = await db.notifications.find(
         {"tenant_id": tenant_id},

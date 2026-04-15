@@ -15,7 +15,7 @@ from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 
-# ============= HR COMPLETE SUITE (İK MÜDÜRÜ İÇİN) =============
+# ============= HR COMPLETE SUITE =============
 
 async def _get_staff_map(tenant_id: str):
     staff = await db.staff_members.find({'tenant_id': tenant_id}, {'_id': 0}).to_list(500)
@@ -36,7 +36,7 @@ async def clock_in(staff_data: dict, current_user: User = Depends(get_current_us
         'created_at': datetime.now(UTC).isoformat()
     }
     await db.attendance_records.insert_one(record)
-    return {'success': True, 'message': 'Clock-in kaydedildi', 'time': record['clock_in']}
+    return {'success': True, 'message': 'Clock-in recorded', 'time': record['clock_in']}
 
 @router.post("/hr/clock-out")
 async def clock_out(staff_data: dict, current_user: User = Depends(get_current_user)):
@@ -52,7 +52,7 @@ async def clock_out(staff_data: dict, current_user: User = Depends(get_current_u
             {'$set': {'clock_out': clock_out_time.isoformat(), 'total_hours': round(hours, 2)}}
         )
         return {'success': True, 'hours_worked': round(hours, 2)}
-    return {'success': False, 'message': 'Clock-in kaydi bulunamadi'}
+    return {'success': False, 'message': 'Clock-in record not found'}
 
 @router.post("/hr/leave-request")
 async def create_leave_request(leave_data: dict, current_user: User = Depends(get_current_user)):
@@ -255,7 +255,7 @@ async def create_job_posting(job_data: dict, current_user: User = Depends(get_cu
     return {'success': True, 'job_id': job['id']}
 
 
-# ============= F&B COMPLETE SUITE (CHEF İÇİN) =============
+# ============= F&B COMPLETE SUITE =============
 
 async def _get_ingredient_map(tenant_id: str):
     ingredients = await db.ingredients.find({'tenant_id': tenant_id}, {'_id': 0}).to_list(1000)

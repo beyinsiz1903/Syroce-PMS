@@ -375,29 +375,35 @@ def build_health_score(
     status = "green"
     reasons: list[str] = []
 
+    reason_params: dict[str, Any] = {}
+
     if audit_gap_count > 0:
         status = "red"
-        reasons.append(f"{audit_gap_count} audit gap detected")
+        reasons.append("audit_gap_detected")
+        reason_params["audit_gap_count"] = audit_gap_count
 
     if failed_outbox_count > 0:
         status = "red"
-        reasons.append(f"{failed_outbox_count} failed outbox event")
+        reasons.append("failed_outbox_event")
+        reason_params["failed_outbox_count"] = failed_outbox_count
 
     if max_mismatch_rate_percent > 5.0:
         status = "red"
-        reasons.append(
-            f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
-        )
+        reasons.append("mismatch_rate_critical")
+        reason_params["mismatch_endpoint"] = highest_mismatch.get("endpoint", "shadow")
+        reason_params["mismatch_rate"] = round(max_mismatch_rate_percent, 1)
 
     if status != "red":
         if stale_pending_count > 0:
-            reasons.append(f"{stale_pending_count} stale pending event")
+            reasons.append("stale_pending_event")
+            reason_params["stale_pending_count"] = stale_pending_count
         if 1.0 <= max_mismatch_rate_percent <= 5.0:
-            reasons.append(
-                f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
-            )
+            reasons.append("mismatch_rate_warning")
+            reason_params["mismatch_endpoint"] = highest_mismatch.get("endpoint", "shadow")
+            reason_params["mismatch_rate"] = round(max_mismatch_rate_percent, 1)
         if compare_error_count > 0:
-            reasons.append(f"{compare_error_count} compare error")
+            reasons.append("compare_error")
+            reason_params["compare_error_count"] = compare_error_count
         if reasons:
             status = "yellow"
 
@@ -409,11 +415,6 @@ def build_health_score(
         ]
 
     operational_guidance_key = status
-    operational_guidance = {
-        "green": "Green — next narrow write-path can be opened",
-        "yellow": "Yellow — observation and review required before proceeding",
-        "red": "Red — new write-path cannot be opened, resolve issues first",
-    }[status]
 
     return {
         "status": status,
@@ -422,8 +423,8 @@ def build_health_score(
         "time_window": "last_24h",
         "time_window_label": "Last 24h",
         "reasons": reasons[:3],
+        "reason_params": reason_params,
         "operational_guidance_key": operational_guidance_key,
-        "operational_guidance": operational_guidance,
         "signals": {
             "failed_outbox_count": failed_outbox_count,
             "stale_pending_count": stale_pending_count,

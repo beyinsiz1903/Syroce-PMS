@@ -51,7 +51,16 @@ axios.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      console.warn("401 Unauthorized - Token may be invalid");
+      console.warn("401 Unauthorized - clearing session");
+      localStorage.removeItem("token");
+      localStorage.removeItem("token_ts");
+      localStorage.removeItem("user");
+      localStorage.removeItem("tenant");
+      localStorage.removeItem("modules");
+      delete axios.defaults.headers.common["Authorization"];
+      if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
+        window.location.assign("/auth");
+      }
     }
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;

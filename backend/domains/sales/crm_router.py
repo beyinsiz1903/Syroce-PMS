@@ -235,7 +235,7 @@ async def create_lead(
     await db.leads.insert_one(lead)
 
     return {
-        'message': 'Lead oluşturuldu',
+        'message': 'Lead created',
         'lead_id': lead['id'],
         'stage': lead['stage']
     }
@@ -276,7 +276,7 @@ async def update_lead_stage(
     )
 
     return {
-        'message': 'Lead stage güncellendi',
+        'message': 'Lead stage updated',
         'lead_id': lead_id,
         'new_stage': request.stage.value
     }
@@ -382,7 +382,7 @@ async def get_follow_ups(
 
 
 # ============================================================================
-# RATE & DISCOUNT MANAGEMENT MOBILE - Fiyat & İndirim Yönetimi
+# RATE & DISCOUNT MANAGEMENT MOBILE
 # ============================================================================
 
 
@@ -410,8 +410,8 @@ async def get_corporate_contracts(
             'room_nights_used': 342,
             'contracted_rate': 1500,
             'discount_percentage': 25,
-            'special_amenities': ['Ücretsiz WiFi', 'Geç Çıkış', 'Toplantı Odası'],
-            'contact_person': 'Ahmet Yılmaz',
+            'special_amenities': ['Free WiFi', 'Late Checkout', 'Meeting Room'],
+            'contact_person': 'Ahmet Yilmaz',
             'contact_email': 'ahmet@techsolutions.com',
             'status': 'active',
             'days_until_expiry': 185
@@ -426,7 +426,7 @@ async def get_corporate_contracts(
             'room_nights_used': 156,
             'contracted_rate': 1800,
             'discount_percentage': 20,
-            'special_amenities': ['Kahvaltı', 'Airport Transfer'],
+            'special_amenities': ['Breakfast', 'Airport Transfer'],
             'contact_person': 'Zeynep Kara',
             'contact_email': 'zeynep@financecorp.com',
             'status': 'expiring_soon',
@@ -696,9 +696,9 @@ async def get_corporate_alerts(
             'alert_type': 'contract_expiring',
             'severity': 'high',
             'company': 'Finance Corp',
-            'message': 'Anlaşma 45 gün içinde sona eriyor',
+            'message': 'Contract expires in 45 days',
             'days_remaining': 45,
-            'action_required': 'Yenileme görüşmesi planla',
+            'action_required': 'Schedule renewal meeting',
             'contact_person': 'Zeynep Kara',
             'created_at': datetime.now().isoformat()
         },
@@ -707,10 +707,10 @@ async def get_corporate_alerts(
             'alert_type': 'volume_milestone',
             'severity': 'medium',
             'company': 'Tech Solutions Ltd.',
-            'message': 'Taahhüt edilen oda gecelerinin %68\'i kullanıldı',
+            'message': '68% of committed room nights have been used',
             'days_remaining': 185,
-            'action_required': 'Kullanım takibi yap',
-            'contact_person': 'Ahmet Yılmaz',
+            'action_required': 'Track usage',
+            'contact_person': 'Ahmet Yilmaz',
             'created_at': datetime.now().isoformat()
         }
     ]

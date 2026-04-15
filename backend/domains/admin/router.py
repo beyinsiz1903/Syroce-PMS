@@ -160,8 +160,8 @@ async def get_my_permissions(
 async def list_tenants(current_user: User = Depends(require_super_admin)):
     """List all hotels/tenants for super admin users ONLY.
 
-    NOTE: Sadece SUPER_ADMIN rolüne sahip kullanıcılar tüm otelleri görebilir.
-    Normal ADMIN kullanıcılar (hotel yöneticileri) bu endpoint'e erişemez.
+    NOTE: Only SUPER_ADMIN users can view all hotels.
+    Regular ADMIN users (hotel managers) cannot access this endpoint.
     """
     tenants = await db.tenants.find({}, {"_id": 0}).to_list(1000)
 
@@ -220,12 +220,12 @@ async def create_tenant(
         "$or": [{"contact_email": payload.email}, {"email": payload.email}]
     })
     if existing:
-        raise HTTPException(status_code=400, detail="Bu email adresi ile kayıtlı bir otel zaten var")
+        raise HTTPException(status_code=400, detail="A hotel is already registered with this email address")
 
     # Also check if user email is taken
     existing_user = await db.users.find_one(build_user_email_query(payload.email))
     if existing_user:
-        raise HTTPException(status_code=400, detail="Bu email adresi zaten bir kullanıcı tarafından kullanılıyor")
+        raise HTTPException(status_code=400, detail="This email address is already in use")
 
     # Calculate subscription dates
     start_date = datetime.now(UTC)
@@ -285,12 +285,12 @@ async def create_tenant(
 
     return {
         "success": True,
-        "message": "Otel başarıyla oluşturuldu",
+        "message": "Hotel created successfully",
         "tenant_id": new_tenant.id,
         "user_id": new_user.id,
         "subscription_start": start_date.isoformat(),
-        "subscription_end": end_date.isoformat() if end_date else "Sınırsız",
-        "subscription_days": payload.subscription_days or "Sınırsız"
+        "subscription_end": end_date.isoformat() if end_date else "Unlimited",
+        "subscription_days": payload.subscription_days or "Unlimited"
     }
 
 
@@ -354,7 +354,7 @@ async def update_user_role(
     # Find user
     target_user = await db.users.find_one({"id": user_id})
     if not target_user:
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        raise HTTPException(status_code=404, detail="User not found")
 
     # Update role
     result = await db.users.update_one(
@@ -363,11 +363,11 @@ async def update_user_role(
     )
 
     if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Role güncellenemedi")
+        raise HTTPException(status_code=400, detail="Role could not be updated")
 
     return {
         "success": True,
-        "message": f"Kullanıcı role'ü başarıyla güncellendi: {payload.role}",
+        "message": f"User role updated successfully: {payload.role}",
         "user_id": user_id,
         "user_email": target_user.get('email'),
         "old_role": target_user.get('role'),
@@ -385,7 +385,7 @@ async def update_tenant_modules(
 ):
     """Update enabled modules for a specific hotel (SUPER ADMIN only).
 
-    Body örneği:
+    Body example:
     {
       "modules": {
         "pms": true,
@@ -415,7 +415,7 @@ async def update_tenant_modules(
     if not result or result.matched_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Otel bulunamadı",
+            detail="Hotel not found",
         )
 
     # Return updated tenant with merged modules
@@ -430,7 +430,7 @@ async def update_tenant_modules(
     if not tenant_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Otel bulunamadı",
+            detail="Hotel not found",
         )
 
     tenant_doc["modules"] = get_tenant_modules(tenant_doc)
@@ -468,13 +468,13 @@ async def update_tenant_subscription(
         except Exception:
             raise HTTPException(
                 status_code=400,
-                detail="Geçersiz tarih formatı. YYYY-MM-DD veya ISO8601 kullanın (örn: 2025-12-17).",
+                detail="Invalid date format. Use YYYY-MM-DD or ISO8601 (e.g. 2025-12-17).",
             )
 
     # Find tenant
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     # If manual dates are provided, prefer them. Otherwise, fallback to subscription_days.
     manual_mode = bool(payload.subscription_start_date) or bool(payload.subscription_end_date)
@@ -489,7 +489,7 @@ async def update_tenant_subscription(
             end_date = start_date + timedelta(days=payload.subscription_days)
 
     if end_date and end_date < start_date:
-        raise HTTPException(status_code=400, detail="Bitiş tarihi başlangıç tarihinden önce olamaz")
+        raise HTTPException(status_code=400, detail="End date cannot be before start date")
 
     # Update tenant
     update_data = {
@@ -505,15 +505,15 @@ async def update_tenant_subscription(
     )
 
     if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Subscription güncellenemedi")
+        raise HTTPException(status_code=400, detail="Subscription could not be updated")
 
     return {
         "success": True,
-        "message": "Üyelik süresi başarıyla güncellendi",
+        "message": "Subscription updated successfully",
         "tenant_id": tenant_id,
         "subscription_start": start_date.isoformat(),
-        "subscription_end": end_date.isoformat() if end_date else "Sınırsız",
-        "subscription_days": payload.subscription_days or "Sınırsız",
+        "subscription_end": end_date.isoformat() if end_date else "Unlimited",
+        "subscription_days": payload.subscription_days or "Unlimited",
         "manual_dates": manual_mode,
     }
 
@@ -561,11 +561,11 @@ async def update_tenant_tier(
     reset_modules = payload.get("reset_modules", True)
 
     if new_tier not in ("basic", "professional", "enterprise"):
-        raise HTTPException(status_code=400, detail="Geçersiz plan. Geçerli: basic, professional, enterprise")
+        raise HTTPException(status_code=400, detail="Invalid plan. Valid options: basic, professional, enterprise")
 
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     update_data = {
         "subscription_tier": new_tier,
@@ -583,7 +583,7 @@ async def update_tenant_tier(
 
     return {
         "success": True,
-        "message": f"Plan {new_tier} olarak güncellendi",
+        "message": f"Plan updated to {new_tier}",
         "tenant": updated_tenant,
     }
 
@@ -601,7 +601,7 @@ async def admin_update_tenant_info(
     """Update any tenant's info (SUPER ADMIN only)"""
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     update_data = {}
     for field in ("property_name", "phone", "email", "address", "location", "description", "total_rooms"):
@@ -614,13 +614,13 @@ async def admin_update_tenant_info(
                 update_data["contact_email"] = val
 
     if not update_data:
-        raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
+        raise HTTPException(status_code=400, detail="No field to update")
 
     update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
 
     updated = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-    return {"success": True, "message": "Otel bilgileri güncellendi", "tenant": updated}
+    return {"success": True, "message": "Hotel information updated", "tenant": updated}
 
 
 @router.get("/admin/tenants/{tenant_id}/team")
@@ -631,7 +631,7 @@ async def admin_list_tenant_team(
     """List team members for a specific tenant (SUPER ADMIN only)"""
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     users_raw = await db.users.find(
         {"tenant_id": tenant_id},
@@ -651,11 +651,11 @@ async def admin_add_tenant_team_member(
     """Add a team member to a specific tenant (SUPER ADMIN only)"""
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     existing = await db.users.find_one(build_user_email_query(payload.email))
     if existing:
-        raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
+        raise HTTPException(status_code=400, detail="This email address is already registered")
 
     tier = (tenant.get("subscription_tier", "basic")).lower()
     if tier == "pro":
@@ -667,7 +667,7 @@ async def admin_add_tenant_team_member(
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
         raise HTTPException(
             status_code=400,
-            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}",
+            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}",
         )
 
     hashed = hash_password(payload.password)
@@ -687,7 +687,7 @@ async def admin_add_tenant_team_member(
 
     return {
         "success": True,
-        "message": f"{payload.name} başarıyla eklendi ({payload.role})",
+        "message": f"{payload.name} added successfully ({payload.role})",
         "user_id": new_user["id"],
     }
 
@@ -701,13 +701,13 @@ async def admin_remove_tenant_team_member(
     """Remove a team member from a specific tenant (SUPER ADMIN only)"""
     target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
     if not target:
-        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+        raise HTTPException(status_code=404, detail="Team member not found")
 
     if target.get("role") == "super_admin":
-        raise HTTPException(status_code=400, detail="Super Admin silinemez")
+        raise HTTPException(status_code=400, detail="Super Admin cannot be deleted")
 
     await db.users.delete_one({"id": user_id, "tenant_id": tenant_id})
-    return {"success": True, "message": "Ekip üyesi silindi"}
+    return {"success": True, "message": "Team member removed"}
 
 
 @router.patch("/admin/tenants/{tenant_id}/team/{user_id}/role")
@@ -720,10 +720,10 @@ async def admin_update_tenant_team_role(
     """Update a team member's role (SUPER ADMIN only)"""
     target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
     if not target:
-        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+        raise HTTPException(status_code=404, detail="Team member not found")
 
     if target.get("role") == "super_admin":
-        raise HTTPException(status_code=400, detail="Super Admin rolü değiştirilemez")
+        raise HTTPException(status_code=400, detail="Super Admin role cannot be changed")
 
     tier_doc = await db.tenants.find_one({"id": tenant_id})
     tier = (tier_doc.get("subscription_tier", "basic") if tier_doc else "basic").lower()
@@ -736,11 +736,11 @@ async def admin_update_tenant_team_role(
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
         raise HTTPException(
             status_code=400,
-            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}",
+            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}",
         )
 
     await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
-    return {"success": True, "message": f"Rol güncellendi: {payload.role}"}
+    return {"success": True, "message": f"Role updated: {payload.role}"}
 
 
 @router.get("/admin/tenants/{tenant_id}/stats")
@@ -751,7 +751,7 @@ async def admin_get_tenant_stats(
     """Get detailed stats for a specific tenant (SUPER ADMIN only)"""
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
     users = await db.users.count_documents({"tenant_id": tenant_id})
@@ -895,21 +895,21 @@ async def change_subscription_plan(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler plan değiştirebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can change the plan")
 
     new_tier = payload.new_tier.lower()
     if new_tier == "pro": new_tier = "professional"
     if new_tier == "ultra": new_tier = "enterprise"
 
     if new_tier not in ("basic", "professional", "enterprise"):
-        raise HTTPException(status_code=400, detail="Geçersiz plan")
+        raise HTTPException(status_code=400, detail="Invalid plan")
 
     current_tier = (tenant.get('subscription_tier', 'basic')).lower()
     if current_tier == "pro": current_tier = "professional"
     if current_tier == "ultra": current_tier = "enterprise"
 
     if current_tier == new_tier:
-        raise HTTPException(status_code=400, detail="Zaten bu plandasınız")
+        raise HTTPException(status_code=400, detail="You are already on this plan")
 
     tier_order = {"basic": 0, "professional": 1, "enterprise": 2}
     is_downgrade = tier_order.get(new_tier, 0) < tier_order.get(current_tier, 0)
@@ -917,7 +917,7 @@ async def change_subscription_plan(
     try:
         plan = SUBSCRIPTION_PLANS[SubscriptionTier(new_tier)]
     except (ValueError, KeyError):
-        raise HTTPException(status_code=400, detail="Geçersiz plan")
+        raise HTTPException(status_code=400, detail="Invalid plan")
 
     # Downgrade checks: room / user limits
     if is_downgrade:
@@ -926,14 +926,14 @@ async def change_subscription_plan(
             if room_count > plan.max_rooms:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Oda sayınız ({room_count}), hedef planın limitini ({plan.max_rooms}) aşıyor. Önce oda sayısını azaltın."
+                    detail=f"Your room count ({room_count}) exceeds the target plan limit ({plan.max_rooms}). Please reduce rooms first."
                 )
         if plan.max_users:
             user_count = await db.users.count_documents({'tenant_id': current_user.tenant_id})
             if user_count > plan.max_users:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Kullanıcı sayınız ({user_count}), hedef planın limitini ({plan.max_users}) aşıyor. Önce kullanıcı sayısını azaltın."
+                    detail=f"Your user count ({user_count}) exceeds the target plan limit ({plan.max_users}). Please reduce users first."
                 )
 
     amount = plan.price_yearly if payload.billing_cycle == 'yearly' else plan.price_monthly
@@ -974,10 +974,10 @@ async def change_subscription_plan(
     }
     await db.billing_history.insert_one(billing_record)
 
-    action_label = "düşürüldü" if is_downgrade else "yükseltildi"
+    action_label = "downgraded" if is_downgrade else "upgraded"
     return {
         "success": True,
-        "message": f"Plan {new_tier} olarak {action_label}",
+        "message": f"Plan {action_label} to {new_tier}",
         "is_downgrade": is_downgrade,
         "tier": new_tier,
         "amount": amount,
@@ -1010,11 +1010,11 @@ async def update_hotel_info(
 ):
     """Update hotel/tenant information (admin only)"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler otel bilgilerini güncelleyebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can update hotel information")
 
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     update_data = {}
     if payload.property_name is not None:
@@ -1041,14 +1041,14 @@ async def update_hotel_info(
             if plan.max_rooms and payload.total_rooms > plan.max_rooms:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Planınızın oda limiti: {plan.max_rooms}. Daha fazla oda için planınızı yükseltin."
+                    detail=f"Your plan room limit: {plan.max_rooms}. Upgrade your plan for more rooms."
                 )
         except (ValueError, KeyError):
             pass
         update_data["total_rooms"] = payload.total_rooms
 
     if not update_data:
-        raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
+        raise HTTPException(status_code=400, detail="No field to update")
 
     update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": update_data})
@@ -1056,7 +1056,7 @@ async def update_hotel_info(
     updated = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
     return {
         "success": True,
-        "message": "Otel bilgileri güncellendi",
+        "message": "Hotel information updated",
         "tenant": updated,
     }
 
@@ -1092,7 +1092,7 @@ async def get_available_roles(current_user: User = Depends(get_current_user)):
 async def list_hotel_team(current_user: User = Depends(get_current_user)):
     """List all team members for the current hotel (hotel admin only)"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler ekip üyelerini görebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can view team members")
 
     users_raw = await db.users.find(
         {"tenant_id": current_user.tenant_id},
@@ -1131,12 +1131,12 @@ async def add_team_member(
 ):
     """Add a new team member to the current hotel"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler ekip üyesi ekleyebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can add team members")
 
     # Get tenant tier
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
     if not tenant:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+        raise HTTPException(status_code=404, detail="Hotel not found")
 
     tier = (tenant.get("subscription_tier", "basic")).lower()
     if tier == "pro": tier = "professional"
@@ -1147,7 +1147,7 @@ async def add_team_member(
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
         raise HTTPException(
             status_code=400,
-            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen roller: {', '.join(allowed)}"
+            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed roles: {', '.join(allowed)}"
         )
 
     # Max users check
@@ -1157,13 +1157,13 @@ async def add_team_member(
     if current_count >= max_users:
         raise HTTPException(
             status_code=400,
-            detail=f"Kullanıcı limitine ulaşıldı ({max_users}). Daha fazla kullanıcı eklemek için planınızı yükseltin."
+            detail=f"User limit reached ({max_users}). Upgrade your plan to add more users."
         )
 
     # Check duplicate email
     existing = await db.users.find_one(build_user_email_query(payload.email))
     if existing:
-        raise HTTPException(status_code=400, detail="Bu email adresi zaten kayıtlı")
+        raise HTTPException(status_code=400, detail="This email address is already registered")
 
     hashed = hash_password(payload.password)
     new_user = {
@@ -1182,7 +1182,7 @@ async def add_team_member(
 
     return {
         "success": True,
-        "message": f"{payload.name} başarıyla eklendi ({payload.role})",
+        "message": f"{payload.name} added successfully ({payload.role})",
         "user_id": new_user["id"],
     }
 
@@ -1197,20 +1197,20 @@ async def update_team_member_role(
 ):
     """Update a team member's role"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler rol değiştirebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can change roles")
 
     # Find team member
     target = await db.users.find_one({"id": user_id, "tenant_id": current_user.tenant_id})
     if not target:
-        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+        raise HTTPException(status_code=404, detail="Team member not found")
 
     # Can't change own role
     if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Kendi rolünüzü değiştiremezsiniz")
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
 
     # Can't change super_admin
     if target.get("role") == "super_admin":
-        raise HTTPException(status_code=400, detail="Super Admin rolü değiştirilemez")
+        raise HTTPException(status_code=400, detail="Super Admin role cannot be changed")
 
     # Tier check
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
@@ -1222,11 +1222,11 @@ async def update_team_member_role(
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
         raise HTTPException(
             status_code=400,
-            detail=f"Bu plan ({tier}) için '{payload.role}' rolü kullanılamaz. İzin verilen: {', '.join(allowed)}"
+            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}"
         )
 
     await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
-    return {"success": True, "message": f"Rol güncellendi: {payload.role}"}
+    return {"success": True, "message": f"Role updated: {payload.role}"}
 
 
 
@@ -1238,19 +1238,19 @@ async def remove_team_member(
 ):
     """Remove a team member"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        raise HTTPException(status_code=403, detail="Sadece yöneticiler üye silebilir")
+        raise HTTPException(status_code=403, detail="Only administrators can remove members")
 
     if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Kendinizi silemezsiniz")
+        raise HTTPException(status_code=400, detail="You cannot remove yourself")
 
     target = await db.users.find_one({"id": user_id, "tenant_id": current_user.tenant_id})
     if not target:
-        raise HTTPException(status_code=404, detail="Ekip üyesi bulunamadı")
+        raise HTTPException(status_code=404, detail="Team member not found")
     if target.get("role") == "super_admin":
-        raise HTTPException(status_code=400, detail="Super Admin silinemez")
+        raise HTTPException(status_code=400, detail="Super Admin cannot be deleted")
 
     await db.users.delete_one({"id": user_id, "tenant_id": current_user.tenant_id})
-    return {"success": True, "message": "Ekip üyesi silindi"}
+    return {"success": True, "message": "Team member removed"}
 
 
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
@@ -1590,12 +1590,12 @@ async def create_sla_config(
             })
 
         return {
-            'message': 'SLA yapılandırması kaydedildi',
+            'message': 'SLA configuration saved',
             'sla_id': sla_id,
             'category': config.category,
             'priority': config.priority,
-            'response_time': f'{config.response_time_minutes} dakika',
-            'resolution_time': f'{config.resolution_time_minutes} dakika'
+            'response_time': f'{config.response_time_minutes} min',
+            'resolution_time': f'{config.resolution_time_minutes} min'
         }
 
     except Exception as e:
@@ -2017,11 +2017,11 @@ async def create_demo_request(request: DemoRequest):
 
         return {
             'success': True,
-            'message': 'Demo talebi başarıyla alındı',
+            'message': 'Demo request received successfully',
             'request_id': demo_data['id']
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Demo talebi kaydedilemedi: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save demo request: {str(e)}")
 
 
 # 4. ENDPOINT HEALTH CHECK

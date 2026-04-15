@@ -93,7 +93,7 @@ class TestMigrationObservability:
         payload = response.json()
 
         assert {'generated_at', 'health_score', 'outbox', 'audit', 'shadow'} <= set(payload.keys())
-        assert {'status', 'display_status', 'calculated_at', 'time_window', 'reasons', 'operational_guidance', 'signals'} <= set(payload['health_score'].keys())
+        assert {'status', 'display_status', 'calculated_at', 'time_window', 'reasons', 'reason_params', 'operational_guidance_key', 'signals'} <= set(payload['health_score'].keys())
         assert {'throughput', 'queue_depth', 'lifecycle', 'event_breakdown', 'retries', 'stale_triage', 'lag', 'recent_events'} <= set(payload['outbox'].keys())
         assert {'recent_count', 'audit_gap_count', 'actions_breakdown', 'recent_stream'} <= set(payload['audit'].keys())
         assert {'summary', 'recent_events'} <= set(payload['shadow'].keys())
@@ -152,7 +152,7 @@ def test_health_score_is_yellow_for_stale_pending_or_compare_error():
     )
 
     assert score['status'] == 'yellow'
-    assert any('stale pending' in reason for reason in score['reasons'])
+    assert 'stale_pending_event' in score['reasons']
 
 
 def test_health_score_red_override_for_audit_gap():
@@ -169,7 +169,7 @@ def test_health_score_red_override_for_audit_gap():
 
     assert score['status'] == 'red'
     assert score['signals']['audit_gap_count'] == 1
-    assert any('audit gap' in reason for reason in score['reasons'])
+    assert 'audit_gap_detected' in score['reasons']
 
 
 def test_stale_pending_triage_classifies_semantic_backlog_without_delivery_signals():

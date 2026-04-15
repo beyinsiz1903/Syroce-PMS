@@ -57,7 +57,7 @@ async def get_rate_grid(
     end_date: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Tarih aralığı için oda tipi x tarih grid'ini döndürür."""
+    """Return room type x date grid for the given date range."""
     tenant_id = current_user.tenant_id
 
     # Get room type mappings
@@ -70,7 +70,7 @@ async def get_rate_grid(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
 
     room_types = conn.get("room_types", [])
     rate_plans = conn.get("rate_plans", [])
@@ -209,7 +209,7 @@ async def update_rates(
     request: BulkRateUpdateRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Fiyat/müsaitlik/kısıtlama güncelle ve Exely'ye push et."""
+    """Update rates/availability/restrictions and push to Exely."""
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
     saved = 0
@@ -219,7 +219,7 @@ async def update_rates(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
 
     # Get credentials for Exely push
     hotel_code = conn.get("hotel_code", "")
@@ -304,7 +304,7 @@ async def update_rates(
                 "room_type_code": upd.room_type_code,
                 "rate_plan_code": upd.rate_plan_code,
                 "success": False,
-                "error": "Exely kimlik bilgileri bulunamadı",
+                "error": "Exely credentials not found",
             })
 
     # Execute DB bulk write in one batch
@@ -321,19 +321,19 @@ async def update_rates(
         "saved": saved,
         "push_results": push_results,
         "all_pushed": all_success,
-        "message": "Tüm güncellemeler başarıyla uygulandı" if all_success else "Bazı güncellemeler başarısız oldu",
+        "message": "All updates applied successfully" if all_success else "Some updates failed",
     }
 
 
 @router.get("/room-types")
 async def get_room_types(current_user: User = Depends(get_current_user)):
-    """Mevcut oda tiplerini, fiyat planlarını ve fiyatlandırma ayarlarını döndürür."""
+    """Return available room types, rate plans, and pricing settings."""
     tenant_id = current_user.tenant_id
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
 
     # Fetch pricing settings
     pricing_docs = await db.pricing_settings.find(
@@ -370,7 +370,7 @@ async def bulk_grid_update(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
 
     # Get credentials for Exely push
     hotel_code = conn.get("hotel_code", "")
