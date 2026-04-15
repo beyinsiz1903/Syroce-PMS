@@ -9,6 +9,19 @@ from typing import Any
 
 logger = logging.getLogger("shadow_metrics")
 
+_db_ref = None
+
+
+def _get_db():
+    global _db_ref
+    if _db_ref is None:
+        try:
+            from core.database import db
+            _db_ref = db
+        except Exception:
+            pass
+    return _db_ref
+
 
 class ShadowMetricsStore:
     def __init__(self, max_entries: int = 1000):
@@ -31,6 +44,47 @@ class ShadowMetricsStore:
                 self._metric_counts[f"shadow.{endpoint}.field_mismatch.{field}"] += 1
 
             self._recent_events.append(event)
+
+        self._persist_to_db(event)
+
+    def _persist_to_db(self, event: dict[str, Any]) -> None:
+        try:
+            db = _get_db()
+            if db is None:
+                return
+            doc = {**event, "_persisted_at": datetime.now(UTC).isoformat()}
+            doc.pop("_id", None)
+            import asyncio
+            loop = None
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            if loop and loop.is_running():
+                loop.create_task(db.shadow_compare_events.insert_one(doc))
+            else:
+                db.delegate["shadow_compare_events"].insert_one(doc)
+        except Exception as exc:
+            logger.debug("Shadow metrics DB persist failed: %s", exc)
+
+    async def load_from_db(self, tenant_id: str | None = None, limit: int = 500) -> None:
+        try:
+            db = _get_db()
+            if db is None:
+                return
+            query: dict[str, Any] = {}
+            if tenant_id:
+                query["tenant_id"] = tenant_id
+            cursor = db.shadow_compare_events.find(
+                query, {"_id": 0}
+            ).sort("timestamp", -1).limit(limit)
+            docs = await cursor.to_list(limit)
+            with self._lock:
+                for doc in reversed(docs):
+                    doc.pop("_persisted_at", None)
+                    self._recent_events.append(doc)
+        except Exception as exc:
+            logger.debug("Shadow metrics DB load failed: %s", exc)
 
     def get_metric(self, metric_name: str) -> int:
         with self._lock:

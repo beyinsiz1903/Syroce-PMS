@@ -183,9 +183,13 @@ def build_stale_pending_triage(
             },
             "assessment": {
                 "backlog_shape": "clear",
-                "source_scope": "Stale pending event yok",
-                "likely_root_cause": "Triage gerekmiyor",
-                "recommended_action": "Mevcut health score sinyaliyle devam edilebilir",
+                "source_scope_key": "no_stale_pending",
+                "source_scope": "No stale pending events",
+                "source_scope_params": {"count": 0, "total": 0},
+                "likely_root_cause_key": "triage_not_needed",
+                "likely_root_cause": "Triage not needed",
+                "recommended_action_key": "continue_with_health",
+                "recommended_action": "Can continue with current health score signal",
             },
             "sample_events": [],
         }
@@ -257,21 +261,30 @@ def build_stale_pending_triage(
 
     semantic_count = origin_counter.get("semantic", 0)
     if semantic_count == total_stale:
-        source_scope = "Tüm stale pending kayıtları semantic write-path kaynaklı"
+        source_scope_key = "all_semantic"
+        source_scope = "All stale pending records are from semantic write-path"
     elif semantic_count == 0:
-        source_scope = "Stale pending kayıtlarında semantic kaynak tespit edilmedi"
+        source_scope_key = "no_semantic"
+        source_scope = "No semantic source detected in stale pending records"
     else:
-        source_scope = f"Stale pending kayıtlarının {semantic_count}/{total_stale} adedi semantic kaynaklı"
+        source_scope_key = "partial_semantic"
+        source_scope = f"{semantic_count}/{total_stale} stale pending records are from semantic source"
+
+    source_scope_params = {"count": semantic_count, "total": total_stale}
 
     if processed_count == 0 and retry_metadata_count == 0:
-        likely_root_cause = "Worker/consumer bağlı değil veya outbox state transition lifecycle henüz aktif değil"
+        likely_root_cause_key = "worker_not_connected"
+        likely_root_cause = "Worker/consumer not connected or outbox state transition lifecycle not yet active"
     elif processed_count == 0:
-        likely_root_cause = "Consumer denemesi görünmüyor; queue backlog aktif ama işleme sinyali yok"
+        likely_root_cause_key = "no_consumer_signal"
+        likely_root_cause = "No consumer attempt visible; queue backlog active but no processing signal"
     else:
-        likely_root_cause = "Consumer kısmen aktif; state transition veya retry davranışı ayrıca incelenmeli"
+        likely_root_cause_key = "consumer_partial"
+        likely_root_cause = "Consumer partially active; state transition or retry behavior needs further investigation"
 
+    recommended_action_key = "clarify_worker_strategy"
     recommended_action = (
-        "Yeni write-path açmadan önce consumer/worker stratejisini netleştir, gerekiyorsa outbox cleanup ya da explicit park policy tanımla"
+        "Clarify consumer/worker strategy before opening new write-path, define outbox cleanup or explicit park policy if needed"
     )
 
     return {
@@ -329,8 +342,12 @@ def build_stale_pending_triage(
         },
         "assessment": {
             "backlog_shape": backlog_shape,
+            "source_scope_key": source_scope_key,
             "source_scope": source_scope,
+            "source_scope_params": source_scope_params,
+            "likely_root_cause_key": likely_root_cause_key,
             "likely_root_cause": likely_root_cause,
+            "recommended_action_key": recommended_action_key,
             "recommended_action": recommended_action,
         },
         "sample_events": samples,
@@ -386,15 +403,16 @@ def build_health_score(
 
     if status == "green":
         reasons = [
-            "Failed outbox event yok",
-            "Stale pending event yok",
-            "Mismatch rate %1 altında ve compare error yok",
+            "no_failed_outbox",
+            "no_stale_pending",
+            "mismatch_below_1",
         ]
 
+    operational_guidance_key = status
     operational_guidance = {
-        "green": "Green → sıradaki dar write-path’e geçilebilir",
-        "yellow": "Yellow → geçmeden önce gözlem ve inceleme gerekir",
-        "red": "Red → yeni write-path açılmaz, önce sorun çözülür",
+        "green": "Green — next narrow write-path can be opened",
+        "yellow": "Yellow — observation and review required before proceeding",
+        "red": "Red — new write-path cannot be opened, resolve issues first",
     }[status]
 
     return {
@@ -404,6 +422,7 @@ def build_health_score(
         "time_window": "last_24h",
         "time_window_label": "Last 24h",
         "reasons": reasons[:3],
+        "operational_guidance_key": operational_guidance_key,
         "operational_guidance": operational_guidance,
         "signals": {
             "failed_outbox_count": failed_outbox_count,
@@ -416,7 +435,15 @@ def build_health_score(
 
 
 class MigrationObservabilityService:
+    _shadow_loaded: set[str] = set()
+
+    async def _ensure_shadow_loaded(self, tenant_id: str) -> None:
+        if tenant_id not in self._shadow_loaded:
+            await shadow_metrics_store.load_from_db(tenant_id=tenant_id, limit=500)
+            self._shadow_loaded.add(tenant_id)
+
     async def get_dashboard(self, tenant_id: str) -> dict[str, Any]:
+        await self._ensure_shadow_loaded(tenant_id)
         now = datetime.now(UTC)
         twenty_four_hours_ago = now - timedelta(hours=24)
         five_minutes_ago = now - timedelta(minutes=5)

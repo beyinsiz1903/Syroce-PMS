@@ -204,4 +204,4 @@ def test_stale_pending_triage_classifies_semantic_backlog_without_delivery_signa
     assert triage['assessment']['backlog_shape'] == 'same_day_backlog'
     assert triage['origin_breakdown'][0]['origin'] == 'semantic'
     assert triage['delivery_signals']['has_delivery_lifecycle'] is False
-    assert 'Worker/consumer' in triage['assessment']['likely_root_cause']
+    assert triage['assessment']['likely_root_cause_key'] == 'worker_not_connected'
