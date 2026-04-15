@@ -1383,7 +1383,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const loadMessageTemplates = async () => {
     try {
-      const response = await axios.get('/messages/templates');
+      const response = await axios.get('/messaging-center/templates');
       setMessageTemplates(response.data.templates || []);
     } catch (error) {
       console.error('Failed to load templates');
@@ -1397,24 +1397,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
 
     try {
-      let response;
-      if (newMessage.channel === 'email') {
-        response = await axios.post('/messages/send-email', {
-          recipient: newMessage.recipient,
-          subject: newMessage.subject,
-          body: newMessage.body
-        });
-      } else if (newMessage.channel === 'sms') {
-        response = await axios.post('/messages/send-sms', {
-          recipient: newMessage.recipient,
-          body: newMessage.body
-        });
-      } else if (newMessage.channel === 'whatsapp') {
-        response = await axios.post('/messages/send-whatsapp', {
-          recipient: newMessage.recipient,
-          body: newMessage.body
-        });
-      }
+      const response = await axios.post('/messaging-center/send', {
+        channel: newMessage.channel,
+        recipient: newMessage.recipient,
+        subject: newMessage.subject,
+        body: newMessage.body,
+        template_id: newMessage.template_id,
+      });
 
       toast.success('Message sent successfully!');
       setSentMessages([response.data, ...sentMessages]);
@@ -2096,16 +2085,24 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <h2 className="text-2xl font-semibold">POS Entegrasyonu</h2>
               <Button onClick={async () => {
                 try {
-                  const response = await axios.get('/pos/orders/today');
-                  setPosOrders(response.data.orders || []);
-                  setPosRevenue(response.data.revenue || { restaurant: 0, bar: 0, room_service: 0, total: 0 });
-                  toast.success('POS data refreshed');
+                  const [ordersRes, summaryRes] = await Promise.allSettled([
+                    axios.get('/pos/orders'),
+                    axios.get('/pos/daily-summary'),
+                  ]);
+                  const anyOk = ordersRes.status === 'fulfilled' || summaryRes.status === 'fulfilled';
+                  if (ordersRes.status === 'fulfilled') setPosOrders(ordersRes.value.data.orders || []);
+                  if (summaryRes.status === 'fulfilled') {
+                    const s = summaryRes.value.data;
+                    setPosRevenue({ restaurant: s.food_revenue || 0, bar: s.beverage_revenue || 0, room_service: s.room_service_revenue || 0, total: s.total_sales || 0 });
+                  }
+                  if (anyOk) toast.success('POS verileri yenilendi');
+                  else toast.error('POS verileri yuklenemedi');
                 } catch (error) {
-                  toast.error('Failed to load POS data');
+                  toast.error('POS verileri yuklenemedi');
                 }
               }}>
                 <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh POS Data
+                POS Yenile
               </Button>
             </div>
 
