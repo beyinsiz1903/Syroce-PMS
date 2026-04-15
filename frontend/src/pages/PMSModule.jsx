@@ -748,7 +748,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadData();
       loadFrontDeskData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Check-in failed');
+      toast.error(error.response?.data?.detail || 'Check-in başarısız');
     }
   };
 
@@ -756,15 +756,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     try {
       const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
       if (response.data.total_balance > 0.01) {
-        toast.warning(`⚠️ Check-out with outstanding balance: $${response.data.total_balance.toFixed(2)}`);
+        toast.warning(`⚠️ Açık bakiye ile check-out: ${response.data.total_balance.toFixed(2)} ₺`);
       } else {
-        toast.success(`✅ ${response.data.message} - ${response.data.folios_closed} folios closed`);
+        toast.success(`✅ ${response.data.message} - ${response.data.folios_closed} folio kapatıldı`);
       }
       loadData();
       loadFrontDeskData();
       loadHousekeepingData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Check-out failed');
+      toast.error(error.response?.data?.detail || 'Check-out başarısız');
     }
   };
 
@@ -1131,7 +1131,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     
     try {
       await axios.post(`/folio/${selectedFolio.id}/charge`, newFolioCharge);
-      toast.success('Charge posted successfully');
+      toast.success('Masraf kaydedildi');
       loadFolioDetails(selectedFolio.id);
       setNewFolioCharge({
         charge_category: 'room',
@@ -1152,7 +1152,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     
     try {
       await axios.post(`/folio/${selectedFolio.id}/payment`, newFolioPayment);
-      toast.success('Payment posted successfully');
+      toast.success('Ödeme kaydedildi');
       loadFolioDetails(selectedFolio.id);
       setNewFolioPayment({
         amount: 0,
@@ -1619,7 +1619,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <div className="space-y-6">
                 {/* Charges */}
                 <div>
-                  <h3 className="font-semibold mb-2">Charges</h3>
+                  <h3 className="font-semibold mb-2">Masraflar</h3>
                   <div className="space-y-2">
                     {folio.charges.map((charge, idx) => (
                       <div key={idx} className="flex justify-between text-sm border-b pb-2">
@@ -1628,8 +1628,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                           <div className="text-xs text-gray-500 capitalize">{charge.charge_type}</div>
                         </div>
                         <div className="text-right">
-                          <div>${charge.total.toFixed(2)}</div>
-                          <div className="text-xs text-gray-500">{charge.quantity} × ${charge.amount}</div>
+                          <div>{charge.total.toFixed(2)} ₺</div>
+                          <div className="text-xs text-gray-500">{charge.quantity} × {charge.amount} ₺</div>
                         </div>
                       </div>
                     ))}
@@ -1643,12 +1643,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="food">Food & Beverage</SelectItem>
-                          <SelectItem value="laundry">Laundry</SelectItem>
+                          <SelectItem value="food">Yiyecek & İçecek</SelectItem>
+                          <SelectItem value="laundry">Çamaşırhane</SelectItem>
                           <SelectItem value="minibar">Minibar</SelectItem>
                           <SelectItem value="spa">Spa</SelectItem>
-                          <SelectItem value="phone">Phone</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
+                          <SelectItem value="phone">Telefon</SelectItem>
+                          <SelectItem value="other">Diğer</SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
@@ -1660,19 +1660,19 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                       <Input
                         type="number"
                         step="0.01"
-                        placeholder="Amount"
+                        placeholder="Tutar"
                         value={newCharge.amount}
                         onChange={(e) => setNewCharge({...newCharge, amount: parseFloat(e.target.value)})}
                         required
                       />
-                      <Button type="submit">Add Charge</Button>
+                      <Button type="submit">Masraf Ekle</Button>
                     </div>
                   </form>
                 </div>
 
                 {/* Payments */}
                 <div>
-                  <h3 className="font-semibold mb-2">Payments</h3>
+                  <h3 className="font-semibold mb-2">Ödemeler</h3>
                   <div className="space-y-2">
                     {folio.payments.map((payment, idx) => (
                       <div key={idx} className="flex justify-between text-sm border-b pb-2">
@@ -1680,7 +1680,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                           <div className="font-medium capitalize">{payment.method}</div>
                           {payment.reference && <div className="text-xs text-gray-500">Ref: {payment.reference}</div>}
                         </div>
-                        <div className="text-green-600 font-medium">${payment.amount.toFixed(2)}</div>
+                        <div className="text-green-600 font-medium">{payment.amount.toFixed(2)} ₺</div>
                       </div>
                     ))}
                   </div>
@@ -1691,7 +1691,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                       <Input
                         type="number"
                         step="0.01"
-                        placeholder="Amount"
+                        placeholder="Tutar"
                         value={newPayment.amount}
                         onChange={(e) => setNewPayment({...newPayment, amount: parseFloat(e.target.value)})}
                         required
@@ -1701,18 +1701,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="cash">Cash</SelectItem>
-                          <SelectItem value="card">Card</SelectItem>
-                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="cash">Nakit</SelectItem>
+                          <SelectItem value="card">Kredi Kartı</SelectItem>
+                          <SelectItem value="bank_transfer">Havale/EFT</SelectItem>
                           <SelectItem value="online">Online</SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
-                        placeholder="Reference (optional)"
+                        placeholder="Referans (opsiyonel)"
                         value={newPayment.reference}
                         onChange={(e) => setNewPayment({...newPayment, reference: e.target.value})}
                       />
-                      <Button type="submit">Process Payment</Button>
+                      <Button type="submit">Ödeme İşle</Button>
                     </div>
                   </form>
                 </div>
@@ -1720,16 +1720,16 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 {/* Summary */}
                 <div className="border-t pt-4">
                   <div className="flex justify-between text-lg font-bold">
-                    <span>Total Charges:</span>
-                    <span>${folio.total_charges.toFixed(2)}</span>
+                    <span>Toplam Masraf:</span>
+                    <span>{folio.total_charges.toFixed(2)} ₺</span>
                   </div>
                   <div className="flex justify-between text-lg font-bold text-green-600">
-                    <span>Total Paid:</span>
-                    <span>${folio.total_paid.toFixed(2)}</span>
+                    <span>Toplam Ödeme:</span>
+                    <span>{folio.total_paid.toFixed(2)} ₺</span>
                   </div>
                   <div className={`flex justify-between text-2xl font-bold ${folio.balance > 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                    <span>Balance:</span>
-                    <span>${folio.balance.toFixed(2)}</span>
+                    <span>Bakiye:</span>
+                    <span>{folio.balance.toFixed(2)} ₺</span>
                   </div>
                 </div>
               </div>
@@ -1741,40 +1741,40 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'room'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Room</DialogTitle>
+              <DialogTitle>Yeni Oda Oluştur</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateRoom} className="space-y-4">
               <div>
-                <Label>Room Number</Label>
+                <Label>Oda Numarası</Label>
                 <Input value={newRoom.room_number} onChange={(e) => setNewRoom({...newRoom, room_number: e.target.value})} required />
               </div>
               <div>
-                <Label>Room Type</Label>
+                <Label>Oda Tipi</Label>
                 <Select value={newRoom.room_type} onValueChange={(v) => setNewRoom({...newRoom, room_type: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="standard">Standart</SelectItem>
                     <SelectItem value="deluxe">Deluxe</SelectItem>
-                    <SelectItem value="suite">Suite</SelectItem>
+                    <SelectItem value="suite">Süit</SelectItem>
                     <SelectItem value="presidential">Presidential</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Floor</Label>
+                  <Label>Kat</Label>
                   <Input type="number" value={newRoom.floor} onChange={(e) => setNewRoom({...newRoom, floor: parseInt(e.target.value)})} required />
                 </div>
                 <div>
-                  <Label>Capacity</Label>
+                  <Label>Kapasite</Label>
                   <Input type="number" value={newRoom.capacity} onChange={(e) => setNewRoom({...newRoom, capacity: parseInt(e.target.value)})} required />
                 </div>
               </div>
               <div>
-                <Label>Base Price</Label>
+                <Label>Taban Fiyat (₺)</Label>
                 <Input type="number" step="0.01" value={newRoom.base_price} onChange={(e) => setNewRoom({...newRoom, base_price: parseFloat(e.target.value)})} required />
               </div>
-              <Button type="submit" className="w-full">Create Room</Button>
+              <Button type="submit" className="w-full">Oda Oluştur</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -1893,8 +1893,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                         confirm_text: bulkDeleteConfirm,
                       });
 
-                      const msgParts = [`Deleted: ${res.data.deleted}`];
-                      if (res.data.blocked > 0) msgParts.push(`Blocked: ${res.data.blocked}`);
+                      const msgParts = [`Silinen: ${res.data.deleted}`];
+                      if (res.data.blocked > 0) msgParts.push(`Bloklanan: ${res.data.blocked}`);
                       toast.success(msgParts.join(' • '));
 
                       if (res.data.blocked > 0) {
@@ -1996,7 +1996,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'folio-view'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Folio Management</DialogTitle>
+              <DialogTitle>Folio Yönetimi</DialogTitle>
               <DialogDescription>
                 {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type.toUpperCase()}`}
               </DialogDescription>
@@ -2008,28 +2008,28 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border">
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <div className="text-sm text-gray-600">Guest</div>
+                      <div className="text-sm text-gray-600">Misafir</div>
                       <div className="font-semibold">
-                        {guests.find(g => g.id === selectedFolio.guest_id)?.name || 'N/A'}
+                        {guests.find(g => g.id === selectedFolio.guest_id)?.name || 'Bilinmiyor'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600">Booking</div>
+                      <div className="text-sm text-gray-600">Rezervasyon</div>
                       <div className="font-semibold">
                         {(() => {
                           const booking = bookings.find(b => b.id === selectedFolio.booking_id);
-                          if (!booking) return 'N/A';
+                          if (!booking) return 'Bilinmiyor';
                           return `${new Date(booking.check_in).toLocaleDateString()} - ${new Date(booking.check_out).toLocaleDateString()}`;
                         })()}
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600">Current Balance</div>
+                      <div className="text-sm text-gray-600">Güncel Bakiye</div>
                       <div className={`text-2xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                        ${selectedFolio.balance?.toFixed(2) || '0.00'}
+                        {selectedFolio.balance?.toFixed(2) || '0.00'} ₺
                       </div>
                       <div className="text-xs text-gray-500">
-                        {selectedFolio.balance > 0 ? 'Guest owes hotel' : selectedFolio.balance < 0 ? 'Hotel owes guest' : 'Balanced'}
+                        {selectedFolio.balance > 0 ? 'Misafir borçlu' : selectedFolio.balance < 0 ? 'Otel borçlu' : 'Dengeli'}
                       </div>
                     </div>
                   </div>
@@ -2039,11 +2039,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 <div className="flex gap-2">
                   <Button onClick={() => setOpenDialog('post-charge')} variant="default">
                     <Plus className="w-4 h-4 mr-2" />
-                    Post Charge
+                    Masraf Ekle
                   </Button>
                   <Button onClick={() => setOpenDialog('post-payment')} variant="default">
                     <Plus className="w-4 h-4 mr-2" />
-                    Post Payment
+                    Ödeme Ekle
                   </Button>
                 </div>
 
@@ -2053,11 +2053,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   <div>
                     <h3 className="text-lg font-semibold mb-3 flex items-center">
                       <ClipboardList className="w-5 h-5 mr-2" />
-                      Charges
+                      Masraflar
                     </h3>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {folioCharges.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8">No charges posted</div>
+                        <div className="text-center text-gray-400 py-8">Henüz masraf kaydedilmedi</div>
                       ) : 
                         folioCharges.map((charge) => {
                           // Check if this is a POS charge with line items
@@ -2084,7 +2084,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                                     <div className="font-semibold">{charge.description}</div>
                                     {isPOSCharge && hasLineItems && (
                                       <button className="text-blue-600 text-xs">
-                                        {isExpanded ? '▼ Hide Items' : '▶ Show Items'}
+                                        {isExpanded ? '▼ Kalemleri Gizle' : '▶ Kalemleri Göster'}
                                       </button>
                                     )}
                                   </div>
@@ -2092,19 +2092,19 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                                     {charge.charge_category.replace('_', ' ').toUpperCase()}
                                   </div>
                                   <div className="text-xs text-gray-500">
-                                    {new Date(charge.date).toLocaleDateString()} • Qty: {charge.quantity}
+                                    {new Date(charge.date).toLocaleDateString('tr-TR')} • Adet: {charge.quantity}
                                   </div>
                                   {charge.voided && (
                                     <div className="text-xs text-red-600 mt-1">
-                                      VOIDED: {charge.void_reason}
+                                      İPTAL: {charge.void_reason}
                                     </div>
                                   )}
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-bold">${charge.total.toFixed(2)}</div>
+                                  <div className="font-bold">{charge.total.toFixed(2)} ₺</div>
                                   {charge.tax_amount > 0 && (
                                     <div className="text-xs text-gray-500">
-                                      +${charge.tax_amount.toFixed(2)} tax
+                                      +{charge.tax_amount.toFixed(2)} ₺ vergi
                                     </div>
                                   )}
                                 </div>
@@ -2128,14 +2128,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                                           )}
                                         </div>
                                         <span className="font-semibold text-gray-800">
-                                          ${(item.unit_price * item.quantity).toFixed(2)}
+                                          {(item.unit_price * item.quantity).toFixed(2)} ₺
                                         </span>
                                       </div>
                                     ))}
                                   </div>
                                   <div className="mt-2 pt-2 border-t flex justify-between text-sm">
-                                    <span className="font-semibold">Subtotal:</span>
-                                    <span className="font-bold">${charge.total.toFixed(2)}</span>
+                                    <span className="font-semibold">Ara Toplam:</span>
+                                    <span className="font-bold">{charge.total.toFixed(2)} ₺</span>
                                   </div>
                                 </div>
                               )}
@@ -2147,8 +2147,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     </div>
                     <div className="mt-4 pt-4 border-t">
                       <div className="flex justify-between font-semibold">
-                        <span>Total Charges:</span>
-                        <span>${folioCharges.filter(c => !c.voided).reduce((sum, c) => sum + c.total, 0).toFixed(2)}</span>
+                        <span>Toplam Masraf:</span>
+                        <span>{folioCharges.filter(c => !c.voided).reduce((sum, c) => sum + c.total, 0).toFixed(2)} ₺</span>
                       </div>
                     </div>
                   </div>
@@ -2157,11 +2157,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   <div>
                     <h3 className="text-lg font-semibold mb-3 flex items-center">
                       <DollarSign className="w-5 h-5 mr-2" />
-                      Payments
+                      Ödemeler
                     </h3>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {folioPayments.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8">No payments posted</div>
+                        <div className="text-center text-gray-400 py-8">Henüz ödeme kaydedilmedi</div>
                       ) : (
                         folioPayments.map((payment) => (
                           <Card key={payment.id} className="bg-green-50">
@@ -2182,7 +2182,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                                   )}
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-bold text-green-600">${payment.amount.toFixed(2)}</div>
+                                  <div className="font-bold text-green-600">{payment.amount.toFixed(2)} ₺</div>
                                 </div>
                               </div>
                             </CardContent>
@@ -2192,8 +2192,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     </div>
                     <div className="mt-4 pt-4 border-t">
                       <div className="flex justify-between font-semibold">
-                        <span>Total Payments:</span>
-                        <span className="text-green-600">${folioPayments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}</span>
+                        <span>Toplam Ödeme:</span>
+                        <span className="text-green-600">{folioPayments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)} ₺</span>
                       </div>
                     </div>
                   </div>
@@ -2202,9 +2202,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 {/* Net Balance */}
                 <div className="bg-gray-50 p-6 rounded-lg border-2 border-gray-300">
                   <div className="flex justify-between items-center">
-                    <span className="text-xl font-semibold">Net Balance:</span>
+                    <span className="text-xl font-semibold">Net Bakiye:</span>
                     <span className={`text-3xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                      ${selectedFolio.balance?.toFixed(2) || '0.00'}
+                      {selectedFolio.balance?.toFixed(2) || '0.00'} ₺
                     </span>
                   </div>
                 </div>
@@ -2217,39 +2217,39 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'post-charge'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Post Charge</DialogTitle>
+              <DialogTitle>Masraf Ekle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handlePostCharge} className="space-y-4">
               <div>
-                <Label>Charge Category *</Label>
+                <Label>Masraf Kategorisi *</Label>
                 <Select value={newFolioCharge.charge_category} onValueChange={(v) => setNewFolioCharge({...newFolioCharge, charge_category: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="room">Room</SelectItem>
-                    <SelectItem value="food">Food & Beverage</SelectItem>
+                    <SelectItem value="room">Oda</SelectItem>
+                    <SelectItem value="food">Yiyecek & İçecek</SelectItem>
                     <SelectItem value="minibar">Minibar</SelectItem>
                     <SelectItem value="spa">Spa</SelectItem>
-                    <SelectItem value="laundry">Laundry</SelectItem>
-                    <SelectItem value="phone">Phone</SelectItem>
-                    <SelectItem value="internet">Internet</SelectItem>
-                    <SelectItem value="parking">Parking</SelectItem>
-                    <SelectItem value="city_tax">City Tax</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="laundry">Çamaşırhane</SelectItem>
+                    <SelectItem value="phone">Telefon</SelectItem>
+                    <SelectItem value="internet">İnternet</SelectItem>
+                    <SelectItem value="parking">Otopark</SelectItem>
+                    <SelectItem value="city_tax">Şehir Vergisi</SelectItem>
+                    <SelectItem value="other">Diğer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Description *</Label>
+                <Label>Açıklama *</Label>
                 <Input 
                   value={newFolioCharge.description} 
                   onChange={(e) => setNewFolioCharge({...newFolioCharge, description: e.target.value})}
-                  placeholder="e.g., Room 101 - Night Charge"
+                  placeholder="Örn: Oda 101 - Gecelik Ücret"
                   required
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Amount *</Label>
+                  <Label>Tutar (₺) *</Label>
                   <Input 
                     type="number" 
                     step="0.01"
@@ -2259,7 +2259,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   />
                 </div>
                 <div>
-                  <Label>Quantity *</Label>
+                  <Label>Adet *</Label>
                   <Input 
                     type="number" 
                     min="1"
@@ -2278,10 +2278,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   className="rounded"
                 />
                 <Label htmlFor="auto-tax" className="cursor-pointer">
-                  Auto-calculate city tax
+                  Şehir vergisini otomatik hesapla
                 </Label>
               </div>
-              <Button type="submit" className="w-full">Post Charge</Button>
+              <Button type="submit" className="w-full">Masraf Kaydet</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -2290,36 +2290,36 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'post-payment'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Post Payment</DialogTitle>
+              <DialogTitle>Ödeme Ekle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handlePostPayment} className="space-y-4">
               <div>
-                <Label>Payment Method *</Label>
+                <Label>Ödeme Yöntemi *</Label>
                 <Select value={newFolioPayment.method} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, method: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="card">Credit/Debit Card</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="online">Online Payment</SelectItem>
+                    <SelectItem value="cash">Nakit</SelectItem>
+                    <SelectItem value="card">Kredi/Banka Kartı</SelectItem>
+                    <SelectItem value="bank_transfer">Havale/EFT</SelectItem>
+                    <SelectItem value="online">Online Ödeme</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Payment Type *</Label>
+                <Label>Ödeme Tipi *</Label>
                 <Select value={newFolioPayment.payment_type} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, payment_type: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="prepayment">Prepayment</SelectItem>
-                    <SelectItem value="deposit">Deposit</SelectItem>
-                    <SelectItem value="interim">Interim Payment</SelectItem>
-                    <SelectItem value="final">Final Payment</SelectItem>
-                    <SelectItem value="refund">Refund</SelectItem>
+                    <SelectItem value="prepayment">Ön Ödeme</SelectItem>
+                    <SelectItem value="deposit">Depozito</SelectItem>
+                    <SelectItem value="interim">Ara Ödeme</SelectItem>
+                    <SelectItem value="final">Son Ödeme</SelectItem>
+                    <SelectItem value="refund">İade</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Amount *</Label>
+                <Label>Tutar (₺) *</Label>
                 <Input 
                   type="number" 
                   step="0.01"
@@ -2329,22 +2329,22 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 />
               </div>
               <div>
-                <Label>Reference / Auth Code</Label>
+                <Label>Referans / Onay Kodu</Label>
                 <Input 
                   value={newFolioPayment.reference} 
                   onChange={(e) => setNewFolioPayment({...newFolioPayment, reference: e.target.value})}
-                  placeholder="e.g., AUTH123456"
+                  placeholder="Örn: AUTH123456"
                 />
               </div>
               <div>
-                <Label>Notes</Label>
+                <Label>Notlar</Label>
                 <Textarea 
                   value={newFolioPayment.notes} 
                   onChange={(e) => setNewFolioPayment({...newFolioPayment, notes: e.target.value})}
                   rows={2}
                 />
               </div>
-              <Button type="submit" className="w-full">Post Payment</Button>
+              <Button type="submit" className="w-full">Ödeme Kaydet</Button>
             </form>
           </DialogContent>
         </Dialog>

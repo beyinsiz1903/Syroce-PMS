@@ -51,8 +51,8 @@ _SENSITIVE_PATTERNS = [
     (re.compile(r'\b[A-Z]{2}\d{2}[A-Z0-9]{11,28}\b'), '***IBAN***'),
     # Passport (common formats — careful to avoid generic matches)
     (re.compile(r'\b[A-Z]{1,2}\d{7,9}\b'), '***PASSPORT***'),
-    # Emergent key
-    (re.compile(r'sk-emergent-[a-zA-Z0-9]+'), '***EMERGENT_KEY***'),
+    # OpenAI key
+    (re.compile(r'sk-[a-zA-Z0-9_-]{20,}'), '***API_KEY***'),
     # MongoDB connection string
     (re.compile(r'mongodb(\+srv)?://[^\s]+'), '***MONGO_URI***'),
     # Generic connection string with password
@@ -125,7 +125,7 @@ def detect_secret_leakage(text: str) -> bool:
         re.compile(r'ghp_[A-Za-z0-9]{36}'),
         re.compile(r'sk_live_[A-Za-z0-9]+'),
         re.compile(r'-----BEGIN (RSA )?PRIVATE KEY-----'),
-        re.compile(r'sk-emergent-[a-zA-Z0-9]+'),
+        re.compile(r'sk-[a-zA-Z0-9_-]{20,}'),
         re.compile(r'mongodb(\+srv)?://[^\s]+'),
     ]
     for pattern in indicators:

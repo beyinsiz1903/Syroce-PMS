@@ -291,10 +291,7 @@ async def ai_chat(
                     lines.append(f"- {name} | {g.get('loyalty_tier','-')} | {g.get('total_stays',0)} konaklama | {g.get('total_spend',0):.0f} TL")
                 data_context = f"\n\n## MİSAFİR LİSTESİ ({len(all_guests)} toplam):\n" + "\n".join(lines)
 
-        try:
-            from emergentintegrations.llm.chat import LlmChat
-            from emergentintegrations.llm.chat import UserMessage as LlmUserMessage
-        except ImportError:
+        if not ai_svc.llm_enabled:
             raise HTTPException(status_code=503, detail="AI servisi şu anda kullanılamıyor")
 
         system_msg = (
@@ -368,16 +365,8 @@ async def ai_chat(
         if data_context:
             enriched_message = user_message + data_context
 
-        session_id = f"chat_{current_user.tenant_id}_{current_user.id}"
-        chat = LlmChat(
-            api_key=ai_svc.api_key,
-            session_id=session_id,
-            system_message=system_msg
-        )
-        chat.with_model("openai", "gpt-4o-mini")
-
-        llm_msg = LlmUserMessage(text=enriched_message)
-        response_text = await chat.send_message(llm_msg)
+        chat = ai_svc._create_chat(system_message=system_msg)
+        response_text = await chat.send_message(enriched_message)
 
         return {'response': response_text}
     except Exception as exc:

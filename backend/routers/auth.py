@@ -71,10 +71,10 @@ async def setup_make_super_admin(request: MakeSuperAdminRequest):
     """One-time setup: Make any user super_admin
 
     ONLY USE FOR INITIAL SETUP!
-    Default password: EMERGENT_SUPER_SETUP_2024
+    Default password: SYROCE_SUPER_SETUP_2024
     """
     # Security check
-    if request.setup_password != "EMERGENT_SUPER_SETUP_2024":
+    if request.setup_password != "SYROCE_SUPER_SETUP_2024":
         raise HTTPException(status_code=403, detail="Invalid setup password")
 
     # Update ALL users with this email to super_admin (all tenants)
@@ -105,7 +105,7 @@ async def make_me_super_admin(
     Safer than email-based because you must be logged in.
     """
     # Security check
-    if setup_password != "EMERGENT_SUPER_SETUP_2024":
+    if setup_password != "SYROCE_SUPER_SETUP_2024":
         raise HTTPException(status_code=403, detail="Invalid setup password")
 
     # Update current logged-in user to super_admin

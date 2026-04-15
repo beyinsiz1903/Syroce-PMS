@@ -10,45 +10,49 @@ from typing import Any
 from dotenv import load_dotenv
 
 try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    _AI_BACKEND_AVAILABLE = True
+    from openai import AsyncOpenAI
+    _OPENAI_AVAILABLE = True
 except Exception:
-    LlmChat = None
-    UserMessage = None
-    _AI_BACKEND_AVAILABLE = False
+    AsyncOpenAI = None
+    _OPENAI_AVAILABLE = False
 
-# Load environment variables
 load_dotenv()
+
+
+class _SimpleLlmChat:
+    def __init__(self, api_key: str, system_message: str, model: str = "gpt-4o-mini"):
+        self.client = AsyncOpenAI(api_key=api_key)
+        self.system_message = system_message
+        self.model = model
+
+    async def send_message(self, content: str) -> str:
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": self.system_message},
+                {"role": "user", "content": content},
+            ],
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+
 
 class AIService:
     def __init__(self):
-        # Track whether we can safely call the external LLM backend
         self.llm_enabled = False
         self.api_key = None
 
-        if _AI_BACKEND_AVAILABLE and LlmChat is not None:
-            api_key = os.getenv('EMERGENT_LLM_KEY')
+        if _OPENAI_AVAILABLE and AsyncOpenAI is not None:
+            api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
                 self.api_key = api_key
                 self.llm_enabled = True
-        # If the backend or key is missing we stay in fallback mode
 
-    def _create_chat(self, system_message: str, session_id: str = "default") -> LlmChat:
-        """Create a new chat instance with the specified system message.
-        If LLM backend is not available, raise a clear error so callers can
-        fallback to heuristic logic instead of crashing the app.
-        """
+    def _create_chat(self, system_message: str, session_id: str = "default") -> _SimpleLlmChat:
         if not self.llm_enabled:
             raise RuntimeError("LLM backend not available")
-
-        chat = LlmChat(
-            api_key=self.api_key,
-            session_id=session_id,
-            system_message=system_message
-        )
-        # Use GPT-4o-mini for fast, cost-effective responses
-        chat.with_model("openai", "gpt-4o-mini")
-        return chat
+        return _SimpleLlmChat(api_key=self.api_key, system_message=system_message)
 
     async def generate_daily_briefing(
         self,
@@ -102,13 +106,12 @@ Current Status:
 - Today's Check-ins: {today_checkins}
 - Today's Check-outs: {today_checkouts}
 - Pending Invoices: {pending_invoices}
-- Monthly Revenue: ${monthly_revenue:,.2f}
+- Monthly Revenue: {monthly_revenue:,.2f} ₺
 - Weather: {weather}
 
 Give a friendly greeting, highlight key metrics, and provide 1-2 actionable insights for today."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
         return response
 
     async def predict_occupancy(
@@ -253,8 +256,7 @@ Identify:
 
 Keep response concise (under 80 words)."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
         return response
 
     async def categorize_expense(
@@ -281,8 +283,7 @@ Vendor: {vendor}
 Respond with just the category name and a confidence level (high/medium/low).
 Format: Category: [category], Confidence: [level]"""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
 
         # Parse response
         category = "Other"
@@ -334,8 +335,7 @@ Identify:
 
 List only genuine anomalies. Be concise."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
 
         return [{
             "type": "analysis",
@@ -373,8 +373,7 @@ Create 3-4 guest segments (e.g., VIP, Regular, New, At-Risk) with:
 
 Format as JSON with segments array."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
 
         return {
             "segments_analysis": response,
@@ -409,8 +408,7 @@ Provide:
 
 Be concise (under 60 words)."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
 
         # Determine risk level from response
         risk_level = "medium"
@@ -454,8 +452,7 @@ Based on typical hotel needs and the season, recommend:
 
 Keep it concise and practical."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
 
         return [{
             "type": "recommendation",
@@ -494,8 +491,7 @@ Provide:
 
 Keep under 80 words."""
 
-        user_message = UserMessage(text=prompt)
-        response = await chat.send_message(user_message)
+        response = await chat.send_message(prompt)
         return response
 
 

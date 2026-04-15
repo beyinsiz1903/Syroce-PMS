@@ -89,7 +89,7 @@ _always_allowed = [
     "https://www.pms.syroce.com",
     "https://syroce.com",
     "http://localhost:3000",
-    "https://syroce-b2b-api.emergent.host",
+    "https://syroce-b2b-api.syroce.com",
 ]
 for origin in _always_allowed:
     if origin not in _cors_origins:

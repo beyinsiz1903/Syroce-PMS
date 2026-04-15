@@ -236,7 +236,7 @@ def _scan_env_secrets() -> list[dict]:
         "CM_CREDENTIAL_KEY": SecretType.ENCRYPTION_KEY,
         "CM_MASTER_KEY_CURRENT": SecretType.ENCRYPTION_KEY,
         "CM_MASTER_KEY_PREVIOUS": SecretType.ENCRYPTION_KEY,
-        "EMERGENT_LLM_KEY": SecretType.THIRD_PARTY_API,
+        "OPENAI_API_KEY": SecretType.THIRD_PARTY_API,
         "MONGO_URL": SecretType.DATABASE,
     }
 
