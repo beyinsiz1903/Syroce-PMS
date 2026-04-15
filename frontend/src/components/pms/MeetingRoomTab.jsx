@@ -62,6 +62,9 @@ const MeetingRoomTab = () => {
   const [eventTypes, setEventTypes] = useState(DEFAULT_EVENT_TYPES);
   const [showAddEventType, setShowAddEventType] = useState(false);
   const [newEventTypeName, setNewEventTypeName] = useState('');
+  const [selectedReservation, setSelectedReservation] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const emptyForm = {
     room_id: '', company_name: '', contact_name: '', contact_phone: '',
@@ -188,6 +191,70 @@ const MeetingRoomTab = () => {
   const handleOpenNewReservation = (dateStr) => {
     setForm({ ...emptyForm, date: dateStr || '' });
     setShowNewReservation(true);
+  };
+
+  const openReservationDetail = (res) => {
+    setSelectedReservation(res);
+    setEditForm({
+      room_id: res.room_id || '',
+      room_name: res.room_name || '',
+      event_name: res.event_name || '',
+      event_type: res.event_type || 'meeting',
+      company_name: res.company_name || '',
+      contact_name: res.contact_name || '',
+      contact_phone: res.contact_phone || '',
+      date: res.date || '',
+      start_time: res.start_time || '',
+      end_time: res.end_time || '',
+      setup_type: res.setup_type || 'theater',
+      attendees: res.attendees || 0,
+      catering: res.catering || 'none',
+      notes: res.notes || '',
+      status: res.status || 'confirmed',
+      total_price: res.total_price || '',
+      deposit_amount: res.deposit_amount || '',
+      deposit_paid: res.deposit_paid || false,
+      payment_method: res.payment_method || '',
+      payment_notes: res.payment_notes || '',
+    });
+  };
+
+  const updateReservation = async () => {
+    if (!selectedReservation || !editForm) return;
+    setSaving(true);
+    try {
+      const room = rooms.find(r => r.id === editForm.room_id);
+      const payload = {
+        ...editForm,
+        room_name: room?.name || editForm.room_name,
+        total_price: editForm.total_price ? parseFloat(editForm.total_price) : 0,
+        deposit_amount: editForm.deposit_amount ? parseFloat(editForm.deposit_amount) : 0,
+        attendees: parseInt(editForm.attendees) || 0,
+      };
+      await axios.put(`/meeting-rooms/reservations/${selectedReservation.id}`, payload);
+      toast.success('Rezervasyon guncellendi');
+      setSelectedReservation(null);
+      setEditForm(null);
+      loadData();
+    } catch {
+      toast.error('Rezervasyon guncellenemedi');
+    }
+    setSaving(false);
+  };
+
+  const cancelReservation = async () => {
+    if (!selectedReservation) return;
+    setSaving(true);
+    try {
+      await axios.put(`/meeting-rooms/reservations/${selectedReservation.id}`, { status: 'cancelled' });
+      toast.success('Rezervasyon iptal edildi');
+      setSelectedReservation(null);
+      setEditForm(null);
+      loadData();
+    } catch {
+      toast.error('Iptal islemi basarisiz');
+    }
+    setSaving(false);
   };
 
   return (
@@ -329,7 +396,7 @@ const MeetingRoomTab = () => {
                     {selectedDateReservations.map(res => {
                       const evType = eventTypes.find(e => e.code === res.event_type);
                       return (
-                        <div key={res.id} className="flex items-center justify-between p-2 bg-white rounded border text-xs">
+                        <div key={res.id} onClick={() => openReservationDetail(res)} className="flex items-center justify-between p-2 bg-white rounded border text-xs cursor-pointer hover:bg-blue-50 transition">
                           <div className="flex items-center gap-2">
                             <span>{evType?.icon || '📋'}</span>
                             <span className="font-medium">{res.event_name}</span>
@@ -373,7 +440,7 @@ const MeetingRoomTab = () => {
                 const sc = statusMap[res.status] || statusMap.confirmed;
                 const evType = eventTypes.find(e => e.code === res.event_type);
                 return (
-                  <div key={res.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                  <div key={res.id} onClick={() => openReservationDetail(res)} className="flex items-center justify-between p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-lg">
                         {evType?.icon || '📋'}
@@ -567,6 +634,164 @@ const MeetingRoomTab = () => {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedReservation} onOpenChange={v => { if (!v) { setSelectedReservation(null); setEditForm(null); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" /> Rezervasyon Detayi
+              {selectedReservation && (
+                <Badge className={statusMap[selectedReservation.status]?.color || 'bg-gray-100'}>
+                  {statusMap[selectedReservation.status]?.label || selectedReservation.status}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {editForm && (
+            <div className="space-y-4 py-2 max-h-[75vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Salon</Label>
+                  <Select value={editForm.room_id} onValueChange={v => setEditForm(p => ({ ...p, room_id: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Salon seciniz" /></SelectTrigger>
+                    <SelectContent>
+                      {rooms.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.capacity} kisi)</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Etkinlik Tipi</Label>
+                  <Select value={editForm.event_type} onValueChange={v => setEditForm(p => ({ ...p, event_type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {eventTypes.map(e => <SelectItem key={e.code} value={e.code}>{e.icon} {e.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Etkinlik Adi</Label><Input value={editForm.event_name} onChange={e => setEditForm(p => ({ ...p, event_name: e.target.value }))} /></div>
+                <div><Label>Katilimci Sayisi</Label><Input type="number" value={editForm.attendees} onChange={e => setEditForm(p => ({ ...p, attendees: parseInt(e.target.value) || 0 }))} /></div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div><Label>Tarih</Label><Input type="date" value={editForm.date} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} /></div>
+                <div><Label>Baslangic</Label><Input type="time" value={editForm.start_time} onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))} /></div>
+                <div><Label>Bitis</Label><Input type="time" value={editForm.end_time} onChange={e => setEditForm(p => ({ ...p, end_time: e.target.value }))} /></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Firma / Kisi Adi</Label><Input value={editForm.company_name} onChange={e => setEditForm(p => ({ ...p, company_name: e.target.value }))} /></div>
+                <div><Label>Yetkili Kisi</Label><Input value={editForm.contact_name} onChange={e => setEditForm(p => ({ ...p, contact_name: e.target.value }))} /></div>
+              </div>
+              <div>
+                <Label>Telefon</Label>
+                <Input value={editForm.contact_phone} onChange={e => setEditForm(p => ({ ...p, contact_phone: e.target.value }))} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Kurulum Tipi</Label>
+                  <Select value={editForm.setup_type} onValueChange={v => setEditForm(p => ({ ...p, setup_type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SETUP_TYPES.map(s => <SelectItem key={s.code} value={s.code}>{s.icon} {s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Ikram</Label>
+                  <Select value={editForm.catering} onValueChange={v => setEditForm(p => ({ ...p, catering: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ikram Yok</SelectItem>
+                      <SelectItem value="coffee_break">Kahve Molasi</SelectItem>
+                      <SelectItem value="lunch">Ogle Yemegi</SelectItem>
+                      <SelectItem value="dinner">Aksam Yemegi</SelectItem>
+                      <SelectItem value="full_day">Tam Gun Paket</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold flex items-center gap-2 mb-3">
+                  <Banknote className="w-4 h-4" /> Ucret & Odeme Bilgileri
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Toplam Ucret (TL)</Label>
+                    <Input type="number" value={editForm.total_price} onChange={e => setEditForm(p => ({ ...p, total_price: e.target.value }))} placeholder="0" min="0" />
+                  </div>
+                  <div>
+                    <Label>Kapora Tutari (TL)</Label>
+                    <Input type="number" value={editForm.deposit_amount} onChange={e => setEditForm(p => ({ ...p, deposit_amount: e.target.value }))} placeholder="0" min="0" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <Label>Kapora Durumu</Label>
+                    <Select value={editForm.deposit_paid ? 'paid' : 'pending'} onValueChange={v => setEditForm(p => ({ ...p, deposit_paid: v === 'paid' }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Henuz Alinmadi</SelectItem>
+                        <SelectItem value="paid">Kapora Alindi</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Odeme Yontemi</Label>
+                    <Select value={editForm.payment_method} onValueChange={v => setEditForm(p => ({ ...p, payment_method: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Seciniz" /></SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHODS.map(m => <SelectItem key={m.code} value={m.code}>{m.icon} {m.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Label>Odeme Notu</Label>
+                  <Input value={editForm.payment_notes} onChange={e => setEditForm(p => ({ ...p, payment_notes: e.target.value }))} placeholder="Ornek: 2 taksit ile odenecek" />
+                </div>
+              </div>
+
+              <div>
+                <Label>Durum</Label>
+                <Select value={editForm.status} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="confirmed">Onaylandi</SelectItem>
+                    <SelectItem value="tentative">Taslak</SelectItem>
+                    <SelectItem value="cancelled">Iptal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div><Label>Not</Label><Textarea value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} placeholder="Ozel istekler..." rows={2} /></div>
+
+              {selectedReservation?.created_by && (
+                <div className="text-[10px] text-gray-400 border-t pt-2">
+                  Olusturan: {selectedReservation.created_by} | {selectedReservation.created_at}
+                  {selectedReservation.updated_by && (<> | Son guncelleme: {selectedReservation.updated_by} - {selectedReservation.updated_at}</>)}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button onClick={updateReservation} disabled={saving} className="flex-1">
+                  {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Kaydet
+                </Button>
+                {editForm.status !== 'cancelled' && (
+                  <Button variant="destructive" onClick={cancelReservation} disabled={saving}>
+                    Iptal Et
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

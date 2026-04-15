@@ -305,6 +305,45 @@ async def create_meeting_reservation(body: dict = Body(...), current_user: User 
     return doc
 
 
+@router.put("/meeting-rooms/reservations/{reservation_id}")
+async def update_meeting_reservation(reservation_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    existing = await db.meeting_reservations.find_one(
+        {"_id": reservation_id, "tenant_id": current_user.tenant_id}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    allowed = [
+        "room_id", "room_name", "company_name", "event_name", "event_type",
+        "contact_name", "contact_phone", "date", "start_time", "end_time",
+        "setup_type", "attendees", "notes", "catering", "status",
+        "total_price", "deposit_amount", "deposit_paid",
+        "payment_method", "payment_notes",
+    ]
+    updates = {}
+    for k in allowed:
+        if k in body:
+            if k == "attendees":
+                updates[k] = _safe_int(body[k])
+            elif k in ("total_price", "deposit_amount"):
+                updates[k] = float(body[k] or 0)
+            elif k == "deposit_paid":
+                updates[k] = bool(body[k])
+            else:
+                updates[k] = body[k]
+
+    updates["updated_at"] = datetime.utcnow().isoformat()
+    updates["updated_by"] = current_user.email
+
+    await db.meeting_reservations.update_one(
+        {"_id": reservation_id, "tenant_id": current_user.tenant_id},
+        {"$set": updates},
+    )
+    doc = await db.meeting_reservations.find_one({"_id": reservation_id})
+    doc["id"] = str(doc.pop("_id"))
+    return doc
+
+
 @router.delete("/meeting-rooms/reservations/{reservation_id}")
 async def delete_meeting_reservation(reservation_id: str, current_user: User = Depends(get_current_user)):
     result = await db.meeting_reservations.delete_one(
