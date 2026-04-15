@@ -32,7 +32,7 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
                 else:
                     body_bytes += chunk
 
-            raw_headers = {k: v for k, v in response.headers.items()}
+            raw_headers = dict(response.headers.items())
 
             try:
                 data = json.loads(body_bytes)

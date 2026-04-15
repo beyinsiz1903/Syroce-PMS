@@ -398,8 +398,8 @@ class DisplacementEngine:
         return analyses
 
     async def save_analysis(self, tenant_id: str, analysis: dict, user_email: str) -> dict:
-        from datetime import datetime, UTC
         import uuid
+        from datetime import UTC, datetime
         doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
