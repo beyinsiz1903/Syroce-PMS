@@ -33,15 +33,15 @@ const BookingsTab = ({
         />
       )}
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Bookings ({bookingStats?.total ?? 0})</h2>
+        <h2 className="text-2xl font-semibold">Rezervasyonlar ({bookingStats?.total ?? 0})</h2>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setOpenDialog('findroom')}>
             <Home className="w-4 h-4 mr-2" />
-            Find Available Rooms
+            Müsait Oda Bul
           </Button>
           <Button onClick={() => setOpenDialog('booking')}>
             <Plus className="w-4 h-4 mr-2" />
-            New Booking
+            Yeni Rezervasyon
           </Button>
         </div>
       </div>
@@ -50,13 +50,13 @@ const BookingsTab = ({
       <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Total Bookings</div>
+            <div className="text-xs text-gray-600">Toplam Rezervasyon</div>
             <div className="text-2xl font-bold">{bookingStats?.total ?? 0}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Confirmed</div>
+            <div className="text-xs text-gray-600">Onaylı</div>
             <div className="text-2xl font-bold text-blue-600">
               {bookingStats?.confirmed ?? 0}
             </div>
@@ -64,7 +64,7 @@ const BookingsTab = ({
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Checked In</div>
+            <div className="text-xs text-gray-600">Giriş Yapan</div>
             <div className="text-2xl font-bold text-green-600">
               {bookingStats?.checkedIn ?? 0}
             </div>
@@ -72,17 +72,17 @@ const BookingsTab = ({
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Total Revenue</div>
+            <div className="text-xs text-gray-600">Toplam Gelir</div>
             <div className="text-2xl font-bold text-green-600">
-              ${(bookingStats?.totalRevenue ?? 0).toFixed(0)}
+              ₺{(bookingStats?.totalRevenue ?? 0).toFixed(0)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-gray-600">Avg ADR</div>
+            <div className="text-xs text-gray-600">Ort. ADR</div>
             <div className="text-2xl font-bold text-purple-600">
-              ${(bookingStats?.avgAdr ?? 0).toFixed(0)}
+              ₺{(bookingStats?.avgAdr ?? 0).toFixed(0)}
             </div>
           </CardContent>
         </Card>
@@ -94,7 +94,7 @@ const BookingsTab = ({
           onSelectBooking={(booking) => {
             setSelectedBookingDetail(booking);
             setOpenDialog('bookingDetail');
-            toast.info('Opening booking details...');
+            toast.info('Rezervasyon detayları açılıyor...');
           }}
           height={600}
         />

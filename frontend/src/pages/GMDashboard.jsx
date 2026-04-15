@@ -1254,26 +1254,26 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
           {/* Quick Actions */}
           <Card>
             <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>Common tasks</CardDescription>
+              <CardTitle>Hızlı Aksiyonlar</CardTitle>
+              <CardDescription>Sık kullanılan işlemler</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 <Button variant="outline" onClick={() => navigate('/pms?tab=bookings')}>
                   <Calendar className="w-4 h-4 mr-2" />
-                  New Booking
+                  Yeni Rezervasyon
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/pms?tab=front-desk')}>
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Check-in
+                  Giriş Yap
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/rms')}>
                   <TrendingUp className="w-4 h-4 mr-2" />
-                  RMS Suggestions
+                  RMS Önerileri
                 </Button>
                 <Button variant="outline" onClick={() => navigate('/pms#reports')}>
                   <BarChart3 className="w-4 h-4 mr-2" />
-                  Reports
+                  Raporlar
                 </Button>
               </div>
             </CardContent>
@@ -1399,48 +1399,48 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
         <FloatingActionButton
           actions={[
             {
-              label: 'New Booking',
+              label: 'Yeni Rezervasyon',
               icon: <Plus className="w-5 h-5" />,
               color: 'bg-blue-600 hover:bg-blue-700',
               onClick: () => {
                 navigate('/pms');
-                toast.info('Opening PMS for new booking...');
+                toast.info('Yeni rezervasyon için PMS açılıyor...');
               }
             },
             {
-              label: 'Check-in Guest',
+              label: 'Misafir Girişi',
               icon: <Users className="w-5 h-5" />,
               color: 'bg-green-600 hover:bg-green-700',
               onClick: () => {
                 navigate('/pms');
-                toast.info('Opening Front Desk for check-in...');
+                toast.info('Check-in için ön büro açılıyor...');
               }
             },
             {
-              label: 'RMS Suggestions',
+              label: 'RMS Önerileri',
               icon: <TrendingUp className="w-5 h-5" />,
               color: 'bg-purple-600 hover:bg-purple-700',
               onClick: () => {
                 navigate('/revenue-management');
-                toast.info('Opening RMS suggestions...');
+                toast.info('RMS önerileri açılıyor...');
               }
             },
             {
-              label: 'View Reports',
+              label: 'Raporlar',
               icon: <FileText className="w-5 h-5" />,
               color: 'bg-orange-600 hover:bg-orange-700',
               onClick: () => {
                 navigate('/reports');
-                toast.info('Opening reports dashboard...');
+                toast.info('Rapor paneli açılıyor...');
               }
             },
             {
-              label: 'Refresh Dashboard',
+              label: 'Paneli Yenile',
               icon: <RefreshCw className="w-5 h-5" />,
               color: 'bg-gray-600 hover:bg-gray-700',
               onClick: () => {
                 loadDashboardData();
-                toast.success('Dashboard refreshed!');
+                toast.success('Panel yenilendi!');
               }
             }
           ]}

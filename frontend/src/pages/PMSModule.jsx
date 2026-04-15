@@ -1349,11 +1349,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   variant="outline"
                   onClick={() => {
                     setOpenDialog('booking');
-                    toast.info('Opening new booking form...');
+                    toast.info('Yeni rezervasyon formu açılıyor...');
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  New Booking
+                  Yeni Rezervasyon
                 </Button>
                 <Button 
                   size="sm" 
@@ -1363,7 +1363,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   }}
                 >
                   <UserPlus className="w-4 h-4 mr-2" />
-                  New Guest
+                  Yeni Misafir
                 </Button>
                 <Button 
                   size="sm" 
@@ -1372,11 +1372,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     try {
                       const response = await axios.get('/reports/daily-flash');
                       if (response.data) {
-                        toast.success('Flash report generated!');
+                        toast.success('Flash rapor oluşturuldu!');
                         console.log('Flash report:', response.data);
                         setActiveTab('reports');
                       } else {
-                        toast.info('No flash report data available');
+                        toast.info('Flash rapor verisi bulunamadı');
                       }
                     } catch (error) {
                       toast.error('Rapor oluşturulamadı');
@@ -1384,7 +1384,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   }}
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  Flash Report
+                  Flash Rapor
                 </Button>
                 <Button 
                   size="sm" 
@@ -1930,30 +1930,30 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <Dialog open={openDialog === 'guest'} onOpenChange={(open) => !open && setOpenDialog(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Register New Guest</DialogTitle>
+              <DialogTitle>Yeni Misafir Kayıt</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateGuest} className="space-y-4">
               <div>
-                <Label>Name</Label>
+                <Label>Ad Soyad</Label>
                 <Input value={newGuest.name} onChange={(e) => setNewGuest({...newGuest, name: e.target.value})} required />
               </div>
               <div>
-                <Label>Email</Label>
+                <Label>E-posta</Label>
                 <Input type="email" value={newGuest.email} onChange={(e) => setNewGuest({...newGuest, email: e.target.value})} required />
               </div>
               <div>
-                <Label>Phone</Label>
+                <Label>Telefon</Label>
                 <Input value={newGuest.phone} onChange={(e) => setNewGuest({...newGuest, phone: e.target.value})} required />
               </div>
               <div>
-                <Label>ID Number</Label>
+                <Label>TC / Pasaport No</Label>
                 <Input value={newGuest.id_number} onChange={(e) => setNewGuest({...newGuest, id_number: e.target.value})} required />
               </div>
               <div>
-                <Label>Address</Label>
+                <Label>Adres</Label>
                 <Input value={newGuest.address} onChange={(e) => setNewGuest({...newGuest, address: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full">Register Guest</Button>
+              <Button type="submit" className="w-full">Misafir Kaydet</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -2424,25 +2424,25 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <FloatingActionButton
           actions={[
             {
-              label: 'New Booking',
+              label: 'Yeni Rezervasyon',
               icon: <Plus className="w-5 h-5" />,
               onClick: () => {
                 setOpenDialog('newbooking');
-                toast.info('Opening new booking form...');
+                toast.info('Yeni rezervasyon formu açılıyor...');
               }
             },
             {
-              label: 'New Guest',
+              label: 'Yeni Misafir',
               icon: <UserPlus className="w-5 h-5" />,
               onClick: () => setOpenDialog('newguest')
             },
             {
-              label: 'Flash Report',
+              label: 'Flash Rapor',
               icon: <FileText className="w-5 h-5" />,
               onClick: async () => {
                 try {
                   const response = await axios.get('/reports/daily-flash');
-                  toast.success('Flash report generated!');
+                  toast.success('Flash rapor oluşturuldu!');
                   console.log('Flash report:', response.data);
                 } catch (error) {
                   toast.error('Rapor oluşturulamadı');
@@ -2450,7 +2450,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               }
             },
             {
-              label: 'Refresh Dashboard',
+              label: 'Paneli Yenile',
               icon: <RefreshCw className="w-5 h-5" />,
               onClick: () => loadData()
             }
