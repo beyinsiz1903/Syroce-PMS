@@ -30,6 +30,7 @@ Webhook Endpoints (API Key Auth):
 """
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import uuid
@@ -336,8 +337,11 @@ async def b2b_get_availability(
     """Gercek zamanli musaitlik sorgusu."""
     tenant_id = agency["tenant_id"]
 
-    ci = datetime.fromisoformat(check_in + "T00:00:00+00:00")
-    co = datetime.fromisoformat(check_out + "T00:00:00+00:00")
+    try:
+        ci = datetime.fromisoformat(check_in + "T00:00:00+00:00")
+        co = datetime.fromisoformat(check_out + "T00:00:00+00:00")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Gecersiz tarih formati. YYYY-MM-DD kullanin.")
     if co <= ci:
         raise HTTPException(status_code=400, detail="check_out, check_in'den sonra olmali")
 
@@ -451,8 +455,11 @@ async def b2b_create_reservation(
     tenant_id = agency["tenant_id"]
     agency_id = agency["agency_id"]
 
-    ci = datetime.fromisoformat(data.check_in + "T14:00:00+00:00")
-    co = datetime.fromisoformat(data.check_out + "T11:00:00+00:00")
+    try:
+        ci = datetime.fromisoformat(data.check_in + "T14:00:00+00:00")
+        co = datetime.fromisoformat(data.check_out + "T11:00:00+00:00")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Gecersiz tarih formati. YYYY-MM-DD kullanin.")
     if co <= ci:
         raise HTTPException(status_code=400, detail="check_out, check_in'den sonra olmali")
 
@@ -820,7 +827,6 @@ async def b2b_test_webhook(
     }
 
     delivery_id = _uuid()
-    import json
     payload = {
         "event": "test",
         "timestamp": _now_iso(),
