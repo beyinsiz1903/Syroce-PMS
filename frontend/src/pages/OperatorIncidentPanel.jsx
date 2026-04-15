@@ -27,10 +27,10 @@ const SEVERITY_CONFIG = {
 };
 
 const STATUS_CONFIG = {
-  open: { color: 'bg-red-500/15 text-red-400', label: 'Open' },
-  investigating: { color: 'bg-amber-500/15 text-amber-400', label: 'Investigating' },
-  resolved: { color: 'bg-emerald-500/15 text-emerald-400', label: 'Resolved' },
-  suppressed: { color: 'bg-zinc-500/15 text-zinc-500', label: 'Suppressed' },
+  open: { color: 'bg-red-500/15 text-red-400', label: 'Açık' },
+  investigating: { color: 'bg-amber-500/15 text-amber-400', label: 'İnceleniyor' },
+  resolved: { color: 'bg-emerald-500/15 text-emerald-400', label: 'Çözüldü' },
+  suppressed: { color: 'bg-zinc-500/15 text-zinc-500', label: 'Bastırıldı' },
 };
 
 // ─── Summary Cards ───────────────────────────────────────────
@@ -65,7 +65,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-zinc-200 truncate">
-              {(incident.issue_type || incident.case_type || incident.drift_type || 'Unknown').replace(/_/g, ' ')}
+              {(incident.issue_type || incident.case_type || incident.drift_type || 'Bilinmiyor').replace(/_/g, ' ')}
             </span>
             <Badge className={`${sev.color} border text-[10px] px-1.5`}>
               {incident.severity || 'medium'}
@@ -79,7 +79,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
             {incident.external_reservation_id && (
               <span>Res: {incident.external_reservation_id}</span>
             )}
-            {incident.room_type_code && <span>Room: {incident.room_type_code}</span>}
+            {incident.room_type_code && <span>Oda: {incident.room_type_code}</span>}
             {incident.created_at && (
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -97,7 +97,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
                 className="h-7 px-2 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
                 onClick={e => { e.stopPropagation(); onAction(incident.id, 'retry'); }}
               >
-                <RotateCcw className="w-3.5 h-3.5 mr-1" /> Retry
+                <RotateCcw className="w-3.5 h-3.5 mr-1" /> Tekrarla
               </Button>
             )}
             <Button
@@ -106,7 +106,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
               className="h-7 px-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
               onClick={e => { e.stopPropagation(); onAction(incident.id, 'resolve'); }}
             >
-              <CheckCircle className="w-3.5 h-3.5 mr-1" /> Resolve
+              <CheckCircle className="w-3.5 h-3.5 mr-1" /> Çöz
             </Button>
             <Button
               data-testid={`incident-suppress-${incident.id}`}
@@ -114,7 +114,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
               className="h-7 px-2 text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700/30"
               onClick={e => { e.stopPropagation(); onAction(incident.id, 'suppress'); }}
             >
-              <Archive className="w-3.5 h-3.5 mr-1" /> Suppress
+              <Archive className="w-3.5 h-3.5 mr-1" /> Bastır
             </Button>
           </div>
         )}
@@ -123,23 +123,23 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
         <div className="px-10 pb-4 space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>
-              <span className="text-zinc-500 block">Recommended</span>
+              <span className="text-zinc-500 block">Önerilen</span>
               <span className="text-zinc-300 font-medium">
                 {incident.recommended_action?.replace(/_/g, ' ') || '-'}
               </span>
             </div>
             <div>
-              <span className="text-zinc-500 block">Gold Source</span>
+              <span className="text-zinc-500 block">Altın Kaynak</span>
               <span className="text-zinc-300 font-medium">{incident.gold_source || '-'}</span>
             </div>
             <div>
-              <span className="text-zinc-500 block">Auto Heal</span>
+              <span className="text-zinc-500 block">Otomatik Düzeltme</span>
               <span className={`font-medium ${incident.can_auto_heal ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                {incident.can_auto_heal ? 'Yes' : 'No'}
+                {incident.can_auto_heal ? 'Evet' : 'Hayır'}
               </span>
             </div>
             <div>
-              <span className="text-zinc-500 block">Last Action</span>
+              <span className="text-zinc-500 block">Son İşlem</span>
               <span className="text-zinc-300 font-medium">{incident.last_action || '-'}</span>
             </div>
           </div>
@@ -187,7 +187,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
         setTotal(listRes.value.data.total || 0);
       }
     } catch {
-      toast.error('Incident verileri yuklenemedi');
+      toast.error('Olay verileri yüklenemedi');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -203,10 +203,10 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
         { action },
         { headers },
       );
-      toast.success(`Incident ${action} basarili`);
+      toast.success(`Olay ${action === 'resolve' ? 'çözüldü' : action === 'retry' ? 'tekrarlandı' : 'bastırıldı'}`);
       fetchData();
     } catch {
-      toast.error(`Incident ${action} basarisiz`);
+      toast.error(`İşlem başarısız`);
     }
   };
 
@@ -233,10 +233,10 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
           <div>
             <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">
               <Shield className="w-6 h-6 text-amber-400" />
-              Operator Incident Panel
+              Olay Merkezi
             </h1>
             <p className="text-sm text-zinc-500 mt-1">
-              Reconciliation, drift ve hard fail yonetimi
+              Reconciliation, drift ve hard fail yönetimi
             </p>
           </div>
           <Button
@@ -258,7 +258,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             icon={AlertTriangle} accent="bg-zinc-700/60 text-zinc-300"
           />
           <SummaryCard
-            testId="summary-open" label="Acik"
+            testId="summary-open" label="Açık"
             value={openCount}
             icon={XCircle}
             accent={openCount > 0 ? 'bg-red-500/20 text-red-400' : 'bg-zinc-700/60 text-zinc-300'}
@@ -270,7 +270,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             accent={criticals > 0 ? 'bg-red-500/20 text-red-400' : 'bg-zinc-700/60 text-zinc-300'}
           />
           <SummaryCard
-            testId="summary-resolved" label="Cozulmus" value={summary?.resolved_count || 0}
+            testId="summary-resolved" label="Çözülmüş" value={summary?.resolved_count || 0}
             icon={CheckCircle} accent="bg-emerald-500/20 text-emerald-400"
           />
         </div>
@@ -279,7 +279,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
         {summary?.by_type && Object.keys(summary.by_type).length > 0 && (
           <Card className="bg-zinc-900/60 border-zinc-800">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-zinc-400 font-medium">Issue Type Breakdown</CardTitle>
+              <CardTitle className="text-sm text-zinc-400 font-medium">Olay Türü Dağılımı</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {Object.entries(summary.by_type).map(([type, count]) => (
@@ -305,11 +305,11 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             value={filter.status}
             onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}
           >
-            <option value="">Tum Durumlar</option>
-            <option value="open">Open</option>
-            <option value="investigating">Investigating</option>
-            <option value="resolved">Resolved</option>
-            <option value="suppressed">Suppressed</option>
+            <option value="">Tüm Durumlar</option>
+            <option value="open">Açık</option>
+            <option value="investigating">İnceleniyor</option>
+            <option value="resolved">Çözüldü</option>
+            <option value="suppressed">Bastırıldı</option>
           </select>
           <select
             data-testid="filter-severity"
@@ -317,11 +317,11 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             value={filter.severity}
             onChange={e => setFilter(f => ({ ...f, severity: e.target.value }))}
           >
-            <option value="">Tum Oncelikler</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
+            <option value="">Tüm Öncelikler</option>
+            <option value="critical">Kritik</option>
+            <option value="high">Yüksek</option>
+            <option value="medium">Orta</option>
+            <option value="low">Düşük</option>
           </select>
           <select
             data-testid="filter-provider"
@@ -329,11 +329,11 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             value={filter.provider}
             onChange={e => setFilter(f => ({ ...f, provider: e.target.value }))}
           >
-            <option value="">Tum Provider'lar</option>
+            <option value="">Tüm Sağlayıcılar</option>
             <option value="exely">Exely</option>
             <option value="hotelrunner">HotelRunner</option>
           </select>
-          <span className="text-xs text-zinc-600 ml-auto">{total} incident</span>
+          <span className="text-xs text-zinc-600 ml-auto">{total} olay</span>
         </div>
 
         {/* Incident List */}
@@ -342,8 +342,8 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             {incidents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
                 <CheckCircle className="w-10 h-10 mb-3 text-emerald-500/50" />
-                <p className="text-sm font-medium">Acik incident yok</p>
-                <p className="text-xs mt-1">Sistem sagligi iyi durumda</p>
+                <p className="text-sm font-medium">Açık olay yok</p>
+                <p className="text-xs mt-1">Sistem sağlığı iyi durumda</p>
               </div>
             ) : (
               incidents.map(inc => (

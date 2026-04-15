@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -11,6 +13,8 @@ const ComplaintManager = () => {
   const [complaints, setComplaints] = useState([]);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolution, setResolution] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,18 +33,21 @@ const ComplaintManager = () => {
   };
 
   const handleResolve = async () => {
-    const resolution = prompt('Çözüm açıklaması:');
-    if (!resolution) return;
-
+    if (!resolution.trim()) {
+      toast.error('Lütfen çözüm açıklaması girin');
+      return;
+    }
     try {
       await axios.post(`/gm/complaint/${selectedComplaint.id}/resolve`, {
         resolution
       });
-      toast.success('✓ Şikayet çözüldü');
+      toast.success('Şikayet çözüldü');
+      setResolveOpen(false);
       setDialogOpen(false);
+      setResolution('');
       loadComplaints();
     } catch (error) {
-      toast.error('✗ Hata');
+      toast.error('Hata oluştu');
     }
   };
 
@@ -58,6 +65,15 @@ const ComplaintManager = () => {
       case 'normal': return 'bg-orange-500';
       case 'low': return 'bg-gray-500';
       default: return 'bg-gray-400';
+    }
+  };
+
+  const getPriorityLabel = (priority) => {
+    switch (priority) {
+      case 'high': return 'Yüksek';
+      case 'normal': return 'Normal';
+      case 'low': return 'Düşük';
+      default: return priority;
     }
   };
 
@@ -114,7 +130,7 @@ const ComplaintManager = () => {
                         </div>
                         <div className="flex items-center space-x-2 mt-2">
                           <Badge className={getPriorityColor(complaint.priority)}>
-                            {complaint.priority}
+                            {getPriorityLabel(complaint.priority)}
                           </Badge>
                           <Badge variant="outline" className="text-xs">
                             {getCategoryLabel(complaint.category)}
@@ -130,7 +146,6 @@ const ComplaintManager = () => {
         </CardContent>
       </Card>
 
-      {/* Complaint Details Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -169,7 +184,7 @@ const ComplaintManager = () => {
               {selectedComplaint.status !== 'resolved' && (
                 <Button
                   className="w-full bg-green-600 hover:bg-green-700"
-                  onClick={handleResolve}
+                  onClick={() => { setResolution(''); setResolveOpen(true); }}
                 >
                   <CheckCircle className="w-4 h-4 mr-1" />
                   Çöz
@@ -186,6 +201,38 @@ const ComplaintManager = () => {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resolveOpen} onOpenChange={setResolveOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Şikayeti Çöz</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedComplaint && (
+              <div className="text-sm bg-gray-50 rounded-lg p-3">
+                <span className="text-gray-500">Konu:</span> <strong>{selectedComplaint.subject}</strong>
+                <br />
+                <span className="text-gray-500">Misafir:</span> {selectedComplaint.guest_name} — Oda {selectedComplaint.room_number}
+              </div>
+            )}
+            <div>
+              <Label>Çözüm Açıklaması</Label>
+              <Textarea
+                value={resolution}
+                onChange={e => setResolution(e.target.value)}
+                placeholder="Şikayetin nasıl çözüldüğünü açıklayın..."
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setResolveOpen(false)}>İptal</Button>
+              <Button className="bg-green-600 hover:bg-green-700" onClick={handleResolve}>
+                <CheckCircle className="w-4 h-4 mr-1" /> Çözüldü Olarak İşaretle
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

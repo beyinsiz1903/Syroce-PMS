@@ -30,7 +30,7 @@ const HousekeepingTab = ({
       <TabsContent value="housekeeping" className="space-y-6">
         <div className="flex items-center justify-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3" />
-          <span className="text-gray-500">Housekeeping verileri yukleniyor...</span>
+          <span className="text-gray-500">Kat hizmetleri verileri yükleniyor...</span>
         </div>
       </TabsContent>
     );
@@ -39,15 +39,15 @@ const HousekeepingTab = ({
   return (
     <TabsContent value="housekeeping" className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Housekeeping Management</h2>
+        <h2 className="text-2xl font-bold">Kat Hizmetleri Yönetimi</h2>
         <div className="space-x-2">
           <Button onClick={() => setOpenDialog('hktask')}>
             <Plus className="w-4 h-4 mr-2" />
-            Create Task
+            Görev Oluştur
           </Button>
           <Button onClick={() => setOpenDialog('roomblock')} variant="outline">
             <Plus className="w-4 h-4 mr-2" />
-            Block Room
+            Oda Bloke
           </Button>
         </div>
       </div>
@@ -56,19 +56,19 @@ const HousekeepingTab = ({
       {roomBlocks.length > 0 && (
         <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">Room Blocks:</span>
+            <span className="font-semibold">Oda Blokları:</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-red-600 rounded"></div>
-            <span className="text-sm">Out of Order: {roomBlocks.filter(b => b.type === 'out_of_order' && b.status === 'active').length}</span>
+            <span className="text-sm">Kullanım Dışı: {roomBlocks.filter(b => b.type === 'out_of_order' && b.status === 'active').length}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-orange-500 rounded"></div>
-            <span className="text-sm">Out of Service: {roomBlocks.filter(b => b.type === 'out_of_service' && b.status === 'active').length}</span>
+            <span className="text-sm">Servis Dışı: {roomBlocks.filter(b => b.type === 'out_of_service' && b.status === 'active').length}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-            <span className="text-sm">Maintenance: {roomBlocks.filter(b => b.type === 'maintenance' && b.status === 'active').length}</span>
+            <span className="text-sm">Bakım: {roomBlocks.filter(b => b.type === 'maintenance' && b.status === 'active').length}</span>
           </div>
         </div>
       )}
@@ -100,20 +100,20 @@ const HousekeepingTab = ({
           <CardHeader>
             <CardTitle className="text-lg flex items-center">
               <LogOut className="w-5 h-5 mr-2 text-red-600" />
-              Due Out ({dueOutRooms.length})
+              Çıkış Yapacak ({dueOutRooms.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-96 overflow-y-auto">
             {dueOutRooms.length === 0 ? (
-              <div className="text-center text-gray-400 py-4">No departures</div>
+              <div className="text-center text-gray-400 py-4">Çıkış yok</div>
             ) : (
               dueOutRooms.map((room, idx) => (
                 <div key={idx} className={`p-3 rounded border ${room.is_today ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
-                  <div className="font-bold">Room {room.room_number}</div>
+                  <div className="font-bold">Oda {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs text-gray-500">
-                    {new Date(room.checkout_date).toLocaleDateString()}
-                    {room.is_today && <span className="ml-2 text-red-600 font-semibold">TODAY</span>}
+                    {new Date(room.checkout_date).toLocaleDateString('tr-TR')}
+                    {room.is_today && <span className="ml-2 text-red-600 font-semibold">BUGÜN</span>}
                   </div>
                 </div>
               ))
@@ -126,19 +126,19 @@ const HousekeepingTab = ({
           <CardHeader>
             <CardTitle className="text-lg flex items-center">
               <Home className="w-5 h-5 mr-2 text-blue-600" />
-              Stayovers ({stayoverRooms.length})
+              Konaklayan ({stayoverRooms.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-96 overflow-y-auto">
             {stayoverRooms.length === 0 ? (
-              <div className="text-center text-gray-400 py-4">No stayovers</div>
+              <div className="text-center text-gray-400 py-4">Konaklayan yok</div>
             ) : (
               stayoverRooms.map((room, idx) => (
                 <div key={idx} className="p-3 rounded border bg-blue-50 border-blue-200">
-                  <div className="font-bold">Room {room.room_number}</div>
+                  <div className="font-bold">Oda {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs text-gray-500">
-                    {room.nights_remaining} night(s) remaining
+                    {room.nights_remaining} gece kaldı
                   </div>
                 </div>
               ))
@@ -151,22 +151,22 @@ const HousekeepingTab = ({
           <CardHeader>
             <CardTitle className="text-lg flex items-center">
               <LogIn className="w-5 h-5 mr-2 text-green-600" />
-              Arrivals ({arrivalRooms.length})
+              Giriş Yapacak ({arrivalRooms.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-96 overflow-y-auto">
             {arrivalRooms.length === 0 ? (
-              <div className="text-center text-gray-400 py-4">No arrivals</div>
+              <div className="text-center text-gray-400 py-4">Giriş yok</div>
             ) : (
               arrivalRooms.map((room, idx) => (
                 <div key={idx} className={`p-3 rounded border ${
                   room.ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
                 }`}>
-                  <div className="font-bold">Room {room.room_number}</div>
+                  <div className="font-bold">Oda {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs flex items-center justify-between">
                     <span className={room.ready ? 'text-green-600 font-semibold' : 'text-yellow-600'}>
-                      {room.ready ? '✓ Ready' : `⚠ ${room.room_status}`}
+                      {room.ready ? '✓ Hazır' : `⚠ ${room.room_status}`}
                     </span>
                   </div>
                 </div>
@@ -181,7 +181,7 @@ const HousekeepingTab = ({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Room Status Board</span>
+              <span>Oda Durum Panosu</span>
               {/* Legend removed for brevity in extracted component */}
             </CardTitle>
           </CardHeader>
@@ -228,7 +228,7 @@ const HousekeepingTab = ({
                             }`}
                             onClick={() => quickUpdateRoomStatus(room.id, 'cleaning')}
                           >
-                            Clean {needsCleaning && '⚡'}
+                            Temizle {needsCleaning && '⚡'}
                           </Button>
                         )}
                         {room.status === 'cleaning' && (
@@ -238,7 +238,7 @@ const HousekeepingTab = ({
                             className="h-6 text-xs"
                             onClick={() => quickUpdateRoomStatus(room.id, 'inspected')}
                           >
-                            Done
+                            Bitti
                           </Button>
                         )}
                         {room.status === 'inspected' && (
@@ -248,7 +248,7 @@ const HousekeepingTab = ({
                             className="h-6 text-xs"
                             onClick={() => quickUpdateRoomStatus(room.id, 'available')}
                           >
-                            Ready
+                            Hazır
                           </Button>
                         )}
                         <Button
@@ -281,10 +281,10 @@ const HousekeepingTab = ({
 
       {/* Task Priority Filter & Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:shadow-lg transition" onClick={() => toast.info('Showing all tasks')}>
+        <Card className="cursor-pointer hover:shadow-lg transition" onClick={() => toast.info('Tüm görevler gösteriliyor')}>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-700">{housekeepingTasks.length}</div>
-            <div className="text-xs text-gray-600">Total Tasks</div>
+            <div className="text-xs text-gray-600">Toplam Görev</div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-lg transition border-red-200">
@@ -292,7 +292,7 @@ const HousekeepingTab = ({
             <div className="text-2xl font-bold text-red-600">
               {housekeepingTasks.filter(t => t.priority === 'high').length}
             </div>
-            <div className="text-xs text-gray-600">High Priority</div>
+            <div className="text-xs text-gray-600">Yüksek Öncelik</div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-lg transition border-yellow-200">
@@ -300,7 +300,7 @@ const HousekeepingTab = ({
             <div className="text-2xl font-bold text-yellow-600">
               {housekeepingTasks.filter(t => t.status === 'in_progress').length}
             </div>
-            <div className="text-xs text-gray-600">In Progress</div>
+            <div className="text-xs text-gray-600">Devam Eden</div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-lg transition border-green-200">
@@ -308,7 +308,7 @@ const HousekeepingTab = ({
             <div className="text-2xl font-bold text-green-600">
               {housekeepingTasks.filter(t => t.status === 'completed').length}
             </div>
-            <div className="text-xs text-gray-600">Completed Today</div>
+            <div className="text-xs text-gray-600">Bugün Tamamlanan</div>
           </CardContent>
         </Card>
       </div>
@@ -317,7 +317,7 @@ const HousekeepingTab = ({
       <div className="space-y-4">
         {housekeepingTasks.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            No housekeeping tasks
+            Kat hizmetleri görevi yok
           </div>
         ) : (
           housekeepingTasks
@@ -344,7 +344,7 @@ const HousekeepingTab = ({
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <div className="font-bold text-lg">Room {task.room?.room_number}</div>
+                        <div className="font-bold text-lg">Oda {task.room?.room_number}</div>
                         <Badge
                           variant={
                             task.priority === 'high'
@@ -354,14 +354,14 @@ const HousekeepingTab = ({
                               : 'outline'
                           }
                         >
-                          {task.priority?.toUpperCase()} PRIORITY
+                          {task.priority === 'high' ? 'YÜKSEK' : task.priority === 'medium' ? 'ORTA' : 'DÜŞÜK'} ÖNCELİK
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           {task.task_type}
                         </Badge>
                       </div>
                       <div className="text-sm text-gray-600 capitalize mb-1">
-                        Assigned to: {task.assigned_to || 'Unassigned'}
+                        Atanan: {task.assigned_to || 'Atanmamış'}
                       </div>
                       {task.notes && (
                         <div className="text-sm text-gray-500 bg-gray-50 p-2 rounded mt-2">
@@ -370,7 +370,7 @@ const HousekeepingTab = ({
                       )}
                       {task.estimated_duration && (
                         <div className="text-xs text-gray-500 mt-2">
-                          ⏱️ Estimated: {task.estimated_duration} minutes
+                          ⏱️ Tahmini: {task.estimated_duration} dakika
                         </div>
                       )}
                     </div>
@@ -378,7 +378,7 @@ const HousekeepingTab = ({
                       {task.status === 'pending' && (
                         <Button size="sm" onClick={() => handleUpdateHKTask(task.id, 'in_progress')}>
                           <Clock className="w-4 h-4 mr-2" />
-                          Start
+                          Başla
                         </Button>
                       )}
                       {task.status === 'in_progress' && (
@@ -389,7 +389,7 @@ const HousekeepingTab = ({
                           onClick={() => handleUpdateHKTask(task.id, 'completed')}
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
-                          Complete
+                          Tamamla
                         </Button>
                       )}
                       <span
@@ -402,10 +402,10 @@ const HousekeepingTab = ({
                         }`}
                       >
                         {task.status === 'completed'
-                          ? '✅ Done'
+                          ? '✅ Tamamlandı'
                           : task.status === 'in_progress'
-                          ? '🔄 Working'
-                          : '⏸️ Pending'}
+                          ? '🔄 Devam Ediyor'
+                          : '⏸️ Bekliyor'}
                       </span>
                     </div>
                   </div>

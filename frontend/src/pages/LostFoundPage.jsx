@@ -13,23 +13,21 @@ import {
   MapPin, Calendar, Tag, Archive, CheckCircle, Clock, Send
 } from 'lucide-react';
 
-const API = "";
-
 const STATUS_CONFIG = {
   found: { label: 'Bulundu', color: 'bg-blue-100 text-blue-700 border-blue-200' },
   stored: { label: 'Depolandı', color: 'bg-amber-100 text-amber-700 border-amber-200' },
   claimed: { label: 'Sahiplenildi', color: 'bg-purple-100 text-purple-700 border-purple-200' },
   returned: { label: 'Teslim Edildi', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  disposed: { label: 'Imha Edildi', color: 'bg-gray-100 text-gray-600 border-gray-200' },
+  disposed: { label: 'İmha Edildi', color: 'bg-gray-100 text-gray-600 border-gray-200' },
 };
 
 const CATEGORY_CONFIG = {
   electronics: { label: 'Elektronik', icon: '📱' },
   clothing: { label: 'Giyim', icon: '👔' },
-  jewelry: { label: 'Mucevher', icon: '💍' },
+  jewelry: { label: 'Mücevher', icon: '💍' },
   documents: { label: 'Belge', icon: '📄' },
-  bags: { label: 'Canta/Bavul', icon: '👜' },
-  other: { label: 'Diger', icon: '📦' },
+  bags: { label: 'Çanta/Bavul', icon: '👜' },
+  other: { label: 'Diğer', icon: '📦' },
 };
 
 const LostFoundPage = ({ user, tenant, onLogout }) => {
@@ -42,6 +40,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
   const [showCreate, setShowCreate] = useState(false);
   const [showDetail, setShowDetail] = useState(null);
   const [showMatch, setShowMatch] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [form, setForm] = useState({
     item_name: '', description: '', category: 'other', found_location: '',
     found_date: new Date().toISOString().split('T')[0], found_by: '',
@@ -69,11 +68,11 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
 
   const handleCreate = async () => {
     if (!form.item_name || !form.found_location) {
-      toast.error('Esya adi ve bulundugu yer zorunlu'); return;
+      toast.error('Eşya adı ve bulunduğu yer zorunlu'); return;
     }
     try {
       await axios.post(`/pms/lost-found`, form);
-      toast.success('Kayip esya kaydedildi');
+      toast.success('Kayıp eşya kaydedildi');
       setShowCreate(false);
       setForm({
         item_name: '', description: '', category: 'other', found_location: '',
@@ -89,13 +88,13 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
   const handleStatusUpdate = async (itemId, newStatus) => {
     try {
       await axios.put(`/pms/lost-found/${itemId}`, { status: newStatus });
-      toast.success(`Durum "${STATUS_CONFIG[newStatus]?.label}" olarak guncellendi`);
+      toast.success(`Durum "${STATUS_CONFIG[newStatus]?.label}" olarak güncellendi`);
       loadItems();
       if (showDetail?.id === itemId) {
         setShowDetail(prev => ({ ...prev, status: newStatus }));
       }
     } catch (e) {
-      toast.error('Guncelleme hatasi');
+      toast.error('Güncelleme hatası');
     }
   };
 
@@ -108,49 +107,47 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
       if (matchForm.booking_id) params.append('booking_id', matchForm.booking_id);
 
       await axios.post(`/pms/lost-found/${showMatch.id}/match-guest?${params.toString()}`);
-      toast.success('Misafir eslestirmesi yapildi');
+      toast.success('Misafir eşleştirmesi yapıldı');
       setShowMatch(null);
       loadItems();
     } catch (e) {
-      toast.error('Eslestirme hatasi');
+      toast.error('Eşleştirme hatası');
     }
   };
 
   const handleDelete = async (itemId) => {
-    if (!window.confirm('Bu kaydi silmek istediginize emin misiniz?')) return;
     try {
       await axios.delete(`/pms/lost-found/${itemId}`);
-      toast.success('Kayit silindi');
+      toast.success('Kayıt silindi');
       setShowDetail(null);
+      setDeleteConfirm(null);
       loadItems();
     } catch (e) {
-      toast.error('Silme hatasi');
+      toast.error('Silme hatası');
     }
   };
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
       <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto" data-testid="lost-found-page">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Package className="w-6 h-6 text-orange-600" />
-              Kayip & Bulunmus Esyalar
+              Kayıp & Bulunan Eşyalar
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Bulunan esyalari kaydedin ve misafirlerle eslestirin</p>
+            <p className="text-sm text-gray-500 mt-1">Bulunan eşyaları kaydedin ve misafirlerle eşleştirin</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadItems(); }}>
               <RefreshCw className="w-4 h-4 mr-1" /> Yenile
             </Button>
             <Button size="sm" onClick={() => setShowCreate(true)} data-testid="create-lostfound-btn">
-              <Plus className="w-4 h-4 mr-1" /> Yeni Kayit
+              <Plus className="w-4 h-4 mr-1" /> Yeni Kayıt
             </Button>
           </div>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
             <Card
@@ -164,14 +161,13 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
           ))}
         </div>
 
-        {/* Filters */}
         <div className="flex flex-wrap gap-3 items-end">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Esya, misafir veya aciklama ara..."
+              placeholder="Eşya, misafir veya açıklama ara..."
               className="pl-9 h-9"
               data-testid="search-lostfound"
             />
@@ -182,7 +178,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
               onChange={e => setFilterCategory(e.target.value)}
               className="h-9 border rounded-md px-3 text-sm"
             >
-              <option value="">Tum Kategoriler</option>
+              <option value="">Tüm Kategoriler</option>
               {Object.entries(CATEGORY_CONFIG).map(([k, v]) => (
                 <option key={k} value={k}>{v.icon} {v.label}</option>
               ))}
@@ -190,13 +186,12 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        {/* Items List */}
         {loading ? (
-          <div className="text-center py-12 text-gray-400">Yukleniyor...</div>
+          <div className="text-center py-12 text-gray-400">Yükleniyor...</div>
         ) : items.length === 0 ? (
           <Card className="p-12 text-center">
             <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">Kayit bulunamadi</p>
+            <p className="text-gray-500">Kayıt bulunamadı</p>
           </Card>
         ) : (
           <div className="grid gap-3">
@@ -235,7 +230,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                         <Button size="sm" variant="outline" className="h-7 text-xs"
                           onClick={(e) => { e.stopPropagation(); setShowMatch(item); setMatchForm({ guest_name: item.guest_name || '', guest_contact: item.guest_contact || '', booking_id: '' }); }}
                         >
-                          <UserCheck className="w-3 h-3 mr-1" /> Eslesdir
+                          <UserCheck className="w-3 h-3 mr-1" /> Eşleştir
                         </Button>
                       )}
                     </div>
@@ -246,17 +241,16 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
           </div>
         )}
 
-        {/* Create Dialog */}
         <Dialog open={showCreate} onOpenChange={setShowCreate}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><Package className="w-5 h-5" /> Yeni Kayip Esya Kaydi</DialogTitle>
+              <DialogTitle className="flex items-center gap-2"><Package className="w-5 h-5" /> Yeni Kayıp Eşya Kaydı</DialogTitle>
             </DialogHeader>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Esya Adi *</Label>
-                  <Input value={form.item_name} onChange={e => setForm(f => ({ ...f, item_name: e.target.value }))} placeholder="Siyah cuzdan" data-testid="lf-item-name" />
+                  <Label>Eşya Adı *</Label>
+                  <Input value={form.item_name} onChange={e => setForm(f => ({ ...f, item_name: e.target.value }))} placeholder="Siyah cüzdan" data-testid="lf-item-name" />
                 </div>
                 <div>
                   <Label>Kategori</Label>
@@ -268,12 +262,12 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
               <div>
-                <Label>Aciklama</Label>
-                <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Detayli aciklama..." />
+                <Label>Açıklama</Label>
+                <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Detaylı açıklama..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Bulundugu Yer *</Label>
+                  <Label>Bulunduğu Yer *</Label>
                   <Input value={form.found_location} onChange={e => setForm(f => ({ ...f, found_location: e.target.value }))} placeholder="Lobi, Oda 205..." data-testid="lf-location" />
                 </div>
                 <div>
@@ -283,22 +277,22 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Bulan Kisi</Label>
-                  <Input value={form.found_by} onChange={e => setForm(f => ({ ...f, found_by: e.target.value }))} placeholder="Personel adi" />
+                  <Label>Bulan Kişi</Label>
+                  <Input value={form.found_by} onChange={e => setForm(f => ({ ...f, found_by: e.target.value }))} placeholder="Personel adı" />
                 </div>
                 <div>
                   <Label>Oda No</Label>
-                  <Input value={form.room_number} onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))} placeholder="Ilgili oda" />
+                  <Input value={form.room_number} onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))} placeholder="İlgili oda" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Misafir Adi</Label>
+                  <Label>Misafir Adı</Label>
                   <Input value={form.guest_name} onChange={e => setForm(f => ({ ...f, guest_name: e.target.value }))} placeholder="Muhtemel sahip" />
                 </div>
                 <div>
-                  <Label>Misafir Iletisim</Label>
-                  <Input value={form.guest_contact} onChange={e => setForm(f => ({ ...f, guest_contact: e.target.value }))} placeholder="Telefon/email" />
+                  <Label>Misafir İletişim</Label>
+                  <Input value={form.guest_contact} onChange={e => setForm(f => ({ ...f, guest_contact: e.target.value }))} placeholder="Telefon/e-posta" />
                 </div>
               </div>
               <div>
@@ -306,14 +300,13 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                 <Input value={form.storage_location} onChange={e => setForm(f => ({ ...f, storage_location: e.target.value }))} placeholder="Depo, Kasa, Resepsiyon..." />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowCreate(false)}>Iptal</Button>
+                <Button variant="outline" onClick={() => setShowCreate(false)}>İptal</Button>
                 <Button onClick={handleCreate} data-testid="save-lostfound-btn">Kaydet</Button>
               </div>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* Detail Dialog */}
         <Dialog open={!!showDetail} onOpenChange={() => setShowDetail(null)}>
           <DialogContent className="max-w-lg">
             {showDetail && (
@@ -328,26 +321,25 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div><span className="text-gray-500">Durum:</span> <Badge className={STATUS_CONFIG[showDetail.status]?.color}>{STATUS_CONFIG[showDetail.status]?.label}</Badge></div>
                     <div><span className="text-gray-500">Kategori:</span> {(CATEGORY_CONFIG[showDetail.category] || CATEGORY_CONFIG.other).label}</div>
-                    <div><span className="text-gray-500">Bulundugu Yer:</span> {showDetail.found_location}</div>
+                    <div><span className="text-gray-500">Bulunduğu Yer:</span> {showDetail.found_location}</div>
                     <div><span className="text-gray-500">Tarih:</span> {showDetail.found_date}</div>
-                    <div><span className="text-gray-500">Bulan Kisi:</span> {showDetail.found_by || '-'}</div>
+                    <div><span className="text-gray-500">Bulan Kişi:</span> {showDetail.found_by || '-'}</div>
                     <div><span className="text-gray-500">Oda:</span> {showDetail.room_number || '-'}</div>
                     <div><span className="text-gray-500">Depo Yeri:</span> {showDetail.storage_location || '-'}</div>
                     <div><span className="text-gray-500">Kaydeden:</span> {showDetail.created_by || '-'}</div>
                   </div>
                   {showDetail.description && (
                     <div className="text-sm bg-gray-50 rounded-lg p-3">
-                      <span className="text-gray-500">Aciklama:</span> {showDetail.description}
+                      <span className="text-gray-500">Açıklama:</span> {showDetail.description}
                     </div>
                   )}
                   {showDetail.guest_name && (
                     <div className="text-sm bg-blue-50 rounded-lg p-3 border border-blue-200">
-                      <div className="font-medium text-blue-700 flex items-center gap-1"><UserCheck className="w-4 h-4" /> Eslesen Misafir</div>
+                      <div className="font-medium text-blue-700 flex items-center gap-1"><UserCheck className="w-4 h-4" /> Eşleşen Misafir</div>
                       <div>{showDetail.guest_name} {showDetail.guest_contact && `(${showDetail.guest_contact})`}</div>
                     </div>
                   )}
 
-                  {/* Status Actions */}
                   <div className="flex flex-wrap gap-2 pt-2 border-t">
                     {showDetail.status !== 'returned' && (
                       <>
@@ -370,12 +362,12 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                           <Button size="sm" variant="outline" className="text-orange-600 border-orange-200"
                             onClick={() => { setShowMatch(showDetail); setMatchForm({ guest_name: showDetail.guest_name || '', guest_contact: showDetail.guest_contact || '', booking_id: '' }); setShowDetail(null); }}
                           >
-                            <UserCheck className="w-3 h-3 mr-1" /> Misafir Eslesdir
+                            <UserCheck className="w-3 h-3 mr-1" /> Misafir Eşleştir
                           </Button>
                         )}
                       </>
                     )}
-                    <Button size="sm" variant="ghost" className="text-red-500 ml-auto" onClick={() => handleDelete(showDetail.id)}>
+                    <Button size="sm" variant="ghost" className="text-red-500 ml-auto" onClick={() => { setDeleteConfirm(showDetail); setShowDetail(null); }}>
                       <Trash2 className="w-3 h-3 mr-1" /> Sil
                     </Button>
                   </div>
@@ -385,35 +377,50 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
 
-        {/* Match Guest Dialog */}
         <Dialog open={!!showMatch} onOpenChange={() => setShowMatch(null)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><UserCheck className="w-5 h-5 text-blue-600" /> Misafir Eslestir</DialogTitle>
+              <DialogTitle className="flex items-center gap-2"><UserCheck className="w-5 h-5 text-blue-600" /> Misafir Eşleştir</DialogTitle>
             </DialogHeader>
             {showMatch && (
               <div className="space-y-3">
                 <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                  <span className="text-gray-500">Esya:</span> <strong>{showMatch.item_name}</strong>
+                  <span className="text-gray-500">Eşya:</span> <strong>{showMatch.item_name}</strong>
                 </div>
                 <div>
-                  <Label>Misafir Adi</Label>
+                  <Label>Misafir Adı</Label>
                   <Input value={matchForm.guest_name} onChange={e => setMatchForm(f => ({ ...f, guest_name: e.target.value }))} placeholder="Ad Soyad" />
                 </div>
                 <div>
-                  <Label>Iletisim</Label>
-                  <Input value={matchForm.guest_contact} onChange={e => setMatchForm(f => ({ ...f, guest_contact: e.target.value }))} placeholder="Telefon veya email" />
+                  <Label>İletişim</Label>
+                  <Input value={matchForm.guest_contact} onChange={e => setMatchForm(f => ({ ...f, guest_contact: e.target.value }))} placeholder="Telefon veya e-posta" />
                 </div>
                 <div>
                   <Label>Rezervasyon ID (opsiyonel)</Label>
-                  <Input value={matchForm.booking_id} onChange={e => setMatchForm(f => ({ ...f, booking_id: e.target.value }))} placeholder="Otomatik eslestirme" />
+                  <Input value={matchForm.booking_id} onChange={e => setMatchForm(f => ({ ...f, booking_id: e.target.value }))} placeholder="Otomatik eşleştirme" />
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => setShowMatch(null)}>Iptal</Button>
-                  <Button onClick={handleMatchGuest} data-testid="match-guest-btn">Eslesdir</Button>
+                  <Button variant="outline" onClick={() => setShowMatch(null)}>İptal</Button>
+                  <Button onClick={handleMatchGuest} data-testid="match-guest-btn">Eşleştir</Button>
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!deleteConfirm} onOpenChange={o => { if (!o) setDeleteConfirm(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Silme Onayı</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-600">
+              Bu kaydı silmek istediğinize emin misiniz?
+              {deleteConfirm && <span className="font-medium"> ({deleteConfirm.item_name})</span>}
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>İptal</Button>
+              <Button variant="destructive" onClick={() => handleDelete(deleteConfirm?.id)}>Sil</Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
