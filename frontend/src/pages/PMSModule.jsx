@@ -5,9 +5,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
-import PickupPaceChart from '@/components/PickupPaceChart';
 import LeadTimeCurve from '@/components/LeadTimeCurve';
-import ForecastGraph from '@/components/ForecastGraph';
 import RevenueDashboard from '@/components/RevenueDashboard';
 import AIActivityLog from '@/components/AIActivityLog';
 import StaffTaskManager from '@/components/StaffTaskManager';
@@ -34,6 +32,7 @@ import Guest360Dialog from '@/components/pms/Guest360Dialog';
 import CashierTab from '@/components/pms/CashierTab';
 import UpsellTab from '@/components/pms/UpsellTab';
 import MessagingTab from '@/components/pms/MessagingTab';
+import ReportsTab from '@/components/pms/ReportsTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
 import RoomTimelineView from '@/components/pms/RoomTimelineView';
 import LaundryTab from '@/components/pms/LaundryTab';
@@ -64,7 +63,6 @@ import {
   MapPin, Shield, Lock, Heart
 } from 'lucide-react';
 import FloatingActionButton from '@/components/FloatingActionButton';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 
@@ -174,16 +172,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     description: ''
   });
 
-  const [reports, setReports] = useState({
-    occupancy: null,
-    revenue: null,
-    daily: null,
-    forecast: [],
-    dailyFlash: null,
-    marketSegment: null,
-    companyAging: null,
-    hkEfficiency: null
-  });
+  
   
   // PMS Lite için izinli sekmeler
   const LITE_TABS = new Set([
@@ -489,15 +478,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   // Flags to track if tab-specific data has been loaded at least once
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
-  const [hasLoadedReports, setHasLoadedReports] = useState(false);
+  
 
   // Load data when tab changes (lazy-load per tab, but only once)
   useEffect(() => {
-    if (activeTab === 'reports' && !hasLoadedReports) {
-      console.log('🔄 Reports tab activated, loading reports (first time)...');
-      loadReports();
-      setHasLoadedReports(true);
-    } else if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) {
+    if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) {
       console.log('🔄 Frontdesk tab activated, loading data (first time)...');
       loadFrontDeskData();
       setHasLoadedFrontdesk(true);
@@ -506,7 +491,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       loadHousekeepingData();
       setHasLoadedHousekeeping(true);
     }
-  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedReports]);
+  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   const loadData = async () => {
     try {
@@ -758,48 +743,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const loadReports = async () => {
-    try {
-      console.log('📊 Loading reports...');
-      const today = new Date().toISOString().split('T')[0];
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-      const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
-      
-      // Use .catch() on each request so one failure doesn't break all reports
-      const [occupancyRes, revenueRes, dailyRes, forecastRes, forecast30Res, dailyFlashRes, marketSegmentRes, companyAgingRes, hkEfficiencyRes] = await Promise.all([
-        axios.get(`/reports/occupancy?start_date=${monthStart}&end_date=${monthEnd}`).catch(e => { console.error('Occupancy report failed:', e); return { data: null }; }),
-        axios.get(`/reports/revenue?start_date=${monthStart}&end_date=${monthEnd}`).catch(e => { console.error('Revenue report failed:', e); return { data: null }; }),
-        axios.get('/reports/daily-summary').catch(e => { console.error('Daily summary failed:', e); return { data: null }; }),
-        axios.get('/reports/forecast?days=7').catch(e => { console.error('Forecast failed:', e); return { data: null }; }),
-        axios.get('/reports/forecast?days=30').catch(e => { console.error('30-day forecast failed:', e); return { data: null }; }),
-        axios.get('/reports/daily-flash').catch(e => { console.error('Daily flash failed:', e); return { data: null }; }),
-        axios.get(`/reports/market-segment?start_date=${monthStart}&end_date=${monthEnd}`).catch(e => { console.error('Market segment failed:', e); return { data: null }; }),
-        axios.get('/reports/company-aging').catch(e => { console.error('Company aging failed:', e); return { data: null }; }),
-        axios.get(`/reports/housekeeping-efficiency?start_date=${monthStart}&end_date=${monthEnd}`).catch(e => { console.error('HK efficiency failed:', e); return { data: null }; })
-      ]);
-      
-      console.log('✅ Reports loaded:', { 
-        occupancy: !!occupancyRes.data, 
-        revenue: !!revenueRes.data, 
-        daily: !!dailyRes.data 
-      });
-      
-      setReports({
-        occupancy: occupancyRes.data,
-        revenue: revenueRes.data,
-        daily: dailyRes.data,
-        forecast: forecastRes.data,
-        forecast30: forecast30Res.data,
-        dailyFlash: dailyFlashRes.data,
-        marketSegment: marketSegmentRes.data,
-        companyAging: companyAgingRes.data,
-        hkEfficiency: hkEfficiencyRes.data
-      });
-    } catch (error) {
-      console.error('❌ Reports loading error:', error);
-      toast.error('Failed to load some reports');
-    }
-  };
+  
 
   const handleCheckIn = async (bookingId, forceClean = false) => {
     try {
@@ -1598,171 +1542,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
           {/* REPORTS TAB */}
           <TabsContent value="reports" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Reports & Analytics</h2>
-              <Button onClick={loadReports}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh Reports
-              </Button>
-            </div>
-
-            {/* Key Metrics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Occupancy Rate</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {reports.occupancy ? `${(reports.occupancy.current_occupancy_rate ?? reports.occupancy.occupancy_rate ?? 0).toFixed(1)}%` : 'Loading...'}
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    {reports.occupancy ? `${reports.occupancy.occupied_rooms ?? reports.occupancy.occupied_room_nights ?? 0}/${reports.occupancy.total_rooms} rooms` : ''}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">ADR</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${(reports.revenue.adr ?? 0).toFixed(2)}` : 'Loading...'}
-                  </div>
-                  <p className="text-xs text-gray-600">Average Daily Rate</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">RevPAR</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${(reports.revenue.revpar ?? reports.revenue.rev_par ?? 0).toFixed(2)}` : 'Loading...'}
-                  </div>
-                  <p className="text-xs text-gray-600">Revenue Per Available Room</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {reports.revenue ? `$${(reports.revenue.total_revenue ?? 0).toLocaleString()}` : 'Loading...'}
-                  </div>
-                  <p className="text-xs text-gray-600">This Month</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Charts and Detailed Reports */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Occupancy Chart */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Occupancy Trend</CardTitle>
-                  <CardDescription>Daily occupancy for the current month</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {reports.occupancy && reports.occupancy.daily_data ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PickupPaceChart data={reports.occupancy.daily_data} />
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-gray-500">
-                      <RefreshCw className="w-8 h-8 animate-spin mr-2" />
-                      Loading chart data...
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Revenue Breakdown */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Revenue Breakdown</CardTitle>
-                  <CardDescription>Revenue by source</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {reports.revenue && reports.revenue.breakdown ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={reports.revenue.breakdown}
-                          dataKey="amount"
-                          nameKey="source"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          fill="#8884d8"
-                        >
-                          {reports.revenue.breakdown.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={['#0088FE', '#00C49F', '#FFBB28', '#FF8042'][index % 4]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-gray-500">
-                      <RefreshCw className="w-8 h-8 animate-spin mr-2" />
-                      Loading chart data...
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Forecast */}
-            {reports.forecast && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>7-Day Forecast</CardTitle>
-                  <CardDescription>Predicted occupancy and revenue</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ForecastGraph data={reports.forecast} />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Daily Flash Report */}
-            {reports.dailyFlash && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Daily Flash Report</CardTitle>
-                  <CardDescription>Today&apos;s key metrics and performance</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{reports.dailyFlash.arrivals}</div>
-                      <div className="text-sm text-gray-600">Arrivals</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">{reports.dailyFlash.departures}</div>
-                      <div className="text-sm text-gray-600">Departures</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-600">{reports.dailyFlash.inhouse}</div>
-                      <div className="text-sm text-gray-600">In-House</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-orange-600">
-                      {reports.dailyFlash?.revenue
-                        ? `$${(reports.dailyFlash.revenue.total_revenue ?? 0).toFixed(2)}`
-                        : 'Loading...'}
-                    </div>
-                      <div className="text-sm text-gray-600">Revenue</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <ReportsTab />
           </TabsContent>
 
           {/* FLASH REPORT TAB */}
