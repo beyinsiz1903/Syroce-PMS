@@ -32,6 +32,7 @@ import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
 import CashierTab from '@/components/pms/CashierTab';
+import UpsellTab from '@/components/pms/UpsellTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
 import RoomTimelineView from '@/components/pms/RoomTimelineView';
 import LaundryTab from '@/components/pms/LaundryTab';
@@ -148,7 +149,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
-  const [upsellOffers, setUpsellOffers] = useState([]);
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [newMessage, setNewMessage] = useState({
     channel: 'email',
@@ -1362,22 +1362,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const generateUpsellOffers = async (bookingId) => {
-    try {
-      const response = await axios.post(`/ai/upsell/generate?booking_id=${bookingId}`, {}, { timeout: 10000 });
-      toast.success(`Generated ${response.data.total_offers} upsell offers`);
-      setUpsellOffers(response.data.offers);
-    } catch (error) {
-      console.error('Upsell generation error:', error);
-      if (error.response?.status === 503) {
-        toast.error('AI service is temporarily unavailable. Using default offers.');
-      } else if (error.response?.status === 404) {
-        toast.error('Booking not found or no available upsell options.');
-      } else {
-        toast.error(error.response?.data?.detail || 'Failed to generate upsell offers. Please try again.');
-      }
-    }
-  };
 
   const loadMessageTemplates = async () => {
     try {
@@ -1636,7 +1620,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             handleCheckIn={handleCheckIn}
             handleCheckOut={handleCheckOut}
             loadBookingFolios={loadBookingFolios}
-            generateUpsellOffers={generateUpsellOffers}
             loadGuest360={loadGuest360}
             setSelectedGuest360={setSelectedGuest360}
             setOpenDialog={setOpenDialog}
@@ -1655,93 +1638,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
           {/* UPSELL TAB */}
           <TabsContent value="upsell" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">AI Upsell & Gelir Optimizasyonu</h2>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5" />
-                    Upsell Opportunities
-                  </CardTitle>
-                  <CardDescription>AI-generated upsell suggestions for current bookings</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {upsellOffers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No upsell offers generated yet</p>
-                      <p className="text-sm">Select a booking to generate AI-powered upsell suggestions</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {upsellOffers.map((offer, index) => (
-                        <div key={index} className="border rounded-lg p-4 space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="font-semibold">{offer.title}</h4>
-                              <p className="text-sm text-gray-600">{offer.description}</p>
-                            </div>
-                            <Badge variant="secondary">${offer.additional_revenue}</Badge>
-                          </div>
-                          <div className="flex justify-between items-center pt-2">
-                            <span className="text-xs text-gray-500">Confidence: {offer.confidence}%</span>
-                            <Button size="sm" variant="outline">
-                              Apply Offer
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    Revenue Insights
-                  </CardTitle>
-                  <CardDescription>AI-powered revenue optimization suggestions</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="font-semibold text-green-800">Revenue Opportunity</span>
-                      </div>
-                      <p className="text-sm text-green-700">
-                        Increase ADR by 12% through strategic room upgrades and package offerings
-                      </p>
-                    </div>
-                    
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                        <span className="font-semibold text-blue-800">Occupancy Optimization</span>
-                      </div>
-                      <p className="text-sm text-blue-700">
-                        Target corporate segment for weekday bookings to improve occupancy by 8%
-                      </p>
-                    </div>
-                    
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                        <span className="font-semibold text-purple-800">Guest Satisfaction</span>
-                      </div>
-                      <p className="text-sm text-purple-700">
-                        Personalized amenity packages can increase guest satisfaction by 15%
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <UpsellTab bookings={bookings} />
           </TabsContent>
 
           {/* MESSAGING TAB */}

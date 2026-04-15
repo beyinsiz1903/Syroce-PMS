@@ -197,39 +197,43 @@ async def generate_upsell_offers(
     booking_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """AI-powered upsell offer generation"""
-    # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
 
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    # Get guest info
     guest = await db.guests.find_one({
-        'id': booking['guest_id'],
+        'id': booking.get('guest_id'),
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bilgisi bulunamadi")
 
-    # Get room info
     room = await db.rooms.find_one({
-        'id': booking['room_id'],
+        'id': booking.get('room_id'),
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="Oda bilgisi bulunamadi")
 
+    check_in = booking['check_in']
+    check_out = booking['check_out']
     offers = []
 
-    # 1. Room Upgrade Logic
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    better_rooms = [r for r in rooms if r['base_price'] > room['base_price']]
+    better_rooms = [r for r in rooms if r.get('base_price', 0) > room.get('base_price', 0)]
 
-    for better_room in better_rooms[:3]:  # Top 3 upgrades
-        # Check availability
-        check_in = booking['check_in']
-        check_out = booking['check_out']
+    loyalty_tier = guest.get('loyalty_tier', 'standard')
+    past_bookings = await db.bookings.count_documents({
+        'guest_id': booking['guest_id'],
+        'tenant_id': current_user.tenant_id,
+        'status': 'checked_out'
+    })
 
+    for better_room in better_rooms[:3]:
         conflicts = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'room_id': better_room['id'],
@@ -239,31 +243,19 @@ async def generate_upsell_offers(
         })
 
         if conflicts == 0:
-            # Calculate confidence
-            loyalty_tier = guest.get('loyalty_tier', 'standard')
             confidence = 0.5
-
             if loyalty_tier == 'vip':
                 confidence = 0.9
             elif loyalty_tier == 'gold':
                 confidence = 0.75
             elif loyalty_tier == 'silver':
                 confidence = 0.6
-
-            # Check historical acceptance
-            past_bookings = await db.bookings.count_documents({
-                'guest_id': booking['guest_id'],
-                'tenant_id': current_user.tenant_id,
-                'status': 'checked_out'
-            })
-
             if past_bookings > 5:
                 confidence += 0.1
-
             confidence = min(0.95, confidence)
 
-            price_diff = better_room['base_price'] - room['base_price']
-            nights = (datetime.fromisoformat(check_out) - datetime.fromisoformat(check_in)).days
+            price_diff = better_room.get('base_price', 0) - room.get('base_price', 0)
+            nights = max((datetime.fromisoformat(check_out) - datetime.fromisoformat(check_in)).days, 1)
             total_upgrade_cost = price_diff * nights
 
             offers.append({
@@ -272,17 +264,16 @@ async def generate_upsell_offers(
                 'guest_id': booking['guest_id'],
                 'booking_id': booking_id,
                 'type': 'room_upgrade',
-                'current_item': room['room_type'],
-                'target_item': better_room['room_type'],
+                'current_item': room.get('room_type', ''),
+                'target_item': better_room.get('room_type', ''),
                 'price': round(total_upgrade_cost, 2),
                 'confidence': round(confidence, 2),
-                'reason': f"{loyalty_tier.upper()} guest, {better_room['room_type']} available, strong demand",
+                'reason': f"{loyalty_tier.upper()} misafir, {better_room.get('room_type','')} musait",
                 'valid_until': (datetime.now(UTC) + timedelta(days=3)).isoformat(),
                 'status': 'pending',
                 'created_at': datetime.now(UTC).isoformat()
             })
 
-    # 2. Early Check-in (if arrival is tomorrow or later)
     arrival_date = datetime.fromisoformat(check_in).date()
     today = datetime.now(UTC).date()
 
@@ -293,34 +284,32 @@ async def generate_upsell_offers(
             'guest_id': booking['guest_id'],
             'booking_id': booking_id,
             'type': 'early_checkin',
-            'current_item': 'Standard 3PM check-in',
-            'target_item': 'Early 12PM check-in',
+            'current_item': 'Standart 15:00 giris',
+            'target_item': 'Erken 12:00 giris',
             'price': 25.00,
             'confidence': 0.65,
-            'reason': 'High-value amenity, low cost to hotel',
+            'reason': 'Yuksek degerli hizmet, dusuk maliyet',
             'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
             'status': 'pending',
             'created_at': datetime.now(UTC).isoformat()
         })
 
-    # 3. Late Checkout
     offers.append({
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'guest_id': booking['guest_id'],
         'booking_id': booking_id,
         'type': 'late_checkout',
-        'current_item': 'Standard 11AM checkout',
-        'target_item': 'Late 2PM checkout',
+        'current_item': 'Standart 11:00 cikis',
+        'target_item': 'Gec 14:00 cikis',
         'price': 35.00,
         'confidence': 0.70,
-        'reason': 'Popular add-on, high guest satisfaction',
+        'reason': 'Populer ek hizmet, yuksek memnuniyet',
         'valid_until': (datetime.fromisoformat(check_out) - timedelta(days=1)).isoformat(),
         'status': 'pending',
         'created_at': datetime.now(UTC).isoformat()
     })
 
-    # 4. Airport Transfer
     offers.append({
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -328,31 +317,228 @@ async def generate_upsell_offers(
         'booking_id': booking_id,
         'type': 'airport_transfer',
         'current_item': None,
-        'target_item': 'Premium airport transfer',
+        'target_item': 'Premium havaalani transferi',
         'price': 50.00,
         'confidence': 0.55,
-        'reason': 'Convenience add-on, good margin',
+        'reason': 'Konfor hizmeti, iyi marj',
         'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
         'status': 'pending',
         'created_at': datetime.now(UTC).isoformat()
     })
 
-    # Sort by confidence
     offers.sort(key=lambda x: x['confidence'], reverse=True)
 
-    # Save offers
     if offers:
         await db.upsell_offers.insert_many(offers)
+        for o in offers:
+            o.pop('_id', None)
 
     estimated_revenue = sum(o['price'] * o['confidence'] for o in offers)
 
     return {
         'booking_id': booking_id,
-        'guest_name': guest.get('name', 'Unknown'),
+        'guest_name': guest.get('name', 'Bilinmiyor'),
         'offers': offers,
         'total_offers': len(offers),
         'estimated_revenue': round(estimated_revenue, 2)
     }
+
+
+@router.get("/ai/upsell/offers")
+async def list_upsell_offers(
+    status: str | None = None,
+    current_user: User = Depends(get_current_user)
+):
+    query = {'tenant_id': current_user.tenant_id}
+    if status:
+        query['status'] = status
+    offers = await db.upsell_offers.find(query, {'_id': 0}).sort('created_at', -1).to_list(200)
+    accepted = sum(1 for o in offers if o.get('status') == 'accepted')
+    rejected = sum(1 for o in offers if o.get('status') == 'rejected')
+    pending = sum(1 for o in offers if o.get('status') == 'pending')
+    total_revenue = sum(o.get('price', 0) for o in offers if o.get('status') == 'accepted')
+    return {
+        'offers': offers,
+        'summary': {
+            'total': len(offers),
+            'accepted': accepted,
+            'rejected': rejected,
+            'pending': pending,
+            'total_revenue': round(total_revenue, 2)
+        }
+    }
+
+
+@router.put("/ai/upsell/offers/{offer_id}")
+async def update_upsell_offer(
+    offer_id: str,
+    action: str,
+    current_user: User = Depends(get_current_user)
+):
+    if action not in ('accepted', 'rejected'):
+        raise HTTPException(status_code=400, detail="Gecersiz aksiyon. 'accepted' veya 'rejected' olmali.")
+
+    offer = await db.upsell_offers.find_one({
+        'id': offer_id,
+        'tenant_id': current_user.tenant_id
+    })
+    if not offer:
+        raise HTTPException(status_code=404, detail="Teklif bulunamadi")
+
+    if offer.get('status') != 'pending':
+        raise HTTPException(status_code=409, detail="Bu teklif zaten islem gormus")
+
+    update_data = {
+        'status': action,
+        'updated_at': datetime.now(UTC).isoformat(),
+        'updated_by': current_user.email
+    }
+
+    if action == 'accepted':
+        existing_charge = await db.folio_charges.find_one({
+            'upsell_offer_id': offer_id,
+            'tenant_id': current_user.tenant_id
+        })
+        if not existing_charge:
+            folio_charge = {
+                'id': str(uuid.uuid4()),
+                'upsell_offer_id': offer_id,
+                'booking_id': offer['booking_id'],
+                'tenant_id': current_user.tenant_id,
+                'description': f"Upsell: {offer.get('target_item', offer.get('type', 'Ek Hizmet'))}",
+                'amount': offer.get('price', 0),
+                'charge_type': 'upsell',
+                'status': 'posted',
+                'created_at': datetime.now(UTC).isoformat(),
+                'created_by': current_user.email
+            }
+            await db.folio_charges.insert_one(folio_charge)
+
+    await db.upsell_offers.update_one({'id': offer_id}, {'$set': update_data})
+    return {'message': f"Teklif {'kabul edildi' if action == 'accepted' else 'reddedildi'}", 'offer_id': offer_id, 'status': action}
+
+
+@router.get("/ai/upsell/revenue-insights")
+async def get_revenue_insights(
+    current_user: User = Depends(get_current_user)
+):
+    tenant_id = current_user.tenant_id
+    now = datetime.now(UTC)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = today.replace(day=1)
+
+    total_rooms = await db.rooms.count_documents({'tenant_id': tenant_id})
+    today_occupied = await db.bookings.count_documents({
+        'tenant_id': tenant_id,
+        'status': {'$in': ['checked_in', 'confirmed', 'guaranteed']},
+        'check_in': {'$lte': today.isoformat()},
+        'check_out': {'$gt': today.isoformat()}
+    })
+    occupancy_rate = round((today_occupied / total_rooms * 100) if total_rooms > 0 else 0, 1)
+
+    monthly_bookings = await db.bookings.find({
+        'tenant_id': tenant_id,
+        'check_in': {'$gte': month_start.isoformat()},
+        'status': {'$nin': ['cancelled', 'no_show']}
+    }, {'total_amount': 1, 'check_in': 1, 'check_out': 1, '_id': 0}).to_list(5000)
+
+    total_revenue = sum(b.get('total_amount', 0) for b in monthly_bookings)
+    total_nights = 0
+    for b in monthly_bookings:
+        try:
+            ci = datetime.fromisoformat(b['check_in'])
+            co = datetime.fromisoformat(b['check_out'])
+            total_nights += max((co - ci).days, 1)
+        except Exception:
+            total_nights += 1
+    adr = round(total_revenue / total_nights, 2) if total_nights > 0 else 0
+    revpar = round(adr * occupancy_rate / 100, 2)
+
+    upsell_stats = await db.upsell_offers.find({
+        'tenant_id': tenant_id,
+        'created_at': {'$gte': month_start.isoformat()}
+    }, {'_id': 0, 'status': 1, 'price': 1, 'type': 1}).to_list(5000)
+    upsell_total = len(upsell_stats)
+    upsell_accepted = sum(1 for u in upsell_stats if u.get('status') == 'accepted')
+    upsell_revenue = sum(u.get('price', 0) for u in upsell_stats if u.get('status') == 'accepted')
+    acceptance_rate = round((upsell_accepted / upsell_total * 100) if upsell_total > 0 else 0, 1)
+
+    type_breakdown = {}
+    for u in upsell_stats:
+        t = u.get('type', 'diger')
+        if t not in type_breakdown:
+            type_breakdown[t] = {'total': 0, 'accepted': 0, 'revenue': 0}
+        type_breakdown[t]['total'] += 1
+        if u.get('status') == 'accepted':
+            type_breakdown[t]['accepted'] += 1
+            type_breakdown[t]['revenue'] += u.get('price', 0)
+
+    insights = []
+    if occupancy_rate < 60:
+        insights.append({
+            'type': 'warning',
+            'title': 'Dusuk Doluluk',
+            'text': f'Guncel doluluk %{occupancy_rate}. Hafta ici kurumsal segment ve OTA kampanyalari ile dolulugu artirabilirsiniz.',
+            'metric': f'%{occupancy_rate}'
+        })
+    elif occupancy_rate > 85:
+        insights.append({
+            'type': 'success',
+            'title': 'Yuksek Doluluk',
+            'text': f'Doluluk %{occupancy_rate} ile yuksek seviyede. ADR artisi icin fiyat optimizasyonu uygulayin.',
+            'metric': f'%{occupancy_rate}'
+        })
+
+    if acceptance_rate > 0:
+        insights.append({
+            'type': 'info',
+            'title': 'Upsell Performansi',
+            'text': f'Bu ay {upsell_total} teklif uretildi, %{acceptance_rate} kabul orani ile {upsell_revenue:.0f} TL ek gelir saglandi.',
+            'metric': f'%{acceptance_rate}'
+        })
+
+    best_type = max(type_breakdown.items(), key=lambda x: x[1]['revenue'], default=None)
+    if best_type and best_type[1]['revenue'] > 0:
+        type_labels = {
+            'room_upgrade': 'Oda Yukseltme',
+            'early_checkin': 'Erken Check-in',
+            'late_checkout': 'Gec Check-out',
+            'airport_transfer': 'Transfer'
+        }
+        insights.append({
+            'type': 'success',
+            'title': 'En Iyi Upsell Kategorisi',
+            'text': f"{type_labels.get(best_type[0], best_type[0])} kategorisi {best_type[1]['revenue']:.0f} TL ile en cok gelir getiren upsell tipi.",
+            'metric': f"{best_type[1]['revenue']:.0f} TL"
+        })
+
+    if adr > 0:
+        insights.append({
+            'type': 'info',
+            'title': 'Ortalama Gunluk Fiyat (ADR)',
+            'text': f'Bu ayin ADR degeri {adr:.0f} TL, RevPAR {revpar:.0f} TL.',
+            'metric': f'{adr:.0f} TL'
+        })
+
+    return {
+        'kpis': {
+            'occupancy_rate': occupancy_rate,
+            'adr': adr,
+            'revpar': revpar,
+            'monthly_revenue': round(total_revenue, 2),
+            'total_rooms': total_rooms,
+            'occupied_rooms': today_occupied
+        },
+        'upsell_summary': {
+            'total': upsell_total,
+            'accepted': upsell_accepted,
+            'revenue': round(upsell_revenue, 2),
+            'acceptance_rate': acceptance_rate,
+            'type_breakdown': type_breakdown
+        },
+        'insights': insights
+    }
+
 
 async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 100) -> bool:
     """Check if rate limit is exceeded for messaging"""

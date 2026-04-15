@@ -76,7 +76,8 @@ Two URL patterns coexist in frontend code:
 - Front desk management and reservations (overstay warnings, no-show list, walk-in quick form, group batch check-in)
 - Housekeeping module
 - Financial folios (direct charge posting, folio print, proforma invoice)
-- **Cashier Module** (`CashierTab.jsx`) — shift open/close, cash count, Z-report, shift history
+- **Cashier Module** (`CashierTab.jsx`) — shift open/close, cash count, Z-report, shift history, secure handover with credential verification
+- **Upsell & Gelir Optimizasyonu** (`UpsellTab.jsx`) — AI-powered upsell offers (room upgrade, early check-in, late checkout, transfer), booking-based offer generation, accept/reject with folio posting, revenue insights with real KPIs (occupancy, ADR, RevPAR), offer history with filtering
 - **Flash Report** (`FlashReportPanel.jsx`) — daily KPIs: occupancy, ADR, RevPAR, dept revenue, print support
 - **Room Timeline** (`RoomTimelineView.jsx`) — Gantt/timeline view with rooms on Y-axis, booking bars colored by status
 - **Laundry Management** (`LaundryTab.jsx`) — order tracking, status updates, room-based laundry orders
