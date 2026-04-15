@@ -27,11 +27,7 @@ const CashierTab = ({ user }) => {
     coin_1: 0, coin_050: 0, coin_025: 0
   });
   const [closingNote, setClosingNote] = useState('');
-  const [handoverTarget, setHandoverTarget] = useState({ email: '', name: '', note: '' });
-  const [handoverCounts, setHandoverCounts] = useState({
-    cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0,
-    coin_1: 0, coin_050: 0, coin_025: 0
-  });
+  const [handoverTarget, setHandoverTarget] = useState({ email: '', password: '', note: '' });
 
   const loadShift = useCallback(async () => {
     try {
@@ -92,22 +88,20 @@ const CashierTab = ({ user }) => {
   };
 
   const handoverShift = async () => {
-    if (!handoverTarget.email.trim()) {
-      toast.error('Devir yapilacak kullanici e-postasi gerekli');
+    if (!handoverTarget.email.trim() || !handoverTarget.password.trim()) {
+      toast.error('Devir alacak kisinin e-posta ve sifresi gerekli');
       return;
     }
     setLoading(true);
     try {
-      await axios.post('/cashier/handover-shift', {
+      const res = await axios.post('/cashier/handover-shift', {
         target_email: handoverTarget.email.trim(),
-        target_name: handoverTarget.name.trim(),
-        counted_amount: calcTotal(handoverCounts),
+        target_password: handoverTarget.password.trim(),
         note: handoverTarget.note
       });
-      toast.success(`Vardiya ${handoverTarget.name || handoverTarget.email} adli kullaniciya devredildi`);
+      toast.success(`Vardiya ${res.data.target_name || handoverTarget.email} adli kullaniciya devredildi`);
       setShowHandoverDialog(false);
-      setHandoverTarget({ email: '', name: '', note: '' });
-      setHandoverCounts({ cash_200: 0, cash_100: 0, cash_50: 0, cash_20: 0, cash_10: 0, cash_5: 0, cash_1: 0, coin_1: 0, coin_050: 0, coin_025: 0 });
+      setHandoverTarget({ email: '', password: '', note: '' });
       loadShift();
       loadHistory();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
@@ -115,10 +109,8 @@ const CashierTab = ({ user }) => {
   };
 
   const countedTotal = calcTotal(closingCounts);
-  const handoverTotal = calcTotal(handoverCounts);
   const expectedCash = shift ? (shift.opening_amount || 0) + (shift.cash_in || 0) - (shift.cash_out || 0) : 0;
   const difference = countedTotal - expectedCash;
-  const handoverDifference = handoverTotal - expectedCash;
 
   const cashStats = {
     totalIn: transactions.filter(t => t.direction === 'in').reduce((s, t) => s + (t.amount || 0), 0),
@@ -383,46 +375,38 @@ const CashierTab = ({ user }) => {
       </Dialog>
 
       <Dialog open={showHandoverDialog} onOpenChange={setShowHandoverDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Vardiya Devret</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-              Mevcut vardiyayi baska bir kullaniciya devrediyorsunuz. Kasa sayimi yapilacak ve yeni vardiya otomatik acilacak.
+              Vardiyayi devralacak kisi kendi e-posta ve sifresini girerek onaylamalidir.
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Devir Yapilacak Kisi Adi</Label>
-                <Input value={handoverTarget.name} onChange={e => setHandoverTarget(p => ({ ...p, name: e.target.value }))} placeholder="Ad Soyad" />
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Mevcut Kasa:</span>
+                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
               </div>
+            </div>
+            <div className="border rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase">Devralacak Kisi Girisi</p>
               <div>
                 <Label>E-posta *</Label>
                 <Input type="email" value={handoverTarget.email} onChange={e => setHandoverTarget(p => ({ ...p, email: e.target.value }))} placeholder="kullanici@hotel.com" />
               </div>
-            </div>
-            <DenominationGrid counts={handoverCounts} setCounts={setHandoverCounts} />
-            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Sayilan Tutar:</span>
-                <span className="font-bold">{handoverTotal.toFixed(2)} TL</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Beklenen Tutar:</span>
-                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
-              </div>
-              <div className={`flex justify-between text-sm pt-1 border-t ${Math.abs(handoverDifference) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
-                <span>Fark:</span>
-                <span className="font-bold">{handoverDifference.toFixed(2)} TL</span>
+              <div>
+                <Label>Sifre *</Label>
+                <Input type="password" value={handoverTarget.password} onChange={e => setHandoverTarget(p => ({ ...p, password: e.target.value }))} placeholder="Sifrenizi girin" />
               </div>
             </div>
             <div>
               <Label>Devir Notu</Label>
               <Input value={handoverTarget.note} onChange={e => setHandoverTarget(p => ({ ...p, note: e.target.value }))} placeholder="Devir notu (opsiyonel)" />
             </div>
-            <Button onClick={handoverShift} disabled={loading || !handoverTarget.email.trim()} className="w-full bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handoverShift} disabled={loading || !handoverTarget.email.trim() || !handoverTarget.password.trim()} className="w-full bg-blue-600 hover:bg-blue-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
-              Vardiyayi Devret
+              Onayla ve Devret
             </Button>
           </div>
         </DialogContent>

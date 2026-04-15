@@ -106,31 +106,49 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
 
 @router.post("/cashier/handover-shift")
 async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+    from passlib.context import CryptContext
+    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
+
     target_email = body.get("target_email", "").strip()
-    target_name = body.get("target_name", "").strip()
-    if not target_email:
-        raise HTTPException(status_code=400, detail="Devir yapilacak kullanici e-postasi gerekli")
+    target_password = body.get("target_password", "").strip()
+    if not target_email or not target_password:
+        raise HTTPException(status_code=400, detail="Devir alacak kullanicinin e-posta ve sifresi gerekli")
+
+    if target_email == current_user.email:
+        raise HTTPException(status_code=400, detail="Vardiyayi kendinize devredemezsiniz")
+
+    target_user = await db.users.find_one(
+        {"email": target_email, "tenant_id": current_user.tenant_id}
+    )
+    if not target_user:
+        raise HTTPException(status_code=401, detail="Kullanici bulunamadi veya ayni otele ait degil")
+
+    stored_hash = target_user.get("hashed_password") or target_user.get("password_hash") or ""
+    if not pwd_ctx.verify(target_password, stored_hash):
+        raise HTTPException(status_code=401, detail="Sifre hatali. Devir alacak kisi kendi sifresini girmeli")
+
+    target_name = target_user.get("name") or target_user.get("full_name") or target_email
     now = datetime.utcnow()
-    counted_amount = _safe_float(body.get("counted_amount", 0))
     expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
-    difference = counted_amount - expected
+
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
         {"$set": {
             "status": "handed_over",
             "closed_at": now.isoformat(),
-            "closing_amount": counted_amount,
+            "closing_amount": expected,
             "expected_amount": expected,
-            "difference": difference,
+            "difference": 0,
             "closed_by": current_user.email,
-            "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+            "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
             "handover_to_email": target_email,
-            "handover_to_name": target_name or target_email,
+            "handover_to_name": target_name,
             "handover_at": now.isoformat(),
             "handover_note": body.get("note", ""),
         }}
@@ -138,18 +156,18 @@ async def handover_shift(body: dict = Body(...), current_user: User = Depends(ge
     new_doc = {
         "_id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "cashier_name": target_name or target_email,
+        "cashier_name": target_name,
         "cashier_email": target_email,
-        "opening_amount": counted_amount,
+        "opening_amount": expected,
         "cash_in": 0,
         "cash_out": 0,
         "status": "open",
         "opened_at": now.isoformat(),
         "opened_by": target_email,
-        "opened_by_name": target_name or target_email,
+        "opened_by_name": target_name,
         "previous_shift_id": str(shift["_id"]),
         "handover_from_email": current_user.email,
-        "handover_from_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+        "handover_from_name": current_user.name if hasattr(current_user, "name") else current_user.email,
     }
     await db.cashier_shifts.insert_one(new_doc)
     new_doc["id"] = new_doc.pop("_id")
@@ -157,8 +175,7 @@ async def handover_shift(body: dict = Body(...), current_user: User = Depends(ge
         "status": "handed_over",
         "previous_shift_closed": True,
         "new_shift": new_doc,
-        "counted_amount": counted_amount,
-        "difference": difference,
+        "target_name": target_name,
     }
 
 
