@@ -134,6 +134,7 @@ const MessagingDashboard = lazy(() => import("@/pages/MessagingDashboard"));
 const MLSchedulerDashboard = lazy(() => import("@/pages/MLSchedulerDashboard"));
 const RevenueAutopilotDashboard = lazy(() => import("@/pages/RevenueAutopilotDashboard"));
 const AnalyticsExportDashboard = lazy(() => import("@/pages/AnalyticsExportDashboard"));
+const DisplacementAnalysis = lazy(() => import("@/pages/DisplacementAnalysis"));
 const GelirYonetimiPage = lazy(() => import("@/pages/GelirYonetimiPage"));
 const AIZekaPage = lazy(() => import("@/pages/AIZekaPage"));
 const AnalitikRaporlarPage = lazy(() => import("@/pages/AnalitikRaporlarPage"));
@@ -303,6 +304,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/reports/corporate-contracts", ...p(CorporateContractsDashboard) },
 
     // ── Revenue & Analytics (Consolidated) ───────────
+    { path: "/displacement-analysis", ...p(DisplacementAnalysis) },
+    { path: "/app/displacement-analysis", ...p(DisplacementAnalysis) },
     { path: "/app/gelir-yonetimi", ...p(GelirYonetimiPage) },
     { path: "/app/ai-zeka", ...p(AIZekaPage) },
     { path: "/app/analitik", ...p(AnalitikRaporlarPage) },

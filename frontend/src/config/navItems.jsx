@@ -460,6 +460,15 @@ export const NAV_ITEMS = [
     navGroup: "advanced",
   },
   {
+    key: "displacement_analysis",
+    label: "Displacement Analizi",
+    path: "/displacement-analysis",
+    moduleKey: "revenue_management",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "advanced",
+  },
+  {
     key: "ai_zeka",
     label: "AI & Zeka",
     path: "/app/ai-zeka",

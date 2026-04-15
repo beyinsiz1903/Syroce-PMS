@@ -32,13 +32,15 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
                 else:
                     body_bytes += chunk
 
+            raw_headers = {k: v for k, v in response.headers.items()}
+
             try:
                 data = json.loads(body_bytes)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return Response(
                     content=body_bytes,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
+                    headers=raw_headers,
                     media_type=response.media_type,
                 )
 
@@ -58,7 +60,7 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
             return Response(
                 content=body_bytes,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=raw_headers,
                 media_type=response.media_type,
             )
 

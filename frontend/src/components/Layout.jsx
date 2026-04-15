@@ -71,6 +71,7 @@ const ICON_BY_KEY = {
   analitik_raporlar: Download,
   no_show_analytics: BarChart3,
   report_builder: FileText,
+  displacement_analysis: TrendingUp,
 };
 
 const GROUP_ICONS = {

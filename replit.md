@@ -92,6 +92,7 @@ Two URL patterns coexist in frontend code:
 - **Complaint Management** (Service Recovery) — full CRUD + resolve/escalate, integrated with rooms/guests/bookings
 - Channel Manager (OTA sync with Exely, HotelRunner)
 - Control Plane for operational monitoring
+- **Displacement Analysis** (`DisplacementAnalysis.jsx`) — 4-tab UI: Market Overview (occupancy forecast, channel mix, risk indicators), Scenario Builder (group booking analysis with displaced/proposed/ancillary revenue, ROI, RevPAR delta, daily breakdown), Compare Scenarios (side-by-side up to 5 scenarios), History (saved analyses). Backend: `displacement_engine.py` (live MongoDB queries for occupancy, ADR, cancellation rate, DOW pricing) + `displacement_analysis.py` router (5 endpoints: `/analyze`, `/market-overview`, `/compare`, `/save`, `/history`). 72 i18n keys across all 10 languages.
 - AI-driven dynamic pricing and forecasting
 - WebSocket real-time updates
 - Multi-tenant architecture
