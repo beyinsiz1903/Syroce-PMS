@@ -569,26 +569,26 @@ class HotelRunnerClient:
             latency = int((time.monotonic() - start) * 1000)
 
             if resp.status_code == 401:
-                return {"status": "fail", "latency_ms": latency, "error_code": "AUTH_INVALID", "message": "Kimlik bilgileri geçersiz (401)"}
+                return {"status": "fail", "latency_ms": latency, "error_code": "AUTH_INVALID", "message": "Invalid credentials (401)"}
             if resp.status_code == 403:
-                return {"status": "fail", "latency_ms": latency, "error_code": "ACCESS_DENIED", "message": "Bu kaynak için erişim izni yok (403)"}
+                return {"status": "fail", "latency_ms": latency, "error_code": "ACCESS_DENIED", "message": "Access denied for this resource (403)"}
             if resp.status_code == 404:
-                return {"status": "fail", "latency_ms": latency, "error_code": "NOT_FOUND", "message": "Kaynak bulunamadı. HR ID veya endpoint doğruluğunu kontrol edin (404)"}
+                return {"status": "fail", "latency_ms": latency, "error_code": "NOT_FOUND", "message": "Resource not found. Check HR ID or endpoint (404)"}
             if resp.status_code == 429:
-                return {"status": "warn", "latency_ms": latency, "error_code": "RATE_LIMITED", "message": "Rate limit aşıldı. Birkaç dakika sonra tekrar deneyin (429)"}
+                return {"status": "warn", "latency_ms": latency, "error_code": "RATE_LIMITED", "message": "Rate limit exceeded. Please try again in a few minutes (429)"}
             if resp.status_code >= 500:
-                return {"status": "fail", "latency_ms": latency, "error_code": "PROVIDER_ERROR", "message": f"HotelRunner sunucu hatası ({resp.status_code}). Lütfen daha sonra tekrar deneyin"}
+                return {"status": "fail", "latency_ms": latency, "error_code": "PROVIDER_ERROR", "message": f"HotelRunner server error ({resp.status_code}). Please try again later"}
             if resp.status_code >= 400:
-                return {"status": "fail", "latency_ms": latency, "error_code": f"HTTP_{resp.status_code}", "message": f"Beklenmeyen hata ({resp.status_code})"}
+                return {"status": "fail", "latency_ms": latency, "error_code": f"HTTP_{resp.status_code}", "message": f"Unexpected error ({resp.status_code})"}
 
-            return {"status": "pass", "latency_ms": latency, "error_code": None, "message": "Başarılı"}
+            return {"status": "pass", "latency_ms": latency, "error_code": None, "message": "Success"}
 
         except httpx.ConnectError:
             latency = int((time.monotonic() - start) * 1000)
-            return {"status": "fail", "latency_ms": latency, "error_code": "CONN_REFUSED", "message": "HotelRunner API'sine bağlanılamıyor. Ağ bağlantınızı kontrol edin"}
+            return {"status": "fail", "latency_ms": latency, "error_code": "CONN_REFUSED", "message": "Cannot connect to HotelRunner API. Check your network connection"}
         except httpx.TimeoutException:
             latency = int((time.monotonic() - start) * 1000)
-            return {"status": "fail", "latency_ms": latency, "error_code": "TIMEOUT", "message": "Bağlantı zaman aşımına uğradı. Sunucu yanıt vermiyor"}
+            return {"status": "fail", "latency_ms": latency, "error_code": "TIMEOUT", "message": "Connection timed out. Server is not responding"}
         except Exception as e:
             latency = int((time.monotonic() - start) * 1000)
             return {"status": "fail", "latency_ms": latency, "error_code": "UNKNOWN", "message": str(e)}
@@ -636,7 +636,7 @@ class HotelRunnerClient:
             "success": overall_success,
             "tested_at": tested_at,
             "total_latency_ms": total_latency,
-            "summary": f"{5 - failed_count}/5 test başarılı" + (f", {warn_count} uyarı" if warn_count else ""),
+            "summary": f"{5 - failed_count}/5 tests passed" + (f", {warn_count} warning(s)" if warn_count else ""),
             "auth_status": auth_result,
             "inventory_read_status": room_result,
             "rate_read_status": rate_result,

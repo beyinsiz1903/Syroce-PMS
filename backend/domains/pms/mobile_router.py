@@ -2335,8 +2335,8 @@ async def get_fnb_notifications_mobile(
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'pos_error',
-            'title': 'POS Bağlantı Hatası',
-            'message': error.get('message', 'POS sistemi ile bağlantı sorunu'),
+            'title': 'POS Connection Error',
+            'message': error.get('message', 'POS system connection issue'),
             'priority': 'high',
             'created_at': error.get('created_at').isoformat()
         })

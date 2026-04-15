@@ -106,20 +106,23 @@ Two URL patterns coexist in frontend code:
 - **KBS/GIKS** (`KBSNotification.jsx`) — emniyet/jandarma misafir bildirimi, toplu gönderim, eksik bilgi takibi
 - **KVKK/GDPR** (`KVKKManager.jsx`) — saklama politikaları, veri talepleri (erişim/silme/düzeltme), rıza yönetimi, denetim izi
 
-## PMS Module Tabs (PMSModule.jsx - 23 Tab)
-All tabs use Lucide icons and Turkish labels:
-- Resepsiyon, Kat Hizmetleri, Odalar, Misafirler, Rezervasyonlar
-- Kasa, Upsell, Mesajlar, Raporlar, Flash Rapor
-- Görevler, Geri Bildirim, Kontenjan, POS (extracted to `POSTab.jsx`)
-- Çamaşırhane, Toplantı, Zaman Çizelgesi
-- Concierge, Banket & Etkinlik, Gelir Kontrol, Müdür Raporu, KBS/GİKS, KVKK
+## PMS Module (PMSModule.jsx — 800 lines)
+Reduced from 2499 lines via dialog extraction. 22 tab layout with lazy-loaded tabs.
 
-### POS Tab (`POSTab.jsx`)
-- Extracted from inline PMSModule.jsx to standalone component
-- Uses correct API fields: `total_sales`, `transaction_count`, `average_transaction` from `/pos/daily-summary`
-- Currency: ₺ (Turkish Lira), not $
-- 3 KPI cards: Toplam Satış, İşlem Sayısı, Ortalama İşlem
-- Son Siparişler list with Turkish status labels
+### Extracted PMS Dialogs (in `frontend/src/components/pms/`)
+- `FolioDialog.jsx` — Guest folio charges/payments
+- `FolioViewDialog.jsx` — Full folio management with post-charge/post-payment sub-dialogs
+- `RoomCreateDialog.jsx` — Room creation form
+- `RoomImageUploadDialog.jsx` — Room photo upload
+- `GuestCreateDialog.jsx` — Guest registration form
+- `BulkDeleteRoomsDialog.jsx` — Bulk room deletion with confirmation
+
+### Invoice Module (InvoiceModule.jsx — 427 lines)
+Reduced from 1309 lines via dialog extraction.
+
+### Extracted Invoice Dialogs (in `frontend/src/components/invoice/`)
+- `InvoiceFormDialog.jsx` — Invoice creation with line items and additional tax calculations
+- `AccountingDialogs.jsx` — ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog
 
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management

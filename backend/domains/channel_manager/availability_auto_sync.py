@@ -55,11 +55,11 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
         {"_id": 0, "room_type": 1},
     )
     if not room:
-        logger.warning("[AVAIL-AUTO-SYNC] Oda bulunamadı: %s", room_id)
+        logger.warning("[AVAIL-AUTO-SYNC] Room not found: %s", room_id)
         return
     pms_room_type = room.get("room_type", "")
     if not pms_room_type:
-        logger.warning("[AVAIL-AUTO-SYNC] Oda tipi boş: %s", room_id)
+        logger.warning("[AVAIL-AUTO-SYNC] Room type empty: %s", room_id)
         return
 
     # 2. Bu oda tipindeki toplam oda sayısını ve oda ID'lerini bul
@@ -139,7 +139,7 @@ async def _push_to_exely(
             {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
         )
         if not conn:
-            logger.debug("[AVAIL-AUTO-SYNC] Exely bağlantısı yok tenant=%s", tenant_id)
+            logger.debug("[AVAIL-AUTO-SYNC] No Exely connection for tenant=%s", tenant_id)
             return
 
         # PMS room type → Exely room code mapping
@@ -148,7 +148,7 @@ async def _push_to_exely(
             {"_id": 0},
         ).to_list(10)
         if not mappings:
-            logger.debug("[AVAIL-AUTO-SYNC] Exely mapping yok pms_type=%s", pms_room_type)
+            logger.debug("[AVAIL-AUTO-SYNC] No Exely mapping for pms_type=%s", pms_room_type)
             return
 
         # Credential'ları al ve provider oluştur
@@ -157,7 +157,7 @@ async def _push_to_exely(
         hotel_code = conn.get("hotel_code", "")
         creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
         if not creds:
-            logger.warning("[AVAIL-AUTO-SYNC] Exely credential bulunamadı tenant=%s", tenant_id)
+            logger.warning("[AVAIL-AUTO-SYNC] Exely credentials not found for tenant=%s", tenant_id)
             return
 
         from domains.channel_manager.providers.exely.provider import ExelyProvider
@@ -175,7 +175,7 @@ async def _push_to_exely(
         # Rate plan'ları al
         rate_plans = conn.get("rate_plans", [])
         if not rate_plans:
-            logger.debug("[AVAIL-AUTO-SYNC] Exely rate_plans boş")
+            logger.debug("[AVAIL-AUTO-SYNC] Exely rate_plans empty")
             return
 
         # Tarihleri ardışık gruplara ayır
@@ -226,10 +226,10 @@ async def _push_to_exely(
                     except Exception as e:
                         logger.error("[AVAIL-AUTO-SYNC] Exely push error: %s", e)
 
-        logger.info("[AVAIL-AUTO-SYNC] Exely toplam %d push tamamlandı", push_count)
+        logger.info("[AVAIL-AUTO-SYNC] Exely total %d pushes completed", push_count)
 
     except Exception as e:
-        logger.error("[AVAIL-AUTO-SYNC] Exely sync hatası: %s", e)
+        logger.error("[AVAIL-AUTO-SYNC] Exely sync error: %s", e)
 
 
 async def _push_to_hotelrunner(
@@ -243,7 +243,7 @@ async def _push_to_hotelrunner(
             {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
         )
         if not conn:
-            logger.debug("[AVAIL-AUTO-SYNC] HR bağlantısı yok tenant=%s", tenant_id)
+            logger.debug("[AVAIL-AUTO-SYNC] No HR connection for tenant=%s", tenant_id)
             return
 
         # PMS room type → HR inv_code mapping
@@ -252,7 +252,7 @@ async def _push_to_hotelrunner(
             {"_id": 0},
         ).to_list(10)
         if not mappings:
-            logger.debug("[AVAIL-AUTO-SYNC] HR mapping yok pms_type=%s", pms_room_type)
+            logger.debug("[AVAIL-AUTO-SYNC] No HR mapping for pms_type=%s", pms_room_type)
             return
 
         # HR provider'ı al
@@ -260,7 +260,7 @@ async def _push_to_hotelrunner(
             from domains.channel_manager.providers.hotelrunner_router import _get_provider
             provider, _ = await _get_provider(tenant_id)
         except Exception as e:
-            logger.warning("[AVAIL-AUTO-SYNC] HR provider alınamadı: %s", e)
+            logger.warning("[AVAIL-AUTO-SYNC] Cannot get HR provider: %s", e)
             return
 
         # Tarihleri ardışık gruplara ayır
@@ -305,10 +305,10 @@ async def _push_to_hotelrunner(
                 except Exception as e:
                     logger.error("[AVAIL-AUTO-SYNC] HR push error: %s", e)
 
-        logger.info("[AVAIL-AUTO-SYNC] HR toplam %d push tamamlandı", push_count)
+        logger.info("[AVAIL-AUTO-SYNC] HR total %d pushes completed", push_count)
 
     except Exception as e:
-        logger.error("[AVAIL-AUTO-SYNC] HR sync hatası: %s", e)
+        logger.error("[AVAIL-AUTO-SYNC] HR sync error: %s", e)
 
 
 def _group_consecutive_dates_with_same_avail(

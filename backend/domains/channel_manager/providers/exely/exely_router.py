@@ -68,7 +68,7 @@ async def _get_client(tenant_id: str) -> tuple:
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0},
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi. Lutfen once baglanti kurun.")
+        raise HTTPException(status_code=404, detail="Exely connection not found. Please set up a connection first.")
 
     # Resolve credentials via secrets manager (with legacy fallback)
     sm = get_secrets_manager()
@@ -97,9 +97,9 @@ async def _get_client(tenant_id: str) -> tuple:
     try:
         return ExelyProvider(**kwargs), conn
     except ExelyError as exc:
-        raise HTTPException(status_code=502, detail=f"Exely kimlik bilgileri gecersiz veya eksik: {exc.message}")
+        raise HTTPException(status_code=502, detail=f"Exely credentials invalid or missing: {exc.message}")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Exely baglanti hatasi: {exc}")
+        raise HTTPException(status_code=502, detail=f"Exely connection error: {exc}")
 
 
 # ── Connection Management ────────────────────────────────────────────
@@ -122,7 +122,7 @@ async def setup_connection(
     test_result = await provider.legacy_test_connection()
 
     if not test_result["connected"]:
-        raise HTTPException(status_code=400, detail=f"Exely baglanti hatasi: {test_result['error']}")
+        raise HTTPException(status_code=400, detail=f"Exely connection error: {test_result['error']}")
 
     # Store credentials in secrets manager (encrypted, audited)
     sm = get_secrets_manager()
@@ -170,7 +170,7 @@ async def setup_connection(
                     duration_ms=test_result.get("duration_ms", 0), user_name=current_user.name)
 
     return {
-        "message": "Exely baglantisi basariyla kuruldu",
+        "message": "Exely connection established successfully",
         "connected": True,
         "room_types": test_result.get("room_types", []),
         "rate_plans": test_result.get("rate_plans", []),
@@ -185,7 +185,7 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
         {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0},
     )
     if not conn:
-        return {"connected": False, "message": "Exely baglantisi kurulmamis"}
+        return {"connected": False, "message": "Exely connection not configured"}
     return {"connected": conn.get("is_active", False), "connection": conn}
 
 
@@ -195,12 +195,12 @@ async def test_connection(current_user: User = Depends(get_current_user)):
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
     if conn.get("mode") == "sandbox":
         return {
             "success": True,
             "connected": True,
-            "message": "Sandbox modu — baglanti aktif ve hazir",
+            "message": "Sandbox mode — connection active and ready",
             "hotel_code": conn.get("hotel_code", ""),
             "property_name": conn.get("property_name", ""),
             "mode": "sandbox",
@@ -221,8 +221,8 @@ async def disconnect(current_user: User = Depends(get_current_user)):
         {"$set": {"is_active": False, "disconnected_at": datetime.now(UTC).isoformat()}},
     )
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
-    return {"message": "Exely baglantisi kesildi"}
+        raise HTTPException(status_code=404, detail="Active connection not found")
+    return {"message": "Exely connection disconnected"}
 
 
 
@@ -238,14 +238,14 @@ async def update_currency(
     """Update the currency for the Exely connection."""
     allowed = {"TRY", "USD", "EUR", "GBP", "RUB"}
     if payload.currency not in allowed:
-        raise HTTPException(status_code=400, detail=f"Desteklenmeyen para birimi. Desteklenen: {', '.join(sorted(allowed))}")
+        raise HTTPException(status_code=400, detail=f"Unsupported currency. Supported: {', '.join(sorted(allowed))}")
     result = await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"$set": {"currency": payload.currency}},
     )
     if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
-    return {"message": f"Para birimi {payload.currency} olarak guncellendi", "currency": payload.currency}
+        raise HTTPException(status_code=404, detail="Active connection not found")
+    return {"message": f"Currency updated to {payload.currency}", "currency": payload.currency}
 
 
 # ── Room Discovery ───────────────────────────────────────────────────
@@ -263,7 +263,7 @@ async def discover_rooms(
 
     result = await client.legacy_discover_rooms(ci, co)
     if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Exely oda kesfetme hatasi: {result['error']}")
+        raise HTTPException(status_code=502, detail=f"Exely room discovery error: {result['error']}")
 
     # Cache discovered rooms/rates on connection
     await db.exely_connections.update_one(
@@ -398,7 +398,7 @@ async def manual_pull(current_user: User = Depends(get_current_user)):
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
 
     # Get credentials from secrets manager
     sm = get_secrets_manager()
@@ -922,7 +922,7 @@ async def start_scheduler(current_user: User = Depends(get_current_user)):
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
     )
     if not conn:
-        raise HTTPException(status_code=404, detail="Exely baglantisi bulunamadi")
+        raise HTTPException(status_code=404, detail="Exely connection not found")
     interval = conn.get("sync_interval_seconds", 60)
     await exely_pull_scheduler.start(interval_seconds=interval)
     return {"message": f"Scheduler baslatildi ({interval}s aralikla)", "interval_seconds": interval}

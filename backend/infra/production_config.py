@@ -158,7 +158,9 @@ class ProductionConfigValidator:
 
         status = "pass" if not missing else "fail"
         if missing:
-            logger.error(f"Startup check FAILED — missing critical vars: {missing}")
+            import os as _os
+            level = logging.WARNING if _os.environ.get("NODE_ENV") != "production" else logging.ERROR
+            logger.log(level, "Startup check — missing critical vars: %s", missing)
         else:
             logger.info("Startup check passed — all critical variables present")
 

@@ -680,10 +680,10 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                     prov, t["rt"], t["start_date"], t["end_date"],
                     rate=t["rate"], avail=t["avail"], stop=t["stop"], minstay=t["minstay"], days=t["days"],
                 )
-                logger.info("[UNIFIED] HR push sonucu rt=%s: %s", t["rt"], result)
+                logger.info("[UNIFIED] HR push result rt=%s: %s", t["rt"], result)
                 return t, result
             except Exception as e:
-                logger.error("[UNIFIED] HR push hatasi %s: %s", t["rt"], e)
+                logger.error("[UNIFIED] HR push error %s: %s", t["rt"], e)
                 return t, {"success": False, "error": str(e)}
 
         async def _bg(tasks, prov, t_id):
@@ -750,19 +750,19 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                     currency=conn.get("currency", "TRY"),
                     stop_sell=stop, min_stay=minstay,
                 )
-                logger.info("[UNIFIED] Exely push sonucu rt=%s: %s", rt, result)
+                logger.info("[UNIFIED] Exely push result rt=%s: %s", rt, result)
                 return result
             except Exception as e:
-                logger.error("[UNIFIED] Exely push hatasi rt=%s: %s", rt, e)
+                logger.error("[UNIFIED] Exely push error rt=%s: %s", rt, e)
         push_tasks.append(_push())
 
     if push_tasks:
         async def _bg(tasks):
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                logger.info("[UNIFIED] Exely background push tamamlandi: %d gorev", len(results))
+                logger.info("[UNIFIED] Exely background push completed: %d tasks", len(results))
             except Exception as e:
-                logger.error("[UNIFIED] Exely background push hatasi: %s", e)
+                logger.error("[UNIFIED] Exely background push error: %s", e)
         asyncio.create_task(_bg(push_tasks))
 
     return len(push_tasks)

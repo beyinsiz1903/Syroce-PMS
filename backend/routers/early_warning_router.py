@@ -95,7 +95,7 @@ async def get_early_warnings(
         }
     except Exception as exc:
         logger.error("Failed to generate warnings: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Uyarı oluşturma hatası: {exc}")
+        raise HTTPException(status_code=500, detail=f"Warning generation error: {exc}")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -189,7 +189,7 @@ async def get_connector_warnings(
     )
 
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector bulunamadı")
+        raise HTTPException(status_code=404, detail="Connector not found")
 
     provider = connector.get("provider", "unknown")
 
@@ -378,7 +378,7 @@ async def start_warning_engine(
     engine = get_early_warning_engine()
     await engine.start()
 
-    return {"ok": True, "message": "Early Warning Engine başlatıldı"}
+    return {"ok": True, "message": "Early Warning Engine started"}
 
 
 @router.post("/engine/stop")
@@ -389,7 +389,7 @@ async def stop_warning_engine(
     engine = get_early_warning_engine()
     await engine.stop()
 
-    return {"ok": True, "message": "Early Warning Engine durduruldu"}
+    return {"ok": True, "message": "Early Warning Engine stopped"}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -415,4 +415,4 @@ async def force_warning_check(
         }
     except Exception as exc:
         logger.error("Force check failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Kontrol hatası: {exc}")
+        raise HTTPException(status_code=500, detail=f"Check error: {exc}")

@@ -47,6 +47,12 @@ import KBSNotification from '@/components/pms/KBSNotification';
 import KVKKManager from '@/components/pms/KVKKManager';
 import RevenueControls from '@/components/pms/RevenueControls';
 import POSTab from '@/components/pms/POSTab';
+import FolioDialog from '@/components/pms/FolioDialog';
+import FolioViewDialog from '@/components/pms/FolioViewDialog';
+import RoomCreateDialog from '@/components/pms/RoomCreateDialog';
+import RoomImageUploadDialog from '@/components/pms/RoomImageUploadDialog';
+import GuestCreateDialog from '@/components/pms/GuestCreateDialog';
+import BulkDeleteRoomsDialog from '@/components/pms/BulkDeleteRoomsDialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,7 +72,6 @@ import {
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
-
 
 const PMSModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -117,66 +122,35 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [roomBlocks, setRoomBlocks] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [newRoomBlock, setNewRoomBlock] = useState({
-    type: 'out_of_order',
-    reason: '',
-    details: '',
-    start_date: '',
-    end_date: '',
-    allow_sell: false
+    type: 'out_of_order', reason: '', details: '', start_date: '', end_date: '', allow_sell: false
   });
-  
 
-  // Search and filter states
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [quickFilters, setQuickFilters] = useState({
-    roomType: '',
-    bookingStatus: '',
-    paymentStatus: '',
-    roomView: '',
-    amenity: ''
+    roomType: '', bookingStatus: '', paymentStatus: '', roomView: '', amenity: ''
   });
   
-  // Bulk selection states
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [bulkRoomMode, setBulkRoomMode] = useState(false);
 
-  // Phase H - CRM & Upsell states
   const [selectedGuest360, setSelectedGuest360] = useState(null);
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
   const [reservationDetailId, setReservationDetailId] = useState(null);
-  const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
   
   const [findRoomCriteria, setFindRoomCriteria] = useState({
-    check_in: '',
-    check_out: '',
-    room_type: '',
-    guests: 1
+    check_in: '', check_out: '', room_type: '', guests: 1
   });
 
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
   const [maintenanceForm, setMaintenanceForm] = useState({
-    room_id: null,
-    room_number: '',
-    issue_type: 'housekeeping_damage',
-    priority: 'normal',
-    description: ''
+    room_id: null, room_number: '', issue_type: 'housekeeping_damage', priority: 'normal', description: ''
   });
 
-  
-  
-  // PMS Lite için izinli sekmeler
-  const LITE_TABS = new Set([
-    'frontdesk',
-    'housekeeping',
-    'rooms',
-    'guests',
-    'bookings',
-    'reports',
-  ]);
+  const LITE_TABS = new Set(['frontdesk', 'housekeeping', 'rooms', 'guests', 'bookings', 'reports']);
 
   const ALL_TABS = [
     { key: 'frontdesk', labelKey: 'pms.frontDesk', icon: UserCheck, testId: 'tab-frontdesk' },
@@ -184,21 +158,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'rooms', labelKey: 'pms.rooms', icon: BedDouble, testId: 'tab-rooms' },
     { key: 'guests', labelKey: 'pms.guests', icon: Users, testId: 'tab-guests' },
     { key: 'bookings', labelKey: 'pms.bookings', icon: Calendar, testId: 'tab-bookings' },
-    { key: 'cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
+    { key: 'cashier', labelKey: 'pms.cashier', icon: Wallet, testId: 'tab-cashier' },
     { key: 'upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
-    { key: 'messaging', labelText: 'Mesajlar', icon: MessageSquare, testId: 'tab-messaging' },
+    { key: 'messaging', labelKey: 'pms.messaging', icon: MessageSquare, testId: 'tab-messaging' },
     { key: 'reports', labelKey: 'pms.reports', icon: FileText, testId: 'tab-reports' },
-    { key: 'flash', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
-    { key: 'tasks', labelText: 'Gorevler', icon: Wrench, testId: 'tab-tasks' },
-    { key: 'feedback', labelText: 'Geri Bildirim', icon: ThumbsUp, testId: 'tab-feedback' },
-    { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
+    { key: 'flash', labelKey: 'pms.flashReport', icon: BarChart3, testId: 'tab-flash' },
+    { key: 'tasks', labelKey: 'pms.tasks', icon: Wrench, testId: 'tab-tasks' },
+    { key: 'feedback', labelKey: 'pms.feedback', icon: ThumbsUp, testId: 'tab-feedback' },
+    { key: 'allotment', labelKey: 'pms.allotment', icon: Building2, testId: 'tab-allotment' },
     { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
-    { key: 'laundry', labelText: 'Camasirhane', icon: Shirt, testId: 'tab-laundry' },
-    { key: 'meeting', labelText: 'Organizasyon', icon: Building2, testId: 'tab-meeting' },
-    { key: 'timeline', labelText: 'Zaman Cizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
+    { key: 'laundry', labelKey: 'pms.laundry', icon: Shirt, testId: 'tab-laundry' },
+    { key: 'meeting', labelKey: 'pms.meeting', icon: Building2, testId: 'tab-meeting' },
+    { key: 'timeline', labelKey: 'pms.timeline', icon: CalendarRange, testId: 'tab-timeline' },
     { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
-    { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
-    { key: 'manager_report', labelText: 'Mudur Raporu', icon: FileText, testId: 'tab-manager-report' },
+    { key: 'revenue', labelKey: 'pms.revenueControl', icon: TrendingUp, testId: 'tab-revenue' },
+    { key: 'manager_report', labelKey: 'pms.managerReport', icon: FileText, testId: 'tab-manager-report' },
     { key: 'kbs', labelText: 'KBS / GIKS', icon: Shield, testId: 'tab-kbs' },
     { key: 'kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
   ];
@@ -207,154 +181,79 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key))
     : ALL_TABS;
 
-  // Active tab state - check URL hash on mount (Lite'ta izinli olmayan hash gelirse frontdesk'e zorla)
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && (!isLite || LITE_TABS.has(hash))) {
-      return hash;
-    }
+    if (hash && (!isLite || LITE_TABS.has(hash))) return hash;
     return 'frontdesk';
   });
 
-  // Hash change listener so that navigation with #tab updates the UI
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-
-      // Lite planda izinli olmayan bir hash gelirse frontdesk'e dön
       if (isLite && hash && !LITE_TABS.has(hash)) {
         setActiveTab('frontdesk');
         window.location.hash = 'frontdesk';
         return;
       }
-
       setActiveTab(hash || 'frontdesk');
     };
-
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [isLite]);
 
-  // Handle one-time dialog open requests from onboarding (Lite only)
   useEffect(() => {
     if (!isLite) return;
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
-
     const tenantId = tenant?.id || tenant?._id || tenant?.tenant_id || 'unknown';
     const key = `pms_open_dialog_once:${tenantId}`;
     const val = window.localStorage.getItem(key);
-
     if (val && activeTab === 'rooms') {
       setOpenDialog(val);
       window.localStorage.removeItem(key);
     }
   }, [isLite, tenant, activeTab]);
 
-  // Apply first booking prefill for Lite when booking dialog opens
   useEffect(() => {
-    if (!isLite) return;
-    if (openDialog !== 'booking') return;
+    if (!isLite || openDialog !== 'booking') return;
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
-
     const tenantId = tenant?.id || tenant?._id || tenant?.tenant_id || 'unknown';
     const key = `pms_booking_prefill:${tenantId}`;
     const raw = window.localStorage.getItem(key);
     if (!raw) return;
-
     try {
       const p = JSON.parse(raw);
       if (p.mode && p.mode !== 'lite_first_booking') return;
-
       const today = new Date();
       const tomorrow = new Date();
       tomorrow.setDate(today.getDate() + 1);
       const fmt = (d) => d.toISOString().split('T')[0];
-
-      setNewBooking((prev) => ({
-        ...prev,
-        check_in: fmt(today),
-        check_out: fmt(tomorrow),
-        adults: prev?.adults || 2,
-      }));
-
+      setNewBooking((prev) => ({ ...prev, check_in: fmt(today), check_out: fmt(tomorrow), adults: prev?.adults || 2 }));
       window.localStorage.removeItem(key);
     } catch (e) {
       console.warn('Failed to apply booking prefill', e);
     }
   }, [isLite, tenant, openDialog]);
 
-  const [newRoom, setNewRoom] = useState({
-    room_number: '',
-    room_type: 'standard',
-    floor: 1,
-    capacity: 2,
-    base_price: 100,
-    amenities: [],
-    view: '',
-    bed_type: ''
-  });
-
-  // Bulk delete UI
-  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState('');
-
-  const [newGuest, setNewGuest] = useState({
-    name: '', email: '', phone: '', id_number: '', address: ''
-  });
-
   const [newBooking, setNewBooking] = useState({
-    guest_id: '',
-    room_id: '',
-    check_in: '',
-    check_out: '',
-    adults: 1,
-    children: 0,
-    children_ages: [],
-    guests_count: 1,
-    total_amount: 0,
-    base_rate: 0,
-    channel: 'direct',
-    company_id: '',
-    contracted_rate: '',
-    rate_type: '',
-    market_segment: '',
-    cancellation_policy: '',
-    billing_address: '',
-    billing_tax_number: '',
-    billing_contact_person: '',
-    override_reason: ''
+    guest_id: '', room_id: '', check_in: '', check_out: '',
+    adults: 1, children: 0, children_ages: [], guests_count: 1,
+    total_amount: 0, base_rate: 0, channel: 'direct', company_id: '',
+    contracted_rate: '', rate_type: '', market_segment: '',
+    cancellation_policy: '', billing_address: '', billing_tax_number: '',
+    billing_contact_person: '', override_reason: ''
   });
 
-  // Multi-room booking state: each item is one room in the booking
   const [multiRoomBooking, setMultiRoomBooking] = useState([
-    {
-      room_id: '',
-      adults: 1,
-      children: 0,
-      children_ages: [],
-      total_amount: 0,
-      base_rate: 0,
-      rate_plan: '',
-      package_code: null
-    }
+    { room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }
   ]);
 
   const [newCompany, setNewCompany] = useState({
-    name: '',
-    corporate_code: '',
-    tax_number: '',
-    billing_address: '',
-    contact_person: '',
-    contact_email: '',
-    contact_phone: '',
-    contracted_rate: '',
-    default_rate_type: '',
-    default_market_segment: '',
-    default_cancellation_policy: '',
-    payment_terms: '',
-    status: 'pending'
+    name: '', corporate_code: '', tax_number: '', billing_address: '',
+    contact_person: '', contact_email: '', contact_phone: '',
+    contracted_rate: '', default_rate_type: '', default_market_segment: '',
+    default_cancellation_policy: '', payment_terms: '', status: 'pending'
   });
 
-  // Lightweight stats for UI (kept outside heavy JSX where possible)
   const bookingStats = useMemo(() => {
     const total = bookings.length;
     const confirmed = bookings.filter(b => b.status === 'confirmed').length;
@@ -364,68 +263,24 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     return { total, confirmed, checkedIn, totalRevenue, avgAdr };
   }, [bookings]);
 
-  const [newCharge, setNewCharge] = useState({
-    charge_type: 'food', description: '', amount: 0, quantity: 1
-  });
-
-  const [newFolioCharge, setNewFolioCharge] = useState({
-    charge_category: 'room',
-    description: '',
-    amount: 0,
-    quantity: 1,
-    auto_calculate_tax: false
-  });
-
-  const [newPayment, setNewPayment] = useState({
-    amount: 0, method: 'card', reference: '', notes: ''
-  });
-
-  const [newFolioPayment, setNewFolioPayment] = useState({
-    amount: 0,
-    method: 'card',
-    payment_type: 'interim',
-    reference: '',
-    notes: ''
-  });
-
-  const [paymentForm, setPaymentForm] = useState({
-    amount: 0,
-    method: 'card',
-    payment_type: 'interim',
-    reference: '',
-    notes: ''
-  });
+  const [newCharge, setNewCharge] = useState({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
+  const [newPayment, setNewPayment] = useState({ amount: 0, method: 'card', reference: '', notes: '' });
+  const [newHKTask, setNewHKTask] = useState({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
+  const [paymentForm, setPaymentForm] = useState({ amount: 0, method: 'card', payment_type: 'interim', reference: '', notes: '' });
 
   const addRoomToMultiBooking = () => {
-    setMultiRoomBooking(prev => [
-      ...prev,
-      {
-        room_id: '',
-        adults: 1,
-        children: 0,
-        children_ages: [],
-        total_amount: 0,
-        base_rate: 0,
-        rate_plan: '',
-        package_code: null
-      }
-    ]);
+    setMultiRoomBooking(prev => [...prev, { room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
   };
 
   const removeRoomFromMultiBooking = (index) => {
-    setMultiRoomBooking(prev => {
-      if (prev.length === 1) return prev; // En az 1 oda kalsın
-      return prev.filter((_, i) => i !== index);
-    });
+    setMultiRoomBooking(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== index));
   };
 
   const updateMultiRoomField = (index, field, value) => {
     setMultiRoomBooking(prev => prev.map((room, i) => {
       if (i !== index) return room;
       if (field === 'adults' || field === 'children' || field === 'base_rate' || field === 'total_amount') {
-        const numeric = field === 'base_rate' || field === 'total_amount'
-          ? parseFloat(value) || 0
-          : parseInt(value) || 0;
+        const numeric = field === 'base_rate' || field === 'total_amount' ? parseFloat(value) || 0 : parseInt(value) || 0;
         return { ...room, [field]: numeric };
       }
       return { ...room, [field]: value };
@@ -437,11 +292,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (i !== index) return room;
       const count = parseInt(childrenCount) || 0;
       let ages = room.children_ages || [];
-      if (count > ages.length) {
-        ages = [...ages, ...Array(count - ages.length).fill(0)];
-      } else {
-        ages = ages.slice(0, count);
-      }
+      if (count > ages.length) ages = [...ages, ...Array(count - ages.length).fill(0)];
+      else ages = ages.slice(0, count);
       return { ...room, children: count, children_ages: ages };
     }));
   };
@@ -455,126 +307,60 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }));
   };
 
-  const [newHKTask, setNewHKTask] = useState({
-    room_id: '', task_type: 'cleaning', priority: 'normal', notes: ''
-  });
-
-  useEffect(() => {
-    // Only load essential data on initial mount
-    loadData();
-    // Load audit logs and channel manager data lazily (after 1 second)
-    setTimeout(() => {
-      loadAuditLogs();
-      loadChannelManagerData();
-    }, 1000);
-  }, []);
-  
-  // Flags to track if tab-specific data has been loaded at least once
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
-  
+  const [ratePlans, setRatePlans] = useState([]);
+  const [packages, setPackages] = useState([]);
 
-  // Load data when tab changes (lazy-load per tab, but only once)
+  useEffect(() => { loadData(); setTimeout(() => { loadAuditLogs(); loadChannelManagerData(); }, 1000); }, []);
+
   useEffect(() => {
-    if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) {
-      console.log('🔄 Frontdesk tab activated, loading data (first time)...');
-      loadFrontDeskData();
-      setHasLoadedFrontdesk(true);
-    } else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) {
-      console.log('🔄 Housekeeping tab activated, loading data (first time)...');
-      loadHousekeepingData();
-      setHasLoadedHousekeeping(true);
-    }
+    if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
+    else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
   }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   const loadData = async () => {
     try {
-      // PERFORMANCE OPTIMIZED: Load only essential data with limits for 550+ room properties
       const today = new Date().toISOString().split('T')[0];
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 90);
+      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 90);
       const futureDateStr = futureDate.toISOString().split('T')[0];
-      
       const results = await Promise.allSettled([
-        axios.get('/pms/rooms?limit=100', { timeout: 15000 }), // Limit rooms for initial load
-        axios.get('/pms/guests?limit=100', { timeout: 15000 }), // Limit guests to 100
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=200`, { timeout: 15000 }), // Next 90 days
-        axios.get('/companies?limit=50', { timeout: 15000 }) // Limit companies to 50
+        axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
+        axios.get('/pms/guests?limit=100', { timeout: 15000 }),
+        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=200`, { timeout: 15000 }),
+        axios.get('/companies?limit=50', { timeout: 15000 })
       ]);
-
       const [roomsRes, guestsRes, bookingsRes, companiesRes] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
-
-      // Log failures but do not hard-fail the entire PMS screen
-      results.forEach((r, idx) => {
-        if (r.status === 'rejected') {
-          console.warn('PMS loadData partial failure:', idx, r.reason?.response?.status, r.reason?.config?.url, r.reason);
-        }
-      });
-
+      results.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS loadData partial failure:', idx, r.reason); });
       const rawBookings = bookingsRes?.data || [];
       const grouped = [];
       const seenGroupIds = new Set();
-
-      // First, handle grouped bookings (with group_booking_id)
-      rawBookings
-        .filter(b => b.group_booking_id)
-        .forEach(b => {
-          if (seenGroupIds.has(b.group_booking_id)) return;
-          const sameGroup = rawBookings.filter(x => x.group_booking_id === b.group_booking_id);
-          seenGroupIds.add(b.group_booking_id);
-          grouped.push({
-            type: 'group',
-            group_booking_id: b.group_booking_id,
-            master_booking: b,
-            bookings: sameGroup
-          });
-        });
-
-      // Then add single bookings (no group id)
-      rawBookings
-        .filter(b => !b.group_booking_id)
-        .forEach(b => {
-          grouped.push({
-            type: 'single',
-            booking: b
-          });
-        });
-
+      rawBookings.filter(b => b.group_booking_id).forEach(b => {
+        if (seenGroupIds.has(b.group_booking_id)) return;
+        const sameGroup = rawBookings.filter(x => x.group_booking_id === b.group_booking_id);
+        seenGroupIds.add(b.group_booking_id);
+        grouped.push({ type: 'group', group_booking_id: b.group_booking_id, master_booking: b, bookings: sameGroup });
+      });
+      rawBookings.filter(b => !b.group_booking_id).forEach(b => { grouped.push({ type: 'single', booking: b }); });
       setGroupedBookings(grouped);
-
-      setRooms(roomsRes?.data || []);
-      setGuests(guestsRes?.data || []);
-      setBookings(bookingsRes?.data || []);
-      setCompanies(companiesRes?.data || []);
-    } catch (error) {
-      toast.error('Veriler yüklenemedi');
-      console.error('PMS data load error:', error);
-    } finally {
-      setLoading(false);
-    }
+      setRooms(roomsRes?.data || []); setGuests(guestsRes?.data || []);
+      setBookings(bookingsRes?.data || []); setCompanies(companiesRes?.data || []);
+    } catch (error) { toast.error('Failed to load data'); console.error('PMS data load error:', error);
+    } finally { setLoading(false); }
   };
 
   const loadFrontDeskData = async () => {
-    setFdLoading(true);
-    setFdError(null);
+    setFdLoading(true); setFdError(null);
     try {
       const [arrivalsRes, departuresRes, inhouseRes] = await Promise.all([
-        axios.get('/frontdesk/arrivals'),
-        axios.get('/frontdesk/departures'),
-        axios.get('/frontdesk/inhouse')
+        axios.get('/frontdesk/arrivals'), axios.get('/frontdesk/departures'), axios.get('/frontdesk/inhouse')
       ]);
-      setArrivals(arrivalsRes.data);
-      setDepartures(departuresRes.data);
-      setInhouse(inhouseRes.data);
-      
+      setArrivals(arrivalsRes.data); setDepartures(departuresRes.data); setInhouse(inhouseRes.data);
       loadAIInsights();
     } catch (error) {
-      const msg = error?.response?.data?.detail || error.message || 'Ön büro verileri yüklenemedi';
-      setFdError(msg);
-      toast.error('Ön büro verileri yüklenemedi');
-    } finally {
-      setFdLoading(false);
-    }
+      const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
+      setFdError(msg); toast.error('Failed to load front desk data');
+    } finally { setFdLoading(false); }
   };
 
   const loadAIInsights = async () => {
@@ -585,97 +371,47 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       ]);
       if (predictionRes) {
         const raw = predictionRes.data || {};
-        // Normalize AI prediction response to a safe, flattened shape
-        const normalizedPrediction = {
-          current_occupancy: typeof raw.current_occupancy === 'number' ? raw.current_occupancy : 0,
-          upcoming_bookings: typeof raw.upcoming_bookings === 'number' ? raw.upcoming_bookings : 0,
-          // prediction can be string or object; keep as-is for FrontdeskTab which handles both
-          prediction: raw.prediction,
-        };
-        setAiPrediction(normalizedPrediction);
+        setAiPrediction({ current_occupancy: typeof raw.current_occupancy === 'number' ? raw.current_occupancy : 0, upcoming_bookings: typeof raw.upcoming_bookings === 'number' ? raw.upcoming_bookings : 0, prediction: raw.prediction });
       }
       if (patternsRes) {
         const rawPatterns = patternsRes.data || {};
-        // Normalize guest patterns response to always have a flat insights array of strings
-        const insights = Array.isArray(rawPatterns.insights)
-          ? rawPatterns.insights.map((item) =>
-              typeof item === 'string' ? item : JSON.stringify(item)
-            )
-          : [];
+        const insights = Array.isArray(rawPatterns.insights) ? rawPatterns.insights.map((item) => typeof item === 'string' ? item : JSON.stringify(item)) : [];
         setAiPatterns({ insights });
       }
-    } catch (error) {
-      // Fail silently - AI features are optional
-      console.error('AI insights not available');
-    }
+    } catch (error) { console.error('AI insights not available'); }
   };
 
   const loadHousekeepingData = async () => {
     setHkLoading(true);
     try {
-      const [tasksRes, boardRes] = await Promise.all([
-        axios.get('/housekeeping/tasks'),
-        axios.get('/housekeeping/room-status')
-      ]);
-      setHousekeepingTasks(tasksRes.data);
-      setRoomStatusBoard(boardRes.data);
-      
+      const [tasksRes, boardRes] = await Promise.all([axios.get('/housekeeping/tasks'), axios.get('/housekeeping/room-status')]);
+      setHousekeepingTasks(tasksRes.data); setRoomStatusBoard(boardRes.data);
       setTimeout(async () => {
         try {
           const [dueOutRes, stayoverRes, arrivalsRes, blocksRes] = await Promise.all([
-            axios.get('/housekeeping/due-out'),
-            axios.get('/housekeeping/stayovers'),
-            axios.get('/housekeeping/arrivals'),
-            axios.get('/pms/room-blocks?status=active')
+            axios.get('/housekeeping/due-out'), axios.get('/housekeeping/stayovers'),
+            axios.get('/housekeeping/arrivals'), axios.get('/pms/room-blocks?status=active')
           ]);
-          setDueOutRooms(dueOutRes.data.due_out_rooms || []);
-          setStayoverRooms(stayoverRes.data.stayover_rooms || []);
-          setArrivalRooms(arrivalsRes.data.arrival_rooms || []);
-          setRoomBlocks(blocksRes.data.blocks || []);
-        } catch (error) {
-          console.error('Failed to load additional housekeeping data:', error);
-        }
+          setDueOutRooms(dueOutRes.data.due_out_rooms || []); setStayoverRooms(stayoverRes.data.stayover_rooms || []);
+          setArrivalRooms(arrivalsRes.data.arrival_rooms || []); setRoomBlocks(blocksRes.data.blocks || []);
+        } catch (error) { console.error('Failed to load additional housekeeping data:', error); }
       }, 500);
-    } catch (error) {
-      toast.error('Kat hizmetleri verileri yüklenemedi');
-    } finally {
-      setHkLoading(false);
-    }
+    } catch (error) { toast.error('Failed to load housekeeping data');
+    } finally { setHkLoading(false); }
   };
-
-  // Cached rate plans and packages to avoid refetching on every change
-  const [ratePlans, setRatePlans] = useState([]);
-  const [packages, setPackages] = useState([]);
 
   const loadRateData = async (channel, companyId, stayDate) => {
     try {
       const params = {};
-      if (channel) params.channel = channel;
-      if (companyId) params.company_id = companyId;
-      if (stayDate) params.stay_date = stayDate;
-      const [rpRes, pkgRes] = await Promise.all([
-        axios.get('/rates/rate-plans', { params }),
-        axios.get('/rates/packages')
-      ]);
-      setRatePlans(rpRes.data || []);
-      setPackages(pkgRes.data || []);
-    } catch (error) {
-      console.error('Failed to load rate plans/packages', error);
-      toast.error('Fiyat planları yüklenemedi');
-    }
+      if (channel) params.channel = channel; if (companyId) params.company_id = companyId; if (stayDate) params.stay_date = stayDate;
+      const [rpRes, pkgRes] = await Promise.all([axios.get('/rates/rate-plans', { params }), axios.get('/rates/packages')]);
+      setRatePlans(rpRes.data || []); setPackages(pkgRes.data || []);
+    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Failed to load rate plans'); }
   };
 
   const loadAuditLogs = async () => {
-    try {
-      // Reduce limit for faster load
-      const response = await axios.get('/audit-logs?limit=20');
-      setAuditLogs(response.data.logs || []);
-    } catch (error) {
-      // Permission denied is okay
-      if (error.response?.status !== 403) {
-        console.error('Failed to load audit logs:', error);
-      }
-    }
+    try { const response = await axios.get('/audit-logs?limit=20'); setAuditLogs(response.data.logs || []);
+    } catch (error) { if (error.response?.status !== 403) console.error('Failed to load audit logs:', error); }
   };
 
   const loadChannelManagerData = async () => {
@@ -685,33 +421,22 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         axios.get('/rms/suggestions?status=pending'),
         axios.get('/channel-manager/exceptions?status=pending')
       ]);
-      setOtaReservations(otaRes.data.reservations || []);
-      setRmsSuggestions(suggestionsRes.data.suggestions || []);
+      setOtaReservations(otaRes.data.reservations || []); setRmsSuggestions(suggestionsRes.data.suggestions || []);
       setExceptions(exceptionsRes.data.exceptions || []);
-    } catch (error) {
-      console.error('Failed to load channel manager data:', error);
-    }
+    } catch (error) { console.error('Failed to load channel manager data:', error); }
   };
 
   const handleImportOTA = async (otaId) => {
     try {
       const response = await axios.post(`/channel-manager/import-reservation/${otaId}`);
-      toast.success(`✅ ${response.data.message} - Room ${response.data.room_number}`);
-      loadChannelManagerData();
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to import reservation');
-    }
+      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      loadChannelManagerData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to import reservation'); }
   };
 
   const handleApplyRMSSuggestion = async (suggestionId) => {
-    try {
-      const response = await axios.post(`/rms/apply-suggestion/${suggestionId}`);
-      toast.success(`✅ ${response.data.message}`);
-      loadChannelManagerData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Öneri uygulanamadı');
-    }
+    try { const response = await axios.post(`/rms/apply-suggestion/${suggestionId}`); toast.success(response.data.message); loadChannelManagerData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to apply suggestion'); }
   };
 
   const handleGenerateRMSSuggestions = async () => {
@@ -719,227 +444,69 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       const today = new Date().toISOString().split('T')[0];
       const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const response = await axios.post(`/rms/generate-suggestions?start_date=${today}&end_date=${nextWeek}`);
-      toast.success(`✅ ${response.data.message}`);
-      loadChannelManagerData();
-    } catch (error) {
-      toast.error('Öneriler oluşturulamadı');
-    }
+      toast.success(response.data.message); loadChannelManagerData();
+    } catch (error) { toast.error('Failed to generate suggestions'); }
   };
-
-  const checkPermission = async (permission) => {
-    try {
-      const response = await axios.post('/permissions/check', null, {
-        params: { permission }
-      });
-      return response.data.has_permission;
-    } catch (error) {
-      return false;
-    }
-  };
-
-  
 
   const handleCheckIn = async (bookingId, forceClean = false) => {
     try {
       const params = new URLSearchParams({ create_folio: 'true' });
       if (forceClean) params.append('force_clean', 'true');
       const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
-      toast.success(`${response.data.message} - Oda ${response.data.room_number}`);
-      loadData();
-      loadFrontDeskData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Check-in başarısız');
-    }
+      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      loadData(); loadFrontDeskData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Check-in failed'); }
   };
 
   const handleCheckOut = async (bookingId) => {
     try {
       const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
-      if (response.data.total_balance > 0.01) {
-        toast.warning(`⚠️ Açık bakiye ile check-out: ${response.data.total_balance.toFixed(2)} ₺`);
-      } else {
-        toast.success(`✅ ${response.data.message} - ${response.data.folios_closed} folio kapatıldı`);
-      }
-      loadData();
-      loadFrontDeskData();
-      loadHousekeepingData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Check-out başarısız');
-    }
+      if (response.data.total_balance > 0.01) toast.warning(`Open balance on check-out: ${response.data.total_balance.toFixed(2)} ₺`);
+      else toast.success(`${response.data.message} - ${response.data.folios_closed} folios closed`);
+      loadData(); loadFrontDeskData(); loadHousekeepingData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Check-out failed'); }
   };
 
   const loadFolio = async (bookingId) => {
-    try {
-      const response = await axios.get(`/frontdesk/folio/${bookingId}`);
-      setFolio(response.data);
-      setSelectedBooking(bookingId);
-      setOpenDialog('folio');
-    } catch (error) {
-      toast.error('Folio yüklenemedi');
-    }
-  };
-
-  const handleAddCharge = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(
-        `/frontdesk/folio/${selectedBooking}/charge`,
-        null,
-        { params: newCharge }
-      );
-      toast.success('Charge added');
-      loadFolio(selectedBooking);
-      setNewCharge({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
-    } catch (error) {
-      toast.error('Masraf eklenemedi');
-    }
-  };
-
-  const handleProcessPayment = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(
-        `/frontdesk/payment/${selectedBooking}`,
-        null,
-        { params: newPayment }
-      );
-      toast.success('Payment processed');
-      loadFolio(selectedBooking);
-      setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
-    } catch (error) {
-      toast.error('Ödeme işlenemedi');
-    }
+    try { const response = await axios.get(`/frontdesk/folio/${bookingId}`); setFolio(response.data); setSelectedBooking(bookingId); setOpenDialog('folio');
+    } catch (error) { toast.error('Failed to load folio'); }
   };
 
   const handleCreateHKTask = async (e) => {
     e.preventDefault();
-    try {
-      await axios.post('/housekeeping/tasks', null, { params: newHKTask });
-      toast.success('Task created');
-      setOpenDialog(null);
-      loadHousekeepingData();
-      setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
-    } catch (error) {
-      toast.error('Görev oluşturulamadı');
-    }
+    try { await axios.post('/housekeeping/tasks', null, { params: newHKTask }); toast.success('Task created'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
+    } catch (error) { toast.error('Failed to create task'); }
   };
 
   const handleUpdateHKTask = async (taskId, status) => {
-    try {
-      await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } });
-      toast.success('Task updated');
-      loadHousekeepingData();
-      loadData();
-    } catch (error) {
-      toast.error('Görev güncellenemedi');
-    }
-  };
-
-  const handleCreateRoom = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('/pms/rooms', {
-        ...newRoom,
-        view: newRoom.view || null,
-        bed_type: newRoom.bed_type || null,
-      });
-      toast.success('Room created');
-      setOpenDialog(null);
-      loadData();
-      setNewRoom({
-        room_number: '',
-        room_type: 'standard',
-        floor: 1,
-        capacity: 2,
-        base_price: 100,
-        amenities: [],
-        view: '',
-        bed_type: ''
-      });
-    } catch (error) {
-      toast.error('Oda oluşturulamadı');
-    }
-  };
-
-  const handleCreateGuest = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('/pms/guests', newGuest);
-      toast.success('Guest created');
-      setOpenDialog(null);
-      loadData();
-      setNewGuest({ name: '', email: '', phone: '', id_number: '', address: '' });
-    } catch (error) {
-      toast.error('Misafir oluşturulamadı');
-    }
+    try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Task updated'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error('Failed to update task'); }
   };
 
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
       const response = await axios.post('/companies', newCompany);
-      toast.success('Company created successfully');
-      setOpenDialog(null);
-      loadData();
-      // Auto-select the newly created company
-      const company = response.data;
-      handleCompanySelect(company.id);
-      setNewCompany({
-        name: '',
-        corporate_code: '',
-        tax_number: '',
-        billing_address: '',
-        contact_person: '',
-        contact_email: '',
-        contact_phone: '',
-        contracted_rate: '',
-        default_rate_type: '',
-        default_market_segment: '',
-        default_cancellation_policy: '',
-        payment_terms: '',
-        status: 'pending'
-      });
-    } catch (error) {
-      toast.error('Şirket oluşturulamadı');
-    }
+      toast.success('Company created successfully'); setOpenDialog(null); loadData();
+      const company = response.data; handleCompanySelect(company.id);
+      setNewCompany({ name: '', corporate_code: '', tax_number: '', billing_address: '', contact_person: '', contact_email: '', contact_phone: '', contracted_rate: '', default_rate_type: '', default_market_segment: '', default_cancellation_policy: '', payment_terms: '', status: 'pending' });
+    } catch (error) { toast.error('Failed to create company'); }
   };
 
   const handleCompanySelect = (companyId) => {
     if (companyId === "none") {
       setSelectedCompany(null);
-      setNewBooking({
-        ...newBooking,
-        company_id: null,
-        contracted_rate: '',
-        rate_type: '',
-        market_segment: '',
-        cancellation_policy: '',
-        billing_address: '',
-        billing_tax_number: '',
-        billing_contact_person: ''
-      });
+      setNewBooking({ ...newBooking, company_id: null, contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '' });
       return;
     }
-    
     const company = companies.find(c => c.id === companyId);
     if (company) {
       setSelectedCompany(company);
-      setNewBooking({
-        ...newBooking,
-        company_id: companyId,
-        contracted_rate: company.contracted_rate || '',
-        rate_type: company.default_rate_type || '',
-        market_segment: company.default_market_segment || '',
-        cancellation_policy: company.default_cancellation_policy || '',
-        billing_address: company.billing_address || '',
-        billing_tax_number: company.tax_number || '',
-        billing_contact_person: company.contact_person || ''
-      });
+      setNewBooking({ ...newBooking, company_id: companyId, contracted_rate: company.contracted_rate || '', rate_type: company.default_rate_type || '', market_segment: company.default_market_segment || '', cancellation_policy: company.default_cancellation_policy || '', billing_address: company.billing_address || '', billing_tax_number: company.tax_number || '', billing_contact_person: company.contact_person || '' });
     }
   };
 
   const handleContractedRateSelect = (contractedRate) => {
-    // Auto-fill rate type and market segment based on contracted rate
     const rateMapping = {
       'corp_std': { rate_type: 'corporate', market_segment: 'corporate', cancellation_policy: 'h48' },
       'corp_pref': { rate_type: 'corporate', market_segment: 'corporate', cancellation_policy: 'flexible' },
@@ -950,351 +517,113 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       'lts': { rate_type: 'long_stay', market_segment: 'long_stay', cancellation_policy: 'flexible' },
       'tou': { rate_type: 'wholesale', market_segment: 'wholesale', cancellation_policy: 'd14' }
     };
-
     const mapping = rateMapping[contractedRate];
-    if (mapping) {
-      setNewBooking({
-        ...newBooking,
-        contracted_rate: contractedRate,
-        rate_type: mapping.rate_type,
-        market_segment: mapping.market_segment,
-        cancellation_policy: mapping.cancellation_policy
-      });
-    }
+    if (mapping) setNewBooking({ ...newBooking, contracted_rate: contractedRate, rate_type: mapping.rate_type, market_segment: mapping.market_segment, cancellation_policy: mapping.cancellation_policy });
   };
 
   const handleChildrenChange = (count) => {
     const childrenCount = parseInt(count) || 0;
-    const currentAges = newBooking.children_ages;
-    
-    // Adjust children_ages array based on new count
-    let newAges = [...currentAges];
-    if (childrenCount > currentAges.length) {
-      // Add default ages for new children
-      newAges = [...currentAges, ...Array(childrenCount - currentAges.length).fill(0)];
-    } else {
-      // Remove excess ages
-      newAges = currentAges.slice(0, childrenCount);
-    }
-    
-    setNewBooking({
-      ...newBooking,
-      children: childrenCount,
-      children_ages: newAges,
-      guests_count: newBooking.adults + childrenCount
-    });
+    let newAges = [...newBooking.children_ages];
+    if (childrenCount > newAges.length) newAges = [...newAges, ...Array(childrenCount - newAges.length).fill(0)];
+    else newAges = newAges.slice(0, childrenCount);
+    setNewBooking({ ...newBooking, children: childrenCount, children_ages: newAges, guests_count: newBooking.adults + childrenCount });
   };
 
   const handleChildAgeChange = (index, age) => {
-    const newAges = [...newBooking.children_ages];
-    newAges[index] = parseInt(age) || 0;
-    setNewBooking({
-      ...newBooking,
-      children_ages: newAges
-    });
+    const newAges = [...newBooking.children_ages]; newAges[index] = parseInt(age) || 0;
+    setNewBooking({ ...newBooking, children_ages: newAges });
   };
 
   const handleCreateBooking = async (e) => {
     e.preventDefault();
-
-    // Rate override kontrolü (ana form)
-    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount) {
-      if (!newBooking.override_reason) {
-        toast.error('Please provide a reason for rate override');
-        return;
-      }
-    }
-
-    if (!newBooking.guest_id) {
-      toast.error('Please select guest');
-      return;
-    }
-
-    if (!newBooking.check_in || !newBooking.check_out) {
-      toast.error('Please select check-in and check-out dates');
-      return;
-    }
-
-    // Load rate data for this booking window
+    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Please provide a reason for rate override'); return; }
+    if (!newBooking.guest_id) { toast.error('Please select guest'); return; }
+    if (!newBooking.check_in || !newBooking.check_out) { toast.error('Please select check-in and check-out dates'); return; }
     await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
-
-    // Multi-room validasyonu
-    if (!multiRoomBooking || multiRoomBooking.length === 0) {
-      toast.error('Please add at least one room');
-      return;
-    }
-
-    const invalidRoom = multiRoomBooking.find(r => !r.room_id);
-    if (invalidRoom) {
-      toast.error('Please select room for each line');
-      return;
-    }
-
+    if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('Please add at least one room'); return; }
+    if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Please select room for each line'); return; }
     try {
       const roomsPayload = multiRoomBooking.map(room => ({
-        room_id: room.room_id,
-        adults: room.adults,
-        children: room.children,
-        children_ages: room.children_ages || [],
-        total_amount: room.total_amount,
-        base_rate: room.base_rate,
-        rate_plan: room.rate_plan || newBooking.rate_type || 'Standard',
-        package_code: room.package_code || null
+        room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
+        total_amount: room.total_amount, base_rate: room.base_rate, rate_plan: room.rate_plan || newBooking.rate_type || 'Standard', package_code: room.package_code || null
       }));
-
-      const payload = {
-        guest_id: newBooking.guest_id,
-        arrival_date: newBooking.check_in,
-        departure_date: newBooking.check_out,
-        rooms: roomsPayload,
-        company_id: newBooking.company_id || null,
-        channel: newBooking.channel || 'direct',
-        special_requests: undefined
-      };
-
-      await axios.post('/pms/bookings/multi-room', payload);
-      toast.success('Booking created successfully');
-      setOpenDialog(null);
-      loadData();
-      setSelectedCompany(null);
-      setNewBooking({
-        guest_id: '',
-        room_id: '',
-        check_in: '',
-        check_out: '',
-        adults: 1,
-        children: 0,
-        children_ages: [],
-        guests_count: 1,
-        total_amount: 0,
-        base_rate: 0,
-        channel: 'direct',
-        company_id: '',
-        contracted_rate: '',
-        rate_type: '',
-        market_segment: '',
-        cancellation_policy: '',
-        billing_address: '',
-        billing_tax_number: '',
-        billing_contact_person: '',
-        override_reason: ''
+      await axios.post('/pms/bookings/multi-room', {
+        guest_id: newBooking.guest_id, arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
+        rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct'
       });
-      setMultiRoomBooking([
-        {
-          room_id: '',
-          adults: 1,
-          children: 0,
-          children_ages: [],
-          total_amount: 0,
-          base_rate: 0,
-          rate_plan: '',
-          package_code: null
-        }
-      ]);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
-    }
+      toast.success('Booking created successfully'); setOpenDialog(null); loadData(); setSelectedCompany(null);
+      setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
+      setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create booking'); }
   };
 
-  // Folio Management Functions
   const loadBookingFolios = async (bookingId) => {
     try {
       const response = await axios.get(`/folio/booking/${bookingId}`);
-      setFolios(response.data);
-      setSelectedBooking(bookingId);
-      setOpenDialog('folio-view');
-      
-      // Auto-select guest folio if exists
+      setFolios(response.data); setSelectedBooking(bookingId); setOpenDialog('folio-view');
       const guestFolio = response.data.find(f => f.folio_type === 'guest');
-      if (guestFolio) {
-        loadFolioDetails(guestFolio.id);
-      }
-    } catch (error) {
-      toast.error('Foliolar yüklenemedi');
-    }
+      if (guestFolio) loadFolioDetails(guestFolio.id);
+    } catch (error) { toast.error('Failed to load folios'); }
   };
 
   const loadFolioDetails = async (folioId) => {
     try {
       const response = await axios.get(`/folio/${folioId}`);
-      setSelectedFolio(response.data.folio);
-      setFolioCharges(response.data.charges || []);
-      setFolioPayments(response.data.payments || []);
-    } catch (error) {
-      toast.error('Folio detayları yüklenemedi');
-    }
-  };
-
-  const handlePostCharge = async (e) => {
-    e.preventDefault();
-    if (!selectedFolio) return;
-    
-    try {
-      await axios.post(`/folio/${selectedFolio.id}/charge`, newFolioCharge);
-      toast.success('Masraf kaydedildi');
-      loadFolioDetails(selectedFolio.id);
-      setNewFolioCharge({
-        charge_category: 'room',
-        description: '',
-        amount: 0,
-        quantity: 1,
-        auto_calculate_tax: false
-      });
-      setOpenDialog('folio-view');
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Masraf kaydedilemedi');
-    }
-  };
-
-  const handlePostPayment = async (e) => {
-    e.preventDefault();
-    if (!selectedFolio) return;
-    
-    try {
-      await axios.post(`/folio/${selectedFolio.id}/payment`, newFolioPayment);
-      toast.success('Ödeme kaydedildi');
-      loadFolioDetails(selectedFolio.id);
-      setNewFolioPayment({
-        amount: 0,
-        method: 'card',
-        payment_type: 'interim',
-        reference: '',
-        notes: ''
-      });
-      setOpenDialog('folio-view');
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Ödeme kaydedilemedi');
-    }
+      setSelectedFolio(response.data.folio); setFolioCharges(response.data.charges || []); setFolioPayments(response.data.payments || []);
+    } catch (error) { toast.error('Failed to load folio details'); }
   };
 
   const updateRoomStatus = async (roomId, newStatus) => {
-    try {
-      await axios.put(`/pms/rooms/${roomId}`, { status: newStatus });
-      toast.success('Room status updated');
-      loadData();
-      loadHousekeepingData();
-    } catch (error) {
-      toast.error('Durum güncellenemedi');
-    }
+    try { await axios.put(`/pms/rooms/${roomId}`, { status: newStatus }); toast.success('Room status updated'); loadData(); loadHousekeepingData();
+    } catch (error) { toast.error('Failed to update status'); }
   };
 
   const quickUpdateRoomStatus = async (roomId, newStatus) => {
-    try {
-      const response = await axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`);
-      toast.success(response.data.message);
-      loadHousekeepingData();
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Durum güncellenemedi');
-    }
+    try { const response = await axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`); toast.success(response.data.message); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to update status'); }
   };
 
   const createRoomBlock = async () => {
-    if (!selectedRoom) {
-      toast.error('Please select a room');
-      return;
-    }
-    if (!newRoomBlock.reason || !newRoomBlock.start_date) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    
+    if (!selectedRoom) { toast.error('Please select a room'); return; }
+    if (!newRoomBlock.reason || !newRoomBlock.start_date) { toast.error('Please fill in all required fields'); return; }
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-create-${Date.now()}-${Math.random()}`;
-      const response = await axios.post('/pms/room-blocks', {
-        room_id: selectedRoom.id,
-        ...newRoomBlock
-      }, {
-        headers: {
-          'Idempotency-Key': idempotencyKey
-        }
-      });
-      
-      if (response.data.warnings && response.data.warnings.length > 0) {
-        response.data.warnings.forEach(warning => {
-          toast.warning(warning.message);
-        });
-      }
-      
-      toast.success(response.data.message);
-      setOpenDialog(null);
-      setSelectedRoom(null);
-      setNewRoomBlock({
-        type: 'out_of_order',
-        reason: '',
-        details: '',
-        start_date: '',
-        end_date: '',
-        allow_sell: false
-      });
-      loadHousekeepingData();
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Oda bloğu oluşturulamadı');
-    }
+      const response = await axios.post('/pms/room-blocks', { room_id: selectedRoom.id, ...newRoomBlock }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      if (response.data.warnings?.length > 0) response.data.warnings.forEach(w => toast.warning(w.message));
+      toast.success(response.data.message); setOpenDialog(null); setSelectedRoom(null);
+      setNewRoomBlock({ type: 'out_of_order', reason: '', details: '', start_date: '', end_date: '', allow_sell: false });
+      loadHousekeepingData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create room block'); }
   };
 
   const cancelRoomBlock = async (blockId) => {
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-release-${Date.now()}-${Math.random()}`;
-      await axios.post(`/pms/room-blocks/${blockId}/cancel`, null, {
-        headers: {
-          'Idempotency-Key': idempotencyKey
-        }
-      });
-      toast.success('Room block cancelled');
-      loadHousekeepingData();
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Blok iptal edilemedi');
-    }
+      await axios.post(`/pms/room-blocks/${blockId}/cancel`, null, { headers: { 'Idempotency-Key': idempotencyKey } });
+      toast.success('Room block cancelled'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to cancel block'); }
   };
 
-  // Phase H - Load Guest 360° Profile
   const loadGuest360 = async (guestId) => {
     setLoadingGuest360(true);
-    try {
-      const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 });
-      setGuest360Data(response.data);
-      setOpenDialog('guest360');
+    try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
     } catch (error) {
-      console.error('Guest 360 error:', error);
-      if (error.code === 'ECONNABORTED') {
-        toast.error('Request timeout - Guest profile has too much data. Please try again.');
-      } else {
-        toast.error(error.response?.data?.detail || 'Misafir profili yüklenemedi. Lütfen tekrar deneyin.');
-      }
-    } finally {
-      setLoadingGuest360(false);
-    }
+      if (error.code === 'ECONNABORTED') toast.error('Request timeout - Guest profile has too much data.');
+      else toast.error(error.response?.data?.detail || 'Failed to load guest profile');
+    } finally { setLoadingGuest360(false); }
   };
 
   const addGuestTag = async () => {
     if (!guestTag || !selectedGuest360) return;
-    try {
-      await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`);
-      toast.success('Tag added');
-      setGuestTag('');
-      loadGuest360(selectedGuest360);
-    } catch (error) {
-      toast.error('Etiket eklenemedi');
-    }
+    try { await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`); toast.success('Tag added'); setGuestTag(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Failed to add tag'); }
   };
 
   const addGuestNote = async () => {
     if (!guestNote || !selectedGuest360) return;
-    try {
-      await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`);
-      toast.success('Note added');
-      setGuestNote('');
-      loadGuest360(selectedGuest360);
-    } catch (error) {
-      toast.error('Not eklenemedi');
-    }
+    try { await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`); toast.success('Note added'); setGuestNote(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Failed to add note'); }
   };
-
-
-  
 
   if (loading) {
     return (
@@ -1320,1178 +649,151 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
           <div className="w-96">
             <GlobalSearch onSelectResult={(result) => {
-              const typeTabMap = {
-                guest: 'frontdesk',
-                booking: 'frontdesk',
-                room: 'rooms',
-                company: 'frontdesk',
-                housekeeping: 'housekeeping',
-              };
+              const typeTabMap = { guest: 'frontdesk', booking: 'frontdesk', room: 'rooms', company: 'frontdesk', housekeeping: 'housekeeping' };
               const tab = typeTabMap[result.type] || 'frontdesk';
-              setActiveTab(tab);
-              window.location.hash = tab;
-              toast.info(`${result.data.name || result.data.room_number || result.data.id} - ${tab} sekmesine yonlendirildi`);
+              setActiveTab(tab); window.location.hash = tab;
+              toast.info(`${result.data.name || result.data.room_number || result.data.id} - redirected to ${tab}`);
             }} />
           </div>
         </div>
 
-
-        {/* Quick Actions Toolbar */}
         <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-purple-50">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-gray-700">Hızlı Aksiyonlar:</div>
+                <div className="text-sm font-semibold text-gray-700">{t('pms.quickActions', 'Quick Actions')}:</div>
               </div>
               <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => {
-                    setOpenDialog('booking');
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Yeni Rezervasyon
+                <Button size="sm" variant="outline" onClick={() => setOpenDialog('booking')}>
+                  <Plus className="w-4 h-4 mr-2" />{t('pms.newBooking', 'New Booking')}
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => {
-                    setOpenDialog('guest');
-                  }}
-                >
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Yeni Misafir
+                <Button size="sm" variant="outline" onClick={() => setOpenDialog('guest')}>
+                  <UserPlus className="w-4 h-4 mr-2" />{t('pms.newGuest', 'New Guest')}
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      const response = await axios.get('/reports/daily-flash');
-                      if (response.data) {
-                        toast.success('Flash rapor oluşturuldu!');
-                        console.log('Flash report:', response.data);
-                        setActiveTab('reports');
-                      } else {
-                        toast.info('Flash rapor verisi bulunamadı');
-                      }
-                    } catch (error) {
-                      toast.error('Rapor oluşturulamadı');
-                    }
-                  }}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Flash Rapor
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash report generated!'); setActiveTab('reports'); } else { toast.info('No flash report data available'); }
+                  } catch (error) { toast.error('Failed to generate report'); }
+                }}>
+                  <FileText className="w-4 h-4 mr-2" />{t('pms.flashReport', 'Flash Report')}
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => loadData()}
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Refresh
+                <Button size="sm" variant="outline" onClick={() => loadData()}>
+                  <RefreshCw className="w-4 h-4 mr-2" />Refresh
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-
-        <Tabs
-          value={activeTab}
-          className="w-full"
-          onValueChange={(v) => {
-            // Sekme değeri hemen değişsin (UI anında tepki versin)
-            setActiveTab(v);
-            window.location.hash = v;
-          }}
-        >
+        <Tabs value={activeTab} className="w-full" onValueChange={(v) => { setActiveTab(v); window.location.hash = v; }}>
           <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1">
             {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
-              return (
-                <TabsTrigger key={tab.key} value={tab.key} data-testid={tab.testId}>
-                  {Icon ? <Icon className="w-4 h-4 mr-2" /> : null}
-                  {label}
-                </TabsTrigger>
-              );
+              return (<TabsTrigger key={tab.key} value={tab.key} data-testid={tab.testId}>{Icon ? <Icon className="w-4 h-4 mr-2" /> : null}{label}</TabsTrigger>);
             })}
           </TabsList>
 
-          {/* FRONT DESK TAB */}
-          <FrontdeskTab
-            t={t}
-            arrivals={arrivals}
-            departures={departures}
-            inhouse={inhouse}
-            bookings={bookings}
-            aiPrediction={aiPrediction}
-            aiPatterns={aiPatterns}
-            handleCheckIn={handleCheckIn}
-            handleCheckOut={handleCheckOut}
-            loadFolio={loadFolio}
-            loadFrontDeskData={loadFrontDeskData}
-            loading={fdLoading}
-            error={fdError}
-          />
-
-          {/* HOUSEKEEPING TAB */}
-          <HousekeepingTab
-            roomBlocks={roomBlocks}
-            roomStatusBoard={roomStatusBoard}
-            dueOutRooms={dueOutRooms}
-            stayoverRooms={stayoverRooms}
-            arrivalRooms={arrivalRooms}
-            housekeepingTasks={housekeepingTasks}
-            quickUpdateRoomStatus={quickUpdateRoomStatus}
-            setOpenDialog={setOpenDialog}
-            setSelectedRoom={setSelectedRoom}
-            setNewBooking={setNewBooking}
-            setMaintenanceForm={setMaintenanceForm}
-            setMaintenanceDialogOpen={setMaintenanceDialogOpen}
-            handleUpdateHKTask={handleUpdateHKTask}
-            toast={toast}
-            loading={hkLoading}
-          />
-
-          {/* ROOMS TAB */}
+          <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loading={fdLoading} error={fdError} />
+          <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} toast={toast} loading={hkLoading} />
           <TabsContent value="rooms" className="space-y-4">
-            <RoomsTab
-              rooms={rooms}
-              bookings={bookings}
-              guests={guests}
-              handleCheckIn={handleCheckIn}
-              handleCheckOut={handleCheckOut}
-              onPayment={(bookingId) => {
-                setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null);
-                setOpenDialog('bookingDetail');
-              }}
-              onGuestClick={(guestId) => {
-                const guest = guests.find(g => g.id === guestId);
-                if (guest) {
-                  setSelectedGuest(guest);
-                  setOpenDialog('guestInfo');
-                }
-              }}
-              onBookingDoubleClick={(booking) => {
-                setReservationDetailId(booking.id);
-              }}
-              onDataRefresh={loadData}
-            />
-            {selectedRoom && (
-              <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />
-            )}
+            <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null); setOpenDialog('bookingDetail'); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
+            {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
           </TabsContent>
-
-          {/* GUESTS TAB */}
-          <GuestsTab
-            guests={guests}
-            setOpenDialog={setOpenDialog}
-            setSelectedGuest360={setSelectedGuest360}
-            loadGuest360={loadGuest360}
-            setNewBooking={setNewBooking}
-            t={t}
-          />
-
-          {/* BOOKINGS TAB */}
-          <BookingsTab
-            bookingStats={bookingStats}
-            bookings={bookings}
-            groupedBookings={groupedBookings}
-            guests={guests}
-            rooms={rooms}
-            companies={companies}
-            handleCheckIn={handleCheckIn}
-            handleCheckOut={handleCheckOut}
-            loadBookingFolios={loadBookingFolios}
-            loadGuest360={loadGuest360}
-            setSelectedGuest360={setSelectedGuest360}
-            setOpenDialog={setOpenDialog}
-            setSelectedBooking={setSelectedBooking}
-            setSelectedBookingDetail={setSelectedBookingDetail}
-            toast={toast}
-            isLite={isLite}
-            roomsCount={roomsCount}
-            activeTab={activeTab}
-          />
-
-          {/* CASHIER TAB */}
-          <TabsContent value="cashier" className="space-y-4">
-            <CashierTab user={user} />
-          </TabsContent>
-
-          {/* UPSELL TAB */}
-          <TabsContent value="upsell" className="space-y-4">
-            <UpsellTab bookings={bookings} />
-          </TabsContent>
-
-          {/* MESSAGING TAB */}
-          <TabsContent value="messaging" className="space-y-4">
-            <MessagingTab guests={guests} />
-          </TabsContent>
-
-          {/* REPORTS TAB */}
-          <TabsContent value="reports" className="space-y-4">
-            <ReportsTab />
-          </TabsContent>
-
-          {/* FLASH REPORT TAB */}
-          <TabsContent value="flash" className="space-y-4">
-            <FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} />
-          </TabsContent>
-
-          {/* TASKS TAB */}
-          <TabsContent value="tasks" className="space-y-4">
-            <StaffTaskManager />
-          </TabsContent>
-
-          {/* FEEDBACK TAB */}
-          <TabsContent value="feedback" className="space-y-4">
-            <FeedbackSystem />
-          </TabsContent>
-
-          {/* ALLOTMENT TAB */}
-          <TabsContent value="allotment" className="space-y-4">
-            <AllotmentGrid />
-          </TabsContent>
-
-          {/* POS TAB */}
-          <TabsContent value="pos" className="space-y-4">
-            <POSTab />
-          </TabsContent>
-
-          {/* LAUNDRY TAB */}
-          <TabsContent value="laundry" className="space-y-4">
-            <LaundryTab />
-          </TabsContent>
-
-          {/* MEETING ROOMS TAB */}
-          <TabsContent value="meeting" className="space-y-4">
-            <MeetingRoomTab />
-          </TabsContent>
-
-          {/* ROOM TIMELINE TAB */}
-          <TabsContent value="timeline" className="space-y-4">
-            <RoomTimelineView
-              rooms={rooms}
-              bookings={bookings}
-              onBookingClick={(booking) => setReservationDetailId(booking.id)}
-            />
-          </TabsContent>
-
-          {/* CONCIERGE TAB */}
-          <TabsContent value="concierge" className="space-y-4">
-            <ConciergeDesk />
-          </TabsContent>
-
-
-          {/* REVENUE CONTROLS TAB */}
-          <TabsContent value="revenue" className="space-y-4">
-            <RevenueControls rooms={rooms} />
-          </TabsContent>
-
-          {/* MANAGER DAILY REPORT TAB */}
-          <TabsContent value="manager_report" className="space-y-4">
-            <ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} />
-          </TabsContent>
-
-          {/* KBS / GIKS TAB */}
-          <TabsContent value="kbs" className="space-y-4">
-            <KBSNotification bookings={bookings} guests={guests} />
-          </TabsContent>
-
-          {/* KVKK TAB */}
-          <TabsContent value="kvkk" className="space-y-4">
-            <KVKKManager />
-          </TabsContent>
+          <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
+          <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
+          <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>
+          <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>
+          <TabsContent value="messaging" className="space-y-4"><MessagingTab guests={guests} /></TabsContent>
+          <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>
+          <TabsContent value="flash" className="space-y-4"><FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
+          <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>
+          <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>
+          <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>
+          <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>
+          <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>
+          <TabsContent value="meeting" className="space-y-4"><MeetingRoomTab /></TabsContent>
+          <TabsContent value="timeline" className="space-y-4"><RoomTimelineView rooms={rooms} bookings={bookings} onBookingClick={(booking) => setReservationDetailId(booking.id)} /></TabsContent>
+          <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>
+          <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>
+          <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
+          <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>
+          <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>
         </Tabs>
 
-        {/* Dialogs and Modals */}
-        <Dialog open={openDialog === 'folio'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Misafir Folyosu</DialogTitle>
-            </DialogHeader>
-            {folio && (
-              <div className="space-y-6">
-                {/* Charges */}
-                <div>
-                  <h3 className="font-semibold mb-2">Masraflar</h3>
-                  <div className="space-y-2">
-                    {folio.charges.map((charge, idx) => (
-                      <div key={idx} className="flex justify-between text-sm border-b pb-2">
-                        <div>
-                          <div className="font-medium">{charge.description}</div>
-                          <div className="text-xs text-gray-500 capitalize">{charge.charge_type}</div>
-                        </div>
-                        <div className="text-right">
-                          <div>{charge.total.toFixed(2)} ₺</div>
-                          <div className="text-xs text-gray-500">{charge.quantity} × {charge.amount} ₺</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Add Charge Form */}
-                  <form onSubmit={handleAddCharge} className="mt-4 p-4 bg-gray-50 rounded">
-                    <div className="grid grid-cols-2 gap-4">
-                      <Select value={newCharge.charge_type} onValueChange={(v) => setNewCharge({...newCharge, charge_type: v})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="food">Yiyecek & İçecek</SelectItem>
-                          <SelectItem value="laundry">Çamaşırhane</SelectItem>
-                          <SelectItem value="minibar">Minibar</SelectItem>
-                          <SelectItem value="spa">Spa</SelectItem>
-                          <SelectItem value="phone">Telefon</SelectItem>
-                          <SelectItem value="other">Diğer</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder={t("common.description")}
-                        value={newCharge.description}
-                        onChange={(e) => setNewCharge({...newCharge, description: e.target.value})}
-                        required
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Tutar"
-                        value={newCharge.amount}
-                        onChange={(e) => setNewCharge({...newCharge, amount: parseFloat(e.target.value)})}
-                        required
-                      />
-                      <Button type="submit">Masraf Ekle</Button>
-                    </div>
-                  </form>
-                </div>
+        <FolioDialog open={openDialog === 'folio'} onClose={() => setOpenDialog(null)} folio={folio} bookingId={selectedBooking} onFolioUpdated={() => loadFolio(selectedBooking)} />
+        <RoomCreateDialog open={openDialog === 'room'} onClose={() => setOpenDialog(null)} onRoomCreated={loadData} />
+        <RoomImageUploadDialog open={openDialog === 'room-images'} onClose={() => setOpenDialog(null)} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} onDataRefresh={loadData} />
+        <BulkDeleteRoomsDialog open={openDialog === 'bulk-delete-rooms'} onClose={() => setOpenDialog(null)} selectedRooms={selectedRooms} rooms={rooms} onDeleted={() => { setSelectedRooms([]); setBulkRoomMode(false); loadData(); }} />
+        <BulkRoomsDialog open={openDialog === 'bulk-rooms'} onClose={() => setOpenDialog(null)} onRoomsCreated={loadData} />
+        <GuestCreateDialog open={openDialog === 'guest'} onClose={() => setOpenDialog(null)} onGuestCreated={loadData} />
+        <BookingDialog open={openDialog === 'booking'} onClose={() => setOpenDialog(null)} guests={guests} rooms={rooms} companies={companies} ratePlans={ratePlans} packages={packages} newBooking={newBooking} setNewBooking={setNewBooking} multiRoomBooking={multiRoomBooking} handleCreateBooking={handleCreateBooking} handleCompanySelect={handleCompanySelect} handleContractedRateSelect={handleContractedRateSelect} handleChildrenChange={handleChildrenChange} handleChildAgeChange={handleChildAgeChange} addRoomToMultiBooking={addRoomToMultiBooking} removeRoomFromMultiBooking={removeRoomFromMultiBooking} updateMultiRoomField={updateMultiRoomField} updateMultiRoomChildrenAges={updateMultiRoomChildrenAges} updateMultiRoomChildAge={updateMultiRoomChildAge} isLite={isLite} setOpenDialog={setOpenDialog} />
+        <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />
+        <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} />
+        <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />
+        <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} selectedRoom={selectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
+        <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
+        <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} criteria={findRoomCriteria} setCriteria={setFindRoomCriteria} />
+        <PaymentDialog open={openDialog === 'payment'} onClose={() => setOpenDialog(null)} paymentForm={paymentForm} setPaymentForm={setPaymentForm} bookingId={selectedBooking} onPaymentSuccess={() => { loadData(); loadFrontDeskData(); }} />
 
-                {/* Payments */}
-                <div>
-                  <h3 className="font-semibold mb-2">Ödemeler</h3>
-                  <div className="space-y-2">
-                    {folio.payments.map((payment, idx) => (
-                      <div key={idx} className="flex justify-between text-sm border-b pb-2">
-                        <div>
-                          <div className="font-medium capitalize">{payment.method}</div>
-                          {payment.reference && <div className="text-xs text-gray-500">Ref: {payment.reference}</div>}
-                        </div>
-                        <div className="text-green-600 font-medium">{payment.amount.toFixed(2)} ₺</div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Add Payment Form */}
-                  <form onSubmit={handleProcessPayment} className="mt-4 p-4 bg-gray-50 rounded">
-                    <div className="grid grid-cols-2 gap-4">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Tutar"
-                        value={newPayment.amount}
-                        onChange={(e) => setNewPayment({...newPayment, amount: parseFloat(e.target.value)})}
-                        required
-                      />
-                      <Select value={newPayment.method} onValueChange={(v) => setNewPayment({...newPayment, method: v})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="cash">Nakit</SelectItem>
-                          <SelectItem value="card">Kredi Kartı</SelectItem>
-                          <SelectItem value="bank_transfer">Havale/EFT</SelectItem>
-                          <SelectItem value="online">Online</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder="Referans (opsiyonel)"
-                        value={newPayment.reference}
-                        onChange={(e) => setNewPayment({...newPayment, reference: e.target.value})}
-                      />
-                      <Button type="submit">Ödeme İşle</Button>
-                    </div>
-                  </form>
-                </div>
+        {selectedBookingDetail && (
+          <BookingDetailDialog
+            open={openDialog === 'bookingDetail'}
+            onClose={() => { setOpenDialog(null); setSelectedBookingDetail(null); }}
+            booking={selectedBookingDetail}
+            guests={guests}
+            rooms={rooms}
+            onCheckIn={handleCheckIn}
+            onCheckOut={handleCheckOut}
+          />
+        )}
 
-                {/* Summary */}
-                <div className="border-t pt-4">
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Toplam Masraf:</span>
-                    <span>{folio.total_charges.toFixed(2)} ₺</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold text-green-600">
-                    <span>Toplam Ödeme:</span>
-                    <span>{folio.total_paid.toFixed(2)} ₺</span>
-                  </div>
-                  <div className={`flex justify-between text-2xl font-bold ${folio.balance > 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                    <span>Bakiye:</span>
-                    <span>{folio.balance.toFixed(2)} ₺</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        {selectedGuest && (
+          <GuestInfoDialog
+            open={openDialog === 'guestInfo'}
+            onClose={() => { setOpenDialog(null); setSelectedGuest(null); }}
+            guest={selectedGuest}
+          />
+        )}
 
-        {/* Room Dialog */}
-        <Dialog open={openDialog === 'room'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Yeni Oda Oluştur</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateRoom} className="space-y-4">
-              <div>
-                <Label>Oda Numarası</Label>
-                <Input value={newRoom.room_number} onChange={(e) => setNewRoom({...newRoom, room_number: e.target.value})} required />
-              </div>
-              <div>
-                <Label>Oda Tipi</Label>
-                <Select value={newRoom.room_type} onValueChange={(v) => setNewRoom({...newRoom, room_type: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="standard">Standart</SelectItem>
-                    <SelectItem value="deluxe">Deluxe</SelectItem>
-                    <SelectItem value="suite">Süit</SelectItem>
-                    <SelectItem value="presidential">Presidential</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Kat</Label>
-                  <Input type="number" value={newRoom.floor} onChange={(e) => setNewRoom({...newRoom, floor: parseInt(e.target.value)})} required />
-                </div>
-                <div>
-                  <Label>Kapasite</Label>
-                  <Input type="number" value={newRoom.capacity} onChange={(e) => setNewRoom({...newRoom, capacity: parseInt(e.target.value)})} required />
-                </div>
-              </div>
-              <div>
-                <Label>Taban Fiyat (₺)</Label>
-                <Input type="number" step="0.01" value={newRoom.base_price} onChange={(e) => setNewRoom({...newRoom, base_price: parseFloat(e.target.value)})} required />
-              </div>
-              <Button type="submit" className="w-full">Oda Oluştur</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {guest360Data && (
+          <Guest360Dialog
+            open={openDialog === 'guest360'}
+            onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
+            guest360Data={guest360Data}
+            guestTag={guestTag}
+            setGuestTag={setGuestTag}
+            guestNote={guestNote}
+            setGuestNote={setGuestNote}
+            addGuestTag={addGuestTag}
+            addGuestNote={addGuestNote}
+          />
+        )}
 
-        {/* Room Images Dialog */}
-        <Dialog open={openDialog === 'room-images'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Oda Fotoğrafları {selectedRoom ? `- ${selectedRoom.room_number}` : ''}</DialogTitle>
-              <DialogDescription>
-                Bu özellik preview ortamında sunucu diskine yükler. Canlıda dosya kalıcılığı için daha sonra S3/Cloudinary önerilir.
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedRoom ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {(selectedRoom.images || []).length === 0 ? (
-                    <div className="col-span-full text-sm text-gray-500">Henüz fotoğraf yüklenmemiş.</div>
-                  ) : (
-                    (selectedRoom.images || []).map((src) => (
-                      <a key={src} href={src} target="_blank" rel="noreferrer" className="block">
-                        <div className="h-32 rounded-lg overflow-hidden border bg-gray-50">
-                          <img src={src} alt="room" className="w-full h-full object-cover" />
-                        </div>
-                      </a>
-                    ))
-                  )}
-                </div>
-
-                <div className="border-t pt-4">
-                  <Label>Yeni Fotoğraf(lar) Yükle</Label>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={async (e) => {
-                      try {
-                        const files = Array.from(e.target.files || []);
-                        if (files.length === 0) return;
-
-                        const formData = new FormData();
-                        files.forEach((f) => formData.append('files', f));
-
-                        const res = await axios.post(`/pms/rooms/${selectedRoom.id}/images`, formData, {
-                          headers: { 'Content-Type': 'multipart/form-data' },
-                        });
-
-                        toast.success(`${res.data.uploaded} fotoğraf yüklendi`);
-
-                        // Refresh rooms, then refresh selectedRoom reference
-                        await loadData();
-                        // After loadData, close and re-open dialog to refresh selectedRoom from updated rooms list.
-                        // (Rooms state updates async; we keep the dialog open and optimistically append returned images.)
-                        setSelectedRoom(prev => prev ? ({ ...prev, images: res.data.images || prev.images }) : prev);
-                      } catch (err) {
-                        toast.error(err?.response?.data?.detail || 'Fotoğraf yüklenemedi');
-                      } finally {
-                        // clear input value
-                        e.target.value = '';
-                      }
-                    }}
-                  />
-                  <p className="text-[11px] text-gray-500 mt-1">JPEG/PNG/WEBP önerilir. Max 10MB/dosya.</p>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button variant="outline" onClick={() => setOpenDialog(null)}>{t("common.close")}</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500">Oda seçilmedi.</div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-
-        {/* Bulk Delete Rooms Dialog */}
-        <Dialog open={openDialog === 'bulk-delete-rooms'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Toplu Oda Silme</DialogTitle>
-              <DialogDescription>
-                Bu işlem geri alınamaz gibi düşünün (soft delete yapılır). Silmeyi onaylamak için aşağıya <span className="font-mono">DELETE</span> yazmalısınız.
-                Aktif rezervasyonu olan odalar otomatik olarak bloklanır.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3">
-              <div className="rounded-md border bg-gray-50 p-3 text-sm">
-                <div className="font-semibold">Silinecek oda sayısı: {selectedRooms.length}</div>
-                <div className="text-xs text-gray-600 mt-1">
-                  Seçili odalardan ilk 5&apos;i: {rooms.filter(r => selectedRooms.includes(r.id)).slice(0,5).map(r => r.room_number).join(', ') || '-'}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label>Onay</Label>
-                <Input
-                  value={bulkDeleteConfirm}
-                  onChange={(e) => setBulkDeleteConfirm(e.target.value)}
-                  placeholder="DELETE"
-                />
-                <p className="text-[11px] text-gray-500">Yanlışlıkla silmeyi önlemek için zorunludur.</p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setOpenDialog(null)}>Vazgeç</Button>
-                <Button
-                  variant="destructive"
-                  disabled={selectedRooms.length === 0 || bulkDeleteConfirm.trim().toUpperCase() !== 'DELETE'}
-                  onClick={async () => {
-                    try {
-                      const res = await axios.post('/pms/rooms/bulk/delete', {
-                        ids: selectedRooms,
-                        confirm_text: bulkDeleteConfirm,
-                      });
-
-                      const msgParts = [`Silinen: ${res.data.deleted}`];
-                      if (res.data.blocked > 0) msgParts.push(`Bloklanan: ${res.data.blocked}`);
-                      toast.success(msgParts.join(' • '));
-
-                      if (res.data.blocked > 0) {
-                        toast.info(`Bloklanan odalar: ${(res.data.blocked_rooms || []).slice(0, 10).join(', ')}`);
-                      }
-
-                      setSelectedRooms([]);
-                      setBulkRoomMode(false);
-                      setOpenDialog(null);
-                      await loadData();
-                    } catch (err) {
-                      toast.error(err?.response?.data?.detail || 'Toplu silme başarısız');
-                    }
-                  }}
-                >
-                  Sil
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-
-        <BulkRoomsDialog
-          open={openDialog === 'bulk-rooms'}
-          onClose={() => setOpenDialog(null)}
-          onRoomsCreated={loadData}
+        <MaintenanceDialog
+          open={maintenanceDialogOpen}
+          onClose={() => setMaintenanceDialogOpen(false)}
+          form={maintenanceForm}
+          setForm={setMaintenanceForm}
+          onSuccess={() => { loadHousekeepingData(); loadData(); }}
         />
 
-
-        {/* Guest Dialog */}
-        <Dialog open={openDialog === 'guest'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Yeni Misafir Kayıt</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateGuest} className="space-y-4">
-              <div>
-                <Label>Ad Soyad</Label>
-                <Input value={newGuest.name} onChange={(e) => setNewGuest({...newGuest, name: e.target.value})} required />
-              </div>
-              <div>
-                <Label>E-posta</Label>
-                <Input type="email" value={newGuest.email} onChange={(e) => setNewGuest({...newGuest, email: e.target.value})} required />
-              </div>
-              <div>
-                <Label>Telefon</Label>
-                <Input value={newGuest.phone} onChange={(e) => setNewGuest({...newGuest, phone: e.target.value})} required />
-              </div>
-              <div>
-                <Label>TC / Pasaport No</Label>
-                <Input value={newGuest.id_number} onChange={(e) => setNewGuest({...newGuest, id_number: e.target.value})} required />
-              </div>
-              <div>
-                <Label>Adres</Label>
-                <Input value={newGuest.address} onChange={(e) => setNewGuest({...newGuest, address: e.target.value})} />
-              </div>
-              <Button type="submit" className="w-full">Misafir Kaydet</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Booking Dialog - Extracted Component */}
-        <BookingDialog
-          open={openDialog === 'booking'}
-          onClose={() => setOpenDialog(null)}
-          guests={guests}
-          rooms={rooms}
-          companies={companies}
-          ratePlans={ratePlans}
-          packages={packages}
-          newBooking={newBooking}
-          setNewBooking={setNewBooking}
-          multiRoomBooking={multiRoomBooking}
-          handleCreateBooking={handleCreateBooking}
-          handleCompanySelect={handleCompanySelect}
-          handleContractedRateSelect={handleContractedRateSelect}
-          handleChildrenChange={handleChildrenChange}
-          handleChildAgeChange={handleChildAgeChange}
-          addRoomToMultiBooking={addRoomToMultiBooking}
-          removeRoomFromMultiBooking={removeRoomFromMultiBooking}
-          updateMultiRoomField={updateMultiRoomField}
-          updateMultiRoomChildrenAges={updateMultiRoomChildrenAges}
-          updateMultiRoomChildAge={updateMultiRoomChildAge}
-          isLite={isLite}
-          setOpenDialog={setOpenDialog}
-        />
-
-        {/* Quick Company Create Dialog */}
-        <CompanyDialog
-          open={openDialog === 'company'}
-          onClose={() => setOpenDialog(null)}
-          newCompany={newCompany}
-          setNewCompany={setNewCompany}
-          onSubmit={handleCreateCompany}
-        />
-
-        {/* Folio View Dialog */}
-        <Dialog open={openDialog === 'folio-view'} onOpenChange={(open) => !open && setOpenDialog(null)}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Folio Yönetimi</DialogTitle>
-              <DialogDescription>
-                {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type.toUpperCase()}`}
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedFolio && (
-              <div className="space-y-6">
-                {/* Header Summary */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <div className="text-sm text-gray-600">Misafir</div>
-                      <div className="font-semibold">
-                        {guests.find(g => g.id === selectedFolio.guest_id)?.name || 'Bilinmiyor'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Rezervasyon</div>
-                      <div className="font-semibold">
-                        {(() => {
-                          const booking = bookings.find(b => b.id === selectedFolio.booking_id);
-                          if (!booking) return 'Bilinmiyor';
-                          return `${new Date(booking.check_in).toLocaleDateString()} - ${new Date(booking.check_out).toLocaleDateString()}`;
-                        })()}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-600">Güncel Bakiye</div>
-                      <div className={`text-2xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                        {selectedFolio.balance?.toFixed(2) || '0.00'} ₺
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {selectedFolio.balance > 0 ? 'Misafir borçlu' : selectedFolio.balance < 0 ? 'Otel borçlu' : 'Dengeli'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <Button onClick={() => setOpenDialog('post-charge')} variant="default">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Masraf Ekle
-                  </Button>
-                  <Button onClick={() => setOpenDialog('post-payment')} variant="default">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Ödeme Ekle
-                  </Button>
-                </div>
-
-                {/* Charges and Payments Lists */}
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Charges List */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center">
-                      <ClipboardList className="w-5 h-5 mr-2" />
-                      Masraflar
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {folioCharges.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8">Henüz masraf kaydedilmedi</div>
-                      ) : 
-                        folioCharges.map((charge) => {
-                          // Check if this is a POS charge with line items
-                          const isPOSCharge = charge.charge_category === 'restaurant' || charge.charge_category === 'bar' || charge.charge_category === 'room_service';
-                          const hasLineItems = charge.line_items && charge.line_items.length > 0;
-                          const isExpanded = expandedChargeItems[charge.id];
-                          
-                          return (
-                          <Card key={charge.id} className={charge.voided ? 'opacity-50 bg-gray-50' : ''}>
-                            <CardContent className="p-4">
-                              <div 
-                                className={`flex justify-between items-start ${isPOSCharge && hasLineItems ? 'cursor-pointer hover:bg-gray-50' : ''}`}
-                                onClick={() => {
-                                  if (isPOSCharge && hasLineItems) {
-                                    setExpandedChargeItems(prev => ({
-                                      ...prev,
-                                      [charge.id]: !prev[charge.id]
-                                    }));
-                                  }
-                                }}
-                              >
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <div className="font-semibold">{charge.description}</div>
-                                    {isPOSCharge && hasLineItems && (
-                                      <button className="text-blue-600 text-xs">
-                                        {isExpanded ? '▼ Kalemleri Gizle' : '▶ Kalemleri Göster'}
-                                      </button>
-                                    )}
-                                  </div>
-                                  <div className="text-sm text-gray-600">
-                                    {charge.charge_category.replace('_', ' ').toUpperCase()}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(charge.date).toLocaleDateString('tr-TR')} • Adet: {charge.quantity}
-                                  </div>
-                                  {charge.voided && (
-                                    <div className="text-xs text-red-600 mt-1">
-                                      İPTAL: {charge.void_reason}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <div className="font-bold">{charge.total.toFixed(2)} ₺</div>
-                                  {charge.tax_amount > 0 && (
-                                    <div className="text-xs text-gray-500">
-                                      +{charge.tax_amount.toFixed(2)} ₺ vergi
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* POS Line Items Breakdown - NEW */}
-                              {isPOSCharge && hasLineItems && isExpanded && (
-                                <div className="mt-3 pt-3 border-t bg-blue-50/50 rounded p-3">
-                                  <div className="text-xs font-semibold text-gray-700 mb-2">POS Fiş Detayı:</div>
-                                  <div className="space-y-1.5">
-                                    {charge.line_items.map((item, idx) => (
-                                      <div key={idx} className="flex justify-between items-center text-sm">
-                                        <div className="flex-1">
-                                          <span className="font-medium text-gray-700">
-                                            {item.quantity} x {item.item_name}
-                                          </span>
-                                          {item.modifiers && item.modifiers.length > 0 && (
-                                            <div className="text-xs text-gray-500 ml-4">
-                                              ({item.modifiers.join(', ')})
-                                            </div>
-                                          )}
-                                        </div>
-                                        <span className="font-semibold text-gray-800">
-                                          {(item.unit_price * item.quantity).toFixed(2)} ₺
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="mt-2 pt-2 border-t flex justify-between text-sm">
-                                    <span className="font-semibold">Ara Toplam:</span>
-                                    <span className="font-bold">{charge.total.toFixed(2)} ₺</span>
-                                  </div>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        );
-                        })
-                      }
-                    </div>
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="flex justify-between font-semibold">
-                        <span>Toplam Masraf:</span>
-                        <span>{folioCharges.filter(c => !c.voided).reduce((sum, c) => sum + c.total, 0).toFixed(2)} ₺</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Payments List */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center">
-                      <DollarSign className="w-5 h-5 mr-2" />
-                      Ödemeler
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {folioPayments.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8">Henüz ödeme kaydedilmedi</div>
-                      ) : (
-                        folioPayments.map((payment) => (
-                          <Card key={payment.id} className="bg-green-50">
-                            <CardContent className="p-4">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                  <div className="font-semibold">{payment.method.toUpperCase()}</div>
-                                  <div className="text-sm text-gray-600">
-                                    {payment.payment_type.replace('_', ' ').toUpperCase()}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(payment.processed_at).toLocaleDateString()}
-                                  </div>
-                                  {payment.reference && (
-                                    <div className="text-xs text-gray-500">
-                                      Ref: {payment.reference}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <div className="font-bold text-green-600">{payment.amount.toFixed(2)} ₺</div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))
-                      )}
-                    </div>
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="flex justify-between font-semibold">
-                        <span>Toplam Ödeme:</span>
-                        <span className="text-green-600">{folioPayments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)} ₺</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Balance */}
-                <div className="bg-gray-50 p-6 rounded-lg border-2 border-gray-300">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xl font-semibold">Net Bakiye:</span>
-                    <span className={`text-3xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                      {selectedFolio.balance?.toFixed(2) || '0.00'} ₺
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Post Charge Dialog */}
-        <Dialog open={openDialog === 'post-charge'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Masraf Ekle</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handlePostCharge} className="space-y-4">
-              <div>
-                <Label>Masraf Kategorisi *</Label>
-                <Select value={newFolioCharge.charge_category} onValueChange={(v) => setNewFolioCharge({...newFolioCharge, charge_category: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="room">Oda</SelectItem>
-                    <SelectItem value="food">Yiyecek & İçecek</SelectItem>
-                    <SelectItem value="minibar">Minibar</SelectItem>
-                    <SelectItem value="spa">Spa</SelectItem>
-                    <SelectItem value="laundry">Çamaşırhane</SelectItem>
-                    <SelectItem value="phone">Telefon</SelectItem>
-                    <SelectItem value="internet">İnternet</SelectItem>
-                    <SelectItem value="parking">Otopark</SelectItem>
-                    <SelectItem value="city_tax">Şehir Vergisi</SelectItem>
-                    <SelectItem value="other">Diğer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Açıklama *</Label>
-                <Input 
-                  value={newFolioCharge.description} 
-                  onChange={(e) => setNewFolioCharge({...newFolioCharge, description: e.target.value})}
-                  placeholder="Örn: Oda 101 - Gecelik Ücret"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Tutar (₺) *</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01"
-                    value={newFolioCharge.amount} 
-                    onChange={(e) => setNewFolioCharge({...newFolioCharge, amount: parseFloat(e.target.value) || 0})}
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Adet *</Label>
-                  <Input 
-                    type="number" 
-                    min="1"
-                    value={newFolioCharge.quantity} 
-                    onChange={(e) => setNewFolioCharge({...newFolioCharge, quantity: parseFloat(e.target.value) || 1})}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="auto-tax"
-                  checked={newFolioCharge.auto_calculate_tax}
-                  onChange={(e) => setNewFolioCharge({...newFolioCharge, auto_calculate_tax: e.target.checked})}
-                  className="rounded"
-                />
-                <Label htmlFor="auto-tax" className="cursor-pointer">
-                  Şehir vergisini otomatik hesapla
-                </Label>
-              </div>
-              <Button type="submit" className="w-full">Masraf Kaydet</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Post Payment Dialog */}
-        <Dialog open={openDialog === 'post-payment'} onOpenChange={(open) => !open && setOpenDialog('folio-view')}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Ödeme Ekle</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handlePostPayment} className="space-y-4">
-              <div>
-                <Label>Ödeme Yöntemi *</Label>
-                <Select value={newFolioPayment.method} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, method: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Nakit</SelectItem>
-                    <SelectItem value="card">Kredi/Banka Kartı</SelectItem>
-                    <SelectItem value="bank_transfer">Havale/EFT</SelectItem>
-                    <SelectItem value="online">Online Ödeme</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Ödeme Tipi *</Label>
-                <Select value={newFolioPayment.payment_type} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, payment_type: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="prepayment">Ön Ödeme</SelectItem>
-                    <SelectItem value="deposit">Depozito</SelectItem>
-                    <SelectItem value="interim">Ara Ödeme</SelectItem>
-                    <SelectItem value="final">Son Ödeme</SelectItem>
-                    <SelectItem value="refund">İade</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Tutar (₺) *</Label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={newFolioPayment.amount} 
-                  onChange={(e) => setNewFolioPayment({...newFolioPayment, amount: parseFloat(e.target.value) || 0})}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Referans / Onay Kodu</Label>
-                <Input 
-                  value={newFolioPayment.reference} 
-                  onChange={(e) => setNewFolioPayment({...newFolioPayment, reference: e.target.value})}
-                  placeholder="Örn: AUTH123456"
-                />
-              </div>
-              <div>
-                <Label>Notlar</Label>
-                <Textarea 
-                  value={newFolioPayment.notes} 
-                  onChange={(e) => setNewFolioPayment({...newFolioPayment, notes: e.target.value})}
-                  rows={2}
-                />
-              </div>
-              <Button type="submit" className="w-full">Ödeme Kaydet</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        <HKTaskDialog
-          open={openDialog === 'hktask'}
-          onClose={() => setOpenDialog(null)}
-          rooms={rooms}
-          newHKTask={newHKTask}
-          setNewHKTask={setNewHKTask}
-          onSubmit={handleCreateHKTask}
-        />
-
-        <RoomBlockCreateDialog
-          open={openDialog === 'roomblock'}
-          onClose={() => setOpenDialog(null)}
-          rooms={rooms}
-          selectedRoom={selectedRoom}
-          setSelectedRoom={setSelectedRoom}
-          newRoomBlock={newRoomBlock}
-          setNewRoomBlock={setNewRoomBlock}
-          onSubmit={createRoomBlock}
-        />
-
-        <RoomBlockViewDialog
-          open={openDialog === 'viewblocks'}
-          onClose={() => setOpenDialog(null)}
-          selectedRoom={selectedRoom}
-          roomBlocks={roomBlocks}
-          onCancelBlock={(id) => { cancelRoomBlock(id); setOpenDialog(null); }}
-        />
-
-        {/* Guest 360° Profile Dialog - Extracted Component */}
-        <Guest360Dialog
-          open={openDialog === 'guest360'}
-          onClose={() => setOpenDialog(null)}
-          guest360Data={guest360Data}
-          loadingGuest360={loadingGuest360}
-          selectedGuest360={selectedGuest360}
-          loadGuest360={loadGuest360}
-        />
-
-        {/* Booking Detail Dialog - Double-Click to Open */}
-        <BookingDetailDialog
-          open={openDialog === 'bookingDetail'}
-          onClose={() => setOpenDialog(null)}
-          booking={selectedBookingDetail}
-          guests={guests}
-          rooms={rooms}
-          companies={companies}
-          onViewFolio={loadBookingFolios}
-          onBookingUpdated={loadData}
-        />
-
-        {/* Reservation Detail Modal (same as Calendar double-click) */}
         {reservationDetailId && (
-          <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
+          <Suspense fallback={null}>
             <ReservationDetailModal
-              bookingId={reservationDetailId}
-              onClose={() => { setReservationDetailId(null); loadData(); }}
-              allBookings={bookings}
+              reservationId={reservationDetailId}
+              onClose={() => setReservationDetailId(null)}
             />
           </Suspense>
         )}
 
-        {/* Floating Action Button - Quick Actions */}
-        {/* Maintenance Work Order Dialog */}
-        <MaintenanceDialog
-          open={maintenanceDialogOpen}
-          onClose={() => setMaintenanceDialogOpen(false)}
-          maintenanceForm={maintenanceForm}
-          setMaintenanceForm={setMaintenanceForm}
-        />
-
-        {/* FloatingActionButton - Quick Actions (mirrors top toolbar) */}
         <FloatingActionButton
           actions={[
-            {
-              label: 'Yeni Rezervasyon',
-              icon: <Plus className="w-5 h-5" />,
-              onClick: () => {
-                setOpenDialog('booking');
-              }
-            },
-            {
-              label: 'Yeni Misafir',
-              icon: <UserPlus className="w-5 h-5" />,
-              onClick: () => setOpenDialog('guest')
-            },
-            {
-              label: 'Flash Rapor',
-              icon: <FileText className="w-5 h-5" />,
-              onClick: async () => {
-                try {
-                  const response = await axios.get('/reports/daily-flash');
-                  toast.success('Flash rapor oluşturuldu!');
-                  console.log('Flash report:', response.data);
-                } catch (error) {
-                  toast.error('Rapor oluşturulamadı');
-                }
-              }
-            },
-            {
-              label: 'Paneli Yenile',
-              icon: <RefreshCw className="w-5 h-5" />,
-              onClick: () => loadData()
-            }
+            { label: t('pms.newBooking', 'New Booking'), icon: Calendar, onClick: () => setOpenDialog('booking') },
+            { label: t('pms.newGuest', 'New Guest'), icon: UserPlus, onClick: () => setOpenDialog('guest') },
+            { label: t('pms.newRoom', 'New Room'), icon: BedDouble, onClick: () => setOpenDialog('room') },
           ]}
         />
-
       </div>
-
-        <GuestInfoDialog
-          open={openDialog === 'guestInfo'}
-          onClose={() => setOpenDialog(null)}
-          selectedGuest={selectedGuest}
-          setSelectedGuest={setSelectedGuest}
-          onSaved={loadData}
-        />
-
-        {/* Payment Dialog */}
-        <PaymentDialog
-          open={openDialog === 'payment'}
-          onClose={() => setOpenDialog(null)}
-          selectedBooking={selectedBooking}
-          paymentForm={paymentForm}
-          setPaymentForm={setPaymentForm}
-          onPaymentDone={loadData}
-        />
-
-        <FindRoomDialog
-          open={openDialog === 'findroom'}
-          onClose={() => setOpenDialog(null)}
-          findRoomCriteria={findRoomCriteria}
-          setFindRoomCriteria={setFindRoomCriteria}
-          onRoomSelected={(room) => {
-            setNewBooking({
-              ...newBooking,
-              room_id: room.id,
-              check_in: findRoomCriteria.check_in,
-              check_out: findRoomCriteria.check_out,
-              adults: findRoomCriteria.guests
-            });
-            setOpenDialog('booking');
-          }}
-        />
-
     </Layout>
   );
 };
