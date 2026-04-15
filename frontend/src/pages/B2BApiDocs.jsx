@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Key, Search, Hotel, Calendar, DollarSign, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt } from 'lucide-react';
+import { BookOpen, Key, Search, Hotel, Calendar, DollarSign, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt, AlertTriangle, Gauge, List, Rocket } from 'lucide-react';
 
 const API_BASE = window.location.origin + '/api/b2b';
 
 const sections = [
   { id: 'overview', icon: BookOpen },
+  { id: 'quickstart', icon: Rocket },
   { id: 'auth', icon: Key },
+  { id: 'errors', icon: AlertTriangle },
+  { id: 'ratelimits', icon: Gauge },
+  { id: 'pagination', icon: List },
   { id: 'content', icon: Hotel },
   { id: 'availability', icon: Calendar },
   { id: 'rates', icon: DollarSign },
@@ -27,7 +31,8 @@ const sections = [
 
 const navLabels = {
   en: {
-    overview: 'Overview', auth: 'Authentication', content: 'Content', availability: 'Availability',
+    overview: 'Overview', quickstart: 'Quick Start', auth: 'Authentication', errors: 'Error Codes',
+    ratelimits: 'Rate Limits', pagination: 'Pagination', content: 'Content', availability: 'Availability',
     rates: 'Rates', reservations: 'Reservations', guests: 'Guests', loyalty: 'Loyalty Program',
     housekeeping: 'Housekeeping', kbs: 'KBS / Police', identity: 'Passport / ID',
     lostfound: 'Lost & Found', wakeup: 'Wake-up Calls', journey: 'Guest Journey',
@@ -35,7 +40,8 @@ const navLabels = {
     folio: 'Folio & Billing', webhooks: 'Webhooks',
   },
   tr: {
-    overview: 'Genel Bakis', auth: 'Kimlik Dogrulama', content: 'Icerik', availability: 'Musaitlik',
+    overview: 'Genel Bakis', quickstart: 'Hizli Baslangic', auth: 'Kimlik Dogrulama', errors: 'Hata Kodlari',
+    ratelimits: 'Istek Limitleri', pagination: 'Sayfalama', content: 'Icerik', availability: 'Musaitlik',
     rates: 'Fiyatlar', reservations: 'Rezervasyonlar', guests: 'Misafirler', loyalty: 'Sadakat Programi',
     housekeeping: 'Kat Hizmetleri', kbs: 'KBS / Emniyet', identity: 'Pasaport / Kimlik',
     lostfound: 'Kayip Esya', wakeup: 'Uyandirma', journey: 'Misafir Yolculugu',
@@ -220,28 +226,411 @@ export default function B2BApiDocs() {
               </div>
             </section>
 
+            {/* ── QUICK START ── */}
+            <section id="quickstart">
+              <SectionHeader icon={Rocket} title={isEn ? 'Quick Start Guide' : 'Hizli Baslangic Rehberi'} id="qs-h" />
+              <Desc>{isEn
+                ? 'Follow these steps to start integrating with the Syroce Open API in minutes. From getting your API key to making your first reservation.'
+                : 'Syroce Open API ile dakikalar icinde entegrasyona baslayin. API key almaktan ilk rezervasyonunuzu yapmaya kadar adim adim rehber.'
+              }</Desc>
+
+              <div className="mt-8 space-y-6">
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">1</div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Get Your API Key' : 'API Key Alin'}</h4>
+                      <p className="text-sm text-slate-600 mt-1">{isEn
+                        ? 'Your hotel partner creates an API key for your agency through the Syroce PMS admin panel:'
+                        : 'Otel ortaginiz Syroce PMS yonetim panelinden acente API key\'inizi olusturur:'
+                      }</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">a.</span> {isEn ? 'Hotel admin navigates to Travel Agent Management (Acente Yonetimi)' : 'Otel yoneticisi Acente Yonetimi sayfasina gider'}</div>
+                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">b.</span> {isEn ? 'Selects your agency and clicks "Generate API Key"' : 'Acentenizi secer ve "API Key Olustur" butonuna tiklar'}</div>
+                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">c.</span> {isEn ? 'The key (starting with syroce_b2b_) is shown ONCE — copy it immediately' : 'Key (syroce_b2b_ ile baslar) sadece BIR KEZ gosterilir — hemen kopyalayin'}</div>
+                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">d.</span> {isEn ? 'Store the key securely (environment variable, secrets manager)' : 'Key\'i guvenli saklayin (ortam degiskeni, secrets manager)'}</div>
+                      </div>
+                      <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <p className="text-xs text-amber-800 flex items-center gap-1.5">
+                          <AlertTriangle size={13} className="shrink-0" />
+                          {isEn ? 'The raw API key is only shown at creation time. If lost, the hotel admin must regenerate it (POST /api/b2b/api-keys/{agency_id}/regenerate). This invalidates the old key.' : 'Ham API key sadece olusturulurken gosterilir. Kaybederseniz otel yoneticisi yenilemek zorundadir (POST /api/b2b/api-keys/{agency_id}/regenerate). Eski key gecersiz olur.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">2</div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Test Your Connection' : 'Baglantinizi Test Edin'}</h4>
+                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Make your first API call to verify the key works:' : 'Key\'in calistigini dogrulamak icin ilk API cagrinizi yapin:'}</p>
+                      <div className="mt-3">
+                        <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/content" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"\n\n# Expected: 200 OK with hotel content\n# If 401: Check your key is correct and active\n# If 403: Your agency account may be inactive`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">3</div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Check Availability & Rates' : 'Musaitlik ve Fiyat Sorgulayın'}</h4>
+                      <div className="mt-3">
+                        <CodeBlock lang="bash" code={`# Check room availability\ncurl "${API_BASE}/availability?check_in=2026-07-01&check_out=2026-07-03" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"\n\n# Get rates for date range\ncurl "${API_BASE}/rates?start_date=2026-07-01&end_date=2026-07-03" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">4</div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Create Your First Reservation' : 'Ilk Rezervasyonunuzu Olusturun'}</h4>
+                      <div className="mt-3">
+                        <CodeBlock lang="bash" code={`curl -X POST "${API_BASE}/reservations" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "room_type": "Deluxe Double",\n    "check_in": "2026-07-01",\n    "check_out": "2026-07-03",\n    "guest_name": "John Doe",\n    "guest_email": "john@example.com",\n    "guest_phone": "+905551234567",\n    "adults": 2,\n    "children": 0\n  }'\n\n# Response includes confirmation_code, room_number, total_amount`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">5</div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Set Up Webhooks (Optional)' : 'Webhook Kurun (Opsiyonel)'}</h4>
+                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Receive real-time notifications when reservations change:' : 'Rezervasyonlar degistiginde gercek zamanli bildirim alin:'}</p>
+                      <div className="mt-3">
+                        <CodeBlock lang="bash" code={`curl -X POST "${API_BASE}/webhooks" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "url": "https://your-system.com/webhook/syroce",\n    "events": ["reservation.created", "reservation.cancelled", "reservation.updated"],\n    "secret": "your_webhook_signing_secret"\n  }'`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
+                  <h4 className="font-semibold text-emerald-900 mb-3">{isEn ? 'Complete Integration Example (Python)' : 'Tam Entegrasyon Ornegi (Python)'}</h4>
+                  <CodeBlock lang="python" code={`import requests\n\nAPI_KEY = "syroce_b2b_YOUR_KEY_HERE"  # Store in env variable!\nBASE_URL = "${API_BASE}"\nHEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}\n\nclass SyroceClient:\n    def __init__(self):\n        self.session = requests.Session()\n        self.session.headers.update(HEADERS)\n\n    def check_availability(self, check_in, check_out, room_type=None):\n        params = {"check_in": check_in, "check_out": check_out}\n        if room_type:\n            params["room_type"] = room_type\n        resp = self.session.get(f"{BASE_URL}/availability", params=params)\n        resp.raise_for_status()\n        return resp.json()\n\n    def create_reservation(self, room_type, check_in, check_out,\n                           guest_name, guest_email="", guest_phone=""):\n        body = {\n            "room_type": room_type,\n            "check_in": check_in,\n            "check_out": check_out,\n            "guest_name": guest_name,\n            "guest_email": guest_email,\n            "guest_phone": guest_phone,\n        }\n        resp = self.session.post(f"{BASE_URL}/reservations", json=body)\n        resp.raise_for_status()\n        return resp.json()\n\n    def get_reservations(self, status=None, limit=50):\n        params = {"limit": limit}\n        if status:\n            params["status"] = status\n        resp = self.session.get(f"{BASE_URL}/reservations", params=params)\n        resp.raise_for_status()\n        return resp.json()\n\n    def cancel_reservation(self, reservation_id):\n        resp = self.session.put(f"{BASE_URL}/reservations/{reservation_id}/cancel")\n        resp.raise_for_status()\n        return resp.json()\n\n    def search_guests(self, query):\n        resp = self.session.get(f"{BASE_URL}/guests/search", params={"q": query})\n        resp.raise_for_status()\n        return resp.json()\n\n# Usage\nclient = SyroceClient()\navail = client.check_availability("2026-07-01", "2026-07-03")\nprint(f"Available rooms: {len(avail['room_types'])}")\n\nbooking = client.create_reservation(\n    "Deluxe Double", "2026-07-01", "2026-07-03",\n    "John Doe", "john@example.com"\n)\nprint(f"Booked! Code: {booking['reservation']['confirmation_code']}")`} />
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
+                  <h4 className="font-semibold text-emerald-900 mb-3">{isEn ? 'Complete Integration Example (JavaScript/Node.js)' : 'Tam Entegrasyon Ornegi (JavaScript/Node.js)'}</h4>
+                  <CodeBlock lang="javascript" code={`const API_KEY = process.env.SYROCE_API_KEY; // Store in env variable!\nconst BASE_URL = "${API_BASE}";\n\nclass SyroceClient {\n  constructor() {\n    this.headers = {\n      "X-API-Key": API_KEY,\n      "Content-Type": "application/json"\n    };\n  }\n\n  async request(method, path, options = {}) {\n    const url = new URL(BASE_URL + path);\n    if (options.params) {\n      Object.entries(options.params).forEach(([k, v]) =>\n        url.searchParams.set(k, v)\n      );\n    }\n    const res = await fetch(url, {\n      method,\n      headers: this.headers,\n      body: options.body ? JSON.stringify(options.body) : undefined\n    });\n    if (!res.ok) {\n      const err = await res.json().catch(() => ({}));\n      throw new Error(err.detail || \`HTTP \${res.status}\`);\n    }\n    return res.json();\n  }\n\n  checkAvailability(checkIn, checkOut, roomType) {\n    const params = { check_in: checkIn, check_out: checkOut };\n    if (roomType) params.room_type = roomType;\n    return this.request("GET", "/availability", { params });\n  }\n\n  createReservation(data) {\n    return this.request("POST", "/reservations", { body: data });\n  }\n\n  getReservations(status, limit = 50) {\n    const params = { limit };\n    if (status) params.status = status;\n    return this.request("GET", "/reservations", { params });\n  }\n\n  cancelReservation(id) {\n    return this.request("PUT", \`/reservations/\${id}/cancel\`);\n  }\n\n  searchGuests(query) {\n    return this.request("GET", "/guests/search", { params: { q: query } });\n  }\n}\n\n// Usage\nconst client = new SyroceClient();\nconst avail = await client.checkAvailability("2026-07-01", "2026-07-03");\nconsole.log(\`Available: \${avail.room_types.length} types\`);\n\nconst booking = await client.createReservation({\n  room_type: "Deluxe Double",\n  check_in: "2026-07-01",\n  check_out: "2026-07-03",\n  guest_name: "John Doe",\n  guest_email: "john@example.com"\n});\nconsole.log(\`Booked! Code: \${booking.reservation.confirmation_code}\`);`} />
+                </div>
+              </div>
+            </section>
+
             {/* ── AUTH ── */}
             <section id="auth">
               <SectionHeader icon={Key} title={isEn ? 'Authentication' : 'Kimlik Dogrulama'} id="auth-h" />
-              <Desc>{isEn ? 'All API endpoints require an API key. Include your key in the X-API-Key header:' : 'Tum API endpoint\'leri bir API key gerektirir. Key\'inizi X-API-Key basligina ekleyin:'}</Desc>
-              <div className="mt-4"><CodeBlock lang="http" code="X-API-Key: syroce_b2b_your_api_key_here" /></div>
-              <div className="mt-4">
-                <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03" \\\n  -H "X-API-Key: syroce_b2b_your_api_key_here"`} />
+              <Desc>{isEn ? 'All API endpoints require an API key in the X-API-Key header. Keys are issued by the hotel administrator through the PMS admin panel.' : 'Tum API endpoint\'leri X-API-Key basliginda bir API key gerektirir. Key\'ler otel yoneticisi tarafindan PMS yonetim panelinden verilir.'}</Desc>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Header Format' : 'Baslik Formati'}</SubTitle>
+                <CodeBlock lang="http" code="X-API-Key: syroce_b2b_your_api_key_here" />
               </div>
-              <div className="mt-4">
-                <CodeBlock lang="python" code={`import requests\n\nAPI_KEY = "syroce_b2b_your_api_key_here"\nBASE = "${API_BASE}"\nheaders = {"X-API-Key": API_KEY}\n\n# Check availability\nresp = requests.get(f"{BASE}/availability",\n    headers=headers,\n    params={"check_in": "2026-06-01", "check_out": "2026-06-03"})\nprint(resp.json())`} />
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'API Key Format' : 'API Key Formati'}</SubTitle>
+                <p className="text-sm text-slate-600 mb-3">{isEn
+                  ? 'All API keys start with the prefix syroce_b2b_ followed by a random string. Example:'
+                  : 'Tum API key\'ler syroce_b2b_ on eki ile baslar, ardindan rastgele bir dizi gelir. Ornek:'
+                }</p>
+                <CodeBlock lang="text" code="syroce_b2b_zMskjN7H0K4xPq2B1wR9fY3eT6uI8oL" />
               </div>
-              <div className="mt-4">
-                <CodeBlock lang="javascript" code={`const API_KEY = "syroce_b2b_your_api_key_here";\nconst BASE = "${API_BASE}";\n\nconst res = await fetch(\`\${BASE}/availability?check_in=2026-06-01&check_out=2026-06-03\`, {\n  headers: { "X-API-Key": API_KEY }\n});\nconst data = await res.json();\nconsole.log(data);`} />
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'API Key Lifecycle' : 'API Key Yasam Dongusu'}</SubTitle>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 mt-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Action' : 'Islem'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Who' : 'Kim'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Endpoint</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Auth' : 'Yetki'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { action: isEn ? 'Create key' : 'Key olustur', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'POST /api/b2b/api-keys?agency_id=...', auth: 'JWT' },
+                        { action: isEn ? 'View key info' : 'Key bilgisi gor', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'GET /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
+                        { action: isEn ? 'Regenerate key' : 'Key yenile', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'POST /api/b2b/api-keys/{agency_id}/regenerate', auth: 'JWT' },
+                        { action: isEn ? 'Revoke key' : 'Key iptal', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'DELETE /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
+                      ].map((r, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5 font-medium text-slate-700">{r.action}</td>
+                          <td className="px-4 py-2.5 text-slate-500">{r.who}</td>
+                          <td className="px-4 py-2.5 font-mono text-[12px] text-emerald-700">{r.ep}</td>
+                          <td className="px-4 py-2.5"><span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">{r.auth}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">{isEn
+                  ? 'Note: Key management endpoints require JWT authentication (hotel admin login), not API key auth. Only the hotel admin can create, view, regenerate, or revoke API keys.'
+                  : 'Not: Key yonetim endpoint\'leri JWT kimlik dogrulama (otel admin girisi) gerektirir, API key degil. Sadece otel yoneticisi API key olusturabilir, goruntuleyebilir, yenileyebilir veya iptal edebilir.'
+                }</p>
               </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Usage Examples' : 'Kullanim Ornekleri'}</SubTitle>
+                <div className="space-y-3">
+                  <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03" \\\n  -H "X-API-Key: syroce_b2b_your_api_key_here"`} />
+                  <CodeBlock lang="python" code={`import requests\n\nheaders = {"X-API-Key": "syroce_b2b_your_api_key_here"}\nresp = requests.get("${API_BASE}/availability",\n    headers=headers,\n    params={"check_in": "2026-06-01", "check_out": "2026-06-03"})\nprint(resp.json())`} />
+                  <CodeBlock lang="javascript" code={`const res = await fetch("${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03", {\n  headers: { "X-API-Key": "syroce_b2b_your_api_key_here" }\n});\nconst data = await res.json();`} />
+                </div>
+              </div>
+
               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-5">
-                <h4 className="font-semibold text-blue-900 flex items-center gap-2 text-sm"><Shield size={15} /> {isEn ? 'Security Notes' : 'Guvenlik Notlari'}</h4>
-                <ul className="text-sm text-blue-800 mt-2 space-y-1 list-disc pl-5">
-                  <li>{isEn ? 'Keys are SHA-256 hashed — never stored in plaintext' : 'Key\'ler SHA-256 ile hashlenir — asla duz metin saklanmaz'}</li>
+                <h4 className="font-semibold text-blue-900 flex items-center gap-2 text-sm"><Shield size={15} /> {isEn ? 'Security Best Practices' : 'Guvenlik En Iyi Uygulamalari'}</h4>
+                <ul className="text-sm text-blue-800 mt-2 space-y-1.5 list-disc pl-5">
+                  <li>{isEn ? 'Keys are SHA-256 hashed on the server — never stored in plaintext' : 'Key\'ler sunucuda SHA-256 ile hashlenir — asla duz metin saklanmaz'}</li>
                   <li>{isEn ? 'Each key is scoped to a single agency and hotel tenant' : 'Her key tek bir acenteye ve otel tenant\'ina baglidir'}</li>
-                  <li>{isEn ? 'Keys can be revoked or rotated by the hotel at any time' : 'Key\'ler otel tarafindan her zaman iptal edilebilir'}</li>
-                  <li>{isEn ? 'Usage is tracked (request count, last used timestamp)' : 'Kullanim takip edilir (istek sayisi, son kullanim zamani)'}</li>
+                  <li>{isEn ? 'Store your key in environment variables — never hardcode in source code' : 'Key\'inizi ortam degiskenlerinde saklayin — kaynak koduna asla yazmayIn'}</li>
+                  <li>{isEn ? 'Keys can be revoked or rotated by the hotel at any time' : 'Key\'ler otel tarafindan her zaman iptal edilebilir veya dondurulebilir'}</li>
+                  <li>{isEn ? 'Usage is tracked: request count, last used time, and IP address' : 'Kullanim takip edilir: istek sayisi, son kullanim zamani ve IP adresi'}</li>
+                  <li>{isEn ? 'Use HTTPS in production — never send API keys over unencrypted connections' : 'Uretimde HTTPS kullanin — API key\'leri sifrelenmemis baglantilarda gondermeyin'}</li>
+                  <li>{isEn ? 'Rotate keys periodically using the regenerate endpoint' : 'Key\'leri periyodik olarak yenileme endpoint\'i ile dondurun'}</li>
                 </ul>
+              </div>
+            </section>
+
+            {/* ── ERROR CODES ── */}
+            <section id="errors">
+              <SectionHeader icon={AlertTriangle} title={isEn ? 'Error Codes Reference' : 'Hata Kodlari Referansi'} id="err-h" />
+              <Desc>{isEn
+                ? 'The API uses standard HTTP status codes. Error responses include a detail field with a human-readable message.'
+                : 'API standart HTTP durum kodlarini kullanir. Hata yanitlari okunabilir bir mesaj iceren detail alani icerir.'
+              }</Desc>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Error Response Format' : 'Hata Yanit Formati'}</SubTitle>
+                <CodeBlock lang="json" code={`{\n  "detail": "Gecersiz veya devre disi API key"\n}`} />
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'HTTP Status Codes' : 'HTTP Durum Kodlari'}</SubTitle>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 mt-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-24">{isEn ? 'Code' : 'Kod'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-40">{isEn ? 'Status' : 'Durum'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Aciklama'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Ornek'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { code: '200', status: 'OK', color: 'emerald', desc: isEn ? 'Request succeeded' : 'Istek basarili', example: isEn ? 'Data returned successfully' : 'Veri basariyla dondu' },
+                        { code: '201', status: 'Created', color: 'emerald', desc: isEn ? 'Resource created' : 'Kaynak olusturuldu', example: isEn ? 'Reservation created' : 'Rezervasyon olusturuldu' },
+                        { code: '400', status: 'Bad Request', color: 'amber', desc: isEn ? 'Invalid request data' : 'Gecersiz istek verisi', example: isEn ? 'Invalid date format, missing required field, invalid enum value' : 'Gecersiz tarih formati, eksik zorunlu alan, gecersiz enum degeri' },
+                        { code: '401', status: 'Unauthorized', color: 'red', desc: isEn ? 'Invalid or missing API key' : 'Gecersiz veya eksik API key', example: '"Gecersiz veya devre disi API key"' },
+                        { code: '403', status: 'Forbidden', color: 'red', desc: isEn ? 'API key valid but access denied' : 'API key gecerli ama erisim reddedildi', example: isEn ? 'Agency account inactive' : 'Acente hesabi aktif degil' },
+                        { code: '404', status: 'Not Found', color: 'amber', desc: isEn ? 'Resource not found' : 'Kaynak bulunamadi', example: isEn ? 'Reservation, guest, or room not found' : 'Rezervasyon, misafir veya oda bulunamadi' },
+                        { code: '409', status: 'Conflict', color: 'amber', desc: isEn ? 'Resource conflict' : 'Kaynak catismasi', example: isEn ? 'No available rooms for the selected dates' : 'Secilen tarihler icin musait oda yok' },
+                        { code: '422', status: 'Validation Error', color: 'amber', desc: isEn ? 'Request body validation failed' : 'Istek govdesi dogrulama hatasi', example: isEn ? 'Negative amount, zero points, date in past' : 'Negatif tutar, sifir puan, gecmis tarih' },
+                        { code: '429', status: 'Too Many Requests', color: 'red', desc: isEn ? 'Rate limit exceeded' : 'Istek limiti asildi', example: isEn ? 'Retry after the specified time' : 'Belirtilen sureden sonra tekrar deneyin' },
+                        { code: '500', status: 'Server Error', color: 'red', desc: isEn ? 'Internal server error' : 'Sunucu hatasi', example: isEn ? 'Contact support if persistent' : 'Devam ederse destek ile iletisime gecin' },
+                      ].map((r, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5"><span className={`font-mono font-bold text-${r.color}-700`}>{r.code}</span></td>
+                          <td className="px-4 py-2.5 font-medium text-slate-700">{r.status}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{r.desc}</td>
+                          <td className="px-4 py-2.5 text-slate-500 text-xs">{r.example}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Common Error Examples' : 'Yaygin Hata Ornekleri'}</SubTitle>
+                <div className="space-y-3">
+                  <CodeBlock lang="json" code={`// 401 — Invalid API Key\n{"detail": "Gecersiz veya devre disi API key"}\n\n// 403 — Agency Inactive\n{"detail": "Acente hesabi aktif degil"}\n\n// 400 — Bad Request\n{"detail": "check_out, check_in'den sonra olmali"}\n{"detail": "Gecersiz durum. Gecerli: clean, dirty, inspected, maintenance, out_of_order"}\n{"detail": "operation must be 'add' or 'subtract'"}\n\n// 404 — Not Found\n{"detail": "Rezervasyon bulunamadi"}\n{"detail": "Misafir bulunamadi"}\n{"detail": "Oda bulunamadi"}\n\n// 409 — No Availability\n{"detail": "Bu tarihler ve oda tipi icin musait oda yok"}\n\n// 422 — Validation Error (Pydantic)\n{"detail": [{"loc": ["body", "amount"], "msg": "Input should be greater than 0", "type": "greater_than"}]}`} />
+                </div>
+              </div>
+
+              <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-5">
+                <h4 className="font-semibold text-blue-900 text-sm">{isEn ? 'Error Handling Best Practice' : 'Hata Yonetimi En Iyi Uygulama'}</h4>
+                <CodeBlock lang="python" code={`import requests\n\ntry:\n    resp = requests.post(f"{BASE_URL}/reservations",\n        headers=headers, json=data, timeout=30)\n    resp.raise_for_status()\n    result = resp.json()\nexcept requests.exceptions.HTTPError as e:\n    error_body = e.response.json()\n    if e.response.status_code == 401:\n        print("API key invalid — check or regenerate")\n    elif e.response.status_code == 409:\n        print(f"No availability: {error_body['detail']}")\n    elif e.response.status_code == 422:\n        print(f"Validation error: {error_body['detail']}")\n    else:\n        print(f"Error {e.response.status_code}: {error_body}")\nexcept requests.exceptions.Timeout:\n    print("Request timed out — retry with backoff")\nexcept requests.exceptions.ConnectionError:\n    print("Connection failed — check network")`} />
+              </div>
+            </section>
+
+            {/* ── RATE LIMITS ── */}
+            <section id="ratelimits">
+              <SectionHeader icon={Gauge} title={isEn ? 'Rate Limits' : 'Istek Limitleri'} id="rl-h" />
+              <Desc>{isEn
+                ? 'API requests are rate-limited per API key to ensure fair usage and system stability. Limits vary by endpoint type.'
+                : 'API istekleri, adil kullanim ve sistem karaliligi icin API key basina sinirlandirilmistir. Limitler endpoint tipine gore degisir.'
+              }</Desc>
+
+              <div className="mt-6">
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Endpoint Type' : 'Endpoint Tipi'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Rate Limit' : 'Istek Limiti'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Window' : 'Pencere'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Examples' : 'Ornekler'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { type: isEn ? 'Read (GET)' : 'Okuma (GET)', limit: '120', window: isEn ? 'per minute' : 'dakika basina', ex: 'availability, rates, reservations list, guests' },
+                        { type: isEn ? 'Write (POST/PUT)' : 'Yazma (POST/PUT)', limit: '30', window: isEn ? 'per minute' : 'dakika basina', ex: 'create reservation, loyalty points, folio charge' },
+                        { type: isEn ? 'Delete (DELETE)' : 'Silme (DELETE)', limit: '10', window: isEn ? 'per minute' : 'dakika basina', ex: 'cancel wake-up, delete webhook' },
+                        { type: isEn ? 'Bulk Operations' : 'Toplu Islemler', limit: '5', window: isEn ? 'per minute' : 'dakika basina', ex: 'rooming-list upload, KBS report' },
+                      ].map((r, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5 font-medium text-slate-700">{r.type}</td>
+                          <td className="px-4 py-2.5"><span className="font-mono font-bold text-[#C09D63]">{r.limit}</span> {isEn ? 'requests' : 'istek'}</td>
+                          <td className="px-4 py-2.5 text-slate-500">{r.window}</td>
+                          <td className="px-4 py-2.5 text-slate-500 text-xs font-mono">{r.ex}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Rate Limit Headers' : 'Istek Limiti Basliklari'}</SubTitle>
+                <p className="text-sm text-slate-600 mb-3">{isEn
+                  ? 'Every API response includes headers showing your current rate limit status:'
+                  : 'Her API yaniti mevcut istek limiti durumunuzu gosteren basliklar icerir:'
+                }</p>
+                <CodeBlock lang="http" code={`X-RateLimit-Limit: 120\nX-RateLimit-Remaining: 115\nX-RateLimit-Reset: 1719835260`} />
+                <div className="mt-3 space-y-1.5 text-sm text-slate-600">
+                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Limit</code> — {isEn ? 'Maximum requests allowed in the window' : 'Penceredeki maksimum istek sayisi'}</div>
+                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Remaining</code> — {isEn ? 'Remaining requests in current window' : 'Mevcut pencerede kalan istek sayisi'}</div>
+                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Reset</code> — {isEn ? 'Unix timestamp when the window resets' : 'Pencerenin sifirlanacagi Unix zaman damgasi'}</div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Handling 429 Too Many Requests' : '429 Cok Fazla Istek Yonetimi'}</SubTitle>
+                <CodeBlock lang="python" code={`import time\nimport requests\n\ndef api_call_with_retry(url, headers, max_retries=3):\n    for attempt in range(max_retries):\n        resp = requests.get(url, headers=headers)\n        if resp.status_code == 429:\n            retry_after = int(resp.headers.get("Retry-After", 60))\n            print(f"Rate limited. Retrying in {retry_after}s...")\n            time.sleep(retry_after)\n            continue\n        return resp\n    raise Exception("Max retries exceeded")`} />
+              </div>
+            </section>
+
+            {/* ── PAGINATION ── */}
+            <section id="pagination">
+              <SectionHeader icon={List} title={isEn ? 'Pagination & Filtering' : 'Sayfalama & Filtreleme'} id="pag-h" />
+              <Desc>{isEn
+                ? 'List endpoints support limit-based pagination and various filters. All list responses include a count field.'
+                : 'Liste endpoint\'leri limit tabanli sayfalama ve cesitli filtreler destekler. Tum liste yanitlari bir count alani icerir.'
+              }</Desc>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Pagination Parameters' : 'Sayfalama Parametreleri'}</SubTitle>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Parameter</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Type</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Default' : 'Varsayilan'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Aciklama'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { name: 'limit', type: 'integer', def: isEn ? 'Varies (20-100)' : 'Degisir (20-100)', desc: isEn ? 'Maximum number of results to return' : 'Dondurulecek maksimum sonuc sayisi' },
+                        { name: 'status', type: 'string', def: isEn ? 'All statuses' : 'Tum durumlar', desc: isEn ? 'Filter by status (varies per endpoint)' : 'Duruma gore filtre (endpoint\'e gore degisir)' },
+                        { name: 'date', type: 'string', def: isEn ? 'Today' : 'Bugun', desc: isEn ? 'Filter by date (YYYY-MM-DD)' : 'Tarihe gore filtre (YYYY-MM-DD)' },
+                      ].map((p, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5 font-mono text-[13px] text-emerald-700">{p.name}</td>
+                          <td className="px-4 py-2.5 text-slate-500 font-mono text-[13px]">{p.type}</td>
+                          <td className="px-4 py-2.5 text-slate-500">{p.def}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{p.desc}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Response Structure' : 'Yanit Yapisi'}</SubTitle>
+                <p className="text-sm text-slate-600 mb-3">{isEn
+                  ? 'All list endpoints return data in a consistent format with a count field:'
+                  : 'Tum liste endpoint\'leri verileri count alaniyla tutarli bir formatta dondurur:'
+                }</p>
+                <CodeBlock lang="json" code={`// GET /api/b2b/reservations?status=confirmed&limit=50\n{\n  "reservations": [\n    { "id": "abc...", "guest_name": "John Doe", ... },\n    { "id": "def...", "guest_name": "Jane Smith", ... }\n  ],\n  "count": 2\n}\n\n// GET /api/b2b/wake-up-calls?date=2026-07-01\n{\n  "wake_up_calls": [...],\n  "count": 5\n}\n\n// GET /api/b2b/lost-found?status=found&category=electronics\n{\n  "items": [...],\n  "count": 3\n}`} />
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Limits per Endpoint' : 'Endpoint Basina Limitler'}</SubTitle>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 mt-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Endpoint</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Default Limit' : 'Varsayilan Limit'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Max Limit' : 'Maks Limit'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Available Filters' : 'Mevcut Filtreler'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { ep: '/reservations', def: '100', max: '500', filters: 'status, check_in_from, check_in_to' },
+                        { ep: '/guests/search', def: '20', max: '100', filters: 'q (search query)' },
+                        { ep: '/guests/{id}/stays', def: '50', max: '200', filters: '-' },
+                        { ep: '/housekeeping/rooms', def: '500', max: '500', filters: 'status, floor' },
+                        { ep: '/kbs/guests', def: '100', max: '500', filters: 'date, status' },
+                        { ep: '/lost-found', def: '50', max: '200', filters: 'status, category' },
+                        { ep: '/wake-up-calls', def: '200', max: '200', filters: 'date, status' },
+                        { ep: '/guest-journey/requests', def: '50', max: '200', filters: 'booking_id, status, request_type' },
+                        { ep: '/groups', def: '50', max: '200', filters: 'status' },
+                      ].map((r, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5 font-mono text-[12px] text-emerald-700">{r.ep}</td>
+                          <td className="px-4 py-2.5 text-slate-700">{r.def}</td>
+                          <td className="px-4 py-2.5 text-slate-700">{r.max}</td>
+                          <td className="px-4 py-2.5 text-slate-500 text-xs font-mono">{r.filters}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Date & Time Formats' : 'Tarih & Saat Formatlari'}</SubTitle>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 mt-3">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Type' : 'Tip'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Format' : 'Format'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Ornek'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Used In' : 'Kullanildigi Yer'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { type: isEn ? 'Date' : 'Tarih', format: 'YYYY-MM-DD', example: '2026-07-15', used: 'check_in, check_out, wake_date, preferred_date' },
+                        { type: isEn ? 'Time' : 'Saat', format: 'HH:MM', example: '07:30', used: 'wake_time, preferred_time, arrival_time' },
+                        { type: isEn ? 'Timestamp' : 'Zaman Damgasi', format: 'ISO 8601', example: '2026-07-15T14:30:00+00:00', used: 'created_at, updated_at (response only)' },
+                      ].map((r, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-4 py-2.5 font-medium text-slate-700">{r.type}</td>
+                          <td className="px-4 py-2.5 font-mono text-[13px] text-emerald-700">{r.format}</td>
+                          <td className="px-4 py-2.5 font-mono text-[13px] text-slate-600">{r.example}</td>
+                          <td className="px-4 py-2.5 text-slate-500 text-xs">{r.used}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
 
@@ -670,7 +1059,8 @@ export default function B2BApiDocs() {
             </section>
 
             <div className="border-t border-slate-200 pt-8 pb-16 text-center">
-              <p className="text-sm text-slate-400">Syroce Open API v2.0 &middot; 19 {isEn ? 'Module Groups' : 'Modul Grubu'} &middot; {new Date().getFullYear()}</p>
+              <p className="text-sm text-slate-400">Syroce Open API v2.0 &middot; 22 {isEn ? 'Documentation Sections' : 'Dokumantasyon Bolumu'} &middot; 19 {isEn ? 'API Groups' : 'API Grubu'} &middot; {new Date().getFullYear()}</p>
+              <p className="text-xs text-slate-300 mt-1">{isEn ? 'API Version: v1 (stable) — No breaking changes without version bump' : 'API Versiyon: v1 (stabil) — Versiyon degisikligi olmadan kirilma degisikligi yapilmaz'}</p>
             </div>
           </div>
         </main>
