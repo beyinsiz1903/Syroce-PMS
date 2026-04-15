@@ -285,17 +285,26 @@ async def create_meeting_reservation(body: dict = Body(...), current_user: User 
         "event_type": body.get("event_type", "meeting"),
         "contact_name": body.get("contact_name", ""),
         "contact_phone": body.get("contact_phone", ""),
+        "contact_email": body.get("contact_email", ""),
         "date": body.get("date", ""),
         "start_time": body.get("start_time", ""),
         "end_time": body.get("end_time", ""),
         "setup_type": body.get("setup_type", ""),
         "attendees": _safe_int(body.get("attendees", 0)),
+        "guaranteed_pax": _safe_int(body.get("guaranteed_pax", 0)),
+        "menu_type": body.get("menu_type", ""),
+        "menu_details": body.get("menu_details", ""),
+        "av_equipment": body.get("av_equipment", []),
+        "decorations": body.get("decorations", ""),
+        "special_requests": body.get("special_requests", ""),
         "total_price": float(body.get("total_price", 0) or 0),
+        "price_per_person": float(body.get("price_per_person", 0) or 0),
         "deposit_amount": float(body.get("deposit_amount", 0) or 0),
         "deposit_paid": bool(body.get("deposit_paid", False)),
         "payment_method": body.get("payment_method", ""),
         "payment_notes": body.get("payment_notes", ""),
-        "status": "confirmed",
+        "billing_instructions": body.get("billing_instructions", ""),
+        "status": body.get("status", "confirmed"),
         "notes": body.get("notes", ""),
         "created_at": now.isoformat(),
         "created_by": current_user.email,
@@ -315,17 +324,23 @@ async def update_meeting_reservation(reservation_id: str, body: dict = Body(...)
 
     allowed = [
         "room_id", "room_name", "company_name", "event_name", "event_type",
-        "contact_name", "contact_phone", "date", "start_time", "end_time",
-        "setup_type", "attendees", "notes", "catering", "status",
-        "total_price", "deposit_amount", "deposit_paid",
-        "payment_method", "payment_notes",
+        "contact_name", "contact_phone", "contact_email",
+        "date", "start_time", "end_time",
+        "setup_type", "attendees", "guaranteed_pax",
+        "menu_type", "menu_details", "av_equipment",
+        "decorations", "special_requests",
+        "notes", "status",
+        "total_price", "price_per_person", "deposit_amount", "deposit_paid",
+        "payment_method", "payment_notes", "billing_instructions",
     ]
+    int_fields = {"attendees", "guaranteed_pax"}
+    float_fields = {"total_price", "price_per_person", "deposit_amount"}
     updates = {}
     for k in allowed:
         if k in body:
-            if k == "attendees":
+            if k in int_fields:
                 updates[k] = _safe_int(body[k])
-            elif k in ("total_price", "deposit_amount"):
+            elif k in float_fields:
                 updates[k] = float(body[k] or 0)
             elif k == "deposit_paid":
                 updates[k] = bool(body[k])

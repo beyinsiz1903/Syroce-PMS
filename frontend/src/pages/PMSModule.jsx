@@ -39,7 +39,6 @@ import MeetingRoomTab from '@/components/pms/MeetingRoomTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
 import ConciergeDesk from '@/components/pms/ConciergeDesk';
-import BanquetEventOrder from '@/components/pms/BanquetEventOrder';
 import GuestPreferences from '@/components/pms/GuestPreferences';
 import RoutingInstructions from '@/components/pms/RoutingInstructions';
 import ManagerDailyReport from '@/components/pms/ManagerDailyReport';
@@ -219,10 +218,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
     { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
     { key: 'laundry', labelText: 'Camasirhane', icon: Shirt, testId: 'tab-laundry' },
-    { key: 'meeting', labelText: 'Toplanti', icon: Building2, testId: 'tab-meeting' },
+    { key: 'meeting', labelText: 'Organizasyon', icon: Building2, testId: 'tab-meeting' },
     { key: 'timeline', labelText: 'Zaman Cizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
     { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
-    { key: 'banquet', labelText: 'Banket & Etkinlik', icon: Calendar, testId: 'tab-banquet' },
     { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
     { key: 'manager_report', labelText: 'Mudur Raporu', icon: FileText, testId: 'tab-manager-report' },
     { key: 'kbs', labelText: 'KBS / GIKS', icon: Shield, testId: 'tab-kbs' },
@@ -2213,10 +2211,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <ConciergeDesk />
           </TabsContent>
 
-          {/* BANQUET & EVENTS TAB */}
-          <TabsContent value="banquet" className="space-y-4">
-            <BanquetEventOrder />
-          </TabsContent>
 
           {/* REVENUE CONTROLS TAB */}
           <TabsContent value="revenue" className="space-y-4">
