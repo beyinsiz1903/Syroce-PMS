@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Calendar as CalendarIcon, MapPin, Loader2 } from 'lucide-react';
 import { API, fmtDate, fmtDateTime, InfoField, Avatar, EmptyState, statusLabel } from './helpers';
 
 export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
@@ -98,21 +99,141 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
   );
 }
 
-export function GuestsTab({ guests, booking }) {
+const ID_TYPES = [
+  { code: 'tc_kimlik', label: 'TC Kimlik' },
+  { code: 'passport', label: 'Pasaport' },
+  { code: 'driving_license', label: 'Ehliyet' },
+  { code: 'other', label: 'Diger' },
+];
+
+export function GuestsTab({ guests, booking, onRefresh }) {
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (g) => {
+    setEditingId(g.id);
+    setForm({
+      name: g.name || '',
+      email: g.email || '',
+      phone: g.phone || '',
+      id_type: g.id_type || 'tc_kimlik',
+      id_number: g.id_number || '',
+      nationality: g.nationality || '',
+      date_of_birth: g.date_of_birth || '',
+      gender: g.gender || '',
+      address: g.address || '',
+      city: g.city || '',
+      country: g.country || '',
+      notes: g.notes || '',
+    });
+  };
+
+  const cancelEdit = () => { setEditingId(null); setForm({}); };
+
+  const handleSave = async (guestId, isPrimary) => {
+    setSaving(true);
+    try {
+      if (isPrimary && booking?.id) {
+        await axios.put(`/pms/reservations/${booking.id}/update-guest`, {
+          name: form.name || undefined,
+          email: form.email || undefined,
+          phone: form.phone || undefined,
+          id_number: form.id_number || undefined,
+          nationality: form.nationality || undefined,
+        });
+      }
+      await axios.put(`/pms/guests/${guestId}`, form);
+      toast.success('Misafir bilgileri guncellendi');
+      cancelEdit();
+      onRefresh?.();
+    } catch (e) {
+      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+    }
+    setSaving(false);
+  };
+
   return (
     <div data-testid="guests-tab" className="space-y-3">
       {(!guests || guests.length === 0) ? <EmptyState icon={Users} text="Kayitli misafir bulunamadi" /> : (
-        guests.map((g, i) => (
-          <div key={g.id || i} className="border rounded-lg p-4 flex items-center gap-4">
-            <Avatar name={g.name} size="lg" />
-            <div className="flex-1">
-              <div className="text-sm font-semibold">{g.name}</div>
-              <div className="text-xs text-gray-500">{g.email || '-'} {g.phone ? `| ${g.phone}` : ''}</div>
+        guests.map((g, i) => {
+          const isPrimary = i === 0;
+          const isEditing = editingId === g.id;
+
+          return (
+            <div key={g.id || i} className="border rounded-lg overflow-hidden">
+              <div className="p-4 flex items-center gap-4">
+                <Avatar name={g.name} size="lg" />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">{g.name}</div>
+                  <div className="text-xs text-gray-500 flex items-center gap-3 mt-0.5">
+                    {g.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{g.email}</span>}
+                    {g.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{g.phone}</span>}
+                    {g.nationality && <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{g.nationality}</span>}
+                    {g.id_number && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{g.id_type === 'passport' ? 'Pasaport' : 'Kimlik'}: {g.id_number}</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
+                  {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
+                  <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
+                    {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                    <span className="ml-1 text-xs">{isEditing ? 'Iptal' : 'Duzenle'}</span>
+                  </Button>
+                </div>
+              </div>
+
+              {isEditing && (
+                <div className="border-t bg-gray-50 p-4 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div><Label className="text-xs">Ad Soyad</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">E-posta</Label><Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Telefon</Label><Input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Uyruk</Label><Input value={form.nationality} onChange={e => setForm(p => ({ ...p, nationality: e.target.value }))} placeholder="TR" className="h-8 text-sm" /></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs">Kimlik Tipi</Label>
+                      <Select value={form.id_type} onValueChange={v => setForm(p => ({ ...p, id_type: v }))}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>{ID_TYPES.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div><Label className="text-xs">Kimlik / Pasaport No</Label><Input value={form.id_number} onChange={e => setForm(p => ({ ...p, id_number: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Dogum Tarihi</Label><Input type="date" value={form.date_of_birth} onChange={e => setForm(p => ({ ...p, date_of_birth: e.target.value }))} className="h-8 text-sm" /></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs">Cinsiyet</Label>
+                      <Select value={form.gender || ''} onValueChange={v => setForm(p => ({ ...p, gender: v }))}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seciniz" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="male">Erkek</SelectItem>
+                          <SelectItem value="female">Kadin</SelectItem>
+                          <SelectItem value="other">Diger</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div><Label className="text-xs">Sehir</Label><Input value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Ulke</Label><Input value={form.country} onChange={e => setForm(p => ({ ...p, country: e.target.value }))} className="h-8 text-sm" /></div>
+                  </div>
+
+                  <div><Label className="text-xs">Adres</Label><Input value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} className="h-8 text-sm" /></div>
+                  <div><Label className="text-xs">Notlar</Label><Input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} className="h-8 text-sm" /></div>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" onClick={() => handleSave(g.id, isPrimary)} disabled={saving} className="h-8">
+                      {saving ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />} Kaydet
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={cancelEdit} className="h-8">Vazgec</Button>
+                  </div>
+                </div>
+              )}
             </div>
-            {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
-            {i === 0 && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
