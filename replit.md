@@ -94,11 +94,11 @@ Two URL patterns coexist in frontend code:
 - Control Plane for operational monitoring
 - **Displacement Analysis** (`DisplacementAnalysis.jsx`) — 4-tab UI: Market Overview (occupancy forecast, channel mix, risk indicators), Scenario Builder (group booking analysis with displaced/proposed/ancillary revenue, ROI, RevPAR delta, daily breakdown), Compare Scenarios (side-by-side up to 5 scenarios), History (saved analyses). Backend: `displacement_engine.py` (live MongoDB queries for occupancy, ADR, cancellation rate, DOW pricing) + `displacement_analysis.py` router (5 endpoints: `/analyze`, `/market-overview`, `/compare`, `/save`, `/history`). 72 i18n keys across all 10 languages.
 - **Travel Agent AR/AP** (`TravelAgentARAP.jsx`) — 4-tab UI: Overview (KPIs: total receivable/payable/paid, collection rate, overdue counts, agency summary table), Agency Ledger (expandable per-agency view with commission entries, payment history, record payment, account statement, create payment plan), Payment Plans (installment tracking with mark-paid), Aging Report (current/30/60/90/90+ day buckets). Backend: `travel_agent_arap.py` router (6 endpoints: `/summary`, `/aging`, `/transactions/{id}`, `/payment`, `/payment-plans`, `/statement/{id}`). Demo seed: 5 agencies with ~50 bookings and payment transactions. 83 i18n keys across all 10 languages.
-- **Syroce Open API** (`B2BApiDocs.jsx` + `b2b_api.py`) — Comprehensive REST API with 19 module groups: Content, Availability, Rates, Reservations, Guest/Loyalty, Housekeeping, KBS/Police Notification, Passport/ID Scanning, Lost & Found, Wake-up Calls, Guest Journey, Concierge, Spa, MICE/Groups, Folio/Billing, Webhooks. All behind API key auth (X-API-Key header, SHA-256 hashed). Frontend docs page at `/b2b/docs` with EN/TR bilingual support. Input validation with Pydantic Field constraints on financial writes.
+- **Syroce Open API** (`B2BApiDocs.jsx` + `b2b_api.py`) — Comprehensive REST API with 19 module groups (22 doc sections): Content, Availability, Rates, Reservations, Guest/Loyalty, Housekeeping, KBS/Police Notification, Passport/ID Scanning, Lost & Found, Wake-up Calls, Guest Journey, Concierge, Spa, MICE/Groups, Folio/Billing, Webhooks + Quick Start (5-step guide, Python/JS SDK), Auth (key lifecycle table, best practices), Error Codes (HTTP 200–500 table), Rate Limits (per-type: Read 120/min, Write 30/min, Delete 10/min, Bulk 5/min + retry pattern), Pagination (limits/filters/date-time reference). All behind API key auth (X-API-Key header, SHA-256 hashed). Frontend docs page at `/b2b/docs` with EN/TR bilingual support (1070 lines). Input validation with Pydantic Field constraints on financial writes.
 - AI-driven dynamic pricing and forecasting
 - WebSocket real-time updates
 - Multi-tenant architecture
-- 8-language internationalization
+- 10-language internationalization (EN, TR, DE, FR, ES, IT, AR, PT, RU, ZH)
 
 - **Concierge Desk** (`ConciergeDesk.jsx`) — restoran rez., transfer, tur, bilet, vale parking, paket takibi, kasa kiralama, uyandırma servisi
 - **Banquet & Event Order** (`BanquetEventOrder.jsx`) — BEO oluşturma/yazdırma, salon seçimi, menü, AV ekipman, dekorasyon, faturalama
@@ -513,3 +513,18 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
   - OperationsSection (NoShow, RoomStatus, Housekeeping, Payments, Departments, FnB)
   - ChannelsSection (Channels, Sources), OfficialSection (Official, Police)
 - **`frontend/src/pages/reports/ReportHelpers.jsx`** — Shared constants, formatters, and reusable UI atoms
+
+## Security Notes
+
+### Dependency Vulnerabilities (Resolved)
+- **python-multipart**: Upgraded 0.0.22 → 0.0.26 (CVE-2026-40347 — DoS via crafted multipart/form-data with large preamble/epilogue). Fixed in `backend/requirements.txt`.
+
+### Security Practices
+- JWT + AES-256-GCM encryption for auth tokens
+- RBAC role-based access control (super_admin, admin, staff, etc.)
+- Tenant-scoped MongoDB queries prevent cross-tenant data access (IDOR protection)
+- API key auth for B2B API: SHA-256 hashed keys stored in DB, never plaintext
+- Input validation: `_safe_int`/`_safe_float` helpers, Pydantic Field constraints on financial writes
+- BEO print uses textContent-based escaping (XSS prevention)
+- Field-whitelisted POST bodies prevent mass assignment
+- `emergentintegrations` package skipped by pip-audit (internal package, not on PyPI — expected)
