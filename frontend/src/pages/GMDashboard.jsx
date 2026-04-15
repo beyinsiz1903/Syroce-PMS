@@ -1404,7 +1404,6 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
               color: 'bg-blue-600 hover:bg-blue-700',
               onClick: () => {
                 navigate('/pms');
-                toast.info('Yeni rezervasyon için PMS açılıyor...');
               }
             },
             {
@@ -1413,7 +1412,6 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
               color: 'bg-green-600 hover:bg-green-700',
               onClick: () => {
                 navigate('/pms');
-                toast.info('Check-in için ön büro açılıyor...');
               }
             },
             {
@@ -1422,7 +1420,6 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
               color: 'bg-purple-600 hover:bg-purple-700',
               onClick: () => {
                 navigate('/revenue-management');
-                toast.info('RMS önerileri açılıyor...');
               }
             },
             {
@@ -1431,7 +1428,6 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
               color: 'bg-orange-600 hover:bg-orange-700',
               onClick: () => {
                 navigate('/reports');
-                toast.info('Rapor paneli açılıyor...');
               }
             },
             {

@@ -1349,7 +1349,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   variant="outline"
                   onClick={() => {
                     setOpenDialog('booking');
-                    toast.info('Yeni rezervasyon formu açılıyor...');
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -2428,7 +2427,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               icon: <Plus className="w-5 h-5" />,
               onClick: () => {
                 setOpenDialog('booking');
-                toast.info('Yeni rezervasyon formu açılıyor...');
               }
             },
             {
