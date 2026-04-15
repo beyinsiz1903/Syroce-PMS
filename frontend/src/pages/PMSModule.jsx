@@ -33,6 +33,7 @@ import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
 import CashierTab from '@/components/pms/CashierTab';
 import UpsellTab from '@/components/pms/UpsellTab';
+import MessagingTab from '@/components/pms/MessagingTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
 import RoomTimelineView from '@/components/pms/RoomTimelineView';
 import LaundryTab from '@/components/pms/LaundryTab';
@@ -149,15 +150,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
-  const [messageTemplates, setMessageTemplates] = useState([]);
-  const [newMessage, setNewMessage] = useState({
-    channel: 'email',
-    recipient: '',
-    subject: '',
-    body: '',
-    template_id: null
-  });
-  const [sentMessages, setSentMessages] = useState([]);
+  
   const [posOrders, setPosOrders] = useState([]);
   const [posRevenue, setPosRevenue] = useState({
     restaurant: 0,
@@ -1363,50 +1356,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
 
-  const loadMessageTemplates = async () => {
-    try {
-      const response = await axios.get('/messaging-center/templates');
-      setMessageTemplates(response.data.templates || []);
-    } catch (error) {
-      console.error('Failed to load templates');
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.recipient || !newMessage.body) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    try {
-      const response = await axios.post('/messaging-center/send', {
-        channel: newMessage.channel,
-        recipient: newMessage.recipient,
-        subject: newMessage.subject,
-        body: newMessage.body,
-        template_id: newMessage.template_id,
-      });
-
-      toast.success('Message sent successfully!');
-      setSentMessages([response.data, ...sentMessages]);
-      setNewMessage({
-        channel: 'email',
-        recipient: '',
-        subject: '',
-        body: '',
-        template_id: null
-      });
-    } catch (error) {
-      console.error('Message send error:', error);
-      if (error.response?.status === 503) {
-        toast.error(`${newMessage.channel.toUpperCase()} service is not configured. Please configure API credentials in Settings.`);
-      } else if (error.response?.status === 401) {
-        toast.error('Authentication failed. Please check your API credentials.');
-      } else {
-        toast.error(error.response?.data?.detail || `Failed to send ${newMessage.channel} message. Please check your configuration.`);
-      }
-    }
-  };
+  
 
   if (loading) {
     return (
@@ -1643,146 +1593,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
           {/* MESSAGING TAB */}
           <TabsContent value="messaging" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">💬 Guest Communication</h2>
-              <Button onClick={loadMessageTemplates}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Load Templates
-              </Button>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Send Message */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Send Message</CardTitle>
-                  <CardDescription>Send email, SMS, or WhatsApp messages to guests</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label>Channel</Label>
-                    <Select
-                      value={newMessage.channel}
-                      onValueChange={(v) => setNewMessage(prev => ({...prev, channel: v}))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="email">📧 Email</SelectItem>
-                        <SelectItem value="sms">📱 SMS</SelectItem>
-                        <SelectItem value="whatsapp">💬 WhatsApp</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label>Recipient</Label>
-                    <Input
-                      placeholder={newMessage.channel === 'email' ? 'guest@example.com' : '+1234567890'}
-                      value={newMessage.recipient}
-                      onChange={(e) => setNewMessage(prev => ({...prev, recipient: e.target.value}))}
-                    />
-                  </div>
-                  
-                  {newMessage.channel === 'email' && (
-                    <div>
-                      <Label>Subject</Label>
-                      <Input
-                        placeholder="Message subject"
-                        value={newMessage.subject}
-                        onChange={(e) => setNewMessage(prev => ({...prev, subject: e.target.value}))}
-                      />
-                    </div>
-                  )}
-                  
-                  <div>
-                    <Label>Message</Label>
-                    <Textarea
-                      placeholder="Type your message here..."
-                      value={newMessage.body}
-                      onChange={(e) => setNewMessage(prev => ({...prev, body: e.target.value}))}
-                      rows={4}
-                    />
-                  </div>
-                  
-                  <Button onClick={sendMessage} className="w-full">
-                    <Send className="w-4 h-4 mr-2" />
-                    Send {newMessage.channel.toUpperCase()}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Message Templates */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Message Templates</CardTitle>
-                  <CardDescription>Pre-defined message templates for common scenarios</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {messageTemplates.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No templates available</p>
-                      <p className="text-sm">Click &quot;Load Templates&quot; to fetch available templates</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {messageTemplates.map((template) => (
-                        <div key={template.id} className="border rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-semibold text-sm">{template.name}</h4>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setNewMessage(prev => ({
-                                  ...prev,
-                                  subject: template.subject || prev.subject,
-                                  body: template.body,
-                                  template_id: template.id
-                                }));
-                              }}
-                            >
-                              Use
-                            </Button>
-                          </div>
-                          <p className="text-xs text-gray-600">{template.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Sent Messages */}
-            {sentMessages.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Messages</CardTitle>
-                  <CardDescription>Recently sent messages</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {sentMessages.slice(0, 5).map((message, index) => (
-                      <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-semibold text-sm">{message.channel.toUpperCase()} to {message.recipient}</div>
-                            <div className="text-xs text-gray-600">{message.subject}</div>
-                          </div>
-                          <Badge variant="secondary">{message.status}</Badge>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {new Date(message.sent_at).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <MessagingTab guests={guests} />
           </TabsContent>
 
           {/* REPORTS TAB */}
