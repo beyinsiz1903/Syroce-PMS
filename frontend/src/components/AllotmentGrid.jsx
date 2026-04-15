@@ -154,7 +154,7 @@ const AllotmentGrid = () => {
           <CardContent className="py-12 text-center text-gray-500">
             <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p className="font-medium">Henüz kontenjan sözleşmesi yok</p>
-            <p className="text-sm mt-1">"Yeni Sözleşme" butonuyla tur operatörü kontenjanyarını tanımlayın</p>
+            <p className="text-sm mt-1">"Yeni Sözleşme" butonuyla tur operatörü kontenjanlarını tanımlayın</p>
           </CardContent>
         </Card>
       ) : (

@@ -57,7 +57,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
         const res = await axios.get(`/pms/group-folio/${groupId}/booking/${bookingId}`);
         setDetail(res.data);
       } catch {
-        toast.error('Folio detayi yuklenemedi');
+        toast.error('Folio detayı yüklenemedi');
       } finally {
         setLoading(false);
       }
@@ -65,8 +65,8 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
     load();
   }, [groupId, bookingId]);
 
-  if (loading) return <div className="py-3 text-center text-sm text-gray-400">Yukleniyor...</div>;
-  if (!detail) return <div className="py-3 text-center text-sm text-gray-400">Veri bulunamadi</div>;
+  if (loading) return <div className="py-3 text-center text-sm text-gray-400">Yükleniyor...</div>;
+  if (!detail) return <div className="py-3 text-center text-sm text-gray-400">Veri bulunamadı</div>;
 
   const allItems = [
     ...(detail.charges || []).map(c => ({
@@ -79,7 +79,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
       type: 'extra', desc: ec.description || ec.category || 'Ekstra', amount: ec.charge_amount || ec.amount || 0, date: ec.created_at, voided: ec.voided
     })),
     ...(detail.payments || []).map(p => ({
-      type: 'payment', desc: `${p.method || 'Odeme'} - ${p.reference || ''}`.trim(), amount: -(p.amount || 0), date: p.created_at, voided: p.voided
+      type: 'payment', desc: `${p.method || 'Ödeme'} - ${p.reference || ''}`.trim(), amount: -(p.amount || 0), date: p.created_at, voided: p.voided
     })),
   ].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
@@ -94,7 +94,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
   return (
     <div className="bg-gray-50/80 rounded-lg border border-gray-100 overflow-hidden" data-testid={`folio-detail-${bookingId}`}>
       <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase border-b bg-gray-100/50">
-        <span>Aciklama</span>
+        <span>Açıklama</span>
         <span>Tarih</span>
         <span className="text-right">Tutar</span>
       </div>
@@ -187,7 +187,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
       const res = await axios.get(`/pms/group-folio/${groupId}`);
       setGroupDetail(res.data);
     } catch {
-      toast.error('Grup detay yuklenemedi');
+      toast.error('Grup detay yüklenemedi');
     } finally {
       setDetailLoading(false);
     }
@@ -207,7 +207,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
   const handleMerge = async () => {
     if (!masterBookingId || !groupDetail) {
-      toast.error('Ana rezervasyon seciniz');
+      toast.error('Ana rezervasyon seçiniz');
       return;
     }
 
@@ -216,7 +216,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
       .map(b => b.booking_id);
 
     if (mergeIds.length === 0) {
-      toast.error('Birlestirilebilecek folio yok');
+      toast.error('Birleştirilebilecek folio yok');
       return;
     }
 
@@ -228,12 +228,12 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
         merge_booking_ids: mergeIds,
         merge_payments: mergePayments,
       });
-      toast.success(`${res.data?.merged_entries_count || 0} folio girisi ve ${res.data?.merged_payments_count || 0} odeme birlestirildi`);
+      toast.success(`${res.data?.merged_entries_count || 0} folio girişi ve ${res.data?.merged_payments_count || 0} ödeme birleştirildi`);
       setShowMerge(false);
       loadGroupDetail(selectedGroup.id);
       loadSummary();
     } catch (e) {
-      toast.error('Birlestirme hatasi: ' + (e.response?.data?.detail || e.message));
+      toast.error('Birleştirme hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setMerging(false);
     }
@@ -242,7 +242,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
   const handlePayment = async () => {
     const amt = parseFloat(paymentAmount);
     if (!amt || amt <= 0) {
-      toast.error('Gecerli bir tutar giriniz');
+      toast.error('Geçerli bir tutar giriniz');
       return;
     }
 
@@ -255,14 +255,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
         method: paymentMethod,
         reference: paymentRef,
       });
-      toast.success('Odeme basariyla kaydedildi');
+      toast.success('Ödeme başarıyla kaydedildi');
       setShowPayment(false);
       setPaymentAmount('');
       setPaymentRef('');
       loadGroupDetail(selectedGroup.id);
       loadSummary();
     } catch (e) {
-      toast.error('Odeme hatasi: ' + (e.response?.data?.detail || e.message));
+      toast.error('Ödeme hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setPaying(false);
     }
@@ -271,7 +271,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
   const handleBulkPayment = async () => {
     const amt = parseFloat(bulkAmount);
     if (!amt || amt <= 0) {
-      toast.error('Gecerli bir tutar giriniz');
+      toast.error('Geçerli bir tutar giriniz');
       return;
     }
 
@@ -284,14 +284,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
         reference: bulkRef,
         distribution: bulkDistribution,
       });
-      toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtTL(res.data?.total_distributed || 0)} TL dagitildi`);
+      toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtTL(res.data?.total_distributed || 0)} TL dağıtıldı`);
       setShowBulkPayment(false);
       setBulkAmount('');
       setBulkRef('');
       loadGroupDetail(selectedGroup.id);
       loadSummary();
     } catch (e) {
-      toast.error('Toplu odeme hatasi: ' + (e.response?.data?.detail || e.message));
+      toast.error('Toplu ödeme hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setBulkPaying(false);
     }
@@ -312,9 +312,9 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Layers className="w-6 h-6 text-violet-600" />
-              Grup Folio Yonetimi
+              Grup Folio Yönetimi
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Grup rezervasyonlarinin folio islemlerini yonetin ve birlestirin</p>
+            <p className="text-sm text-gray-500 mt-1">Grup rezervasyonlarının folio işlemlerini yönetin ve birleştirin</p>
           </div>
           <Button variant="outline" size="sm" onClick={handleRefresh} data-testid="refresh-btn">
             <RefreshCw className="w-4 h-4 mr-1" /> Yenile
@@ -352,12 +352,12 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
             </div>
 
             {loading ? (
-              <div className="text-center py-8 text-gray-400">Yukleniyor...</div>
+              <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
             ) : filteredGroups.length === 0 ? (
               <Card className="p-8 text-center">
                 <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">
-                  {searchTerm ? 'Aramayla eslesen grup yok' : 'Henuz grup rezervasyonu yok'}
+                  {searchTerm ? 'Aramayla eşleşen grup yok' : 'Henüz grup rezervasyonu yok'}
                 </p>
               </Card>
             ) : (
@@ -413,11 +413,11 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
             {!selectedGroup ? (
               <Card className="p-12 text-center">
                 <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">Soldaki listeden bir grup secin</p>
-                <p className="text-xs text-gray-400 mt-1">Folio detaylarini ve birlestirme islemlerini goruntuleyebilirsiniz</p>
+                <p className="text-gray-500">Soldaki listeden bir grup seçin</p>
+                <p className="text-xs text-gray-400 mt-1">Folio detaylarını ve birleştirme işlemlerini görüntüleyebilirsiniz</p>
               </Card>
             ) : detailLoading ? (
-              <Card className="p-12 text-center text-gray-400">Yukleniyor...</Card>
+              <Card className="p-12 text-center text-gray-400">Yükleniyor...</Card>
             ) : groupDetail ? (
               <>
                 {/* Group header with actions */}
@@ -437,7 +437,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                       data-testid="bulk-payment-btn"
                     >
-                      <Users className="w-4 h-4 mr-1" /> Toplu Odeme
+                      <Users className="w-4 h-4 mr-1" /> Toplu Ödeme
                     </Button>
                     <Button
                       size="sm"
@@ -452,7 +452,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       disabled={!groupDetail.bookings || groupDetail.bookings.length === 0}
                       data-testid="add-payment-btn"
                     >
-                      <Banknote className="w-4 h-4 mr-1" /> Odeme Ekle
+                      <Banknote className="w-4 h-4 mr-1" /> Ödeme Ekle
                     </Button>
                     <Button
                       size="sm"
@@ -464,7 +464,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       className="bg-violet-600 hover:bg-violet-700"
                       data-testid="merge-btn"
                     >
-                      <Merge className="w-4 h-4 mr-1" /> Foliolari Birlesdir
+                      <Merge className="w-4 h-4 mr-1" /> Folioları Birleştir
                     </Button>
                   </div>
                 </div>
@@ -504,7 +504,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                     <div className="text-sm font-semibold">{fmtTL(b.accommodation_total)} TL</div>
                                   </div>
                                   <div>
-                                    <div className="text-[11px] text-gray-500">Odeme</div>
+                                    <div className="text-[11px] text-gray-500">Ödeme</div>
                                     <div className="text-sm font-semibold text-emerald-600">{fmtTL(b.payments)} TL</div>
                                   </div>
                                   <div>
@@ -529,7 +529,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                             {isExpanded && (
                               <div className="px-4 pb-4 border-t border-gray-100">
                                 <div className="flex items-center justify-between pt-3 pb-2">
-                                  <span className="text-xs font-semibold text-gray-500 uppercase">Folio Detaylari</span>
+                                  <span className="text-xs font-semibold text-gray-500 uppercase">Folio Detayları</span>
                                   {!isMerged && (
                                     <Button
                                       size="sm"
@@ -542,7 +542,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                       }}
                                       data-testid={`pay-btn-${b.booking_id}`}
                                     >
-                                      <CreditCard className="w-3 h-3 mr-1" /> Odeme Yap
+                                      <CreditCard className="w-3 h-3 mr-1" /> Ödeme Yap
                                     </Button>
                                   )}
                                 </div>
@@ -571,13 +571,13 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 {/* Merge Logs */}
                 {groupDetail.merge_logs?.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-600 mb-2">Birlestirme Gecmisi</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 mb-2">Birleştirme Geçmişi</h3>
                     {groupDetail.merge_logs.map(log => (
                       <Card key={log.id} className="mb-2">
                         <CardContent className="p-3 text-xs text-gray-600">
                           <div className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                            <span>{log.merged_by} - {log.total_entries_merged} giri, {log.total_payments_merged} odeme birlestirildi</span>
+                            <span>{log.merged_by} - {log.total_entries_merged} giriş, {log.total_payments_merged} ödeme birleştirildi</span>
                             <span className="ml-auto text-gray-400 whitespace-nowrap">{(log.created_at || '').slice(0, 16).replace('T', ' ')}</span>
                           </div>
                         </CardContent>
@@ -595,16 +595,16 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Merge className="w-5 h-5 text-violet-600" /> Foliolari Birlesdir
+                <Merge className="w-5 h-5 text-violet-600" /> Folioları Birleştir
               </DialogTitle>
               <DialogDescription>
-                Grup icerisindeki folio girislerini tek bir ana folioda toplayin.
+                Grup içerisindeki folio girişlerini tek bir ana folioda toplayın.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Bu islem diger odalarin folio girislerini secilen ana folioya tasiyacaktir. Bu islem geri alinamaz.</span>
+                <span>Bu işlem diğer odaların folio girişlerini seçilen ana folioya taşıyacaktır. Bu işlem geri alınamaz.</span>
               </div>
 
               <div>
@@ -624,7 +624,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div className="text-sm text-gray-600">
-                <div className="font-medium mb-2">Birlestirilecek Foliolar:</div>
+                <div className="font-medium mb-2">Birleştirilecek Foliolar:</div>
                 {(groupDetail?.bookings || []).filter(b => b.booking_id !== masterBookingId && !b.folio_merged_to).map(b => (
                   <div key={b.booking_id} className="flex items-center gap-2 py-1">
                     <ArrowRight className="w-3 h-3 text-violet-500" />
@@ -635,13 +635,13 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
 
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={mergePayments} onChange={e => setMergePayments(e.target.checked)} className="w-4 h-4 rounded" id="merge-payments" />
-                <Label htmlFor="merge-payments" className="cursor-pointer text-sm">Odemeleri de birlesdir</Label>
+                <Label htmlFor="merge-payments" className="cursor-pointer text-sm">Ödemeleri de birleştir</Label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowMerge(false)}>Iptal</Button>
+                <Button variant="outline" onClick={() => setShowMerge(false)}>İptal</Button>
                 <Button onClick={handleMerge} disabled={merging} className="bg-violet-600 hover:bg-violet-700" data-testid="confirm-merge-btn">
-                  {merging ? 'Birlestiriliyor...' : 'Birlesdir'}
+                  {merging ? 'Birleştiriliyor...' : 'Birleştir'}
                 </Button>
               </div>
             </div>
@@ -653,10 +653,10 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-emerald-600" /> Odeme Kaydet
+                <CreditCard className="w-5 h-5 text-emerald-600" /> Ödeme Kaydet
               </DialogTitle>
               <DialogDescription>
-                Secilen rezervasyon icin odeme girisi yapin.
+                Seçilen rezervasyon için ödeme girişi yapın.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -691,14 +691,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Odeme Yontemi</Label>
+                <Label>Ödeme Yöntemi</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="mt-1" data-testid="payment-method-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Nakit</SelectItem>
-                    <SelectItem value="credit_card">Kredi Karti</SelectItem>
+                    <SelectItem value="credit_card">Kredi Kartı</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
                     <SelectItem value="agency">Acenta</SelectItem>
                   </SelectContent>
@@ -706,7 +706,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Referans / Aciklama</Label>
+                <Label>Referans / Açıklama</Label>
                 <Input
                   value={paymentRef}
                   onChange={e => setPaymentRef(e.target.value)}
@@ -717,9 +717,9 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowPayment(false)}>Iptal</Button>
+                <Button variant="outline" onClick={() => setShowPayment(false)}>İptal</Button>
                 <Button onClick={handlePayment} disabled={paying} className="bg-emerald-600 hover:bg-emerald-700" data-testid="confirm-payment-btn">
-                  {paying ? 'Kaydediliyor...' : 'Odemeyi Kaydet'}
+                  {paying ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
                 </Button>
               </div>
             </div>
@@ -731,10 +731,10 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-emerald-600" /> Tum Grup Icin Toplu Odeme
+                <Users className="w-5 h-5 text-emerald-600" /> Tüm Grup İçin Toplu Ödeme
               </DialogTitle>
               <DialogDescription>
-                Girdiginiz tutar gruptaki aktif rezervasyonlara otomatik dagitilir.
+                Girdiğiniz tutar gruptaki aktif rezervasyonlara otomatik dağıtılır.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -767,34 +767,34 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                     onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))}
                     data-testid="fill-balance-btn"
                   >
-                    Bakiye tutarini doldur ({fmtTL(groupBalance)} TL)
+                    Bakiye tutarını doldur ({fmtTL(groupBalance)} TL)
                   </Button>
                 )}
               </div>
 
               <div>
-                <Label>Dagitim Yontemi</Label>
+                <Label>Dağıtım Yöntemi</Label>
                 <Select value={bulkDistribution} onValueChange={setBulkDistribution}>
                   <SelectTrigger className="mt-1" data-testid="bulk-distribution-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="proportional">Oransal (bakiyeye gore)</SelectItem>
-                    <SelectItem value="equal">Esit (her rezervasyona esit)</SelectItem>
+                    <SelectItem value="proportional">Oransal (bakiyeye göre)</SelectItem>
+                    <SelectItem value="equal">Eşit (her rezervasyona eşit)</SelectItem>
                     <SelectItem value="balance_only">Sadece bakiyesi olan</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <Label>Odeme Yontemi</Label>
+                <Label>Ödeme Yöntemi</Label>
                 <Select value={bulkMethod} onValueChange={setBulkMethod}>
                   <SelectTrigger className="mt-1" data-testid="bulk-method-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Nakit</SelectItem>
-                    <SelectItem value="credit_card">Kredi Karti</SelectItem>
+                    <SelectItem value="credit_card">Kredi Kartı</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
                     <SelectItem value="agency">Acenta</SelectItem>
                   </SelectContent>
@@ -802,7 +802,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Referans / Aciklama</Label>
+                <Label>Referans / Açıklama</Label>
                 <Input
                   value={bulkRef}
                   onChange={e => setBulkRef(e.target.value)}
@@ -815,7 +815,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               {/* Preview distribution */}
               {bulkAmount && parseFloat(bulkAmount) > 0 && (
                 <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Dagitim Onizleme</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Dağıtım Önizleme</div>
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => {
                     const amt = parseFloat(bulkAmount) || 0;
                     const totalPos = (groupDetail?.bookings || []).filter(x => !x.folio_merged_to && x.balance > 0).reduce((s, x) => s + x.balance, 0);
@@ -838,14 +838,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               )}
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowBulkPayment(false)}>Iptal</Button>
+                <Button variant="outline" onClick={() => setShowBulkPayment(false)}>İptal</Button>
                 <Button
                   onClick={handleBulkPayment}
                   disabled={bulkPaying || !bulkAmount || parseFloat(bulkAmount) <= 0}
                   className="bg-emerald-600 hover:bg-emerald-700"
                   data-testid="confirm-bulk-payment-btn"
                 >
-                  {bulkPaying ? 'Dagitiliyor...' : 'Toplu Odemeyi Kaydet'}
+                  {bulkPaying ? 'Dağıtılıyor...' : 'Toplu Ödemeyi Kaydet'}
                 </Button>
               </div>
             </div>
