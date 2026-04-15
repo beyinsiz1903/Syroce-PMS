@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.helpers import (
@@ -19,10 +19,26 @@ from core.security import (
     get_current_user,
     security,
 )
-from domains.guest.schemas import LinenInventoryItem
 from models.schemas import ReportIssueRequest, UploadPhotoRequest, User
 
 logger = logging.getLogger(__name__)
+
+
+class LinenInventoryItem(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    item_type: str
+    size: str | None = None
+    quantity_in_stock: int = 0
+    quantity_in_use: int = 0
+    quantity_in_laundry: int = 0
+    quantity_damaged: int = 0
+    reorder_level: int = 50
+    unit_cost: float = 0.0
+    last_restocked: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 try:
     from cache_manager import cached
