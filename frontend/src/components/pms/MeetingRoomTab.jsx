@@ -65,6 +65,7 @@ const MeetingRoomTab = () => {
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const emptyForm = {
     room_id: '', company_name: '', contact_name: '', contact_phone: '',
@@ -250,11 +251,18 @@ const MeetingRoomTab = () => {
       toast.success('Rezervasyon iptal edildi');
       setSelectedReservation(null);
       setEditForm(null);
+      setShowCancelConfirm(false);
       loadData();
     } catch {
       toast.error('Iptal islemi basarisiz');
     }
     setSaving(false);
+  };
+
+  const closeDetailDialog = () => {
+    setSelectedReservation(null);
+    setEditForm(null);
+    setShowCancelConfirm(false);
   };
 
   return (
@@ -637,7 +645,7 @@ const MeetingRoomTab = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!selectedReservation} onOpenChange={v => { if (!v) { setSelectedReservation(null); setEditForm(null); } }}>
+      <Dialog open={!!selectedReservation} onOpenChange={v => { if (!v) closeDetailDialog(); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -760,14 +768,17 @@ const MeetingRoomTab = () => {
 
               <div>
                 <Label>Durum</Label>
-                <Select value={editForm.status} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="confirmed">Onaylandi</SelectItem>
-                    <SelectItem value="tentative">Taslak</SelectItem>
-                    <SelectItem value="cancelled">Iptal</SelectItem>
-                  </SelectContent>
-                </Select>
+                {editForm.status === 'cancelled' ? (
+                  <div className="mt-1"><Badge className="bg-red-100 text-red-700">Iptal Edildi</Badge></div>
+                ) : (
+                  <Select value={editForm.status} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="confirmed">Onaylandi</SelectItem>
+                      <SelectItem value="tentative">Taslak</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               <div><Label>Not</Label><Textarea value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} placeholder="Ozel istekler..." rows={2} /></div>
@@ -779,16 +790,43 @@ const MeetingRoomTab = () => {
                 </div>
               )}
 
-              <div className="flex gap-2">
+              {editForm.status !== 'cancelled' && !showCancelConfirm && (
+                <div className="border-t pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 text-xs"
+                    onClick={() => setShowCancelConfirm(true)}
+                  >
+                    Rezervasyonu Iptal Et
+                  </Button>
+                </div>
+              )}
+
+              {showCancelConfirm && (
+                <div className="border border-red-200 bg-red-50 rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-medium text-red-800">Rezervasyonu iptal etmek istediginizden emin misiniz?</p>
+                  <p className="text-xs text-red-600">Bu islem geri alinamaz. Rezervasyon durumu "Iptal" olarak guncellenecektir.</p>
+                  <div className="flex gap-2">
+                    <Button variant="destructive" size="sm" onClick={cancelReservation} disabled={saving}>
+                      {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
+                      Evet, Iptal Et
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowCancelConfirm(false)}>
+                      Vazgec
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 border-t pt-3">
                 <Button onClick={updateReservation} disabled={saving} className="flex-1">
                   {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
                   Kaydet
                 </Button>
-                {editForm.status !== 'cancelled' && (
-                  <Button variant="destructive" onClick={cancelReservation} disabled={saving}>
-                    Iptal Et
-                  </Button>
-                )}
+                <Button variant="outline" onClick={closeDetailDialog}>
+                  Kapat
+                </Button>
               </div>
             </div>
           )}
