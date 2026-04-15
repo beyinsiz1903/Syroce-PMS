@@ -17,9 +17,9 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
 
     application = FastAPI(
-        title="RoomOps Platform - Otel Yonetim Sistemi",
+        title="Syroce PMS - Otel Yönetim Sistemi",
         description="""
-## RoomOps PMS - Kapsamli Otel Yonetim Platformu
+## Syroce PMS - Kapsamlı Otel Yönetim Platformu
 
 ### Temel Moduller
 - **PMS**: Oda, Rezervasyon, Check-in/Check-out Yonetimi

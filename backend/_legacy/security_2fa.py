@@ -28,7 +28,7 @@ class TwoFASetupResponse(BaseModel):
     secret: str
     qr_code: str
     manual_entry_key: str
-    issuer: str = "RoomOps PMS"
+    issuer: str = "Syroce PMS"
 
 class TwoFAVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=8)  # 6 for TOTP, 8 for backup
@@ -180,7 +180,7 @@ def create_2fa_routes(db, get_current_user):
         
         provisioning_uri = totp.provisioning_uri(
             name=current_user.email,
-            issuer_name="RoomOps PMS"
+            issuer_name="Syroce PMS"
         )
         
         qr_code = generate_qr_code_base64(provisioning_uri)

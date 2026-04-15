@@ -5,7 +5,7 @@
 
 const CACHE_VERSION = 'v1.0.0';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
-const OFFLINE_DB_NAME = 'RoomOpsOffline';
+const OFFLINE_DB_NAME = 'SyroceOffline';
 const OFFLINE_DB_VERSION = 1;
 const MEDIA_QUEUE_STORE = 'mediaQueue';
 const TASK_QUEUE_STORE = 'taskQueue';

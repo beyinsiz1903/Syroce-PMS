@@ -76,7 +76,7 @@ MAX_MEDIA_SIZE = 25 * 1024 * 1024  # 25MB
 
 def _generate_upload_url(media_id: str, filename: str) -> str:
     sanitized = filename.replace(" ", "_")
-    return f"https://storage.roomops.local/{media_id}/{sanitized}"
+    return f"https://storage.syroce.local/{media_id}/{sanitized}"
 
 
 @media_router.post("/request-upload", response_model=MediaUploadResponse)

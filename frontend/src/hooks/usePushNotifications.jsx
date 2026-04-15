@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import axios from 'axios';
 
-const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BHVV1Bv0roomOpsFallbackKeyExample1234567890';
+const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BHVV1Bv0syroceFallbackKeyExample1234567890';
 
 const isPushSupported = () =>
   typeof window !== 'undefined' &&

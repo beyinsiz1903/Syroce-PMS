@@ -3,7 +3,7 @@
  * Stores pending media uploads / task updates while the app is offline.
  */
 
-const DB_NAME = 'RoomOpsOffline';
+const DB_NAME = 'SyroceOffline';
 const DB_VERSION = 1;
 
 const STORES = {

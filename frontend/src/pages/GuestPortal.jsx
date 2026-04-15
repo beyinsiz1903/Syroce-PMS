@@ -192,7 +192,7 @@ const GuestPortal = ({ user, onLogout }) => {
                 onClick={() => navigate('/')}
                 data-testid="guest-logo"
               >
-                RoomOps Guest
+                Syroce PMS
               </h1>
             </div>
 
