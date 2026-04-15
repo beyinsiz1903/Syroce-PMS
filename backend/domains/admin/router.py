@@ -19,6 +19,7 @@ from core.security import (
 )
 
 require_super_admin = require_super_admin_guard()
+from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings
 from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
 from models.enums import UserRole
 from models.schemas import Tenant, TenantRegister, UpdateUserRoleRequest, User
@@ -155,6 +156,24 @@ async def get_my_permissions(
 # ============= MOBILE APP ENDPOINTS (STAFF & GUEST) =============
 
 
+@router.get("/admin/property-types")
+async def list_property_types():
+    """List all available property types with their profiles (public endpoint for tenant creation form)"""
+    return {"property_types": get_all_property_types()}
+
+
+@router.get("/admin/property-types/{property_type}")
+async def get_property_type_detail(property_type: str):
+    """Get detailed property type profile including module config and special settings"""
+    profile = get_property_profile(property_type)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Property type not found")
+    return {
+        "key": property_type,
+        **profile,
+        "dashboard_layout": profile.get("dashboard_layout", "standard"),
+    }
+
 
 @router.get("/admin/tenants")
 async def list_tenants(current_user: User = Depends(require_super_admin)):
@@ -240,28 +259,51 @@ async def create_tenant(
     if tier not in ("basic", "professional", "enterprise"):
         tier = "basic"
 
-    tier_modules = get_plan_default_modules(tier)
+    property_type = payload.property_type or "city_hotel"
+    profile = get_property_profile(property_type)
+
+    valid_types = [pt["key"] for pt in get_all_property_types()]
+    if property_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Gecersiz tesis tipi: {property_type}. Gecerli: {', '.join(valid_types)}")
+
+    if profile:
+        if not payload.subscription_tier:
+            tier = profile.get("recommended_tier", "basic")
+        combined_modules = get_modules_for_property_type(property_type, tier)
+        special_settings = get_property_special_settings(property_type)
+        nav_config = get_hidden_nav_config(property_type)
+        dashboard_layout = profile.get("dashboard_layout", "standard")
+    else:
+        combined_modules = get_plan_default_modules(tier)
+        special_settings = {}
+        nav_config = {"hidden_nav_groups": [], "hidden_nav_items": []}
+        dashboard_layout = "standard"
 
     new_tenant = Tenant(
         property_name=payload.property_name,
+        property_type=property_type,
         contact_email=payload.email,
         contact_phone=payload.phone,
         address=payload.address,
         location=payload.location or "",
+        total_rooms=payload.total_rooms or profile.get("room_range", {}).get("min", 50) if profile else (payload.total_rooms or 50),
         subscription_tier=tier,
         subscription_start_date=start_date.isoformat(),
         subscription_end_date=end_date.isoformat() if end_date else None,
         subscription_status="active",
         subscription_plan=normalized_plan,
-        modules=tier_modules,
+        modules=combined_modules,
+        features=special_settings,
     )
 
     tenant_dict = new_tenant.model_dump()
     tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
-    # Store email/phone/description for backward compatibility
     tenant_dict['email'] = payload.email
     tenant_dict['phone'] = payload.phone
     tenant_dict['description'] = payload.description or ""
+    tenant_dict['dashboard_layout'] = dashboard_layout
+    tenant_dict['hidden_nav_groups'] = nav_config.get("hidden_nav_groups", [])
+    tenant_dict['hidden_nav_items'] = nav_config.get("hidden_nav_items", [])
     await db.tenants.insert_one(tenant_dict)
 
     # Create admin user for this tenant

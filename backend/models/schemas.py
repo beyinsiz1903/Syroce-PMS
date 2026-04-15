@@ -104,16 +104,18 @@ def _ensure_hotel_context(user: User):
 
 class TenantRegister(BaseModel):
     property_name: str
+    property_type: str | None = "city_hotel"
     email: EmailStr
     password: str
     name: str
     phone: str
     address: str
     location: str | None = None
+    total_rooms: int | None = None
     description: str | None = None
-    subscription_days: int | None = None  # Duration in days (30, 60, 90, 180, 365, None=unlimited)
-    subscription_plan: str | None = None  # e.g. core_small_hotel, pms_lite
-    subscription_tier: str | None = "basic"  # basic, professional, enterprise
+    subscription_days: int | None = None
+    subscription_plan: str | None = None
+    subscription_tier: str | None = "basic"
 
 class GuestRegister(BaseModel):
     email: EmailStr

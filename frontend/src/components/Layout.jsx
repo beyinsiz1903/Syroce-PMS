@@ -100,6 +100,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const isSuperAdmin = user?.role === 'super_admin';
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
+  const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
+  const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);
 
   const currentTier = useMemo(() => {
     const tier = tenant?.subscription_tier || 'basic';
@@ -130,6 +132,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
     NAV_ITEMS.forEach((item) => {
       if (item.hidden) return;
+      if (!isSuperAdmin && hiddenNavItems.has(item.key)) return;
+      if (!isSuperAdmin && item.navGroup && hiddenNavGroups.has(item.navGroup)) return;
       if (item.requireSuperAdmin) {
         if (isSuperAdmin) visible.push(item);
         return;
@@ -145,7 +149,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     });
 
     return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
-  }, [modules, isSuperAdmin]);
+  }, [modules, isSuperAdmin, hiddenNavGroups, hiddenNavItems]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];
@@ -326,7 +330,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
 
               {/* Group dropdowns */}
-              {NAV_GROUPS.map((groupDef) => renderGroupDropdown(groupDef))}
+              {NAV_GROUPS.filter(g => !hiddenNavGroups.has(g.id) || isSuperAdmin).map((groupDef) => renderGroupDropdown(groupDef))}
 
               {/* Separator */}
               <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
@@ -452,7 +456,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 );
               })}
 
-              {NAV_GROUPS.map((groupDef) => {
+              {NAV_GROUPS.filter(g => !hiddenNavGroups.has(g.id) || isSuperAdmin).map((groupDef) => {
                 const items = groupedItems[groupDef.id];
                 if (!items || items.length === 0) return null;
                 const GroupIcon = GROUP_ICONS[groupDef.id] || Home;

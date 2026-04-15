@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Enterprise-grade multi-tenant Hotel Property Management System (PMS) with AI-powered features for hotel operations, reservations, housekeeping, financial folios, and OTA channel management.
+Enterprise-grade multi-tenant Hotel Property Management System (PMS) with AI-powered features for hotel operations, reservations, housekeeping, financial folios, and OTA channel management. Features a **Property Type Profiling System** that adapts the entire PMS for any accommodation type — from 1-room pensions to 1000-room luxury resorts.
 
 ## Architecture
 
@@ -169,6 +169,35 @@ Reduced from 1309 lines via dialog extraction.
 - **DB Collection**: `service_complaints`
 - **Frontend**: `frontend/src/pages/ServiceRecovery.jsx` — stats, filters, create/detail/resolve dialogs
 - **Integration**: Selecting a booking auto-fills guest, room, room_type; rooms and guests also selectable independently
+
+## Property Type Profiling System
+
+Adapts the PMS for any accommodation type. 15 property types across 4 categories.
+
+### Property Types (backend/domains/admin/property_profiles.py)
+- **Small Properties** (Basic tier): Pension, Villa, Hostel, Motel, Camping
+- **Mid-Scale** (Professional tier): Apart Hotel, Boutique Hotel, 3-Star Hotel, City Hotel
+- **Large Properties** (Enterprise tier): Business/Conference Hotel, 4-Star Hotel, 5-Star/Luxury Hotel
+- **Resorts** (Enterprise tier): Summer/Beach, Winter/Ski, Thermal/Wellness
+
+### How It Works
+- Each property type defines: enabled modules, hidden nav groups/items, dashboard layout, special settings
+- When creating a new tenant (POST /api/admin/tenants), `property_type` determines module configuration
+- Subscription tier is auto-recommended but can be overridden
+- `hidden_nav_groups` and `hidden_nav_items` stored on tenant doc → Layout.jsx filters navigation
+- `features` dict stores property-specific settings (e.g., `quick_reservation_mode`, `show_spa`, `all_inclusive`)
+- Dashboard layouts: simple, standard, advanced, full
+
+### Key Files
+- `backend/domains/admin/property_profiles.py` — 15 property type definitions with full module maps
+- `frontend/src/pages/admin/CreateTenantModal.jsx` — 2-step wizard: type selection → tenant details
+- `frontend/src/components/Layout.jsx` — Nav filtering by `hiddenNavGroups` + `hiddenNavItems`
+- `backend/domains/admin/router.py` — GET /api/admin/property-types, property-aware create_tenant
+
+### API Endpoints
+- `GET /api/admin/property-types` — List all 15 property types (public)
+- `GET /api/admin/property-types/{type}` — Get detail profile with modules, settings, nav config
+- `POST /api/admin/tenants` — Now accepts `property_type` and `total_rooms` fields
 
 ## Channel Manager Connection State & Sandbox Mode
 
