@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
 import { InfoField, Avatar, EmptyState, SummaryCard, FormField } from '../helpers';
 
 vi.mock('lucide-react', () => ({

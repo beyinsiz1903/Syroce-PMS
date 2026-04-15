@@ -25,7 +25,7 @@ describe('cacheUtils', () => {
     });
 
     it('handles localStorage errors gracefully', () => {
-      const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      const spy = vi.spyOn(Object.getPrototypeOf(window.localStorage), 'setItem').mockImplementation(() => {
         throw new Error('QuotaExceeded');
       });
       expect(() => setCache('key', 'val')).not.toThrow();
