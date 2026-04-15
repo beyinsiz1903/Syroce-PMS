@@ -13,7 +13,7 @@ import {
   TrendingUp, AlertTriangle, Lock, Unlock, Save, Users
 } from 'lucide-react';
 
-const DAYS = ['Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma', 'Cumartesi', 'Pazar'];
+const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
 const ROOM_TYPES = ['Standart Oda', 'Deluxe Oda', 'Corner Suit', 'Junior Suit', 'Kral Dairesi'];
 
 const defaultHurdle = () => ROOM_TYPES.reduce((acc, rt) => ({ ...acc, [rt]: { min_rate: 0, bar: 0, active: false } }), {});
@@ -58,9 +58,10 @@ const RevenueControls = ({ rooms = [] }) => {
     setSaving(true);
     try {
       await axios.put('/revenue/settings', { hurdle_rates: hurdleRates, day_pricing: dayPricing, overbooking });
-      toast.success(section === 'hurdle' ? 'Engel fiyatlar kaydedildi' : section === 'daypricing' ? 'Gun bazli fiyatlandirma kaydedildi' : 'Overbooking ayarlari kaydedildi');
+      toast.success(section === 'hurdle' ? 'Engel fiyatlar kaydedildi' : section === 'daypricing' ? 'Gün bazlı fiyatlandırma kaydedildi' : 'Overbooking ayarları kaydedildi');
     } catch {
       toast.error('Ayarlar kaydedilemedi');
+
     } finally {
       setSaving(false);
     }
@@ -70,11 +71,11 @@ const RevenueControls = ({ rooms = [] }) => {
     if (!walkData.guest_name) return;
     try {
       await axios.post('/revenue/walk-out', walkData);
-      toast.success(`${walkData.guest_name} walk-out islemi tamamlandi`);
+      toast.success(`${walkData.guest_name} walk-out işlemi tamamlandı`);
       setShowWalkDialog(false);
       setWalkData({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
     } catch {
-      toast.error('Walk-out islemi basarisiz');
+      toast.error('Walk-out işlemi başarısız');
     }
   };
 
@@ -89,7 +90,7 @@ const RevenueControls = ({ rooms = [] }) => {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="hurdle">Engel Fiyat (BAR)</TabsTrigger>
-          <TabsTrigger value="daypricing">Gun Bazli Fiyat</TabsTrigger>
+          <TabsTrigger value="daypricing">Gün Bazlı Fiyat</TabsTrigger>
           <TabsTrigger value="overbooking">Overbooking</TabsTrigger>
         </TabsList>
 
@@ -97,7 +98,7 @@ const RevenueControls = ({ rooms = [] }) => {
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Minimum Satis Fiyatlari (Hurdle Rate / BAR)</CardTitle>
+                <CardTitle className="text-sm">Minimum Satış Fiyatları (Hurdle Rate / BAR)</CardTitle>
                 <Button size="sm" onClick={() => saveAll('hurdle')} disabled={saving}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
               </div>
             </CardHeader>
@@ -123,7 +124,7 @@ const RevenueControls = ({ rooms = [] }) => {
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 <AlertTriangle className="h-3 w-3 inline mr-1" />
-                Engel fiyat aktif oldugunda, bu fiyatin altinda rezervasyon alinmaz.
+                Engel fiyat aktif olduğunda, bu fiyatın altında rezervasyon alınmaz.
               </p>
             </CardContent>
           </Card>
@@ -133,7 +134,7 @@ const RevenueControls = ({ rooms = [] }) => {
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Gun Bazli Fiyatlandirma Matrisi</CardTitle>
+                <CardTitle className="text-sm">Gün Bazlı Fiyatlandırma Matrisi</CardTitle>
                 <Button size="sm" onClick={() => saveAll('daypricing')} disabled={saving}><Save className="h-3 w-3 mr-1" /> Kaydet</Button>
               </div>
             </CardHeader>
@@ -161,7 +162,7 @@ const RevenueControls = ({ rooms = [] }) => {
                 </table>
               </div>
               <div className="mt-3">
-                <Label className="text-xs">Minimum Konaklama Suresi (tum oda tipleri icin)</Label>
+                <Label className="text-xs">Minimum Konaklama Süresi (tüm oda tipleri için)</Label>
                 <div className="flex gap-2 mt-1 flex-wrap">
                   {DAYS.map(day => (
                     <div key={day} className="text-center">
@@ -178,12 +179,12 @@ const RevenueControls = ({ rooms = [] }) => {
         <TabsContent value="overbooking" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Overbooking Ayarlari</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Overbooking Ayarları</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>Overbooking Aktif</Label>
                   <Button size="sm" variant={overbooking.enabled ? 'destructive' : 'default'} onClick={() => setOverbooking(p => ({ ...p, enabled: !p.enabled }))}>
-                    {overbooking.enabled ? 'Kapat' : 'Ac'}
+                    {overbooking.enabled ? 'Kapat' : 'Aç'}
                   </Button>
                 </div>
                 <div>
@@ -192,27 +193,27 @@ const RevenueControls = ({ rooms = [] }) => {
                   <p className="text-xs text-muted-foreground mt-1">Maks. {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} ekstra rezervasyon</p>
                 </div>
                 <div>
-                  <Label>Walk-Out Tazminati</Label>
+                  <Label>Walk-Out Tazminatı</Label>
                   <Select value={overbooking.walk_compensation} onValueChange={v => setOverbooking(p => ({ ...p, walk_compensation: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="upgrade_nearby">Yakindaki otelde upgrade</SelectItem>
+                      <SelectItem value="upgrade_nearby">Yakındaki otelde upgrade</SelectItem>
                       <SelectItem value="cash">Nakit tazminat</SelectItem>
-                      <SelectItem value="free_night">Ucretsiz gece (gelecek konaklama)</SelectItem>
-                      <SelectItem value="combo">Nakit + Gelecek ucretsiz gece</SelectItem>
+                      <SelectItem value="free_night">Ücretsiz gece (gelecek konaklama)</SelectItem>
+                      <SelectItem value="combo">Nakit + Gelecek ücretsiz gece</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Tazminat Tutari (TL)</Label>
+                  <Label>Tazminat Tutarı (₺)</Label>
                   <Input type="number" value={overbooking.walk_amount} onChange={e => setOverbooking(p => ({ ...p, walk_amount: parseInt(e.target.value) || 0 }))} />
                 </div>
-                <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving}><Save className="h-4 w-4 mr-1" /> Ayarlari Kaydet</Button>
+                <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving}><Save className="h-4 w-4 mr-1" /> Ayarları Kaydet</Button>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Walk-Out Islemi</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Walk-Out İşlemi</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="p-4 bg-muted rounded-lg text-center">
                   <div className="text-3xl font-bold">{overbooking.current_overbooked || 0}</div>
@@ -220,7 +221,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <div className="text-xs mt-1">Kapasite: {overbooking.total_rooms} + {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} = {overbooking.total_rooms + Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)}</div>
                 </div>
                 <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)}>
-                  <Users className="h-4 w-4 mr-1" /> Walk-Out Islemi Baslat
+                  <Users className="h-4 w-4 mr-1" /> Walk-Out İşlemi Başlat
                 </Button>
               </CardContent>
             </Card>
@@ -228,23 +229,23 @@ const RevenueControls = ({ rooms = [] }) => {
 
           <Dialog open={showWalkDialog} onOpenChange={setShowWalkDialog}>
             <DialogContent>
-              <DialogHeader><DialogTitle>Walk-Out Tazminat Islemi</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>Walk-Out Tazminat İşlemi</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div><Label>Misafir Adi</Label><Input value={walkData.guest_name} onChange={e => setWalkData(p => ({ ...p, guest_name: e.target.value }))} /></div>
+                <div><Label>Misafir Adı</Label><Input value={walkData.guest_name} onChange={e => setWalkData(p => ({ ...p, guest_name: e.target.value }))} /></div>
                 <div><Label>Oda Tipi</Label><Input value={walkData.room_type} onChange={e => setWalkData(p => ({ ...p, room_type: e.target.value }))} /></div>
                 <div>
                   <Label>Tazminat Tipi</Label>
                   <Select value={walkData.compensation_type} onValueChange={v => setWalkData(p => ({ ...p, compensation_type: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="upgrade_nearby">Yakin otele yonlendir</SelectItem>
+                      <SelectItem value="upgrade_nearby">Yakın otele yönlendir</SelectItem>
                       <SelectItem value="cash">Nakit tazminat</SelectItem>
-                      <SelectItem value="free_night">Ucretsiz gece</SelectItem>
+                      <SelectItem value="free_night">Ücretsiz gece</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div><Label>Tazminat Tutari (TL)</Label><Input type="number" value={walkData.compensation_amount} onChange={e => setWalkData(p => ({ ...p, compensation_amount: e.target.value }))} /></div>
-                <div><Label>Yonlendirilen Otel</Label><Input value={walkData.nearby_hotel} onChange={e => setWalkData(p => ({ ...p, nearby_hotel: e.target.value }))} placeholder="Otel adi..." /></div>
+                <div><Label>Tazminat Tutarı (₺)</Label><Input type="number" value={walkData.compensation_amount} onChange={e => setWalkData(p => ({ ...p, compensation_amount: e.target.value }))} /></div>
+                <div><Label>Yönlendirilen Otel</Label><Input value={walkData.nearby_hotel} onChange={e => setWalkData(p => ({ ...p, nearby_hotel: e.target.value }))} placeholder="Otel adı..." /></div>
                 <div><Label>Notlar</Label><Input value={walkData.notes} onChange={e => setWalkData(p => ({ ...p, notes: e.target.value }))} /></div>
                 <Button className="w-full" variant="destructive" onClick={processWalk}>Walk-Out Tamamla</Button>
               </div>

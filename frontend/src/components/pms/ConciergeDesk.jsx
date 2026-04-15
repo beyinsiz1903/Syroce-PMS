@@ -16,15 +16,15 @@ import {
 
 const REQUEST_TYPES = [
   { value: 'restaurant', label: 'Restoran Rezervasyonu', icon: Utensils },
-  { value: 'transfer', label: 'Transfer / Ulasim', icon: Car },
+  { value: 'transfer', label: 'Transfer / Ulaşım', icon: Car },
   { value: 'tour', label: 'Tur / Gezi', icon: MapPin },
   { value: 'ticket', label: 'Bilet (Konser/Etkinlik)', icon: Ticket },
   { value: 'spa', label: 'Spa Randevusu', icon: Coffee },
   { value: 'valet', label: 'Vale Parking', icon: Car },
   { value: 'parcel', label: 'Paket / Kargo', icon: Package },
   { value: 'deposit_box', label: 'Kasa Kiralama', icon: Key },
-  { value: 'wakeup', label: 'Uyandirma Servisi', icon: Bell },
-  { value: 'other', label: 'Diger Talep', icon: AlertCircle },
+  { value: 'wakeup', label: 'Uyandırma Servisi', icon: Bell },
+  { value: 'other', label: 'Diğer Talep', icon: AlertCircle },
 ];
 
 const STATUS_COLORS = {
@@ -54,7 +54,7 @@ const ConciergeDesk = () => {
       const res = await axios.get('/concierge/requests');
       setRequests(res.data.requests || []);
     } catch (err) {
-      toast.error('Concierge talepleri yuklenemedi');
+      toast.error('Concierge talepleri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -65,11 +65,11 @@ const ConciergeDesk = () => {
     try {
       const res = await axios.post('/concierge/requests', newReq);
       setRequests(prev => [res.data, ...prev]);
-      toast.success('Talep olusturuldu');
+      toast.success('Talep oluşturuldu');
       setNewReq({ type: '', room_number: '', guest_name: '', details: '', date: '', time: '', pax: '', notes: '', priority: 'normal' });
       setShowNew(false);
     } catch {
-      toast.error('Talep olusturulamadi');
+      toast.error('Talep oluşturulamadı');
     }
   };
 
@@ -77,9 +77,9 @@ const ConciergeDesk = () => {
     try {
       await axios.patch(`/concierge/requests/${id}`, { status });
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-      toast.success(`Talep durumu: ${status === 'completed' ? 'Tamamlandi' : status === 'in_progress' ? 'Islemde' : status === 'cancelled' ? 'Iptal' : status}`);
+      toast.success(`Talep durumu: ${status === 'completed' ? 'Tamamlandı' : status === 'in_progress' ? 'İşlemde' : status === 'cancelled' ? 'İptal' : status}`);
     } catch {
-      toast.error('Durum guncellenemedi');
+      toast.error('Durum güncellenemedi');
     }
   };
 
@@ -100,7 +100,7 @@ const ConciergeDesk = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          <MapPin className="h-5 w-5" /> Concierge Masasi
+          <MapPin className="h-5 w-5" /> Concierge Masası
         </h2>
         <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1" /> Yeni Talep</Button>
       </div>
@@ -121,7 +121,7 @@ const ConciergeDesk = () => {
         <Card className="cursor-pointer border-blue-200">
           <CardContent className="p-3 text-center">
             <div className="text-2xl font-bold text-blue-600">{stats.in_progress}</div>
-            <div className="text-xs text-muted-foreground">Islemde</div>
+            <div className="text-xs text-muted-foreground">İşlemde</div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer border-green-200">
@@ -133,7 +133,7 @@ const ConciergeDesk = () => {
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        <Button size="sm" variant={activeType === 'all' ? 'default' : 'outline'} onClick={() => setActiveType('all')}>Tumu</Button>
+        <Button size="sm" variant={activeType === 'all' ? 'default' : 'outline'} onClick={() => setActiveType('all')}>Tümü</Button>
         {REQUEST_TYPES.map(t => (
           <Button key={t.value} size="sm" variant={activeType === t.value ? 'default' : 'outline'} onClick={() => setActiveType(t.value)}>
             <t.icon className="h-3 w-3 mr-1" />{t.label}
@@ -143,12 +143,12 @@ const ConciergeDesk = () => {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Misafir adi veya oda no ile ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <Input className="pl-9" placeholder="Misafir adı veya oda no ile ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="space-y-2">
-        {loading && <p className="text-center text-muted-foreground py-4">Yukleniyor...</p>}
-        {!loading && filtered.length === 0 && <p className="text-center text-muted-foreground py-8">Talep bulunamadi</p>}
+        {loading && <p className="text-center text-muted-foreground py-4">Yükleniyor...</p>}
+        {!loading && filtered.length === 0 && <p className="text-center text-muted-foreground py-8">Talep bulunamadı</p>}
         {filtered.map(req => {
           const typeInfo = REQUEST_TYPES.find(t => t.value === req.type);
           const Icon = typeInfo?.icon || AlertCircle;
@@ -163,21 +163,21 @@ const ConciergeDesk = () => {
                         <span className="font-medium">{req.guest_name}</span>
                         <Badge variant="outline">Oda {req.room_number}</Badge>
                         {req.priority === 'vip' && <Badge className="bg-purple-100 text-purple-800">VIP</Badge>}
-                        {req.priority === 'high' && <Badge className="bg-red-100 text-red-800">Oncelikli</Badge>}
+                        {req.priority === 'high' && <Badge className="bg-red-100 text-red-800">Öncelikli</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">{typeInfo?.label}: {req.details}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                         <Clock className="h-3 w-3" />{req.date} {req.time}
-                        {req.pax > 1 && <span>• {req.pax} kisi</span>}
+                        {req.pax > 1 && <span>• {req.pax} kişi</span>}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className={STATUS_COLORS[req.status] || ''}>
-                      {req.status === 'pending' ? 'Bekliyor' : req.status === 'in_progress' ? 'Islemde' : req.status === 'completed' ? 'Tamamlandi' : req.status === 'confirmed' ? 'Onaylandi' : 'Iptal'}
+                      {req.status === 'pending' ? 'Bekliyor' : req.status === 'in_progress' ? 'İşlemde' : req.status === 'completed' ? 'Tamamlandı' : req.status === 'confirmed' ? 'Onaylandı' : 'İptal'}
                     </Badge>
                     {req.status === 'pending' && (
-                      <Button size="sm" variant="outline" onClick={() => updateStatus(req.id, 'in_progress')}>Basla</Button>
+                      <Button size="sm" variant="outline" onClick={() => updateStatus(req.id, 'in_progress')}>Başla</Button>
                     )}
                     {(req.status === 'pending' || req.status === 'in_progress') && (
                       <Button size="sm" onClick={() => updateStatus(req.id, 'completed')}>
@@ -195,22 +195,23 @@ const ConciergeDesk = () => {
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Yeni Concierge Talebi</DialogTitle></DialogHeader>
+
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Talep Tipi</Label>
                 <Select value={newReq.type} onValueChange={v => setNewReq(p => ({ ...p, type: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Tip secin..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Tip seçin..." /></SelectTrigger>
                   <SelectContent>{REQUEST_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Oncelik</Label>
+                <Label>Öncelik</Label>
                 <Select value={newReq.priority} onValueChange={v => setNewReq(p => ({ ...p, priority: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">Yuksek</SelectItem>
+                    <SelectItem value="high">Yüksek</SelectItem>
                     <SelectItem value="vip">VIP</SelectItem>
                   </SelectContent>
                 </Select>
@@ -218,16 +219,16 @@ const ConciergeDesk = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Oda No</Label><Input value={newReq.room_number} onChange={e => setNewReq(p => ({ ...p, room_number: e.target.value }))} /></div>
-              <div><Label>Misafir Adi</Label><Input value={newReq.guest_name} onChange={e => setNewReq(p => ({ ...p, guest_name: e.target.value }))} /></div>
+              <div><Label>Misafir Adı</Label><Input value={newReq.guest_name} onChange={e => setNewReq(p => ({ ...p, guest_name: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Tarih</Label><Input type="date" value={newReq.date} onChange={e => setNewReq(p => ({ ...p, date: e.target.value }))} /></div>
               <div><Label>Saat</Label><Input type="time" value={newReq.time} onChange={e => setNewReq(p => ({ ...p, time: e.target.value }))} /></div>
-              <div><Label>Kisi</Label><Input type="number" min="1" value={newReq.pax} onChange={e => setNewReq(p => ({ ...p, pax: e.target.value }))} /></div>
+              <div><Label>Kişi</Label><Input type="number" min="1" value={newReq.pax} onChange={e => setNewReq(p => ({ ...p, pax: e.target.value }))} /></div>
             </div>
-            <div><Label>Detaylar</Label><Textarea value={newReq.details} onChange={e => setNewReq(p => ({ ...p, details: e.target.value }))} placeholder="Restoran adi, adres, arac tipi..." /></div>
+            <div><Label>Detaylar</Label><Textarea value={newReq.details} onChange={e => setNewReq(p => ({ ...p, details: e.target.value }))} placeholder="Restoran adı, adres, araç tipi..." /></div>
             <div><Label>Notlar</Label><Input value={newReq.notes} onChange={e => setNewReq(p => ({ ...p, notes: e.target.value }))} placeholder="Ek bilgiler..." /></div>
-            <Button className="w-full" onClick={createRequest}>Talep Olustur</Button>
+            <Button className="w-full" onClick={createRequest}>Talep Oluştur</Button>
           </div>
         </DialogContent>
       </Dialog>

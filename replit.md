@@ -108,9 +108,16 @@ Two URL patterns coexist in frontend code:
 All tabs use Lucide icons and Turkish labels:
 - Resepsiyon, Kat Hizmetleri, Odalar, Misafirler, Rezervasyonlar
 - Kasa, Upsell, Mesajlar, Raporlar, Flash Rapor
-- Gorevler, Geri Bildirim, Kontenjan, POS
-- Camasirhane, Toplanti, Zaman Cizelgesi
-- Concierge, Banket & Etkinlik, Gelir Kontrol, Mudur Raporu, KBS/GIKS, KVKK
+- Görevler, Geri Bildirim, Kontenjan, POS (extracted to `POSTab.jsx`)
+- Çamaşırhane, Toplantı, Zaman Çizelgesi
+- Concierge, Banket & Etkinlik, Gelir Kontrol, Müdür Raporu, KBS/GİKS, KVKK
+
+### POS Tab (`POSTab.jsx`)
+- Extracted from inline PMSModule.jsx to standalone component
+- Uses correct API fields: `total_sales`, `transaction_count`, `average_transaction` from `/pos/daily-summary`
+- Currency: ₺ (Turkish Lira), not $
+- 3 KPI cards: Toplam Satış, İşlem Sayısı, Ortalama İşlem
+- Son Siparişler list with Turkish status labels
 
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management

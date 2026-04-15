@@ -46,6 +46,7 @@ import ManagerDailyReport from '@/components/pms/ManagerDailyReport';
 import KBSNotification from '@/components/pms/KBSNotification';
 import KVKKManager from '@/components/pms/KVKKManager';
 import RevenueControls from '@/components/pms/RevenueControls';
+import POSTab from '@/components/pms/POSTab';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -149,13 +150,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
   
-  const [posOrders, setPosOrders] = useState([]);
-  const [posRevenue, setPosRevenue] = useState({
-    restaurant: 0,
-    bar: 0,
-    room_service: 0,
-    total: 0
-  });
   const [findRoomCriteria, setFindRoomCriteria] = useState({
     check_in: '',
     check_out: '',
@@ -1567,112 +1561,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
           {/* POS TAB */}
           <TabsContent value="pos" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">POS Entegrasyonu</h2>
-              <Button onClick={async () => {
-                try {
-                  const [ordersRes, summaryRes] = await Promise.allSettled([
-                    axios.get('/pos/orders'),
-                    axios.get('/pos/daily-summary'),
-                  ]);
-                  const anyOk = ordersRes.status === 'fulfilled' || summaryRes.status === 'fulfilled';
-                  if (ordersRes.status === 'fulfilled') setPosOrders(ordersRes.value.data.orders || []);
-                  if (summaryRes.status === 'fulfilled') {
-                    const s = summaryRes.value.data;
-                    setPosRevenue({ restaurant: s.food_revenue || 0, bar: s.beverage_revenue || 0, room_service: s.room_service_revenue || 0, total: s.total_sales || 0 });
-                  }
-                  if (anyOk) toast.success('POS verileri yenilendi');
-                  else toast.error('POS verileri yuklenemedi');
-                } catch (error) {
-                  toast.error('POS verileri yuklenemedi');
-                }
-              }}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                POS Yenile
-              </Button>
-            </div>
-
-            {/* POS Revenue Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Restaurant</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${posRevenue.restaurant}</div>
-                  <p className="text-xs text-gray-600">Today&apos;s Revenue</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Bar</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${posRevenue.bar}</div>
-                  <p className="text-xs text-gray-600">Today&apos;s Revenue</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Room Service</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${posRevenue.room_service}</div>
-                  <p className="text-xs text-gray-600">Today&apos;s Revenue</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total F&B</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${posRevenue.total}</div>
-                  <p className="text-xs text-gray-600">Today&apos;s Total</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent POS Orders */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Orders</CardTitle>
-                <CardDescription>Latest POS transactions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {posOrders.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <div className="text-4xl mb-4">🍽️</div>
-                    <p>No recent orders</p>
-                    <p className="text-sm">POS orders will appear here when available</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {posOrders.slice(0, 10).map((order) => (
-                      <div key={order.id} className="flex justify-between items-center p-3 border rounded-lg">
-                        <div>
-                          <div className="font-semibold">Order #{order.id}</div>
-                          <div className="text-sm text-gray-600">
-                            {order.outlet} • Room {order.room_number || 'N/A'}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {new Date(order.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold">${order.total}</div>
-                          <Badge variant={order.status === 'completed' ? 'default' : 'secondary'}>
-                            {order.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <POSTab />
           </TabsContent>
 
           {/* LAUNDRY TAB */}

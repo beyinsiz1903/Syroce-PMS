@@ -36,7 +36,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
 
   const nationality = {};
   bookings.filter(b => b.status === 'checked_in').forEach(b => {
-    const nat = b.guest_nationality || b.nationality || 'Belirtilmemis';
+    const nat = b.guest_nationality || b.nationality || 'Belirtilmemiş';
     nationality[nat] = (nationality[nat] || 0) + 1;
   });
   const topNationalities = Object.entries(nationality).sort((a,b) => b[1]-a[1]).slice(0, 5);
@@ -54,14 +54,14 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
 
   const printReport = () => {
     const w = window.open('', '_blank');
-    w.document.write(`<html><head><title>Mudur Gunluk Raporu - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
-    w.document.write(`<h1>MUDUR GUNLUK RAPORU</h1><p style="text-align:center">${reportDate}</p>`);
-    w.document.write(`<h2>ODA DURUMU</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">Toplam Oda</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">Dolu</div></div><div class="box"><div class="val">${availableRooms - occupiedRooms}</div><div class="lbl">Bos</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">Doluluk</div></div></div>`);
-    w.document.write(`<h2>GELIR</h2><div class="grid"><div class="box"><div class="val">${totalRevenue.toLocaleString()} TL</div><div class="lbl">Toplam Gelir</div></div><div class="box"><div class="val">${adr} TL</div><div class="lbl">ADR</div></div><div class="box"><div class="val">${revpar} TL</div><div class="lbl">RevPAR</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">OOO/OOS</div></div></div>`);
-    w.document.write(`<h2>MISAFIR HAREKETI</h2><table><tr><th>Bilgi</th><th>Sayi</th></tr><tr><td>Bugunku Girisler</td><td>${todayArrivals}</td></tr><tr><td>Bugunku Cikislar</td><td>${todayDepartures}</td></tr><tr><td>Otelde Misafir</td><td>${inhouseGuests}</td></tr><tr><td>VIP Misafir</td><td>${vipGuests}</td></tr><tr><td>Grup Rezervasyon</td><td>${groupBookings}</td></tr><tr><td>Walk-In</td><td>${walkIns}</td></tr><tr><td>No-Show</td><td>${noShows}</td></tr><tr><td>Iptal</td><td>${cancellations}</td></tr></table>`);
-    if (topNationalities.length > 0) { w.document.write(`<h2>MILLIYET DAGILIMI</h2><table><tr><th>Milliyet</th><th>Sayi</th></tr>`); topNationalities.forEach(([nat, count]) => w.document.write(`<tr><td>${nat}</td><td>${count}</td></tr>`)); w.document.write('</table>'); }
-    w.document.write(`<h2>KONAKLAMA SURESI DAGILIMI</h2><table><tr><th>Sure</th><th>Sayi</th></tr>`); Object.entries(losDistribution).forEach(([k,v]) => w.document.write(`<tr><td>${k} gece</td><td>${v}</td></tr>`)); w.document.write('</table>');
-    w.document.write(`<div class="footer">Olusturma: ${new Date().toLocaleString('tr-TR')} | Syroce PMS</div></body></html>`);
+    w.document.write(`<html><head><title>Müdür Günlük Raporu - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
+    w.document.write(`<h1>MÜDÜR GÜNLÜK RAPORU</h1><p style="text-align:center">${reportDate}</p>`);
+    w.document.write(`<h2>ODA DURUMU</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">Toplam Oda</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">Dolu</div></div><div class="box"><div class="val">${availableRooms - occupiedRooms}</div><div class="lbl">Boş</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">Doluluk</div></div></div>`);
+    w.document.write(`<h2>GELİR</h2><div class="grid"><div class="box"><div class="val">${totalRevenue.toLocaleString()} TL</div><div class="lbl">Toplam Gelir</div></div><div class="box"><div class="val">${adr} TL</div><div class="lbl">ADR</div></div><div class="box"><div class="val">${revpar} TL</div><div class="lbl">RevPAR</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">OOO/OOS</div></div></div>`);
+    w.document.write(`<h2>MİSAFİR HAREKETİ</h2><table><tr><th>Bilgi</th><th>Sayı</th></tr><tr><td>Bugünkü Girişler</td><td>${todayArrivals}</td></tr><tr><td>Bugünkü Çıkışlar</td><td>${todayDepartures}</td></tr><tr><td>Otelde Misafir</td><td>${inhouseGuests}</td></tr><tr><td>VIP Misafir</td><td>${vipGuests}</td></tr><tr><td>Grup Rezervasyon</td><td>${groupBookings}</td></tr><tr><td>Walk-In</td><td>${walkIns}</td></tr><tr><td>No-Show</td><td>${noShows}</td></tr><tr><td>İptal</td><td>${cancellations}</td></tr></table>`);
+    if (topNationalities.length > 0) { w.document.write(`<h2>MİLLİYET DAĞILIMI</h2><table><tr><th>Milliyet</th><th>Sayı</th></tr>`); topNationalities.forEach(([nat, count]) => w.document.write(`<tr><td>${nat}</td><td>${count}</td></tr>`)); w.document.write('</table>'); }
+    w.document.write(`<h2>KONAKLAMA SÜRESİ DAĞILIMI</h2><table><tr><th>Süre</th><th>Sayı</th></tr>`); Object.entries(losDistribution).forEach(([k,v]) => w.document.write(`<tr><td>${k} gece</td><td>${v}</td></tr>`)); w.document.write('</table>');
+    w.document.write(`<div class="footer">Oluşturma: ${new Date().toLocaleString('tr-TR')} | Syroce PMS</div></body></html>`);
     w.document.close();
     w.print();
   };
@@ -83,18 +83,18 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          <FileText className="h-5 w-5" /> Mudur Gunluk Raporu
+          <FileText className="h-5 w-5" /> Müdür Günlük Raporu
         </h2>
         <div className="flex items-center gap-2">
           <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="w-40" />
-          <Button onClick={printReport}><Printer className="h-4 w-4 mr-1" /> Yazdir</Button>
+          <Button onClick={printReport}><Printer className="h-4 w-4 mr-1" /> Yazdır</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <Card><CardContent className="p-3"><Metric label="Doluluk" value={occupancy} suffix="%" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label="Dolu Oda" value={occupiedRooms} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label="Bos Oda" value={availableRooms - occupiedRooms} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label="Boş Oda" value={availableRooms - occupiedRooms} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label="ADR" value={adr} suffix=" TL" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label="RevPAR" value={revpar} suffix=" TL" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label="Toplam Gelir" value={totalRevenue.toLocaleString()} suffix=" TL" /></CardContent></Card>
@@ -105,19 +105,19 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4" /> Misafir Hareketi</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex justify-between text-sm"><span>Girisler</span><Badge variant="outline">{todayArrivals}</Badge></div>
-            <div className="flex justify-between text-sm"><span>Cikislar</span><Badge variant="outline">{todayDepartures}</Badge></div>
+            <div className="flex justify-between text-sm"><span>Girişler</span><Badge variant="outline">{todayArrivals}</Badge></div>
+            <div className="flex justify-between text-sm"><span>Çıkışlar</span><Badge variant="outline">{todayDepartures}</Badge></div>
             <div className="flex justify-between text-sm"><span>Otelde</span><Badge>{inhouseGuests}</Badge></div>
             <div className="flex justify-between text-sm"><span>VIP</span><Badge className="bg-purple-100 text-purple-800">{vipGuests}</Badge></div>
             <div className="flex justify-between text-sm"><span>Grup</span><Badge variant="outline">{groupBookings}</Badge></div>
             <div className="flex justify-between text-sm"><span>Walk-In</span><Badge variant="outline">{walkIns}</Badge></div>
             <div className="flex justify-between text-sm"><span>No-Show</span><Badge variant="destructive">{noShows}</Badge></div>
-            <div className="flex justify-between text-sm"><span>Iptal</span><Badge variant="secondary">{cancellations}</Badge></div>
+            <div className="flex justify-between text-sm"><span>İptal</span><Badge variant="secondary">{cancellations}</Badge></div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Calendar className="h-4 w-4" /> Milliyet Dagilimi</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Calendar className="h-4 w-4" /> Milliyet Dağılımı</CardTitle></CardHeader>
           <CardContent>
             {topNationalities.length > 0 ? topNationalities.map(([nat, count]) => (
               <div key={nat} className="flex justify-between text-sm py-1 border-b last:border-0">
@@ -128,7 +128,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
         </Card>
 
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><BedDouble className="h-4 w-4" /> Konaklama Suresi</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><BedDouble className="h-4 w-4" /> Konaklama Süresi</CardTitle></CardHeader>
           <CardContent>
             {Object.entries(losDistribution).map(([key, val]) => (
               <div key={key} className="flex justify-between text-sm py-1 border-b last:border-0">
