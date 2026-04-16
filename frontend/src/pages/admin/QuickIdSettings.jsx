@@ -20,7 +20,7 @@ const PROVIDERS = [
   { id: "tesseract", name: "Tesseract OCR", desc: "Offline, ücretsiz, düşük doğruluk" },
 ];
 
-export default function QuickIdSettings() {
+export default function QuickIdSettings({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -84,7 +84,7 @@ export default function QuickIdSettings() {
 
   if (loading) {
     return (
-      <Layout>
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
         </div>
@@ -101,7 +101,7 @@ export default function QuickIdSettings() {
   };
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
