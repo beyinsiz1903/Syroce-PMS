@@ -136,6 +136,7 @@ const Desc = ({ children }) => <p className="text-slate-600 leading-relaxed mt-3
 export default function B2BApiDocs() {
   const [lang, setLang] = useState('en');
   const [activeSection, setActiveSection] = useState('overview');
+  const [urlCopied, setUrlCopied] = useState(false);
   const nl = navLabels[lang];
 
   useEffect(() => {
@@ -169,6 +170,14 @@ export default function B2BApiDocs() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => { navigator.clipboard.writeText(window.location.origin + '/b2b/docs'); setUrlCopied(true); setTimeout(() => setUrlCopied(false), 2000); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-600"
+              title={isEn ? 'Copy documentation URL' : 'Dokümantasyon linkini kopyala'}
+            >
+              {urlCopied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
+              <span className="hidden sm:inline">{urlCopied ? (isEn ? 'Copied!' : 'Kopyalandi!') : (isEn ? 'Copy Link' : 'Link Kopyala')}</span>
+            </button>
             <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
               <button onClick={() => setLang('en')} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${lang === 'en' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'}`}>EN</button>
               <button onClick={() => setLang('tr')} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${lang === 'tr' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'}`}>TR</button>

@@ -73,6 +73,7 @@ const ICON_BY_KEY = {
   no_show_analytics: BarChart3,
   report_builder: FileText,
   displacement_analysis: TrendingUp,
+  api_docs: FileText,
 };
 
 const GROUP_ICONS = {

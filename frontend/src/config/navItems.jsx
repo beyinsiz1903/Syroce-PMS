@@ -686,6 +686,14 @@ export const NAV_ITEMS = [
     group: "admin",
     navGroup: "admin",
   },
+  {
+    key: "api_docs",
+    label: "API Dokumantasyon",
+    path: "/b2b/docs",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+  },
 ];
 
 // Legacy compatibility
