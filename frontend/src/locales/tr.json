@@ -1798,7 +1798,8 @@
     "channels": "Kanallar",
     "reports": "Raporlar",
     "advanced": "Gelişmiş",
-    "infrastructure": "Altyapı"
+    "infrastructure": "Altyapı",
+    "admin": "Yönetim"
   },
   "commandCenter": {
     "loadingStatus": "Operasyonel durum yükleniyor...",

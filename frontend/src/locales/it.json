@@ -1798,7 +1798,8 @@
     "channels": "Canali",
     "reports": "Report",
     "advanced": "Avanzato",
-    "infrastructure": "Infrastruttura"
+    "infrastructure": "Infrastruttura",
+    "admin": "Amministrazione"
   },
   "commandCenter": {
     "loadingStatus": "Caricamento stato operativo...",

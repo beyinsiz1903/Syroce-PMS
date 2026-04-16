@@ -41,6 +41,11 @@ export const NAV_GROUPS = [
     label: "Altyapi",
     icon: "Server",
   },
+  {
+    id: "admin",
+    label: "Yonetim",
+    icon: "Shield",
+  },
 ];
 
 export const NAV_ITEMS = [
@@ -655,7 +660,7 @@ export const NAV_ITEMS = [
     path: "/admin/tenants",
     requireSuperAdmin: true,
     group: "admin",
-    navGroup: null,
+    navGroup: "admin",
   },
   {
     key: "admin_module_report",
@@ -663,7 +668,7 @@ export const NAV_ITEMS = [
     path: "/admin/module-report",
     requireSuperAdmin: true,
     group: "admin",
-    navGroup: null,
+    navGroup: "admin",
   },
   {
     key: "admin_leads",
@@ -671,7 +676,7 @@ export const NAV_ITEMS = [
     path: "/app/admin/leads",
     requireSuperAdmin: true,
     group: "admin",
-    navGroup: null,
+    navGroup: "admin",
   },
   {
     key: "governance",
@@ -679,7 +684,7 @@ export const NAV_ITEMS = [
     path: "/admin/governance",
     requireSuperAdmin: true,
     group: "admin",
-    navGroup: null,
+    navGroup: "admin",
   },
 ];
 

@@ -1798,7 +1798,8 @@
     "channels": "القنوات",
     "reports": "التقارير",
     "advanced": "متقدم",
-    "infrastructure": "البنية التحتية"
+    "infrastructure": "البنية التحتية",
+    "admin": "الإدارة"
   },
   "commandCenter": {
     "loadingStatus": "جاري تحميل الحالة التشغيلية...",

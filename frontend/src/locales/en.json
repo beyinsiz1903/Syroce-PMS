@@ -1798,7 +1798,8 @@
     "channels": "Channels",
     "reports": "Reports",
     "advanced": "Advanced",
-    "infrastructure": "Infrastructure"
+    "infrastructure": "Infrastructure",
+    "admin": "Administration"
   },
   "commandCenter": {
     "loadingStatus": "Loading operational status...",

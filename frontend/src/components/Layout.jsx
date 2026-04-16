@@ -83,6 +83,7 @@ const GROUP_ICONS = {
   reports: BarChart3,
   advanced: Zap,
   infrastructure: Server,
+  admin: Shield,
 };
 
 const TIER_CONFIG = {

@@ -1798,7 +1798,8 @@
     "channels": "Каналы",
     "reports": "Отчёты",
     "advanced": "Расширенные",
-    "infrastructure": "Инфраструктура"
+    "infrastructure": "Инфраструктура",
+    "admin": "Управление"
   },
   "commandCenter": {
     "loadingStatus": "Загрузка операционного статуса...",

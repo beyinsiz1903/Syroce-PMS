@@ -1798,7 +1798,8 @@
     "channels": "Kanäle",
     "reports": "Berichte",
     "advanced": "Erweitert",
-    "infrastructure": "Infrastruktur"
+    "infrastructure": "Infrastruktur",
+    "admin": "Verwaltung"
   },
   "commandCenter": {
     "loadingStatus": "Betriebsstatus wird geladen...",

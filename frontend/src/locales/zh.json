@@ -1798,7 +1798,8 @@
     "channels": "渠道",
     "reports": "报告",
     "advanced": "高级",
-    "infrastructure": "基础设施"
+    "infrastructure": "基础设施",
+    "admin": "管理"
   },
   "commandCenter": {
     "loadingStatus": "加载运营状态...",
