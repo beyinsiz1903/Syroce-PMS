@@ -333,10 +333,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               {/* Group dropdowns */}
               {NAV_GROUPS.filter(g => !hiddenNavGroups.has(g.id) || isSuperAdmin).map((groupDef) => renderGroupDropdown(groupDef))}
 
-              {/* Separator */}
-              <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
+            </nav>
 
-              {/* Settings */}
+            {/* Right utilities - fixed */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              {/* Settings button - always visible */}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
@@ -348,7 +349,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleNavigate(item.path)}
-                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
+                          className={`hidden md:flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                               : 'text-gray-600 hover:bg-gray-100'
@@ -357,38 +358,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           data-testid={`nav-${item.key}-button`}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" className="2xl:hidden">
+                      <TooltipContent side="bottom">
                         <p>{t(`navKeys.${item.key}`, item.label)}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 );
               })}
-
-              {/* Super admin items */}
-              {standaloneItems.filter((item) => item.requireSuperAdmin).map((item) => {
-                const Icon = ICON_BY_KEY[item.key] || Home;
-                return (
-                  <Button
-                    key={item.key}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleNavigate(item.path)}
-                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 text-gray-600 hover:bg-gray-100"
-                    data-testid={`nav-${item.key}-button`}
-                  >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
-                  </Button>
-                );
-              })}
-            </nav>
-
-            {/* Right utilities - fixed */}
-            <div className="flex items-center gap-1.5 shrink-0 ml-2">
               <div className="hidden md:block">
                 <LanguageSelector />
               </div>
