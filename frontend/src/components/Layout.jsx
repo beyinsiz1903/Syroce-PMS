@@ -394,13 +394,18 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="text-sm font-medium">{user?.email}</DropdownMenuItem>
-                  <DropdownMenuItem className="text-sm text-gray-500">Rol: {user?.role}</DropdownMenuItem>
+                  <DropdownMenuItem className="text-sm font-medium truncate max-w-[240px]">{user?.email || user?.name}</DropdownMenuItem>
+                  <DropdownMenuItem className="text-sm text-gray-600">
+                    <span className="text-gray-500 mr-1">Rol:</span>
+                    <span className="font-semibold">{user?.role || '—'}</span>
+                    {isSuperAdmin && <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Super Admin</span>}
+                  </DropdownMenuItem>
                   {!isSuperAdmin && (
-                    <DropdownMenuItem>
+                    <DropdownMenuItem className="text-sm text-gray-600">
+                      <span className="text-gray-500 mr-1">Plan:</span>
                       <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-[10px] font-semibold`}>
                         <TierIcon className="w-3 h-3" />
-                        {tierConfig.label} Plan
+                        {tierConfig.label}
                       </span>
                     </DropdownMenuItem>
                   )}

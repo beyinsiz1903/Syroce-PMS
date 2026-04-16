@@ -108,11 +108,13 @@ function App() {
 
   const handleLogout = () => {
     clearAuthStorage();
+    try { sessionStorage.clear(); } catch { /* ignore */ }
     delete axios.defaults.headers.common["Authorization"];
     setUser(null);
     setTenant(null);
     setModules(null);
     setIsAuthenticated(false);
+    window.location.replace("/auth");
   };
 
   if (loading) {
