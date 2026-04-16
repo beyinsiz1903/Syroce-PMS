@@ -344,7 +344,7 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
 
 // ── Main Component ─────────────────────────────────────────────────
 
-const ChannelOpsPage = () => {
+const ChannelOpsPage = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -520,7 +520,7 @@ const ChannelOpsPage = () => {
 
   if (loading) {
     return (
-      <Layout>
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
         <div className="flex items-center justify-center h-96" data-testid="ops-loading">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
           <span className="ml-3 text-gray-600">Operasyon verileri yükleniyor...</span>
@@ -538,7 +538,7 @@ const ChannelOpsPage = () => {
   const healthSummary = connectorsHealth.summary || {};
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="channel-ops-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">

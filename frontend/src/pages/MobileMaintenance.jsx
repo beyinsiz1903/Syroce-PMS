@@ -1529,12 +1529,12 @@ const MobileMaintenance = ({ user }) => {
           <div className="space-y-4">
             <div>
               <Label>Durum</Label>
-              <Select value={filters.status} onValueChange={(val) => setFilters({...filters, status: val})}>
+              <Select value={filters.status || "__all__"} onValueChange={(val) => setFilters({...filters, status: val === "__all__" ? "" : val})}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">{t("common.all")}</SelectItem>
+                  <SelectItem value="__all__">{t("common.all")}</SelectItem>
                   <SelectItem value="open">Açık</SelectItem>
                   <SelectItem value="in_progress">Devam Ediyor</SelectItem>
                   <SelectItem value="on_hold">Beklemede</SelectItem>
@@ -1546,12 +1546,12 @@ const MobileMaintenance = ({ user }) => {
             
             <div>
               <Label>Öncelik</Label>
-              <Select value={filters.priority} onValueChange={(val) => setFilters({...filters, priority: val})}>
+              <Select value={filters.priority || "__all__"} onValueChange={(val) => setFilters({...filters, priority: val === "__all__" ? "" : val})}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder={t("common.all")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">{t("common.all")}</SelectItem>
+                  <SelectItem value="__all__">{t("common.all")}</SelectItem>
                   <SelectItem value="emergency">Acil</SelectItem>
                   <SelectItem value="urgent">Çok Acil</SelectItem>
                   <SelectItem value="high">Yüksek</SelectItem>

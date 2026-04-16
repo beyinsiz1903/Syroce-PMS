@@ -142,7 +142,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
   });
 
   return (
-    <Layout user={user} onLogout={onLogout} title="ARI Push Engine">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} title="ARI Push Engine">
       <div data-testid="ari-push-dashboard" className="space-y-6 p-4 sm:p-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

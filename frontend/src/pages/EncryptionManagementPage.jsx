@@ -48,7 +48,7 @@ const keyTypeIcons = {
   pii: Database,
 };
 
-export default function EncryptionManagementPage() {
+export default function EncryptionManagementPage({ user, tenant, onLogout }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
@@ -242,7 +242,7 @@ export default function EncryptionManagementPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
         <div className="flex items-center justify-center h-96">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
         </div>
@@ -258,7 +258,7 @@ export default function EncryptionManagementPage() {
   const warningKeys = dashboard?.keys?.rotation_warnings || [];
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
       <div className="space-y-6 p-6" data-testid="encryption-management-page">
         {/* Header */}
         <div className="flex items-center justify-between">

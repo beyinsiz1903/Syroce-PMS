@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const SalesModule = () => {
+const SalesModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('pipeline');
@@ -172,7 +172,7 @@ const SalesModule = () => {
   };
 
   return (
-    <Layout user={{ name: 'Sales Manager', role: 'sales' }}>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="sales">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

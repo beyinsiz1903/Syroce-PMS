@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const MessagingCenter = () => {
+const MessagingCenter = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [selectedChannel, setSelectedChannel] = useState('email');
@@ -70,7 +70,7 @@ const MessagingCenter = () => {
   };
 
   return (
-    <Layout user={{ name: 'GM User', role: 'admin' }}>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
