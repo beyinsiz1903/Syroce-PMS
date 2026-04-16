@@ -107,7 +107,15 @@ const ID_TYPES = [
   { code: 'other', label: 'Diger' },
 ];
 
+function isQuickIdEnabled() {
+  try {
+    const m = JSON.parse(localStorage.getItem("modules") || "null");
+    return !m || m.quick_id !== false;
+  } catch { return true; }
+}
+
 export function GuestsTab({ guests, booking, onRefresh }) {
+  const quickIdOn = isQuickIdEnabled();
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -210,10 +218,12 @@ export function GuestsTab({ guests, booking, onRefresh }) {
                 <div className="flex items-center gap-2">
                   {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
                   {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
-                  <Button variant="outline" size="sm" className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
-                    <ScanLine className="w-3.5 h-3.5" />
-                    <span className="ml-1 text-xs">Kimlik Tara</span>
-                  </Button>
+                  {quickIdOn && (
+                    <Button variant="outline" size="sm" className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
+                      <ScanLine className="w-3.5 h-3.5" />
+                      <span className="ml-1 text-xs">Kimlik Tara</span>
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Duzenle'}</span>

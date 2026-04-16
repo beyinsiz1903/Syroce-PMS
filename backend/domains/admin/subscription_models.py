@@ -63,6 +63,10 @@ class FeatureFlag(str, Enum):
     AI_REVENUE_AUTOPILOT = "ai_revenue_autopilot"
     AI_SOCIAL_RADAR = "ai_social_radar"
 
+    # Operations Add-ons
+    ROOM_QR_REQUESTS = "room_qr_requests"  # Oda QR talep sistemi (misafir → departman)
+    QUICK_ID = "quick_id"  # Kimlik OCR taraması (Quick-ID microservice)
+
 
 class SubscriptionPlan(BaseModel):
     """Subscription plan definition"""
@@ -128,6 +132,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_reputation": False,
         "ai_revenue_autopilot": False,
         "ai_social_radar": False,
+        # OPERATIONS ADD-ONS
+        "room_qr_requests": True,   # Basic'te bile açık (temel misafir hizmeti)
+        "quick_id": False,          # Upsell: Pro+'ta açılır
     },
     "professional": {
         # CORE - Açık
@@ -172,6 +179,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_reputation": False,
         "ai_revenue_autopilot": False,
         "ai_social_radar": False,
+        # OPERATIONS ADD-ONS
+        "room_qr_requests": True,
+        "quick_id": True,
     },
     "enterprise": {
         # CORE - Açık
@@ -216,6 +226,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_reputation": True,
         "ai_revenue_autopilot": True,
         "ai_social_radar": True,
+        # OPERATIONS ADD-ONS
+        "room_qr_requests": True,
+        "quick_id": True,
     },
 }
 

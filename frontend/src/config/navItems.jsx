@@ -701,6 +701,8 @@ export const NAV_ITEMS = [
     group: "operations",
     navGroup: "operations",
     icon: "MessageSquare",
+    moduleKey: "room_qr_requests",
+    tier: "basic",
   },
   {
     key: "room_qr_codes",
@@ -709,6 +711,8 @@ export const NAV_ITEMS = [
     group: "admin",
     navGroup: "admin",
     icon: "QrCode",
+    moduleKey: "room_qr_requests",
+    tier: "basic",
   },
   {
     key: "api_docs",
