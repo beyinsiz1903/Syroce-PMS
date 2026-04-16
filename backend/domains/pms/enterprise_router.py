@@ -149,13 +149,17 @@ async def pull_reservations_from_booking(current_user: User = Depends(get_curren
 
 # 3. Housekeeping Mobile
 @router.get("/housekeeping/rooms")
-@cached(ttl=120, key_prefix="housekeeping_rooms_list")  # Cache for 2 min
+@cached(ttl=120, key_prefix="housekeeping_rooms_list")
 async def get_housekeeping_rooms(
-    status: str = 'dirty',
+    status: str = None,
     current_user: User = Depends(get_current_user)
 ):
-    query = {'tenant_id': current_user.tenant_id, 'hk_status': status}
-    rooms = await db.rooms.find(query, {'_id': 0}).to_list(100)
+    query = {'tenant_id': current_user.tenant_id}
+    if status:
+        query["$or"] = [{"housekeeping_status": status}, {"hk_status": status}]
+    rooms = await db.rooms.find(query, {'_id': 0}).to_list(200)
+    for r in rooms:
+        r["hk_status"] = r.get("housekeeping_status", r.get("hk_status", "clean"))
     return {'rooms': rooms}
 
 @router.get("/housekeeping/checklist")
@@ -177,10 +181,12 @@ async def start_room_cleaning(
     room_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    await db.rooms.update_one(
-        {'id': room_id},
-        {'$set': {'hk_status': 'cleaning', 'cleaning_started_at': datetime.now(UTC).isoformat()}}
+    result = await db.rooms.update_one(
+        {'id': room_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {'housekeeping_status': 'cleaning', 'hk_status': 'cleaning', 'cleaning_started_at': datetime.now(UTC).isoformat()}}
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Room not found")
     return {'message': 'Cleaning started'}
 
 @router.post("/housekeeping/rooms/{room_id}/complete")
@@ -189,14 +195,17 @@ async def complete_room_cleaning(
     completion_data: dict,
     current_user: User = Depends(get_current_user)
 ):
-    await db.rooms.update_one(
-        {'id': room_id},
+    result = await db.rooms.update_one(
+        {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
+            'housekeeping_status': 'clean',
             'hk_status': 'clean',
             'last_cleaned_at': datetime.now(UTC).isoformat(),
             'cleaned_by': completion_data.get('cleaned_by')
         }}
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Room not found")
     return {'message': 'Room cleaned successfully'}
 
 # 4. Group & Block Reservations

@@ -313,7 +313,7 @@ const GMDashboard = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold mb-2">
-                ${(revenue.revpar || 0).toFixed(2)}
+                ${(revenue.revpar || revenue.rev_par || 0).toFixed(2)}
               </div>
               <div className="text-sm opacity-90">
                 Revenue per Available Room

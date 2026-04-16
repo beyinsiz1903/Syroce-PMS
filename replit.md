@@ -514,6 +514,33 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
   - ChannelsSection (Channels, Sources), OfficialSection (Official, Police)
 - **`frontend/src/pages/reports/ReportHelpers.jsx`** — Shared constants, formatters, and reusable UI atoms
 
+## E2E Testing Bug Fixes (April 2026)
+
+### Flash Report Field Mapping (FlashReport.jsx)
+- Fixed `occupancy.occupancy_pct` → `occupancy.rate`
+- Fixed `guest_flow.*` → `operations.*` (arrivals, departures, inhouse, no_shows, cancellations)
+- Fixed `revenue.adr`/`revenue.revpar` → `kpi.adr`/`kpi.revpar`
+- Fixed `revenue.rooms_revenue`/`fnb_revenue`/`other_revenue`/`total_revenue` → `revenue.room`/`fb`/`other`/`total`
+- Computed TRevPAR from `revenue.total / occupancy.total` (not a backend field)
+- Revenue breakdown percentages now computed dynamically
+
+### GM Dashboard (GMDashboard.jsx)
+- Fixed RevPAR: `revenue.revpar` → `revenue.revpar || revenue.rev_par` (daily-flash uses `rev_par`)
+
+### Folio Management (FolioManagementPage.jsx)
+- Fixed create endpoint: `POST /api/folio` → `POST /api/folio/create` with `Idempotency-Key` header
+- Fixed folio lookup: uses `/api/folio/booking/{bookingId}` to resolve folio ID instead of treating booking ID as folio ID
+- Fixed charge posting: `POST /api/folio/charge` → `POST /api/folio/{folioId}/charge`; field `unit_price` → `amount`
+- Fixed payment posting: `POST /api/folio/payment` → `POST /api/folio/{folioId}/payment`; added required `payment_type` field; fixed `payment_method` → `method`; removed invalid `check` option, added `online`
+- Payment method enum: `cash`, `card`, `bank_transfer`, `online`
+- Payment type enum: `prepayment`, `deposit`, `interim`, `final`
+
+### Housekeeping (Backend + Frontend)
+- Fixed `enterprise_router.py`: rooms query used `hk_status` field but DB stores `housekeeping_status` — now queries both
+- Fixed tenant isolation: `start`/`complete` endpoints now include `tenant_id` in query filter (IDOR fix)
+- Fixed `HousekeepingMobileApp.jsx`: endpoint `/housekeeping/rooms` → `/pms/housekeeping/rooms` with `status_filter` param
+- Fixed `HousekeepingDashboard.jsx`: reads `status_counts.*` from API (was looking for `summary.*`)
+
 ## Security Notes
 
 ### Dependency Vulnerabilities (Resolved)

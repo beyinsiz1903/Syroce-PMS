@@ -131,28 +131,28 @@ const FlashReport = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
               title="Doluluk Oranı"
-              value={`${report.occupancy.occupancy_pct}%`}
-              subtitle={`${report.occupancy.rooms_occupied}/${report.occupancy.total_rooms} oda`}
+              value={`${report.occupancy?.rate ?? 0}%`}
+              subtitle={`${report.occupancy?.occupied ?? 0}/${report.occupancy?.total ?? 0} oda`}
               icon={Hotel}
               color="blue"
             />
             <MetricCard
               title="Varışlar (Arrival)"
-              value={report.guest_flow.arrivals}
+              value={report.operations?.arrivals ?? 0}
               subtitle="Bugün gelen misafir"
               icon={UserCheck}
               color="green"
             />
             <MetricCard
               title="Çıkışlar (Departure)"
-              value={report.guest_flow.departures}
+              value={report.operations?.departures ?? 0}
               subtitle="Bugün çıkan misafir"
               icon={LogOut}
               color="orange"
             />
             <MetricCard
               title="In-House"
-              value={report.guest_flow.in_house}
+              value={report.operations?.inhouse ?? 0}
               subtitle="Şu an oteldeki misafir"
               icon={Users}
               color="purple"
@@ -163,21 +163,21 @@ const FlashReport = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <MetricCard
               title="ADR (Ort. Oda Fiyatı)"
-              value={`€${report.revenue.adr.toFixed(2)}`}
+              value={`€${(report.kpi?.adr ?? 0).toFixed(2)}`}
               subtitle="Average Daily Rate"
               icon={DollarSign}
               color="green"
             />
             <MetricCard
               title="RevPAR"
-              value={`€${report.revenue.revpar.toFixed(2)}`}
+              value={`€${(report.kpi?.revpar ?? 0).toFixed(2)}`}
               subtitle="Revenue Per Available Room"
               icon={TrendingUp}
               color="blue"
             />
             <MetricCard
               title="TRevPAR"
-              value={`€${report.revenue.trevpar.toFixed(2)}`}
+              value={`€${(report.revenue?.total && report.occupancy?.total ? (report.revenue.total / report.occupancy.total) : 0).toFixed(2)}`}
               subtitle="Total Revenue PAR"
               icon={Sparkles}
               color="purple"
@@ -190,55 +190,64 @@ const FlashReport = () => {
               <CardTitle>Gelir Dağılımı</CardTitle>
             </CardHeader>
             <CardContent>
+              {(() => {
+                const totalRev = report.revenue?.total || 1;
+                const roomPct = ((report.revenue?.room || 0) / totalRev * 100).toFixed(1);
+                const fbPct = ((report.revenue?.fb || 0) / totalRev * 100).toFixed(1);
+                const otherPct = (((report.revenue?.spa || 0) + (report.revenue?.minibar || 0) + (report.revenue?.laundry || 0) + (report.revenue?.other || 0)) / totalRev * 100).toFixed(1);
+                const otherAmount = (report.revenue?.spa || 0) + (report.revenue?.minibar || 0) + (report.revenue?.laundry || 0) + (report.revenue?.other || 0);
+                return (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-600">Oda Geliri</span>
-                    <span className="text-sm font-bold">€{report.revenue.rooms_revenue.toFixed(2)}</span>
+                    <span className="text-sm font-bold">€{(report.revenue?.room || 0).toFixed(2)}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${report.revenue_breakdown.rooms}%` }}
+                      style={{ width: `${roomPct}%` }}
                     />
                   </div>
-                  <span className="text-xs text-gray-500">{report.revenue_breakdown.rooms}%</span>
+                  <span className="text-xs text-gray-500">{roomPct}%</span>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-600">F&B Geliri</span>
-                    <span className="text-sm font-bold">€{report.revenue.fnb_revenue.toFixed(2)}</span>
+                    <span className="text-sm font-bold">€{(report.revenue?.fb || 0).toFixed(2)}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-green-600 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${report.revenue_breakdown.fnb}%` }}
+                      style={{ width: `${fbPct}%` }}
                     />
                   </div>
-                  <span className="text-xs text-gray-500">{report.revenue_breakdown.fnb}%</span>
+                  <span className="text-xs text-gray-500">{fbPct}%</span>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-600">Diğer Gelirler</span>
-                    <span className="text-sm font-bold">€{report.revenue.other_revenue.toFixed(2)}</span>
+                    <span className="text-sm font-bold">€{otherAmount.toFixed(2)}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-purple-600 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${report.revenue_breakdown.other}%` }}
+                      style={{ width: `${otherPct}%` }}
                     />
                   </div>
-                  <span className="text-xs text-gray-500">{report.revenue_breakdown.other}%</span>
+                  <span className="text-xs text-gray-500">{otherPct}%</span>
                 </div>
               </div>
+                );
+              })()}
 
               <div className="mt-6 pt-6 border-t">
                 <div className="flex items-center justify-between">
                   <span className="text-lg font-semibold text-gray-700">Toplam Gelir</span>
                   <span className="text-2xl font-bold text-gray-900">
-                    €{report.revenue.total_revenue.toFixed(2)}
+                    €{(report.revenue?.total || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -246,23 +255,23 @@ const FlashReport = () => {
           </Card>
 
           {/* Issues & Alerts */}
-          {(report.guest_flow.no_shows > 0 || report.guest_flow.cancellations > 0) && (
+          {((report.operations?.no_shows || 0) > 0 || (report.operations?.cancellations || 0) > 0) && (
             <Card className="border-orange-200 bg-orange-50">
               <CardHeader>
                 <CardTitle className="text-orange-800">⚠️ Dikkat Gerektiren Durumlar</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {report.guest_flow.no_shows > 0 && (
+                  {(report.operations?.no_shows || 0) > 0 && (
                     <div className="flex items-center gap-2 text-orange-700">
                       <XCircle className="w-5 h-5" />
-                      <span className="font-semibold">{report.guest_flow.no_shows} No-show</span>
+                      <span className="font-semibold">{report.operations.no_shows} No-show</span>
                     </div>
                   )}
-                  {report.guest_flow.cancellations > 0 && (
+                  {(report.operations?.cancellations || 0) > 0 && (
                     <div className="flex items-center gap-2 text-orange-700">
                       <XCircle className="w-5 h-5" />
-                      <span className="font-semibold">{report.guest_flow.cancellations} İptal</span>
+                      <span className="font-semibold">{report.operations.cancellations} İptal</span>
                     </div>
                   )}
                 </div>

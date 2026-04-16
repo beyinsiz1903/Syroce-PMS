@@ -22,8 +22,8 @@ const HousekeepingMobileApp = ({ user }) => {
 
   const loadRooms = async () => {
     try {
-      const response = await axios.get(`/housekeeping/rooms?status=${filter}`);
-      setRooms(response.data.rooms || []);
+      const response = await axios.get(`/pms/housekeeping/rooms`, { params: { status_filter: filter } });
+      setRooms(response.data.rooms || response.data || []);
     } catch (error) {
       console.error('Failed to load rooms:', error);
     }
@@ -31,7 +31,7 @@ const HousekeepingMobileApp = ({ user }) => {
 
   const handleStartCleaning = async (room) => {
     try {
-      await axios.post(`/housekeeping/rooms/${room.id}/start`);
+      await axios.put(`/pms/housekeeping/rooms/${room.id || room._id}/status`, { status: 'cleaning' });
       setSelectedRoom(room);
       const checklistRes = await axios.get('/housekeeping/checklist');
       setChecklistItems(checklistRes.data.items || []);
@@ -53,15 +53,7 @@ const HousekeepingMobileApp = ({ user }) => {
 
     setLoading(true);
     try {
-      // Update room status to 'inspected' via quick update endpoint
-      await axios.put(`/housekeeping/room/${selectedRoom.id}/status?new_status=inspected`);
-      
-      // Complete the cleaning task
-      await axios.post(`/housekeeping/rooms/${selectedRoom.id}/complete`, {
-        checklist: checklistItems,
-        cleaned_by: user?.id,
-        cleaned_at: new Date().toISOString()
-      });
+      await axios.put(`/pms/housekeeping/rooms/${selectedRoom.id || selectedRoom._id}/status`, { status: 'inspected' });
 
       toast.success(`✅ Room ${selectedRoom.room_number} cleaned & marked as inspected!`);
       setSelectedRoom(null);
@@ -76,7 +68,7 @@ const HousekeepingMobileApp = ({ user }) => {
 
   const handleQuickStatusUpdate = async (roomId, roomNumber, newStatus) => {
     try {
-      await axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`);
+      await axios.put(`/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus });
       toast.success(`Room ${roomNumber} status updated to ${newStatus}!`);
       loadRooms();
     } catch (error) {

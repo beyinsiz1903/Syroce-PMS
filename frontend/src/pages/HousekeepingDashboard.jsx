@@ -108,19 +108,19 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-blue-50 p-3 rounded">
                   <div className="text-xs text-gray-600">{t('hkDashboard.roomsTotal')}</div>
-                  <div className="text-2xl font-bold text-blue-700">{roomStatus?.summary?.total_rooms ?? '-'}</div>
+                  <div className="text-2xl font-bold text-blue-700">{roomStatus?.total_rooms ?? roomStatus?.summary?.total_rooms ?? '-'}</div>
                 </div>
                 <div className="bg-green-50 p-3 rounded">
                   <div className="text-xs text-gray-600">{t('hkDashboard.vacantClean')}</div>
-                  <div className="text-2xl font-bold text-green-700">{roomStatus?.summary?.vacant_clean ?? '-'}</div>
+                  <div className="text-2xl font-bold text-green-700">{roomStatus?.status_counts?.available ?? roomStatus?.summary?.vacant_clean ?? '-'}</div>
                 </div>
                 <div className="bg-yellow-50 p-3 rounded">
                   <div className="text-xs text-gray-600">{t('hkDashboard.vacantDirty')}</div>
-                  <div className="text-2xl font-bold text-yellow-700">{roomStatus?.summary?.vacant_dirty ?? '-'}</div>
+                  <div className="text-2xl font-bold text-yellow-700">{roomStatus?.status_counts?.dirty ?? roomStatus?.summary?.vacant_dirty ?? '-'}</div>
                 </div>
                 <div className="bg-red-50 p-3 rounded">
                   <div className="text-xs text-gray-600">{t('hkDashboard.outOfOrderService')}</div>
-                  <div className="text-2xl font-bold text-red-700">{(roomStatus?.summary?.out_of_order || 0) + (roomStatus?.summary?.out_of_service || 0)}</div>
+                  <div className="text-2xl font-bold text-red-700">{(roomStatus?.status_counts?.out_of_order ?? roomStatus?.summary?.out_of_order ?? 0) + (roomStatus?.status_counts?.maintenance ?? roomStatus?.summary?.out_of_service ?? 0)}</div>
                 </div>
               </div>
             )}

@@ -96,49 +96,56 @@ const FolioManagementPage = () => {
     }
   };
 
+  const resolveFolioId = async (bookingId, token) => {
+    const res = await fetch(`/api/folio/booking/${bookingId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const folioList = Array.isArray(data) ? data : [data];
+      const openFolio = folioList.find(f => f.status === 'open') || folioList[0];
+      return openFolio?.id || openFolio?.folio_id || null;
+    }
+    return null;
+  };
+
   const fetchFolioDetails = async (bookingId) => {
     try {
       const token = localStorage.getItem('token');
-      
-      // Try to fetch folio
-      try {
-        const folioResponse = await fetch(
-          `/api/folio/${bookingId}`,
-          {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }
-        );
-        
-        if (folioResponse.ok) {
-          const folioData = await folioResponse.json();
+      const folioId = await resolveFolioId(bookingId, token);
+
+      if (folioId) {
+        const detailRes = await fetch(`/api/folio/${folioId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (detailRes.ok) {
+          const folioData = await detailRes.json();
           setCharges(folioData.charges || []);
           setPayments(folioData.payments || []);
+          return;
         }
-      } catch (error) {
-        // If folio doesn't exist, create mock charges
-        const booking = folios.find(f => f.id === bookingId);
-        if (booking) {
-          const nights = Math.ceil(
-            (new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24)
-          );
-          
-          const mockCharges = [];
-          for (let i = 0; i < nights; i++) {
-            mockCharges.push({
-              description: `Room Charge - Night ${i + 1}`,
-              charge_category: 'room',
-              quantity: 1,
-              unit_price: booking.total_amount / nights,
-              amount: booking.total_amount / nights,
-              tax_amount: (booking.total_amount / nights) * 0.18,
-              total: (booking.total_amount / nights) * 1.18,
-              posted_at: new Date(new Date(booking.check_in).getTime() + i * 24 * 60 * 60 * 1000).toISOString()
-            });
-          }
-          
-          setCharges(mockCharges);
-          setPayments([]);
+      }
+
+      const booking = folios.find(f => f.id === bookingId);
+      if (booking) {
+        const nights = Math.max(1, Math.ceil(
+          (new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24)
+        ));
+        const mockCharges = [];
+        for (let i = 0; i < nights; i++) {
+          mockCharges.push({
+            description: `Room Charge - Night ${i + 1}`,
+            charge_category: 'room',
+            quantity: 1,
+            unit_price: booking.total_amount / nights,
+            amount: booking.total_amount / nights,
+            tax_amount: (booking.total_amount / nights) * 0.18,
+            total: (booking.total_amount / nights) * 1.18,
+            posted_at: new Date(new Date(booking.check_in).getTime() + i * 24 * 60 * 60 * 1000).toISOString()
+          });
         }
+        setCharges(mockCharges);
+        setPayments([]);
       }
     } catch (error) {
       console.error('Error fetching folio details:', error);
@@ -148,109 +155,76 @@ const FolioManagementPage = () => {
   const postCharge = async (chargeData) => {
     try {
       const token = localStorage.getItem('token');
-      
-      // First, try to get or create folio
-      const folioResponse = await fetch(
-        `/api/folio/${selectedFolio.id}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-      
-      let folioId;
-      if (folioResponse.ok) {
-        const folioData = await folioResponse.json();
-        folioId = folioData.folio.id;
-      } else {
-        // Create folio first
-        const createFolioResponse = await fetch(
-          `/api/folio`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              booking_id: selectedFolio.id,
-              folio_type: 'guest'
-            })
-          }
-        );
-        
-        if (!createFolioResponse.ok) {
-          throw new Error('Folio oluşturulamadı');
-        }
-        
-        const newFolioData = await createFolioResponse.json();
-        folioId = newFolioData.folio_id;
-      }
-      
-      // Post charge
-      await fetch(
-        `/api/folio/charge`,
-        {
+      let folioId = await resolveFolioId(selectedFolio.id, token);
+
+      if (!folioId) {
+        const createRes = await fetch(`/api/folio/create`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `folio-${selectedFolio.id}-${Date.now()}`
           },
           body: JSON.stringify({
-            ...chargeData,
-            folio_id: folioId
+            booking_id: selectedFolio.id,
+            folio_type: 'guest'
           })
-        }
-      );
-      
+        });
+        if (!createRes.ok) throw new Error('Folio oluşturulamadı');
+        const newFolio = await createRes.json();
+        folioId = newFolio.id || newFolio.folio_id;
+      }
+
+      const chargeRes = await fetch(`/api/folio/${folioId}/charge`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(chargeData)
+      });
+
+      if (!chargeRes.ok) {
+        const err = await chargeRes.json().catch(() => ({}));
+        throw new Error(err.detail || 'Charge failed');
+      }
+
       alert('Charge posted successfully');
       setShowChargeModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting charge:', error);
-      alert('Masraf kaydedilemedi');
+      alert('Masraf kaydedilemedi: ' + error.message);
     }
   };
 
   const postPayment = async (paymentData) => {
     try {
       const token = localStorage.getItem('token');
-      
-      // Get folio
-      const folioResponse = await fetch(
-        `/api/folio/${selectedFolio.id}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-      
-      if (!folioResponse.ok) {
-        throw new Error('Folio not found');
+      const folioId = await resolveFolioId(selectedFolio.id, token);
+
+      if (!folioId) throw new Error('Folio not found');
+
+      const payRes = await fetch(`/api/folio/${folioId}/payment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(paymentData)
+      });
+
+      if (!payRes.ok) {
+        const err = await payRes.json().catch(() => ({}));
+        throw new Error(err.detail || 'Payment failed');
       }
-      
-      const folioData = await folioResponse.json();
-      
-      // Post payment
-      await fetch(
-        `/api/folio/payment`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ...paymentData,
-            folio_id: folioData.folio.id
-          })
-        }
-      );
-      
+
       alert('Payment posted successfully');
       setShowPaymentModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting payment:', error);
-      alert('Ödeme kaydedilemedi');
+      alert('Ödeme kaydedilemedi: ' + error.message);
     }
   };
 
@@ -501,7 +475,7 @@ const FolioManagementPage = () => {
                   description: formData.get('description'),
                   charge_category: formData.get('category'),
                   quantity: parseInt(formData.get('quantity')),
-                  unit_price: parseFloat(formData.get('unit_price'))
+                  amount: parseFloat(formData.get('unit_price'))
                 });
               }}>
                 <div className="space-y-4">
@@ -561,9 +535,10 @@ const FolioManagementPage = () => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 postPayment({
-                  payment_method: formData.get('method'),
+                  method: formData.get('method'),
+                  payment_type: formData.get('payment_type'),
                   amount: parseFloat(formData.get('amount')),
-                  reference: formData.get('reference')
+                  reference: formData.get('reference') || null
                 });
               }}>
                 <div className="space-y-4">
@@ -577,7 +552,21 @@ const FolioManagementPage = () => {
                         <SelectItem value="cash">Cash</SelectItem>
                         <SelectItem value="card">Credit/Debit Card</SelectItem>
                         <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="check">Check</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Payment Type</label>
+                    <Select name="payment_type" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="prepayment">Prepayment</SelectItem>
+                        <SelectItem value="deposit">Deposit</SelectItem>
+                        <SelectItem value="interim">Interim</SelectItem>
+                        <SelectItem value="final">Final</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
