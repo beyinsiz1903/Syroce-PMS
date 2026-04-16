@@ -11,8 +11,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Loader2, Save, KeyRound, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, ScanLine } from "lucide-react";
 
+const AUTO_PROVIDER = "__auto__";
 const PROVIDERS = [
-  { id: "", name: "Otomatik (Akıllı)", desc: "Görüntü kalitesine göre seçilir" },
+  { id: AUTO_PROVIDER, name: "Otomatik (Akıllı)", desc: "Görüntü kalitesine göre seçilir" },
   { id: "gpt-4o", name: "GPT-4o", desc: "En yüksek doğruluk (OpenAI)" },
   { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Hızlı ve ucuz (OpenAI)" },
   { id: "gemini-flash", name: "Gemini 2.0 Flash", desc: "Google alternatifi" },
@@ -28,7 +29,7 @@ export default function QuickIdSettings() {
   const [geminiKey, setGeminiKey] = useState("");
   const [showOpenai, setShowOpenai] = useState(false);
   const [showGemini, setShowGemini] = useState(false);
-  const [provider, setProvider] = useState("");
+  const [provider, setProvider] = useState(AUTO_PROVIDER);
   const [testResults, setTestResults] = useState(null);
 
   const load = async () => {
@@ -36,7 +37,7 @@ export default function QuickIdSettings() {
     try {
       const r = await axios.get("/quick-id/settings");
       setSettings(r.data);
-      setProvider(r.data.preferred_provider || "");
+      setProvider(r.data.preferred_provider || AUTO_PROVIDER);
     } catch (e) {
       const msg = e.response?.data?.detail || e.message;
       toast.error(`Ayarlar yüklenemedi: ${msg}`);
@@ -50,7 +51,7 @@ export default function QuickIdSettings() {
   const save = async (clearOpenai = false, clearGemini = false) => {
     setSaving(true);
     try {
-      const payload = { preferred_provider: provider || "" };
+      const payload = { preferred_provider: provider === AUTO_PROVIDER ? "" : provider };
       if (clearOpenai) payload.openai_api_key = "";
       else if (openaiKey.trim()) payload.openai_api_key = openaiKey.trim();
       if (clearGemini) payload.gemini_api_key = "";
