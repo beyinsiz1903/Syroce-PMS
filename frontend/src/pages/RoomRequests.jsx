@@ -84,7 +84,7 @@ function RequestCard({ item, onOpen }) {
   );
 }
 
-export default function RoomRequests() {
+export default function RoomRequests({ user, tenant, onLogout }) {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +139,7 @@ export default function RoomRequests() {
   };
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_requests">
       <div className="p-6 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

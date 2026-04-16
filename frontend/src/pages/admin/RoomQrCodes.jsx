@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { Loader2, Printer, Download, QrCode, Search, Copy } from "lucide-react";
 
-export default function RoomQrCodes() {
+export default function RoomQrCodes({ user, tenant, onLogout }) {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -68,7 +68,7 @@ export default function RoomQrCodes() {
   );
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_codes">
       <div className="p-6 space-y-6 print:hidden">
         <div className="flex justify-between items-center">
           <div>
