@@ -20,8 +20,9 @@ const STATUS_COLUMNS = [
   { key: "completed",   label: "Tamamlandı",  color: "bg-emerald-50 border-emerald-300",badge: "bg-emerald-600" },
 ];
 
+const ALL_DEPTS = "__all__";
 const DEPARTMENTS = [
-  { id: "", label: "Tüm Departmanlar" },
+  { id: ALL_DEPTS, label: "Tüm Departmanlar" },
   { id: "rooms", label: "Kat Hizmetleri" },
   { id: "technical", label: "Teknik" },
   { id: "fnb", label: "Yiyecek & İçecek" },
@@ -87,7 +88,7 @@ export default function RoomRequests() {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [department, setDepartment] = useState("");
+  const [department, setDepartment] = useState(ALL_DEPTS);
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -96,7 +97,7 @@ export default function RoomRequests() {
     setLoading(true);
     try {
       const [l, s] = await Promise.all([
-        axios.get("/room-requests", { params: department ? { department } : {} }),
+        axios.get("/room-requests", { params: department && department !== ALL_DEPTS ? { department } : {} }),
         axios.get("/room-requests/stats/summary"),
       ]);
       setItems(l.data.items || []);
