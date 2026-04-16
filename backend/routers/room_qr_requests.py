@@ -14,20 +14,20 @@ Veri modeli (MongoDB `room_qr_requests` koleksiyonu):
 
 QR token: HMAC-SHA256(tenant_id|room_id, JWT_SECRET) — DB'de ekstra state yok.
 """
-import os
-import hmac
 import hashlib
+import hmac
 import logging
-import uuid
+import os
 import time
+import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from core.security import get_current_user, JWT_SECRET, generate_qr_code
 from core.database import _raw_db as raw_db
+from core.security import JWT_SECRET, generate_qr_code, get_current_user
 
 logger = logging.getLogger("room_qr_requests")
 
@@ -53,7 +53,7 @@ def _rl_check(key: str) -> bool:
     return True
 
 
-def _mask_name(name: Optional[str]) -> Optional[str]:
+def _mask_name(name: str | None) -> str | None:
     """'John Doe' → 'J*** D***' (misafir gizliliği için)."""
     if not name:
         return None
@@ -117,7 +117,7 @@ def _token_for(tenant_id: str, room_id: str) -> str:
             detail="QR servisi yapılandırılmamış: ROOM_QR_SECRET veya JWT_SECRET gerekir",
         )
     secret = _QR_SECRET.encode("utf-8")
-    msg = f"{tenant_id}|{room_id}".encode("utf-8")
+    msg = f"{tenant_id}|{room_id}".encode()
     return hmac.new(secret, msg, hashlib.sha256).hexdigest()  # tam digest (64 char)
 
 
@@ -146,7 +146,7 @@ def _guest_url(request: Request, tenant_id: str, room_id: str) -> str:
     return f"{base}/g/room/{tenant_id}/{room_id}?t={token}"
 
 
-async def _find_active_booking(tenant_id: str, room_id: str) -> Optional[dict]:
+async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
     """Odadaki aktif rezervasyonu bulur (check-in yapmış misafir)."""
     try:
         b = await raw_db["bookings"].find_one({
@@ -206,8 +206,8 @@ class PublicRequestSubmit(BaseModel):
     description: str = Field(..., min_length=1, max_length=2000)
     priority: str = "normal"
     language: str = "tr"
-    guest_name: Optional[str] = None
-    guest_phone: Optional[str] = None
+    guest_name: str | None = None
+    guest_phone: str | None = None
 
 
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/submit")
@@ -242,7 +242,7 @@ async def public_submit_request(
 
     cat = CATEGORY_MAP[payload.category]
     booking = await _find_active_booking(tenant_id, room_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     title_label = CATEGORY_LABELS.get(payload.category, {}).get(payload.language, payload.category)
 
     doc = {
@@ -321,9 +321,9 @@ def _serialize(doc: dict) -> dict:
 
 @router.get("/api/room-requests")
 async def list_requests(
-    status: Optional[str] = None,
-    department: Optional[str] = None,
-    room_id: Optional[str] = None,
+    status: str | None = None,
+    department: str | None = None,
+    room_id: str | None = None,
     limit: int = 200,
     current_user=Depends(get_current_user),
 ):
@@ -385,11 +385,11 @@ async def get_request(request_id: str, current_user=Depends(get_current_user)):
 
 
 class RequestUpdate(BaseModel):
-    status: Optional[str] = None
-    assigned_to: Optional[str] = None
-    priority: Optional[str] = None
-    department: Optional[str] = None
-    note: Optional[str] = None
+    status: str | None = None
+    assigned_to: str | None = None
+    priority: str | None = None
+    department: str | None = None
+    note: str | None = None
 
 
 @router.patch("/api/room-requests/{request_id}")
@@ -403,7 +403,7 @@ async def update_request(
     if not doc:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     update: dict = {"updated_at": now}
     history_entry = {"at": now, "by": getattr(current_user, "email", None) or "staff"}
 

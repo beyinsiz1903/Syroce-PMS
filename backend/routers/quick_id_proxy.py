@@ -7,19 +7,20 @@ PMS kullanıcısı JWT'si ile korunur; Quick-ID'ye servis anahtarı (QUICKID_SER
 Ayrıca admin kullanıcılar OpenAI/Gemini API anahtarlarını uygulama içinden
 yönetebilir (şifreli olarak `quick_id_settings` koleksiyonunda saklanır).
 """
-import os
 import base64
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+import os
+from datetime import UTC, datetime
 from urllib.parse import urlparse
+
 import httpx
-from cryptography.fernet import Fernet, MultiFernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, Body
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
-from core.security import get_current_user, _is_super_admin, JWT_SECRET
+
 from core.database import _raw_db as raw_db
+from core.security import JWT_SECRET, _is_super_admin, get_current_user
 
 logger = logging.getLogger("quick_id_proxy")
 
@@ -54,7 +55,7 @@ def _is_safe_quickid_transport(url: str) -> bool:
     return False
 
 
-def _normalize_fernet_key(raw: str) -> Optional[bytes]:
+def _normalize_fernet_key(raw: str) -> bytes | None:
     """Verilen string'i Fernet anahtarına dönüştürür.
     - 44 byte urlsafe base64 ise olduğu gibi kullanılır.
     - Aksi halde SHA256 türevi alınıp base64 encode edilir.
@@ -70,7 +71,7 @@ def _normalize_fernet_key(raw: str) -> Optional[bytes]:
         return base64.urlsafe_b64encode(digest)
 
 
-def _build_fernet() -> Optional[MultiFernet]:
+def _build_fernet() -> MultiFernet | None:
     """MultiFernet: birincil anahtarla şifreler; OLD ile de okuyabilir."""
     primary_raw = QUICKID_ENC_KEY or JWT_SECRET
     if not primary_raw:
@@ -96,13 +97,13 @@ def _fernet() -> MultiFernet:
     return f
 
 
-def _enc(value: Optional[str]) -> Optional[str]:
+def _enc(value: str | None) -> str | None:
     if not value:
         return None
     return _fernet().encrypt(value.encode("utf-8")).decode("utf-8")
 
 
-def _dec(value: Optional[str]) -> Optional[tuple]:
+def _dec(value: str | None) -> tuple | None:
     """(plaintext, ok) — ok=False decryption hata anlamına gelir (anahtar uyumsuz/bozuk)."""
     if not value:
         return None
@@ -120,7 +121,7 @@ def _dec(value: Optional[str]) -> Optional[tuple]:
         return "__DECRYPT_FAILED__"
 
 
-def _mask(value: Optional[str]) -> Optional[str]:
+def _mask(value: str | None) -> str | None:
     if not value:
         return None
     if len(value) <= 8:
@@ -134,7 +135,7 @@ async def _load_settings() -> dict:
 
 
 async def _save_settings(update: dict, user) -> None:
-    update["updated_at"] = datetime.now(timezone.utc)
+    update["updated_at"] = datetime.now(UTC)
     update["updated_by"] = getattr(user, "email", None) or getattr(user, "username", "admin")
     await raw_db[SETTINGS_COLL].update_one(
         {"_id": SETTINGS_DOC_ID},
@@ -143,7 +144,7 @@ async def _save_settings(update: dict, user) -> None:
     )
 
 
-def _safe_dec(value: Optional[str]) -> Optional[str]:
+def _safe_dec(value: str | None) -> str | None:
     """`__DECRYPT_FAILED__` durumunu None'a çevirerek ham metni döner."""
     res = _dec(value)
     if res == "__DECRYPT_FAILED__":
@@ -163,7 +164,7 @@ async def _resolve_api_keys() -> dict:
     }
 
 
-def _service_headers(user, api_keys: Optional[dict] = None) -> dict:
+def _service_headers(user, api_keys: dict | None = None) -> dict:
     acting = getattr(user, "email", None) or getattr(user, "username", None) or "pms-user"
     headers = {
         "X-Service-Key": QUICKID_SERVICE_KEY,
@@ -326,9 +327,9 @@ async def providers(current_user=Depends(get_current_user)):
 # ===================== AYARLAR (admin) =====================
 
 class QuickIdSettingsUpdate(BaseModel):
-    openai_api_key: Optional[str] = None  # None: değiştirme; "": temizle
-    gemini_api_key: Optional[str] = None
-    preferred_provider: Optional[str] = None  # gpt-4o | gpt-4o-mini | gemini-flash | tesseract | None
+    openai_api_key: str | None = None  # None: değiştirme; "": temizle
+    gemini_api_key: str | None = None
+    preferred_provider: str | None = None  # gpt-4o | gpt-4o-mini | gemini-flash | tesseract | None
 
 
 @router.get("/settings")
