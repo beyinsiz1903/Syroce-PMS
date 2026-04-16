@@ -78,12 +78,20 @@ function App() {
     }
   }, []);
 
-  const handleLogin = (token, userData, tenantData) => {
+  const handleLogin = async (token, userData, tenantData) => {
     clearAuthStorage();
     localStorage.setItem("token", token);
     localStorage.setItem("token_ts", String(Date.now()));
-    localStorage.setItem("user", JSON.stringify(userData));
     localStorage.setItem("tenant", tenantData ? JSON.stringify(tenantData) : "null");
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+    // Canonical user from /auth/me — role/permission kaynağı login response değil, /me
+    let canonicalUser = userData;
+    try {
+      const me = await axios.get("/auth/me");
+      if (me?.data) canonicalUser = me.data;
+    } catch { /* fallback: login response */ }
+    localStorage.setItem("user", JSON.stringify(canonicalUser));
 
     const fetchModules = async () => {
       try {
@@ -93,8 +101,7 @@ function App() {
       } catch { /* ignore fetch error */ }
     };
 
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    setUser(userData);
+    setUser(canonicalUser);
     setTenant(tenantData);
     setIsAuthenticated(true);
     fetchModules();
