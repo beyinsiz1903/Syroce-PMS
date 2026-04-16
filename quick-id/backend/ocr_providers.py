@@ -219,8 +219,12 @@ Return this exact JSON structure (no markdown, no code fences):
 }"""
 
 
-async def extract_with_provider(provider_id: str, image_base64: str) -> dict:
-    """Belirtilen provider ile kimlik tarama yap"""
+async def extract_with_provider(provider_id: str, image_base64: str, api_keys: Optional[dict] = None) -> dict:
+    """Belirtilen provider ile kimlik tarama yap.
+
+    api_keys: opsiyonel sözlük {"openai": "...", "gemini": "..."} – istek başına
+    farklı anahtar kullanılmasına olanak verir (PMS proxy üzerinden).
+    """
     provider = PROVIDERS.get(provider_id)
     if not provider:
         raise ValueError(f"Bilinmeyen provider: {provider_id}")
@@ -234,12 +238,20 @@ async def extract_with_provider(provider_id: str, image_base64: str) -> dict:
 
     start_time = time.time()
 
+    api_key = None
+    if api_keys:
+        if provider["provider_type"] == "openai":
+            api_key = api_keys.get("openai")
+        elif provider["provider_type"] == "google":
+            api_key = api_keys.get("gemini")
+
     try:
         result = await chat_with_vision_json(
             system_message=ID_EXTRACTION_PROMPT,
             user_text="Analyze ALL identity documents visible in this image. There may be 1 or more documents. Extract data from EACH document separately and return them in the documents array. Return ONLY the JSON structure, no markdown.",
             images_base64=[image_base64],
             model=provider["model"],
+            api_key=api_key,
         )
 
         elapsed = time.time() - start_time
@@ -266,7 +278,7 @@ async def extract_with_provider(provider_id: str, image_base64: str) -> dict:
         raise
 
 
-async def smart_scan(image_base64: str, quality_score: int = 70, preferred_provider: Optional[str] = None) -> dict:
+async def smart_scan(image_base64: str, quality_score: int = 70, preferred_provider: Optional[str] = None, api_keys: Optional[dict] = None) -> dict:
     """Akıllı tarama: kaliteye göre provider seç, fallback zinciri uygula"""
 
     if preferred_provider and preferred_provider in PROVIDERS:
@@ -283,7 +295,7 @@ async def smart_scan(image_base64: str, quality_score: int = 70, preferred_provi
     errors = []
     for provider_id in chain:
         try:
-            result = await extract_with_provider(provider_id, image_base64)
+            result = await extract_with_provider(provider_id, image_base64, api_keys=api_keys)
             result["fallback_used"] = provider_id != chain[0]
             result["original_provider"] = chain[0]
             result["provider_chain"] = chain

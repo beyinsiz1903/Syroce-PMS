@@ -1021,6 +1021,13 @@ async def scan_id(request: Request, scan_req: ScanRequest, user=Depends(require_
                 detail=f"Görüntü boyutu çok büyük. Maksimum {MAX_IMAGE_BASE64_LENGTH // (1024*1024)}MB izin verilir."
             )
 
+        # Per-request API keys (PMS proxy upstream'inden gelir)
+        per_req_keys = {
+            "openai": request.headers.get("X-OpenAI-Key"),
+            "gemini": request.headers.get("X-Gemini-Key"),
+        }
+        per_req_keys = {k: v for k, v in per_req_keys.items() if v}
+
         # Step 1: Image quality check (geliştirilmiş)
         quality = assess_image_quality(scan_req.image_base64)
         quality_score = quality.get("overall_score", 70)
@@ -1049,6 +1056,7 @@ async def scan_id(request: Request, scan_req: ScanRequest, user=Depends(require_
             scan_result = await smart_scan(
                 scan_req.image_base64,
                 quality_score=quality_score,
+                api_keys=per_req_keys or None,
             )
             if not scan_result.get("success"):
                 raise Exception(scan_result.get("error", "Tüm AI sağlayıcılar başarısız"))
@@ -1070,7 +1078,7 @@ async def scan_id(request: Request, scan_req: ScanRequest, user=Depends(require_
             response_time = scan_result.get("response_time", 0)
         elif requested_provider and requested_provider in PROVIDERS:
             # Belirli provider kullan
-            scan_result = await extract_with_provider(requested_provider, scan_req.image_base64)
+            scan_result = await extract_with_provider(requested_provider, scan_req.image_base64, api_keys=per_req_keys or None)
             extracted = {
                 "documents": scan_result.get("documents", []),
                 "document_count": scan_result.get("document_count", 0),

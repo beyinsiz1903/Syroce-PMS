@@ -687,6 +687,14 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "quick_id_settings",
+    label: "Kimlik Tarama (Quick-ID)",
+    path: "/admin/quick-id",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+  },
+  {
     key: "api_docs",
     label: "API Dokumantasyon",
     path: "/b2b/docs",

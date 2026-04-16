@@ -85,6 +85,7 @@ const FeaturesShowcase = lazy(() => import("@/pages/FeaturesShowcase"));
 const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDashboard"));
 const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
 const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
+const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
 const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
 const AIModule = lazy(() => import("@/pages/AIModule"));
@@ -451,6 +452,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Admin ──────────────────────────────────────────
     { path: "/admin/tenants", ...p(AdminTenants) },
+    { path: "/admin/quick-id", ...p(QuickIdSettings) },
     { path: "/admin/module-report", ...p(ModuleReport) },
     { path: "/app/admin/leads", ...p(AdminLeads) },
     { path: "/admin/governance", ...p(GovernancePanel) },
