@@ -695,6 +695,22 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "room_qr_requests",
+    label: "Oda QR Talepleri",
+    path: "/app/room-requests",
+    group: "operations",
+    navGroup: "operations",
+    icon: "MessageSquare",
+  },
+  {
+    key: "room_qr_codes",
+    label: "Oda QR Kodları",
+    path: "/admin/room-qr-codes",
+    group: "admin",
+    navGroup: "admin",
+    icon: "QrCode",
+  },
+  {
     key: "api_docs",
     label: "API Dokumantasyon",
     path: "/b2b/docs",

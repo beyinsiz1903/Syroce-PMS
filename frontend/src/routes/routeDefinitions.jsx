@@ -86,6 +86,9 @@ const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDashboard")
 const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
 const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
 const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
+const RoomQrCodes = lazy(() => import("@/pages/admin/RoomQrCodes"));
+const RoomRequests = lazy(() => import("@/pages/RoomRequests"));
+const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"));
 const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
 const AIModule = lazy(() => import("@/pages/AIModule"));
@@ -221,6 +224,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
   return [
     // ── Public ──────────────────────────────────────────
     { path: "/landing", type: "public", component: LandingPage },
+    { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/privacy-policy", type: "public", component: PrivacyPolicy },
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
@@ -453,6 +457,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Admin ──────────────────────────────────────────
     { path: "/admin/tenants", ...p(AdminTenants) },
     { path: "/admin/quick-id", ...p(QuickIdSettings) },
+    { path: "/admin/room-qr-codes", ...p(RoomQrCodes) },
+    { path: "/app/room-requests", ...p(RoomRequests) },
     { path: "/admin/module-report", ...p(ModuleReport) },
     { path: "/app/admin/leads", ...p(AdminLeads) },
     { path: "/admin/governance", ...p(GovernancePanel) },

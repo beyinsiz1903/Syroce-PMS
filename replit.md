@@ -578,3 +578,50 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - BEO print uses textContent-based escaping (XSS prevention)
 - Field-whitelisted POST bodies prevent mass assignment
 - `emergentintegrations` package skipped by pip-audit (internal package, not on PyPI — expected)
+
+## Room QR Requests Module (Oda QR Talepleri) — Native
+
+### Özellikler
+- Her odaya **benzersiz QR kod** — misafir tarar, giriş yapmadan talep gönderir
+- **15 önceden tanımlı kategori** (temizlik, teknik, F&B, çamaşır, minibar, ulaşım, SPA, vb.) — her biri doğru departmana otomatik yönlendirilir
+- **Kanban staff dashboard**: Yeni / Atandı / İşlemde / Tamamlandı sütunları, 30 sn'de bir tazeleme, istatistik kartları
+- **5-dil misafir arayüzü** (tr/en/de/ru/ar) — RTL desteği, hotel branding (renk/logo)
+- **Aktif rezervasyon otomatik bağlanır** — booking_id + misafir adı (maskeli) otomatik eklenir
+- **QR yazdırma sayfası** — her oda için PNG indir, URL kopyala, toplu yazdırma (A4'e sığacak şekilde)
+- **Gerçek-zamanlı websocket event'i** (`room_request:new`, `room_request:update`) — tenant-scoped odaya emit
+- **Durum geçmişi (history)** — kim ne zaman hangi statüye aldı, notlar ile
+
+### Veri Modeli (MongoDB `room_qr_requests`)
+`tenant_id, room_id, room_number, category, department (DepartmentType enum), title, description, priority (low/normal/high/urgent), status (new/assigned/in_progress/completed/cancelled), language, guest_name, guest_phone, booking_id, assigned_to, created_at, updated_at, completed_at, status_history[]`
+
+### QR Token (Tokensız Akış)
+- **HMAC-SHA256(tenant_id|room_id, ROOM_QR_SECRET)** — tam 64 char digest (constant-time compare)
+- **DB'de state yok** — token kayıt gerektirmez, doğrulama pure math
+- **Fail-closed**: `ROOM_QR_SECRET` yoksa JWT_SECRET'a düşer; ikisi de yoksa 503
+- **Rate limit**: public submit endpoint'i — 10 dk / 20 talep / (oda + IP)
+- **Misafir adı public meta'da maskelenir** (`"J*** D***"`) — QR'ı gören 3. kişi gerçek adı göremez
+
+### Endpoint'ler
+**Public (auth yok)**:
+- `GET  /api/public/room-qr/{tenant}/{room}?t=TOKEN` → hotel/oda bilgileri + kategori listesi
+- `POST /api/public/room-qr/{tenant}/{room}/submit?t=TOKEN` → talep oluştur
+
+**Staff (JWT)**:
+- `GET   /api/room-requests?status=&department=&room_id=` → liste (filtreli)
+- `GET   /api/room-requests/{id}` → detay (history dahil)
+- `PATCH /api/room-requests/{id}` → status/priority/department/assigned_to + note (history'ye eklenir)
+- `GET   /api/room-requests/stats/summary` → dashboard istatistikleri
+
+**QR Üretimi (staff)**:
+- `GET /api/rooms/{room_id}/qr-code` → URL + PNG base64 + token
+- `GET /api/rooms/qr-codes/bulk` → tüm odaların URL listesi (toplu yazdırma için)
+
+### Frontend Sayfalar
+- `frontend/src/pages/guest/RoomRequestPage.jsx` — public, `/g/room/:tenantId/:roomId?t=TOKEN`
+- `frontend/src/pages/RoomRequests.jsx` — staff kanban, `/app/room-requests`
+- `frontend/src/pages/admin/RoomQrCodes.jsx` — QR yazdırma, `/admin/room-qr-codes`
+- Nav: Operasyon > "Oda QR Talepleri", Yönetim > "Oda QR Kodları"
+
+### Env Vars
+- `ROOM_QR_SECRET` *(önerilen)* — HMAC secret; yoksa `JWT_SECRET` kullanılır
+- `PUBLIC_APP_URL` — QR URL'leri için; yoksa `REPLIT_DEV_DOMAIN` veya request header'dan türetilir

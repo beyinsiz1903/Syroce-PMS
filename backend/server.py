@@ -318,6 +318,8 @@ except Exception as _ws_err:
 try:
     from routers.quick_id_proxy import router as quick_id_proxy_router
     app.include_router(quick_id_proxy_router)
+    from routers.room_qr_requests import router as room_qr_router
+    app.include_router(room_qr_router)
     logger.info("  ✅ Quick-ID proxy router loaded")
 except Exception as _qid_err:
     logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")
