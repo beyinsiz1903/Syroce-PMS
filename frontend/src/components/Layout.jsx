@@ -294,7 +294,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </div>
 
             {/* Desktop Navigation - scrollable */}
-            <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
+            <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
               {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
