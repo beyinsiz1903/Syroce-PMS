@@ -1,0 +1,1521 @@
+{
+  "backup_id": "16c9db50-ef70-4718-813b-90a63df6675b",
+  "created_at": "2026-02-21T18:10:59.437303+00:00",
+  "created_by": "admin@quickid.com",
+  "description": "verify test",
+  "collections": {
+    "guests": [
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d22",
+        "first_name": "Test",
+        "last_name": "Misafir",
+        "nationality": "Germany",
+        "document_type": "passport",
+        "status": "pending",
+        "created_at": "2026-02-21T18:09:42.513000",
+        "updated_at": "2026-02-21T18:09:42.610000",
+        "check_in_at": null,
+        "check_out_at": null,
+        "scan_ids": [],
+        "original_extracted_data": null,
+        "kvkk_consent": false,
+        "kvkk_consent_at": null,
+        "created_by": "admin@quickid.com",
+        "room_id": "0a82e626-d22e-4ce4-b790-a16ff9c8a37c",
+        "room_number": "202"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d28",
+        "first_name": "Yeni",
+        "last_name": "Misafir",
+        "nationality": "TR",
+        "status": "pending",
+        "created_at": "2026-02-21T18:09:42.657000",
+        "updated_at": "2026-02-21T18:09:42.710000",
+        "check_in_at": null,
+        "check_out_at": null,
+        "scan_ids": [],
+        "original_extracted_data": null,
+        "kvkk_consent": false,
+        "kvkk_consent_at": null,
+        "created_by": "admin@quickid.com",
+        "room_id": "26b4abb4-2fe5-4f0f-9c5d-c8306b23f318",
+        "room_number": "203"
+      },
+      {
+        "_id": "6999f5269651161a4134df2a",
+        "first_name": "Atama",
+        "last_name": "Test",
+        "nationality": "Germany",
+        "status": "pending",
+        "created_at": "2026-02-21T18:10:46.689000",
+        "updated_at": "2026-02-21T18:10:46.762000",
+        "check_in_at": null,
+        "check_out_at": null,
+        "scan_ids": [],
+        "original_extracted_data": null,
+        "kvkk_consent": false,
+        "kvkk_consent_at": null,
+        "created_by": "admin@quickid.com",
+        "room_id": "97b824ef-b17b-4783-9cb6-d986192fa392",
+        "room_number": "301"
+      },
+      {
+        "_id": "6999f5269651161a4134df2f",
+        "first_name": "Oto",
+        "last_name": "Atama",
+        "nationality": "TR",
+        "status": "pending",
+        "created_at": "2026-02-21T18:10:46.803000",
+        "updated_at": "2026-02-21T18:10:46.860000",
+        "check_in_at": null,
+        "check_out_at": null,
+        "scan_ids": [],
+        "original_extracted_data": null,
+        "kvkk_consent": false,
+        "kvkk_consent_at": null,
+        "created_by": "admin@quickid.com",
+        "room_id": "a61b1822-97af-48a4-9f21-00889e4a9964",
+        "room_number": "302"
+      }
+    ],
+    "scans": [],
+    "audit_logs": [
+      {
+        "_id": "6999f3907e523ed2f6286709",
+        "guest_id": "6999f3907e523ed2f6286708",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Hans",
+          "last_name": "Mueller",
+          "id_number": "12345678901",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.361000"
+      },
+      {
+        "_id": "6999f3907e523ed2f628670a",
+        "guest_id": "6999f3907e523ed2f6286708",
+        "action": "photo_captured",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "quality": "invalid"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.478000"
+      },
+      {
+        "_id": "6999f3907e523ed2f628670c",
+        "guest_id": "6999f3907e523ed2f628670b",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Klaus",
+          "last_name": "Weber",
+          "id_number": "A12345678",
+          "birth_date": "1980-05-15",
+          "gender": "M",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.610000"
+      },
+      {
+        "_id": "6999f3907e523ed2f628670f",
+        "guest_id": "6999f3907e523ed2f628670e",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Guest1",
+          "last_name": "GroupTest",
+          "id_number": "GRP00123456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.842000"
+      },
+      {
+        "_id": "6999f3907e523ed2f6286711",
+        "guest_id": "6999f3907e523ed2f6286710",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Guest2",
+          "last_name": "GroupTest",
+          "id_number": "GRP00223456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.905000"
+      },
+      {
+        "_id": "6999f3907e523ed2f6286712",
+        "guest_id": "6999f3907e523ed2f628670e",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.968000"
+      },
+      {
+        "_id": "6999f3907e523ed2f6286713",
+        "guest_id": "6999f3907e523ed2f6286710",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:00.970000"
+      },
+      {
+        "_id": "6999f3917e523ed2f6286714",
+        "guest_id": "6999f3907e523ed2f6286708",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3907e523ed2f6286708",
+          "first_name": "Hans",
+          "last_name": "Mueller",
+          "id_number": "12345678901",
+          "nationality": "Germany",
+          "document_type": "passport",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:00.351000",
+          "updated_at": "2026-02-21T18:04:00.477000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:00.351000",
+          "created_by": "admin@quickid.com",
+          "has_photo": true,
+          "photo_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU77zgAAAABJRU5ErkJggg==",
+          "photo_captured_at": "2026-02-21T18:04:00.477000"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:01.030000"
+      },
+      {
+        "_id": "6999f3917e523ed2f6286715",
+        "guest_id": "6999f3907e523ed2f628670b",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3907e523ed2f628670b",
+          "first_name": "Klaus",
+          "last_name": "Weber",
+          "id_number": "A12345678",
+          "birth_date": "1980-05-15",
+          "gender": "M",
+          "nationality": "Germany",
+          "document_type": "passport",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:00.610000",
+          "updated_at": "2026-02-21T18:04:00.610000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:00.610000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:01.091000"
+      },
+      {
+        "_id": "6999f3917e523ed2f6286716",
+        "guest_id": "6999f3907e523ed2f628670e",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3907e523ed2f628670e",
+          "first_name": "Guest1",
+          "last_name": "GroupTest",
+          "id_number": "GRP00123456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:00.841000",
+          "updated_at": "2026-02-21T18:04:00.968000",
+          "check_in_at": "2026-02-21T18:04:00.968000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:00.841000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:01.154000"
+      },
+      {
+        "_id": "6999f3917e523ed2f6286717",
+        "guest_id": "6999f3907e523ed2f6286710",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3907e523ed2f6286710",
+          "first_name": "Guest2",
+          "last_name": "GroupTest",
+          "id_number": "GRP00223456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:00.904000",
+          "updated_at": "2026-02-21T18:04:00.969000",
+          "check_in_at": "2026-02-21T18:04:00.969000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:00.904000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:01.231000"
+      },
+      {
+        "_id": "6999f39e7e523ed2f6286719",
+        "guest_id": "6999f39e7e523ed2f6286718",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test1",
+          "last_name": "Group",
+          "id_number": "TEST123456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:14.821000"
+      },
+      {
+        "_id": "6999f39e7e523ed2f628671b",
+        "guest_id": "6999f39e7e523ed2f628671a",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test2",
+          "last_name": "Group",
+          "id_number": "TEST223456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:14.968000"
+      },
+      {
+        "_id": "6999f39f7e523ed2f628671c",
+        "guest_id": "6999f39e7e523ed2f6286718",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:15.099000"
+      },
+      {
+        "_id": "6999f39f7e523ed2f628671d",
+        "guest_id": "6999f39e7e523ed2f628671a",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:15.100000"
+      },
+      {
+        "_id": "6999f39f7e523ed2f628671e",
+        "guest_id": "6999f39e7e523ed2f6286718",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f39e7e523ed2f6286718",
+          "first_name": "Test1",
+          "last_name": "Group",
+          "id_number": "TEST123456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:14.821000",
+          "updated_at": "2026-02-21T18:04:15.098000",
+          "check_in_at": "2026-02-21T18:04:15.098000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:14.821000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:15.278000"
+      },
+      {
+        "_id": "6999f39f7e523ed2f628671f",
+        "guest_id": "6999f39e7e523ed2f628671a",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f39e7e523ed2f628671a",
+          "first_name": "Test2",
+          "last_name": "Group",
+          "id_number": "TEST223456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:14.967000",
+          "updated_at": "2026-02-21T18:04:15.100000",
+          "check_in_at": "2026-02-21T18:04:15.100000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:14.967000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:15.421000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f6286722",
+        "guest_id": "6999f3af7e523ed2f6286721",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Hans",
+          "last_name": "Mueller",
+          "id_number": "12345678901",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.329000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f6286723",
+        "guest_id": "6999f3af7e523ed2f6286721",
+        "action": "photo_captured",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "quality": "invalid"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.390000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f6286725",
+        "guest_id": "6999f3af7e523ed2f6286724",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Klaus",
+          "last_name": "Weber",
+          "id_number": "A12345678",
+          "birth_date": "1980-05-15",
+          "gender": "M",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.529000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f6286728",
+        "guest_id": "6999f3af7e523ed2f6286727",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Guest1",
+          "last_name": "GroupTest",
+          "id_number": "GRP00123456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.656000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f628672a",
+        "guest_id": "6999f3af7e523ed2f6286729",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Guest2",
+          "last_name": "GroupTest",
+          "id_number": "GRP00223456",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.731000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f628672b",
+        "guest_id": "6999f3af7e523ed2f6286727",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.804000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f628672c",
+        "guest_id": "6999f3af7e523ed2f6286729",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.805000"
+      },
+      {
+        "_id": "6999f3af7e523ed2f628672e",
+        "guest_id": "6999f3af7e523ed2f6286724",
+        "action": "room_auto_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "79eb56d3-bd48-4386-bccc-4298f170e9df"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:31.964000"
+      },
+      {
+        "_id": "6999f3b07e523ed2f6286730",
+        "guest_id": "6999f3af7e523ed2f6286721",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3af7e523ed2f6286721",
+          "first_name": "Hans",
+          "last_name": "Mueller",
+          "id_number": "12345678901",
+          "nationality": "Germany",
+          "document_type": "passport",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:31.328000",
+          "updated_at": "2026-02-21T18:04:31.389000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:31.328000",
+          "created_by": "admin@quickid.com",
+          "has_photo": true,
+          "photo_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU77zgAAAABJRU5ErkJggg==",
+          "photo_captured_at": "2026-02-21T18:04:31.389000"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:32.439000"
+      },
+      {
+        "_id": "6999f3b07e523ed2f6286731",
+        "guest_id": "6999f3af7e523ed2f6286724",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3af7e523ed2f6286724",
+          "first_name": "Klaus",
+          "last_name": "Weber",
+          "id_number": "A12345678",
+          "birth_date": "1980-05-15",
+          "gender": "M",
+          "nationality": "Germany",
+          "document_type": "passport",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:31.529000",
+          "updated_at": "2026-02-21T18:04:31.954000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:31.529000",
+          "created_by": "admin@quickid.com",
+          "room_id": "79eb56d3-bd48-4386-bccc-4298f170e9df",
+          "room_number": "101"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:32.617000"
+      },
+      {
+        "_id": "6999f3b07e523ed2f6286732",
+        "guest_id": "6999f3af7e523ed2f6286727",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3af7e523ed2f6286727",
+          "first_name": "Guest1",
+          "last_name": "GroupTest",
+          "id_number": "GRP00123456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:31.656000",
+          "updated_at": "2026-02-21T18:04:31.804000",
+          "check_in_at": "2026-02-21T18:04:31.804000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:31.656000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:32.681000"
+      },
+      {
+        "_id": "6999f3b07e523ed2f6286733",
+        "guest_id": "6999f3af7e523ed2f6286729",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3af7e523ed2f6286729",
+          "first_name": "Guest2",
+          "last_name": "GroupTest",
+          "id_number": "GRP00223456",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:04:31.731000",
+          "updated_at": "2026-02-21T18:04:31.805000",
+          "check_in_at": "2026-02-21T18:04:31.805000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:31.731000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:32.752000"
+      },
+      {
+        "_id": "6999f3c77e523ed2f6286737",
+        "guest_id": "6999f3c77e523ed2f6286736",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test",
+          "last_name": "Assign",
+          "id_number": "TEST12345",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:55.962000"
+      },
+      {
+        "_id": "6999f3c87e523ed2f6286739",
+        "guest_id": "6999f3c87e523ed2f6286738",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test2",
+          "last_name": "Auto",
+          "id_number": "TEST54321",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:56.185000"
+      },
+      {
+        "_id": "6999f3c87e523ed2f628673b",
+        "guest_id": "6999f3c87e523ed2f6286738",
+        "action": "room_auto_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "2175afcf-5754-491b-a673-c7bb7e7a3d5d"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:56.302000"
+      },
+      {
+        "_id": "6999f3c87e523ed2f628673c",
+        "guest_id": "6999f3c87e523ed2f6286738",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3c87e523ed2f6286738",
+          "first_name": "Test2",
+          "last_name": "Auto",
+          "id_number": "TEST54321",
+          "nationality": "Türkiye",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:56.185000",
+          "updated_at": "2026-02-21T18:04:56.301000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:56.185000",
+          "created_by": "admin@quickid.com",
+          "room_id": "2175afcf-5754-491b-a673-c7bb7e7a3d5d",
+          "room_number": "102"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:56.446000"
+      },
+      {
+        "_id": "6999f3c87e523ed2f628673d",
+        "guest_id": "6999f3c77e523ed2f6286736",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3c77e523ed2f6286736",
+          "first_name": "Test",
+          "last_name": "Assign",
+          "id_number": "TEST12345",
+          "nationality": "Türkiye",
+          "status": "pending",
+          "created_at": "2026-02-21T18:04:55.962000",
+          "updated_at": "2026-02-21T18:04:55.962000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:04:55.962000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:04:56.557000"
+      },
+      {
+        "_id": "6999f3e47e523ed2f6286740",
+        "guest_id": "6999f3e47e523ed2f628673f",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test",
+          "last_name": "Assign",
+          "id_number": "TEST12399",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:05:24.380000"
+      },
+      {
+        "_id": "6999f3e47e523ed2f6286742",
+        "guest_id": "6999f3e47e523ed2f628673f",
+        "action": "room_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "bd4af77b-8e53-48b9-a43f-7e053b3fc24e",
+          "room_number": "999"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:05:24.630000"
+      },
+      {
+        "_id": "6999f3e47e523ed2f6286743",
+        "guest_id": "6999f3e47e523ed2f628673f",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f3e47e523ed2f628673f",
+          "first_name": "Test",
+          "last_name": "Assign",
+          "id_number": "TEST12399",
+          "nationality": "Türkiye",
+          "status": "pending",
+          "created_at": "2026-02-21T18:05:24.380000",
+          "updated_at": "2026-02-21T18:05:24.629000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:05:24.380000",
+          "created_by": "admin@quickid.com",
+          "room_id": "bd4af77b-8e53-48b9-a43f-7e053b3fc24e",
+          "room_number": "999"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:05:24.742000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f6286747",
+        "guest_id": "6999f43b7e523ed2f6286746",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "TestPhoto",
+          "last_name": "User",
+          "id_number": "PHOTO180650",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.024000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f6286748",
+        "guest_id": "6999f43b7e523ed2f6286746",
+        "action": "photo_captured",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "quality": "invalid"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.084000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f628674b",
+        "guest_id": "6999f43b7e523ed2f628674a",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Group1",
+          "last_name": "Test",
+          "id_number": "GRP1806510",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.270000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f628674d",
+        "guest_id": "6999f43b7e523ed2f628674c",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Group2",
+          "last_name": "Test",
+          "id_number": "GRP1806511",
+          "nationality": "Türkiye"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": true
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.328000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f628674e",
+        "guest_id": "6999f43b7e523ed2f628674a",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.429000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f628674f",
+        "guest_id": "6999f43b7e523ed2f628674c",
+        "action": "group_checked_in",
+        "changes": {
+          "status": {
+            "old": "pending",
+            "new": "checked_in"
+          }
+        },
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "group_checkin": true,
+          "group_size": 2
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.430000"
+      },
+      {
+        "_id": "6999f43b7e523ed2f6286751",
+        "guest_id": "6999f43b7e523ed2f628674c",
+        "action": "room_auto_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "b14da1c7-b66a-4dea-b80d-10b9a8e6b74f"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:51.560000"
+      },
+      {
+        "_id": "6999f43c7e523ed2f6286753",
+        "guest_id": "6999f43b7e523ed2f6286746",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f43b7e523ed2f6286746",
+          "first_name": "TestPhoto",
+          "last_name": "User",
+          "id_number": "PHOTO180650",
+          "nationality": "Germany",
+          "document_type": "passport",
+          "status": "pending",
+          "created_at": "2026-02-21T18:06:51.024000",
+          "updated_at": "2026-02-21T18:06:51.083000",
+          "check_in_at": null,
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:06:51.024000",
+          "created_by": "admin@quickid.com",
+          "has_photo": true,
+          "photo_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU77zgAAAABJRU5ErkJggg==",
+          "photo_captured_at": "2026-02-21T18:06:51.083000"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:52.410000"
+      },
+      {
+        "_id": "6999f43c7e523ed2f6286754",
+        "guest_id": "6999f43b7e523ed2f628674a",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f43b7e523ed2f628674a",
+          "first_name": "Group1",
+          "last_name": "Test",
+          "id_number": "GRP1806510",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:06:51.270000",
+          "updated_at": "2026-02-21T18:06:51.429000",
+          "check_in_at": "2026-02-21T18:06:51.429000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:06:51.270000",
+          "created_by": "admin@quickid.com"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:52.559000"
+      },
+      {
+        "_id": "6999f43c7e523ed2f6286755",
+        "guest_id": "6999f43b7e523ed2f628674c",
+        "action": "deleted",
+        "changes": {},
+        "old_data": {
+          "id": "6999f43b7e523ed2f628674c",
+          "first_name": "Group2",
+          "last_name": "Test",
+          "id_number": "GRP1806511",
+          "nationality": "Türkiye",
+          "status": "checked_in",
+          "created_at": "2026-02-21T18:06:51.328000",
+          "updated_at": "2026-02-21T18:06:51.559000",
+          "check_in_at": "2026-02-21T18:06:51.430000",
+          "check_out_at": null,
+          "scan_ids": [],
+          "original_extracted_data": null,
+          "kvkk_consent": true,
+          "kvkk_consent_at": "2026-02-21T18:06:51.328000",
+          "created_by": "admin@quickid.com",
+          "room_id": "b14da1c7-b66a-4dea-b80d-10b9a8e6b74f",
+          "room_number": "103"
+        },
+        "new_data": {},
+        "metadata": {},
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:06:52.677000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d23",
+        "guest_id": "6999f4e6b8f9e7a826ca3d22",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Test",
+          "last_name": "Misafir",
+          "nationality": "Germany",
+          "document_type": "passport"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": false
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:09:42.514000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d26",
+        "guest_id": "6999f4e6b8f9e7a826ca3d22",
+        "action": "room_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "0a82e626-d22e-4ce4-b790-a16ff9c8a37c",
+          "room_number": "202"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:09:42.612000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d29",
+        "guest_id": "6999f4e6b8f9e7a826ca3d28",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Yeni",
+          "last_name": "Misafir",
+          "nationality": "TR"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": false
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:09:42.658000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d2b",
+        "guest_id": "6999f4e6b8f9e7a826ca3d28",
+        "action": "room_auto_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "26b4abb4-2fe5-4f0f-9c5d-c8306b23f318"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:09:42.711000"
+      },
+      {
+        "_id": "6999f5269651161a4134df2b",
+        "guest_id": "6999f5269651161a4134df2a",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Atama",
+          "last_name": "Test",
+          "nationality": "Germany"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": false
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:10:46.690000"
+      },
+      {
+        "_id": "6999f5269651161a4134df2e",
+        "guest_id": "6999f5269651161a4134df2a",
+        "action": "room_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "97b824ef-b17b-4783-9cb6-d986192fa392",
+          "room_number": "301"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:10:46.763000"
+      },
+      {
+        "_id": "6999f5269651161a4134df30",
+        "guest_id": "6999f5269651161a4134df2f",
+        "action": "created",
+        "changes": {},
+        "old_data": {},
+        "new_data": {
+          "first_name": "Oto",
+          "last_name": "Atama",
+          "nationality": "TR"
+        },
+        "metadata": {
+          "scan_id": null,
+          "had_manual_edits": false,
+          "kvkk_consent": false
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:10:46.803000"
+      },
+      {
+        "_id": "6999f5269651161a4134df33",
+        "guest_id": "6999f5269651161a4134df2f",
+        "action": "room_auto_assigned",
+        "changes": {},
+        "old_data": {},
+        "new_data": {},
+        "metadata": {
+          "room_id": "a61b1822-97af-48a4-9f21-00889e4a9964"
+        },
+        "user_email": "admin@quickid.com",
+        "created_at": "2026-02-21T18:10:46.861000"
+      }
+    ],
+    "users": [
+      {
+        "_id": "6999ee7525ac645851b9e5a5",
+        "email": "admin@quickid.com",
+        "password_hash": "$2b$12$99USlUZr/zOUynQocPCFD.FP39eJHIWU09Ml6v0crx4k/Oh.CDqBa",
+        "name": "Admin",
+        "role": "admin",
+        "is_active": true,
+        "created_at": "2026-02-21T17:42:13.132000"
+      },
+      {
+        "_id": "6999ee7525ac645851b9e5a6",
+        "email": "resepsiyon@quickid.com",
+        "password_hash": "$2b$12$7mbnI3qRd8h7TyZHHmQ3yulgyHeg8wX2A33qCNkq47zY0nAXc8Y.2",
+        "name": "Resepsiyon",
+        "role": "reception",
+        "is_active": true,
+        "created_at": "2026-02-21T17:42:13.726000"
+      }
+    ],
+    "properties": [],
+    "rooms": [
+      {
+        "_id": "6999f0b77e523ed2f6286707",
+        "room_id": "79eb56d3-bd48-4386-bccc-4298f170e9df",
+        "room_number": "101",
+        "room_type": "standard",
+        "floor": 1,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f3af7e523ed2f6286724"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T17:51:51.945000",
+        "updated_at": "2026-02-21T18:04:31.953000"
+      },
+      {
+        "_id": "6999f3ae7e523ed2f6286720",
+        "room_id": "2175afcf-5754-491b-a673-c7bb7e7a3d5d",
+        "room_number": "102",
+        "room_type": "standard",
+        "floor": 1,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f3c87e523ed2f6286738"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:04:30.953000",
+        "updated_at": "2026-02-21T18:04:56.301000"
+      },
+      {
+        "_id": "6999f3c77e523ed2f6286735",
+        "room_id": "b14da1c7-b66a-4dea-b80d-10b9a8e6b74f",
+        "room_number": "103",
+        "room_type": "standard",
+        "floor": 1,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f43b7e523ed2f628674c"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:04:55.825000",
+        "updated_at": "2026-02-21T18:06:51.558000"
+      },
+      {
+        "_id": "6999f3e47e523ed2f628673e",
+        "room_id": "bd4af77b-8e53-48b9-a43f-7e053b3fc24e",
+        "room_number": "999",
+        "room_type": "standard",
+        "floor": 1,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f3e47e523ed2f628673f"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:05:24.270000",
+        "updated_at": "2026-02-21T18:05:24.629000"
+      },
+      {
+        "_id": "6999f43a7e523ed2f6286745",
+        "room_id": "e988f571-132c-4fc1-b01c-9291af3a4d34",
+        "room_number": "TEST180650",
+        "room_type": "standard",
+        "floor": 1,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "cleaning",
+        "current_guest_ids": [],
+        "features": [],
+        "created_at": "2026-02-21T18:06:50.796000",
+        "updated_at": "2026-02-21T18:06:50.967000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d24",
+        "room_id": "0a82e626-d22e-4ce4-b790-a16ff9c8a37c",
+        "room_number": "202",
+        "room_type": "standard",
+        "floor": 2,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f4e6b8f9e7a826ca3d22"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:09:42.550000",
+        "updated_at": "2026-02-21T18:09:42.610000"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d27",
+        "room_id": "26b4abb4-2fe5-4f0f-9c5d-c8306b23f318",
+        "room_number": "203",
+        "room_type": "deluxe",
+        "floor": 2,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f4e6b8f9e7a826ca3d28"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:09:42.636000",
+        "updated_at": "2026-02-21T18:09:42.709000"
+      },
+      {
+        "_id": "6999f5269651161a4134df2c",
+        "room_id": "97b824ef-b17b-4783-9cb6-d986192fa392",
+        "room_number": "301",
+        "room_type": "standard",
+        "floor": 3,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f5269651161a4134df2a"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:10:46.724000",
+        "updated_at": "2026-02-21T18:10:46.761000"
+      },
+      {
+        "_id": "6999f5269651161a4134df31",
+        "room_id": "a61b1822-97af-48a4-9f21-00889e4a9964",
+        "room_number": "302",
+        "room_type": "deluxe",
+        "floor": 3,
+        "capacity": 2,
+        "property_id": "default",
+        "status": "occupied",
+        "current_guest_ids": [
+          "6999f5269651161a4134df2f"
+        ],
+        "features": [],
+        "created_at": "2026-02-21T18:10:46.840000",
+        "updated_at": "2026-02-21T18:10:46.860000"
+      }
+    ],
+    "room_assignments": [
+      {
+        "_id": "6999f3af7e523ed2f628672d",
+        "assignment_id": "955b7bf8-1e06-486a-b1a5-28a74c6b6e17",
+        "room_id": "79eb56d3-bd48-4386-bccc-4298f170e9df",
+        "room_number": "101",
+        "guest_id": "6999f3af7e523ed2f6286724",
+        "assigned_at": "2026-02-21T18:04:31.954000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f3c87e523ed2f628673a",
+        "assignment_id": "1cfe6208-b1ad-4e54-9dc2-84273f36f86f",
+        "room_id": "2175afcf-5754-491b-a673-c7bb7e7a3d5d",
+        "room_number": "102",
+        "guest_id": "6999f3c87e523ed2f6286738",
+        "assigned_at": "2026-02-21T18:04:56.302000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f3e47e523ed2f6286741",
+        "assignment_id": "8e7a71cf-68c5-4daf-96ae-35085397e15b",
+        "room_id": "bd4af77b-8e53-48b9-a43f-7e053b3fc24e",
+        "room_number": "999",
+        "guest_id": "6999f3e47e523ed2f628673f",
+        "assigned_at": "2026-02-21T18:05:24.629000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f43b7e523ed2f6286750",
+        "assignment_id": "b01bcf21-1dae-4089-b7f7-6313bc1ba2a6",
+        "room_id": "b14da1c7-b66a-4dea-b80d-10b9a8e6b74f",
+        "room_number": "103",
+        "guest_id": "6999f43b7e523ed2f628674c",
+        "assigned_at": "2026-02-21T18:06:51.559000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d25",
+        "assignment_id": "f5aaecf2-95d1-4552-8808-72bf958d5951",
+        "room_id": "0a82e626-d22e-4ce4-b790-a16ff9c8a37c",
+        "room_number": "202",
+        "guest_id": "6999f4e6b8f9e7a826ca3d22",
+        "assigned_at": "2026-02-21T18:09:42.611000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f4e6b8f9e7a826ca3d2a",
+        "assignment_id": "d9199d89-6223-44c7-bf14-d847ac729f42",
+        "room_id": "26b4abb4-2fe5-4f0f-9c5d-c8306b23f318",
+        "room_number": "203",
+        "guest_id": "6999f4e6b8f9e7a826ca3d28",
+        "assigned_at": "2026-02-21T18:09:42.710000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f5269651161a4134df2d",
+        "assignment_id": "559100c8-b47a-43f2-8899-276987fb074f",
+        "room_id": "97b824ef-b17b-4783-9cb6-d986192fa392",
+        "room_number": "301",
+        "guest_id": "6999f5269651161a4134df2a",
+        "assigned_at": "2026-02-21T18:10:46.762000",
+        "released_at": null,
+        "status": "active"
+      },
+      {
+        "_id": "6999f5269651161a4134df32",
+        "assignment_id": "c35592ab-bcb0-4916-96f1-9c2f9b3e8a3e",
+        "room_id": "a61b1822-97af-48a4-9f21-00889e4a9964",
+        "room_number": "302",
+        "guest_id": "6999f5269651161a4134df2f",
+        "assigned_at": "2026-02-21T18:10:46.861000",
+        "released_at": null,
+        "status": "active"
+      }
+    ],
+    "kiosk_sessions": [],
+    "offline_sync": [],
+    "precheckin_tokens": [],
+    "emniyet_bildirimleri": [],
+    "kvkk_rights_requests": [],
+    "biometric_matches": [],
+    "liveness_checks": [],
+    "ai_cost_tracking": []
+  },
+  "stats": {
+    "guests": 4,
+    "scans": 0,
+    "audit_logs": 55,
+    "users": 2,
+    "properties": 0,
+    "rooms": 9,
+    "room_assignments": 8,
+    "kiosk_sessions": 0,
+    "offline_sync": 0,
+    "precheckin_tokens": 0,
+    "emniyet_bildirimleri": 0,
+    "kvkk_rights_requests": 0,
+    "biometric_matches": 0,
+    "liveness_checks": 0,
+    "ai_cost_tracking": 0
+  },
+  "total_records": 78
+}

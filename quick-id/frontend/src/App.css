@@ -1,0 +1,159 @@
+/* Quick ID Reader - App Styles */
+
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Camera video mirror for selfie-style */
+.camera-mirror {
+  transform: scaleX(-1);
+}
+
+/* Camera overlay corners */
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.camera-corner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-color: rgba(11, 94, 138, 0.8);
+}
+
+.camera-corner-tl {
+  top: 16px;
+  left: 16px;
+  border-top: 3px solid;
+  border-left: 3px solid;
+  border-radius: 4px 0 0 0;
+}
+
+.camera-corner-tr {
+  top: 16px;
+  right: 16px;
+  border-top: 3px solid;
+  border-left: none;
+  border-right: 3px solid;
+  border-radius: 0 4px 0 0;
+}
+
+.camera-corner-bl {
+  bottom: 16px;
+  left: 16px;
+  border-bottom: 3px solid;
+  border-left: 3px solid;
+  border-radius: 0 0 0 4px;
+}
+
+.camera-corner-br {
+  bottom: 16px;
+  right: 16px;
+  border-bottom: 3px solid;
+  border-right: 3px solid;
+  border-radius: 0 0 4px 0;
+}
+
+/* Camera flash animation */
+@keyframes cameraFlash {
+  0% { opacity: 0; }
+  30% { opacity: 0.25; }
+  100% { opacity: 0; }
+}
+
+.camera-flash {
+  animation: cameraFlash 200ms ease-out;
+}
+
+/* Scanning animation */
+@keyframes scanLine {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand-sky), transparent);
+  animation: scanLine 2s linear infinite;
+}
+
+/* Sidebar active link */
+.nav-link-active {
+  background-color: var(--brand-sky-soft);
+  color: var(--brand-sky);
+  font-weight: 500;
+}
+
+/* Loading pulse */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Status badges */
+.status-checked-in {
+  background-color: var(--brand-success-soft);
+  color: var(--brand-success);
+  border: 1px solid #A7F3D0;
+}
+
+.status-checked-out {
+  background-color: var(--brand-sky-soft);
+  color: var(--brand-info);
+  border: 1px solid #BFDBFE;
+}
+
+.status-pending {
+  background-color: var(--brand-warning-soft);
+  color: var(--brand-warning);
+  border: 1px solid #FED7AA;
+}
+
+/* Table hover */
+.guest-row:hover {
+  background-color: hsl(var(--secondary));
+}
+
+/* KPI card hover */
+.kpi-card {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+/* Subtle noise texture */
+.noise-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.45'/></svg>");
+  z-index: 0;
+}

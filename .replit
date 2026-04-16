@@ -21,6 +21,10 @@ args = "Start application"
 task = "workflow.run"
 args = "Backend API"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Quick-ID API"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -45,6 +49,15 @@ waitForPort = 8000
 [workflows.workflow.metadata]
 outputType = "console"
 
+[[workflows.workflow]]
+name = "Quick-ID API"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash quick-id/start.sh"
+waitForPort = 8099
+
 [[ports]]
 localPort = 5000
 externalPort = 80
@@ -60,6 +73,14 @@ externalPort = 3002
 [[ports]]
 localPort = 8000
 externalPort = 8000
+
+[[ports]]
+localPort = 8099
+externalPort = 8099
+
+[[ports]]
+localPort = 8100
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "static"
