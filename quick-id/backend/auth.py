@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
 import re
@@ -18,6 +18,9 @@ if not JWT_SECRET:
     JWT_SECRET = "quickid-fallback-CHANGE-ME-IN-PRODUCTION"
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
+
+# Service-to-service key (Syroce PMS backend -> Quick-ID)
+QUICKID_SERVICE_KEY = os.environ.get("QUICKID_SERVICE_KEY", "")
 
 # ===== Password Policy =====
 PASSWORD_MIN_LENGTH = 8
@@ -116,8 +119,50 @@ def decode_token(token: str) -> dict:
         return None
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+SERVICE_ALLOWED_PATHS = (
+    "/api/scan",
+    "/api/scan/",
+    "/api/scan/providers",
+    "/api/scan/ocr-status",
+    "/api/health",
+    "/api/providers",
+)
+
+
+def _check_service_key(request) -> Optional[dict]:
+    """Service-to-service: X-Service-Key header eşleşirse sentetik kullanıcı döndürür.
+    Yalnızca SERVICE_ALLOWED_PATHS içindeki yollarda geçerlidir; admin yetkisi verilmez."""
+    if not QUICKID_SERVICE_KEY:
+        return None
+    try:
+        svc = request.headers.get("x-service-key") or request.headers.get("X-Service-Key")
+        path = str(request.url.path or "")
+    except Exception:
+        return None
+    if not svc or svc != QUICKID_SERVICE_KEY:
+        return None
+    # Yetki sadece beyaz listedeki path'ler için
+    if not any(path == p or path.startswith(p.rstrip("/") + "/") for p in SERVICE_ALLOWED_PATHS):
+        return None
+    acting = request.headers.get("x-acting-user") or "syroce-pms"
+    return {
+        "sub": "service",
+        "email": acting,
+        "name": f"Syroce PMS ({acting})",
+        "role": "service",
+        "is_service": True,
+    }
+
+
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """Dependency: extract current user from JWT token. Returns None if no token."""
+    if request is not None:
+        svc_user = _check_service_key(request)
+        if svc_user:
+            return svc_user
     if not credentials:
         return None
     payload = decode_token(credentials.credentials)
@@ -126,8 +171,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return payload
 
 
-async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Dependency: require valid auth token"""
+async def require_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Dependency: require valid auth token veya servis anahtarı"""
+    if request is not None:
+        svc_user = _check_service_key(request)
+        if svc_user:
+            return svc_user
     if not credentials:
         raise HTTPException(status_code=401, detail="Giriş yapmanız gerekiyor")
     payload = decode_token(credentials.credentials)
@@ -136,9 +188,12 @@ async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(secur
     return payload
 
 
-async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Dependency: require admin role"""
-    user = await require_auth(credentials)
+async def require_admin(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Dependency: require admin role. Service key bypass admin yetkisi vermez."""
+    user = await require_auth(request, credentials)
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
     return user

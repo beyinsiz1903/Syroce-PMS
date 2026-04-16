@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Calendar as CalendarIcon, MapPin, Loader2 } from 'lucide-react';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Calendar as CalendarIcon, MapPin, Loader2, ScanLine } from 'lucide-react';
 import { API, fmtDate, fmtDateTime, InfoField, Avatar, EmptyState, statusLabel } from './helpers';
+import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 
 export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
   const [editing, setEditing] = useState(false);
@@ -110,6 +111,7 @@ export function GuestsTab({ guests, booking, onRefresh }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [scanGuestId, setScanGuestId] = useState(null);
 
   const startEdit = (g) => {
     setEditingId(g.id);
@@ -130,6 +132,38 @@ export function GuestsTab({ guests, booking, onRefresh }) {
   };
 
   const cancelEdit = () => { setEditingId(null); setForm({}); };
+
+  const mapIdType = (dt) => {
+    if (!dt) return 'tc_kimlik';
+    const s = String(dt).toLowerCase();
+    if (s.includes('passport') || s.includes('pasaport')) return 'passport';
+    if (s.includes('driv') || s.includes('ehliyet')) return 'driving_license';
+    if (s.includes('tc') || s.includes('kimlik') || s.includes('national')) return 'tc_kimlik';
+    return 'other';
+  };
+
+  const applyExtractedData = (g, doc) => {
+    const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim();
+    const prev = editingId === g.id ? form : {
+      name: g.name || '', email: g.email || '', phone: g.phone || '',
+      id_type: g.id_type || 'tc_kimlik', id_number: g.id_number || '',
+      nationality: g.nationality || '', date_of_birth: g.date_of_birth || '',
+      gender: g.gender || '', address: g.address || '', city: g.city || '',
+      country: g.country || '', notes: g.notes || '',
+    };
+    const next = {
+      ...prev,
+      name: fullName || prev.name,
+      id_number: doc.id_number || doc.document_number || prev.id_number,
+      id_type: mapIdType(doc.document_type) || prev.id_type,
+      nationality: doc.nationality || prev.nationality,
+      date_of_birth: doc.birth_date || prev.date_of_birth,
+      gender: doc.gender || prev.gender,
+    };
+    setEditingId(g.id);
+    setForm(next);
+    setScanGuestId(null);
+  };
 
   const handleSave = async (guestId, isPrimary) => {
     setSaving(true);
@@ -176,6 +210,10 @@ export function GuestsTab({ guests, booking, onRefresh }) {
                 <div className="flex items-center gap-2">
                   {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
                   {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
+                  <Button variant="outline" size="sm" className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
+                    <ScanLine className="w-3.5 h-3.5" />
+                    <span className="ml-1 text-xs">Kimlik Tara</span>
+                  </Button>
                   <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Duzenle'}</span>
@@ -235,6 +273,14 @@ export function GuestsTab({ guests, booking, onRefresh }) {
           );
         })
       )}
+      <QuickIdScanDialog
+        open={!!scanGuestId}
+        onClose={() => setScanGuestId(null)}
+        onExtracted={(doc) => {
+          const g = guests?.find(x => x.id === scanGuestId);
+          if (g) applyExtractedData(g, doc);
+        }}
+      />
     </div>
   );
 }

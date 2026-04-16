@@ -314,6 +314,14 @@ try:
 except Exception as _ws_err:
     logger.warning(f"Wire Status router skipped: {_ws_err}")
 
+# Quick-ID Microservice Proxy (kimlik tarama)
+try:
+    from routers.quick_id_proxy import router as quick_id_proxy_router
+    app.include_router(quick_id_proxy_router)
+    logger.info("  ✅ Quick-ID proxy router loaded")
+except Exception as _qid_err:
+    logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")
+
 # Security Classification & PII Management
 try:
     from security.classification_router import router as classification_router

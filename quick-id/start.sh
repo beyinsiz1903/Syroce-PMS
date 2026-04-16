@@ -10,6 +10,7 @@ export JWT_EXPIRE_HOURS="${JWT_EXPIRE_HOURS:-24}"
 export CORS_ORIGINS="${CORS_ORIGINS:-*}"
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 export FRONTEND_URL="${FRONTEND_URL:-http://localhost:5000}"
+export QUICKID_SERVICE_KEY="${QUICKID_SERVICE_KEY:-}"
 
 if [ -z "$MONGO_URL" ]; then
   echo "❌ MONGO_ATLAS_URI tanımlı değil!"

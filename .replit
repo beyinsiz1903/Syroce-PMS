@@ -91,3 +91,6 @@ publicDir = "frontend/build"
 
 [userenv.shared]
 JWT_SECRET = "ZA531NRnb-4uaBVfTK5oiWdck4PfTrmXI6GHjydKuR0CISB2mif9vk5A1cQDvlQy"
+QUICKID_SERVICE_KEY = "EqAbae8f5Zi9tPTydfFO4PfPWGy7ihGRKTpNbdvvglivjzRvLkpuStzqWJ1Tj_va"
+QUICKID_URL = "http://localhost:8099"
+ENABLE_QUICKID_DEMO = "true"

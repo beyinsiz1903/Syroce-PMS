@@ -541,6 +541,29 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - Fixed `HousekeepingMobileApp.jsx`: endpoint `/housekeeping/rooms` → `/pms/housekeeping/rooms` with `status_filter` param
 - Fixed `HousekeepingDashboard.jsx`: reads `status_counts.*` from API (was looking for `summary.*`)
 
+## Quick-ID Microservice Integration (April 2026)
+
+### Architecture
+- **Service**: `quick-id/` — bağımsız FastAPI uygulaması, port **8099**, Atlas DB `syroce-kimlik`
+- **Workflow**: `Quick-ID API` (`bash quick-id/start.sh`) — `MONGO_ATLAS_URI` + `QUICKID_SERVICE_KEY` env'lerini okur, PYTHONPATH izolasyonu sağlar
+- **OCR Sağlayıcılar**: GPT-4o, GPT-4o-mini, Gemini Flash, Tesseract (yerel) — `OPENAI_API_KEY` veya `GEMINI_API_KEY` ile etkinleştirilir
+
+### PMS ↔ Quick-ID Bridge
+- **Service-to-service auth**: `X-Service-Key: $QUICKID_SERVICE_KEY` header (`X-Acting-User` ile birlikte)
+  - **Whitelist'li**: yalnızca `/api/scan`, `/api/scan/*`, `/api/health`, `/api/providers` path'lerinde geçerli (auth.py `SERVICE_ALLOWED_PATHS`)
+  - **`role: service`** atanır — admin yetkisi YOK
+- **PMS Proxy**: `backend/routers/quick_id_proxy.py` → endpoint'ler `/api/quick-id/{health,scan,providers}`
+  - PMS JWT ile korunur, Quick-ID'ye servis anahtarıyla iletir
+  - **Demo fallback fail-closed**: yalnızca `ENABLE_QUICKID_DEMO=true` ise OCR yokken sahte veri döner; production'da 503 fırlatır
+- **Frontend**: `frontend/src/components/QuickIdScanDialog.jsx` — dosya yükle/kamera, base64'e çevir, `/quick-id/scan`'e POST, sonucu `onExtracted(doc)` callback'iyle döner
+- **Entegrasyon noktası**: `frontend/src/pages/reservation-detail/InfoTabs.jsx` GuestsTab → her misafirde **"Kimlik Tara"** butonu, çıkarılan veri (ad, soyad, kimlik no, doğum tarihi, uyruk, cinsiyet, belge tipi) düzenleme formuna otomatik dolar
+
+### Önemli Env Vars
+- `QUICKID_SERVICE_KEY` (secret) — PMS↔quick-id bridge anahtarı
+- `QUICKID_URL` — varsayılan `http://localhost:8099`
+- `ENABLE_QUICKID_DEMO` — `true` ise OCR yokken sahte veri (sadece dev)
+- `OPENAI_API_KEY` / `GEMINI_API_KEY` — gerçek OCR için (quick-id okur)
+
 ## Security Notes
 
 ### Dependency Vulnerabilities (Resolved)
