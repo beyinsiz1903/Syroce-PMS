@@ -6,7 +6,7 @@ mkdir -p /tmp/redis-data
 # MongoDB: Atlas (cloud) öncelikli; yoksa local fallback
 if [ -n "$MONGO_ATLAS_URI" ]; then
   export MONGO_URL="$MONGO_ATLAS_URI"
-  export DB_NAME="${DB_NAME:-syroce_crm}"
+  export DB_NAME="${DB_NAME:-syroce-pms}"
   echo "✅ MongoDB: Atlas Cloud kullanılıyor (DB: $DB_NAME)"
 else
   echo "⚠️  MONGO_ATLAS_URI tanımlı değil, local MongoDB başlatılıyor..."
