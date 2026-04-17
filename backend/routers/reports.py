@@ -823,16 +823,32 @@ async def get_forecast(
     _: None = Depends(require_module("reports")),
 ):
     today = datetime.now(UTC).date()
+    window_start = datetime.combine(today, datetime.min.time())
+    window_end = datetime.combine(today + timedelta(days=days - 1), datetime.max.time())
+
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'checked_in']},
+        'check_in': {'$lte': window_end.isoformat()},
+        'check_out': {'$gte': window_start.isoformat()},
+    }, {'_id': 0, 'check_in': 1, 'check_out': 1}).to_list(10000)
+
+    parsed = []
+    for b in bookings:
+        try:
+            ci = datetime.fromisoformat(b['check_in'].replace('Z', '+00:00')).date()
+            co = datetime.fromisoformat(b['check_out'].replace('Z', '+00:00')).date()
+            parsed.append((ci, co))
+        except (KeyError, ValueError, TypeError, AttributeError):
+            continue
+
     forecast_data = []
     for i in range(days):
         forecast_date = today + timedelta(days=i)
-        start_of_day = datetime.combine(forecast_date, datetime.min.time())
-        end_of_day = datetime.combine(forecast_date, datetime.max.time())
-        bookings = await db.bookings.count_documents({'tenant_id': current_user.tenant_id, 'status': {'$in': ['confirmed', 'checked_in']},
-                                                       'check_in': {'$lte': end_of_day.isoformat()}, 'check_out': {'$gte': start_of_day.isoformat()}})
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-        occupancy = round((bookings / total_rooms * 100) if total_rooms > 0 else 0, 2)
-        forecast_data.append({'date': forecast_date.isoformat(), 'bookings': bookings, 'total_rooms': total_rooms, 'occupancy_rate': occupancy})
+        count = sum(1 for ci, co in parsed if ci <= forecast_date <= co)
+        occupancy = round((count / total_rooms * 100) if total_rooms > 0 else 0, 2)
+        forecast_data.append({'date': forecast_date.isoformat(), 'bookings': count, 'total_rooms': total_rooms, 'occupancy_rate': occupancy})
     return forecast_data
 
 
