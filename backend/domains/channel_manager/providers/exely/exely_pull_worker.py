@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
+from core.secrets import get_secrets_manager
 from core.tenant_db import clear_tenant_context, set_tenant_context
 from domains.channel_manager.credential_vault import get_decrypted_credentials
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
@@ -18,6 +19,60 @@ from domains.channel_manager.providers.exely.provider import ExelyProvider
 logger = logging.getLogger(__name__)
 
 PROVIDER = "exely"
+
+
+async def _resolve_exely_credentials(
+    tenant_id: str, hotel_code: str, conn: dict[str, Any] | None = None
+) -> dict[str, str] | None:
+    """
+    Resolve Exely credentials with a 3-tier fallback chain (mirrors HotelRunner).
+
+    1) New SecretsManager (encrypted, AAD-bound) — written by /api/exely/connect
+    2) Legacy credential vault (`provider_secrets` collection) — older deployments
+    3) Plaintext on the connection document — seed data / pre-vault records
+    """
+    # Tier 1: New SecretsManager (preferred)
+    try:
+        sm = get_secrets_manager()
+        creds = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
+        if creds and creds.get("username") and creds.get("password"):
+            return {
+                "username": creds["username"],
+                "password": creds["password"],
+                "endpoint_url": creds.get("endpoint_url", ""),
+            }
+    except Exception as e:
+        logger.warning(f"[EXELY-CREDS] SecretsManager lookup failed for {tenant_id}/{hotel_code}: {e}")
+
+    # Tier 2: Legacy credential vault
+    try:
+        legacy = await get_decrypted_credentials(tenant_id, PROVIDER, hotel_code)
+        if legacy and legacy.get("username") and legacy.get("password"):
+            return {
+                "username": legacy["username"],
+                "password": legacy["password"],
+                "endpoint_url": legacy.get("endpoint_url", ""),
+            }
+    except Exception as e:
+        logger.warning(f"[EXELY-CREDS] Legacy vault lookup failed for {tenant_id}/{hotel_code}: {e}")
+
+    # Tier 3: Plaintext on connection doc (seed / pre-vault)
+    if conn is None:
+        conn = await db.exely_connections.find_one(
+            {"tenant_id": tenant_id, "hotel_code": hotel_code}, {"_id": 0}
+        )
+    if conn and conn.get("username") and conn.get("password"):
+        logger.warning(
+            f"[EXELY-CREDS] Using legacy plaintext credentials for tenant {tenant_id}, "
+            f"hotel {hotel_code}. Re-save via /api/exely/connect to migrate to vault."
+        )
+        return {
+            "username": conn["username"],
+            "password": conn["password"],
+            "endpoint_url": conn.get("endpoint_url", ""),
+        }
+
+    return None
 
 
 class ExelyPullScheduler:
@@ -82,22 +137,7 @@ class ExelyPullScheduler:
                 hotel_code = conn["hotel_code"]
                 endpoint_url = conn.get("endpoint_url", "")
 
-                # 1) Try vault (preferred path — credentials saved via /connect endpoint)
-                creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
-
-                # 2) Legacy fallback: plaintext credentials stored directly on
-                #    the connection document (seed data / pre-vault records).
-                if not creds and conn.get("username") and conn.get("password"):
-                    creds = {
-                        "username": conn["username"],
-                        "password": conn["password"],
-                        "endpoint_url": conn.get("endpoint_url", ""),
-                    }
-                    logger.warning(
-                        f"[EXELY-PULL] Using legacy plaintext credentials for tenant {tenant_id}, "
-                        f"hotel {hotel_code}. Re-save via /api/exely/connect to migrate to vault."
-                    )
-
+                creds = await _resolve_exely_credentials(tenant_id, hotel_code, conn)
                 if not creds:
                     logger.warning(
                         f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. "
