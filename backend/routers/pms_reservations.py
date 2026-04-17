@@ -155,14 +155,12 @@ async def check_double_booking_conflicts(
     target_date = date or datetime.now().date().isoformat()
 
     # Get all bookings for the date
-    bookings = []
-    async for booking in db.bookings.find({
+    bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
         'check_in': {'$lte': target_date},
         'check_out': {'$gte': target_date}
-    }):
-        bookings.append(booking)
+    }).to_list(length=None)
 
     # Group by room
     room_bookings = {}
@@ -172,12 +170,21 @@ async def check_double_booking_conflicts(
             room_bookings[room_id] = []
         room_bookings[room_id].append(booking)
 
+    # Batch-fetch all conflicting rooms in one query (avoid N+1)
+    conflict_room_ids = [rid for rid, bl in room_bookings.items() if len(bl) > 1 and rid]
+    rooms_by_id: dict = {}
+    if conflict_room_ids:
+        async for r in db.rooms.find(
+            {'id': {'$in': conflict_room_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_number': 1},
+        ):
+            rooms_by_id[r['id']] = r
+
     # Find conflicts
     conflicts = []
     for room_id, room_booking_list in room_bookings.items():
         if len(room_booking_list) > 1:
-            # Potential conflict
-            room = await db.rooms.find_one({'id': room_id})
+            room = rooms_by_id.get(room_id)
             conflicts.append({
                 'room_id': room_id,
                 'room_number': room.get('room_number') if room else 'Unknown',

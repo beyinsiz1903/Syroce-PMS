@@ -9,6 +9,7 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
 from modules.platform_scaling.competitive_analysis import (
@@ -275,6 +276,7 @@ async def api_at_risk_bookings(min_risk: float = 0.3, current_user: User = Depen
     return await cancellation_model.get_at_risk_bookings(current_user.tenant_id, min_risk)
 
 @router.get("/ml/dashboard")
+@cached(ttl=180, key_prefix="ml_dashboard")
 async def api_ml_dashboard(current_user: User = Depends(get_current_user)):
     """Get comprehensive Revenue ML dashboard."""
     return await ml_dashboard.get_ml_dashboard(current_user.tenant_id)

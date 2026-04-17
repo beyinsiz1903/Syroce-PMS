@@ -10,6 +10,7 @@ from modules.security_hardening.credential_vault import credential_vault
 from modules.security_hardening.data_masking import data_masking
 from modules.security_hardening.property_permissions import property_permissions
 from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+from core.cache import cached
 from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"]
 # --- Tenant Scope ---
 
 @router.get("/tenant-scope/check")
+@cached(ttl=60, key_prefix="tenant_scope_check")
 async def check_tenant_isolation(tenant: TenantContext = Depends(get_current_tenant)):
     return await tenant_query_guard.check_isolation(tenant.tenant_id)
 

@@ -6,6 +6,7 @@ live ops alerts, and full dashboard data.
 
 from fastapi import APIRouter, Body, Depends, Query
 
+from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
 
@@ -22,6 +23,7 @@ async def get_readiness(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/summary")
+@cached(ttl=60, key_prefix="golive_summary")
 async def get_golive_summary(current_user: User = Depends(get_current_user)):
     """Complete production go-live dashboard data — aggregates all subsystems."""
     from infra.mongo_production import mongo_validator

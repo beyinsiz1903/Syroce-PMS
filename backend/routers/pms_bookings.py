@@ -212,17 +212,29 @@ async def get_bookings(
                 {"id": {"$regex": term, "$options": "i"}},
             ],
         }
-        bookings = []
-        async for b in db.bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit):
+        bookings = await db.bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
+        # Batch-fetch missing guest names and room numbers in one query each
+        missing_guest_ids = {b["guest_id"] for b in bookings if not b.get("guest_name") and b.get("guest_id")}
+        missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
+        guest_name_map: dict[str, str] = {}
+        if missing_guest_ids:
+            async for g in db.guests.find(
+                {"id": {"$in": list(missing_guest_ids)}, "tenant_id": current_user.tenant_id},
+                {"_id": 0, "id": 1, "name": 1},
+            ):
+                guest_name_map[g["id"]] = g.get("name", "")
+        room_num_map: dict[str, str] = {}
+        if missing_room_ids:
+            async for r in db.rooms.find(
+                {"id": {"$in": list(missing_room_ids)}, "tenant_id": current_user.tenant_id},
+                {"_id": 0, "id": 1, "room_number": 1},
+            ):
+                room_num_map[r["id"]] = r.get("room_number", "")
+        for b in bookings:
             if not b.get("guest_name") and b.get("guest_id"):
-                guest = await db.guests.find_one({"id": b["guest_id"]}, {"name": 1, "_id": 0})
-                if guest:
-                    b["guest_name"] = guest.get("name", "")
+                b["guest_name"] = guest_name_map.get(b["guest_id"], "")
             if b.get("room_id") and not b.get("room_number"):
-                room = await db.rooms.find_one({"id": b["room_id"]}, {"room_number": 1, "_id": 0})
-                if room:
-                    b["room_number"] = room.get("room_number", "")
-            bookings.append(b)
+                b["room_number"] = room_num_map.get(b["room_id"], "")
         return {"bookings": bookings, "total": len(bookings)}
 
     # Check pre-warmed cache for default query (no filters)

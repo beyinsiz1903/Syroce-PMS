@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.cache import cached
 from core.database import _raw_db as system_db
 from core.security import get_current_user
 from models.schemas import User
@@ -94,6 +95,7 @@ async def get_violations(
 
 
 @router.get("/encryption-status")
+@cached(ttl=120, key_prefix="pii_encryption_status")
 async def get_encryption_status(user: User = Depends(_require_admin)):
     """Return field-level encryption coverage per collection."""
     enc_svc = get_field_encryption_service()

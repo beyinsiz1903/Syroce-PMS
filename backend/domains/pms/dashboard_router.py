@@ -75,15 +75,24 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
             'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
         })
 
-        # Get VIP arrivals
-        vip_arrivals = []
-        async for booking in db.bookings.find({
+        # Get VIP arrivals (batched: 1 booking query + 1 guest query)
+        candidate_bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
             'status': {'$in': ['confirmed', 'guaranteed']}
-        }).limit(10):
-            guest = await db.guests.find_one({'id': booking.get('guest_id')})
-            if guest and guest.get('vip'):
+        }, {'_id': 0, 'guest_id': 1, 'room_number': 1, 'check_in': 1}).limit(10).to_list(length=10)
+        guest_ids = [b.get('guest_id') for b in candidate_bookings if b.get('guest_id')]
+        guests_by_id = {}
+        if guest_ids:
+            async for g in db.guests.find(
+                {'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id, 'vip': True},
+                {'_id': 0, 'id': 1, 'name': 1, 'preferences': 1, 'vip': 1},
+            ):
+                guests_by_id[g['id']] = g
+        vip_arrivals = []
+        for booking in candidate_bookings:
+            guest = guests_by_id.get(booking.get('guest_id'))
+            if guest:
                 vip_arrivals.append({
                     'guest_name': guest.get('name'),
                     'room_number': booking.get('room_number'),
@@ -129,14 +138,23 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
         }
 
     elif current_user.role == 'front_desk':
-        # Front desk specific
-        arrivals = []
-        async for booking in db.bookings.find({
+        # Front desk specific (batched)
+        fd_bookings = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
             'status': {'$in': ['confirmed', 'guaranteed']}
-        }).limit(20):
-            room = await db.rooms.find_one({'id': booking.get('room_id')})
+        }, {'_id': 0, 'id': 1, 'guest_name': 1, 'room_number': 1, 'check_in': 1, 'status': 1, 'room_id': 1}).limit(20).to_list(length=20)
+        room_ids = [b.get('room_id') for b in fd_bookings if b.get('room_id')]
+        rooms_by_id = {}
+        if room_ids:
+            async for r in db.rooms.find(
+                {'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id},
+                {'_id': 0, 'id': 1, 'status': 1},
+            ):
+                rooms_by_id[r['id']] = r
+        arrivals = []
+        for booking in fd_bookings:
+            room = rooms_by_id.get(booking.get('room_id'))
             arrivals.append({
                 'id': booking.get('id'),
                 'guest_name': booking.get('guest_name'),

@@ -3,10 +3,13 @@ Redis Cache Manager for High-Performance Hotel PMS
 Implements caching for frequently accessed data
 """
 
+import fnmatch
 import hashlib
 import json
 import logging
 import os
+import threading
+import time
 from datetime import date, datetime
 from functools import wraps
 from typing import Any, Callable
@@ -14,6 +17,62 @@ from typing import Any, Callable
 import redis
 
 logger = logging.getLogger(__name__)
+
+
+class _InMemoryTTLStore:
+    """Thread-safe in-memory TTL cache used when Redis is unavailable.
+
+    Bounded to ~5000 entries via simple FIFO eviction to prevent unbounded growth.
+    Suitable as a single-process fallback; multi-worker setups should use Redis.
+    """
+
+    MAX_ENTRIES = 5000
+
+    def __init__(self):
+        self._data: dict[str, tuple[float, str]] = {}
+        self._lock = threading.RLock()
+
+    def get(self, key: str) -> str | None:
+        with self._lock:
+            entry = self._data.get(key)
+            if not entry:
+                return None
+            expires_at, value = entry
+            if expires_at < time.time():
+                self._data.pop(key, None)
+                return None
+            return value
+
+    def setex(self, key: str, ttl: int, value: str):
+        with self._lock:
+            if len(self._data) >= self.MAX_ENTRIES and key not in self._data:
+                # Evict oldest 10% to keep latency predictable
+                drop = max(1, self.MAX_ENTRIES // 10)
+                for k in list(self._data.keys())[:drop]:
+                    self._data.pop(k, None)
+            self._data[key] = (time.time() + ttl, value)
+
+    def delete(self, *keys: str) -> int:
+        n = 0
+        with self._lock:
+            for k in keys:
+                if self._data.pop(k, None) is not None:
+                    n += 1
+        return n
+
+    def keys(self, pattern: str) -> list[str]:
+        with self._lock:
+            return [k for k in self._data.keys() if fnmatch.fnmatchcase(k, pattern)]
+
+    def dbsize(self) -> int:
+        with self._lock:
+            return len(self._data)
+
+    def info(self) -> dict:
+        return {"connected_clients": 1, "used_memory_human": "in-memory"}
+
+    def ping(self):
+        return True
 
 
 def _json_serializer(obj):
@@ -53,22 +112,26 @@ class CacheManager:
 
     def __init__(self):
         self.redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        self.backend = "none"
         try:
             self.client = redis.from_url(
                 self.redis_url,
                 decode_responses=True,
                 max_connections=50,
-                socket_connect_timeout=5,
-                socket_timeout=5,
+                socket_connect_timeout=2,
+                socket_timeout=2,
                 retry_on_timeout=True
             )
             self.client.ping()
             self.enabled = True
+            self.backend = "redis"
             logger.info("Redis cache connected successfully")
         except Exception as e:
-            logger.warning(f"Redis not available: {e}. Caching disabled.")
-            self.enabled = False
-            self.client = None
+            # Fallback to in-memory TTL cache so @cached() decorators stay effective.
+            logger.warning(f"Redis not available: {e}. Falling back to in-memory cache.")
+            self.client = _InMemoryTTLStore()
+            self.enabled = True
+            self.backend = "memory"
 
     def get(self, key: str) -> Any | None:
         """Get value from cache"""
@@ -162,11 +225,11 @@ class CacheManager:
 cache = CacheManager()
 
 def _extract_tenant_id(args, kwargs) -> str:
-    """Extract tenant_id from function arguments, checking User objects first."""
-    # Check kwargs for current_user or tenant_id
-    for key in ('current_user', 'user'):
+    """Extract tenant_id from function arguments, checking User/Tenant context first."""
+    # Check kwargs for any common tenant-bearing dependency
+    for key in ('current_user', 'user', 'tenant', 'tenant_ctx', 'ctx'):
         obj = kwargs.get(key)
-        if obj and hasattr(obj, 'tenant_id') and obj.tenant_id:
+        if obj and hasattr(obj, 'tenant_id') and getattr(obj, 'tenant_id', None):
             return str(obj.tenant_id)
 
     if 'tenant_id' in kwargs and kwargs['tenant_id']:
@@ -180,22 +243,43 @@ def _extract_tenant_id(args, kwargs) -> str:
     return 'global'
 
 
+def _stable_str(value: Any) -> str:
+    """Render a value into a stable string for cache-key hashing.
+    Avoids object reprs that include memory addresses (e.g. <Obj at 0x...>).
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return str(value)
+    if hasattr(value, 'tenant_id') and getattr(value, 'tenant_id', None):
+        return f"tenant:{value.tenant_id}"
+    if hasattr(value, 'model_dump'):
+        try:
+            return json.dumps(value.model_dump(), sort_keys=True, default=str)
+        except Exception:
+            return type(value).__name__
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_stable_str(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{k}:{_stable_str(v)}" for k, v in sorted(value.items())) + "}"
+    return type(value).__name__
+
+
 def _build_cache_key(func: Callable, key_prefix: str, tenant_id: str, args, kwargs) -> str:
     """Build a stable, deterministic cache key."""
-    # Collect key-relevant parts (exclude User objects which are not cache-relevant)
+    # Collect key-relevant parts (exclude User/tenant objects, already in tenant_id prefix)
+    skip_keys = {'current_user', 'user', 'request', 'response', 'db', 'tenant', 'tenant_ctx', 'ctx'}
     key_parts = []
     for arg in args:
         if hasattr(arg, 'tenant_id'):
-            continue  # Skip User objects
-        key_parts.append(str(arg))
+            continue
+        key_parts.append(_stable_str(arg))
 
     for k, v in sorted(kwargs.items()):
-        if k in ('current_user', 'user', 'request', 'response', 'db'):
-            continue  # Skip non-cacheable params
-        key_parts.append(f"{k}={v}")
+        if k in skip_keys:
+            continue
+        key_parts.append(f"{k}={_stable_str(v)}")
 
     params_str = "|".join(key_parts)
-    params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
+    params_hash = hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
     return f"cache:{tenant_id}:{key_prefix or func.__name__}:{params_hash}"
 
