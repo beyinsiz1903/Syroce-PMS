@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Home, RefreshCw } from 'lucide-react';
 
-const FindRoomDialog = ({ open, onClose, findRoomCriteria, setFindRoomCriteria, onRoomSelected }) => {
+const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCriteria, onRoomSelected }) => {
   const { t } = useTranslation();
   const [availableRooms, setAvailableRooms] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -60,13 +60,13 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria, setFindRoomCriteria, 
           <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
             <div>
               <Label>{t('booking.checkInDate')} *</Label>
-              <Input type="date" value={findRoomCriteria.check_in}
+              <Input type="date" value={findRoomCriteria.check_in || ''}
                 onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_in: e.target.value})}
                 min={new Date().toISOString().split('T')[0]} />
             </div>
             <div>
               <Label>{t('booking.checkOutDate')} *</Label>
-              <Input type="date" value={findRoomCriteria.check_out}
+              <Input type="date" value={findRoomCriteria.check_out || ''}
                 onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
                 min={findRoomCriteria.check_in || new Date().toISOString().split('T')[0]} />
             </div>
