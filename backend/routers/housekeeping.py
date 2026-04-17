@@ -44,11 +44,16 @@ async def get_housekeeping_tasks(status: str | None = None, current_user: User =
     if status:
         query['status'] = status
     tasks = await db.housekeeping_tasks.find(query, {'_id': 0}).to_list(1000)
-    enriched = []
-    for task in tasks:
-        room = await db.rooms.find_one({'id': task['room_id']}, {'_id': 0})
-        enriched.append({**task, 'room': room})
-    return enriched
+    room_ids = list({t['room_id'] for t in tasks if t.get('room_id')})
+    rooms_by_id = {}
+    if room_ids:
+        rooms_cursor = db.rooms.find(
+            {'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0}
+        )
+        async for r in rooms_cursor:
+            rooms_by_id[r['id']] = r
+    return [{**task, 'room': rooms_by_id.get(task.get('room_id'))} for task in tasks]
 
 @router.post("/housekeeping/tasks")
 async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: str | None = None, current_user: User = Depends(get_current_user)):
@@ -99,10 +104,10 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
         'status': 'checked_in'
     }).to_list(1000)
 
-    due_out_rooms = []
+    # First pass: filter bookings by date in Python (date format mixed)
+    matched = []
     for booking in bookings:
         try:
-            # Handle both datetime and string formats
             checkout = booking.get('check_out')
             if isinstance(checkout, datetime):
                 checkout_date = checkout.date()
@@ -110,22 +115,35 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
                 checkout_date = datetime.fromisoformat(checkout.replace('Z', '+00:00')).date()
             else:
                 continue
-
             if checkout_date == today or checkout_date == tomorrow:
-                room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
-                guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-
-                due_out_rooms.append({
-                    'room_number': room['room_number'] if room else 'N/A',
-                    'room_type': room['room_type'] if room else 'N/A',
-                    'guest_name': guest['name'] if guest else 'N/A',
-                    'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
-                    'booking_id': booking['id'],
-                    'is_today': checkout_date == today
-                })
+                matched.append((booking, checkout, checkout_date))
         except Exception as e:
             logger.info(f"Error processing booking {booking.get('id')}: {e}")
             continue
+
+    # Batch fetch rooms + guests for all matched bookings
+    room_ids = list({b['room_id'] for b, _, _ in matched if b.get('room_id')})
+    guest_ids = list({b['guest_id'] for b, _, _ in matched if b.get('guest_id')})
+    rooms_by_id, guests_by_id = {}, {}
+    if room_ids:
+        async for r in db.rooms.find({'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            rooms_by_id[r['id']] = r
+    if guest_ids:
+        async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            guests_by_id[g['id']] = g
+
+    due_out_rooms = []
+    for booking, checkout, checkout_date in matched:
+        room = rooms_by_id.get(booking.get('room_id'))
+        guest = guests_by_id.get(booking.get('guest_id'))
+        due_out_rooms.append({
+            'room_number': room['room_number'] if room else 'N/A',
+            'room_type': room['room_type'] if room else 'N/A',
+            'guest_name': guest['name'] if guest else 'N/A',
+            'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
+            'booking_id': booking['id'],
+            'is_today': checkout_date == today
+        })
 
     return {
         'due_out_rooms': due_out_rooms,
@@ -144,10 +162,9 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
         'status': 'checked_in'
     }).to_list(1000)
 
-    stayover_rooms = []
+    matched = []
     for booking in bookings:
         try:
-            # Handle both datetime and string formats
             checkout = booking.get('check_out')
             if isinstance(checkout, datetime):
                 checkout_date = checkout.date()
@@ -155,24 +172,34 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
                 checkout_date = datetime.fromisoformat(checkout.replace('Z', '+00:00')).date()
             else:
                 continue
-
             if checkout_date > today:
-                room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
-                guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-
-                nights_remaining = (checkout_date - today).days
-
-                stayover_rooms.append({
-                    'room_number': room['room_number'] if room else 'N/A',
-                    'room_type': room['room_type'] if room else 'N/A',
-                    'guest_name': guest['name'] if guest else 'N/A',
-                    'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
-                    'nights_remaining': nights_remaining,
-                    'booking_id': booking['id']
-                })
+                matched.append((booking, checkout, checkout_date))
         except Exception as e:
             logger.info(f"Error processing stayover booking {booking.get('id')}: {e}")
             continue
+
+    room_ids = list({b['room_id'] for b, _, _ in matched if b.get('room_id')})
+    guest_ids = list({b['guest_id'] for b, _, _ in matched if b.get('guest_id')})
+    rooms_by_id, guests_by_id = {}, {}
+    if room_ids:
+        async for r in db.rooms.find({'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            rooms_by_id[r['id']] = r
+    if guest_ids:
+        async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            guests_by_id[g['id']] = g
+
+    stayover_rooms = []
+    for booking, checkout, checkout_date in matched:
+        room = rooms_by_id.get(booking.get('room_id'))
+        guest = guests_by_id.get(booking.get('guest_id'))
+        stayover_rooms.append({
+            'room_number': room['room_number'] if room else 'N/A',
+            'room_type': room['room_type'] if room else 'N/A',
+            'guest_name': guest['name'] if guest else 'N/A',
+            'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
+            'nights_remaining': (checkout_date - today).days,
+            'booking_id': booking['id']
+        })
 
     return {
         'stayover_rooms': stayover_rooms,
@@ -353,10 +380,9 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
         'status': {'$in': ['confirmed', 'guaranteed', 'pending']}
     }).to_list(1000)
 
-    arrival_rooms = []
+    matched = []
     for booking in bookings:
         try:
-            # Handle both datetime and string formats
             checkin = booking.get('check_in')
             if isinstance(checkin, datetime):
                 checkin_date = checkin.date()
@@ -364,24 +390,36 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
                 checkin_date = datetime.fromisoformat(checkin.replace('Z', '+00:00')).date()
             else:
                 continue
-
             if checkin_date == today:
-                room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
-                guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
-
-                arrival_rooms.append({
-                    'room_number': room['room_number'] if room else 'N/A',
-                    'room_type': room['room_type'] if room else 'N/A',
-                    'room_status': room['status'] if room else 'unknown',
-                    'guest_name': guest['name'] if guest else 'N/A',
-                    'checkin_time': checkin.isoformat() if isinstance(checkin, datetime) else checkin,
-                    'booking_id': booking['id'],
-                    'booking_status': booking['status'],
-                    'ready': room['status'] in ['available', 'inspected'] if room else False
-                })
+                matched.append((booking, checkin))
         except Exception as e:
             logger.info(f"Error processing arrival booking {booking.get('id')}: {e}")
             continue
+
+    room_ids = list({b['room_id'] for b, _ in matched if b.get('room_id')})
+    guest_ids = list({b['guest_id'] for b, _ in matched if b.get('guest_id')})
+    rooms_by_id, guests_by_id = {}, {}
+    if room_ids:
+        async for r in db.rooms.find({'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            rooms_by_id[r['id']] = r
+    if guest_ids:
+        async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            guests_by_id[g['id']] = g
+
+    arrival_rooms = []
+    for booking, checkin in matched:
+        room = rooms_by_id.get(booking.get('room_id'))
+        guest = guests_by_id.get(booking.get('guest_id'))
+        arrival_rooms.append({
+            'room_number': room['room_number'] if room else 'N/A',
+            'room_type': room['room_type'] if room else 'N/A',
+            'room_status': room['status'] if room else 'unknown',
+            'guest_name': guest['name'] if guest else 'N/A',
+            'checkin_time': checkin.isoformat() if isinstance(checkin, datetime) else checkin,
+            'booking_id': booking['id'],
+            'booking_status': booking['status'],
+            'ready': room['status'] in ['available', 'inspected'] if room else False
+        })
 
     return {
         'arrival_rooms': arrival_rooms,
@@ -500,12 +538,21 @@ async def get_room_blocks(
 
     blocks = await db.room_blocks.find(query, {'_id': 0}).to_list(1000)
 
-    # Enrich with room information
+    # Batch enrich with room information
+    room_ids = list({b['room_id'] for b in blocks if b.get('room_id')})
+    rooms_by_id = {}
+    if room_ids:
+        async for r in db.rooms.find(
+            {'id': {'$in': room_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1}
+        ):
+            rooms_by_id[r['id']] = r
+
     for block in blocks:
-        room = await db.rooms.find_one({'id': block['room_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
+        room = rooms_by_id.get(block.get('room_id'))
         if room:
-            block['room_number'] = room['room_number']
-            block['room_type'] = room['room_type']
+            block['room_number'] = room.get('room_number')
+            block['room_type'] = room.get('room_type')
 
     return {
         'blocks': blocks,
