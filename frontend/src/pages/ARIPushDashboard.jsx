@@ -24,9 +24,9 @@ const StatusBadge = ({ status }) => {
     acked: { color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: 'Acked' },
     failed_retryable: { color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', label: 'Retry' },
     manual_review: { color: 'bg-red-500/15 text-red-400 border-red-500/30', label: 'Failed' },
-    skipped: { color: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30', label: 'Skipped' },
+    skipped: { color: 'bg-gray-100 text-gray-600 border-gray-300', label: 'Skipped' },
   };
-  const s = map[status] || { color: 'bg-zinc-500/15 text-zinc-400', label: status };
+  const s = map[status] || { color: 'bg-gray-100 text-gray-600', label: status };
   return <Badge data-testid={`status-badge-${status}`} className={`${s.color} border text-xs font-medium`}>{s.label}</Badge>;
 };
 
@@ -36,19 +36,19 @@ const ScopeBadge = ({ scope }) => {
     rate: { color: 'bg-violet-500/15 text-violet-400 border-violet-500/30', icon: '₺' },
     restriction: { color: 'bg-rose-500/15 text-rose-400 border-rose-500/30', icon: '⊘' },
   };
-  const s = map[scope] || { color: 'bg-zinc-500/15 text-zinc-400', icon: '?' };
+  const s = map[scope] || { color: 'bg-gray-100 text-gray-600', icon: '?' };
   return <Badge className={`${s.color} border text-xs`}>{s.icon} {scope}</Badge>;
 };
 
 const MetricCard = ({ title, value, icon: Icon, color, testId }) => (
-  <Card data-testid={testId} className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+  <Card data-testid={testId} className="bg-white border-gray-200">
     <CardContent className="p-4 flex items-center gap-3">
       <div className={`p-2 rounded-lg ${color}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-xs text-zinc-500 font-medium">{title}</p>
-        <p className="text-2xl font-bold text-zinc-100">{value}</p>
+        <p className="text-xs text-gray-500 font-medium">{title}</p>
+        <p className="text-2xl font-bold text-gray-900">{value}</p>
       </div>
     </CardContent>
   </Card>
@@ -147,8 +147,8 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-zinc-100 tracking-tight">ARI Push Engine</h1>
-            <p className="text-sm text-zinc-500 mt-1">Event-driven availability, rate & restriction push pipeline</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">ARI Push Engine</h1>
+            <p className="text-sm text-gray-500 mt-1">Event-driven availability, rate & restriction push pipeline</p>
           </div>
           <div className="flex gap-2">
             <Button data-testid="push-pending-btn" onClick={pushPending} size="sm" className="bg-emerald-600 hover:bg-emerald-700">
@@ -172,25 +172,25 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
         {/* Engine Status + Drift Mode */}
         {engineStats && (
-          <Card className="bg-zinc-900/60 border-zinc-800">
+          <Card className="bg-white border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-6 flex-wrap text-sm">
                 <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${engineStats.buffer?.running ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
-                  <span className="text-zinc-400">Buffer: {engineStats.buffer?.running ? 'Active' : 'Idle'}</span>
-                  <span className="text-zinc-600">({engineStats.buffer?.total_buffered_events ?? 0} buffered)</span>
+                  <div className={`w-2 h-2 rounded-full ${engineStats.buffer?.running ? 'bg-emerald-400 animate-pulse' : 'bg-gray-400'}`} />
+                  <span className="text-gray-600">Buffer: {engineStats.buffer?.running ? 'Active' : 'Idle'}</span>
+                  <span className="text-gray-600">({engineStats.buffer?.total_buffered_events ?? 0} buffered)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-zinc-500" />
-                  <span className="text-zinc-400">Adapters:</span>
+                  <Shield className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-gray-600">Adapters:</span>
                   {(engineStats.registered_adapters || []).map(a => (
-                    <Badge key={a} className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{a}</Badge>
+                    <Badge key={a} className="bg-gray-100 text-gray-700 border-gray-300 text-xs">{a}</Badge>
                   ))}
                 </div>
                 {driftMode && (
                   <div className="flex items-center gap-2">
-                    <Timer className="w-3.5 h-3.5 text-zinc-500" />
-                    <span className="text-zinc-400">Drift:</span>
+                    <Timer className="w-3.5 h-3.5 text-gray-500" />
+                    <span className="text-gray-600">Drift:</span>
                     <Badge
                       data-testid="drift-mode-badge"
                       className={`text-xs cursor-pointer transition-colors ${
@@ -214,9 +214,9 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Provider Health */}
             {Object.entries(opMetrics.provider_health || {}).map(([prov, h]) => (
-              <Card key={prov} data-testid={`health-card-${prov}`} className="bg-zinc-900/60 border-zinc-800">
+              <Card key={prov} data-testid={`health-card-${prov}`} className="bg-white border-gray-200">
                 <CardHeader className="pb-2 pt-3 px-4">
-                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                  <CardTitle className="text-xs text-gray-500 flex items-center gap-1.5">
                     <Gauge className="w-3.5 h-3.5" /> {prov} Health
                   </CardTitle>
                 </CardHeader>
@@ -224,15 +224,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <p className="text-lg font-bold text-emerald-400">{h.ack_rate}%</p>
-                      <p className="text-[10px] text-zinc-600">ACK Rate</p>
+                      <p className="text-[10px] text-gray-600">ACK Rate</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-red-400">{h.error_rate}%</p>
-                      <p className="text-[10px] text-zinc-600">Error Rate</p>
+                      <p className="text-[10px] text-gray-600">Error Rate</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-orange-400">{h.retry_rate}%</p>
-                      <p className="text-[10px] text-zinc-600">Retry Rate</p>
+                      <p className="text-[10px] text-gray-600">Retry Rate</p>
                     </div>
                   </div>
                 </CardContent>
@@ -241,9 +241,9 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
             {/* Latency Percentiles */}
             {Object.entries(opMetrics.performance || {}).map(([prov, p]) => (
-              <Card key={`perf-${prov}`} data-testid={`perf-card-${prov}`} className="bg-zinc-900/60 border-zinc-800">
+              <Card key={`perf-${prov}`} data-testid={`perf-card-${prov}`} className="bg-white border-gray-200">
                 <CardHeader className="pb-2 pt-3 px-4">
-                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                  <CardTitle className="text-xs text-gray-500 flex items-center gap-1.5">
                     <BarChart3 className="w-3.5 h-3.5" /> {prov} Latency
                   </CardTitle>
                 </CardHeader>
@@ -251,15 +251,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <p className="text-lg font-bold text-cyan-400">{p.p50}ms</p>
-                      <p className="text-[10px] text-zinc-600">P50</p>
+                      <p className="text-[10px] text-gray-600">P50</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-amber-400">{p.p95}ms</p>
-                      <p className="text-[10px] text-zinc-600">P95</p>
+                      <p className="text-[10px] text-gray-600">P95</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-rose-400">{p.p99}ms</p>
-                      <p className="text-[10px] text-zinc-600">P99</p>
+                      <p className="text-[10px] text-gray-600">P99</p>
                     </div>
                   </div>
                 </CardContent>
@@ -268,9 +268,9 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
             {/* Queue Stats */}
             {opMetrics.queue && (
-              <Card data-testid="queue-stats-card" className="bg-zinc-900/60 border-zinc-800">
+              <Card data-testid="queue-stats-card" className="bg-white border-gray-200">
                 <CardHeader className="pb-2 pt-3 px-4">
-                  <CardTitle className="text-xs text-zinc-500 flex items-center gap-1.5">
+                  <CardTitle className="text-xs text-gray-500 flex items-center gap-1.5">
                     <Inbox className="w-3.5 h-3.5" /> Queue
                   </CardTitle>
                 </CardHeader>
@@ -278,15 +278,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <p className="text-lg font-bold text-blue-400">{opMetrics.queue.queue_depth}</p>
-                      <p className="text-[10px] text-zinc-600">Queue Depth</p>
+                      <p className="text-[10px] text-gray-600">Queue Depth</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-orange-400">{opMetrics.queue.retry_backlog}</p>
-                      <p className="text-[10px] text-zinc-600">Retry Backlog</p>
+                      <p className="text-[10px] text-gray-600">Retry Backlog</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-red-400">{opMetrics.queue.dead_letter_count}</p>
-                      <p className="text-[10px] text-zinc-600">Dead Letters</p>
+                      <p className="text-[10px] text-gray-600">Dead Letters</p>
                     </div>
                   </div>
                 </CardContent>
@@ -297,22 +297,22 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
         {/* Tabs */}
         <Tabs defaultValue="queue" className="space-y-4">
-          <TabsList className="bg-zinc-900/80 border border-zinc-800 p-1">
-            <TabsTrigger data-testid="tab-queue" value="queue" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Queue Monitor</TabsTrigger>
-            <TabsTrigger data-testid="tab-outbound" value="outbound" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Outbound Logs</TabsTrigger>
-            <TabsTrigger data-testid="tab-drift" value="drift" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Drift</TabsTrigger>
-            <TabsTrigger data-testid="tab-events" value="events" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Events</TabsTrigger>
-            <TabsTrigger data-testid="tab-harness" value="harness" className="data-[state=active]:bg-zinc-800 text-xs sm:text-sm">Test Harness</TabsTrigger>
+          <TabsList className="bg-gray-100 border border-gray-200 p-1">
+            <TabsTrigger data-testid="tab-queue" value="queue" className="data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm">Queue Monitor</TabsTrigger>
+            <TabsTrigger data-testid="tab-outbound" value="outbound" className="data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm">Outbound Logs</TabsTrigger>
+            <TabsTrigger data-testid="tab-drift" value="drift" className="data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm">Drift</TabsTrigger>
+            <TabsTrigger data-testid="tab-events" value="events" className="data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm">Events</TabsTrigger>
+            <TabsTrigger data-testid="tab-harness" value="harness" className="data-[state=active]:bg-white data-[state=active]:shadow-sm text-xs sm:text-sm">Test Harness</TabsTrigger>
           </TabsList>
 
           {/* Queue Monitor Tab */}
           <TabsContent value="queue" className="space-y-4">
             <div className="flex gap-3 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger data-testid="status-filter" className="w-[140px] bg-zinc-900 border-zinc-800 text-sm">
+                <SelectTrigger data-testid="status-filter" className="w-[140px] bg-white border-gray-200 text-sm">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent className="bg-zinc-900 border-zinc-800">
+                <SelectContent className="bg-white border-gray-200">
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="acked">Acked</SelectItem>
@@ -321,10 +321,10 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                 </SelectContent>
               </Select>
               <Select value={providerFilter} onValueChange={setProviderFilter}>
-                <SelectTrigger data-testid="provider-filter" className="w-[160px] bg-zinc-900 border-zinc-800 text-sm">
+                <SelectTrigger data-testid="provider-filter" className="w-[160px] bg-white border-gray-200 text-sm">
                   <SelectValue placeholder="Provider" />
                 </SelectTrigger>
-                <SelectContent className="bg-zinc-900 border-zinc-800">
+                <SelectContent className="bg-white border-gray-200">
                   <SelectItem value="all">All Providers</SelectItem>
                   <SelectItem value="hotelrunner">HotelRunner</SelectItem>
                   <SelectItem value="exely">Exely</SelectItem>
@@ -332,15 +332,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
               </Select>
             </div>
 
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card className="bg-white border-gray-200">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm text-zinc-400">Change Sets ({filteredCS.length})</CardTitle>
+                <CardTitle className="text-sm text-gray-600">Change Sets ({filteredCS.length})</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table data-testid="change-sets-table" className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500 text-xs">
+                      <tr className="border-b border-gray-200 text-gray-500 text-xs">
                         <th className="text-left py-2.5 px-4 font-medium">Provider</th>
                         <th className="text-left py-2.5 px-4 font-medium">Scope</th>
                         <th className="text-left py-2.5 px-4 font-medium">Room</th>
@@ -352,18 +352,18 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     </thead>
                     <tbody>
                       {filteredCS.length === 0 ? (
-                        <tr><td colSpan={7} className="text-center py-8 text-zinc-600">No change sets found</td></tr>
+                        <tr><td colSpan={7} className="text-center py-8 text-gray-600">No change sets found</td></tr>
                       ) : filteredCS.map((cs, i) => (
-                        <tr key={cs.id || i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                        <tr key={cs.id || i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-2.5 px-4">
-                            <Badge className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{cs.provider}</Badge>
+                            <Badge className="bg-gray-100 text-gray-700 border-gray-300 text-xs">{cs.provider}</Badge>
                           </td>
                           <td className="py-2.5 px-4"><ScopeBadge scope={cs.change_scope} /></td>
-                          <td className="py-2.5 px-4 text-zinc-300 font-mono text-xs">{cs.room_type_code}{cs.rate_plan_code ? `/${cs.rate_plan_code}` : ''}</td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{cs.date_from} → {cs.date_to}</td>
+                          <td className="py-2.5 px-4 text-gray-700 font-mono text-xs">{cs.room_type_code}{cs.rate_plan_code ? `/${cs.rate_plan_code}` : ''}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{cs.date_from} → {cs.date_to}</td>
                           <td className="py-2.5 px-4"><StatusBadge status={cs.status} /></td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{cs.outbound_attempt_count}</td>
-                          <td className="py-2.5 px-4 text-zinc-500 text-xs">{cs.updated_at ? new Date(cs.updated_at).toLocaleString('tr-TR') : '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{cs.outbound_attempt_count}</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs">{cs.updated_at ? new Date(cs.updated_at).toLocaleString('tr-TR') : '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -375,15 +375,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
           {/* Outbound Logs Tab */}
           <TabsContent value="outbound" className="space-y-4">
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card className="bg-white border-gray-200">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm text-zinc-400">Outbound Push Logs ({outboundLogs.length})</CardTitle>
+                <CardTitle className="text-sm text-gray-600">Outbound Push Logs ({outboundLogs.length})</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table data-testid="outbound-logs-table" className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500 text-xs">
+                      <tr className="border-b border-gray-200 text-gray-500 text-xs">
                         <th className="text-left py-2.5 px-4 font-medium">Provider</th>
                         <th className="text-left py-2.5 px-4 font-medium">Action</th>
                         <th className="text-left py-2.5 px-4 font-medium">Success</th>
@@ -394,21 +394,21 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     </thead>
                     <tbody>
                       {outboundLogs.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-zinc-600">No outbound logs</td></tr>
+                        <tr><td colSpan={6} className="text-center py-8 text-gray-600">No outbound logs</td></tr>
                       ) : outboundLogs.map((log, i) => (
-                        <tr key={log.id || i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                        <tr key={log.id || i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-2.5 px-4">
-                            <Badge className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{log.provider}</Badge>
+                            <Badge className="bg-gray-100 text-gray-700 border-gray-300 text-xs">{log.provider}</Badge>
                           </td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs font-mono">{log.endpoint_or_action}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs font-mono">{log.endpoint_or_action}</td>
                           <td className="py-2.5 px-4">
                             {log.success
                               ? <CheckCircle className="w-4 h-4 text-emerald-400" />
                               : <XCircle className="w-4 h-4 text-red-400" />}
                           </td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{log.status_code || '-'}</td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{log.duration_ms}ms</td>
-                          <td className="py-2.5 px-4 text-zinc-500 text-xs">{log.pushed_at ? new Date(log.pushed_at).toLocaleString('tr-TR') : '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{log.status_code || '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{log.duration_ms}ms</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs">{log.pushed_at ? new Date(log.pushed_at).toLocaleString('tr-TR') : '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -420,15 +420,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
           {/* Drift Tab */}
           <TabsContent value="drift" className="space-y-4">
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card className="bg-white border-gray-200">
               <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm text-zinc-400">Drift States ({driftStates.length})</CardTitle>
+                <CardTitle className="text-sm text-gray-600">Drift States ({driftStates.length})</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table data-testid="drift-table" className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500 text-xs">
+                      <tr className="border-b border-gray-200 text-gray-500 text-xs">
                         <th className="text-left py-2.5 px-4 font-medium">Provider</th>
                         <th className="text-left py-2.5 px-4 font-medium">Room</th>
                         <th className="text-left py-2.5 px-4 font-medium">Dates</th>
@@ -440,22 +440,22 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     </thead>
                     <tbody>
                       {driftStates.length === 0 ? (
-                        <tr><td colSpan={7} className="text-center py-8 text-zinc-600">No drift data. Run a drift check to compare PMS vs provider state.</td></tr>
+                        <tr><td colSpan={7} className="text-center py-8 text-gray-600">No drift data. Run a drift check to compare PMS vs provider state.</td></tr>
                       ) : driftStates.map((ds, i) => (
-                        <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-2.5 px-4">
-                            <Badge className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{ds.provider}</Badge>
+                            <Badge className="bg-gray-100 text-gray-700 border-gray-300 text-xs">{ds.provider}</Badge>
                           </td>
-                          <td className="py-2.5 px-4 text-zinc-300 font-mono text-xs">{ds.room_type_code}{ds.rate_plan_code ? `/${ds.rate_plan_code}` : ''}</td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{ds.date_from} → {ds.date_to}</td>
+                          <td className="py-2.5 px-4 text-gray-700 font-mono text-xs">{ds.room_type_code}{ds.rate_plan_code ? `/${ds.rate_plan_code}` : ''}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{ds.date_from} → {ds.date_to}</td>
                           <td className="py-2.5 px-4">
                             {ds.drift_detected
                               ? <Badge className="bg-red-500/15 text-red-400 border-red-500/30 text-xs">Drift</Badge>
                               : <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">OK</Badge>}
                           </td>
-                          <td className="py-2.5 px-4 text-zinc-500 font-mono text-xs">{ds.pms_hash?.slice(0, 8) || '-'}</td>
-                          <td className="py-2.5 px-4 text-zinc-500 font-mono text-xs">{ds.provider_hash?.slice(0, 8) || '-'}</td>
-                          <td className="py-2.5 px-4 text-zinc-500 text-xs">{ds.last_checked_at ? new Date(ds.last_checked_at).toLocaleString('tr-TR') : '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-500 font-mono text-xs">{ds.pms_hash?.slice(0, 8) || '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-500 font-mono text-xs">{ds.provider_hash?.slice(0, 8) || '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs">{ds.last_checked_at ? new Date(ds.last_checked_at).toLocaleString('tr-TR') : '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -467,15 +467,15 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
 
           {/* Events Tab */}
           <TabsContent value="events" className="space-y-4">
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card className="bg-white border-gray-200">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm text-zinc-400">Recent ARI Events ({events.length})</CardTitle>
+                <CardTitle className="text-sm text-gray-600">Recent ARI Events ({events.length})</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table data-testid="events-table" className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500 text-xs">
+                      <tr className="border-b border-gray-200 text-gray-500 text-xs">
                         <th className="text-left py-2.5 px-4 font-medium">Source</th>
                         <th className="text-left py-2.5 px-4 font-medium">Type</th>
                         <th className="text-left py-2.5 px-4 font-medium">Room</th>
@@ -486,17 +486,17 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     </thead>
                     <tbody>
                       {events.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-zinc-600">No events yet</td></tr>
+                        <tr><td colSpan={6} className="text-center py-8 text-gray-600">No events yet</td></tr>
                       ) : events.map((ev, i) => (
-                        <tr key={ev.id || i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                        <tr key={ev.id || i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-2.5 px-4">
-                            <Badge className="bg-zinc-800 text-zinc-300 border-zinc-700 text-xs">{ev.source_service}</Badge>
+                            <Badge className="bg-gray-100 text-gray-700 border-gray-300 text-xs">{ev.source_service}</Badge>
                           </td>
                           <td className="py-2.5 px-4"><ScopeBadge scope={ev.event_type} /></td>
-                          <td className="py-2.5 px-4 text-zinc-300 font-mono text-xs">{ev.room_type_code}{ev.rate_plan_code ? `/${ev.rate_plan_code}` : ''}</td>
-                          <td className="py-2.5 px-4 text-zinc-400 text-xs">{ev.date_from} → {ev.date_to}</td>
-                          <td className="py-2.5 px-4 text-zinc-500 text-xs font-mono max-w-[200px] truncate">{JSON.stringify(ev.payload)}</td>
-                          <td className="py-2.5 px-4 text-zinc-500 text-xs">{ev.created_at ? new Date(ev.created_at).toLocaleString('tr-TR') : '-'}</td>
+                          <td className="py-2.5 px-4 text-gray-700 font-mono text-xs">{ev.room_type_code}{ev.rate_plan_code ? `/${ev.rate_plan_code}` : ''}</td>
+                          <td className="py-2.5 px-4 text-gray-600 text-xs">{ev.date_from} → {ev.date_to}</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs font-mono max-w-[200px] truncate">{JSON.stringify(ev.payload)}</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs">{ev.created_at ? new Date(ev.created_at).toLocaleString('tr-TR') : '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -510,11 +510,11 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
           <TabsContent value="harness" className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {['hotelrunner', 'exely'].map(provider => (
-                <Card key={provider} data-testid={`test-harness-${provider}`} className="bg-zinc-900/60 border-zinc-800">
+                <Card key={provider} data-testid={`test-harness-${provider}`} className="bg-white border-gray-200">
                   <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
                     <div>
-                      <CardTitle className="text-sm text-zinc-300 capitalize">{provider} Validation</CardTitle>
-                      <CardDescription className="text-xs text-zinc-600">Sandbox / Live test checklist</CardDescription>
+                      <CardTitle className="text-sm text-gray-700 capitalize">{provider} Validation</CardTitle>
+                      <CardDescription className="text-xs text-gray-600">Sandbox / Live test checklist</CardDescription>
                     </div>
                     <Button
                       data-testid={`run-test-${provider}`}
@@ -532,29 +532,29 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                     {testResults[provider]?.results ? (
                       <div className="space-y-1.5">
                         {testResults[provider].results.map((r, i) => (
-                          <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded bg-zinc-800/40 text-xs">
+                          <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-100/40 text-xs">
                             <div className="flex items-center gap-2">
                               {r.success
                                 ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                                 : <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
-                              <span className="text-zinc-300">{r.step}</span>
+                              <span className="text-gray-700">{r.step}</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-zinc-600 max-w-[200px] truncate">{r.detail}</span>
-                              <span className="text-zinc-700">{r.duration_ms}ms</span>
+                              <span className="text-gray-600 max-w-[200px] truncate">{r.detail}</span>
+                              <span className="text-gray-700">{r.duration_ms}ms</span>
                             </div>
                           </div>
                         ))}
                         {testResults[provider].summary && (
-                          <div className="mt-2 pt-2 border-t border-zinc-800 flex gap-3 text-xs">
+                          <div className="mt-2 pt-2 border-t border-gray-200 flex gap-3 text-xs">
                             <span className="text-emerald-400">{testResults[provider].summary.passed} passed</span>
                             <span className="text-red-400">{testResults[provider].summary.failed} failed</span>
-                            <span className="text-zinc-600">/ {testResults[provider].summary.total} total</span>
+                            <span className="text-gray-600">/ {testResults[provider].summary.total} total</span>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs text-zinc-600 py-4 text-center">Click "Run All" to execute the validation checklist</p>
+                      <p className="text-xs text-gray-600 py-4 text-center">Click "Run All" to execute the validation checklist</p>
                     )}
                   </CardContent>
                 </Card>
