@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +49,7 @@ const EMPTY_FORM = {
   day_of_month: 1, include_charts: true, notes: "", date_range: "auto",
 };
 
-export default function ReportScheduler() {
+export default function ReportScheduler({ user, tenant, onLogout }) {
   const [schedules, setSchedules] = useState([]);
   const [history, setHistory] = useState([]);
   const [reportTypes, setReportTypes] = useState([]);
@@ -218,6 +219,7 @@ export default function ReportScheduler() {
   }
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="report-scheduler">
     <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
@@ -624,5 +626,6 @@ export default function ReportScheduler() {
         </DialogContent>
       </Dialog>
     </div>
+    </Layout>
   );
 }
