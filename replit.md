@@ -127,6 +127,12 @@ Reduced from 1309 lines via dialog extraction.
 - `InvoiceFormDialog.jsx` — Invoice creation with line items and additional tax calculations
 - `AccountingDialogs.jsx` — ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog
 
+## Major Refactors (Apr 2026)
+- **`backend/models/schemas.py`** (1671 satır) → `backend/models/schemas/` paketi (16 alan modülü: identity, rooms, companies, maintenance, fnb, frontoffice, revenue, guests, bookings, folio, audit, channels, services, invoicing, loyalty, requests). `__init__.py` her şeyi re-export ediyor — 135 import noktası dokunulmadı.
+- **`backend/routers/finance.py`** (4628 satır, ~90 endpoint) → `backend/routers/finance/` paketi (7 alt-router: integrations, folio, invoices, accounting, mobile, dashboards, cashiering). `__init__.py` `APIRouter(prefix='/api')` altında `include_router()` ile birleştiriyor; `router_registry.py` import yolu (`routers.finance:router`) değişmedi. `cashiering.py` içine eksik `CityLedgerAccount` import'u eklendi (orijinal dosyada da eksikti).
+- **`frontend/src/pages/IntegrationHub.jsx`** (1896 → 1183 satır) → 7 sekme bileşeni `frontend/src/components/integration-hub/tabs/` altına taşındı (DashboardTab, ConnectorsTab, MappingsTab, SyncTab, ReservationsTab, ReconciliationTab, AuditTab). Paylaşılan rozetler `badges.jsx`'te (HealthBadge, StatusBadge, AckBadge). Ebeveyn tüm state/handler'ı `ctx` nesnesi olarak spread ile çocuklara geçiriyor.
+- **N+1 optimizasyonu** 5 hot endpoint'te (bookings, operational-alerts, demand-heatmap, occupancy-prediction, inhouse).
+
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management
 - `GET/POST/PATCH /api/laundry/orders` — Laundry order management

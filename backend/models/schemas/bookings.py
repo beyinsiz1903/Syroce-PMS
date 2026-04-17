@@ -1,0 +1,121 @@
+"""Auto-split from schemas.py — domain: bookings."""
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from models.enums import (
+    BookingStatus, CancellationPolicyType, ChannelStatus, ChannelType,
+    ChargeCategory, CheckInStatus, CompanyStatus, ContractedRateType,
+    DepartmentType, FolioOperationType, FolioStatus, FolioType,
+    GuestRequestStatus, GuestRequestType, InspectionStatus, InvoiceStatus,
+    LostFoundStatus, LoyaltyTier, MaintenancePriority, MaintenanceTaskStatus,
+    MaintenanceType, MappingStatus, MarketSegment, MeasurementUnit,
+    OrderStatus, OTAChannel, OTAPaymentModel, OutletType, PaymentMethod,
+    PaymentStatus, PaymentType, PricingStrategy, RateType, RiskLevel,
+    RoomServiceStatus, RoomStatus, UserRole, WarehouseLocation,
+)
+
+
+class BookingCreate(BaseModel):
+    guest_id: str
+    room_id: str
+    check_in: str
+    check_out: str
+    adults: int = 1
+    children: int = 0
+
+    # CM / integration semantics (optional; defaults applied in Booking model)
+    source_channel: str | None = None
+    origin: str | None = None
+    hold_status: str | None = None
+    allocation_source: str | None = None
+    children_ages: list[int] = []
+    guests_count: int  # Total: adults + children
+    total_amount: float
+    base_rate: float | None = None  # For override tracking
+    channel: ChannelType = ChannelType.DIRECT
+    special_requests: str | None = None
+    rate_plan: str | None = None
+    # New fields for corporate/contracted bookings
+    company_id: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    rate_type: RateType | None = None
+    market_segment: MarketSegment | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+    billing_address: str | None = None
+    billing_tax_number: str | None = None
+    billing_contact_person: str | None = None
+    # Override tracking
+    override_reason: str | None = None
+    # OTA Channel fields
+    ota_channel: OTAChannel | None = None
+    ota_confirmation: str | None = None
+    ota_reference_id: str | None = None
+    commission_pct: float | None = None
+    payment_model: OTAPaymentModel | None = None
+    virtual_card_provided: bool = False
+    virtual_card_number: str | None = None
+    virtual_card_expiry: str | None = None
+
+class Booking(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    guest_id: str
+    room_id: str
+
+REJECTED_STATUS = "rejected"
+
+class BookingExtended(BaseModel):
+    """Extended booking model with CM/integration fields"""
+    # CM / integration semantics (defaults chosen by user)
+    source_channel: str = "direct"  # direct|agency|airbnb|booking|expedia|manual
+    origin: str = "ui"  # ui|api|webhook|import
+    hold_status: str = "none"  # none|tentative|hold|released|expired
+    allocation_source: str = "manual"  # manual|channel|allotment
+    # Enriched fields for calendar display
+    guest_name: str | None = None
+    room_number: str | None = None
+    check_in: datetime
+    check_out: datetime
+    adults: int = 1
+    children: int = 0
+    children_ages: list[int] = []
+    guests_count: int | None = None
+    total_amount: float
+    base_rate: float | None = None
+    paid_amount: float = 0.0
+    status: BookingStatus = BookingStatus.PENDING
+    group_booking_id: str | None = None
+    channel: ChannelType = ChannelType.DIRECT
+    rate_plan: str | None = "Standard"
+    special_requests: str | None = None
+    # Corporate/contracted booking fields
+    company_id: str | None = None
+    contracted_rate: ContractedRateType | None = None
+    rate_type: RateType | None = None
+    market_segment: MarketSegment | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+    billing_address: str | None = None
+    billing_tax_number: str | None = None
+    billing_contact_person: str | None = None
+    # OTA Channel fields
+    ota_channel: OTAChannel | None = None
+    ota_confirmation: str | None = None
+    ota_reference_id: str | None = None
+    commission_pct: float | None = None
+    payment_model: OTAPaymentModel | None = None
+    virtual_card_provided: bool = False
+    virtual_card_number: str | None = None
+    virtual_card_expiry: str | None = None
+    # System fields
+    qr_code: str | None = None
+    qr_code_data: str | None = None
+    checked_in_at: datetime | None = None
+    checked_out_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
