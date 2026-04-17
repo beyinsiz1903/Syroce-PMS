@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -481,6 +482,7 @@ function TemplatesTab() {
 // Send Message Tab
 // ═══════════════════════════════════════════════
 function SendTab() {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({
@@ -560,7 +562,7 @@ function SendTab() {
           <div>
             <Label>Şablon (Opsiyonel)</Label>
             <Select value={form.template_id} onValueChange={selectTemplate}>
-              <SelectTrigger data-testid="send-template"><SelectValue placeholder="Şablon seçin veya serbest yazin" /></SelectTrigger>
+              <SelectTrigger data-testid="send-template"><SelectValue placeholder={t('common.selectTemplateOrFree')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Şablon kullanma</SelectItem>
                 {filteredTemplates.map(t => (
@@ -797,6 +799,7 @@ const TRIGGER_COLORS = {
 };
 
 function AutomationTab() {
+  const { t } = useTranslation();
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [triggers, setTriggers] = useState({});
@@ -1017,7 +1020,7 @@ function AutomationTab() {
             <div>
               <Label>Şablon</Label>
               <Select value={form.template_id} onValueChange={v => setForm(p => ({ ...p, template_id: v }))}>
-                <SelectTrigger data-testid="automation-template"><SelectValue placeholder="Şablon seçin" /></SelectTrigger>
+                <SelectTrigger data-testid="automation-template"><SelectValue placeholder={t('common.selectTemplate')} /></SelectTrigger>
                 <SelectContent>
                   {filteredTemplates.map(t => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>

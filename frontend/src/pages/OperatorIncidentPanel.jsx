@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -157,6 +158,7 @@ const IncidentRow = ({ incident, onAction, expanded, onToggle }) => {
 
 // ─── Main Component ──────────────────────────────────────────
 export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState(null);
@@ -270,7 +272,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
             accent={criticals > 0 ? 'bg-red-500/20 text-red-400' : 'bg-zinc-700/60 text-zinc-300'}
           />
           <SummaryCard
-            testId="summary-resolved" label="Çözülmüş" value={summary?.resolved_count || 0}
+            testId="summary-resolved" label={t('common.solvedCount')} value={summary?.resolved_count || 0}
             icon={CheckCircle} accent="bg-emerald-500/20 text-emerald-400"
           />
         </div>

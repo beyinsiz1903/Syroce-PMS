@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import axios from "axios";
 import Layout from "@/components/Layout";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -96,6 +97,7 @@ const paymentMethodLabels = {
 };
 
 const NightAuditDashboard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [businessDate, setBusinessDate] = useState(null);
   const [previousDate, setPreviousDate] = useState(null);
   const [history, setHistory] = useState([]);
@@ -871,7 +873,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <StatCard
                     icon={CreditCard}
-                    label="Ödeme Toplamı"
+                    label={t('common.paymentTotal')}
                     value={`${reconciliation.payments_total?.toFixed(2) || "0.00"} TL`}
                     subValue={`${reconciliation.payments_count || 0} ödeme`}
                     color="text-emerald-600"

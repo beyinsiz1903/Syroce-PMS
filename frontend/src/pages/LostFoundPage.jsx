@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -31,6 +32,7 @@ const CATEGORY_CONFIG = {
 };
 
 const LostFoundPage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -282,7 +284,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                 </div>
                 <div>
                   <Label>Oda No</Label>
-                  <Input value={form.room_number} onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))} placeholder="İlgili oda" />
+                  <Input value={form.room_number} onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))} placeholder={t('common.relatedRoom')} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

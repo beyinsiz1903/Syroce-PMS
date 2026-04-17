@@ -1,9 +1,11 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 const TrendChart = ({ trendData }) => {
+  const { t } = useTranslation();
   if (!trendData || !trendData.trend || trendData.trend.length === 0) {
     return null;
   }
@@ -13,7 +15,7 @@ const TrendChart = ({ trendData }) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Son 7 Gün Trend Analizi</CardTitle>
+        <CardTitle>{t('common.last7Days', 'Son 7 Gün')} - {t('common.summary')}</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
@@ -23,8 +25,8 @@ const TrendChart = ({ trendData }) => {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="arrivals" stroke="#10b981" name="Girişler" strokeWidth={2} />
-            <Line type="monotone" dataKey="departures" stroke="#ef4444" name="Çıkışlar" strokeWidth={2} />
+            <Line type="monotone" dataKey="arrivals" stroke="#10b981" name={t('common.arrivals', 'Girişler')} strokeWidth={2} />
+            <Line type="monotone" dataKey="departures" stroke="#ef4444" name={t('common.departuresPlural')} strokeWidth={2} />
             <Line type="monotone" dataKey="occupancy" stroke="#3b82f6" name="Doluluk" strokeWidth={2} />
           </LineChart>
         </ResponsiveContainer>

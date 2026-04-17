@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import axios from "axios";
 import {
   RotateCcw, Shield, AlertTriangle, CheckCircle, XCircle,
@@ -587,6 +588,7 @@ function ConfirmActionDialog({ open, action, item, version, onConfirm, onCancel,
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════
 export function RotationOpsPanel() {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [audit, setAudit] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -648,7 +650,7 @@ export function RotationOpsPanel() {
       setSelectedItem(null);
       fetchData();
     } catch (err) {
-      const detail = err.response?.data?.detail || err.response?.data?.error || "İşlem başarısız oldu";
+      const detail = err.response?.data?.detail || err.response?.data?.error || t('common.operationFailed');
       toast.error(detail);
     } finally {
       setActionLoading(false);

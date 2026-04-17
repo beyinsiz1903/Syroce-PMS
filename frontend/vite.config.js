@@ -118,6 +118,9 @@ export default defineConfig({
       },
     },
   },
+  oxc: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
   build: {
     outDir: 'build',
     sourcemap: false,

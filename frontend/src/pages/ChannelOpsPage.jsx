@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '@/components/Layout';
@@ -345,6 +346,7 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
 // ── Main Component ─────────────────────────────────────────────────
 
 const ChannelOpsPage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -868,7 +870,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout }) => {
                 color="orange"
               />
               <StatCard
-                title="Çözülen"
+                title={t('common.solved')}
                 value={prioritizedIncidents.counts?.resolved || 0}
                 icon={CheckCircle2}
                 color="green"

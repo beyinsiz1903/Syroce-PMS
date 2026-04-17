@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import {
 import { API, fmtTL, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, onRefresh, onSwitchTab }) {
+  const { t } = useTranslation();
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
   const [showAgency, setShowAgency] = useState(false);
@@ -54,16 +56,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       </div>
 
       {showPayment && (
-        <FormPanel color="emerald" title="Ödeme Kaydet" testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
+        <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, { ...payForm, amount: parseFloat(payForm.amount) });
             toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
-            <SelectField label="Ödeme Yontemi" value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
+            <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Karti'],['bank_transfer','Havale/EFT'],['online','Online']]} />
-            <SelectField label="Ödeme Tipi" value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
+            <SelectField label={t('common.paymentType')} value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
               options={[['prepayment','On Ödeme'],['deposit','Depozito'],['interim','Ara Ödeme'],['final','Final']]} />
             <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
           </div>

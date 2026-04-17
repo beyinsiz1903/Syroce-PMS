@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -15,7 +16,9 @@ import {
   ROOM_STATUS_COLORS, ROOM_STATUS_LABELS
 } from './ReportHelpers';
 
-const OverviewSection = ({ data, s, pc, roomStatusData }) => (
+const OverviewSection = ({ data, s, pc, roomStatusData }) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canlı</Badge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -32,10 +35,10 @@ const OverviewSection = ({ data, s, pc, roomStatusData }) => (
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <StatBox label="Giriş" value={s.arrivals || 0} color="blue" icon={ArrowUpRight} />
-          <StatBox label="Çıkış" value={s.departures || 0} color="amber" icon={ArrowDownRight} />
+          <StatBox label={t('common.departureSingle')} value={s.departures || 0} color="amber" icon={ArrowDownRight} />
           <StatBox label="Otelde" value={s.in_house || 0} color="green" icon={Users} />
           <StatBox label="No-Show" value={s.no_shows || 0} color="red" icon={AlertTriangle} />
-          <StatBox label="İptal" value={s.cancellations || 0} color="gray" icon={Calendar} />
+          <StatBox label={t('common.cancellationSingle')} value={s.cancellations || 0} color="gray" icon={Calendar} />
         </div>
       </CardContent>
     </Card>
@@ -101,6 +104,7 @@ const OverviewSection = ({ data, s, pc, roomStatusData }) => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 export default OverviewSection;

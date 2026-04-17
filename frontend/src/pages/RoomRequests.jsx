@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import axios from "axios";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,7 @@ function RequestCard({ item, onOpen }) {
 }
 
 export default function RoomRequests({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,7 @@ export default function RoomRequests({ user, tenant, onLogout }) {
             <StatCard label="Toplam" value={stats.total} icon={MessageSquare} color="bg-slate-100 text-slate-700" />
             <StatCard label="Yeni" value={stats.by_status?.new || 0} icon={AlertTriangle} color="bg-blue-100 text-blue-700" />
             <StatCard label="Atandı" value={stats.by_status?.assigned || 0} icon={User} color="bg-indigo-100 text-indigo-700" />
-            <StatCard label="İşlemde" value={stats.by_status?.in_progress || 0} icon={PlayCircle} color="bg-amber-100 text-amber-700" />
+            <StatCard label={t('common.inProgress')} value={stats.by_status?.in_progress || 0} icon={PlayCircle} color="bg-amber-100 text-amber-700" />
             <StatCard label="Tamamlandı" value={stats.by_status?.completed || 0} icon={CheckCircle2} color="bg-emerald-100 text-emerald-700" />
           </div>
         )}

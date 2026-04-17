@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,6 +92,7 @@ const EMPTY_FORM = {
 };
 
 const MeetingRoomTab = () => {
+  const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [showNewReservation, setShowNewReservation] = useState(false);
@@ -710,7 +712,7 @@ const MeetingRoomTab = () => {
               {showCancelConfirm && (
                 <div className="border border-red-200 bg-red-50 rounded-lg p-3 space-y-2">
                   <p className="text-sm font-medium text-red-800">Organizasyonu iptal etmek istediginizden emin misiniz?</p>
-                  <p className="text-xs text-red-600">Bu işlem geri alınamaz. Durum "İptal" olarak güncellenecektir.</p>
+                  <p className="text-xs text-red-600">{t('common.nonReversibleCancel')}</p>
                   <div className="flex gap-2">
                     <Button variant="destructive" size="sm" onClick={cancelReservation} disabled={saving}>
                       {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}Evet, İptal Et

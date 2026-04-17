@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,12 +12,14 @@ import {
   ROOM_STATUS_LABELS
 } from './ReportHelpers';
 
-export const NoShowSection = ({ s, noShowGuests, cancelledGuests }) => (
+export const NoShowSection = ({ s, noShowGuests, cancelledGuests }) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-6" data-testid="section-noshow">
     <SectionHeader title="No-Show & İptaller" description="No-show ve iptal edilen rezervasyonlar" />
     <div className="grid grid-cols-2 gap-3">
       <KPICard title="No-Show" value={s.no_shows || 0} icon={AlertTriangle} color="red" />
-      <KPICard title="İptal" value={s.cancellations || 0} icon={Calendar} color="amber" />
+      <KPICard title={t('common.cancellationSingle')} value={s.cancellations || 0} icon={Calendar} color="amber" />
     </div>
     {noShowGuests.length > 0 && (
       <Card>
@@ -48,7 +51,8 @@ export const NoShowSection = ({ s, noShowGuests, cancelledGuests }) => (
       <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} message="No-show veya iptal kaydı yok" submessage="Bu dönem için herhangi bir no-show veya iptal bulunmuyor" /></CardContent></Card>
     )}
   </div>
-);
+  );
+};
 
 export const RoomStatusSection = ({ roomStatus, roomStatusData }) => (
   <div className="space-y-6" data-testid="section-room-status">
@@ -105,13 +109,15 @@ export const HousekeepingSection = ({ hk }) => (
   </div>
 );
 
-export const PaymentsSection = ({ payments, paymentData }) => (
+export const PaymentsSection = ({ payments, paymentData }) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-6" data-testid="section-payments">
-    <SectionHeader title="Ödeme Raporu" description="Ödeme yöntemleri ve tutar dağılımı" />
+    <SectionHeader title={t('common.paymentReport')} description={t('common.paymentReportDesc')} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title="Toplam Ödenen" value={payments.total_paid} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
-      <KPICard title="Ödeme Yöntemi" value={(Object.keys(payments.by_method || {}).length) + ' tur'} icon={CreditCard} color="blue" />
+      <KPICard title={t('common.paymentMethod')} value={(Object.keys(payments.by_method || {}).length) + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
     </div>
     <div className="grid md:grid-cols-2 gap-4">
       <Card>
@@ -123,7 +129,7 @@ export const PaymentsSection = ({ payments, paymentData }) => (
                 {paymentData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} /></PieChart>
             </ResponsiveContainer>
-          ) : <EmptyState icon={CreditCard} message="Ödeme verisi yok" />}
+          ) : <EmptyState icon={CreditCard} message={t('common.noPaymentData')} />}
         </CardContent>
       </Card>
       <Card>
@@ -144,16 +150,19 @@ export const PaymentsSection = ({ payments, paymentData }) => (
       </Card>
     </div>
   </div>
-);
+  );
+};
 
-export const DepartmentsSection = ({ s, hk, maint, finance }) => (
+export const DepartmentsSection = ({ s, hk, maint, finance }) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-6" data-testid="section-departments">
     <SectionHeader title="Departman Özeti" description="Tüm departmanların günlük performans özeti" />
     <div className="grid md:grid-cols-2 gap-4">
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-500" />Ön Büro</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
           <StatBox label="Giriş" value={s.arrivals || 0} color="blue" />
-          <StatBox label="Çıkış" value={s.departures || 0} color="amber" />
+          <StatBox label={t('common.departureSingle')} value={s.departures || 0} color="amber" />
           <StatBox label="Otelde" value={s.in_house || 0} color="green" />
         </div></CardContent>
       </Card>
@@ -178,7 +187,8 @@ export const DepartmentsSection = ({ s, hk, maint, finance }) => (
       </Card>
     </div>
   </div>
-);
+  );
+};
 
 export const FnBSection = ({ s }) => (
   <div className="space-y-6" data-testid="section-fnb">

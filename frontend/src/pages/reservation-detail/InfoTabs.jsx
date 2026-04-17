@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { API, fmtDate, fmtDateTime, InfoField, Avatar, EmptyState, statusLabel }
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 
 export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [guestForm, setGuestForm] = useState({});
   useEffect(() => { if (guest) setGuestForm({ ...guest }); }, [guest]);
@@ -49,7 +51,7 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
         </div>
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Konaklama Turu" value={booking?.rate_plan || 'Standart'} />
-          <InfoField label="İptal Kurali" value={booking?.cancellation_policy || 'Esnek'} />
+          <InfoField label={t('common.cancellationPolicy')} value={booking?.cancellation_policy || t('common.flexible')} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
