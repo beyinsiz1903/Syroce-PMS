@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Smile, Meh, Frown, TrendingUp, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import Layout from '@/components/Layout';
 
-const GuestJourney = () => {
+const GuestJourney = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [npsData, setNpsData] = useState(null);
@@ -25,6 +26,7 @@ const GuestJourney = () => {
   };
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout}>
     <div className="p-6">
       <div className="mb-8">
         <div className="flex items-center gap-3">
@@ -81,6 +83,7 @@ const GuestJourney = () => {
         </>
       )}
     </div>
+    </Layout>
   );
 };
 

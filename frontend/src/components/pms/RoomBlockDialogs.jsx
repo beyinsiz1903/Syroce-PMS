@@ -19,9 +19,9 @@ export const RoomBlockCreateDialog = ({ open, onClose, rooms, selectedRoom, setS
         <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="space-y-4">
           <div>
             <Label>{t('common.room')} *</Label>
-            <Select value={selectedRoom?.id || ''} onValueChange={(v) => setSelectedRoom(rooms.find(r => r.id === v))}>
+            <Select value={selectedRoom?.id || ''} onValueChange={(v) => setSelectedRoom((rooms || []).find(r => r.id === v))}>
               <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
-              <SelectContent>{rooms.map(r => <SelectItem key={r.id} value={r.id}>Room {r.room_number} ({r.room_type})</SelectItem>)}</SelectContent>
+              <SelectContent>{(rooms || []).map(r => <SelectItem key={r.id} value={r.id}>Room {r.room_number} ({r.room_type})</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
@@ -70,7 +70,7 @@ export const RoomBlockViewDialog = ({ open, onClose, selectedRoom, roomBlocks, o
           {selectedRoom && roomBlocks.filter(b => b.room_id === selectedRoom.id).length === 0 && (
             <div className="text-center text-gray-400 py-8">No blocks for this room</div>
           )}
-          {selectedRoom && roomBlocks.filter(b => b.room_id === selectedRoom.id).map((block) => (
+          {selectedRoom && (roomBlocks || []).filter(b => b.room_id === selectedRoom.id).map((block) => (
             <Card key={block.id} className={block.status === 'cancelled' ? 'bg-gray-50' : block.type === 'out_of_order' ? 'border-red-400' : block.type === 'out_of_service' ? 'border-orange-400' : 'border-yellow-400'}>
               <CardContent className="pt-4">
                 <div className="flex justify-between items-start">
