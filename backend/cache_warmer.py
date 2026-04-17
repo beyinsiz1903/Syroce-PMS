@@ -27,6 +27,7 @@ class CacheWarmer:
             self.warm_dashboard_cache(tenant_id),
             self.warm_kpi_cache(tenant_id),
             self.warm_housekeeping_endpoints(tenant_id),
+            self.warm_frontdesk_endpoints(tenant_id),
             return_exceptions=True
         )
 
@@ -61,6 +62,30 @@ class CacheWarmer:
             logger.info("  ✅ Housekeeping endpoints pre-warmed")
         except Exception as e:
             logger.info(f"  ❌ Housekeeping warming failed: {e}")
+
+    async def warm_frontdesk_endpoints(self, tenant_id: str):
+        """Pre-call front desk endpoints (arrivals, departures, inhouse)."""
+        try:
+            fake_user = type('CacheWarmUser', (), {
+                'tenant_id': tenant_id, 'role': 'admin',
+                'id': 'cache-warmer', 'email': '', 'property_id': None,
+            })()
+
+            from domains.pms.frontdesk_router import (
+                get_arrivals,
+                get_departures,
+                get_inhouse_guests,
+            )
+
+            await asyncio.gather(
+                get_arrivals(date=None, current_user=fake_user),
+                get_departures(date=None, current_user=fake_user),
+                get_inhouse_guests(current_user=fake_user),
+                return_exceptions=True,
+            )
+            logger.info("  ✅ Front desk endpoints pre-warmed")
+        except Exception as e:
+            logger.info(f"  ❌ Front desk warming failed: {e}")
 
     async def warm_rooms_cache(self, tenant_id: str):
         """Pre-warm rooms cache"""
