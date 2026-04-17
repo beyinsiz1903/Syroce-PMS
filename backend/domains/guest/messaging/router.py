@@ -508,40 +508,57 @@ async def trigger_auto_messages(
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow_end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        async for booking in db.bookings.find({
+        # Pre-fetch the template once (constant per trigger)
+        template = await db.message_templates.find_one({
             'tenant_id': current_user.tenant_id,
-            'check_in': {'$gte': tomorrow_start, '$lte': tomorrow_end},
-            'status': {'$in': ['confirmed', 'guaranteed']}
-        }):
-            # Get guest
-            guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id})
-            if guest and guest.get('phone'):
-                # Get template
-                template = await db.message_templates.find_one({
-                    'tenant_id': current_user.tenant_id,
-                    'trigger': trigger_type.value,
-                    'active': True
-                })
+            'trigger': trigger_type.value,
+            'active': True
+        })
+        if template:
+            target_bookings = await db.bookings.find({
+                'tenant_id': current_user.tenant_id,
+                'check_in': {'$gte': tomorrow_start, '$lte': tomorrow_end},
+                'status': {'$in': ['confirmed', 'guaranteed']}
+            }).to_list(length=None)
 
-                if template:
-                    # Replace variables
-                    room = await db.rooms.find_one({'id': booking['room_id'], 'tenant_id': current_user.tenant_id})
-                    message_content = template['message_content'].replace('{guest_name}', guest['name'])
-                    message_content = message_content.replace('{room_number}', room.get('room_number', 'N/A') if room else 'N/A')
-                    message_content = message_content.replace('{check_in_date}', booking['check_in'].strftime('%Y-%m-%d') if isinstance(booking['check_in'], datetime) else str(booking['check_in']))
+            # Batch guests + rooms in one query each
+            tb_guest_ids = [b.get('guest_id') for b in target_bookings if b.get('guest_id')]
+            tb_room_ids = [b.get('room_id') for b in target_bookings if b.get('room_id')]
+            tb_guests_by_id: dict = {}
+            if tb_guest_ids:
+                async for g in db.guests.find(
+                    {'id': {'$in': tb_guest_ids}, 'tenant_id': current_user.tenant_id},
+                    {'_id': 0, 'id': 1, 'name': 1, 'phone': 1},
+                ):
+                    tb_guests_by_id[g['id']] = g
+            tb_rooms_by_id: dict = {}
+            if tb_room_ids:
+                async for r in db.rooms.find(
+                    {'id': {'$in': tb_room_ids}, 'tenant_id': current_user.tenant_id},
+                    {'_id': 0, 'id': 1, 'room_number': 1},
+                ):
+                    tb_rooms_by_id[r['id']] = r
 
-                    # Send message
-                    message = SentMessage(
-                        tenant_id=current_user.tenant_id,
-                        guest_id=guest['id'],
-                        booking_id=booking['id'],
-                        message_type=MessageType(template['message_type']),
-                        recipient=guest['phone'],
-                        message_content=message_content
-                    )
+            for booking in target_bookings:
+                guest = tb_guests_by_id.get(booking.get('guest_id'))
+                if not (guest and guest.get('phone')):
+                    continue
+                room = tb_rooms_by_id.get(booking.get('room_id'))
+                message_content = template['message_content'].replace('{guest_name}', guest['name'])
+                message_content = message_content.replace('{room_number}', room.get('room_number', 'N/A') if room else 'N/A')
+                message_content = message_content.replace('{check_in_date}', booking['check_in'].strftime('%Y-%m-%d') if isinstance(booking['check_in'], datetime) else str(booking['check_in']))
 
-                    await db.sent_messages.insert_one(message.model_dump())
-                    messages_sent += 1
+                message = SentMessage(
+                    tenant_id=current_user.tenant_id,
+                    guest_id=guest['id'],
+                    booking_id=booking['id'],
+                    message_type=MessageType(template['message_type']),
+                    recipient=guest['phone'],
+                    message_content=message_content
+                )
+
+                await db.sent_messages.insert_one(message.model_dump())
+                messages_sent += 1
 
     return {
         'success': True,

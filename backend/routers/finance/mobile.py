@@ -297,19 +297,28 @@ async def get_pending_receivables_mobile(
 
     today = datetime.now(UTC)
 
-    async for folio in db.folios.find({
+    open_folios = await db.folios.find({
         'tenant_id': current_user.tenant_id,
         'status': 'open',
         'balance': {'$gt': 0}
-    }):
+    }).to_list(length=None)
+
+    # Batch-fetch all related bookings in one query
+    booking_ids = [f.get('booking_id') for f in open_folios if f.get('booking_id')]
+    bookings_by_id: dict = {}
+    if booking_ids:
+        async for b in db.bookings.find(
+            {'id': {'$in': booking_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'check_out': 1, 'guest_name': 1, 'room_number': 1},
+        ):
+            bookings_by_id[b['id']] = b
+
+    for folio in open_folios:
         balance = folio.get('balance', 0)
         total_pending += balance
 
-        # Get booking info
-        booking = await db.bookings.find_one({
-            'id': folio.get('booking_id'),
-            'tenant_id': current_user.tenant_id
-        })
+        # Get booking info from batch lookup
+        booking = bookings_by_id.get(folio.get('booking_id'))
 
         is_overdue = False
         checkout_date_str = None

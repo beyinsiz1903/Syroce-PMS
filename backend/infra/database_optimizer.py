@@ -42,12 +42,87 @@ class DatabaseOptimizer:
             # Performance Reports
             results['reports'] = await self.create_report_indexes()
 
+            # Tenant-prefixed compound indexes (most important for multi-tenant query plans)
+            results['tenant_compound'] = await self.create_tenant_compound_indexes()
+
             logger.info(f"✅ All indexes created successfully: {results}")
             return results
 
         except Exception as e:
             logger.error(f"❌ Failed to create indexes: {e}")
             return {"error": str(e)}
+
+    async def create_tenant_compound_indexes(self):
+        """Multi-tenant compound indexes (tenant_id always as the first key).
+        Without these, every tenant-scoped query falls back to a less efficient plan.
+        """
+        # (collection_name, [(index_spec, options), ...])
+        plan = [
+            ('bookings', [
+                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_b_tid_id'}),
+                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_b_tid_status'}),
+                ([('tenant_id', ASCENDING), ('check_in', ASCENDING)], {'name': 'idx_b_tid_chkin'}),
+                ([('tenant_id', ASCENDING), ('check_out', ASCENDING)], {'name': 'idx_b_tid_chkout'}),
+                ([('tenant_id', ASCENDING), ('status', ASCENDING), ('check_in', ASCENDING)], {'name': 'idx_b_tid_status_chkin'}),
+                ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_b_tid_room'}),
+                ([('tenant_id', ASCENDING), ('guest_id', ASCENDING)], {'name': 'idx_b_tid_guest'}),
+                ([('tenant_id', ASCENDING), ('created_at', DESCENDING)], {'name': 'idx_b_tid_created'}),
+            ]),
+            ('rooms', [
+                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_r_tid_id'}),
+                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_r_tid_status'}),
+                ([('tenant_id', ASCENDING), ('room_number', ASCENDING)], {'name': 'idx_r_tid_num'}),
+            ]),
+            ('guests', [
+                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_g_tid_id'}),
+                ([('tenant_id', ASCENDING), ('vip', ASCENDING)], {'name': 'idx_g_tid_vip'}),
+            ]),
+            ('folios', [
+                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_f_tid_booking'}),
+                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_f_tid_status'}),
+            ]),
+            ('folio_charges', [
+                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_fc_tid_booking'}),
+                ([('tenant_id', ASCENDING), ('date', ASCENDING)], {'name': 'idx_fc_tid_date'}),
+            ]),
+            ('housekeeping_tasks', [
+                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_hk_tid_status'}),
+                ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_hk_tid_room'}),
+                ([('tenant_id', ASCENDING), ('completed_at', DESCENDING)], {'name': 'idx_hk_tid_done'}),
+            ]),
+            ('users', [
+                ([('tenant_id', ASCENDING), ('email', ASCENDING)], {'name': 'idx_u_tid_email'}),
+                ([('tenant_id', ASCENDING), ('role', ASCENDING)], {'name': 'idx_u_tid_role'}),
+            ]),
+            ('notifications', [
+                ([('tenant_id', ASCENDING), ('created_at', DESCENDING)], {'name': 'idx_n_tid_created'}),
+                ([('tenant_id', ASCENDING), ('user_id', ASCENDING), ('read', ASCENDING)], {'name': 'idx_n_tid_user_read'}),
+            ]),
+            ('communication_logs', [
+                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_cl_tid_booking'}),
+            ]),
+            ('booking_guests', [
+                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_bg_tid_booking'}),
+            ]),
+            ('deposits', [
+                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_dep_tid_booking'}),
+            ]),
+            ('room_notes', [
+                ([('tenant_id', ASCENDING), ('room_id', ASCENDING), ('resolved', ASCENDING)], {'name': 'idx_rn_tid_room_resolved'}),
+            ]),
+        ]
+
+        total = 0
+        for coll_name, idx_list in plan:
+            coll = self.db[coll_name]
+            for spec, opts in idx_list:
+                try:
+                    await coll.create_index(spec, **opts)
+                    total += 1
+                except Exception as e:
+                    logger.warning(f"Tenant-compound index warning for {coll_name}: {e}")
+
+        return {"created": total}
 
     async def create_booking_indexes(self):
         """Bookings collection indexes"""

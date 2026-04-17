@@ -132,6 +132,11 @@ Reduced from 1309 lines via dialog extraction.
 - **`backend/routers/finance.py`** (4628 satır, ~90 endpoint) → `backend/routers/finance/` paketi (7 alt-router: integrations, folio, invoices, accounting, mobile, dashboards, cashiering). `__init__.py` `APIRouter(prefix='/api')` altında `include_router()` ile birleştiriyor; `router_registry.py` import yolu (`routers.finance:router`) değişmedi. `cashiering.py` içine eksik `CityLedgerAccount` import'u eklendi (orijinal dosyada da eksikti).
 - **`frontend/src/pages/IntegrationHub.jsx`** (1896 → 1183 satır) → 7 sekme bileşeni `frontend/src/components/integration-hub/tabs/` altına taşındı (DashboardTab, ConnectorsTab, MappingsTab, SyncTab, ReservationsTab, ReconciliationTab, AuditTab). Paylaşılan rozetler `badges.jsx`'te (HealthBadge, StatusBadge, AckBadge). Ebeveyn tüm state/handler'ı `ctx` nesnesi olarak spread ile çocuklara geçiriyor.
 - **N+1 optimizasyonu** 5 hot endpoint'te (bookings, operational-alerts, demand-heatmap, occupancy-prediction, inhouse).
+- **2026-04 Performans dalgası**: 
+  - `cache_manager.py` artık in-memory TTL fallback + TenantContext aware (tenant/tenant_ctx/ctx kwargs).
+  - 4 yavaş endpoint micro-cache'lendi: production-golive/summary, ml/dashboard, pii-strict-mode/encryption-status, security-hardening/tenant-scope/check.
+  - **8+ N+1 düzeltildi** (batch `$in` lookup pattern): housekeeping rooms, dashboard (VIP+frontdesk arrivals), pms_reservations (double-booking), pms_bookings (search), finance/mobile pending-receivables, mobile_router overbookings, pos_router cleaning_delay, pos_fnb floor-plan, messaging auto-messages.
+  - **23 tenant-prefixed compound MongoDB indeksi** eklendi (`infra/database_optimizer.create_tenant_compound_indexes`): bookings/rooms/guests/folios/folio_charges/housekeeping_tasks/users/notifications/communication_logs/booking_guests/deposits/room_notes — hepsi `tenant_id` prefix'iyle. Tenant-scoped sorgular artık index plan'a girer.
 
 ## Cleanup & Refactor Pass-2 (Apr 2026)
 - **`backend/domains/revenue/pricing_router.py`** (2962 satır, 43 endpoint) → `pricing_router/` paketi: 7 alt-modül (rms, rates, ai_pricing, contracted_rates, revenue_mobile, revenue_analysis, anomaly).

@@ -395,16 +395,21 @@ async def get_table_layout(
     - Current transactions
     """
     tables = []
-    async for table in db.table_layouts.find({
+    raw_tables = await db.table_layouts.find({
         'tenant_id': current_user.tenant_id,
         'outlet_id': outlet_id
-    }):
-        # Get current transaction if occupied
-        transaction = None
-        if table.get('current_transaction_id'):
-            transaction = await db.pos_transactions.find_one({
-                'id': table.get('current_transaction_id')
-            })
+    }).to_list(length=None)
+    # Batch-fetch all open transactions referenced by tables
+    txn_ids = [t.get('current_transaction_id') for t in raw_tables if t.get('current_transaction_id')]
+    txns_by_id: dict = {}
+    if txn_ids:
+        async for tx in db.pos_transactions.find(
+            {'id': {'$in': txn_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'total_amount': 1, 'guests': 1},
+        ):
+            txns_by_id[tx['id']] = tx
+    for table in raw_tables:
+        transaction = txns_by_id.get(table.get('current_transaction_id'))
 
         tables.append({
             'id': table.get('id'),

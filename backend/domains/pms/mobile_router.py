@@ -91,18 +91,21 @@ async def get_critical_issues_mobile(
     # Get overbooking situations
     today = datetime.now(UTC)
     overbookings = []
-    async for booking in db.bookings.find({
+    candidate_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$lte': today + timedelta(days=1)},
         'status': 'confirmed'
-    }):
-        # Check if room is already occupied
-        room = await db.rooms.find_one({
-            'id': booking.get('room_id'),
-            'tenant_id': current_user.tenant_id,
-            'status': 'occupied'
-        })
-        if room:
+    }, {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1, 'guest_name': 1, 'created_at': 1}).to_list(length=None)
+    occupied_room_ids: set = set()
+    cb_room_ids = [b.get('room_id') for b in candidate_bookings if b.get('room_id')]
+    if cb_room_ids:
+        async for r in db.rooms.find(
+            {'id': {'$in': cb_room_ids}, 'tenant_id': current_user.tenant_id, 'status': 'occupied'},
+            {'_id': 0, 'id': 1},
+        ):
+            occupied_room_ids.add(r['id'])
+    for booking in candidate_bookings:
+        if booking.get('room_id') in occupied_room_ids:
             overbookings.append({
                 'id': booking.get('id'),
                 'title': f"Overbooking - Room {booking.get('room_number')}",

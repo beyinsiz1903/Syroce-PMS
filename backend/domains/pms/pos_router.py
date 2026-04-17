@@ -182,28 +182,33 @@ async def get_anomaly_detection(
                     'message': f"Oda {booking.get('room_number')} ortalamanın %{((avg_rate - room_rate) / avg_rate * 100):.0f} altında fiyatlandırılmış"
                 })
 
-    # 2. Cleaning Delay Anomalies
-    async for task in db.housekeeping_tasks.find({
+    # 2. Cleaning Delay Anomalies (batched room lookup)
+    delay_tasks = await db.housekeeping_tasks.find({
         'tenant_id': current_user.tenant_id,
         'task_type': 'cleaning',
         'status': 'in_progress',
         'started_at': {'$lte': datetime.now(UTC) - timedelta(hours=1)}
-    }):
+    }).to_list(length=None)
+    dt_room_ids = [t.get('room_id') for t in delay_tasks if t.get('room_id')]
+    dt_rooms_by_id: dict = {}
+    if dt_room_ids:
+        async for r in db.rooms.find(
+            {'id': {'$in': dt_room_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_number': 1},
+        ):
+            dt_rooms_by_id[r['id']] = r
+    for task in delay_tasks:
         duration = (datetime.now(UTC) - task.get('started_at')).total_seconds() / 60
-
-        room = await db.rooms.find_one({
-            'id': task.get('room_id'),
-            'tenant_id': current_user.tenant_id
-        })
-
+        room = dt_rooms_by_id.get(task.get('room_id'))
+        room_num = room.get('room_number') if room else 'N/A'
         anomalies.append({
             'type': 'cleaning_delay',
             'severity': 'high' if duration > 90 else 'medium',
             'room_id': task.get('room_id'),
-            'room_number': room.get('room_number') if room else 'N/A',
+            'room_number': room_num,
             'duration_minutes': int(duration),
             'assigned_to': task.get('assigned_to'),
-            'message': f"Oda {room.get('room_number') if room else 'N/A'} {int(duration)} dakikadır temizleniyor"
+            'message': f"Oda {room_num} {int(duration)} dakikadır temizleniyor"
         })
 
     # 3. Overstay Risk Detection
