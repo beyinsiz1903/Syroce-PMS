@@ -229,31 +229,44 @@ async def get_bookings(
         if cache_warmer:
             cached_data = cache_warmer.get_cached(f"bookings:{current_user.tenant_id}")
             if cached_data:
-                # Process and return immediately
+                page = [dict(b) for b in cached_data[:limit]]
+                # Batch-fetch guests and rooms once
+                missing_guest_ids = {b['guest_id'] for b in page if b.get('guest_id') and not b.get('guest_name')}
+                room_ids = {b['room_id'] for b in page if b.get('room_id')}
+                guest_map: dict[str, str] = {}
+                if missing_guest_ids:
+                    async for g in db.guests.find(
+                        {'id': {'$in': list(missing_guest_ids)}},
+                        {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
+                    ):
+                        nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+                        if nm:
+                            guest_map[g['id']] = nm
+                room_map: dict[str, dict] = {}
+                if room_ids:
+                    async for r in db.rooms.find(
+                        {'id': {'$in': list(room_ids)}},
+                        {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
+                    ):
+                        room_map[r['id']] = r
+                rate_map = {'advance_purchase': 'promotional', 'member': 'promotional'}
+                segment_map = {'business': 'corporate'}
                 bookings = []
-                for booking in cached_data[:limit]:
-                    # Enrich guest_name if missing
+                for booking in page:
                     if not booking.get('guest_name') and booking.get('guest_id'):
-                        guest = await db.guests.find_one({'id': booking['guest_id']}, {'name': 1, 'first_name': 1, 'last_name': 1, '_id': 0})
-                        if guest:
-                            booking['guest_name'] = guest.get('name') or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip() or 'Unknown Guest'
-                    # Always enrich room_number from room document (handles room moves)
+                        booking['guest_name'] = guest_map.get(booking['guest_id'], 'Unknown Guest')
                     if booking.get('room_id'):
-                        room = await db.rooms.find_one({'id': booking['room_id']}, {'room_number': 1, 'room_type': 1, '_id': 0})
+                        room = room_map.get(booking['room_id'])
                         if room:
                             booking['room_number'] = room.get('room_number', 'Unknown Room')
                             if not booking.get('room_type'):
                                 booking['room_type'] = room.get('room_type')
                         elif not booking.get('room_number'):
                             booking['room_number'] = 'Unknown Room'
-                    if 'rate_type' in booking:
-                        rate_map = {'advance_purchase': 'promotional', 'member': 'promotional'}
-                        if booking['rate_type'] in rate_map:
-                            booking['rate_type'] = rate_map[booking['rate_type']]
-                    if 'market_segment' in booking:
-                        segment_map = {'business': 'corporate'}
-                        if booking['market_segment'] in segment_map:
-                            booking['market_segment'] = segment_map[booking['market_segment']]
+                    if booking.get('rate_type') in rate_map:
+                        booking['rate_type'] = rate_map[booking['rate_type']]
+                    if booking.get('market_segment') in segment_map:
+                        booking['market_segment'] = segment_map[booking['market_segment']]
                     bookings.append(booking)
                 return bookings
 
