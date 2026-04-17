@@ -112,7 +112,7 @@ const CalendarGrid = ({
   return (
     <div className="bg-white rounded-lg border border-gray-200 relative" data-testid="calendar-grid">
       {/* Date Header Row - STICKY */}
-      <div className="sticky top-16 z-40 bg-white border-b border-gray-300 overflow-x-auto">
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-300 overflow-x-auto">
         <div className="min-w-max">
           <div className="flex">
             <div className="w-28 flex-shrink-0 border-r border-gray-200"></div>

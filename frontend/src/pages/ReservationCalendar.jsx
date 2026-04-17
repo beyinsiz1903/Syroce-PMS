@@ -635,8 +635,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
-      <div className="p-4 space-y-3">
-        <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200 shadow-sm space-y-3" data-testid="calendar-sticky-header">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden">
+        <div className="flex-none p-4 pb-3 bg-gray-50 border-b border-gray-200 space-y-3" data-testid="calendar-sticky-header">
         <CalendarHeader
           dateRange={dateRange}
           daysToShow={daysToShow}
@@ -666,6 +666,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
         </div>
 
+        <div className="flex-1 overflow-auto p-4 pt-3 space-y-3">
         <CalendarOccupancy
           dateRange={dateRange}
           getOccupancyForDate={getOccupancyForDate}
@@ -772,6 +773,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
             </CardContent>
           </Card>
+        </div>
         </div>
       </div>
 
