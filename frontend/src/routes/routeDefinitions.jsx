@@ -469,6 +469,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/pos", ...p(POSDashboard) },
     { path: "/admin/features", ...p(FeaturesShowcase) },
     { path: "/admin/cost", ...p(CostManagement) },
+    { path: "/app/cost-management", ...p(CostManagement) },
+    { path: "/cost-management", ...p(CostManagement) },
     { path: "/admin/gm-enhanced", ...p(EnhancedGMDashboard) },
   ];
 }
