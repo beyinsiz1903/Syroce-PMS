@@ -184,23 +184,26 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "action_label": "Odemelere Git"
         })
 
-    # 3) VIP arrivals today
+    # 3) VIP arrivals today (batched)
     vip_arrivals = []
+    arrival_guest_ids = list({arr["guest_id"] for arr in arrivals_today if arr.get("guest_id")})
+    guest_map: dict = {}
+    if arrival_guest_ids:
+        async for g in db.guests.find(
+            {"id": {"$in": arrival_guest_ids}, "tenant_id": tenant_id},
+            {"_id": 0, "id": 1, "name": 1, "vip_status": 1, "total_stays": 1, "preferences": 1}
+        ):
+            guest_map[g["id"]] = g
     for arr in arrivals_today:
-        guest_id = arr.get("guest_id")
-        if guest_id:
-            guest = await db.guests.find_one(
-                {"id": guest_id, "tenant_id": tenant_id},
-                {"_id": 0, "name": 1, "vip_status": 1, "total_stays": 1, "preferences": 1}
-            )
-            if guest and guest.get("vip_status"):
-                vip_arrivals.append({
-                    "booking_id": arr["id"],
-                    "guest_name": guest.get("name", arr.get("guest_name", "VIP")),
-                    "room_number": str(arr.get("room_number", "")),
-                    "total_stays": guest.get("total_stays", 0),
-                    "preferences": guest.get("preferences", {})
-                })
+        guest = guest_map.get(arr.get("guest_id"))
+        if guest and guest.get("vip_status"):
+            vip_arrivals.append({
+                "booking_id": arr["id"],
+                "guest_name": guest.get("name", arr.get("guest_name", "VIP")),
+                "room_number": str(arr.get("room_number", "")),
+                "total_stays": guest.get("total_stays", 0),
+                "preferences": guest.get("preferences", {})
+            })
 
     if vip_arrivals:
         alerts.append({

@@ -1201,26 +1201,39 @@ async def get_demand_heatmap(
 
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
-    # Generate heatmap data for each day
+    # Single fetch of all overlapping bookings in window, then count per-day in memory
+    overlapping = await db.bookings.find(
+        {
+            'tenant_id': current_user.tenant_id,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': end},
+            'check_out': {'$gt': start},
+        },
+        {'_id': 0, 'check_in': 1, 'check_out': 1},
+    ).to_list(10000)
+
+    def _to_dt(v):
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except Exception:
+                return None
+        return None
+
+    parsed = []
+    for b in overlapping:
+        ci = _to_dt(b.get('check_in'))
+        co = _to_dt(b.get('check_out'))
+        if ci and co:
+            parsed.append((ci, co))
+
     heatmap_data = []
     current_date = start
-
     while current_date <= end:
-        # Count bookings for this date
-        bookings_count = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {
-                '$lte': current_date
-            },
-            'check_out': {
-                '$gt': current_date
-            },
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-        })
-
+        bookings_count = sum(1 for ci, co in parsed if ci <= current_date < co)
         occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
-
-        # Determine demand level
         if occupancy_pct < 30:
             demand_level = 'low'
         elif occupancy_pct < 60:
@@ -1229,7 +1242,6 @@ async def get_demand_heatmap(
             demand_level = 'high'
         else:
             demand_level = 'very_high'
-
         heatmap_data.append({
             'date': current_date.strftime('%Y-%m-%d'),
             'day_of_week': current_date.strftime('%A'),
@@ -1237,7 +1249,6 @@ async def get_demand_heatmap(
             'bookings_count': bookings_count,
             'demand_level': demand_level
         })
-
         current_date += timedelta(days=1)
 
     return {

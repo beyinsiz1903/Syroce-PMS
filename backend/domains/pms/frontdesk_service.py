@@ -424,11 +424,19 @@ class FrontdeskService:
 
     async def get_inhouse(self, ctx: OperationContext) -> ServiceResult:
         bookings = await self._db.bookings.find({"tenant_id": ctx.tenant_id, "status": "checked_in"}, {"_id": 0}).to_list(1000)
-        enriched = []
-        for b in bookings:
-            guest = await self._db.guests.find_one({"id": b["guest_id"]}, {"_id": 0})
-            room = await self._db.rooms.find_one({"id": b["room_id"]}, {"_id": 0})
-            enriched.append({**b, "guest": guest, "room": room})
+        if not bookings:
+            return ServiceResult.success([])
+        guest_ids = list({b["guest_id"] for b in bookings if b.get("guest_id")})
+        room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
+        guest_map = {}
+        if guest_ids:
+            async for g in self._db.guests.find({"id": {"$in": guest_ids}}, {"_id": 0}):
+                guest_map[g["id"]] = g
+        room_map = {}
+        if room_ids:
+            async for r in self._db.rooms.find({"id": {"$in": room_ids}}, {"_id": 0}):
+                room_map[r["id"]] = r
+        enriched = [{**b, "guest": guest_map.get(b.get("guest_id")), "room": room_map.get(b.get("room_id"))} for b in bookings]
         return ServiceResult.success(enriched)
 
     # ------------------------------------------------------------------
@@ -504,22 +512,36 @@ class FrontdeskService:
     # Internal helpers
     # ------------------------------------------------------------------
     async def _enrich_bookings(self, bookings: list, tenant_id: str) -> list:
-        enriched = []
+        if not bookings:
+            return []
+        guest_ids = list({b["guest_id"] for b in bookings if b.get("guest_id")})
+        room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
+        guest_map = {}
+        if guest_ids:
+            async for g in self._db.guests.find(
+                {"id": {"$in": guest_ids}},
+                {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1},
+            ):
+                guest_map[g["id"]] = g
+        room_map = {}
+        if room_ids:
+            async for r in self._db.rooms.find(
+                {"id": {"$in": room_ids}},
+                {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1},
+            ):
+                room_map[r["id"]] = r
         for b in bookings:
-            if b.get("guest_id"):
-                guest = await self._db.guests.find_one({"id": b["guest_id"]}, {"_id": 0})
-                if guest:
-                    b["guest_name"] = guest.get("name")
-                    b["guest_phone"] = guest.get("phone")
-                    b["guest_email"] = guest.get("email")
-            if b.get("room_id"):
-                room = await self._db.rooms.find_one({"id": b["room_id"]}, {"_id": 0})
-                if room:
-                    b["room_number"] = room.get("room_number")
-                    b["room_type"] = room.get("room_type")
-                    b["room_status"] = room.get("status")
-            enriched.append(b)
-        return enriched
+            guest = guest_map.get(b.get("guest_id"))
+            if guest:
+                b["guest_name"] = guest.get("name")
+                b["guest_phone"] = guest.get("phone")
+                b["guest_email"] = guest.get("email")
+            room = room_map.get(b.get("room_id"))
+            if room:
+                b["room_number"] = room.get("room_number")
+                b["room_type"] = room.get("room_type")
+                b["room_status"] = room.get("status")
+        return bookings
 
 
 frontdesk_service = FrontdeskService()

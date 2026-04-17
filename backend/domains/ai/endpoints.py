@@ -189,18 +189,15 @@ async def predict_occupancy(
     try:
         from server import db
 
-        # Get booking data
-        bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
-
-        rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-
-        total_rooms = len(rooms)
-        occupied_rooms = len([b for b in bookings if b.get('status') == 'checked_in'])
+        # Use count queries instead of fetching full documents
+        total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
+        occupied_rooms = await db.bookings.count_documents(
+            {"tenant_id": current_user.tenant_id, "status": "checked_in"}
+        )
+        upcoming_bookings = await db.bookings.count_documents(
+            {"tenant_id": current_user.tenant_id, "status": "confirmed"}
+        )
         current_occupancy = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
-
-        upcoming_bookings = len([b for b in bookings if b.get('status') == 'confirmed'])
 
         # Get historical data (simplified)
         historical_data = []
