@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import "@/App.css";
 import "@/config/axiosConfig";
 import axios from "axios";
@@ -17,6 +17,7 @@ import {
 import {
   ProtectedRoute, ProtectedRouteWithMemory, ModuleGuardedRoute, LoadingFallback,
 } from "@/routes/ProtectedRoute";
+import { registerRoutes } from "@/routes/preload";
 
 const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -124,6 +125,18 @@ function App() {
     window.location.replace("/auth");
   };
 
+  const hasFeature = (key) => {
+    if (!key) return true;
+    if ((user?.roles || []).includes("super_admin") || user?.role === "super_admin") return true;
+    return !!tenant?.features?.[key];
+  };
+
+  const routeConfigs = useMemo(
+    () => getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogout: handleLogout, hasFeature }),
+    [user, tenant, modules, isAuthenticated]
+  );
+  useEffect(() => { registerRoutes(routeConfigs); }, [routeConfigs]);
+
   if (loading) {
     return (
       <div className="loading-screen" style={{
@@ -141,12 +154,6 @@ function App() {
       </div>
     );
   }
-
-  const hasFeature = (key) => {
-    if (!key) return true;
-    if ((user?.roles || []).includes("super_admin") || user?.role === "super_admin") return true;
-    return !!tenant?.features?.[key];
-  };
 
   // Guest user routes
   if (isAuthenticated && user?.role === "guest") {
@@ -169,8 +176,6 @@ function App() {
       </NotificationProvider>
     );
   }
-
-  const routeConfigs = getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogout: handleLogout, hasFeature });
 
   const PostAuthRedirect = () => {
     const redirectTarget = sessionStorage.getItem("postLoginRedirect") || "/app/dashboard";

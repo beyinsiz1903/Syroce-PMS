@@ -9,7 +9,7 @@
  *   "feature"    — Auth + feature flag required
  *   "memory"     — Auth required, saves redirect path on failure
  */
-import { lazy } from "react";
+import { lazyWithPreload as lazy } from "./lazyWithPreload";
 
 // ── Critical imports (loaded immediately) ──────────────────────────
 import AuthPage from "@/pages/AuthPage";

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { preloadRoute } from '@/routes/preload';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -230,7 +231,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   return (
                     <DropdownMenuItem
                       key={item.key}
-                      onClick={() => handleNavigate(item.path)}
+                      onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                       className={`flex items-center gap-2 cursor-pointer ${
                         isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
                       }`}
@@ -253,7 +254,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       return (
                         <DropdownMenuItem
                           key={item.key}
-                          onClick={() => handleNavigate(item.path)}
+                          onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                           className={`flex items-center gap-2 cursor-pointer text-gray-500 ${
                             isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
                           }`}
@@ -307,7 +308,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleNavigate(item.path)}
+                          onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
@@ -349,7 +350,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleNavigate(item.path)}
+                          onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                           className={`hidden md:flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
@@ -433,7 +434,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
                 return (
-                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
@@ -465,7 +466,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
                           return (
                             <Button key={item.key} variant="ghost" size="sm"
-                              onClick={() => handleNavigate(item.path, true)}
+                              onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                               className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50'}`}
                               data-testid={`nav-${item.key}-button`}>
                               <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
@@ -482,7 +483,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
                 return (
-                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
@@ -493,7 +494,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               {standaloneItems.filter((item) => item.requireSuperAdmin).map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 return (
-                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)}
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                     className="w-full justify-start py-2 mb-0.5 hover:bg-gray-100" data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                   </Button>
