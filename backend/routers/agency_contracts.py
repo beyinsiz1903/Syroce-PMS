@@ -159,8 +159,12 @@ async def _get_agency_dep():
 
 
 # Bağımlılık zincirini başlangıçta çözelim (FastAPI Depends için)
-from routers.marketplace_b2b import get_marketplace_agency as _agency_dep  # noqa: E402
-from routers.marketplace_b2b import _get_listing_or_404 as _listing_dep  # noqa: E402
+from routers.marketplace_b2b import (  # noqa: E402
+    _get_listing_or_404 as _listing_dep,
+)
+from routers.marketplace_b2b import (
+    get_marketplace_agency as _agency_dep,
+)
 
 
 async def _next_contract_code(sysdb) -> str:
