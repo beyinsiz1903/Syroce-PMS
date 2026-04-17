@@ -1,5 +1,5 @@
-import React from "react";
-import { Calendar as CalendarIcon, Plus } from "lucide-react";
+import React, { useState } from "react";
+import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
   toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
@@ -45,6 +45,16 @@ const CalendarGrid = ({
   onDragEnd,
   onBookingDoubleClick,
 }) => {
+  const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+
+  const toggleType = (type) => {
+    setCollapsedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  };
 
   const hasConflict = (roomId, date) => {
     return conflicts.some(c =>
@@ -122,7 +132,27 @@ const CalendarGrid = ({
           </div>
           <div className="flex bg-white">
             <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 text-[10px] text-gray-500 font-medium flex items-end">
-              <span className="cursor-pointer hover:text-gray-700">Daralt ^</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const allCollapsed = sortedTypes.length > 0 && sortedTypes.every((t) => collapsedTypes.has(t));
+                  if (allCollapsed) setCollapsedTypes(new Set());
+                  else setCollapsedTypes(new Set(sortedTypes));
+                }}
+                className="flex items-center gap-0.5 cursor-pointer hover:text-gray-800 select-none"
+                data-testid="calendar-collapse-all-btn"
+                title="Tüm oda tiplerini aç/kapat"
+              >
+                {sortedTypes.length > 0 && sortedTypes.every((t) => collapsedTypes.has(t)) ? (
+                  <>
+                    <ChevronRight className="w-3 h-3" /> Genişlet
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-3 h-3" /> Daralt
+                  </>
+                )}
+              </button>
             </div>
             {dateRange.map((date, idx) => {
               const { dayName, dayNum } = formatDateWithDay(date);
@@ -169,9 +199,20 @@ const CalendarGrid = ({
                   <div className="bg-blue-50/70 border-b border-blue-200">
                     <div className="flex">
                       <div className="w-28 flex-shrink-0 px-2 py-1.5 border-r border-blue-200 flex items-center">
-                        <span className="font-bold text-xs text-gray-800" data-testid={`room-type-${roomType}`}>
-                          {roomType} ^
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleType(roomType)}
+                          className="flex items-center gap-1 font-bold text-xs text-gray-800 hover:text-blue-700 select-none"
+                          data-testid={`room-type-${roomType}`}
+                          title={collapsedTypes.has(roomType) ? 'Aç' : 'Daralt'}
+                        >
+                          {collapsedTypes.has(roomType) ? (
+                            <ChevronRight className="w-3 h-3" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3" />
+                          )}
+                          <span>{roomType}</span>
+                        </button>
                       </div>
                       {dateRange.map((date, idx) => {
                         const weekend = isWeekend(date);
@@ -314,7 +355,7 @@ const CalendarGrid = ({
                   })()}
 
                   {/* Rooms of this type */}
-                  {typeRooms.map((room) => {
+                  {!collapsedTypes.has(roomType) && typeRooms.map((room) => {
                     const hasBookingToday = bookings.some(b => b.room_id === room.id && isBookingOnDate(b, new Date()) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
                     return (
                       <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
