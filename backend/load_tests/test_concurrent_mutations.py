@@ -10,6 +10,8 @@ Critical invariants:
 3. Staff tasks: Concurrent updates don't lose data
 4. Dashboard: Reads remain accurate during concurrent mutations
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -60,7 +62,7 @@ class TestConcurrentRoomBlockOperations:
         server_errors = [r for r in results if r[0] >= 500]
 
         assert len(server_errors) == 0, f"Server errors: {server_errors}"
-        print(f"\n[CONCURRENT BLOCKS] {success_count}/5 blocks created successfully")
+        logger.info(f"\n[CONCURRENT BLOCKS] {success_count}/5 blocks created successfully")
 
         # Cleanup blocks
         for status, data in results:
@@ -169,7 +171,7 @@ class TestConcurrentStaffTaskOperations:
         })
         assert db_count == 10, f"DB shows {db_count} tasks, expected 10"
 
-        print(f"\n[CONCURRENT TASKS] 10/10 tasks created and verified in DB")
+        logger.info(f"\n[CONCURRENT TASKS] 10/10 tasks created and verified in DB")
 
     async def test_concurrent_task_status_updates(
         self, api_url, auth_headers, raw_db, tenant_id
@@ -214,7 +216,7 @@ class TestConcurrentStaffTaskOperations:
             f"Final status '{final_task['status']}' not in expected values"
         )
 
-        print(f"\n[CONCURRENT TASK UPDATE] Final status: {final_task['status']}")
+        logger.info(f"\n[CONCURRENT TASK UPDATE] Final status: {final_task['status']}")
 
 
 class TestDashboardUnderLoad:
@@ -242,7 +244,7 @@ class TestDashboardUnderLoad:
         success_count = sum(1 for s in results if s == 200)
         assert success_count == 20, f"Expected 20 successful, got {success_count}"
 
-        print(f"\n[DASHBOARD LOAD] 20/20 dashboard reads succeeded")
+        logger.info(f"\n[DASHBOARD LOAD] 20/20 dashboard reads succeeded")
 
     @pytest.mark.ci_load
     async def test_concurrent_mixed_read_write_operations(
@@ -321,7 +323,7 @@ class TestDashboardUnderLoad:
         server_errors = [(t, s) for t, s in results if s >= 500]
         assert len(server_errors) == 0, f"Server errors in mixed workload: {server_errors}"
 
-        print(f"\n[MIXED WORKLOAD] Results by type:")
+        logger.info(f"\n[MIXED WORKLOAD] Results by type:")
         for op_type, statuses in by_type.items():
             print(f"  {op_type}: {len(statuses)} requests, "
                   f"all 200: {all(s == 200 for s in statuses)}")
@@ -362,7 +364,7 @@ class TestAllotmentContractConcurrency:
         assert len(server_errors) == 0, f"Server errors: {server_errors}"
         assert success_count == 5, f"Expected 5 contracts, got {success_count}"
 
-        print(f"\n[ALLOTMENT CONCURRENCY] 5/5 contracts created")
+        logger.info(f"\n[ALLOTMENT CONCURRENCY] 5/5 contracts created")
 
 
 class TestGroupReservationConcurrency:
@@ -398,4 +400,4 @@ class TestGroupReservationConcurrency:
         success_count = sum(1 for s in results if s in (200, 201))
         assert success_count == 5, f"Expected 5 groups, got {success_count}"
 
-        print(f"\n[GROUP RESERVATION] 5/5 groups created concurrently")
+        logger.info(f"\n[GROUP RESERVATION] 5/5 groups created concurrently")

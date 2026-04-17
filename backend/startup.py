@@ -84,7 +84,7 @@ async def on_startup(app):
     try:
         from controlplane.timeline_writer import ensure_timeline_indexes
         await ensure_timeline_indexes()
-        print("Event timeline indexes ensured")
+        logger.info("Event timeline indexes ensured")
     except Exception as e:
         logger.warning(f"Event timeline index creation error: {e}")
 
@@ -107,7 +107,7 @@ async def on_startup(app):
             name="idx_raw_payload_ttl",
             expireAfterSeconds=7776000,  # 90 days
         )
-        print("Webhook raw payload indexes ensured")
+        logger.info("Webhook raw payload indexes ensured")
     except Exception as e:
         logger.warning(f"Webhook raw payload index creation error: {e}")
 
@@ -121,7 +121,7 @@ async def on_startup(app):
         snapshot_worker = get_snapshot_worker()
         await snapshot_worker.start()
         app.state.dashboard_snapshot_worker = snapshot_worker
-        print("Dashboard snapshot worker started (60s interval)")
+        logger.info("Dashboard snapshot worker started (60s interval)")
     except Exception as e:
         logger.warning(f"Dashboard snapshot worker startup error: {e}")
 
@@ -129,7 +129,7 @@ async def on_startup(app):
     try:
         from controlplane.deploy_tracker import ensure_deploy_indexes
         await ensure_deploy_indexes()
-        print("Deploy event indexes ensured")
+        logger.info("Deploy event indexes ensured")
     except Exception as e:
         logger.warning(f"Deploy event index creation error: {e}")
 
@@ -187,7 +187,7 @@ async def on_startup(app):
         inv_worker = get_inventory_worker()
         await inv_worker.start()
         app.state.room_type_inventory_worker = inv_worker
-        print("Room-type inventory worker started (300s interval)")
+        logger.info("Room-type inventory worker started (300s interval)")
     except Exception as e:
         logger.warning(f"Room-type inventory worker startup error: {e}")
 
@@ -236,37 +236,37 @@ async def on_startup(app):
         await col.create_index([("agency_id", 1), ("status", 1)], name="idx_agency_status")
         await col.create_index([("expires_at", 1)], name="idx_expires_at")
         await col.create_index([("created_at", -1)], name="idx_created_at_desc")
-        print("✅ Agency booking request indexes created")
+        logger.info("✅ Agency booking request indexes created")
     except Exception as e:
         logger.warning(f"Agency booking request indexes error: {e}")
 
     # ── Redis cache (best-effort) ───────────────────────────────────
     try:
-        print("🚀 Initializing Redis ultra-fast cache...")
+        logger.info("🚀 Initializing Redis ultra-fast cache...")
         from redis_cache import init_redis_cache
         init_redis_cache()
-        print("✅ Redis cache initialized!")
+        logger.info("✅ Redis cache initialized!")
     except Exception as e:
         logger.warning(f"Redis cache initialization: {e}")
 
     # ── Cache warmer ────────────────────────────────────────────────
     try:
-        print("🔥 Initializing ultra-fast cache warmer...")
+        logger.info("🔥 Initializing ultra-fast cache warmer...")
         from cache_warmer import initialize_cache_warmer
         await initialize_cache_warmer(_raw_db)
-        print("✅ Cache warmer initialized - responses will be instant!")
+        logger.info("✅ Cache warmer initialized - responses will be instant!")
     except Exception as e:
         logger.warning(f"Cache warmer initialization: {e}")
 
     # ── Optimization systems ────────────────────────────────────────
     try:
-        print("🚀 Initializing enterprise optimization systems...")
+        logger.info("🚀 Initializing enterprise optimization systems...")
         any_rms_enabled = await _raw_db.organizations.find_one(
             {"$or": [{"plan": "enterprise"}, {"subscription_tier": "enterprise"}, {"features.hidden_rms": True}]},
             {"_id": 1},
         )
         if not any_rms_enabled:
-            print("ℹ️ No orgs with RMS enabled; skipping optimization init")
+            logger.info("ℹ️ No orgs with RMS enabled; skipping optimization init")
         else:
             import redis
 
@@ -280,7 +280,7 @@ async def on_startup(app):
             if materialized_views_manager:
                 await materialized_views_manager.setup_indexes()
                 await materialized_views_manager.refresh_dashboard_metrics()
-            print("🎉 Enterprise optimization systems ready!")
+            logger.info("🎉 Enterprise optimization systems ready!")
     except Exception as e:
         logger.warning(f"Optimization system initialization error: {e}")
 
@@ -288,24 +288,24 @@ async def on_startup(app):
     try:
         from domains.channel_manager.unified_repository import ensure_indexes
         await ensure_indexes()
-        print("✅ Channel Manager 9-collection indexes created")
+        logger.info("✅ Channel Manager 9-collection indexes created")
     except Exception as e:
         logger.warning(f"CM 9-collection indexes error: {e}")
 
     # ── Database optimization ───────────────────────────────────────
     try:
-        print("🚀 Running comprehensive database optimization...")
+        logger.info("🚀 Running comprehensive database optimization...")
         from infra.database_optimizer import DatabaseOptimizer
         db_optimizer = DatabaseOptimizer(_raw_db)
         opt_result = await db_optimizer.create_all_indexes()
         total_idx = sum(r.get("created", 0) for r in opt_result.values() if isinstance(r, dict) and "created" in r)
-        print(f"✅ Database optimization complete: {total_idx} indexes ensured")
+        logger.info(f"✅ Database optimization complete: {total_idx} indexes ensured")
     except Exception as e:
         logger.warning(f"Database optimization warning: {e}")
 
     # ── Performance indexes ─────────────────────────────────────────
     try:
-        print("🚀 Creating performance indexes for large-scale operations...")
+        logger.info("🚀 Creating performance indexes for large-scale operations...")
         await _raw_db.bookings.create_index([("tenant_id", 1), ("check_in", 1), ("check_out", 1)], name="idx_bookings_tenant_checkin_checkout")
         await _raw_db.bookings.create_index([("tenant_id", 1), ("status", 1), ("check_in", 1)], name="idx_bookings_tenant_status_checkin")
         await _raw_db.bookings.create_index([("tenant_id", 1), ("room_id", 1), ("check_in", 1)], name="idx_bookings_tenant_room_checkin")
@@ -320,7 +320,7 @@ async def on_startup(app):
         await _raw_db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
         await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
-        print("✅ Performance indexes created successfully!")
+        logger.info("✅ Performance indexes created successfully!")
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")
 
@@ -328,14 +328,14 @@ async def on_startup(app):
     try:
         from core.metering import ensure_metering_indexes
         await ensure_metering_indexes()
-        print("✅ Usage metering indexes ensured")
+        logger.info("✅ Usage metering indexes ensured")
     except Exception as e:
         logger.warning(f"Metering index creation: {e}")
 
     try:
         from core.feature_flags import ensure_feature_flag_indexes
         await ensure_feature_flag_indexes()
-        print("✅ Feature flag indexes ensured")
+        logger.info("✅ Feature flag indexes ensured")
     except Exception as e:
         logger.warning(f"Feature flag index creation: {e}")
 
@@ -345,7 +345,7 @@ async def on_startup(app):
         await _raw_db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
         await _raw_db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
         await _raw_db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
-        print("✅ Deploy pipeline indexes ensured")
+        logger.info("✅ Deploy pipeline indexes ensured")
     except Exception as e:
         logger.warning(f"Deploy pipeline index creation: {e}")
 
@@ -353,7 +353,7 @@ async def on_startup(app):
     try:
         from core.outbox_service import ensure_outbox_indexes
         await ensure_outbox_indexes(_raw_db)
-        print("Outbox pattern indexes ensured (OTA-002)")
+        logger.info("Outbox pattern indexes ensured (OTA-002)")
     except Exception as e:
         logger.warning(f"Outbox index creation error: {e}")
 
@@ -362,7 +362,7 @@ async def on_startup(app):
         from core.outbox_worker import outbox_ota_worker
         await outbox_ota_worker.start()
         app.state.outbox_ota_worker = outbox_ota_worker
-        print("OTA Outbox Worker started (guaranteed delivery)")
+        logger.info("OTA Outbox Worker started (guaranteed delivery)")
     except Exception as e:
         logger.warning(f"OTA Outbox Worker startup warning: {e}")
 
@@ -370,7 +370,7 @@ async def on_startup(app):
     try:
         from core.import_bridge_service import ensure_import_indexes
         await ensure_import_indexes()
-        print("Import bridge indexes ensured (DATA-001)")
+        logger.info("Import bridge indexes ensured (DATA-001)")
     except Exception as e:
         logger.warning(f"Import bridge index creation error: {e}")
 
@@ -378,7 +378,7 @@ async def on_startup(app):
         from core.import_retry_worker import import_retry_worker
         await import_retry_worker.start()
         app.state.import_retry_worker = import_retry_worker
-        print("Import Retry Worker started (DATA-001)")
+        logger.info("Import Retry Worker started (DATA-001)")
     except Exception as e:
         logger.warning(f"Import Retry Worker startup warning: {e}")
 
@@ -387,7 +387,7 @@ async def on_startup(app):
         from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
         await outbox_lifecycle_worker.start()
         app.state.outbox_lifecycle_worker = outbox_lifecycle_worker
-        print("Legacy outbox lifecycle worker started")
+        logger.info("Legacy outbox lifecycle worker started")
     except Exception as e:
         logger.warning(f"Outbox lifecycle worker startup warning: {e}")
 
@@ -395,7 +395,7 @@ async def on_startup(app):
     try:
         from channel_manager.infrastructure.indexes import create_cm_indexes
         await create_cm_indexes()
-        print("✅ Channel Manager v2 indexes created")
+        logger.info("✅ Channel Manager v2 indexes created")
     except Exception as e:
         logger.warning(f"Channel Manager v2 indexes warning: {e}")
 
@@ -403,7 +403,7 @@ async def on_startup(app):
     try:
         from modules.event_bus.abstraction import event_bus
         await event_bus.initialize()
-        print(f"✅ Event Bus initialized in {event_bus.mode.upper()} mode")
+        logger.info(f"✅ Event Bus initialized in {event_bus.mode.upper()} mode")
     except Exception as e:
         logger.warning(f"Event Bus initialization warning: {e}")
 
@@ -411,7 +411,7 @@ async def on_startup(app):
     try:
         from modules.persistence_repositories import ensure_all_indexes
         await ensure_all_indexes()
-        print("✅ Persistence repository indexes ensured")
+        logger.info("✅ Persistence repository indexes ensured")
     except Exception as e:
         logger.warning(f"Persistence indexes warning: {e}")
 
@@ -429,9 +429,9 @@ async def on_startup(app):
             )
             from infra.horizontal_scaling import scaling_manager
             await scaling_manager.initialize(redis_cluster.get_client())
-            print(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
+            logger.info(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
         else:
-            print("ℹ️ Infrastructure Hardening: Redis unavailable, using fallback modes")
+            logger.info("ℹ️ Infrastructure Hardening: Redis unavailable, using fallback modes")
     except Exception as e:
         logger.warning(f"Infrastructure Hardening init warning: {e}")
 
@@ -440,7 +440,7 @@ async def on_startup(app):
         from infra.cloud_observability import otel_tracer, sentry_integration
         await otel_tracer.initialize()
         await sentry_integration.initialize()
-        print("✅ Cloud observability initialized")
+        logger.info("✅ Cloud observability initialized")
     except Exception as e:
         logger.warning(f"Cloud observability init warning: {e}")
 
@@ -454,7 +454,7 @@ async def on_startup(app):
         readiness_validator.set_db(_raw_db)
         from infra.production_config import production_config
         startup_result = production_config.startup_check()
-        print(f"✅ Production Go-Live validators initialized (config: {startup_result['status']})")
+        logger.info(f"✅ Production Go-Live validators initialized (config: {startup_result['status']})")
     except Exception as e:
         logger.warning(f"Production Go-Live validators init warning: {e}")
 
@@ -472,7 +472,7 @@ async def on_startup(app):
         await _raw_db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
         await _raw_db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
         await _raw_db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
-        print("✅ ARI Push Engine initialized (HotelRunner + Exely adapters)")
+        logger.info("✅ ARI Push Engine initialized (HotelRunner + Exely adapters)")
     except Exception as e:
         logger.warning(f"ARI Push Engine init warning: {e}")
 
@@ -487,7 +487,7 @@ async def on_startup(app):
     try:
         from domains.channel_manager.monitoring.monitoring_worker import start_monitoring_worker
         await start_monitoring_worker()
-        print("✅ Operational Monitoring worker started (60s interval)")
+        logger.info("✅ Operational Monitoring worker started (60s interval)")
     except Exception as e:
         logger.warning(f"Monitoring worker init warning: {e}")
 
@@ -500,9 +500,9 @@ async def on_startup(app):
             from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
             await exely_pull_scheduler.start(interval_seconds=30)
             app.state.exely_pull_scheduler = exely_pull_scheduler
-            print("✅ Exely Pull Scheduler started (60s interval, auto-import enabled)")
+            logger.info("✅ Exely Pull Scheduler started (60s interval, auto-import enabled)")
         else:
-            print("ℹ️ No active Exely connections; pull scheduler not started")
+            logger.info("ℹ️ No active Exely connections; pull scheduler not started")
     except Exception as e:
         logger.warning(f"Exely Pull Scheduler init warning: {e}")
 
@@ -515,14 +515,14 @@ async def on_startup(app):
             from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
             await hr_pull_scheduler.start(interval_seconds=300)
             app.state.hr_pull_scheduler = hr_pull_scheduler
-            print("HotelRunner Pull Scheduler started (300s interval, adaptive backoff active)")
+            logger.info("HotelRunner Pull Scheduler started (300s interval, adaptive backoff active)")
             # Also start push queue worker for automatic retry of failed pushes
             from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
             await hr_push_worker.start()
             app.state.hr_push_queue_worker = hr_push_worker
-            print("HotelRunner Push Queue Worker started (120s interval)")
+            logger.info("HotelRunner Push Queue Worker started (120s interval)")
         else:
-            print("No active HotelRunner connections; pull scheduler not started")
+            logger.info("No active HotelRunner connections; pull scheduler not started")
     except Exception as e:
         logger.warning(f"HotelRunner Pull Scheduler init warning: {e}")
 
@@ -532,7 +532,7 @@ async def on_startup(app):
         tenant = await _raw_db.organizations.find_one({}, {"_id": 0, "id": 1})
         if tenant:
             start_cockpit_worker(tenant["id"], interval=3.0)
-            print("✅ Cockpit snapshot worker started (3s interval)")
+            logger.info("✅ Cockpit snapshot worker started (3s interval)")
     except Exception as e:
         logger.warning(f"Cockpit snapshot worker init warning: {e}")
 
@@ -540,7 +540,7 @@ async def on_startup(app):
     try:
         from core.night_audit_hardened import ensure_night_audit_indexes
         await ensure_night_audit_indexes()
-        print("✅ Night audit hardening indexes ensured (NA-001/NA-002)")
+        logger.info("✅ Night audit hardening indexes ensured (NA-001/NA-002)")
     except Exception as e:
         logger.warning(f"Night audit hardening indexes error: {e}")
 
@@ -548,7 +548,7 @@ async def on_startup(app):
     try:
         from domains.pms.night_audit.scheduler import start_scheduler
         start_scheduler()
-        print("✅ Night Audit Scheduler started (60s check interval, hardened)")
+        logger.info("✅ Night Audit Scheduler started (60s check interval, hardened)")
     except Exception as e:
         logger.warning(f"Night Audit Scheduler init warning: {e}")
 
@@ -563,9 +563,9 @@ async def on_startup(app):
             from domains.channel_manager.availability_reconciliation_worker import availability_reconciliation_worker
             await availability_reconciliation_worker.start(interval_seconds=900)
             app.state.availability_reconciliation_worker = availability_reconciliation_worker
-            print("✅ Availability Reconciliation Worker started (15min interval)")
+            logger.info("✅ Availability Reconciliation Worker started (15min interval)")
         else:
-            print("ℹ️ No active channel connections; reconciliation worker not started")
+            logger.info("ℹ️ No active channel connections; reconciliation worker not started")
     except Exception as e:
         logger.warning(f"Availability Reconciliation Worker init warning: {e}")
 

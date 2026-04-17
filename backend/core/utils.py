@@ -2,6 +2,8 @@
 Syroce PMS - Shared Utility Functions
 Used across multiple routers. Extracted from server.py to avoid circular imports.
 """
+import logging
+logger = logging.getLogger(__name__)
 import base64
 import io
 import secrets
@@ -40,7 +42,7 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
         balance = total_charges - total_payments
         return round(balance, 2)
     except Exception as e:
-        print(f"Error calculating folio balance: {str(e)}")
+        logger.info(f"Error calculating folio balance: {str(e)}")
         return 0.0
 
 

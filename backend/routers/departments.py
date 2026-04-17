@@ -4,6 +4,8 @@ Front Office, Housekeeping Manager, Finance, Revenue, F&B, Maintenance,
 Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
+import logging
+logger = logging.getLogger(__name__)
 import random
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -712,7 +714,7 @@ async def get_ai_dashboard_briefing(
                 weather="clear"
             )
     except Exception as ai_err:
-        print(f"AI briefing generation failed: {ai_err}")
+        logger.info(f"AI briefing generation failed: {ai_err}")
 
     # Fallback summary
     if not ai_summary:
@@ -2268,7 +2270,7 @@ async def manual_pos_sync(current_user: User = Depends(get_current_user)):
 
             posted_count += 1
         except Exception as e:
-            print(f"Failed to post POS charge {charge.get('id')}: {str(e)}")
+            logger.info(f"Failed to post POS charge {charge.get('id')}: {str(e)}")
             continue
 
     # Update last sync time

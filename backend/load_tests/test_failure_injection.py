@@ -14,6 +14,8 @@ These tests exercise real API endpoints with hostile concurrency
 patterns.  The key assertion: **no 500 errors** and **data stays
 consistent**.
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import random
 import uuid
@@ -88,7 +90,7 @@ class TestRetryStorm:
             "status": {"$in": ["confirmed", "guaranteed"]},
         })
 
-        print(f"\n[RETRY STORM] Status codes: {sorted(set(results))}, DB bookings: {db_count}")
+        logger.info(f"\n[RETRY STORM] Status codes: {sorted(set(results))}, DB bookings: {db_count}")
         # Idempotency should ideally produce exactly 1, but we accept <=2
         # due to the race window between check-and-insert
         assert db_count <= 2, f"Retry storm created {db_count} bookings — idempotency broken!"
@@ -125,7 +127,7 @@ class TestRetryStorm:
         assert final["total_amount"] == target_rate, (
             f"Rate corruption! Expected {target_rate}, got {final['total_amount']}"
         )
-        print(f"\n[RETRY STORM RATE] Final rate: {final['total_amount']} — correct")
+        logger.info(f"\n[RETRY STORM RATE] Final rate: {final['total_amount']} — correct")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -179,7 +181,7 @@ class TestQueueBacklog:
         })
         assert db_count >= 20, f"DB has {db_count} tasks, expected ≥20"
 
-        print(f"\n[QUEUE BACKLOG] 20/20 burst tasks created, DB count: {db_count}")
+        logger.info(f"\n[QUEUE BACKLOG] 20/20 burst tasks created, DB count: {db_count}")
 
     async def test_burst_followed_by_reads(
         self, api_url, auth_headers, raw_db, tenant_id,
@@ -217,7 +219,7 @@ class TestQueueBacklog:
         errors = [(t, s) for t, s in all_results if s >= 500]
         assert len(errors) == 0, f"Burst-then-read errors: {errors}"
 
-        print("\n[QUEUE BACKLOG READ] Writes OK, 10/10 reads OK after burst")
+        logger.info("\n[QUEUE BACKLOG READ] Writes OK, 10/10 reads OK after burst")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -276,7 +278,7 @@ class TestPartialFailureRecovery:
         valid_ok = sum(1 for s, v in results if v and s in (200, 201))
         assert valid_ok == 5, f"Expected 5 valid bookings, got {valid_ok}"
 
-        print("\n[PARTIAL FAILURE] 5 valid succeeded, 5 invalid rejected, 0 server errors")
+        logger.info("\n[PARTIAL FAILURE] 5 valid succeeded, 5 invalid rejected, 0 server errors")
         await raw_db.guests.delete_many({"source": LOAD_SRC})
 
     @pytest.mark.ci_load
@@ -308,7 +310,7 @@ class TestPartialFailureRecovery:
         assert health.status_code == 200, "System unhealthy after error burst!"
         assert dashboard.status_code == 200, "Dashboard broken after error burst!"
 
-        print(f"\n[RECOVERY] {len(server_errors)} 500s in errors, system healthy after burst")
+        logger.info(f"\n[RECOVERY] {len(server_errors)} 500s in errors, system healthy after burst")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -368,7 +370,7 @@ class TestReconciliationUnderLoad:
             f"Reconciliation mismatch: API says {successes} created, DB has {db_count}"
         )
 
-        print(f"\n[RECONCILIATION] {successes} bookings, DB count matches — OK")
+        logger.info(f"\n[RECONCILIATION] {successes} bookings, DB count matches — OK")
         await raw_db.guests.delete_many({"source": LOAD_SRC})
 
 
@@ -400,7 +402,7 @@ class TestFailureInjection:
         errors = [s for s in results if s >= 500]
         assert len(errors) == 0, f"Errors with jitter: {errors}"
         assert all(s == 200 for s in results)
-        print("\n[JITTER] 15/15 dashboard reads OK with random delay")
+        logger.info("\n[JITTER] 15/15 dashboard reads OK with random delay")
 
     async def test_short_timeout_requests_do_not_corrupt(
         self, api_url, auth_headers, raw_db, tenant_id,
@@ -436,7 +438,7 @@ class TestFailureInjection:
             h = await c.get("/health/")
             assert h.status_code == 200, "System unhealthy after timeout storm!"
 
-        print(f"\n[SHORT TIMEOUT] successes={successes}, timeouts={timeouts}, 0 server errors")
+        logger.info(f"\n[SHORT TIMEOUT] successes={successes}, timeouts={timeouts}, 0 server errors")
 
     async def test_concurrent_writes_with_random_abort(
         self, api_url, auth_headers, raw_db, tenant_id,
@@ -578,7 +580,7 @@ class TestSustainedMixedLoad:
         for t, s in all_results:
             by_wave.setdefault(t, []).append(s)
 
-        print(f"\n[SUSTAINED LOAD] 3 waves, {len(all_results)} total ops:")
+        logger.info(f"\n[SUSTAINED LOAD] 3 waves, {len(all_results)} total ops:")
         for wave, statuses in by_wave.items():
             ok = sum(1 for s in statuses if s == 200)
-            print(f"  {wave}: {ok}/{len(statuses)} OK")
+            logger.info(f"  {wave}: {ok}/{len(statuses)} OK")

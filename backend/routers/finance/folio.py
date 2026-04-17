@@ -1,4 +1,6 @@
 """Auto-split from finance.py — section: folio."""
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -137,7 +139,7 @@ async def get_folio_dashboard_stats(
             'recent_payments_24h': recent_payments
         }
     except Exception as e:
-        print(f"Error in folio dashboard stats: {str(e)}")
+        logger.info(f"Error in folio dashboard stats: {str(e)}")
         import traceback
         traceback.print_exc()
         # Return default values instead of raising
@@ -218,7 +220,7 @@ async def get_pending_ar(
         return ar_data
 
     except Exception as e:
-        print(f"Error in get_pending_ar: {str(e)}")
+        logger.info(f"Error in get_pending_ar: {str(e)}")
         import traceback
         traceback.print_exc()
         return []

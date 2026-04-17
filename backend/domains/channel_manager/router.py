@@ -3,6 +3,8 @@ Domain Router: Channel Manager
 
 Extracted from legacy_routes.py — CM ARI endpoints + Admin API key management.
 """
+import logging
+logger = logging.getLogger(__name__)
 import hashlib
 import os
 import secrets
@@ -156,7 +158,7 @@ async def cm_push_event(event: dict):
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(CM_PARTNER_WEBHOOK_URL, json=event)
     except Exception as e:
-        print(f"CM webhook push failed: {e}")
+        logger.info(f"CM webhook push failed: {e}")
 
 
 def require_cm_api_key(request: Request) -> dict:

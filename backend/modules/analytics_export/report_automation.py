@@ -2,6 +2,8 @@
 Report Automation Service
 Otomatik rapor email gönderimi, PDF generation, scheduling
 """
+import logging
+logger = logging.getLogger(__name__)
 
 class ReportAutomation:
     """Otomatik rapor gönderimi"""
@@ -49,7 +51,7 @@ class ReportAutomation:
 
     async def send_flash_report_email(self, tenant_id: str, recipients: list):
         """Flash report'u email ile gönder"""
-        print(f"📧 Sending flash report to {len(recipients)} recipients")
+        logger.info(f"📧 Sending flash report to {len(recipients)} recipients")
         return True
 
 # Global

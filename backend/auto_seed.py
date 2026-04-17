@@ -2,6 +2,8 @@
 Auto Seed Data - Creates demo data on startup if database is empty
 Generates: demo user, tenant, rooms, guests, bookings, folios, housekeeping tasks
 """
+import logging
+logger = logging.getLogger(__name__)
 
 import random
 import uuid
@@ -66,7 +68,7 @@ async def _ensure_hr_legacy_connection(db):
         "created_by": "auto_ensure",
     }
     await db.hotelrunner_connections.insert_one(hr_legacy)
-    print("✅ hotelrunner_connections legacy doc created from provider_connections")
+    logger.info("✅ hotelrunner_connections legacy doc created from provider_connections")
 
 
 async def _ensure_complaints_seeded(db):
@@ -147,7 +149,7 @@ async def _ensure_complaints_seeded(db):
 
     if complaints:
         await db.service_complaints.insert_many(complaints)
-        print(f"✅ {len(complaints)} service complaints seeded")
+        logger.info(f"✅ {len(complaints)} service complaints seeded")
 
 
 async def _ensure_agencies_seeded(db):
@@ -162,7 +164,7 @@ async def _ensure_agencies_seeded(db):
     if not tid:
         return
 
-    print("🌱 Seeding travel agencies and AR/AP data...")
+    logger.info("🌱 Seeding travel agencies and AR/AP data...")
 
     agency_defs = [
         {"name": "Antalya Sun Tours", "contact_name": "Mehmet Yılmaz", "contact_email": "mehmet@antsunsuntours.com", "contact_phone": "+905551001001", "commission_rate": 12, "notes": "Premium partner since 2020"},
@@ -268,22 +270,22 @@ async def _ensure_agencies_seeded(db):
     if all_transactions:
         await db.agency_transactions.insert_many(all_transactions)
 
-    print(f"  ✅ Agencies: {len(agencies)}")
-    print(f"  ✅ Agency bookings: {len(all_bookings)}")
-    print(f"  ✅ Agency transactions: {len(all_transactions)}")
+    logger.info(f"  ✅ Agencies: {len(agencies)}")
+    logger.info(f"  ✅ Agency bookings: {len(all_bookings)}")
+    logger.info(f"  ✅ Agency transactions: {len(all_transactions)}")
 
 
 async def auto_seed_if_empty(db):
     """Main entry point: seeds demo data only when users collection is empty."""
     user_count = await db.users.count_documents({})
     if user_count > 0:
-        print("ℹ️  Database already has users — skipping auto-seed.")
+        logger.info("ℹ️  Database already has users — skipping auto-seed.")
         await _ensure_hr_legacy_connection(db)
         await _ensure_complaints_seeded(db)
         await _ensure_agencies_seeded(db)
         return False
 
-    print("🌱 Empty database detected — seeding demo data...")
+    logger.info("🌱 Empty database detected — seeding demo data...")
 
     tenant_id = _uuid()
     admin_user_id = _uuid()
@@ -1359,15 +1361,15 @@ async def auto_seed_if_empty(db):
 
     # ── Summary ─────────────────────────────────────────
     total_bookings = len(bookings) + len(extended_bookings)
-    print("Demo data seeded successfully!")
-    print(f"   Users: {1 + len(staff_users)} (admin: {DEMO_EMAIL} / {DEMO_PASSWORD})")
-    print(f"   Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")
-    print(f"   Rooms: {len(rooms)}")
-    print(f"   Room Types: {len(room_types_docs)}")
-    print(f"   Guests: {len(guests)}")
-    print(f"   Bookings: {total_bookings} (incl. 6-month history)")
-    print(f"   Yield Rules: {len(yield_rules)}")
-    print(f"   Seasonal Calendar: {len(seasonal_entries)}")
-    print(f"   Folios: {len(folios)}")
-    print(f"   HK Tasks: {len(tasks)}")
+    logger.info("Demo data seeded successfully!")
+    logger.info(f"   Users: {1 + len(staff_users)} (admin: {DEMO_EMAIL} / {DEMO_PASSWORD})")
+    logger.info(f"   Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")
+    logger.info(f"   Rooms: {len(rooms)}")
+    logger.info(f"   Room Types: {len(room_types_docs)}")
+    logger.info(f"   Guests: {len(guests)}")
+    logger.info(f"   Bookings: {total_bookings} (incl. 6-month history)")
+    logger.info(f"   Yield Rules: {len(yield_rules)}")
+    logger.info(f"   Seasonal Calendar: {len(seasonal_entries)}")
+    logger.info(f"   Folios: {len(folios)}")
+    logger.info(f"   HK Tasks: {len(tasks)}")
     return True

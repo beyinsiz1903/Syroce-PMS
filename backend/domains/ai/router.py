@@ -370,7 +370,7 @@ async def ai_chat(
 
         return {'response': response_text}
     except Exception as exc:
-        print(f"AI chat error: {exc}")
+        logger.info(f"AI chat error: {exc}")
         # Fallback to keyword-based responses with accurate app navigation info
         msg_lower = user_message.lower()
         if any(w in msg_lower for w in ['merhaba', 'selam', 'hey']):
@@ -2195,7 +2195,7 @@ async def train_rms_model(
         from ml_trainers import RMSModelTrainer
 
         # Generate training data
-        print(f"Generating {historical_days} days of RMS training data...")
+        logger.info(f"Generating {historical_days} days of RMS training data...")
         data_df = RMSDataGenerator.generate(days=historical_days)
 
         # Train models
@@ -2246,7 +2246,7 @@ async def train_persona_model(
         from ml_trainers import PersonaModelTrainer
 
         # Generate training data
-        print(f"Generating {num_guests} guest persona training samples...")
+        logger.info(f"Generating {num_guests} guest persona training samples...")
         data_df = PersonaDataGenerator.generate(num_guests=num_guests)
 
         # Train model
@@ -2287,7 +2287,7 @@ async def train_predictive_maintenance_model(
         from ml_trainers import PredictiveMaintenanceModelTrainer
 
         # Generate training data
-        print(f"Generating {num_samples} predictive maintenance training samples...")
+        logger.info(f"Generating {num_samples} predictive maintenance training samples...")
         data_df = PredictiveMaintenanceDataGenerator.generate(num_samples=num_samples)
 
         # Train models
@@ -2327,7 +2327,7 @@ async def train_hk_scheduler_model(
         from ml_trainers import HKSchedulerModelTrainer
 
         # Generate training data
-        print(f"Generating {num_days} days of HK scheduler training data...")
+        logger.info(f"Generating {num_days} days of HK scheduler training data...")
         data_df = HKSchedulerDataGenerator.generate(num_days=num_days)
 
         # Train models
@@ -2373,7 +2373,7 @@ async def train_all_models(
 
         # 1. Train RMS Model
         try:
-            print("\n=== Training RMS Model ===")
+            logger.info("\n=== Training RMS Model ===")
             data_df = RMSDataGenerator.generate(days=730)
             trainer = RMSModelTrainer(model_dir='ml_models')
             results['rms'] = trainer.train(data_df)
@@ -2384,7 +2384,7 @@ async def train_all_models(
 
         # 2. Train Persona Model
         try:
-            print("\n=== Training Persona Model ===")
+            logger.info("\n=== Training Persona Model ===")
             data_df = PersonaDataGenerator.generate(num_guests=400)
             trainer = PersonaModelTrainer(model_dir='ml_models')
             results['persona'] = trainer.train(data_df)
@@ -2395,7 +2395,7 @@ async def train_all_models(
 
         # 3. Train Predictive Maintenance Model
         try:
-            print("\n=== Training Predictive Maintenance Model ===")
+            logger.info("\n=== Training Predictive Maintenance Model ===")
             data_df = PredictiveMaintenanceDataGenerator.generate(num_samples=1000)
             trainer = PredictiveMaintenanceModelTrainer(model_dir='ml_models')
             results['predictive_maintenance'] = trainer.train(data_df)
@@ -2406,7 +2406,7 @@ async def train_all_models(
 
         # 4. Train HK Scheduler Model
         try:
-            print("\n=== Training HK Scheduler Model ===")
+            logger.info("\n=== Training HK Scheduler Model ===")
             data_df = HKSchedulerDataGenerator.generate(num_days=365)
             trainer = HKSchedulerModelTrainer(model_dir='ml_models')
             results['hk_scheduler'] = trainer.train(data_df)

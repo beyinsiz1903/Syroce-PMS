@@ -2,6 +2,8 @@
 PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
+import logging
+logger = logging.getLogger(__name__)
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
@@ -356,7 +358,7 @@ async def approve_booking(
             ip_address=request.client.host if request.client else None,
         )
     except Exception as e:
-        print(f"audit log failed (approve_booking): {e}")
+        logger.info(f"audit log failed (approve_booking): {e}")
 
     final = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
 
@@ -445,7 +447,7 @@ async def reject_booking(
             ip_address=request.client.host if request.client else None,
         )
     except Exception as e:
-        print(f"audit log failed (reject_booking): {e}")
+        logger.info(f"audit log failed (reject_booking): {e}")
 
     final = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
     return {"status": "ok", "booking": final, "booking_id": booking_id}

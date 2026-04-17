@@ -3,6 +3,8 @@ Bootstrap: Router Registry
 Centralised router mounting. Each router is imported and mounted
 with proper error isolation so one broken module cannot crash the app.
 """
+import logging
+logger = logging.getLogger(__name__)
 import importlib
 import traceback
 from typing import Callable
@@ -17,7 +19,7 @@ def _safe_import(module_path: str, attr: str):
         router = getattr(mod, attr)
         return router
     except Exception as e:
-        print(f"⚠️  Router import failed [{module_path}.{attr}]: {e}")
+        logger.info(f"⚠️  Router import failed [{module_path}.{attr}]: {e}")
         traceback.print_exc()
         return None
 
@@ -234,9 +236,9 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
         if router is not None:
             try:
                 app.include_router(router, tags=tags)
-                print(f"  ✅ {mod_path}")
+                logger.info(f"  ✅ {mod_path}")
             except Exception as e:
-                print(f"  ❌ {mod_path}: {e}")
+                logger.info(f"  ❌ {mod_path}: {e}")
 
     # Mount optional routers directly on app
     for mod_path, attr, tags, prefix, guard in _OPTIONAL_ROUTERS:
@@ -249,6 +251,6 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
                 kwargs["dependencies"] = [Depends(require_super_admin_dep())]
             try:
                 app.include_router(router, **kwargs)
-                print(f"  ✅ {mod_path} (optional)")
+                logger.info(f"  ✅ {mod_path} (optional)")
             except Exception as e:
-                print(f"  ❌ {mod_path}: {e}")
+                logger.info(f"  ❌ {mod_path}: {e}")

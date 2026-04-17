@@ -11,6 +11,8 @@ Scenarios
 2. Concurrent dashboard reads per tenant — each sees only own data
 3. Mixed read/write across tenants — no 500 errors, correct counts
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -185,7 +187,7 @@ class TestMultiTenantBookingIsolation:
                 f"TENANT LEAK: Tenant-B sees Tenant-A's room {b.get('room_id')}"
             )
 
-        print(f"\n[MULTI-TENANT] A bookings={len(bookings_a)}, B bookings={len(bookings_b)} — isolation OK")
+        logger.info(f"\n[MULTI-TENANT] A bookings={len(bookings_a)}, B bookings={len(bookings_b)} — isolation OK")
 
 
 class TestMultiTenantDashboardIsolation:
@@ -213,7 +215,7 @@ class TestMultiTenantDashboardIsolation:
 
         a_ok = sum(1 for label, s in results if label == "A" and s == 200)
         b_ok = sum(1 for label, s in results if label == "B" and s == 200)
-        print(f"\n[MULTI-TENANT DASHBOARD] A={a_ok}/10, B={b_ok}/10 — no cross-talk")
+        logger.info(f"\n[MULTI-TENANT DASHBOARD] A={a_ok}/10, B={b_ok}/10 — no cross-talk")
 
 
 class TestMultiTenantMixedWorkload:
@@ -266,4 +268,4 @@ class TestMultiTenantMixedWorkload:
         errors = [(t, s) for t, s in results if s >= 500]
         assert len(errors) == 0, f"Server errors in mixed MT workload: {errors}"
 
-        print(f"\n[MULTI-TENANT MIXED] {len(results)} ops, 0 server errors")
+        logger.info(f"\n[MULTI-TENANT MIXED] {len(results)} ops, 0 server errors")

@@ -9,6 +9,8 @@ Routes:
   POST   /rooms/queue/notify-guest
   DELETE /rooms/queue/{queue_id}
 """
+import logging
+logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -178,7 +180,7 @@ async def notify_guest_room_ready(
     # Send notification (mock)
     notification_message = f"Dear {queue_entry['guest_name']}, your room {room_number} is now ready! Please proceed to reception."
 
-    print(f"Room Ready Notification: {notification_message}")
+    logger.info(f"Room Ready Notification: {notification_message}")
 
     return {
         'success': True,

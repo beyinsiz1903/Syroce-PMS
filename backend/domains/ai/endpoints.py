@@ -1,6 +1,8 @@
 """
 AI Intelligence API Endpoints
 """
+import logging
+logger = logging.getLogger(__name__)
 
 from datetime import datetime
 
@@ -105,7 +107,7 @@ async def get_daily_briefing(
                     lang=lang
                 )
         except Exception as ai_err:
-            print(f"AI briefing generation failed: {ai_err}")
+            logger.info(f"AI briefing generation failed: {ai_err}")
 
         # Fallback briefing
         if not briefing_text:

@@ -447,7 +447,7 @@ async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):
         }, {'_id': 0}).to_list(1000)
         return tasks
     except Exception as e:
-        print(f"Maintenance tasks error: {str(e)}")
+        logger.info(f"Maintenance tasks error: {str(e)}")
 
 
 @router.post("/maintenance/assets")

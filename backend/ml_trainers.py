@@ -2,6 +2,8 @@
 ML Model Trainers for Hotel PMS
 Train and save ML models for production use
 """
+import logging
+logger = logging.getLogger(__name__)
 
 import json
 import os
@@ -56,7 +58,7 @@ class RMSModelTrainer:
         )
 
         # Train occupancy prediction model (XGBoost)
-        print("Training occupancy prediction model...")
+        logger.info("Training occupancy prediction model...")
         self.occupancy_model = xgb.XGBRegressor(
             n_estimators=200,
             max_depth=8,
@@ -78,10 +80,10 @@ class RMSModelTrainer:
             'mean_error_percentage': float(np.mean(np.abs((y_test - y_pred) / y_test)) * 100)
         }
 
-        print(f"Occupancy Model - RMSE: {occupancy_metrics['rmse']:.4f}, R²: {occupancy_metrics['r2_score']:.4f}")
+        logger.info(f"Occupancy Model - RMSE: {occupancy_metrics['rmse']:.4f}, R²: {occupancy_metrics['r2_score']:.4f}")
 
         # Train dynamic pricing model
-        print("Training dynamic pricing model...")
+        logger.info("Training dynamic pricing model...")
 
         pricing_features = [
             'day_of_week', 'month', 'season', 'is_weekend', 'is_holiday',
@@ -117,7 +119,7 @@ class RMSModelTrainer:
             'mean_error_percentage': float(np.mean(np.abs((y_test_p - y_pred_p) / y_test_p)) * 100)
         }
 
-        print(f"Pricing Model - RMSE: {pricing_metrics['rmse']:.2f}, R²: {pricing_metrics['r2_score']:.4f}")
+        logger.info(f"Pricing Model - RMSE: {pricing_metrics['rmse']:.2f}, R²: {pricing_metrics['r2_score']:.4f}")
 
         # Save models
         self.save_models()
@@ -148,7 +150,7 @@ class RMSModelTrainer:
         joblib.dump(self.occupancy_model, os.path.join(self.model_dir, 'rms_occupancy_model.pkl'))
         joblib.dump(self.pricing_model, os.path.join(self.model_dir, 'rms_pricing_model.pkl'))
 
-        print(f"Models saved to {self.model_dir}/")
+        logger.info(f"Models saved to {self.model_dir}/")
 
     def load_models(self):
         """Load trained models from disk"""
@@ -158,7 +160,7 @@ class RMSModelTrainer:
         with open(os.path.join(self.model_dir, 'rms_metrics.json')) as f:
             self.metrics = json.load(f)
 
-        print("Models loaded successfully")
+        logger.info("Models loaded successfully")
         return self.metrics
 
 
@@ -205,7 +207,7 @@ class PersonaModelTrainer:
         )
 
         # Train Random Forest Classifier
-        print("Training guest persona classification model...")
+        logger.info("Training guest persona classification model...")
         self.model = RandomForestClassifier(
             n_estimators=200,
             max_depth=15,
@@ -230,11 +232,11 @@ class PersonaModelTrainer:
             zero_division=0
         )
 
-        print(f"Persona Model - Accuracy: {accuracy:.4f}")
-        print("\nClassification Report:")
+        logger.info(f"Persona Model - Accuracy: {accuracy:.4f}")
+        logger.info("\nClassification Report:")
         for persona, metrics in report.items():
             if isinstance(metrics, dict):
-                print(f"  {persona}: Precision={metrics.get('precision', 0):.3f}, Recall={metrics.get('recall', 0):.3f}, F1={metrics.get('f1-score', 0):.3f}")
+                logger.info(f"  {persona}: Precision={metrics.get('precision', 0):.3f}, Recall={metrics.get('recall', 0):.3f}, F1={metrics.get('f1-score', 0):.3f}")
 
         # Feature importance
         feature_importance = dict(zip(features, self.model.feature_importances_))
@@ -268,7 +270,7 @@ class PersonaModelTrainer:
         joblib.dump(self.model, os.path.join(self.model_dir, 'persona_model.pkl'))
         joblib.dump(self.label_encoder, os.path.join(self.model_dir, 'persona_label_encoder.pkl'))
 
-        print(f"Models saved to {self.model_dir}/")
+        logger.info(f"Models saved to {self.model_dir}/")
 
     def load_models(self):
         """Load trained models from disk"""
@@ -278,7 +280,7 @@ class PersonaModelTrainer:
         with open(os.path.join(self.model_dir, 'persona_metrics.json')) as f:
             self.metrics = json.load(f)
 
-        print("Models loaded successfully")
+        logger.info("Models loaded successfully")
         return self.metrics
 
 
@@ -320,7 +322,7 @@ class PredictiveMaintenanceModelTrainer:
         X = data_df[features]
 
         # Train failure risk classifier
-        print("Training failure risk classification model...")
+        logger.info("Training failure risk classification model...")
 
         y_risk = self.label_encoder.fit_transform(data_df['failure_risk'])
 
@@ -348,10 +350,10 @@ class PredictiveMaintenanceModelTrainer:
             zero_division=0
         )
 
-        print(f"Risk Model - Accuracy: {accuracy:.4f}")
+        logger.info(f"Risk Model - Accuracy: {accuracy:.4f}")
 
         # Train days until failure regressor
-        print("Training days-until-failure prediction model...")
+        logger.info("Training days-until-failure prediction model...")
 
         y_days = data_df['days_until_failure']
 
@@ -377,7 +379,7 @@ class PredictiveMaintenanceModelTrainer:
             'r2_score': float(r2_score(y_test_d, y_pred_d))
         }
 
-        print(f"Days Model - RMSE: {days_metrics['rmse']:.2f} days, R²: {days_metrics['r2_score']:.4f}")
+        logger.info(f"Days Model - RMSE: {days_metrics['rmse']:.2f} days, R²: {days_metrics['r2_score']:.4f}")
 
         # Feature importance
         feature_importance = dict(zip(features, self.risk_model.feature_importances_))
@@ -417,7 +419,7 @@ class PredictiveMaintenanceModelTrainer:
         joblib.dump(self.label_encoder, os.path.join(self.model_dir, 'maintenance_label_encoder.pkl'))
         joblib.dump(self.equipment_encoder, os.path.join(self.model_dir, 'maintenance_equipment_encoder.pkl'))
 
-        print(f"Models saved to {self.model_dir}/")
+        logger.info(f"Models saved to {self.model_dir}/")
 
     def load_models(self):
         """Load trained models from disk"""
@@ -429,7 +431,7 @@ class PredictiveMaintenanceModelTrainer:
         with open(os.path.join(self.model_dir, 'maintenance_metrics.json')) as f:
             self.metrics = json.load(f)
 
-        print("Models loaded successfully")
+        logger.info("Models loaded successfully")
         return self.metrics
 
 
@@ -466,7 +468,7 @@ class HKSchedulerModelTrainer:
         X = data_df[features]
 
         # Train staff prediction model
-        print("Training staff requirements prediction model...")
+        logger.info("Training staff requirements prediction model...")
 
         y_staff = data_df['staff_needed']
 
@@ -493,10 +495,10 @@ class HKSchedulerModelTrainer:
             'mean_error_percentage': float(np.mean(np.abs((y_test - y_pred) / y_test)) * 100)
         }
 
-        print(f"Staff Model - RMSE: {staff_metrics['rmse']:.2f} staff, R²: {staff_metrics['r2_score']:.4f}")
+        logger.info(f"Staff Model - RMSE: {staff_metrics['rmse']:.2f} staff, R²: {staff_metrics['r2_score']:.4f}")
 
         # Train hours prediction model
-        print("Training hours estimation model...")
+        logger.info("Training hours estimation model...")
 
         y_hours = data_df['estimated_hours']
 
@@ -523,7 +525,7 @@ class HKSchedulerModelTrainer:
             'mean_error_percentage': float(np.mean(np.abs((y_test_h - y_pred_h) / y_test_h)) * 100)
         }
 
-        print(f"Hours Model - RMSE: {hours_metrics['rmse']:.2f} hours, R²: {hours_metrics['r2_score']:.4f}")
+        logger.info(f"Hours Model - RMSE: {hours_metrics['rmse']:.2f} hours, R²: {hours_metrics['r2_score']:.4f}")
 
         # Feature importance
         feature_importance = dict(zip(features, self.staff_model.feature_importances_))
@@ -556,7 +558,7 @@ class HKSchedulerModelTrainer:
         joblib.dump(self.staff_model, os.path.join(self.model_dir, 'hk_staff_model.pkl'))
         joblib.dump(self.hours_model, os.path.join(self.model_dir, 'hk_hours_model.pkl'))
 
-        print(f"Models saved to {self.model_dir}/")
+        logger.info(f"Models saved to {self.model_dir}/")
 
     def load_models(self):
         """Load trained models from disk"""
@@ -566,5 +568,5 @@ class HKSchedulerModelTrainer:
         with open(os.path.join(self.model_dir, 'hk_scheduler_metrics.json')) as f:
             self.metrics = json.load(f)
 
-        print("Models loaded successfully")
+        logger.info("Models loaded successfully")
         return self.metrics

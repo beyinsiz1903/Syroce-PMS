@@ -2,6 +2,8 @@
 Prometheus Metrics Exporter for Hotel PMS
 Exposes custom metrics for monitoring and alerting
 """
+import logging
+logger = logging.getLogger(__name__)
 
 import time
 from functools import wraps
@@ -204,7 +206,7 @@ async def collect_system_metrics(db):
             pass
 
     except Exception as e:
-        print(f"Error collecting system metrics: {e}")
+        logger.info(f"Error collecting system metrics: {e}")
 
 # ============= BUSINESS METRICS COLLECTION =============
 
@@ -223,4 +225,4 @@ async def collect_business_metrics(db):
             update_room_occupancy(tenant_id, occupied_count)
 
     except Exception as e:
-        print(f"Error collecting business metrics: {e}")
+        logger.info(f"Error collecting business metrics: {e}")

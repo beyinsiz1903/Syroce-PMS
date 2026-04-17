@@ -1267,7 +1267,7 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
         }
 
     except Exception as e:
-        print(f"Anomaly detection error: {str(e)}")
+        logger.info(f"Anomaly detection error: {str(e)}")
         return {
             'anomalies': [],
             'total_detected': 0,

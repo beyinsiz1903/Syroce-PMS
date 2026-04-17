@@ -2,6 +2,8 @@
 Syroce PMS - Security & Authentication Helpers
 JWT token management, password hashing, and user authentication.
 """
+import logging
+logger = logging.getLogger(__name__)
 import base64
 import io
 import os
@@ -23,7 +25,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_SECRET = os.environ.get('JWT_SECRET')
 if not JWT_SECRET:
     JWT_SECRET = secrets.token_urlsafe(64)
-    print("⚠️ JWT_SECRET not set in .env! Using random secret (tokens will invalidate on restart)")
+    logger.info("⚠️ JWT_SECRET not set in .env! Using random secret (tokens will invalidate on restart)")
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 168  # 7 days
 
@@ -86,7 +88,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Auth error: {str(e)}")
+        logger.info(f"Auth error: {str(e)}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
 
 

@@ -2,6 +2,8 @@
 Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
+import logging
+logger = logging.getLogger(__name__)
 from functools import wraps
 from typing import Any, Callable
 
@@ -54,7 +56,7 @@ class RedisCache:
             self._misses += 1
             return None
         except Exception as e:
-            print(f"Redis get error: {e}")
+            logger.info(f"Redis get error: {e}")
             self._misses += 1
             return None
 
@@ -64,14 +66,14 @@ class RedisCache:
             serialized = orjson.dumps(value)
             self.redis_client.setex(key, ttl, serialized)
         except Exception as e:
-            print(f"Redis set error: {e}")
+            logger.info(f"Redis set error: {e}")
 
     def delete(self, key: str):
         """Delete from cache"""
         try:
             self.redis_client.delete(key)
         except Exception as e:
-            print(f"Redis delete error: {e}")
+            logger.info(f"Redis delete error: {e}")
 
     def clear_pattern(self, pattern: str):
         """Clear all keys matching pattern"""
@@ -80,7 +82,7 @@ class RedisCache:
             if keys:
                 self.redis_client.delete(*keys)
         except Exception as e:
-            print(f"Redis clear pattern error: {e}")
+            logger.info(f"Redis clear pattern error: {e}")
 
     def get_stats(self):
         """Get cache statistics"""
@@ -110,10 +112,10 @@ def init_redis_cache():
     try:
         redis_cache = RedisCache()
         if redis_cache.redis_client.ping():
-            print("✅ Redis cache initialized successfully")
+            logger.info("✅ Redis cache initialized successfully")
             return redis_cache
     except Exception as e:
-        print(f"⚠️ Redis initialization failed: {e}")
+        logger.info(f"⚠️ Redis initialization failed: {e}")
         redis_cache = None
     return redis_cache
 

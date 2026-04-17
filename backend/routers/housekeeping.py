@@ -2,6 +2,8 @@
 Housekeeping Router - Room status, tasks, assignments, reports
 Extracted from server.py for modularity.
 """
+import logging
+logger = logging.getLogger(__name__)
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -122,7 +124,7 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
                     'is_today': checkout_date == today
                 })
         except Exception as e:
-            print(f"Error processing booking {booking.get('id')}: {e}")
+            logger.info(f"Error processing booking {booking.get('id')}: {e}")
             continue
 
     return {
@@ -169,7 +171,7 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
                     'booking_id': booking['id']
                 })
         except Exception as e:
-            print(f"Error processing stayover booking {booking.get('id')}: {e}")
+            logger.info(f"Error processing stayover booking {booking.get('id')}: {e}")
             continue
 
     return {
@@ -378,7 +380,7 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
                     'ready': room['status'] in ['available', 'inspected'] if room else False
                 })
         except Exception as e:
-            print(f"Error processing arrival booking {booking.get('id')}: {e}")
+            logger.info(f"Error processing arrival booking {booking.get('id')}: {e}")
             continue
 
     return {

@@ -10,6 +10,8 @@ Critical invariants:
 3. No phantom bookings: Cancelled bookings don't block rooms
 4. Rate overrides are atomic: No lost or corrupted rate changes
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -151,7 +153,7 @@ class TestDoubleBookingPrevention:
             f"Server errors during concurrent bookings: {server_errors}"
         )
 
-        print(f"\n[API DOUBLE-BOOKING] Status codes: {[r[0] for r in results]}")
+        logger.info(f"\n[API DOUBLE-BOOKING] Status codes: {[r[0] for r in results]}")
 
         # Cleanup
         await raw_db.guests.delete_many({"source": "load_test_framework"})
@@ -279,5 +281,5 @@ class TestSearchUnderLoad:
         )
 
         success_count = sum(1 for s in results if s == 200)
-        print(f"\n[SEARCH LOAD] {success_count}/15 searches returned 200")
+        logger.info(f"\n[SEARCH LOAD] {success_count}/15 searches returned 200")
         assert success_count == len(search_params)

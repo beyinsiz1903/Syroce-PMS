@@ -1,6 +1,8 @@
 """
 REPORTS Router - Extracted from server.py
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -959,9 +961,9 @@ async def email_daily_flash(
         # For MVP, we'll log the email and return success
         # TODO: Implement actual SMTP email sending
 
-        print(f"Email would be sent to: {recipients}")
-        print(f"Subject: Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}")
-        print(f"Content length: {len(email_html)} characters")
+        logger.info(f"Email would be sent to: {recipients}")
+        logger.info(f"Subject: Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}")
+        logger.info(f"Content length: {len(email_html)} characters")
 
         return {
             'success': True,

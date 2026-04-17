@@ -2,6 +2,8 @@
 Cache Warmer - Pre-warm critical endpoints for instant response
 Runs on startup and periodically refreshes cache
 """
+import logging
+logger = logging.getLogger(__name__)
 import asyncio
 from datetime import UTC, datetime, timedelta
 
@@ -16,7 +18,7 @@ class CacheWarmer:
 
     async def warm_all_caches(self, tenant_id: str):
         """Warm all critical caches"""
-        print(f"🔥 Warming caches for tenant: {tenant_id}")
+        logger.info(f"🔥 Warming caches for tenant: {tenant_id}")
 
         # Run all warming tasks in parallel
         await asyncio.gather(
@@ -27,7 +29,7 @@ class CacheWarmer:
             return_exceptions=True
         )
 
-        print(f"✅ Cache warming complete for tenant: {tenant_id}")
+        logger.info(f"✅ Cache warming complete for tenant: {tenant_id}")
 
     async def warm_rooms_cache(self, tenant_id: str):
         """Pre-warm rooms cache"""
@@ -38,7 +40,7 @@ class CacheWarmer:
             }
             # First, check total count
             total_rooms = await self.db.rooms.count_documents({})
-            print(f"  🔍 Total rooms in DB: {total_rooms}")
+            logger.info(f"  🔍 Total rooms in DB: {total_rooms}")
 
             # Try without tenant filter if none found — exclude virtual rooms
             rooms = await self.db.rooms.find(
@@ -56,18 +58,18 @@ class CacheWarmer:
                         'data': tenant_rooms,
                         'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Shorter expiry for fresh data
                     }
-                    print(f"  ✅ Rooms cache warmed for tenant {t_id[:8]}: {len(tenant_rooms)} rooms")
+                    logger.info(f"  ✅ Rooms cache warmed for tenant {t_id[:8]}: {len(tenant_rooms)} rooms")
             else:
-                print("  ⚠️ No rooms found in database")
+                logger.info("  ⚠️ No rooms found in database")
         except Exception as e:
-            print(f"  ❌ Rooms cache warming failed: {e}")
+            logger.info(f"  ❌ Rooms cache warming failed: {e}")
 
     async def warm_bookings_cache(self, tenant_id: str):
         """Pre-warm bookings cache"""
         try:
             # Check total bookings
             total_bookings = await self.db.bookings.count_documents({})
-            print(f"  🔍 Total bookings in DB: {total_bookings}")
+            logger.info(f"  🔍 Total bookings in DB: {total_bookings}")
 
             today = datetime.now(UTC)
             (today - timedelta(days=30)).isoformat()  # Wider range
@@ -95,11 +97,11 @@ class CacheWarmer:
                         'data': tenant_bookings,
                         'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
                     }
-                    print(f"  ✅ Bookings cache warmed for tenant {t_id[:8]}: {len(tenant_bookings)} bookings")
+                    logger.info(f"  ✅ Bookings cache warmed for tenant {t_id[:8]}: {len(tenant_bookings)} bookings")
             else:
-                print("  ⚠️ No bookings found in database")
+                logger.info("  ⚠️ No bookings found in database")
         except Exception as e:
-            print(f"  ❌ Bookings cache warming failed: {e}")
+            logger.info(f"  ❌ Bookings cache warming failed: {e}")
 
     async def warm_dashboard_cache(self, tenant_id: str):
         """Pre-warm dashboard cache"""
@@ -160,9 +162,9 @@ class CacheWarmer:
                 'data': dashboard_data,
                 'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
             }
-            print("  ✅ Dashboard cache warmed")
+            logger.info("  ✅ Dashboard cache warmed")
         except Exception as e:
-            print(f"  ❌ Dashboard cache warming failed: {e}")
+            logger.info(f"  ❌ Dashboard cache warming failed: {e}")
 
     async def warm_kpi_cache(self, tenant_id: str):
         """Pre-warm KPI cache"""
@@ -189,9 +191,9 @@ class CacheWarmer:
                 'data': kpi_data,
                 'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
             }
-            print("  ✅ KPI cache warmed")
+            logger.info("  ✅ KPI cache warmed")
         except Exception as e:
-            print(f"  ❌ KPI cache warming failed: {e}")
+            logger.info(f"  ❌ KPI cache warming failed: {e}")
 
     def get_cached(self, cache_key: str):
         """Get data from warmed cache"""
@@ -210,7 +212,7 @@ class CacheWarmer:
                 await asyncio.sleep(15)  # Refresh every 15 seconds for max freshness
                 await self.warm_all_caches(tenant_id)
             except Exception as e:
-                print(f"Background cache refresh error: {e}")
+                logger.info(f"Background cache refresh error: {e}")
 
 # Global cache warmer
 cache_warmer = None

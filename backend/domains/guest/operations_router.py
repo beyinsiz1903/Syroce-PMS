@@ -322,7 +322,7 @@ async def send_pre_arrival_welcome(
     """
 
     # In production, this would send via AWS SES
-    print(f"📧 Sending pre-arrival email to {guest['email']}")
+    logger.info(f"📧 Sending pre-arrival email to {guest['email']}")
 
     # Save communication record
     comm_record = {
@@ -1257,7 +1257,7 @@ async def get_complete_guest_profile(
             })
         except Exception as e:
             # Skip bookings that cause errors
-            print(f"Error processing booking {booking.get('id')}: {e}")
+            logger.info(f"Error processing booking {booking.get('id')}: {e}")
             continue
 
     # Get preferences

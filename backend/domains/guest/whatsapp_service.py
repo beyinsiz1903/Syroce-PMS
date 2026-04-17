@@ -2,6 +2,8 @@
 WhatsApp Business Integration
 Simplified version - requires WhatsApp Business API credentials
 """
+import logging
+logger = logging.getLogger(__name__)
 
 class WhatsAppService:
     """WhatsApp Business service"""
@@ -31,12 +33,12 @@ See you soon!
         if self.mode == "production":
             pass
         else:
-            print("\n" + "="*60)
-            print("📱 WHATSAPP MESSAGE (MOCK)")
-            print("="*60)
-            print(f"To: {phone}")
-            print(f"Message:\n{message}")
-            print("="*60 + "\n")
+            logger.info("\n" + "="*60)
+            logger.info("📱 WHATSAPP MESSAGE (MOCK)")
+            logger.info("="*60)
+            logger.info(f"To: {phone}")
+            logger.info(f"Message:\n{message}")
+            logger.info("="*60 + "\n")
 
         return True
 
@@ -60,7 +62,7 @@ Syroce Team 🌟
         if self.mode == "production":
             pass
         else:
-            print(f"\n📱 WhatsApp Pre-Arrival to {phone}\n{message}\n")
+            logger.info(f"\n📱 WhatsApp Pre-Arrival to {phone}\n{message}\n")
 
         return True
 
@@ -83,7 +85,7 @@ Reply 'YES' to accept.
         if self.mode == "production":
             pass
         else:
-            print(f"\n📱 WhatsApp Upsell to {phone}\n{message}\n")
+            logger.info(f"\n📱 WhatsApp Upsell to {phone}\n{message}\n")
 
         return True
 

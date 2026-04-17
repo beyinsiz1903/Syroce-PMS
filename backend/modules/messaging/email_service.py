@@ -2,6 +2,8 @@
 Email Service - AWS SES SMTP Implementation
 Gerçek e-posta gönderimi için AWS SES kullanır
 """
+import logging
+logger = logging.getLogger(__name__)
 import os
 import random
 import smtplib
@@ -25,9 +27,9 @@ class EmailService:
         self.sender_email = os.environ.get('SENDER_EMAIL', 'info@syroce.com')
         self.sender_name = os.environ.get('SENDER_NAME', 'Syroce')
 
-        print(f"📧 Email Service initialized in {self.mode} mode")
+        logger.info(f"📧 Email Service initialized in {self.mode} mode")
         if self.mode == "production" and self.smtp_username:
-            print(f"✅ AWS SES configured: {self.smtp_host}:{self.smtp_port}")
+            logger.info(f"✅ AWS SES configured: {self.smtp_host}:{self.smtp_port}")
 
     def generate_verification_code(self) -> str:
         """6 haneli onay kodu oluştur"""
@@ -200,11 +202,11 @@ class EmailService:
             server.sendmail(self.sender_email, to_email, msg.as_string())
             server.quit()
 
-            print(f"✅ Email sent successfully to {to_email}")
+            logger.info(f"✅ Email sent successfully to {to_email}")
             return True
 
         except Exception as e:
-            print(f"❌ Failed to send email via SMTP: {e}")
+            logger.info(f"❌ Failed to send email via SMTP: {e}")
             return False
 
     async def send_verification_code(self, email: str, code: str, name: str = None) -> bool:
@@ -229,16 +231,16 @@ Bu kodu kimseyle paylaşmayın.
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            print("\n" + "="*60)
-            print("📧 E-POSTA DOĞRULAMA KODU")
-            print("="*60)
-            print(f"Alıcı: {email}")
+            logger.info("\n" + "="*60)
+            logger.info("📧 E-POSTA DOĞRULAMA KODU")
+            logger.info("="*60)
+            logger.info(f"Alıcı: {email}")
             if name:
-                print(f"İsim: {name}")
-            print(f"Kod: {code}")
-            print("Geçerlilik: 15 dakika")
-            print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("="*60 + "\n")
+                logger.info(f"İsim: {name}")
+            logger.info(f"Kod: {code}")
+            logger.info("Geçerlilik: 15 dakika")
+            logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("="*60 + "\n")
             return True
 
     async def send_password_reset_code(self, email: str, code: str, name: str = None) -> bool:
@@ -265,16 +267,16 @@ Bu talebi siz yapmadınız mı? Güvenle bu e-postayı görmezden gelebilirsiniz
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            print("\n" + "="*60)
-            print("🔐 ŞİFRE SIFIRLAMA KODU")
-            print("="*60)
-            print(f"Alıcı: {email}")
+            logger.info("\n" + "="*60)
+            logger.info("🔐 ŞİFRE SIFIRLAMA KODU")
+            logger.info("="*60)
+            logger.info(f"Alıcı: {email}")
             if name:
-                print(f"İsim: {name}")
-            print(f"Kod: {code}")
-            print("Geçerlilik: 15 dakika")
-            print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("="*60 + "\n")
+                logger.info(f"İsim: {name}")
+            logger.info(f"Kod: {code}")
+            logger.info("Geçerlilik: 15 dakika")
+            logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("="*60 + "\n")
             return True
 
     async def send_welcome_email(self, email: str, name: str) -> bool:
@@ -297,14 +299,14 @@ Destek: info@syroce.com
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            print("\n" + "="*60)
-            print("🎉 HOŞGELDİN E-POSTASI")
-            print("="*60)
-            print(f"Alıcı: {email}")
-            print(f"İsim: {name}")
-            print("Mesaj: Hesabınız başarıyla oluşturuldu!")
-            print(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("="*60 + "\n")
+            logger.info("\n" + "="*60)
+            logger.info("🎉 HOŞGELDİN E-POSTASI")
+            logger.info("="*60)
+            logger.info(f"Alıcı: {email}")
+            logger.info(f"İsim: {name}")
+            logger.info("Mesaj: Hesabınız başarıyla oluşturuldu!")
+            logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("="*60 + "\n")
             return True
 
 # Global email service instance

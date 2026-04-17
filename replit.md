@@ -133,6 +133,14 @@ Reduced from 1309 lines via dialog extraction.
 - **`frontend/src/pages/IntegrationHub.jsx`** (1896 → 1183 satır) → 7 sekme bileşeni `frontend/src/components/integration-hub/tabs/` altına taşındı (DashboardTab, ConnectorsTab, MappingsTab, SyncTab, ReservationsTab, ReconciliationTab, AuditTab). Paylaşılan rozetler `badges.jsx`'te (HealthBadge, StatusBadge, AckBadge). Ebeveyn tüm state/handler'ı `ctx` nesnesi olarak spread ile çocuklara geçiriyor.
 - **N+1 optimizasyonu** 5 hot endpoint'te (bookings, operational-alerts, demand-heatmap, occupancy-prediction, inhouse).
 
+## Cleanup & Refactor Pass-2 (Apr 2026)
+- **`backend/domains/revenue/pricing_router.py`** (2962 satır, 43 endpoint) → `pricing_router/` paketi: 7 alt-modül (rms, rates, ai_pricing, contracted_rates, revenue_mobile, revenue_analysis, anomaly).
+- **`backend/domains/revenue/rms_router.py`** (2773 satır, 46 endpoint) → `rms_router/` paketi: 9 alt-modül (comp_set, pricing_strategy, demand_forecast, sales, revenue_reports, security_mobile, housekeeping_inventory, notifications_mobile, dashboards).
+- **`frontend/src/pages/NightAuditDashboard.jsx`** (1586 → 670 satır) → 5 sekme bileşeni `frontend/src/components/night-audit/tabs/` (Overview/Financial/Reconciliation/Integrity/Report) + paylaşılan `badges.jsx` (StatusBadge, SeverityBadge, StatCard, IntegrityBadge, statusConfig, severityConfig, kategoriler/ödeme yöntemleri sözlükleri).
+- **`frontend/src/pages/MobileFinance.jsx`** (1814 → 775 satır) → 8 dialog bileşeni `frontend/src/components/mobile-finance/dialogs/` (Payment, Reports, Invoices, PlDetail, CashierShift, CashFlow, Risk, FolioExtract).
+- **Logger geçişi**: 209 `print()` → `logger.info()` (28 üretim dosyası), test/scripts dokunulmadı; frontend için Vite zaten `oxc.drop: ['console','debugger']` ile production build'de log temizliyor.
+- **Quick-ID API workflow** restart ile düzeltildi (artık 200 dönüyor).
+
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management
 - `GET/POST/PATCH /api/laundry/orders` — Laundry order management
