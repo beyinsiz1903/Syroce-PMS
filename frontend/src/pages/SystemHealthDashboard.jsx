@@ -23,9 +23,9 @@ function StatusBadge({ status }) {
     warning: { label: "Warning", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
     active: { label: "Active", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
     ok: { label: "OK", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-    unknown: { label: "Unknown", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
+    unknown: { label: "Unknown", cls: "bg-gray-100 text-gray-600 border-gray-200" },
   };
-  const m = map[status] || { label: status || "Unknown", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" };
+  const m = map[status] || { label: status || "Unknown", cls: "bg-gray-100 text-gray-600 border-gray-200" };
   return <Badge data-testid={`status-badge-${status}`} variant="outline" className={`${m.cls} text-xs font-mono`}>{m.label}</Badge>;
 }
 
@@ -45,12 +45,12 @@ function SeverityChip({ severity }) {
 
 function MetricCard({ icon: Icon, title, value, sub, testId }) {
   return (
-    <div data-testid={testId} className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
-      <div className="p-2 rounded-md bg-zinc-800"><Icon className="w-4 h-4 text-zinc-400" /></div>
+    <div data-testid={testId} className="bg-white border border-gray-200 rounded-lg p-4 flex items-start gap-3">
+      <div className="p-2 rounded-md bg-gray-50"><Icon className="w-4 h-4 text-gray-600" /></div>
       <div>
-        <p className="text-xs text-zinc-500 mb-0.5">{title}</p>
-        <p className="text-lg font-semibold text-zinc-100 leading-none">{value}</p>
-        {sub && <p className="text-[11px] text-zinc-500 mt-1">{sub}</p>}
+        <p className="text-xs text-gray-600 mb-0.5">{title}</p>
+        <p className="text-lg font-semibold text-gray-900 leading-none">{value}</p>
+        {sub && <p className="text-[11px] text-gray-600 mt-1">{sub}</p>}
       </div>
     </div>
   );
@@ -58,25 +58,25 @@ function MetricCard({ icon: Icon, title, value, sub, testId }) {
 
 function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel, actionLoading, testId, permissionGated }) {
   return (
-    <Card data-testid={testId} className="bg-zinc-950 border-zinc-800/70 shadow-lg">
+    <Card data-testid={testId} className="bg-white border-gray-200 shadow-lg">
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-zinc-400" />
-          <CardTitle className="text-sm font-semibold text-zinc-200">{title}</CardTitle>
+          <Icon className="w-4 h-4 text-gray-600" />
+          <CardTitle className="text-sm font-semibold text-gray-900">{title}</CardTitle>
         </div>
         <div className="flex items-center gap-2">
           {status && <StatusBadge status={status} />}
           {onAction && !permissionGated && (
             <Button data-testid={testId ? `${testId}-action` : `action-${title.toLowerCase().replace(/\s+/g, "-")}`}
               size="sm" variant="outline"
-              className="h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+              className="h-7 text-xs border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
               onClick={onAction} disabled={actionLoading}>
               {actionLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
               {actionLabel || "Scan"}
             </Button>
           )}
           {permissionGated && (
-            <span className="text-[10px] text-zinc-600 flex items-center gap-1"><Lock className="w-3 h-3" /> View Only</span>
+            <span className="text-[10px] text-gray-600 flex items-center gap-1"><Lock className="w-3 h-3" /> View Only</span>
           )}
         </div>
       </CardHeader>
@@ -87,7 +87,7 @@ function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel,
 
 function EmptyState({ icon: Icon, message }) {
   return (
-    <div data-testid="empty-state" className="flex flex-col items-center justify-center py-6 text-zinc-600">
+    <div data-testid="empty-state" className="flex flex-col items-center justify-center py-6 text-gray-600">
       <Icon className="w-6 h-6 mb-2 opacity-50" />
       <span className="text-xs">{message}</span>
     </div>
@@ -106,7 +106,7 @@ function ScopeBanner({ role, scope }) {
     <div data-testid="scope-banner" className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium border ${cfg.bg}`}>
       <RIcon className={`w-3 h-3 ${cfg.color}`} />
       <span className={cfg.color}>{cfg.label}</span>
-      {scope && <span className="text-zinc-500 ml-1">({scope})</span>}
+      {scope && <span className="text-gray-600 ml-1">({scope})</span>}
     </div>
   );
 }
@@ -114,9 +114,9 @@ function ScopeBanner({ role, scope }) {
 /* ── Row Helper ─────────────────────────────────────────── */
 function DataRow({ label, value, valueClass }) {
   return (
-    <div className="flex justify-between text-zinc-400">
+    <div className="flex justify-between text-gray-600">
       <span>{label}</span>
-      <span className={valueClass || "text-zinc-200"}>{value}</span>
+      <span className={valueClass || "text-gray-900"}>{value}</span>
     </div>
   );
 }
@@ -142,7 +142,7 @@ function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
         <div className="space-y-2 text-xs">
           <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
           <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
-          <DataRow label="Drift Issues" value={driftActive} valueClass={driftActive > 0 ? "text-amber-400" : "text-zinc-200"} />
+          <DataRow label="Drift Issues" value={driftActive} valueClass={driftActive > 0 ? "text-amber-400" : "text-gray-900"} />
           <DataRow label="Providers" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
         </div>
       </PanelCard>
@@ -153,11 +153,11 @@ function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
         {alerts?.alerts?.length > 0 ? (
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {alerts.alerts.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+              <div key={i} className="flex items-start gap-2 p-2 rounded bg-white border border-gray-200">
                 <SeverityChip severity={a.severity} />
                 <div className="min-w-0">
-                  <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
-                  {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                  <p className="text-xs text-gray-700 truncate">{a.message || a.type}</p>
+                  {a.metric && <p className="text-[11px] text-gray-600">{a.metric}: {a.value}</p>}
                 </div>
               </div>
             ))}
@@ -193,7 +193,7 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
             <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
             <DataRow label="Drift Issues" value={cmStatus?.drift?.active_drifts || 0} />
             <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
-            <div className="flex justify-between text-zinc-400">
+            <div className="flex justify-between text-gray-600">
               <span>Reconciliation</span>
               <StatusBadge status={cmStatus?.reconciliation?.status || "ok"} />
             </div>
@@ -202,7 +202,7 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
               <DataRow label="Sync Lag" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}m`} />
             )}
             <Button data-testid="admin-run-recon-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
-              className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              className="w-full mt-2 h-7 text-xs border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
               {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
               Run Reconciliation
             </Button>
@@ -214,11 +214,11 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
           <div className="space-y-2 text-xs">
             <DataRow label="Pending Tasks" value={queueHealth?.pending || 0} />
             <DataRow label="Processing" value={queueHealth?.processing || 0} />
-            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-gray-900"} />
             <DataRow label="Saturation" value={`${queueHealth?.saturation_pct ?? 0}%`} />
-            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-gray-900"} />
             <DataRow label="Dead Letter" value={queueHealth?.dead_letter?.total || 0} />
-            <div className="flex justify-between text-zinc-400">
+            <div className="flex justify-between text-gray-600">
               <span>Workers</span>
               <StatusBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
             </div>
@@ -230,11 +230,11 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
           status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
           <div className="space-y-2 text-xs">
             <DataRow label="Audit Score" value={`${secAudit?.completeness_score ?? "N/A"}%`} />
-            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
-            <div className="flex justify-between text-zinc-400"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
+            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-gray-900"} />
+            <div className="flex justify-between text-gray-600"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
             {rateLimit?.burst_detected && <DataRow label="Burst Detected" value="Yes" valueClass="text-red-400" />}
-            <div className="flex justify-between text-zinc-400"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
-            <DataRow label="Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <div className="flex justify-between text-gray-600"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label="Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-gray-900"} />
             <DataRow label="Log Sanitization" value={logSanit?.all_patterns_working ? "All OK" : "Issues"} />
           </div>
         </PanelCard>
@@ -245,11 +245,11 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
           {alerts?.alerts?.length > 0 ? (
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {alerts.alerts.map((a, i) => (
-                <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                <div key={i} className="flex items-start gap-2 p-2 rounded bg-white border border-gray-200">
                   <SeverityChip severity={a.severity} />
                   <div className="min-w-0">
-                    <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
-                    {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                    <p className="text-xs text-gray-700 truncate">{a.message || a.type}</p>
+                    {a.metric && <p className="text-[11px] text-gray-600">{a.metric}: {a.value}</p>}
                   </div>
                 </div>
               ))}
@@ -263,7 +263,7 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
       {/* Audit & Observability */}
       {auditMetrics && (
         <div>
-          <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Audit & Observability
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -315,11 +315,11 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
             <DataRow label="Sync Status" value={cmStatus?.sync_stats?.last_sync ? "Active" : "Idle"} />
             <DataRow label="Drift Issues" value={cmStatus?.drift?.active_drifts || 0} />
             <DataRow label="Sync Success Rate" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
-            <div className="flex justify-between text-zinc-400"><span>Reconciliation</span><StatusBadge status={cmStatus?.reconciliation?.status || "ok"} /></div>
+            <div className="flex justify-between text-gray-600"><span>Reconciliation</span><StatusBadge status={cmStatus?.reconciliation?.status || "ok"} /></div>
             <DataRow label="Providers" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
             {cmStatus?.sync_stats?.sync_lag_seconds != null && <DataRow label="Sync Lag" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}m`} />}
             <Button data-testid="sa-run-recon-btn" size="sm" variant="outline" onClick={triggerRecon} disabled={reconLoading}
-              className="w-full mt-2 h-7 text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              className="w-full mt-2 h-7 text-xs border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
               {reconLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
               Run Reconciliation
             </Button>
@@ -331,11 +331,11 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
           <div className="space-y-2 text-xs">
             <DataRow label="Pending Tasks" value={queueHealth?.pending || 0} />
             <DataRow label="Processing" value={queueHealth?.processing || 0} />
-            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <DataRow label="Failed" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-red-400" : "text-gray-900"} />
             <DataRow label="Saturation" value={`${queueHealth?.saturation_pct ?? 0}%`} />
-            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
+            <DataRow label="Stuck Tasks" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-400" : "text-gray-900"} />
             <DataRow label="Dead Letter" value={queueHealth?.dead_letter?.total || 0} />
-            <div className="flex justify-between text-zinc-400">
+            <div className="flex justify-between text-gray-600">
               <span>Workers</span>
               <StatusBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
             </div>
@@ -347,11 +347,11 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
           status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
           <div className="space-y-2 text-xs">
             <DataRow label="Audit Score" value={`${secAudit?.completeness_score ?? "N/A"}%`} />
-            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-zinc-200"} />
-            <div className="flex justify-between text-zinc-400"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
+            <DataRow label="Audit Gaps" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-400" : "text-gray-900"} />
+            <div className="flex justify-between text-gray-600"><span>Rate Limiting</span><StatusBadge status={rateLimit?.enforcement || "active"} /></div>
             {rateLimit?.burst_detected && <DataRow label="Burst Detected" value="Yes" valueClass="text-red-400" />}
-            <div className="flex justify-between text-zinc-400"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
-            <DataRow label="Cross-Tenant Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-zinc-200"} />
+            <div className="flex justify-between text-gray-600"><span>Tenant Guard</span><StatusBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label="Cross-Tenant Violations" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-red-400" : "text-gray-900"} />
             <DataRow label="Log Sanitization" value={logSanit?.all_patterns_working ? "All OK" : "Issues"} />
           </div>
         </PanelCard>
@@ -362,11 +362,11 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
           {alerts?.alerts?.length > 0 ? (
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {alerts.alerts.map((a, i) => (
-                <div key={i} className="flex items-start gap-2 p-2 rounded bg-zinc-900/50 border border-zinc-800/50">
+                <div key={i} className="flex items-start gap-2 p-2 rounded bg-white border border-gray-200">
                   <SeverityChip severity={a.severity} />
                   <div className="min-w-0">
-                    <p className="text-xs text-zinc-300 truncate">{a.message || a.type}</p>
-                    {a.metric && <p className="text-[11px] text-zinc-500">{a.metric}: {a.value}</p>}
+                    <p className="text-xs text-gray-700 truncate">{a.message || a.type}</p>
+                    {a.metric && <p className="text-[11px] text-gray-600">{a.metric}: {a.value}</p>}
                   </div>
                 </div>
               ))}
@@ -380,7 +380,7 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
       {/* Audit & Observability */}
       {auditMetrics && (
         <div>
-          <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Audit & Observability (Global)
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -397,7 +397,7 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
       {/* Runtime Metrics */}
       {metrics && (
         <div>
-          <h2 className="text-sm font-semibold text-zinc-300 mb-3">Runtime Metrics (Global)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Runtime Metrics (Global)</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {metrics.sync && <MetricCard testId="sa-rt-sync" icon={Clock} title="Sync Lag" value={`${metrics.sync.lag_seconds ?? 0}s`} />}
             {metrics.drift && <MetricCard testId="sa-rt-drift" icon={AlertTriangle} title="Active Drifts" value={metrics.drift.active_count ?? 0} />}
@@ -411,20 +411,20 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
       {/* Subsystem Health */}
       {normalizedOverview?.subsystems && (
         <div>
-          <h2 className="text-sm font-semibold text-zinc-300 mb-3">Subsystem Health (Global)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Subsystem Health (Global)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             {Object.entries(normalizedOverview.subsystems).map(([key, sub]) => (
-              <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
+              <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-white border border-gray-200">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-zinc-300 capitalize">{key.replace(/_/g, " ")}</span>
+                  <span className="text-xs font-medium text-gray-700 capitalize">{key.replace(/_/g, " ")}</span>
                   <StatusBadge status={sub.status} />
                 </div>
-                <div className="text-[11px] text-zinc-500 space-y-1">
+                <div className="text-[11px] text-gray-600 space-y-1">
                   <SeverityChip severity={sub.severity} />
-                  {sub.evidence_summary && <p className="mt-1 text-zinc-400">{sub.evidence_summary}</p>}
+                  {sub.evidence_summary && <p className="mt-1 text-gray-600">{sub.evidence_summary}</p>}
                   {sub.degraded_reason && <p className="text-amber-400/80">{sub.degraded_reason}</p>}
                   {sub.suggested_action && <p className="text-sky-400/70">{sub.suggested_action}</p>}
-                  <p className="text-zinc-600">Updated: {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString() : "N/A"}</p>
+                  <p className="text-gray-600">Updated: {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString() : "N/A"}</p>
                 </div>
               </div>
             ))}
@@ -574,8 +574,8 @@ export default function SystemHealthDashboard({ user }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-zinc-400 animate-spin" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-gray-600 animate-spin" />
       </div>
     );
   }
@@ -584,17 +584,17 @@ export default function SystemHealthDashboard({ user }) {
   const userScope = roleDashboard?.scope || "";
 
   return (
-    <div data-testid="system-health-dashboard" className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div data-testid="system-health-dashboard" className="min-h-screen bg-white text-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Button data-testid="back-btn" variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-zinc-400 hover:text-zinc-200">
+            <Button data-testid="back-btn" variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-gray-600 hover:text-gray-900">
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
               <h1 className="text-xl font-bold tracking-tight">System Health</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Runtime hardening & operations console</p>
+              <p className="text-xs text-gray-600 mt-0.5">Runtime hardening & operations console</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -605,9 +605,9 @@ export default function SystemHealthDashboard({ user }) {
               {wsConnected ? <Radio className="w-3 h-3 animate-pulse" /> : <WifiOff className="w-3 h-3" />}
               {wsConnected ? "Live" : "Polling"}
             </div>
-            {lastUpdated && <span className="text-[11px] text-zinc-600">Updated {lastUpdated}</span>}
+            {lastUpdated && <span className="text-[11px] text-gray-600">Updated {lastUpdated}</span>}
             <Button data-testid="refresh-all-btn" size="sm" variant="outline" onClick={fetchAll}
-              className="h-8 border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300">
+              className="h-8 border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh
             </Button>
           </div>
@@ -623,8 +623,8 @@ export default function SystemHealthDashboard({ user }) {
                 normalizedOverview.overall_status === "degraded" ? "rgba(245,158,11,0.3)" : "rgba(16,185,129,0.3)",
             }}>
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-zinc-300" />
-              <span className="text-sm font-medium text-zinc-200">Overall:</span>
+              <Activity className="w-4 h-4 text-gray-700" />
+              <span className="text-sm font-medium text-gray-900">Overall:</span>
               <StatusBadge status={normalizedOverview.overall_status} />
               <SeverityChip severity={normalizedOverview.overall_severity} />
             </div>
@@ -635,11 +635,11 @@ export default function SystemHealthDashboard({ user }) {
         {liveEvents.length > 0 && (
           <div data-testid="live-events-strip" className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {liveEvents.slice(0, 8).map((ev, i) => (
-              <div key={i} className="flex-shrink-0 px-3 py-1.5 rounded-md bg-zinc-900/70 border border-zinc-800 text-[11px] flex items-center gap-2">
+              <div key={i} className="flex-shrink-0 px-3 py-1.5 rounded-md bg-white border border-gray-200 text-[11px] flex items-center gap-2">
                 <Zap className="w-3 h-3 text-amber-400" />
                 <SeverityChip severity={ev.severity || "info"} />
-                <span className="text-zinc-300">{ev.event_type}</span>
-                <span className="text-zinc-600">{ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : ""}</span>
+                <span className="text-gray-700">{ev.event_type}</span>
+                <span className="text-gray-600">{ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : ""}</span>
               </div>
             ))}
           </div>

@@ -95,7 +95,7 @@ function ReservationLookup() {
       {/* Search bar */}
       <div className="flex gap-2" data-testid="lookup-search-bar">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-600" />
           <Input
             ref={inputRef}
             data-testid="lookup-search-input"
@@ -103,7 +103,7 @@ function ReservationLookup() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="pl-10 bg-zinc-900 border-zinc-700 text-zinc-100 font-mono placeholder:text-zinc-600 h-11"
+            className="pl-10 bg-white border-gray-200 text-gray-900 font-mono placeholder:text-gray-600 h-11"
           />
         </div>
         <Button
@@ -119,8 +119,8 @@ function ReservationLookup() {
       {/* Loading */}
       {loading && (
         <div className="space-y-3">
-          <Skeleton className="h-16 bg-zinc-800" />
-          <Skeleton className="h-32 bg-zinc-800" />
+          <Skeleton className="h-16 bg-gray-50" />
+          <Skeleton className="h-32 bg-gray-50" />
         </div>
       )}
 
@@ -143,10 +143,10 @@ function ReservationLookup() {
 
       {/* Empty state */}
       {!traceResult && !loading && (
-        <div className="text-center py-16 text-zinc-500" data-testid="lookup-empty-state">
+        <div className="text-center py-16 text-gray-600" data-testid="lookup-empty-state">
           <Search className="h-12 w-12 mx-auto mb-3 opacity-30" />
           <p className="text-sm">OTA Reservation ID veya Correlation ID girerek trace başlatın</p>
-          <p className="text-xs mt-1 text-zinc-600">Örnek: HR-12345, EX-67890, veya UUID</p>
+          <p className="text-xs mt-1 text-gray-600">Örnek: HR-12345, EX-67890, veya UUID</p>
         </div>
       )}
     </div>
@@ -178,36 +178,36 @@ function TraceHeader({ trace, onCopy }) {
   }
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4" data-testid="trace-header">
+    <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="trace-header">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <span className={`px-3 py-1 rounded text-xs font-bold tracking-wide border ${statusColor}`} data-testid="trace-status-badge">
             {statusLabel}
           </span>
-          <span className="text-zinc-400 text-xs font-mono">
+          <span className="text-gray-600 text-xs font-mono">
             {trace.total_events} event · {trace.total_duration_ms != null ? `${trace.total_duration_ms}ms` : "—"}
           </span>
         </div>
         {trace.timeline?.[0]?.provider && (
-          <Badge variant="outline" className="text-zinc-400 border-zinc-700 text-xs">
+          <Badge variant="outline" className="text-gray-600 border-gray-200 text-xs">
             {trace.timeline[0].provider}
           </Badge>
         )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
         <div>
-          <span className="text-zinc-500">external_id: </span>
-          <button onClick={() => onCopy(trace.external_id || "")} className="text-zinc-200 hover:text-white" data-testid="trace-external-id">
+          <span className="text-gray-600">external_id: </span>
+          <button onClick={() => onCopy(trace.external_id || "")} className="text-gray-900 hover:text-white" data-testid="trace-external-id">
             {trace.external_id || "—"}
           </button>
         </div>
         <div>
-          <span className="text-zinc-500">entity_id: </span>
-          <span className="text-zinc-300">{trace.entity_id || "—"}</span>
+          <span className="text-gray-600">entity_id: </span>
+          <span className="text-gray-700">{trace.entity_id || "—"}</span>
         </div>
         <div>
-          <span className="text-zinc-500">current_stage: </span>
-          <span className="text-zinc-300">{trace.current_stage || "—"}</span>
+          <span className="text-gray-600">current_stage: </span>
+          <span className="text-gray-700">{trace.current_stage || "—"}</span>
         </div>
       </div>
     </div>
@@ -225,10 +225,10 @@ function TraceTimeline({ events, onLoadRaw }) {
   };
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden" data-testid="trace-timeline">
-      <div className="px-4 py-2 border-b border-zinc-800 flex items-center gap-2">
-        <Activity className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Timeline</span>
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="trace-timeline">
+      <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2">
+        <Activity className="h-3.5 w-3.5 text-gray-600" />
+        <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">Timeline</span>
       </div>
       <div className="divide-y divide-zinc-800/50">
         {events.map((evt, idx) => {
@@ -238,19 +238,19 @@ function TraceTimeline({ events, onLoadRaw }) {
           return (
             <div key={idx} className="group" data-testid={`timeline-event-${idx}`}>
               <button
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-800/50 transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
                 onClick={() => setExpandedIdx(isExpanded ? null : idx)}
               >
                 {/* Stage icon */}
                 {stageIcon(evt.status)}
 
                 {/* Stage name */}
-                <span className="text-sm font-mono text-zinc-200 min-w-[140px]">
+                <span className="text-sm font-mono text-gray-900 min-w-[140px]">
                   {evt.stage}
                 </span>
 
                 {/* Timestamp */}
-                <span className="text-xs text-zinc-500 font-mono">
+                <span className="text-xs text-gray-600 font-mono">
                   {formatTime(evt.timestamp)}
                 </span>
 
@@ -280,23 +280,23 @@ function TraceTimeline({ events, onLoadRaw }) {
 
                 {/* Expand arrow */}
                 {isExpanded ? (
-                  <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                  <ChevronDown className="h-3.5 w-3.5 text-gray-600" />
                 ) : (
-                  <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                  <ChevronRight className="h-3.5 w-3.5 text-gray-600" />
                 )}
               </button>
 
               {/* Expanded detail */}
               {isExpanded && (
-                <div className="px-4 pb-3 bg-zinc-950/50" data-testid={`timeline-detail-${idx}`}>
+                <div className="px-4 pb-3 bg-white" data-testid={`timeline-detail-${idx}`}>
                   <div className="pl-7 space-y-2">
                     {/* Metadata */}
                     {evt.metadata && Object.keys(evt.metadata).length > 0 && (
-                      <pre className="text-xs text-zinc-400 font-mono bg-zinc-900 rounded p-2 overflow-x-auto">
+                      <pre className="text-xs text-gray-600 font-mono bg-white rounded p-2 overflow-x-auto">
                         {JSON.stringify(evt.metadata, null, 2)}
                       </pre>
                     )}
-                    <div className="flex gap-2 text-[10px] font-mono text-zinc-600">
+                    <div className="flex gap-2 text-[10px] font-mono text-gray-600">
                       <span>source: {evt.source}</span>
                       <span>·</span>
                       <span>seq: {evt.sequence}</span>
@@ -307,7 +307,7 @@ function TraceTimeline({ events, onLoadRaw }) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-xs text-zinc-500 hover:text-zinc-300 h-7 px-2"
+                        className="text-xs text-gray-600 hover:text-gray-700 h-7 px-2"
                         onClick={(e) => { e.stopPropagation(); onLoadRaw(evt.correlation_id); }}
                         data-testid={`load-raw-payload-${idx}`}
                       >
@@ -349,28 +349,28 @@ function RawPayloadViewer({ payload, onCopy, onClose }) {
     : JSON.stringify(payload.raw_payload, null, 2);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden" data-testid="raw-payload-viewer">
-      <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="raw-payload-viewer">
+      <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Raw Payload</span>
-          <Badge variant="outline" className="text-zinc-500 border-zinc-700 text-[10px]">
+          <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">Raw Payload</span>
+          <Badge variant="outline" className="text-gray-600 border-gray-200 text-[10px]">
             {payload.content_type || "unknown"}
           </Badge>
-          <Badge variant="outline" className="text-zinc-500 border-zinc-700 text-[10px]">
+          <Badge variant="outline" className="text-gray-600 border-gray-200 text-[10px]">
             {payload.provider}
           </Badge>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-zinc-500" onClick={() => onCopy(raw)}>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-gray-600" onClick={() => onCopy(raw)}>
             <Copy className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-zinc-500" onClick={onClose}>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-gray-600" onClick={onClose}>
             <XCircle className="h-3 w-3" />
           </Button>
         </div>
       </div>
       <ScrollArea className="max-h-64">
-        <pre className="text-xs text-zinc-400 font-mono p-4 whitespace-pre-wrap break-all">
+        <pre className="text-xs text-gray-600 font-mono p-4 whitespace-pre-wrap break-all">
           {raw}
         </pre>
       </ScrollArea>
@@ -400,8 +400,8 @@ function SystemHealth() {
     return () => clearInterval(interval);
   }, [fetchDashboard]);
 
-  if (loading) return <div className="space-y-3"><Skeleton className="h-24 bg-zinc-800" /><Skeleton className="h-24 bg-zinc-800" /><Skeleton className="h-24 bg-zinc-800" /></div>;
-  if (!dashboard) return <div className="text-zinc-500 text-center py-16">Dashboard verisi yok</div>;
+  if (loading) return <div className="space-y-3"><Skeleton className="h-24 bg-gray-50" /><Skeleton className="h-24 bg-gray-50" /><Skeleton className="h-24 bg-gray-50" /></div>;
+  if (!dashboard) return <div className="text-gray-600 text-center py-16">Dashboard verisi yok</div>;
 
   const m = dashboard.metrics || {};
   const score = dashboard.health_score;
@@ -413,18 +413,18 @@ function SystemHealth() {
     C: "text-yellow-400 border-yellow-500/40 bg-yellow-500/10",
     D: "text-orange-400 border-orange-500/40 bg-orange-500/10",
     F: "text-red-400 border-red-500/40 bg-red-500/10",
-  }[grade] || "text-zinc-400";
+  }[grade] || "text-gray-600";
 
   return (
     <div className="space-y-4" data-testid="system-health">
       {/* Health Score */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 flex items-center gap-6" data-testid="health-score-card">
+      <div className="bg-white border border-gray-200 rounded-lg p-6 flex items-center gap-6" data-testid="health-score-card">
         <div className={`text-5xl font-bold font-mono px-4 py-2 rounded-lg border ${gradeColor}`}>
           {grade}
         </div>
         <div>
-          <div className="text-3xl font-bold text-zinc-100 font-mono">{score}</div>
-          <div className="text-xs text-zinc-500 mt-1">Health Score · Son güncelleme: {formatTime(dashboard.timestamp)}</div>
+          <div className="text-3xl font-bold text-gray-900 font-mono">{score}</div>
+          <div className="text-xs text-gray-600 mt-1">Health Score · Son güncelleme: {formatTime(dashboard.timestamp)}</div>
         </div>
       </div>
 
@@ -462,34 +462,34 @@ function SystemHealth() {
 
       {/* Pipeline depth */}
       {dashboard.pipeline?.stages && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4" data-testid="pipeline-depth">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Pipeline Derinligi</div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="pipeline-depth">
+          <div className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-3">Pipeline Derinligi</div>
           <div className="flex items-center gap-4">
             {dashboard.pipeline.stages.map((s, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500 font-mono">{s.name.replace(/_/g, " ")}</span>
-                <span className={`text-sm font-bold font-mono ${s.count > 0 ? "text-yellow-400" : "text-zinc-600"}`}>
+                <span className="text-xs text-gray-600 font-mono">{s.name.replace(/_/g, " ")}</span>
+                <span className={`text-sm font-bold font-mono ${s.count > 0 ? "text-yellow-400" : "text-gray-600"}`}>
                   {s.count}
                 </span>
-                {i < dashboard.pipeline.stages.length - 1 && <ChevronRight className="h-3 w-3 text-zinc-700" />}
+                {i < dashboard.pipeline.stages.length - 1 && <ChevronRight className="h-3 w-3 text-gray-600" />}
               </div>
             ))}
-            <span className="text-xs text-zinc-500 ml-auto">toplam: <span className="text-zinc-300 font-mono">{dashboard.pipeline.total_in_flight}</span></span>
+            <span className="text-xs text-gray-600 ml-auto">toplam: <span className="text-gray-700 font-mono">{dashboard.pipeline.total_in_flight}</span></span>
           </div>
         </div>
       )}
 
       {/* Recent failures */}
       {dashboard.recent_failures?.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4" data-testid="recent-failures">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Son Hatalar</div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="recent-failures">
+          <div className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-3">Son Hatalar</div>
           <div className="space-y-2">
             {dashboard.recent_failures.map((f, i) => (
               <div key={i} className="flex items-start gap-2 text-xs font-mono">
                 <XCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
                 <div>
-                  <span className="text-zinc-300">{f.operation || f.failure_type || "unknown"}</span>
-                  {f.error_message && <span className="text-zinc-600 ml-2">— {f.error_message.slice(0, 80)}</span>}
+                  <span className="text-gray-700">{f.operation || f.failure_type || "unknown"}</span>
+                  {f.error_message && <span className="text-gray-600 ml-2">— {f.error_message.slice(0, 80)}</span>}
                 </div>
               </div>
             ))}
@@ -502,10 +502,10 @@ function SystemHealth() {
 
 function MetricCard({ label, value, sub, ok, testId }) {
   return (
-    <div className={`bg-zinc-900 border rounded-lg p-4 ${ok ? "border-zinc-800" : "border-red-500/30"}`} data-testid={testId}>
-      <div className="text-xs text-zinc-500 mb-1">{label}</div>
-      <div className={`text-xl font-bold font-mono ${ok ? "text-zinc-100" : "text-red-400"}`}>{value}</div>
-      {sub && <div className="text-[10px] text-zinc-600 mt-1">{sub}</div>}
+    <div className={`bg-white border rounded-lg p-4 ${ok ? "border-gray-200" : "border-red-500/30"}`} data-testid={testId}>
+      <div className="text-xs text-gray-600 mb-1">{label}</div>
+      <div className={`text-xl font-bold font-mono ${ok ? "text-gray-900" : "text-red-400"}`}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-600 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -536,15 +536,15 @@ function LiveFeed() {
     return () => clearInterval(interval);
   }, [fetchEvents, autoRefresh]);
 
-  if (loading) return <div className="space-y-2">{Array.from({length: 8}).map((_, i) => <Skeleton key={i} className="h-10 bg-zinc-800" />)}</div>;
+  if (loading) return <div className="space-y-2">{Array.from({length: 8}).map((_, i) => <Skeleton key={i} className="h-10 bg-gray-50" />)}</div>;
 
   return (
     <div className="space-y-3" data-testid="live-feed">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-zinc-600"}`} />
-          <span className="text-xs text-zinc-400">
+          <div className={`h-2 w-2 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-gray-100"}`} />
+          <span className="text-xs text-gray-600">
             {total} toplam event · son 50 gosteriliyor
           </span>
         </div>
@@ -552,7 +552,7 @@ function LiveFeed() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-zinc-500"
+            className="h-7 text-xs text-gray-600"
             onClick={() => setAutoRefresh(!autoRefresh)}
             data-testid="toggle-auto-refresh"
           >
@@ -562,7 +562,7 @@ function LiveFeed() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-zinc-500"
+            className="h-7 text-xs text-gray-600"
             onClick={fetchEvents}
             data-testid="refresh-feed-button"
           >
@@ -572,8 +572,8 @@ function LiveFeed() {
       </div>
 
       {/* Event list */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[100px_110px_1fr_80px_60px] gap-2 px-4 py-2 border-b border-zinc-800 text-[10px] text-zinc-600 uppercase tracking-wider font-medium">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="grid grid-cols-[100px_110px_1fr_80px_60px] gap-2 px-4 py-2 border-b border-gray-200 text-[10px] text-gray-600 uppercase tracking-wider font-medium">
           <span>Zaman</span>
           <span>Stage</span>
           <span>External ID</span>
@@ -586,13 +586,13 @@ function LiveFeed() {
             return (
               <div
                 key={idx}
-                className={`grid grid-cols-[100px_110px_1fr_80px_60px] gap-2 px-4 py-2 text-xs font-mono border-b border-zinc-800/30 hover:bg-zinc-800/30 transition-colors ${isFail ? "bg-red-500/5" : ""}`}
+                className={`grid grid-cols-[100px_110px_1fr_80px_60px] gap-2 px-4 py-2 text-xs font-mono border-b border-gray-200 hover:bg-gray-50 transition-colors ${isFail ? "bg-red-500/5" : ""}`}
                 data-testid={`feed-event-${idx}`}
               >
-                <span className="text-zinc-500">{formatTime(evt.timestamp)}</span>
-                <span className="text-zinc-300">{evt.stage}</span>
-                <span className="text-zinc-400 truncate">{evt.external_id || "—"}</span>
-                <span className="text-zinc-500">{evt.provider || "—"}</span>
+                <span className="text-gray-600">{formatTime(evt.timestamp)}</span>
+                <span className="text-gray-700">{evt.stage}</span>
+                <span className="text-gray-600 truncate">{evt.external_id || "—"}</span>
+                <span className="text-gray-600">{evt.provider || "—"}</span>
                 <span>
                   {isFail ? (
                     <XCircle className="h-3.5 w-3.5 text-red-500" />
@@ -626,22 +626,22 @@ function formatTime(isoStr) {
 export default function ControlPlane({ user, tenant, onLogout }) {
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentPage="control_plane">
-      <div className="min-h-screen bg-zinc-950 text-zinc-100" data-testid="control-plane-page">
+      <div className="min-h-screen bg-white text-gray-900" data-testid="control-plane-page">
         <div className="max-w-6xl mx-auto px-4 py-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Ops merkezi · Kanal sağlığı · Deploy · DORA · Envanter hizalama</p>
+              <h1 className="text-lg font-semibold text-gray-900 tracking-tight">Control Plane</h1>
+              <p className="text-xs text-gray-600 mt-0.5">Ops merkezi · Kanal sağlığı · Deploy · DORA · Envanter hizalama</p>
             </div>
           </div>
 
           {/* Tabs */}
           <Tabs defaultValue="ops" className="space-y-4">
-            <TabsList className="bg-zinc-900 border border-zinc-800 p-1">
+            <TabsList className="bg-white border border-gray-200 p-1">
               <TabsTrigger
                 value="ops"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-ops"
               >
                 <LayoutDashboard className="h-3.5 w-3.5 mr-2" />
@@ -649,7 +649,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="lookup"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-lookup"
               >
                 <Search className="h-3.5 w-3.5 mr-2" />
@@ -657,7 +657,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="health"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-health"
               >
                 <Activity className="h-3.5 w-3.5 mr-2" />
@@ -665,7 +665,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="channel-health"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-channel-health"
               >
                 <Gauge className="h-3.5 w-3.5 mr-2" />
@@ -673,7 +673,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="feed"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-feed"
               >
                 <Radio className="h-3.5 w-3.5 mr-2" />
@@ -681,7 +681,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="weekly-proof"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-weekly-proof"
               >
                 <Award className="h-3.5 w-3.5 mr-2" />
@@ -689,7 +689,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="deploys"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-deploys"
               >
                 <Rocket className="h-3.5 w-3.5 mr-2" />
@@ -697,7 +697,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
               </TabsTrigger>
               <TabsTrigger
                 value="tech-debt"
-                className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100 text-zinc-500 text-sm px-4"
+                className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4"
                 data-testid="tab-tech-debt"
               >
                 <Flame className="h-3.5 w-3.5 mr-2" />

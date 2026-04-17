@@ -23,8 +23,8 @@ function ScoreBadge({ score, label }) {
 function TabLoader() {
   return (
     <div className="flex items-center justify-center h-64">
-      <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
-      <span className="ml-3 text-zinc-400">Yükleniyor...</span>
+      <Loader2 className="h-8 w-8 animate-spin text-gray-600" />
+      <span className="ml-3 text-gray-600">Yükleniyor...</span>
     </div>
   );
 }
@@ -69,14 +69,14 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
   const properties = permissions?.properties || {};
 
   return (
-    <div data-testid="security-hardening-dashboard" className="space-y-6 p-6 bg-slate-950 min-h-screen">
+    <div data-testid="security-hardening-dashboard" className="space-y-6 p-6 bg-white min-h-screen">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Shield className="w-6 h-6 text-rose-400" />
             Güvenlik & Güçlendirme
           </h1>
-          <p className="text-sm text-slate-400 mt-1">Tenant izolasyon, PII koruma ve altyapı güçlendirme</p>
+          <p className="text-sm text-gray-600 mt-1">Tenant izolasyon, PII koruma ve altyapı güçlendirme</p>
         </div>
         {mainTab === "security" && (
           <Button data-testid="refresh-security-btn" onClick={fetchData} size="sm" className="bg-rose-600 hover:bg-rose-700 text-white">
@@ -87,7 +87,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
 
       {/* Main Tab Switch: Security | PII | Infrastructure */}
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList className="bg-slate-800/80 border-slate-700 grid w-full grid-cols-3 max-w-xl" data-testid="main-tabs">
+        <TabsList className="bg-gray-50 border-gray-200 grid w-full grid-cols-3 max-w-xl" data-testid="main-tabs">
           <TabsTrigger value="security" data-testid="main-tab-security" className="data-[state=active]:bg-rose-600 flex items-center gap-2">
             <Lock className="w-4 h-4" /> Güvenlik
           </TabsTrigger>
@@ -107,47 +107,47 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
             <>
               {/* Top Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card data-testid="card-isolation" className="bg-slate-900/60 border-slate-700/50">
+                <Card data-testid="card-isolation" className="bg-white border-gray-200">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Tenant İzolasyon</p>
+                    <p className="text-xs text-gray-600 uppercase tracking-wider">Tenant İzolasyon</p>
                     <div className="flex items-center gap-2 mt-2">
                       <p className="text-2xl font-bold text-white">{(isoScore * 100).toFixed(0)}%</p>
                       <ScoreBadge score={isoScore} />
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">{isolation?.clean_collections || 0}/{isolation?.collections_checked || 0} temiz</p>
+                    <p className="text-xs text-gray-600 mt-1">{isolation?.clean_collections || 0}/{isolation?.collections_checked || 0} temiz</p>
                   </CardContent>
                 </Card>
-                <Card data-testid="card-audit" className="bg-slate-900/60 border-slate-700/50">
+                <Card data-testid="card-audit" className="bg-white border-gray-200">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Audit Tamlığı</p>
+                    <p className="text-xs text-gray-600 uppercase tracking-wider">Audit Tamlığı</p>
                     <div className="flex items-center gap-2 mt-2">
                       <p className="text-2xl font-bold text-white">{(auditScore * 100).toFixed(0)}%</p>
                       <ScoreBadge score={auditScore} />
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">{audit?.total_audit_entries || 0} kayit (24h)</p>
+                    <p className="text-xs text-gray-600 mt-1">{audit?.total_audit_entries || 0} kayit (24h)</p>
                   </CardContent>
                 </Card>
-                <Card data-testid="card-vault" className="bg-slate-900/60 border-slate-700/50">
+                <Card data-testid="card-vault" className="bg-white border-gray-200">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Credential Vault</p>
+                    <p className="text-xs text-gray-600 uppercase tracking-wider">Credential Vault</p>
                     <div className="flex items-center gap-2 mt-2">
                       <span className={`w-3 h-3 rounded-full ${vaultHealth === "healthy" ? "bg-emerald-500" : "bg-amber-500"}`} />
                       <p className="text-lg font-bold text-white capitalize">{vaultHealth.replace("_", " ")}</p>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">{vault?.total_credentials || 0} credential | {vault?.rotation_overdue_count || 0} rotasyon bekliyor</p>
+                    <p className="text-xs text-gray-600 mt-1">{vault?.total_credentials || 0} credential | {vault?.rotation_overdue_count || 0} rotasyon bekliyor</p>
                   </CardContent>
                 </Card>
-                <Card data-testid="card-properties" className="bg-slate-900/60 border-slate-700/50">
+                <Card data-testid="card-properties" className="bg-white border-gray-200">
                   <CardContent className="p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Property RBAC</p>
+                    <p className="text-xs text-gray-600 uppercase tracking-wider">Property RBAC</p>
                     <p className="text-2xl font-bold text-white mt-2">{Object.keys(properties).length}</p>
-                    <p className="text-xs text-slate-500 mt-1">property gruplari</p>
+                    <p className="text-xs text-gray-600 mt-1">property gruplari</p>
                   </CardContent>
                 </Card>
               </div>
 
               <Tabs value={secTab} onValueChange={setSecTab} className="space-y-4">
-                <TabsList className="bg-slate-800/80 border-slate-700">
+                <TabsList className="bg-gray-50 border-gray-200">
                   <TabsTrigger value="isolation" data-testid="tab-isolation" className="data-[state=active]:bg-rose-600">İzolasyon</TabsTrigger>
                   <TabsTrigger value="permissions" data-testid="tab-permissions" className="data-[state=active]:bg-rose-600">RBAC</TabsTrigger>
                   <TabsTrigger value="vault" data-testid="tab-vault" className="data-[state=active]:bg-rose-600">Vault</TabsTrigger>
@@ -155,15 +155,15 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                 </TabsList>
 
                 <TabsContent value="isolation">
-                  <Card className="bg-slate-900/60 border-slate-700/50">
+                  <Card className="bg-white border-gray-200">
                     <CardHeader><CardTitle className="text-white text-base">Tenant Veri İzolasyonu</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-2">
                         {(isolation?.details || []).map((d, i) => (
-                          <div key={i} data-testid={`iso-collection-${i}`} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/40">
+                          <div key={i} data-testid={`iso-collection-${i}`} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 border border-gray-200">
                             <div>
                               <p className="text-sm text-white font-medium">{d.collection}</p>
-                              <p className="text-xs text-slate-400">{d.tenant_documents} tenant doc | {d.unscoped_documents} unscoped</p>
+                              <p className="text-xs text-gray-600">{d.tenant_documents} tenant doc | {d.unscoped_documents} unscoped</p>
                             </div>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${d.isolation_status === "clean" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
                               {d.isolation_status}
@@ -176,22 +176,22 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                 </TabsContent>
 
                 <TabsContent value="permissions">
-                  <Card className="bg-slate-900/60 border-slate-700/50">
+                  <Card className="bg-white border-gray-200">
                     <CardHeader><CardTitle className="text-white text-base">Property Bazli Izinler</CardTitle></CardHeader>
                     <CardContent>
                       {Object.keys(properties).length === 0 ? (
-                        <p className="text-slate-500 text-sm">Kullanıcı bilgisi bulunamadı</p>
+                        <p className="text-gray-600 text-sm">Kullanıcı bilgisi bulunamadı</p>
                       ) : (
                         <div className="space-y-3">
                           {Object.entries(properties).map(([pid, pdata]) => (
-                            <div key={pid} data-testid={`property-${pid}`} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40">
+                            <div key={pid} data-testid={`property-${pid}`} className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-sm font-medium text-white">Property: {pid}</p>
                                 <Badge variant="outline" className="text-rose-400 border-rose-500/30">{pdata.user_count} kullanici</Badge>
                               </div>
                               <div className="flex flex-wrap gap-1">
                                 {(pdata.roles || []).map((r) => (
-                                  <Badge key={r} variant="outline" className="text-xs text-slate-300 border-slate-600">{r}</Badge>
+                                  <Badge key={r} variant="outline" className="text-xs text-gray-700 border-gray-200">{r}</Badge>
                                 ))}
                               </div>
                             </div>
@@ -203,16 +203,16 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                 </TabsContent>
 
                 <TabsContent value="vault">
-                  <Card className="bg-slate-900/60 border-slate-700/50">
+                  <Card className="bg-white border-gray-200">
                     <CardHeader><CardTitle className="text-white text-base">Credential Vault Durumu</CardTitle></CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                          <p className="text-xs text-slate-400">Toplam Credential</p>
+                        <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 text-center">
+                          <p className="text-xs text-gray-600">Toplam Credential</p>
                           <p className="text-2xl font-bold text-white">{vault?.total_credentials || 0}</p>
                         </div>
-                        <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40 text-center">
-                          <p className="text-xs text-slate-400">Rotasyon Bekleyen</p>
+                        <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 text-center">
+                          <p className="text-xs text-gray-600">Rotasyon Bekleyen</p>
                           <p className="text-2xl font-bold text-amber-400">{vault?.rotation_overdue_count || 0}</p>
                         </div>
                       </div>
@@ -232,12 +232,12 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                 </TabsContent>
 
                 <TabsContent value="audit">
-                  <Card className="bg-slate-900/60 border-slate-700/50">
+                  <Card className="bg-white border-gray-200">
                     <CardHeader><CardTitle className="text-white text-base">Audit Tamlığı (24 Saat)</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-3">
                         {(audit?.categories || []).map((cat, i) => (
-                          <div key={i} data-testid={`audit-cat-${i}`} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/40">
+                          <div key={i} data-testid={`audit-cat-${i}`} className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-sm font-medium text-white capitalize">{cat.category}</p>
                               <ScoreBadge score={cat.coverage} label={`${(cat.coverage * 100).toFixed(0)}%`} />

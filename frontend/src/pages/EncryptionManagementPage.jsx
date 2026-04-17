@@ -25,18 +25,18 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 const stateColors = {
   active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   pending_rotation: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  retired: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  retired: 'bg-gray-100 text-gray-600 border-gray-200',
   revoked: 'bg-red-500/20 text-red-400 border-red-500/30',
 };
 
 // Job state colors
 const jobStateColors = {
-  pending: 'bg-slate-500/20 text-slate-400',
+  pending: 'bg-gray-100 text-gray-600',
   running: 'bg-blue-500/20 text-blue-400',
   paused: 'bg-amber-500/20 text-amber-400',
   completed: 'bg-emerald-500/20 text-emerald-400',
   failed: 'bg-red-500/20 text-red-400',
-  cancelled: 'bg-slate-500/20 text-slate-400',
+  cancelled: 'bg-gray-100 text-gray-600',
 };
 
 // Key type icons
@@ -267,7 +267,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               <Key className="h-6 w-6 text-emerald-400" />
               Şifreleme Yönetimi
             </h1>
-            <p className="text-slate-400 mt-1">
+            <p className="text-gray-600 mt-1">
               Anahtar yaşam döngüsü, rotasyon ve yeniden sifreleme işlemleri
             </p>
           </div>
@@ -283,7 +283,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
             <Button 
               onClick={() => setShowJobDialog(true)}
               variant="outline"
-              className="border-slate-600"
+              className="border-gray-200"
               data-testid="create-job-btn"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
@@ -294,84 +294,84 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-500/20">
                   <CheckCircle className="h-5 w-5 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Aktif</p>
+                  <p className="text-sm text-gray-600">Aktif</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.active || 0}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-amber-500/20">
                   <RefreshCw className="h-5 w-5 text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Rotasyonda</p>
+                  <p className="text-sm text-gray-600">Rotasyonda</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.pending_rotation || 0}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-slate-500/20">
-                  <Clock className="h-5 w-5 text-slate-400" />
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <Clock className="h-5 w-5 text-gray-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Emekli</p>
+                  <p className="text-sm text-gray-600">Emekli</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.retired || 0}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-red-500/20">
                   <XCircle className="h-5 w-5 text-red-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">İptal</p>
+                  <p className="text-sm text-gray-600">İptal</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.revoked || 0}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-orange-500/20">
                   <AlertTriangle className="h-5 w-5 text-orange-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Geciken</p>
+                  <p className="text-sm text-gray-600">Geciken</p>
                   <p className="text-2xl font-bold text-white">{keysSummary.overdue_count || 0}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-slate-800/50 border-slate-700">
+          <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-blue-500/20">
                   <Database className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">İşler</p>
+                  <p className="text-sm text-gray-600">İşler</p>
                   <p className="text-2xl font-bold text-white">{jobsSummary.total_jobs || 0}</p>
                 </div>
               </div>
@@ -410,17 +410,17 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="bg-slate-800 border border-slate-700">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-slate-700">
+          <TabsList className="bg-gray-50 border border-gray-200">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-gray-50">
               Genel Bakış
             </TabsTrigger>
-            <TabsTrigger value="keys" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="keys" className="data-[state=active]:bg-gray-50">
               Anahtarlar
             </TabsTrigger>
-            <TabsTrigger value="jobs" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="jobs" className="data-[state=active]:bg-gray-50">
               Yeniden Şifreleme
             </TabsTrigger>
-            <TabsTrigger value="audit" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="audit" className="data-[state=active]:bg-gray-50">
               Denetim Gunlugu
             </TabsTrigger>
           </TabsList>
@@ -429,7 +429,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Active Keys */}
-              <Card className="bg-slate-800/50 border-slate-700">
+              <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <Key className="h-5 w-5 text-emerald-400" />
@@ -441,12 +441,12 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     {keys.filter(k => k.state === 'active').slice(0, 5).map(key => {
                       const Icon = keyTypeIcons[key.key_type] || Key;
                       return (
-                        <div key={key.key_id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50">
+                        <div key={key.key_id} className="flex items-center justify-between p-3 rounded-lg bg-white">
                           <div className="flex items-center gap-3">
                             <Icon className="h-4 w-4 text-emerald-400" />
                             <div>
                               <p className="text-white font-medium">{key.key_id}</p>
-                              <p className="text-xs text-slate-400">{key.description || key.key_type}</p>
+                              <p className="text-xs text-gray-600">{key.description || key.key_type}</p>
                             </div>
                           </div>
                           <Badge className={stateColors[key.state]}>
@@ -456,14 +456,14 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                       );
                     })}
                     {keys.filter(k => k.state === 'active').length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Aktif anahtar yok</p>
+                      <p className="text-gray-600 text-center py-4">Aktif anahtar yok</p>
                     )}
                   </div>
                 </CardContent>
               </Card>
 
               {/* Running Jobs */}
-              <Card className="bg-slate-800/50 border-slate-700">
+              <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <RefreshCw className="h-5 w-5 text-blue-400" />
@@ -473,19 +473,19 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 <CardContent>
                   <div className="space-y-3">
                     {jobs.filter(j => j.state === 'running').map(job => (
-                      <div key={job.job_id} className="p-3 rounded-lg bg-slate-900/50">
+                      <div key={job.job_id} className="p-3 rounded-lg bg-white">
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-white font-medium">{job.job_id}</p>
                           <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
                         </div>
                         <Progress value={job.progress_percent || 0} className="h-2" />
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-gray-600 mt-1">
                           {job.processed_documents || 0} / {job.total_documents || 0} dokuman
                         </p>
                       </div>
                     ))}
                     {jobs.filter(j => j.state === 'running').length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Çalışan iş yok</p>
+                      <p className="text-gray-600 text-center py-4">Çalışan iş yok</p>
                     )}
                   </div>
                 </CardContent>
@@ -495,10 +495,10 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
           {/* Keys Tab */}
           <TabsContent value="keys" className="space-y-4">
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-gray-50 border-gray-200">
               <CardHeader>
                 <CardTitle className="text-white">Tum Anahtarlar</CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-gray-600">
                   Kayıtlı sifreleme anahtarlari ve durumlari
                 </CardDescription>
               </CardHeader>
@@ -510,15 +510,15 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     const daysUntil = nextDue ? Math.ceil((nextDue - new Date()) / (1000 * 60 * 60 * 24)) : null;
                     
                     return (
-                      <div key={key.key_id} className="flex items-center justify-between p-4 rounded-lg bg-slate-900/50 border border-slate-700">
+                      <div key={key.key_id} className="flex items-center justify-between p-4 rounded-lg bg-white border border-gray-200">
                         <div className="flex items-center gap-4">
-                          <div className="p-2 rounded-lg bg-slate-800">
+                          <div className="p-2 rounded-lg bg-gray-50">
                             <Icon className="h-5 w-5 text-emerald-400" />
                           </div>
                           <div>
                             <p className="text-white font-medium">{key.key_id}</p>
-                            <p className="text-sm text-slate-400">{key.description || `Tip: ${key.key_type}`}</p>
-                            <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+                            <p className="text-sm text-gray-600">{key.description || `Tip: ${key.key_type}`}</p>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-gray-600">
                               <span>v{key.version}</span>
                               {key.provider && <span>Provider: {key.provider}</span>}
                               {daysUntil !== null && (
@@ -537,7 +537,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                               <Button 
                                 size="sm" 
                                 variant="outline"
-                                className="border-slate-600"
+                                className="border-gray-200"
                                 onClick={() => handleInitiateRotation(key.key_id)}
                               >
                                 <RefreshCw className="h-3 w-3 mr-1" />
@@ -567,7 +567,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                               <Button 
                                 size="sm" 
                                 variant="outline"
-                                className="border-slate-600"
+                                className="border-gray-200"
                                 onClick={() => handleCancelRotation(key.key_id)}
                               >
                                 <XCircle className="h-3 w-3 mr-1" />
@@ -580,7 +580,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     );
                   })}
                   {keys.length === 0 && (
-                    <p className="text-slate-400 text-center py-8">Henüz anahtar kaydedilmemis</p>
+                    <p className="text-gray-600 text-center py-8">Henüz anahtar kaydedilmemis</p>
                   )}
                 </div>
               </CardContent>
@@ -589,21 +589,21 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
           {/* Jobs Tab */}
           <TabsContent value="jobs" className="space-y-4">
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-gray-50 border-gray-200">
               <CardHeader>
                 <CardTitle className="text-white">Yeniden Şifreleme İşleri</CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-gray-600">
                   Anahtar rotasyonu sonrasi veri migrasyonu isleri
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {jobs.map(job => (
-                    <div key={job.job_id} className="p-4 rounded-lg bg-slate-900/50 border border-slate-700">
+                    <div key={job.job_id} className="p-4 rounded-lg bg-white border border-gray-200">
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <p className="text-white font-medium">{job.job_id}</p>
-                          <p className="text-sm text-slate-400">{job.description || `Key: ${job.key_id}`}</p>
+                          <p className="text-sm text-gray-600">{job.description || `Key: ${job.key_id}`}</p>
                         </div>
                         <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
                       </div>
@@ -611,7 +611,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                       <Progress value={job.progress_percent || 0} className="h-2 mb-2" />
                       
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-400">
+                        <span className="text-gray-600">
                           {job.processed_documents || 0} / {job.total_documents || 0} dokuman 
                           ({job.progress_percent?.toFixed(1) || 0}%)
                         </span>
@@ -645,7 +645,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     </div>
                   ))}
                   {jobs.length === 0 && (
-                    <p className="text-slate-400 text-center py-8">Henüz is olusturulmamis</p>
+                    <p className="text-gray-600 text-center py-8">Henüz is olusturulmamis</p>
                   )}
                 </div>
               </CardContent>
@@ -656,7 +656,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <TabsContent value="audit" className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Key Audit */}
-              <Card className="bg-slate-800/50 border-slate-700">
+              <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <History className="h-5 w-5 text-emerald-400" />
@@ -666,7 +666,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 <CardContent>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {keyAudit.map((entry, idx) => (
-                      <div key={idx} className="flex items-start gap-3 p-2 rounded bg-slate-900/50 text-sm">
+                      <div key={idx} className="flex items-start gap-3 p-2 rounded bg-white text-sm">
                         <div className={`w-2 h-2 rounded-full mt-1.5 ${
                           entry.severity === 'critical' ? 'bg-red-500' :
                           entry.severity === 'error' ? 'bg-orange-500' :
@@ -674,23 +674,23 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                         }`} />
                         <div className="flex-1">
                           <p className="text-white">
-                            <span className="text-slate-400">{entry.key_id}</span> — {entry.action}
+                            <span className="text-gray-600">{entry.key_id}</span> — {entry.action}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-gray-600">
                             {entry.actor} • {new Date(entry.timestamp).toLocaleString('tr-TR')}
                           </p>
                         </div>
                       </div>
                     ))}
                     {keyAudit.length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Kayıt yok</p>
+                      <p className="text-gray-600 text-center py-4">Kayıt yok</p>
                     )}
                   </div>
                 </CardContent>
               </Card>
 
               {/* Job Audit */}
-              <Card className="bg-slate-800/50 border-slate-700">
+              <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <History className="h-5 w-5 text-blue-400" />
@@ -700,23 +700,23 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 <CardContent>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {jobAudit.map((entry, idx) => (
-                      <div key={idx} className="flex items-start gap-3 p-2 rounded bg-slate-900/50 text-sm">
+                      <div key={idx} className="flex items-start gap-3 p-2 rounded bg-white text-sm">
                         <div className={`w-2 h-2 rounded-full mt-1.5 ${
                           entry.severity === 'error' ? 'bg-red-500' :
                           entry.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
                         }`} />
                         <div className="flex-1">
                           <p className="text-white">
-                            <span className="text-slate-400">{entry.job_id}</span> — {entry.action}
+                            <span className="text-gray-600">{entry.job_id}</span> — {entry.action}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-gray-600">
                             {entry.actor} • {new Date(entry.timestamp).toLocaleString('tr-TR')}
                           </p>
                         </div>
                       </div>
                     ))}
                     {jobAudit.length === 0 && (
-                      <p className="text-slate-400 text-center py-4">Kayıt yok</p>
+                      <p className="text-gray-600 text-center py-4">Kayıt yok</p>
                     )}
                   </div>
                 </CardContent>
@@ -727,30 +727,30 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
         {/* Register Key Dialog */}
         <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
-          <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogContent className="bg-gray-50 border-gray-200">
             <DialogHeader>
               <DialogTitle className="text-white">Yeni Anahtar Kaydet</DialogTitle>
-              <DialogDescription className="text-slate-400">
+              <DialogDescription className="text-gray-600">
                 Yeni bir sifreleme anahtari kaydedin
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Anahtar ID</Label>
+                <Label className="text-gray-700">Anahtar ID</Label>
                 <Input 
                   value={registerForm.key_id}
                   onChange={e => setRegisterForm({...registerForm, key_id: e.target.value})}
                   placeholder="ornek: master-key-v2"
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Tip</Label>
+                <Label className="text-gray-700">Tip</Label>
                 <Select value={registerForm.key_type} onValueChange={v => setRegisterForm({...registerForm, key_type: v})}>
-                  <SelectTrigger className="bg-slate-900 border-slate-600 text-white">
+                  <SelectTrigger className="bg-white border-gray-200 text-white">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectContent className="bg-gray-50 border-gray-200">
                     <SelectItem value="master">Master (Ana)</SelectItem>
                     <SelectItem value="connector">Connector (Baglanti)</SelectItem>
                     <SelectItem value="webhook">Webhook</SelectItem>
@@ -760,27 +760,27 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Aciklama</Label>
+                <Label className="text-gray-700">Aciklama</Label>
                 <Input 
                   value={registerForm.description}
                   onChange={e => setRegisterForm({...registerForm, description: e.target.value})}
                   placeholder="Anahtar aciklamasi"
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Rotasyon Suresi (gun)</Label>
+                <Label className="text-gray-700">Rotasyon Suresi (gun)</Label>
                 <Input 
                   type="number"
                   value={registerForm.rotation_policy_days}
                   onChange={e => setRegisterForm({...registerForm, rotation_policy_days: parseInt(e.target.value) || 90})}
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                 />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-slate-600">İptal</Button>
+                <Button variant="outline" className="border-gray-200">İptal</Button>
               </DialogClose>
               <Button onClick={handleRegisterKey} className="bg-emerald-600 hover:bg-emerald-700">
                 Kaydet
@@ -791,13 +791,13 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
         {/* Emergency Revoke Dialog */}
         <Dialog open={showRevokeDialog} onOpenChange={setShowRevokeDialog}>
-          <DialogContent className="bg-slate-800 border-red-700">
+          <DialogContent className="bg-gray-50 border-red-700">
             <DialogHeader>
               <DialogTitle className="text-red-400 flex items-center gap-2">
                 <AlertOctagon className="h-5 w-5" />
                 Acil Anahtar Iptali
               </DialogTitle>
-              <DialogDescription className="text-slate-400">
+              <DialogDescription className="text-gray-600">
                 Bu işlem geri alınamaz. Anahtar hemen kullanilmaz hale gelir.
               </DialogDescription>
             </DialogHeader>
@@ -807,19 +807,19 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 <p className="text-sm text-red-400">{selectedKey?.description}</p>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">İptal Sebebi (min 10 karakter)</Label>
+                <Label className="text-gray-700">İptal Sebebi (min 10 karakter)</Label>
                 <Textarea 
                   value={revokeReason}
                   onChange={e => setRevokeReason(e.target.value)}
                   placeholder="Anahtarin neden iptal edildigini aciklayin..."
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                   rows={3}
                 />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-slate-600">Vazgec</Button>
+                <Button variant="outline" className="border-gray-200">Vazgec</Button>
               </DialogClose>
               <Button 
                 onClick={handleEmergencyRevoke} 
@@ -835,21 +835,21 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
         {/* Create Job Dialog */}
         <Dialog open={showJobDialog} onOpenChange={setShowJobDialog}>
-          <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogContent className="bg-gray-50 border-gray-200">
             <DialogHeader>
               <DialogTitle className="text-white">Yeniden Şifreleme Isi Olustur</DialogTitle>
-              <DialogDescription className="text-slate-400">
+              <DialogDescription className="text-gray-600">
                 Veri migrasyonu için yeni bir is oluşturun
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Anahtar ID</Label>
+                <Label className="text-gray-700">Anahtar ID</Label>
                 <Select value={jobForm.key_id} onValueChange={v => setJobForm({...jobForm, key_id: v})}>
-                  <SelectTrigger className="bg-slate-900 border-slate-600 text-white">
+                  <SelectTrigger className="bg-white border-gray-200 text-white">
                     <SelectValue placeholder="Anahtar seçin" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectContent className="bg-gray-50 border-gray-200">
                     {keys.map(k => (
                       <SelectItem key={k.key_id} value={k.key_id}>{k.key_id}</SelectItem>
                     ))}
@@ -857,13 +857,13 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Koleksiyonlar</Label>
+                <Label className="text-gray-700">Koleksiyonlar</Label>
                 <div className="flex flex-wrap gap-2">
                   {['guests', 'bookings', 'reservations', 'users'].map(col => (
                     <Badge 
                       key={col}
                       variant="outline"
-                      className={`cursor-pointer ${jobForm.collections.includes(col) ? 'bg-emerald-500/20 border-emerald-500' : 'border-slate-600'}`}
+                      className={`cursor-pointer ${jobForm.collections.includes(col) ? 'bg-emerald-500/20 border-emerald-500' : 'border-gray-200'}`}
                       onClick={() => {
                         const cols = jobForm.collections.includes(col) 
                           ? jobForm.collections.filter(c => c !== col)
@@ -877,27 +877,27 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Batch Boyutu</Label>
+                <Label className="text-gray-700">Batch Boyutu</Label>
                 <Input 
                   type="number"
                   value={jobForm.batch_size}
                   onChange={e => setJobForm({...jobForm, batch_size: parseInt(e.target.value) || 100})}
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Aciklama</Label>
+                <Label className="text-gray-700">Aciklama</Label>
                 <Input 
                   value={jobForm.description}
                   onChange={e => setJobForm({...jobForm, description: e.target.value})}
                   placeholder="Is aciklamasi"
-                  className="bg-slate-900 border-slate-600 text-white"
+                  className="bg-white border-gray-200 text-white"
                 />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-slate-600">İptal</Button>
+                <Button variant="outline" className="border-gray-200">İptal</Button>
               </DialogClose>
               <Button 
                 onClick={handleCreateJob} 
