@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
-const MaintenanceDialog = ({ open, onClose, maintenanceForm, setMaintenanceForm }) => {
+const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenanceForm }) => {
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
 
