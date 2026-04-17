@@ -285,6 +285,15 @@ export const NAV_ITEMS = [
     navGroup: "channels",
   },
   {
+    key: "incoming_agency_contracts",
+    label: "Gelen Acente Talepleri",
+    path: "/app/incoming-agency-contracts",
+    moduleKey: "channel_manager",
+    tier: "basic",
+    group: "core",
+    navGroup: "channels",
+  },
+  {
     key: "agency_content",
     label: "Icerik Dagitimi",
     path: "/agency-content",

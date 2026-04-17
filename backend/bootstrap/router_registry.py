@@ -205,6 +205,10 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
     # Marketplace v1 — Cross-tenant B2B köprüsü (Syroce Agent entegrasyonu)
     ("routers.marketplace_b2b", "router", ["Marketplace v1"], None, None),
+    # Marketplace v1 — Sözleşme yönetimi (agency-side / hotel-side / admin)
+    ("routers.agency_contracts", "agency_router", ["Marketplace v1 / Contracts"], None, None),
+    ("routers.agency_contracts", "hotel_router", ["Marketplace v1 / Incoming"], None, None),
+    ("routers.agency_contracts", "admin_router", ["Marketplace v1 / Admin"], None, None),
     # KBS — Konaklama Bildirim Sistemi (PMS kullanıcı oturumuyla, key gerekmez)
     ("routers.kbs", "router", ["KBS"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),

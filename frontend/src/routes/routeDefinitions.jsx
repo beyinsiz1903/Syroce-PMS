@@ -114,6 +114,7 @@ const AIWhatsAppConcierge = lazy(() => import("@/pages/AIWhatsAppConcierge"));
 const PredictiveAnalytics = lazy(() => import("@/pages/PredictiveAnalytics"));
 const TravelAgentARAP = lazy(() => import("@/pages/TravelAgentARAP"));
 const AgencyRequests = lazy(() => import("@/pages/AgencyRequests"));
+const IncomingAgencyContracts = lazy(() => import("@/pages/IncomingAgencyContracts"));
 const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
 const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
 const AgencyPortalDashboard = lazy(() => import("@/pages/AgencyPortalDashboard"));
@@ -350,6 +351,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/travel-agent-arap", ...p(TravelAgentARAP) },
     { path: "/app/travel-agent-arap", ...p(TravelAgentARAP) },
     { path: "/agency-requests", ...p(AgencyRequests) },
+    { path: "/app/incoming-agency-contracts", ...p(IncomingAgencyContracts) },
     { path: "/agency-management", ...p(AgencyManagement) },
     { path: "/agency-content", ...p(AgencyContentDistribution) },
     { path: "/b2b-analytics", ...p(B2BAnalyticsDashboard) },

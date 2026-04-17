@@ -393,11 +393,17 @@ async def agency_list_hotels(
     country: str | None = Query(None),
     q: str | None = Query(None, description="Ad veya açıklamada ara"),
     limit: int = Query(50, le=200),
-    _agency: dict = Depends(get_marketplace_agency),
+    agency: dict = Depends(get_marketplace_agency),
 ):
-    """Marketplace'te listelenen otelleri keşfet."""
+    """Marketplace'te listelenen ve aktif sözleşmesi bulunan otelleri keşfet."""
+    from routers.agency_contracts import list_partner_tenant_ids
+    partner_tenant_ids = await list_partner_tenant_ids(agency["agency_id"])
+    if not partner_tenant_ids:
+        return {"hotels": [], "total": 0,
+                "message": "Henüz onaylı sözleşmeniz olan otel yok. Önce otele teklif gönderin."}
+
     sysdb = get_system_db()
-    query: dict = {"is_listed": True}
+    query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
     if city:
         query["city"] = {"$regex": f"^{city}$", "$options": "i"}
     if country:
@@ -418,8 +424,11 @@ async def agency_list_hotels(
 @router.get("/hotels/{tenant_id}")
 async def agency_get_hotel(
     tenant_id: str,
-    _agency: dict = Depends(get_marketplace_agency),
+    agency: dict = Depends(get_marketplace_agency),
 ):
+    from routers.agency_contracts import has_active_contract
+    if not await has_active_contract(agency["agency_id"], tenant_id):
+        raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
 
     with tenant_context(tenant_id):
@@ -461,8 +470,15 @@ async def agency_search(
     if co <= ci:
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
+    from routers.agency_contracts import list_partner_tenant_ids
+    partner_tenant_ids = await list_partner_tenant_ids(agency["agency_id"], on_date=req.check_in)
+    if not partner_tenant_ids:
+        return {"check_in": req.check_in, "check_out": req.check_out,
+                "results": [], "total_hotels": 0,
+                "message": "Henüz onaylı sözleşmeniz olan otel yok."}
+
     sysdb = get_system_db()
-    list_query: dict = {"is_listed": True}
+    list_query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
     if req.city:
         list_query["city"] = {"$regex": f"^{req.city}$", "$options": "i"}
     if req.country:
@@ -560,6 +576,9 @@ async def agency_hotel_availability(
     check_out: str = Query(..., description="YYYY-MM-DD"),
     agency: dict = Depends(get_marketplace_agency),
 ):
+    from routers.agency_contracts import has_active_contract
+    if not await has_active_contract(agency["agency_id"], tenant_id, on_date=check_in):
+        raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
     if any(d in listing.get("blocked_dates", []) for d in _date_range(check_in, check_out)):
         return {"check_in": check_in, "check_out": check_out, "room_types": [], "blocked": True}
@@ -650,11 +669,24 @@ async def agency_create_reservation(
     agency: dict = Depends(get_marketplace_agency),
 ):
     """Listed otele cross-tenant rezervasyon oluştur. Mevcut bookings koleksiyonuna düşer."""
+    from routers.agency_contracts import has_active_contract
+    contract = await has_active_contract(agency["agency_id"], data.tenant_id, on_date=data.check_in)
+    if not contract:
+        raise HTTPException(
+            403,
+            "Bu otelle bu tarih için aktif sözleşmeniz yok. Önce sözleşme teklifi "
+            "gönderip otelin onayını bekleyin."
+        )
+
     listing = await _get_listing_or_404(data.tenant_id)
 
     if any(d in listing.get("blocked_dates", []) for d in _date_range(data.check_in, data.check_out)):
         raise HTTPException(409, "Bu tarih aralığı otel tarafından kapatılmış")
 
+    # Sözleşmedeki oda tipi kısıtı (varsa) listing kısıtının üzerine biner
+    contract_room_types = contract.get("allowed_room_types") or []
+    if contract_room_types and data.room_type not in contract_room_types:
+        raise HTTPException(403, f"Bu oda tipi sözleşmenizde tanımlı değil: {contract_room_types}")
     if listing.get("allowed_room_types") and data.room_type not in listing["allowed_room_types"]:
         raise HTTPException(403, "Bu oda tipi marketplace satışına açık değil")
 
@@ -693,7 +725,8 @@ async def agency_create_reservation(
         if not available_room:
             raise HTTPException(409, "Seçilen tarihler için müsait oda yok")
 
-        commission_pct = _commission_for(agency, listing)
+        # Komisyon: sözleşmede otelin onayladığı oran (override edilmiş olabilir) kullanılır
+        commission_pct = float(contract.get("commission_pct", _commission_for(agency, listing)))
         nights = (co - ci).days
         # Server-side "ground truth" fiyat — istemcinin gönderdiği total_amount'a güvenme.
         server_total = float(available_room.get("base_price", 0)) * max(nights, 1)
