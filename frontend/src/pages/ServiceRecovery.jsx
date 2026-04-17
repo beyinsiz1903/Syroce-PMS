@@ -14,6 +14,7 @@ import {
   ArrowUpCircle, User, DoorOpen, Calendar, Filter, ChevronDown,
   ChevronUp, MessageSquare, Trash2, Edit, Eye
 } from 'lucide-react';
+import Layout from '@/components/Layout';
 
 const CATEGORIES = [
   { value: 'room', label: 'Oda', color: 'bg-blue-100 text-blue-800' },
@@ -57,7 +58,7 @@ const COMPENSATIONS = [
 
 const getBadge = (items, value) => items.find(i => i.value === value) || items[0];
 
-const ServiceRecovery = () => {
+const ServiceRecovery = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [stats, setStats] = useState({});
@@ -262,16 +263,19 @@ const ServiceRecovery = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
-          <p className="text-gray-500">Yükleniyor...</p>
+      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
+            <p className="text-gray-500">Yükleniyor...</p>
+          </div>
         </div>
-      </div>
+      </Layout>
     );
   }
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout}>
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -715,6 +719,7 @@ const ServiceRecovery = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </Layout>
   );
 };
 
