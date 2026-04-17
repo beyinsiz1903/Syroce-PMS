@@ -48,16 +48,22 @@ async def get_housekeeping_rooms(
     if floor:
         query["floor"] = floor
 
-    rooms = []
-    async for r in db.rooms.find(query, {"_id": 0}).sort("room_number", 1):
-        # Check if room has active booking
-        booking = await db.bookings.find_one(
-            {"room_id": r.get("id"), "tenant_id": tid, "status": {"$in": ["checked_in", "confirmed"]}},
-            {"_id": 0, "guest_name": 1, "check_out": 1, "status": 1}
-        )
-        r["current_booking"] = booking
+    rooms = await db.rooms.find(query, {"_id": 0}).sort("room_number", 1).to_list(length=None)
+    room_ids = [r.get("id") for r in rooms if r.get("id")]
+
+    bookings_by_room: dict = {}
+    if room_ids:
+        async for b in db.bookings.find(
+            {"room_id": {"$in": room_ids}, "tenant_id": tid, "status": {"$in": ["checked_in", "confirmed"]}},
+            {"_id": 0, "room_id": 1, "guest_name": 1, "check_out": 1, "status": 1},
+        ):
+            rid = b.get("room_id")
+            if rid and rid not in bookings_by_room:
+                bookings_by_room[rid] = {k: v for k, v in b.items() if k != "room_id"}
+
+    for r in rooms:
+        r["current_booking"] = bookings_by_room.get(r.get("id"))
         r["housekeeping_status"] = r.get("housekeeping_status", "clean")
-        rooms.append(r)
 
     # Summary counts
     statuses = {}
