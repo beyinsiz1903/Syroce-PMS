@@ -332,12 +332,23 @@ class EnhancedRateLimitMiddleware:
         self._windows: dict[str, deque] = defaultdict(lambda: deque())
 
         # Rate limit tiers: (max_requests, window_seconds)
-        # In test/CI/dev environments, use higher limits to avoid test failures
-        is_test_env = (
-            os.environ.get('TESTING', '') == '1'
-            or os.environ.get('CI', '') != ''
-            or os.environ.get('APP_ENV', '') == 'development'
-        )
+        # In test/CI/dev environments, use higher limits to avoid test failures.
+        # Replit dev environment is detected via REPL_ID / REPLIT_DEV_DOMAIN
+        # (always set inside the Replit workspace, absent in deployed prod).
+        # Fail-closed: if REPLIT_DEPLOYMENT=1 (published deployment), force prod
+        # limits regardless of any other dev signals.
+        is_replit_deployment = os.environ.get('REPLIT_DEPLOYMENT', '') == '1'
+        if is_replit_deployment:
+            is_test_env = False
+        else:
+            is_test_env = (
+                os.environ.get('TESTING', '') == '1'
+                or os.environ.get('CI', '') != ''
+                or os.environ.get('APP_ENV', '') == 'development'
+                or os.environ.get('REPL_ID', '') != ''
+                or os.environ.get('REPLIT_DEV_DOMAIN', '') != ''
+            )
+        logger.info(f"Rate limiter profile: {'DEV (10000/min)' if is_test_env else 'PROD'} | REPLIT_DEPLOYMENT={os.environ.get('REPLIT_DEPLOYMENT', '')} | REPL_ID_set={bool(os.environ.get('REPL_ID', ''))}")
         if is_test_env:
             self.limits = {
                 'auth': (10000, 60),
