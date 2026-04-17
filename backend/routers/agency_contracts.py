@@ -235,18 +235,33 @@ async def contract_propose(
     return {"ok": True, "contract": doc}
 
 
-@agency_router.get("/contracts/mine")
-async def contract_list_mine(
-    status: str | None = Query(None, pattern="^(pending|approved|rejected|terminated|expired)$"),
-    limit: int = Query(100, le=500),
-    agency: dict = Depends(_agency_dep),
-):
+async def _list_agency_contracts(status: str | None, limit: int, agency: dict) -> dict:
     sysdb = get_system_db()
     q: dict = {"agency_id": agency["agency_id"]}
     if status:
         q["status"] = status
     docs = await sysdb.agency_contracts.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return {"contracts": docs, "total": len(docs)}
+
+
+@agency_router.get("/contracts/mine")
+async def contract_list_mine(
+    status: str | None = Query(None, pattern="^(pending|approved|rejected|terminated|expired|withdrawn)$"),
+    limit: int = Query(100, le=500),
+    agency: dict = Depends(_agency_dep),
+):
+    return await _list_agency_contracts(status, limit, agency)
+
+
+# Alias — Acente otomasyon SaaS'ı GET /contracts/ kullanıyor
+@agency_router.get("/contracts")
+@agency_router.get("/contracts/")
+async def contract_list_root(
+    status: str | None = Query(None, pattern="^(pending|approved|rejected|terminated|expired|withdrawn)$"),
+    limit: int = Query(100, le=500),
+    agency: dict = Depends(_agency_dep),
+):
+    return await _list_agency_contracts(status, limit, agency)
 
 
 @agency_router.get("/contracts/{contract_id}")

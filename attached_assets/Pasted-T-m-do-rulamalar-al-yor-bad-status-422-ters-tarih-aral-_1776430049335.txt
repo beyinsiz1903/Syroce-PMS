@@ -1,0 +1,32 @@
+Tüm doğrulamalar çalışıyor: bad status → 422, ters tarih aralığı → 422, geçerli istek PMS'e proxy ediliyor (PMS henüz yok = 404). Her şey hazır. Özet:
+
+Eklenenler — Sözleşme-Tabanlı Marketplace v2 (Acenta tarafı)
+Backend
+backend/app/services/syroce/agent.py — SyroceAgentClient'a 4 yeni metod: propose_contract, list_contracts, get_contract, withdraw_contract. Hepsi PMS /api/marketplace/v1/contracts/* uçlarına şifrelenmiş per-org X-API-Key ile gidiyor.
+backend/app/modules/inventory/routers/syroce_contracts.py — yeni proxy router /api/syroce-marketplace/contracts:
+GET / (status filtresi: pending/approved/rejected/terminated/expired)
+GET /{id}
+POST /propose (komisyon, iptal politikası, ödeme vadesi, tarih aralığı, oda tipleri, özel şartlar)
+DELETE /{id} (geri çekme)
+Tarih formatı + chronological + status enum doğrulaması proxy katmanında yapılıyor
+PMS yanıt şekli normalize ediliyor (array / {items} / {contracts} / {data} hepsi destekleniyor)
+inventory/__init__.py'ye router kaydedildi, syroce_marketplace modül guard'ı altında.
+Frontend
+frontend/src/pages/syroce/MarketplaceContractsPage.jsx — yeni "Sözleşmelerim" sayfası:
+3 tab: Aktif Anlaşmalar / Bekleyen Tekliflerim / Geçmiş (sayaçlarla)
+Her sözleşme kartında: kod, otel, durum rozeti, komisyon, ödeme, geçerlilik, iptal politikası, oda tipleri, özel şartlar, otelci karar notu
+Bekleyen kartlarda "Geri Çek" butonu
+"Yeni Teklif" modalı: komisyon, iptal politikası (ücretsiz/geç/no-show), ödeme vadesi, tarih aralığı, para birimi, oda tipleri, özel şartlar (markdown)
+Client-side validasyon (tarih aralığı), sunucu validasyonu hataları kullanıcıya gösteriliyor
+Route eklendi: /app/admin/syroce-marketplace/contracts
+Sidebar'a "Sözleşmelerim" menü öğesi eklendi (Otel Ara'dan sonra, FileText ikonu)
+PMS tarafındaki 3 sorunun cevabı (önerilerine katılıyorum)
+Komisyon override: Evet, otelci dialog'da değiştirebilsin — gerçekçi.
+Tek aktif sözleşme: Tek aktif kuralı sade ve anlaşılır.
+Mevcut acenteler: Otomatik approved migration en pürüzsüz geçiş.
+Doğrulanan akış
+Frontend (Sözleşmelerim) → /api/syroce-marketplace/contracts/*  
+                        → SyroceAgentClient (per-org X-API-Key)
+                        → PMS /api/marketplace/v1/contracts/*
+
+PMS tarafındaki router'ı eklediğin anda sayfa otomatik canlanacak. Sen PMS'i deploy ettikten sonra bana haber ver, beraber uçtan uca rezervasyon akışını test edelim — search 403'ü için "Sözleşme Teklif Et" CTA entegrasyonunu da o aşamada (otel listesi bilindiğinde) MarketplaceSearchPage'e ekleyeceğim.
