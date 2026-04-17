@@ -82,10 +82,27 @@ class ExelyPullScheduler:
                 hotel_code = conn["hotel_code"]
                 endpoint_url = conn.get("endpoint_url", "")
 
-                # Get credentials from vault
+                # 1) Try vault (preferred path — credentials saved via /connect endpoint)
                 creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
+
+                # 2) Legacy fallback: plaintext credentials stored directly on
+                #    the connection document (seed data / pre-vault records).
+                if not creds and conn.get("username") and conn.get("password"):
+                    creds = {
+                        "username": conn["username"],
+                        "password": conn["password"],
+                        "endpoint_url": conn.get("endpoint_url", ""),
+                    }
+                    logger.warning(
+                        f"[EXELY-PULL] Using legacy plaintext credentials for tenant {tenant_id}, "
+                        f"hotel {hotel_code}. Re-save via /api/exely/connect to migrate to vault."
+                    )
+
                 if not creds:
-                    logger.error(f"[EXELY-PULL] No vault credentials for tenant {tenant_id}, hotel {hotel_code}")
+                    logger.warning(
+                        f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. "
+                        f"Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull."
+                    )
                     continue
 
                 await self.pull_for_tenant(
