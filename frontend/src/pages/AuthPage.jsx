@@ -37,12 +37,16 @@ const AuthPage = ({ onLogin }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
   
-  const [hotelLoginData, setHotelLoginData] = useState({ email: '', password: '' });
+  const [hotelLoginData, setHotelLoginData] = useState({ hotel_id: '', username: '', password: '' });
   const [guestLoginData, setGuestLoginData] = useState({ email: '', password: '' });
-  
+  const [forgotEmail, setForgotEmail] = useState('');
+
   const [hotelRegisterData, setHotelRegisterData] = useState({
-    property_name: '', email: '', password: '', name: '', phone: '', address: ''
+    property_name: '', email: '', username: '', password: '', name: '', phone: '', address: ''
   });
+
+  // After successful registration, show generated hotel_id
+  const [registrationSuccess, setRegistrationSuccess] = useState(null); // { hotel_id, username }
   
   const [guestRegisterData, setGuestRegisterData] = useState({
     email: '', password: '', name: '', phone: ''
@@ -52,8 +56,12 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post('/auth/login', hotelLoginData);
-      
+      const payload = {
+        hotel_id: String(hotelLoginData.hotel_id || '').trim(),
+        username: String(hotelLoginData.username || '').trim().toLowerCase(),
+        password: hotelLoginData.password,
+      };
+      const response = await axios.post('/auth/login', payload);
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
@@ -82,14 +90,23 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      console.log('📝 Register data being sent:', hotelRegisterData);
-      const response = await axios.post('/auth/register', hotelRegisterData);
-      console.log('✅ Register response:', response.data);
+      const payload = {
+        ...hotelRegisterData,
+        username: String(hotelRegisterData.username || '').trim().toLowerCase(),
+      };
+      const response = await axios.post('/auth/register', payload);
+      const newHotelId = response.data?.tenant?.hotel_id;
+      const newUsername = response.data?.user?.username || payload.username;
+      // Show success screen with credentials, then auto-login after user dismisses
+      setRegistrationSuccess({
+        hotel_id: newHotelId,
+        username: newUsername,
+        token: response.data.access_token,
+        user: response.data.user,
+        tenant: response.data.tenant,
+      });
       toast.success(t('auth.registerSuccess'));
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
-      console.error('Registration error:', error);
-      console.error('Error response:', error.response?.data);
       toast.error(error.response?.data?.detail || t('auth.registerFailed'));
     } finally {
       setLoading(false);
@@ -162,9 +179,7 @@ const AuthPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('/auth/forgot-password', {
-        email: hotelLoginData.email
-      });
+      await axios.post('/auth/forgot-password', { email: forgotEmail });
       toast.success(t('auth.resetCodeSent'));
       setForgotPasswordStep('code');
     } catch (error) {
@@ -179,7 +194,7 @@ const AuthPage = ({ onLogin }) => {
     setLoading(true);
     try {
       await axios.post('/auth/reset-password', {
-        email: hotelLoginData.email,
+        email: forgotEmail,
         code: resetCode,
         new_password: hotelLoginData.password
       });
@@ -271,25 +286,46 @@ const AuthPage = ({ onLogin }) => {
                   <TabsContent value="login">
                     {!showForgotPassword ? (
                       <form onSubmit={handleHotelLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
-                        {isMobile && (
-                          <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                            <p className="text-sm text-blue-800 font-medium">
-                              📱 {t('auth.mobileLogin')}
-                            </p>
-                            <p className="text-xs text-blue-600 mt-1">
-                              {t('auth.mobileAccess')}
-                            </p>
-                          </div>
-                        )}
+                        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg">
+                          <p className="text-xs font-semibold text-amber-900 mb-1">🔑 Demo Hesabı</p>
+                          <p className="text-xs text-amber-800 leading-relaxed">
+                            Otel ID: <strong>100001</strong> &nbsp;|&nbsp;
+                            Kullanıcı: <strong>demo</strong> &nbsp;|&nbsp;
+                            Şifre: <strong>demo123</strong>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setHotelLoginData({ hotel_id: '100001', username: 'demo', password: 'demo123' })}
+                            className="text-xs text-amber-700 hover:text-amber-900 underline mt-1"
+                          >
+                            Demo bilgileri otomatik doldur
+                          </button>
+                        </div>
                         <div>
-                          <Label>{t('common.email')}</Label>
+                          <Label>Otel ID</Label>
                           <Input
-                            type="email"
-                            value={hotelLoginData.email}
-                            onChange={(e) => setHotelLoginData({...hotelLoginData, email: e.target.value})}
+                            type="text"
+                            inputMode="numeric"
+                            value={hotelLoginData.hotel_id}
+                            onChange={(e) => setHotelLoginData({...hotelLoginData, hotel_id: e.target.value.replace(/\D/g, '').slice(0, 6)})}
                             required
-                            data-testid="hotel-login-email"
-                            placeholder={isMobile ? "your@email.com" : ""}
+                            data-testid="hotel-login-hotel-id"
+                            placeholder="6 haneli otel kimliği"
+                            maxLength={6}
+                            style={isMobile ? { fontSize: '16px' } : {}}
+                          />
+                        </div>
+                        <div>
+                          <Label>Kullanıcı Adı</Label>
+                          <Input
+                            type="text"
+                            value={hotelLoginData.username}
+                            onChange={(e) => setHotelLoginData({...hotelLoginData, username: e.target.value})}
+                            required
+                            data-testid="hotel-login-username"
+                            placeholder="ör. demo"
+                            autoCapitalize="none"
+                            autoCorrect="off"
                             style={isMobile ? { fontSize: '16px' } : {}}
                           />
                         </div>
@@ -351,8 +387,8 @@ const AuthPage = ({ onLogin }) => {
                               <Label>{t('auth.yourEmail')}</Label>
                               <Input
                                 type="email"
-                                value={hotelLoginData.email}
-                                onChange={(e) => setHotelLoginData({...hotelLoginData, email: e.target.value})}
+                                value={forgotEmail}
+                                onChange={(e) => setForgotEmail(e.target.value)}
                                 required
                                 placeholder="ornek@hotel.com"
                               />
@@ -414,8 +450,37 @@ const AuthPage = ({ onLogin }) => {
                   </TabsContent>
                   
                   <TabsContent value="register">
-                    {registrationStep === 'form' ? (
-                      <form onSubmit={handleRequestVerification} className="space-y-4">
+                    {registrationSuccess ? (
+                      <div className="space-y-4 py-4">
+                        <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+                          <p className="text-sm font-bold text-green-900 mb-2">✅ Hesabınız oluşturuldu!</p>
+                          <p className="text-xs text-green-800 mb-3">
+                            Bu bilgileri güvenli bir yere kaydedin. Bir sonraki girişinizde gerekecek.
+                          </p>
+                          <div className="bg-white border border-green-300 rounded p-3 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500">Otel ID</span>
+                              <span className="text-lg font-mono font-bold text-green-700">{registrationSuccess.hotel_id || '—'}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500">Kullanıcı Adı</span>
+                              <span className="text-base font-mono font-semibold text-gray-900">{registrationSuccess.username}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            const s = registrationSuccess;
+                            setRegistrationSuccess(null);
+                            onLogin(s.token, s.user, s.tenant);
+                          }}
+                        >
+                          Devam Et
+                        </Button>
+                      </div>
+                    ) : registrationStep === 'form' ? (
+                      <form onSubmit={handleHotelRegister} className="space-y-4">
                         <div>
                           <Label>{t('auth.hotelName')}</Label>
                           <Input
@@ -443,6 +508,22 @@ const AuthPage = ({ onLogin }) => {
                             required
                             placeholder="ornek@hotel.com"
                           />
+                          <p className="text-xs text-gray-500 mt-1">Şifre sıfırlama e-postaları bu adrese gönderilir.</p>
+                        </div>
+                        <div>
+                          <Label>Kullanıcı Adı</Label>
+                          <Input
+                            value={hotelRegisterData.username}
+                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, username: e.target.value.replace(/\s/g, '').toLowerCase()})}
+                            required
+                            minLength={3}
+                            maxLength={32}
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            pattern="[a-z0-9_.\-]{3,32}"
+                            placeholder="ör. admin"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Sadece küçük harf, rakam ve _ . - (3-32 karakter).</p>
                         </div>
                         <div>
                           <Label>{t('common.phone')}</Label>
@@ -465,7 +546,7 @@ const AuthPage = ({ onLogin }) => {
                           />
                         </div>
                         <Button type="submit" className="w-full" disabled={loading}>
-                          {loading ? t('auth.sending') : t('auth.sendVerCode')}
+                          {loading ? t('common.loading') : 'Hesabımı Oluştur'}
                         </Button>
                       </form>
                     ) : (

@@ -21,6 +21,7 @@ from models.enums import (
 class Tenant(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    hotel_id: str | None = None  # 6-digit human-friendly ID (e.g. "482917")
     property_name: str
     property_type: str | None = "hotel"
     contact_email: str | None = None
@@ -52,6 +53,7 @@ class User(BaseModel):
     tenant_id: str | None = None  # Hotel ID
     agency_id: str | None = None  # Agency ID (new for agency users)
     email: EmailStr
+    username: str | None = None  # Login username (unique within tenant)
     name: str
     role: UserRole
     phone: str | None = None
@@ -73,6 +75,7 @@ class TenantRegister(BaseModel):
     email: EmailStr
     password: str
     name: str
+    username: str | None = None  # Optional; if not provided, derived from email local-part
     phone: str
     address: str
     location: str | None = None
@@ -89,8 +92,15 @@ class GuestRegister(BaseModel):
     phone: str
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    """Hotel staff login. Either (hotel_id + username) or legacy email is accepted."""
+    hotel_id: str | None = None
+    username: str | None = None
+    email: EmailStr | None = None  # Legacy fallback (guest login still uses email)
     password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 class TokenResponse(BaseModel):
     access_token: str

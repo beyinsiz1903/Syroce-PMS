@@ -410,6 +410,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       </span>
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem onClick={() => navigate('/app/profile')} className="text-sm cursor-pointer">
+                    <User className="w-4 h-4 mr-2" />
+                    Profilim
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={onLogout} className="text-red-600 focus:text-red-700">
                     <LogOut className="w-4 h-4 mr-2" />
                     {t('common.logout')}

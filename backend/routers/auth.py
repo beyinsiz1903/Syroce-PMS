@@ -28,6 +28,7 @@ from models.schemas import (
     User,
     UserLogin,
 )
+from models.schemas.identity import ChangePasswordRequest
 from security.encrypted_lookup import (
     build_user_email_query,
     decrypt_user_doc,
@@ -184,20 +185,45 @@ async def list_all_users_for_debug(secret: str = "DEBUG_2024"):
     }
 
 
+async def _generate_unique_hotel_id() -> str:
+    """Generate a 6-digit unique hotel_id, retrying on collision."""
+    import random as _random
+    for _ in range(50):
+        cand = f"{_random.randint(100000, 999999)}"
+        if not await db.tenants.find_one({"hotel_id": cand}):
+            return cand
+    raise HTTPException(status_code=500, detail="Could not allocate hotel_id")
+
+
+def _derive_username(email: str, name: str | None = None) -> str:
+    """Derive a default username from email local-part."""
+    import re as _re
+    base = (email or "").split("@", 1)[0].strip().lower()
+    base = _re.sub(r"[^a-z0-9._-]+", "", base) or "user"
+    return base
+
+
 @router.post("/auth/register", response_model=TokenResponse)
 async def register_tenant(data: TenantRegister):
     existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Decide username (explicit > derived from email)
+    username = (data.username or _derive_username(data.email)).strip().lower()
+    if not username:
+        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı")
+
+    # Generate unique hotel_id
+    hotel_id = await _generate_unique_hotel_id()
+
     tenant = Tenant(
-        name=data.name,
+        hotel_id=hotel_id,
         property_name=data.property_name,
-        email=data.email,
-        phone=data.phone,
+        contact_email=data.email,
+        contact_phone=data.phone,
         address=data.address,
         location=data.location,
-        description=data.description
     )
     tenant_dict = tenant.model_dump()
     tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
@@ -206,9 +232,10 @@ async def register_tenant(data: TenantRegister):
     user = User(
         tenant_id=tenant.id,
         email=data.email,
+        username=username,
         name=data.name,
         role=UserRole.ADMIN,
-        phone=data.phone
+        phone=data.phone,
     )
     user_dict = user.model_dump()
     user_dict['hashed_password'] = hash_password(data.password)
@@ -246,18 +273,55 @@ async def register_guest(data: GuestRegister):
 
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin):
+    """Hotel staff login via (hotel_id + username) OR legacy guest login via (email).
+
+    Resolution order:
+      1) If hotel_id + username are provided → look up tenant, then user (tenant_id+username).
+      2) Else if email is provided (guest path) → look up by email.
+    """
     import hashlib as _hl
 
     from infra.simple_cache import simple_cache as _login_cache
 
-    cache_key = f"login:{_hl.sha256(f'{data.email}:{data.password}'.encode()).hexdigest()[:24]}"
+    # Build a stable cache key
+    if data.hotel_id and data.username:
+        cache_seed = f"hid:{data.hotel_id}|u:{data.username.lower()}|p:{data.password}"
+        identity_label = f"hotel_id={data.hotel_id} username={data.username}"
+    elif data.email:
+        cache_seed = f"em:{data.email}|p:{data.password}"
+        identity_label = data.email
+    else:
+        raise HTTPException(status_code=400, detail="Otel ID + kullanıcı adı veya e-posta gereklidir")
 
-    # --- Check session cache first (skip bcrypt if cached) ---
+    cache_key = f"login:{_hl.sha256(cache_seed.encode()).hexdigest()[:24]}"
     cached = _login_cache.get(cache_key)
     if cached:
         return TokenResponse(**cached)
 
-    user_doc = await db.users.find_one(build_user_email_query(data.email))
+    user_doc = None
+
+    if data.hotel_id and data.username:
+        # Lookup tenant by hotel_id
+        tenant_doc_for_lookup = await db.tenants.find_one({"hotel_id": str(data.hotel_id).strip()})
+        if not tenant_doc_for_lookup:
+            await db.audit_logs.insert_one({
+                "id": str(__import__('uuid').uuid4()),
+                "tenant_id": None,
+                "user_email": identity_label,
+                "action": "login_failed",
+                "resource_type": "auth",
+                "details": "Hotel ID not found",
+                "timestamp": datetime.now(UTC).isoformat(),
+            })
+            raise HTTPException(status_code=401, detail="Otel ID veya bilgiler hatalı")
+        tid = tenant_doc_for_lookup.get("id")
+        user_doc = await db.users.find_one({
+            "tenant_id": tid,
+            "username": data.username.strip().lower(),
+        })
+    elif data.email:
+        user_doc = await db.users.find_one(build_user_email_query(data.email))
+
     if user_doc:
         user_doc.pop('_id', None)
         user_doc = decrypt_user_doc(user_doc)
@@ -265,7 +329,7 @@ async def login(data: UserLogin):
             import uuid
             user_doc['id'] = str(uuid.uuid4())
             await db.users.update_one(
-                build_user_email_query(data.email),
+                {"tenant_id": user_doc.get("tenant_id"), "username": user_doc.get("username")} if user_doc.get("username") else build_user_email_query(data.email or ""),
                 {'$set': {'id': user_doc['id']}}
             )
 
@@ -275,13 +339,13 @@ async def login(data: UserLogin):
         await db.audit_logs.insert_one({
             "id": str(__import__('uuid').uuid4()),
             "tenant_id": user_doc.get('tenant_id') if user_doc else None,
-            "user_email": data.email,
+            "user_email": identity_label,
             "action": "login_failed",
             "resource_type": "auth",
             "details": "Invalid credentials",
             "timestamp": datetime.now(UTC).isoformat(),
         })
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Otel ID, kullanıcı adı veya şifre hatalı")
 
     user_data = {k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']}
     user = User(**user_data)
@@ -329,6 +393,61 @@ async def login(data: UserLogin):
 @router.get("/auth/me", response_model=User)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/auth/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Allow an authenticated user to change their own password."""
+    if not data.new_password or len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Yeni şifre en az 6 karakter olmalı")
+    if data.new_password == data.current_password:
+        raise HTTPException(status_code=400, detail="Yeni şifre eskisinden farklı olmalı")
+
+    user_doc = await db.users.find_one({"id": current_user.id})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    user_doc.pop('_id', None)
+    user_doc = decrypt_user_doc(user_doc)
+    hashed_pwd = user_doc.get('hashed_password') or user_doc.get('password_hash') or user_doc.get('password', '')
+    if not verify_password(data.current_password, hashed_pwd):
+        await db.audit_logs.insert_one({
+            "id": str(__import__('uuid').uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "action": "password_change_failed",
+            "resource_type": "auth",
+            "details": "Mevcut şifre hatalı",
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=401, detail="Mevcut şifre hatalı")
+
+    new_hash = hash_password(data.new_password)
+    await db.users.update_one(
+        {"id": current_user.id},
+        {"$set": {"hashed_password": new_hash}, "$unset": {"password_hash": "", "password": ""}},
+    )
+
+    # Invalidate any cached login responses for this user (best-effort)
+    try:
+        from infra.simple_cache import simple_cache as _login_cache
+        _login_cache.clear()
+    except Exception:
+        pass
+
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "user_email": getattr(current_user, "email", None),
+        "action": "password_change",
+        "resource_type": "auth",
+        "details": "Şifre güncellendi",
+        "timestamp": datetime.now(UTC).isoformat(),
+    })
+    return {"success": True, "message": "Şifre başarıyla güncellendi"}
 
 
 @router.post("/auth/refresh-token")
@@ -628,14 +747,87 @@ async def forgot_password(data: ForgotPasswordRequest):
     # Yeni kodu kaydet
     await db.password_reset_codes.insert_one(reset_doc)
 
-    # E-posta gönder (mock)
-    await email_service.send_password_reset_code(data.email, code, user.get('name'))
+    # Generate a token for the link-based reset flow as well.
+    import secrets as _secrets
+    token = _secrets.token_urlsafe(32)
+    await db.password_reset_codes.update_one(
+        {"_id": (await db.password_reset_codes.find_one({"email": data.email, "code": code}))['_id']},
+        {"$set": {"token": token, "expires_at": datetime.now(UTC) + timedelta(minutes=30)}},
+    )
+
+    # Build reset link + send via Resend (falls back to console if no API key).
+    from core.email import _frontend_base_url, render_password_reset_email, send_email
+
+    reset_link = f"{_frontend_base_url()}/auth/reset-password?token={token}"
+    subject, html = render_password_reset_email(
+        name=user.get('name'),
+        reset_link=reset_link,
+        code=code,
+        expires_in_minutes=30,
+    )
+    send_result = await send_email(data.email, subject, html)
+
+    # Best-effort fallback: if Resend not configured, also call legacy mock.
+    if not send_result.get("sent"):
+        try:
+            await email_service.send_password_reset_code(data.email, code, user.get('name'))
+        except Exception:
+            pass
 
     return {
         'success': True,
-        'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama kodu gönderildi',
-        'expires_in_minutes': 15
+        'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama bağlantısı gönderildi',
+        'expires_in_minutes': 30,
+        'email_sent': send_result.get("sent", False),
     }
+
+
+@router.post("/auth/reset-password-by-token")
+async def reset_password_by_token(payload: dict):
+    """Reset a password using the token embedded in the email link."""
+    token = (payload.get("token") or "").strip()
+    new_password = payload.get("new_password") or ""
+    if not token:
+        raise HTTPException(status_code=400, detail="Geçersiz bağlantı")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı")
+
+    reset = await db.password_reset_codes.find_one({"token": token, "used": False})
+    if not reset:
+        raise HTTPException(status_code=400, detail="Bağlantı geçersiz veya kullanılmış")
+
+    expires_at = reset['expires_at']
+    if not getattr(expires_at, 'tzinfo', None):
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) > expires_at:
+        await db.password_reset_codes.delete_one({'_id': reset['_id']})
+        raise HTTPException(status_code=400, detail="Bağlantının süresi dolmuş. Lütfen yeniden talep edin.")
+
+    email = reset.get('email')
+    user = await db.users.find_one(build_user_email_query(email))
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+
+    new_hash = hash_password(new_password)
+    await db.users.update_one(
+        build_user_email_query(email),
+        {"$set": {"hashed_password": new_hash, "password_reset_at": datetime.now(UTC).isoformat()}},
+    )
+
+    # Invalidate cached login responses
+    try:
+        from infra.simple_cache import simple_cache as _login_cache
+        for k in list(_login_cache._cache.keys()):
+            if k.startswith("login:"):
+                _login_cache.delete(k)
+    except Exception:
+        pass
+
+    await db.password_reset_codes.update_one(
+        {"_id": reset['_id']},
+        {"$set": {"used": True, "used_at": datetime.now(UTC)}},
+    )
+    return {"success": True, "message": "Şifreniz başarıyla güncellendi."}
 
 @router.post("/auth/reset-password")
 async def reset_password(data: ResetPasswordRequest):

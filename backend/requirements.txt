@@ -216,3 +216,4 @@ zipp==3.23.0
 zope.event==6.1
 zope.interface==8.2
 zopfli==0.4.1
+resend==2.29.0

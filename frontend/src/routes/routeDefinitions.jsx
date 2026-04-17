@@ -28,6 +28,8 @@ const MappingManager = lazy(() => import("@/pages/MappingManager"));
 const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const PendingAR = lazy(() => import("@/pages/PendingAR"));
 const CityLedgerAccounts = lazy(() => import("@/pages/CityLedgerAccounts"));
 const LoyaltyModule = lazy(() => import("@/pages/LoyaltyModule"));
@@ -232,9 +234,12 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
     { path: "/b2b/docs", type: "public", component: B2BApiDocs },
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
+    { path: "/auth/reset-password", type: "public", component: ResetPasswordPage },
 
     // ── Core Operations ────────────────────────────────
     { path: "/app/dashboard", ...p(Dashboard, { modules }) },
+    { path: "/app/profile", ...p(ProfilePage) },
+    { path: "/profile", ...p(ProfilePage) },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }) },
     { path: "/ai-pms", ...p(AIEnhancedPMS) },
     { path: "/app/ai", ...p(AIModule) },
