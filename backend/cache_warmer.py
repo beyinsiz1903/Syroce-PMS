@@ -26,10 +26,41 @@ class CacheWarmer:
             self.warm_bookings_cache(tenant_id),
             self.warm_dashboard_cache(tenant_id),
             self.warm_kpi_cache(tenant_id),
+            self.warm_housekeeping_endpoints(tenant_id),
             return_exceptions=True
         )
 
         logger.info(f"✅ Cache warming complete for tenant: {tenant_id}")
+
+    async def warm_housekeeping_endpoints(self, tenant_id: str):
+        """Pre-call housekeeping endpoints so their @cached results are hot.
+        First user click on the Housekeeping tab returns from cache instantly."""
+        try:
+            # Lightweight user shim — cached() only reads .tenant_id from current_user
+            fake_user = type('CacheWarmUser', (), {'tenant_id': tenant_id, 'role': 'admin'})()
+
+            # Lazy imports to avoid circular dependencies at module load
+            from routers.housekeeping import (
+                get_housekeeping_tasks,
+                get_room_status_board,
+                get_due_out_rooms,
+                get_stayover_rooms,
+                get_arrival_rooms,
+                get_room_blocks,
+            )
+
+            await asyncio.gather(
+                get_housekeeping_tasks(status=None, current_user=fake_user),
+                get_room_status_board(current_user=fake_user),
+                get_due_out_rooms(current_user=fake_user),
+                get_stayover_rooms(current_user=fake_user),
+                get_arrival_rooms(current_user=fake_user),
+                get_room_blocks(room_id=None, status='active', from_date=None, to_date=None, current_user=fake_user),
+                return_exceptions=True,
+            )
+            logger.info("  ✅ Housekeeping endpoints pre-warmed")
+        except Exception as e:
+            logger.info(f"  ❌ Housekeeping warming failed: {e}")
 
     async def warm_rooms_cache(self, tenant_id: str):
         """Pre-warm rooms cache"""
