@@ -20,11 +20,8 @@ import os
 import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Optional
 
-from fastapi import (
-    APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-)
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -64,7 +61,7 @@ def _require_hotel_admin(user: User) -> str:
     return user.tenant_id
 
 
-def _require_system_admin(token: Optional[str] = Header(None, alias="X-Marketplace-Admin-Token")) -> bool:
+def _require_system_admin(token: str | None = Header(None, alias="X-Marketplace-Admin-Token")) -> bool:
     """Sistem yöneticisi yetkisi: env var ile koruma.
 
     Production'da gerçek bir super-admin paneline bağlanır; MVP için
@@ -148,25 +145,25 @@ class MarketplaceListingCreate(BaseModel):
     description: str = ""
     photos: list[str] = []
     amenities: list[str] = []
-    star_rating: Optional[int] = Field(default=None, ge=1, le=5)
-    commission_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    star_rating: int | None = Field(default=None, ge=1, le=5)
+    commission_pct: float | None = Field(default=None, ge=0, le=100)
     allowed_room_types: list[str] = []
     blocked_dates: list[str] = []  # YYYY-MM-DD
 
 
 class MarketplaceListingUpdate(BaseModel):
-    hotel_name: Optional[str] = None
-    city: Optional[str] = None
-    country: Optional[str] = None
-    address: Optional[str] = None
-    description: Optional[str] = None
-    photos: Optional[list[str]] = None
-    amenities: Optional[list[str]] = None
-    star_rating: Optional[int] = Field(default=None, ge=1, le=5)
-    commission_pct: Optional[float] = Field(default=None, ge=0, le=100)
-    allowed_room_types: Optional[list[str]] = None
-    blocked_dates: Optional[list[str]] = None
-    is_listed: Optional[bool] = None
+    hotel_name: str | None = None
+    city: str | None = None
+    country: str | None = None
+    address: str | None = None
+    description: str | None = None
+    photos: list[str] | None = None
+    amenities: list[str] | None = None
+    star_rating: int | None = Field(default=None, ge=1, le=5)
+    commission_pct: float | None = Field(default=None, ge=0, le=100)
+    allowed_room_types: list[str] | None = None
+    blocked_dates: list[str] | None = None
+    is_listed: bool | None = None
 
 
 class MarketplaceSearchRequest(BaseModel):
@@ -174,10 +171,10 @@ class MarketplaceSearchRequest(BaseModel):
     check_out: str  # YYYY-MM-DD
     adults: int = 2
     children: int = 0
-    city: Optional[str] = None
-    country: Optional[str] = None
-    q: Optional[str] = None
-    max_price: Optional[float] = None
+    city: str | None = None
+    country: str | None = None
+    q: str | None = None
+    max_price: float | None = None
     limit: int = Field(default=50, le=200)
 
 
@@ -392,9 +389,9 @@ async def listing_opt_out(current_user: User = Depends(get_current_user)):
 
 @router.get("/hotels")
 async def agency_list_hotels(
-    city: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
-    q: Optional[str] = Query(None, description="Ad veya açıklamada ara"),
+    city: str | None = Query(None),
+    country: str | None = Query(None),
+    q: str | None = Query(None, description="Ad veya açıklamada ara"),
     limit: int = Query(50, le=200),
     _agency: dict = Depends(get_marketplace_agency),
 ):
@@ -624,7 +621,7 @@ async def agency_hotel_rates(
     tenant_id: str,
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
-    room_type: Optional[str] = Query(None),
+    room_type: str | None = Query(None),
     _agency: dict = Depends(get_marketplace_agency),
 ):
     await _get_listing_or_404(tenant_id)
@@ -826,10 +823,10 @@ async def agency_create_reservation(
 
 @router.get("/reservations")
 async def agency_list_reservations(
-    status: Optional[str] = Query(None),
-    tenant_id: Optional[str] = Query(None, description="Belirli bir otele filtrele"),
-    check_in_from: Optional[str] = Query(None),
-    check_in_to: Optional[str] = Query(None),
+    status: str | None = Query(None),
+    tenant_id: str | None = Query(None, description="Belirli bir otele filtrele"),
+    check_in_from: str | None = Query(None),
+    check_in_to: str | None = Query(None),
     limit: int = Query(100, le=500),
     agency: dict = Depends(get_marketplace_agency),
 ):
