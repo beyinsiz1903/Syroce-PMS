@@ -636,6 +636,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
       <div className="p-4 space-y-3">
+        <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200 shadow-sm space-y-3" data-testid="calendar-sticky-header">
         <CalendarHeader
           dateRange={dateRange}
           daysToShow={daysToShow}
@@ -663,6 +664,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
         />
+        </div>
 
         <CalendarOccupancy
           dateRange={dateRange}
