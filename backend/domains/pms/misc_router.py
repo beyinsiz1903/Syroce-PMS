@@ -876,42 +876,58 @@ async def get_staff_mobile_dashboard(
     }
 
     if role == UserRole.HOUSEKEEPING:
-        # Housekeeping tasks
-        tasks = []
-        async for task in db.housekeeping_tasks.find({
+        # Housekeeping tasks — batch room lookup (was N+1)
+        task_docs = await db.housekeeping_tasks.find({
             'tenant_id': current_user.tenant_id,
             'assigned_to': current_user.name,
             'status': {'$in': ['pending', 'in_progress']}
-        }).limit(20):
-            room = await db.rooms.find_one({'id': task.get('room_id')})
-            tasks.append({
-                'task_id': task.get('id'),
-                'room_number': room.get('room_number') if room else 'N/A',
-                'task_type': task.get('task_type'),
-                'priority': task.get('priority'),
-                'status': task.get('status')
-            })
+        }).limit(20).to_list(20)
+
+        task_room_ids = list({t.get('room_id') for t in task_docs if t.get('room_id')})
+        room_num_map = {}
+        if task_room_ids:
+            async for r in db.rooms.find(
+                {'id': {'$in': task_room_ids}, 'tenant_id': current_user.tenant_id},
+                {'_id': 0, 'id': 1, 'room_number': 1}
+            ):
+                room_num_map[r['id']] = r.get('room_number', 'N/A')
+
+        tasks = [{
+            'task_id': t.get('id'),
+            'room_number': room_num_map.get(t.get('room_id'), 'N/A'),
+            'task_type': t.get('task_type'),
+            'priority': t.get('priority'),
+            'status': t.get('status')
+        } for t in task_docs]
 
         dashboard['quick_actions'] = ['Start Task', 'Report Issue', 'Take Photo']
         dashboard['today_tasks'] = tasks
         dashboard['notifications_count'] = len(tasks)
 
     elif role == UserRole.FRONT_DESK:
-        # Check-in tasks
+        # Check-in tasks — batch guest lookup (was N+1)
         today = datetime.now().date().isoformat()
-        arrivals = []
-        async for booking in db.bookings.find({
+        booking_docs = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
             'check_in': today,
             'status': {'$in': ['confirmed', 'guaranteed']}
-        }).limit(10):
-            guest = await db.guests.find_one({'id': booking.get('guest_id')})
-            arrivals.append({
-                'booking_id': booking.get('id'),
-                'guest_name': guest.get('name') if guest else 'Guest',
-                'room': booking.get('room_id'),
-                'status': 'Pending Check-in'
-            })
+        }).limit(10).to_list(10)
+
+        booking_guest_ids = list({b.get('guest_id') for b in booking_docs if b.get('guest_id')})
+        guest_name_map = {}
+        if booking_guest_ids:
+            async for g in db.guests.find(
+                {'id': {'$in': booking_guest_ids}, 'tenant_id': current_user.tenant_id},
+                {'_id': 0, 'id': 1, 'name': 1}
+            ):
+                guest_name_map[g['id']] = g.get('name', 'Guest')
+
+        arrivals = [{
+            'booking_id': b.get('id'),
+            'guest_name': guest_name_map.get(b.get('guest_id'), 'Guest'),
+            'room': b.get('room_id'),
+            'status': 'Pending Check-in'
+        } for b in booking_docs]
 
         dashboard['quick_actions'] = ['Quick Check-in', 'Walk-in Booking', 'Scan Passport']
         dashboard['today_tasks'] = arrivals

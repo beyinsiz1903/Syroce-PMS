@@ -1722,12 +1722,24 @@ async def get_all_guest_insights(
     if persona_type:
         match_criteria['persona_type'] = persona_type
 
+    personas = await db.guest_personas.find(match_criteria).sort('confidence_score', -1).to_list(5000)
+
+    # Batch lookup all referenced guests in one query (was N+1)
+    guest_ids = list({p.get('guest_id') for p in personas if p.get('guest_id')})
+    guest_name_map = {}
+    if guest_ids:
+        async for g in db.guests.find(
+            {'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'name': 1}
+        ):
+            guest_name_map[g['id']] = g.get('name', 'Unknown')
+
     insights = []
-    async for persona in db.guest_personas.find(match_criteria).sort('confidence_score', -1):
-        guest = await db.guests.find_one({'id': persona.get('guest_id')})
+    for persona in personas:
+        gid = persona.get('guest_id')
         insights.append({
-            'guest_id': persona.get('guest_id'),
-            'guest_name': guest.get('name') if guest else 'Unknown',
+            'guest_id': gid,
+            'guest_name': guest_name_map.get(gid, 'Unknown'),
             'persona_type': persona.get('persona_type'),
             'confidence': persona.get('confidence_score'),
             'recommendations': persona.get('recommendations')
@@ -1747,7 +1759,11 @@ async def get_all_guest_insights(
         'min_confidence': min_confidence,
         'insights': insights,
         'by_type': {k: len(v) for k, v in by_type.items()},
-        'marketing_campaigns': generate_campaign_suggestions(by_type)
+        'marketing_campaigns': [
+            {'persona_type': ptype, 'audience_size': len(items),
+             'suggestion': f"{ptype} segmenti için kişiselleştirilmiş kampanya"}
+            for ptype, items in by_type.items() if items
+        ]
     }
 
 
@@ -2523,22 +2539,31 @@ async def get_occupancy_prediction(
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
-    # Get bookings for next N days
+    # Get bookings for next N days — single batch query, then count overlaps in Python
     start_date = datetime.now(UTC)
-    start_date + timedelta(days=days)
+    window_end = start_date + timedelta(days=days)
+
+    booking_docs = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        'check_in': {'$lte': window_end},
+        'check_out': {'$gt': start_date},
+    }, {'_id': 0, 'check_in': 1, 'check_out': 1}).to_list(10000)
+
+    parsed_bookings = []
+    for b in booking_docs:
+        ci_raw, co_raw = b.get('check_in'), b.get('check_out')
+        try:
+            ci = ci_raw if isinstance(ci_raw, datetime) else datetime.fromisoformat(str(ci_raw).replace('Z', '+00:00'))
+            co = co_raw if isinstance(co_raw, datetime) else datetime.fromisoformat(str(co_raw).replace('Z', '+00:00'))
+            parsed_bookings.append((ci, co))
+        except (ValueError, TypeError):
+            continue
 
     predictions = []
     for day_offset in range(days):
         pred_date = start_date + timedelta(days=day_offset)
-
-        # Count bookings for this date
-        bookings_count = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$lte': pred_date},
-            'check_out': {'$gt': pred_date},
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-        })
-
+        bookings_count = sum(1 for ci, co in parsed_bookings if ci <= pred_date < co)
         occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
 
         # Simple prediction model (can be enhanced with ML)
@@ -2592,6 +2617,16 @@ async def get_guest_patterns(
         'check_in': {'$gte': ninety_days_ago.isoformat()}
     }).to_list(length=5000)
 
+    # Pre-fetch all referenced rooms in one batch (was N+1 inside loop)
+    room_ids_in_bookings = list({b.get('room_id') for b in bookings if b.get('room_id')})
+    room_type_map = {}
+    if room_ids_in_bookings:
+        async for r in db.rooms.find(
+            {'id': {'$in': room_ids_in_bookings}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_type': 1}
+        ):
+            room_type_map[r['id']] = r.get('room_type', 'standard')
+
     # Analyze patterns
     patterns = {
         'booking_lead_time': {},
@@ -2624,10 +2659,9 @@ async def get_guest_patterns(
         duration = (check_out - check_in).days
         durations.append(duration)
 
-        # Room type (get from room)
-        room = await db.rooms.find_one({'id': booking.get('room_id')})
-        if room:
-            room_type = room.get('room_type', 'standard')
+        # Room type (lookup from pre-fetched batch)
+        room_type = room_type_map.get(booking.get('room_id'))
+        if room_type:
             room_types[room_type] = room_types.get(room_type, 0) + 1
 
         # Channel
