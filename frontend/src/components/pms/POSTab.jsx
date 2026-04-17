@@ -41,8 +41,7 @@ const POSTab = () => {
         setSummary(summaryRes.value.data || {});
       }
       const anyOk = ordersRes.status === 'fulfilled' || summaryRes.status === 'fulfilled';
-      if (anyOk) toast.success(tc('dataRefreshed'));
-      else toast.error(tc('dataLoadFailed'));
+      if (!anyOk) toast.error(tc('dataLoadFailed'));
     } catch {
       toast.error(tc('dataLoadFailed'));
     }
