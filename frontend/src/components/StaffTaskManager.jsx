@@ -31,7 +31,7 @@ const STATUS_COLORS = { pending: 'text-orange-500', in_progress: 'text-blue-500'
 
 const StaffTaskManager = () => {
   const { t } = useTranslation();
-  const ts = (k) => t(`pmsComponents.staff.${k}`);
+  const ts = useCallback((k) => t(`pmsComponents.staff.${k}`), [t]);
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);

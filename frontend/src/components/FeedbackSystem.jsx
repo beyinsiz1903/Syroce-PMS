@@ -13,7 +13,7 @@ import {
 
 const FeedbackSystem = () => {
   const { t } = useTranslation();
-  const tf = (k) => t(`pmsComponents.feedback.${k}`);
+  const tf = useCallback((k) => t(`pmsComponents.feedback.${k}`), [t]);
 
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(false);

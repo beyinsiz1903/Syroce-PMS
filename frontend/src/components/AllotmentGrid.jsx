@@ -17,7 +17,7 @@ const ROOM_TYPE_KEYS = ['standard', 'superior', 'deluxe', 'suite', 'family', 'ki
 
 const AllotmentGrid = () => {
   const { t, i18n } = useTranslation();
-  const ta = (k) => t(`pmsComponents.allotment.${k}`);
+  const ta = useCallback((k) => t(`pmsComponents.allotment.${k}`), [t]);
   const cur = t('pmsComponents.common.currency');
 
   const [contracts, setContracts] = useState([]);
