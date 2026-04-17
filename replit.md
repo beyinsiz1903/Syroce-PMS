@@ -473,6 +473,21 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - T005: KBSNotification — Dialog, XML escaping, Turkish UI
 - T006: ConciergeDesk, RevenueControls, ManagerDailyReport, KVKKManager — All complete
 
+## Sprint 7 Changes (Marketplace v1 — Cross-tenant B2B)
+
+- **`backend/routers/marketplace_b2b.py`** (~750L) — Cross-tenant marketplace API enabling external apps (e.g. Syroce Agent at github.com/beyinsiz1903/acenta-uygulama) to search & book across many Syroce-PMS hotels with a single API key.
+  - **Auth**: System-level (tenant-independent) API keys in `sysdb.marketplace_api_keys`. `get_marketplace_agency` does NOT call `set_tenant_context`; each endpoint resolves the target tenant per-request from the path/body and sets context inline.
+  - **Admin endpoints** (gated by `X-Marketplace-Admin-Token` env-secret): create/list/disable agencies, regenerate API keys.
+  - **Hotel admin endpoints** (JWT): `POST/GET/PUT/DELETE /listings/me` to opt-in / update / opt-out of the marketplace, with per-listing commission override, allowed_room_types whitelist and blocked_dates.
+  - **Agency endpoints** (X-API-Key, cross-tenant): `GET /hotels` discovery (city/country/q filter), `GET /hotels/{tenant_id}` detail, `POST /search` multi-hotel availability with capacity + max_price filters, `GET /hotels/{tid}/availability|rates`, full reservation lifecycle (`POST/GET/DELETE /reservations`).
+  - **Bookings pipeline reuse**: cross-tenant bookings drop into the existing `db.bookings` collection with `channel="marketplace"`, `marketplace_agency_id`, `agency_commission_rate/_amount`, `net_to_hotel`, `external_reference` (agency PNR), `origin="syroce_marketplace"`. Mirror summary written to `sysdb.marketplace_bookings` for cross-tenant ledger / reconciliation.
+  - **Webhooks**: reuses `routers.b2b_api.fire_webhooks` (retry + DLQ) — fires `marketplace.reservation.created` and `marketplace.reservation.cancelled` to the booking's tenant.
+  - **Reconciliation**: `GET /reconciliation/agency` (cross-tenant rollup by hotel) and `GET /reconciliation/hotel` (rollup by agency) for period-based commission/net reports.
+  - **Env**: `MARKETPLACE_ADMIN_TOKEN` secret required (passed via `X-Marketplace-Admin-Token` header on `/admin/*` routes).
+  - **Collections created on first use**: `sysdb.marketplace_agencies`, `sysdb.marketplace_api_keys`, `sysdb.marketplace_listings`, `sysdb.marketplace_bookings`.
+  - Mounted in `bootstrap/router_registry.py` after b2b_analytics. Smoke-tested end-to-end (agency create → hotel opt-in → multi-hotel search → cross-tenant booking → hotel reconciliation → cancel).
+  - **Out of scope this sprint**: client SDK on the acenta-uygulama side (separate repo), invoice generation from reconciliation totals, agency self-service portal UI on PMS, payouts.
+
 ## Sprint 6 Changes (B2B Analytics Dashboard)
 
 ### Backend

@@ -29,8 +29,12 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
-from core.tenant_db import get_system_db, set_tenant_context
+from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
+
+# Server-side fiyat hesaplamasının istemciden gelen total_amount'tan tolerans
+# (TRY) — bu eşiği aşan farklarda istek reddedilir (price-spoofing koruması).
+PRICE_TOLERANCE = 0.50
 
 logger = logging.getLogger(__name__)
 
@@ -421,8 +425,8 @@ async def agency_get_hotel(
 ):
     listing = await _get_listing_or_404(tenant_id)
 
-    set_tenant_context(tenant_id)
-    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+    with tenant_context(tenant_id):
+        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
     room_types = {}
     for r in rooms:
         rt = r.get("room_type", "Standard")
@@ -483,37 +487,37 @@ async def agency_search(
         if any(d in listing.get("blocked_dates", []) for d in _date_range(req.check_in, req.check_out)):
             continue
 
-        set_tenant_context(tenant_id)
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+        with tenant_context(tenant_id):
+            rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
 
-        room_types: dict[str, dict] = {}
-        for r in rooms:
-            rt = r.get("room_type", "Standard")
-            if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
-                continue
-            if r.get("capacity", 2) < capacity_needed:
-                continue
-            rt_data = room_types.setdefault(rt, {
-                "room_type": rt,
-                "capacity": r.get("capacity", 2),
-                "base_price": r.get("base_price", 0),
-                "total_rooms": 0,
-                "available_rooms": 0,
-                "_room_ids": [],
-            })
-            rt_data["total_rooms"] += 1
-            rt_data["_room_ids"].append(r.get("id"))
+            room_types: dict[str, dict] = {}
+            for r in rooms:
+                rt = r.get("room_type", "Standard")
+                if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
+                    continue
+                if r.get("capacity", 2) < capacity_needed:
+                    continue
+                rt_data = room_types.setdefault(rt, {
+                    "room_type": rt,
+                    "capacity": r.get("capacity", 2),
+                    "base_price": r.get("base_price", 0),
+                    "total_rooms": 0,
+                    "available_rooms": 0,
+                    "_room_ids": [],
+                })
+                rt_data["total_rooms"] += 1
+                rt_data["_room_ids"].append(r.get("id"))
 
-        for rt_data in room_types.values():
-            booked = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "room_id": {"$in": rt_data["_room_ids"]},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": req.check_out + "T23:59:59"},
-                "check_out": {"$gt": req.check_in + "T00:00:00"},
-            })
-            rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
-            del rt_data["_room_ids"]
+            for rt_data in room_types.values():
+                booked = await db.bookings.count_documents({
+                    "tenant_id": tenant_id,
+                    "room_id": {"$in": rt_data["_room_ids"]},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                    "check_in": {"$lt": req.check_out + "T23:59:59"},
+                    "check_out": {"$gt": req.check_in + "T00:00:00"},
+                })
+                rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
+                del rt_data["_room_ids"]
 
         # Sadece müsait oda tipleri olan otelleri ekle
         nights = (co - ci).days
@@ -571,41 +575,41 @@ async def agency_hotel_availability(
     if co <= ci:
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
-    set_tenant_context(tenant_id)
-    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
-    room_types: dict[str, dict] = {}
-    for r in rooms:
-        rt = r.get("room_type", "Standard")
-        if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
-            continue
-        rt_data = room_types.setdefault(rt, {
-            "room_type": rt,
-            "capacity": r.get("capacity", 2),
-            "base_price": r.get("base_price", 0),
-            "amenities": r.get("amenities", []),
-            "total_rooms": 0,
-            "available_rooms": 0,
-            "_room_ids": [],
-        })
-        rt_data["total_rooms"] += 1
-        rt_data["_room_ids"].append(r.get("id"))
+    with tenant_context(tenant_id):
+        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+        room_types: dict[str, dict] = {}
+        for r in rooms:
+            rt = r.get("room_type", "Standard")
+            if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
+                continue
+            rt_data = room_types.setdefault(rt, {
+                "room_type": rt,
+                "capacity": r.get("capacity", 2),
+                "base_price": r.get("base_price", 0),
+                "amenities": r.get("amenities", []),
+                "total_rooms": 0,
+                "available_rooms": 0,
+                "_room_ids": [],
+            })
+            rt_data["total_rooms"] += 1
+            rt_data["_room_ids"].append(r.get("id"))
 
-    nights = (co - ci).days
-    commission_pct = _commission_for(agency, listing)
-    for rt_data in room_types.values():
-        booked = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": {"$in": rt_data["_room_ids"]},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": check_out + "T23:59:59"},
-            "check_out": {"$gt": check_in + "T00:00:00"},
-        })
-        rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
-        rt_data["nights"] = nights
-        rt_data["total_price"] = rt_data["base_price"] * nights
-        rt_data["commission_pct"] = commission_pct
-        rt_data["agency_payable"] = round(rt_data["total_price"] * (1 - commission_pct / 100), 2)
-        del rt_data["_room_ids"]
+        nights = (co - ci).days
+        commission_pct = _commission_for(agency, listing)
+        for rt_data in room_types.values():
+            booked = await db.bookings.count_documents({
+                "tenant_id": tenant_id,
+                "room_id": {"$in": rt_data["_room_ids"]},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": check_out + "T23:59:59"},
+                "check_out": {"$gt": check_in + "T00:00:00"},
+            })
+            rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
+            rt_data["nights"] = nights
+            rt_data["total_price"] = rt_data["base_price"] * nights
+            rt_data["commission_pct"] = commission_pct
+            rt_data["agency_payable"] = round(rt_data["total_price"] * (1 - commission_pct / 100), 2)
+            del rt_data["_room_ids"]
 
     return {
         "check_in": check_in,
@@ -624,7 +628,6 @@ async def agency_hotel_rates(
     _agency: dict = Depends(get_marketplace_agency),
 ):
     await _get_listing_or_404(tenant_id)
-    set_tenant_context(tenant_id)
     base_query = {
         "tenant_id": tenant_id,
         "date": {"$gte": start_date, "$lte": end_date},
@@ -632,9 +635,10 @@ async def agency_hotel_rates(
     if room_type:
         base_query["room_type_code"] = room_type
 
-    rates = await db.hr_rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
-    if not rates:
-        rates = await db.rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
+    with tenant_context(tenant_id):
+        rates = await db.hr_rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
+        if not rates:
+            rates = await db.rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
     return {"start_date": start_date, "end_date": end_date, "rates": rates}
 
 
@@ -665,53 +669,66 @@ async def agency_create_reservation(
     if co <= ci:
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
-    set_tenant_context(data.tenant_id)
-    rooms = await db.rooms.find(
-        {"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}
-    ).to_list(500)
-    if not rooms:
-        raise HTTPException(404, "Oda tipi bulunamadı")
+    # NOTE: Mevcut /api/b2b/reservations ile paylaşılan davranış — "check-then-act"
+    # rezervasyon akışı, yüksek eş zamanlılıkta aynı son odaya çift booking
+    # üretebilir. Bu kapsamda kabul edilmiştir; gelecek sprint'te per-room
+    # atomic find_and_modify lock'a geçirilecek.
+    with tenant_context(data.tenant_id):
+        rooms = await db.rooms.find(
+            {"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}
+        ).to_list(500)
+        if not rooms:
+            raise HTTPException(404, "Oda tipi bulunamadı")
 
-    available_room = None
-    for room in rooms:
-        conflict = await db.bookings.count_documents({
+        available_room = None
+        for room in rooms:
+            conflict = await db.bookings.count_documents({
+                "tenant_id": data.tenant_id,
+                "room_id": room["id"],
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": data.check_out + "T23:59:59"},
+                "check_out": {"$gt": data.check_in + "T00:00:00"},
+            })
+            if conflict == 0:
+                available_room = room
+                break
+
+        if not available_room:
+            raise HTTPException(409, "Seçilen tarihler için müsait oda yok")
+
+        commission_pct = _commission_for(agency, listing)
+        nights = (co - ci).days
+        # Server-side "ground truth" fiyat — istemcinin gönderdiği total_amount'a güvenme.
+        server_total = float(available_room.get("base_price", 0)) * max(nights, 1)
+        if data.total_amount and data.total_amount > 0:
+            if abs(data.total_amount - server_total) > PRICE_TOLERANCE:
+                raise HTTPException(
+                    422,
+                    f"Fiyat uyuşmazlığı: gönderilen {data.total_amount}, beklenen {server_total} "
+                    f"(tolerans ±{PRICE_TOLERANCE}). Lütfen güncel fiyat için /search çağrısını tekrarlayın.",
+                )
+        total = server_total
+        commission_amount = round(total * commission_pct / 100, 2)
+        net_to_hotel = round(total - commission_amount, 2)
+
+        guest_id = _uuid()
+        await db.guests.insert_one({
+            "id": guest_id,
             "tenant_id": data.tenant_id,
-            "room_id": room["id"],
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": data.check_out + "T23:59:59"},
-            "check_out": {"$gt": data.check_in + "T00:00:00"},
+            "name": data.guest_name.strip(),
+            "email": data.guest_email.strip() or f"mkt-{guest_id[:8]}@placeholder.local",
+            "phone": data.guest_phone.strip(),
+            "id_number": "",
+            "vip_status": False,
+            "loyalty_points": 0,
+            "total_stays": 0,
+            "total_spend": 0.0,
+            "created_at": _now_iso(),
         })
-        if conflict == 0:
-            available_room = room
-            break
 
-    if not available_room:
-        raise HTTPException(409, "Seçilen tarihler için müsait oda yok")
-
-    commission_pct = _commission_for(agency, listing)
-    nights = (co - ci).days
-    total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
-    commission_amount = round(total * commission_pct / 100, 2)
-    net_to_hotel = round(total - commission_amount, 2)
-
-    guest_id = _uuid()
-    await db.guests.insert_one({
-        "id": guest_id,
-        "tenant_id": data.tenant_id,
-        "name": data.guest_name.strip(),
-        "email": data.guest_email.strip() or f"mkt-{guest_id[:8]}@placeholder.local",
-        "phone": data.guest_phone.strip(),
-        "id_number": "",
-        "vip_status": False,
-        "loyalty_points": 0,
-        "total_stays": 0,
-        "total_spend": 0.0,
-        "created_at": _now_iso(),
-    })
-
-    booking_id = _uuid()
-    confirmation_code = f"MKT-{booking_id[:8].upper()}"
-    booking_doc = {
+        booking_id = _uuid()
+        confirmation_code = f"MKT-{booking_id[:8].upper()}"
+        booking_doc = {
         "id": booking_id,
         "tenant_id": data.tenant_id,
         "guest_id": guest_id,
@@ -740,14 +757,14 @@ async def agency_create_reservation(
         "guest_name": data.guest_name.strip(),
         "guest_email": data.guest_email.strip(),
         "guest_phone": data.guest_phone.strip(),
-        "origin": "syroce_marketplace",
-        "created_at": _now_iso(),
-        "updated_at": _now_iso(),
-    }
-    await db.bookings.insert_one(booking_doc)
-    booking_doc.pop("_id", None)
+            "origin": "syroce_marketplace",
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+        }
+        await db.bookings.insert_one(booking_doc)
+        booking_doc.pop("_id", None)
 
-    # Cross-tenant ledger (ileride mutabakat için)
+    # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
     sysdb = get_system_db()
     await sysdb.marketplace_bookings.insert_one({
         "id": booking_id,
@@ -846,11 +863,11 @@ async def agency_get_reservation(
     if not doc:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
-    set_tenant_context(doc["tenant_id"])
-    booking = await db.bookings.find_one(
-        {"id": reservation_id, "tenant_id": doc["tenant_id"]},
-        {"_id": 0, "tenant_id": 0, "guest_id": 0, "room_id": 0},
-    )
+    with tenant_context(doc["tenant_id"]):
+        booking = await db.bookings.find_one(
+            {"id": reservation_id, "tenant_id": doc["tenant_id"]},
+            {"_id": 0, "tenant_id": 0, "guest_id": 0, "room_id": 0},
+        )
     return {"summary": doc, "booking": booking}
 
 
@@ -870,21 +887,21 @@ async def agency_cancel_reservation(
     if summary.get("status") == "cancelled":
         return {"ok": True, "message": "Rezervasyon zaten iptal edilmiş"}
 
-    set_tenant_context(summary["tenant_id"])
-    booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": summary["tenant_id"]})
-    if booking and booking.get("status") in ("checked_in", "checked_out"):
-        raise HTTPException(409, "Otele giriş yapılmış rezervasyon iptal edilemez")
+    with tenant_context(summary["tenant_id"]):
+        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": summary["tenant_id"]})
+        if booking and booking.get("status") in ("checked_in", "checked_out"):
+            raise HTTPException(409, "Otele giriş yapılmış rezervasyon iptal edilemez")
 
-    await db.bookings.update_one(
-        {"id": reservation_id, "tenant_id": summary["tenant_id"]},
-        {"$set": {
-            "status": "cancelled",
-            "cancellation_reason": reason,
-            "cancelled_by": "marketplace_agency",
-            "cancelled_at": _now_iso(),
-            "updated_at": _now_iso(),
-        }},
-    )
+        await db.bookings.update_one(
+            {"id": reservation_id, "tenant_id": summary["tenant_id"]},
+            {"$set": {
+                "status": "cancelled",
+                "cancellation_reason": reason,
+                "cancelled_by": "marketplace_agency",
+                "cancelled_at": _now_iso(),
+                "updated_at": _now_iso(),
+            }},
+        )
     await sysdb.marketplace_bookings.update_one(
         {"id": reservation_id},
         {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": reason}},
