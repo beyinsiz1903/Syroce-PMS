@@ -199,6 +199,14 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Booking hold sweeper start error: {e}")
 
+    # ── Mailing automation worker (rezervasyon onay/hatırlatma vb.) ──
+    try:
+        from workers.mailing_automation import start as start_mailing_automation
+        start_mailing_automation()
+        logger.info("Mailing automation worker started (600s interval)")
+    except Exception as e:
+        logger.warning(f"Mailing automation worker start error: {e}")
+
     # ── Check-in/Check-out transaction indexes ─────────────────────
     try:
         from core.atomic_checkin_checkout import ensure_checkin_checkout_indexes

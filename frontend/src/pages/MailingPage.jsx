@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
 
 const API = '/api/mailing';
 
@@ -17,21 +18,24 @@ export default function MailingPage() {
   const [templates, setTemplates] = useState([]);
   const [recipients, setRecipients] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [automations, setAutomations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, t, r, cp] = await Promise.all([
+      const [c, t, r, cp, au] = await Promise.all([
         axios.get(`${API}/credits`),
         axios.get(`${API}/templates`),
         axios.get(`${API}/recipients`),
         axios.get(`${API}/campaigns`),
+        axios.get(`${API}/automations`),
       ]);
       setCredits(c.data);
       setTemplates(t.data || []);
       setRecipients(r.data || []);
       setCampaigns(cp.data || []);
+      setAutomations(au.data?.automations || []);
     } catch (e) {
       toast.error('Mailing verileri yüklenemedi');
     } finally {
@@ -57,8 +61,9 @@ export default function MailingPage() {
       </div>
 
       <Tabs defaultValue="campaign" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="campaign"><Send className="w-4 h-4 mr-1.5" />Kampanya</TabsTrigger>
+          <TabsTrigger value="automations"><Zap className="w-4 h-4 mr-1.5" />Otomasyon</TabsTrigger>
           <TabsTrigger value="templates"><FileText className="w-4 h-4 mr-1.5" />Şablonlar</TabsTrigger>
           <TabsTrigger value="history"><Sparkles className="w-4 h-4 mr-1.5" />Geçmiş</TabsTrigger>
           <TabsTrigger value="credits"><AlertCircle className="w-4 h-4 mr-1.5" />Krediler</TabsTrigger>
@@ -71,6 +76,9 @@ export default function MailingPage() {
             credits={credits}
             onSent={refresh}
           />
+        </TabsContent>
+        <TabsContent value="automations">
+          <AutomationsTab automations={automations} templates={templates} onChanged={refresh} />
         </TabsContent>
         <TabsContent value="templates">
           <TemplatesTab templates={templates} onChanged={refresh} />
@@ -254,6 +262,86 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
     </div>
   );
 }
+
+// ── Automations Tab ──────────────────────────────────────────
+function AutomationsTab({ automations, templates, onChanged }) {
+  const save = async (a, patch) => {
+    try {
+      await axios.put(`${API}/automations/${a.trigger_type}`, {
+        enabled: patch.enabled ?? a.enabled,
+        template_id: patch.template_id ?? a.template_id,
+        offset_days: patch.offset_days ?? a.offset_days,
+      });
+      toast.success('Otomasyon güncellendi');
+      onChanged();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Güncellenemedi');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="pt-4">
+          <p className="text-sm text-blue-900">
+            <strong>Nasıl çalışır?</strong> Aşağıdan bir tetikleyici seçip şablon atayın.
+            Sistem her 10 dakikada bir tarar ve uygun rezervasyonlara otomatik olarak e-posta gönderir.
+            Aynı misafire aynı tetikleyici için sadece <strong>bir kez</strong> mail gönderilir.
+            Kredi yetersizse otomasyon duraklar.
+          </p>
+        </CardContent>
+      </Card>
+      {automations.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">Yükleniyor…</div>
+      )}
+      {automations.map(a => (
+        <Card key={a.trigger_type}>
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Zap className={`w-5 h-5 ${a.enabled ? 'text-green-600' : 'text-gray-400'}`} />
+                  <h3 className="font-semibold text-lg">{a.label}</h3>
+                  {a.enabled && <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Aktif</Badge>}
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">{a.description}</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Şablon</Label>
+                    <select className="w-full border rounded px-3 py-2 text-sm mt-1"
+                      value={a.template_id || ''}
+                      onChange={e => save(a, { template_id: e.target.value || null })}>
+                      <option value="">— Şablon seçin —</option>
+                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">
+                      Gün farkı {a.trigger_type === 'checkin_reminder' ? '(check-in öncesi)' :
+                                a.trigger_type === 'checkout_thanks' ? '(check-out sonrası)' : '(0 = anında)'}
+                    </Label>
+                    <Input type="number" className="mt-1" value={a.offset_days ?? 0}
+                      onChange={e => save(a, { offset_days: parseInt(e.target.value || '0', 10) })} />
+                  </div>
+                </div>
+                {a.last_run_at && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Son çalışma: {new Date(a.last_run_at).toLocaleString('tr-TR')} • {a.last_sent_count} gönderim
+                  </p>
+                )}
+              </div>
+              <Switch
+                checked={a.enabled}
+                onCheckedChange={(v) => save(a, { enabled: v })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 
 // ── Templates Tab ──────────────────────────────────────────────
 function TemplatesTab({ templates, onChanged }) {

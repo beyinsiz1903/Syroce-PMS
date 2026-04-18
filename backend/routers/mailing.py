@@ -29,6 +29,25 @@ DEFAULT_FREE_CREDITS = 100
 RECIPIENT_FETCH_LIMIT = 1000
 SEND_BATCH_LIMIT = 500  # max recipients per single campaign send
 
+# Automation trigger types
+AUTOMATION_TRIGGERS = {
+    "booking_created": {
+        "label": "Rezervasyon Onayı",
+        "description": "Rezervasyon oluşturulur oluşturulmaz misafire onay e-postası gönderilir",
+        "default_offset_days": 0,
+    },
+    "checkin_reminder": {
+        "label": "Check-in Hatırlatma",
+        "description": "Check-in tarihinden 1 gün önce hatırlatma e-postası gönderilir",
+        "default_offset_days": -1,
+    },
+    "checkout_thanks": {
+        "label": "Check-out Sonrası Teşekkür",
+        "description": "Check-out'tan 2 gün sonra teşekkür / anket e-postası gönderilir",
+        "default_offset_days": 2,
+    },
+}
+
 
 def _db():
     from server import db  # late import to avoid circulars
@@ -52,6 +71,12 @@ class TemplateOut(TemplateIn):
     tenant_id: str
     created_at: str
     updated_at: str
+
+
+class AutomationConfig(BaseModel):
+    enabled: bool = False
+    template_id: Optional[str] = None
+    offset_days: Optional[int] = None  # negative = days BEFORE event, positive = AFTER
 
 
 class CampaignCreate(BaseModel):
@@ -235,6 +260,68 @@ async def list_recipients(
             "email": email,
         })
     return out
+
+
+# ── Automations ────────────────────────────────────────────────────────
+@router.get("/automations")
+async def list_automations(current_user: User = Depends(get_current_user)) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    db = _db()
+    docs = await db.mailing_automations.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).to_list(50)
+    by_type = {d["trigger_type"]: d for d in docs}
+    out = []
+    for trig, meta in AUTOMATION_TRIGGERS.items():
+        existing = by_type.get(trig, {})
+        out.append({
+            "trigger_type": trig,
+            "label": meta["label"],
+            "description": meta["description"],
+            "default_offset_days": meta["default_offset_days"],
+            "enabled": bool(existing.get("enabled", False)),
+            "template_id": existing.get("template_id"),
+            "offset_days": existing.get("offset_days", meta["default_offset_days"]),
+            "last_run_at": existing.get("last_run_at"),
+            "last_sent_count": existing.get("last_sent_count", 0),
+        })
+    return {"automations": out}
+
+
+@router.put("/automations/{trigger_type}")
+async def update_automation(
+    trigger_type: str,
+    payload: AutomationConfig,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    if trigger_type not in AUTOMATION_TRIGGERS:
+        raise HTTPException(status_code=400, detail="Bilinmeyen tetikleyici")
+    db = _db()
+    if payload.enabled and not payload.template_id:
+        raise HTTPException(status_code=400, detail="Aktif etmek için bir şablon seçin")
+    if payload.template_id:
+        tpl = await db.mailing_templates.find_one(
+            {"id": payload.template_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+        )
+        if not tpl:
+            raise HTTPException(status_code=404, detail="Şablon bulunamadı")
+    update = {
+        "tenant_id": current_user.tenant_id,
+        "trigger_type": trigger_type,
+        "enabled": payload.enabled,
+        "template_id": payload.template_id,
+        "offset_days": payload.offset_days if payload.offset_days is not None
+        else AUTOMATION_TRIGGERS[trigger_type]["default_offset_days"],
+        "updated_at": _now_iso(),
+    }
+    await db.mailing_automations.update_one(
+        {"tenant_id": current_user.tenant_id, "trigger_type": trigger_type},
+        {"$set": update}, upsert=True,
+    )
+    return {"success": True, **update}
 
 
 # ── Campaigns ──────────────────────────────────────────────────────────
