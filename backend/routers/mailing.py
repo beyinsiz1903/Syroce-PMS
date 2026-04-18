@@ -169,25 +169,40 @@ async def _ensure_purchase_indexes() -> None:
         logger.warning("[mailing] purchase index create skipped: %s", e)
 
 
-@router.get("/packages")
+@router.get("/packages", deprecated=True)
 async def list_packages() -> dict:
-    """Public list of credit packages — also tells frontend if iyzico is configured."""
+    """DEPRECATED: kredi paketleri artık Modül Pazarı (/api/module-store)
+    üzerinden satılıyor. Bu uç geriye dönük uyumluluk için kalıyor; yeni
+    UI çağrı yapmamalı. Mevcut bakiye okuma `/api/mailing/credits` üzerinden."""
     from core.iyzico import is_configured
     await _ensure_purchase_indexes()
     return {
         "packages": CREDIT_PACKAGES,
         "payment_ready": is_configured(),
         "currency": "TRY",
+        "deprecated": True,
+        "successor": "/api/module-store/products",
+        "message": "Kredi paketleri artık Modül Pazarı üzerinden satılıyor.",
     }
 
 
-@router.post("/purchase")
+@router.post("/purchase", deprecated=True)
 async def purchase_package(
     payload: PurchaseRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Initiate iyzico Checkout Form. Returns paymentPageUrl for redirect."""
-    from core.iyzico import init_checkout_form, is_configured, public_callback_url
+    """DEPRECATED: kullanıcıyı Modül Pazarı'na yönlendir. Bu uç artık ödeme
+    başlatmıyor; çift satış kanalını önlemek için 410 Gone döndürüyor."""
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Kredi paketi satışı artık Modül Pazarı üzerinden yapılıyor. "
+            "Lütfen /app/module-store sayfasından satın alın."
+        ),
+    )
+
+    # Eski iyzico akışı — referans için bırakıldı, asla çalıştırılmaz.
+    from core.iyzico import init_checkout_form, is_configured, public_callback_url  # noqa: F401
 
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")

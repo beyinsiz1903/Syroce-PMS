@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 
 const API = '/mailing';
@@ -549,39 +550,8 @@ function StatBox({ label, value, sub, color = "text-foreground" }) {
 
 // ── Credits Tab ──────────────────────────────────────────────
 function CreditsTab({ credits }) {
-  const [pkgData, setPkgData] = useState(null);
-  const [purchases, setPurchases] = useState([]);
-  const [buying, setBuying] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [p, h] = await Promise.all([
-          axios.get(`${API}/packages`),
-          axios.get(`${API}/purchases`),
-        ]);
-        setPkgData(p.data);
-        setPurchases(h.data || []);
-      } catch { /* ignore */ }
-    })();
-  }, []);
-
-  const buy = async (code) => {
-    setBuying(code);
-    try {
-      const r = await axios.post(`${API}/purchase`, { package_code: code });
-      if (r.data.payment_page_url) {
-        toast.success('Ödeme sayfasına yönlendiriliyorsunuz…');
-        window.location.href = r.data.payment_page_url;
-      }
-    } catch (e) {
-      const msg = e.response?.data?.detail || 'Satın alma başlatılamadı';
-      toast.error(msg);
-    } finally { setBuying(null); }
-  };
-
+  const navigate = useNavigate();
   if (!credits) return null;
-  const ready = pkgData?.payment_ready;
 
   return (
     <div className="space-y-6">
@@ -606,80 +576,24 @@ function CreditsTab({ credits }) {
         </Card>
       </div>
 
-      <div>
-        <h3 className="text-lg font-semibold mb-1">Kredi Paketleri</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Tüm paketler tek seferlik satın alma — kredileriniz son kullanma tarihi olmadan kalır.
-        </p>
-        {!ready && (
-          <Card className="bg-amber-50 border-amber-200 mb-4">
-            <CardContent className="pt-4">
-              <p className="text-sm text-amber-900">
-                ℹ️ <strong>Ödeme sistemi henüz hazırlanma aşamasında.</strong> iyzico anlaşması tamamlandığında
-                paket satın alma butonları otomatik olarak aktive olacak. Şimdilik 100 ücretsiz hediye kredinizi kullanabilirsiniz.
+      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-white">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-4">
+            <div className="text-4xl">🛒</div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold mb-1">Kredi yüklemek ister misiniz?</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Mailing kredi paketleri artık <strong>Modül Pazarı</strong> üzerinden satılıyor.
+                Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.
+                Mevcut krediniz ve geçmişiniz aynen korunuyor.
               </p>
-            </CardContent>
-          </Card>
-        )}
-        <div className="grid md:grid-cols-3 gap-4">
-          {(pkgData?.packages || []).map(p => (
-            <Card key={p.code} className={p.popular ? 'border-indigo-500 border-2 relative' : ''}>
-              {p.popular && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-600">
-                  En Popüler
-                </Badge>
-              )}
-              <CardHeader>
-                <CardTitle className="text-xl">{p.name}</CardTitle>
-                <CardDescription>{p.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-indigo-700">{p.price_try.toLocaleString('tr-TR')} ₺</div>
-                <p className="text-sm text-muted-foreground mb-3">KDV dahil, tek seferlik</p>
-                <div className="space-y-1 text-sm mb-4">
-                  <div className="flex items-center gap-2">✉️ <strong>{p.credits.toLocaleString('tr-TR')}</strong> e-posta kredisi</div>
-                  <div className="flex items-center gap-2">💰 E-posta başına <strong>{p.per_email.toFixed(3)} ₺</strong></div>
-                  <div className="flex items-center gap-2">⏳ Süre sınırı yok</div>
-                  <div className="flex items-center gap-2">📊 Detaylı raporlama</div>
-                </div>
-                <Button className="w-full" disabled={!ready || buying === p.code}
-                  onClick={() => buy(p.code)}>
-                  {!ready ? 'Yakında Aktif' : (buying === p.code ? 'Yönlendiriliyor…' : 'Satın Al')}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {purchases.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">Satın Alma Geçmişi</h3>
-          <Card>
-            <CardContent className="p-0">
-              <div className="divide-y">
-                {purchases.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-3">
-                    <div>
-                      <p className="font-medium">{PACKAGE_LABEL(p.package_code)}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString('tr-TR')}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{p.price_try} ₺</p>
-                      <Badge variant={p.status === 'completed' ? 'default' : 'secondary'} className={p.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}>
-                        {STATUS_LABEL(p.status)}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              <Button onClick={() => navigate('/app/module-store')} className="bg-indigo-600 hover:bg-indigo-700">
+                Modül Pazarı'na Git →
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
-
-const PACKAGE_LABEL = (code) => ({ starter: 'Başlangıç', growth: 'Büyüme', scale: 'Profesyonel' })[code] || code;
-const STATUS_LABEL = (s) => ({ pending: 'Bekliyor', completed: 'Tamamlandı', failed: 'Başarısız', init_failed: 'Başlatılamadı' })[s] || s;
