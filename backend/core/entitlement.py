@@ -36,6 +36,12 @@ ROUTE_MODULE_MAP: dict[str, str] = {
     "/api/loyalty/": "loyalty_program",
     "/api/analytics/gm": "gm_dashboards",
     "/api/marketplace/": "channel_manager",
+    # Marketplace-purchased integration. Aliases (quick_id_integration)
+    # are resolved inside core.subscriptions.tenant_has_module.
+    "/api/quick-id/": "quick_id",
+    # NOTE: /api/mailing/ is intentionally NOT entitlement-gated.
+    # Mailing is sold as credit packs and is enforced at send-time
+    # by the mailing credit balance check, not by route gating.
 }
 
 # Routes that are always allowed (no module check needed)
@@ -69,13 +75,15 @@ def _get_token_from_headers(headers: list) -> str | None:
 
 
 def _decode_tenant_from_token(token: str) -> str | None:
-    """Decode tenant_id from JWT without full validation (for middleware speed)."""
-    try:
-        import os
+    """Decode tenant_id from JWT.
 
+    Uses the SAME secret as core.security so middleware and auth layer
+    cannot diverge (which would silently bypass entitlement checks).
+    """
+    try:
         import jwt
-        secret = os.environ.get("JWT_SECRET", "secret-key-change-in-production")
-        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        from core.security import JWT_SECRET
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return payload.get("tenant_id")
     except Exception:
         return None
@@ -90,7 +98,13 @@ def _match_route_module(path: str) -> str | None:
 
 
 async def _check_module_access(tenant_id: str, module: str) -> bool:
-    """Check if tenant has access to the required module."""
+    """Check if tenant has access to the required module.
+
+    Access granted when EITHER:
+    1. The tenant's plan includes the module (legacy `modules` map), OR
+    2. There is an active marketplace subscription for the module key
+       (tenant_subscriptions, status=active, end_date in the future).
+    """
     try:
         tenant_doc = await db.tenants.find_one(
             {"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1}
@@ -100,10 +114,18 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
 
         from core.helpers import get_tenant_modules
         modules = get_tenant_modules(tenant_doc)
-        return bool(modules.get(module, False))
+        if modules.get(module, False):
+            return True
+
+        # Fall back to marketplace subscription check.
+        from core.subscriptions import tenant_has_module
+        return await tenant_has_module(tenant_id, module)
     except Exception as e:
-        logger.warning(f"Entitlement check error: {e}")
-        return True  # Fail open on errors
+        # Fail CLOSED on errors so a transient DB outage cannot
+        # silently grant access to paid modules. The middleware only
+        # reaches this code path when a route IS module-gated.
+        logger.error(f"Entitlement check error for module={module}: {e}")
+        return False
 
 
 class EntitlementMiddleware:

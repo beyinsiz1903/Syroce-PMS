@@ -12,8 +12,10 @@ from typing import Any
 
 
 def _db():
-    from server import db
-    return db
+    """Raw, non-tenant-scoped DB. tenant_subscriptions stores tenant_id
+    explicitly and we always filter on it manually."""
+    from core.database import _raw_db
+    return _raw_db
 
 
 async def get_active_subscriptions(tenant_id: str) -> list[dict[str, Any]]:
@@ -33,25 +35,39 @@ async def get_active_subscriptions(tenant_id: str) -> list[dict[str, Any]]:
     return [doc async for doc in cur]
 
 
+# Canonical entitlement key → list of accepted marketplace product keys.
+# Allows route-level checks (e.g. "mailing") to be satisfied by ANY of the
+# matching marketplace SKUs (e.g. "mailing_starter" credit pack).
+MODULE_ALIASES: dict[str, list[str]] = {
+    "mailing": ["mailing", "mailing_starter", "mailing_pro"],
+    "quick_id": ["quick_id", "quick_id_integration"],
+}
+
+
 async def tenant_has_module(tenant_id: str, module_key: str) -> bool:
     """Return True if tenant has access to a module either via plan or
-    an active marketplace subscription."""
+    an active marketplace subscription (any aliased SKU counts)."""
     db = _db()
+    accepted_keys = MODULE_ALIASES.get(module_key, [module_key])
+
     tenant = await db.tenants.find_one(
         {"id": tenant_id},
         {"_id": 0, "modules": 1},
     )
     if tenant:
         modules = tenant.get("modules") or {}
-        if isinstance(modules, dict) and modules.get(module_key):
-            return True
-        if isinstance(modules, list) and module_key in modules:
-            return True
+        if isinstance(modules, dict):
+            for k in accepted_keys:
+                if modules.get(k):
+                    return True
+        elif isinstance(modules, list):
+            if any(k in modules for k in accepted_keys):
+                return True
 
     now = datetime.now(UTC)
     sub = await db.tenant_subscriptions.find_one({
         "tenant_id": tenant_id,
-        "product_key": module_key,
+        "product_key": {"$in": accepted_keys},
         "status": "active",
         "$or": [
             {"end_date": None},

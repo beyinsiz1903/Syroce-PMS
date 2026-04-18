@@ -25,22 +25,6 @@ router = APIRouter(prefix="/api/module-store", tags=["module-store"])
 # ── Default catalog (seed) ──────────────────────────────────────
 DEFAULT_PRODUCTS: list[dict[str, Any]] = [
     {
-        "key": "qr_room_management",
-        "name": "QR Oda Yönetimi",
-        "description": "Her oda için QR kod üretimi, misafir self-servis talepleri.",
-        "category": "module",
-        "billing_type": "subscription",
-        "price_try": 199.0,
-        "duration_days": 30,
-        "icon": "QrCode",
-        "features": [
-            "Oda başına benzersiz QR kod",
-            "Misafir talep formu",
-            "Talep yönetim paneli",
-        ],
-        "active": True,
-    },
-    {
         "key": "quick_id_integration",
         "name": "Quick-ID Kimlik Okuma",
         "description": "Pasaport / TC kimlik OCR entegrasyonu, KBS hazır.",
@@ -86,8 +70,15 @@ DEFAULT_PRODUCTS: list[dict[str, Any]] = [
 
 
 def _db():
-    from server import db
-    return db
+    """Return raw, non-tenant-scoped DB.
+
+    Marketplace_products is a PLATFORM-WIDE catalog (no tenant_id field).
+    marketplace_orders / tenant_subscriptions store tenant_id explicitly
+    and we always filter on it manually, so the tenant-scoping wrapper
+    would cause duplicate-key insert errors and miss-filtering. Use raw.
+    """
+    from core.database import _raw_db
+    return _raw_db
 
 
 def _now_iso() -> str:
@@ -106,6 +97,13 @@ async def _seed_products_if_empty() -> None:
                 upsert=True,
             )
         logger.info("[marketplace] seeded %d default products", len(DEFAULT_PRODUCTS))
+
+    # Deactivate legacy QR product — that module is included free in all plans.
+    await db.marketplace_products.update_one(
+        {"key": "qr_room_management"},
+        {"$set": {"active": False, "updated_at": _now_iso(),
+                  "deactivated_reason": "Tüm planlarda ücretsiz olarak dahildir"}},
+    )
 
 
 # ── Schemas ─────────────────────────────────────────────────────
