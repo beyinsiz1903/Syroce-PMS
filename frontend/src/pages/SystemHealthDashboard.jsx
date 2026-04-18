@@ -5,6 +5,7 @@ import { io } from "socket.io-client";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import Layout from "../components/Layout";
 import {
   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, ArrowLeft, Loader2,
@@ -437,7 +438,7 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
 
 /* ── Main Dashboard ──────────────────────────────────────── */
 
-export default function SystemHealthDashboard({ user }) {
+export default function SystemHealthDashboard({ user, tenant, onLogout }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [cmStatus, setCmStatus] = useState(null);
@@ -584,6 +585,7 @@ export default function SystemHealthDashboard({ user }) {
   const userScope = roleDashboard?.scope || "";
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="system-health">
     <div data-testid="system-health-dashboard" className="min-h-screen bg-white text-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
@@ -672,5 +674,6 @@ export default function SystemHealthDashboard({ user }) {
         )}
       </div>
     </div>
+    </Layout>
   );
 }
