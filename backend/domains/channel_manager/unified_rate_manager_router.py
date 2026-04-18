@@ -770,15 +770,30 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     # ── HR room code -> pms_room_type -> exely_room_code translation ──
     hr_codes = sorted({rt.split(":", 1)[1] if rt.startswith("HR:") else rt for rt, _ in pairs})
+    # hotelrunner_room_mappings sema: {hr_inv_code, pms_room_type, ...}
     hr_mappings = await db.hotelrunner_room_mappings.find(
-        {"tenant_id": tenant_id, "provider_room_code": {"$in": hr_codes}},
-        {"_id": 0, "provider_room_code": 1, "pms_room_type_name": 1, "pms_room_type_id": 1},
-    ).to_list(100)
-    hr_to_pms = {}
+        {"tenant_id": tenant_id, "hr_inv_code": {"$in": hr_codes}},
+        {"_id": 0, "hr_inv_code": 1, "pms_room_type": 1},
+    ).to_list(200)
+    hr_to_pms: dict[str, str] = {}
     for m in hr_mappings:
-        pms_name = m.get("pms_room_type_name") or m.get("pms_room_type_id")
-        if pms_name:
-            hr_to_pms[m["provider_room_code"]] = pms_name
+        pms_name = m.get("pms_room_type")
+        hr_inv = m.get("hr_inv_code")
+        if pms_name and hr_inv and hr_inv not in hr_to_pms:
+            hr_to_pms[hr_inv] = pms_name
+    # Fallback: birle\u015fik room_mappings koleksiyonu (provider=hotelrunner)
+    missing = [c for c in hr_codes if c not in hr_to_pms]
+    if missing:
+        rm = await db.room_mappings.find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner",
+             "provider_room_code": {"$in": missing}, "is_active": True},
+            {"_id": 0, "provider_room_code": 1, "pms_room_type_name": 1, "pms_room_type_id": 1},
+        ).to_list(200)
+        for m in rm:
+            pms_name = m.get("pms_room_type_name") or m.get("pms_room_type_id")
+            code = m.get("provider_room_code")
+            if pms_name and code and code not in hr_to_pms:
+                hr_to_pms[code] = pms_name
 
     pms_types = sorted({v for v in hr_to_pms.values()})
     exely_mappings = await db.exely_room_mappings.find(
