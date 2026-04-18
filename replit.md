@@ -758,3 +758,42 @@ bekleyen çağrılar otomatik tetiklenir.
   source_id, type=alert, severity=warning, title, message, link, icon,
   read=false, created_at}` — mevcut `/api/notifications/list`
   normalizasyonuyla (legacy `is_read` → `read`) uyumlu.
+
+## Misafir Yorumları & NPS Yönetimi (Apr 2026)
+
+Müşteri ilişkileri ekibinin oda bazlı yorum + puan girip raporlayabilmesi
+için `/guest-journey` sayfasına tam CRUD + analiz katmanı eklendi.
+
+### Backend (`backend/domains/guest/operations_router.py`)
+- `POST /api/nps/survey` — `room_number`, `guest_name`, `nps_score (0-10)`,
+  `feedback`, `source` alır; `recorded_by` + `recorded_by_id` otomatik
+  damgalanır. **Kritik**: `nps_score=0` falsy tuzağı `if 'nps_score' in
+  data` kontrolüyle kapatıldı (eski `or` davranışı 0'ı 5'e çeviriyordu).
+  Score 0-10 arası tam sayı doğrulaması + 400 hatası.
+- `DELETE /api/nps/survey/{id}` — yalnızca aynı tenant.
+- `GET /api/nps/recent` — kategori/oda filtreli, son N yorum
+  (`limit` 1-200 bounded).
+- `GET /api/nps/by-room` — Mongo aggregation pipeline: oda başına
+  ortalama puan + yanıt sayısı + kategori dağılımı + son yanıt tarihi,
+  **en kötüden iyiye sıralı** (şikayet odaklı).
+- `_bounded_days(1..730)` helper — tüm `days` query param'larında.
+
+### Frontend (`frontend/src/pages/GuestJourney.jsx`)
+- **Dönem seçici** (7/30/90/365 gün) — tüm endpoint'leri yeniden tetikler.
+- **Kategori kartları** tıklanabilir filtre olarak çalışır
+  (Destekçi/Nötr/Eleştirmen).
+- **Oda bazlı tablo** — ortalama puan rengi (≥9 yeşil, ≥7 amber, <7
+  kırmızı), tek tıkla o odanın yorumlarına filtrele.
+- **Yeni Yorum dialog**: oda + misafir + 0-10 slider (canlı kategori
+  önizleme) + serbest metin yorum. `source: manual` damgalı.
+- **Son yorumlar listesi**: skor rozeti + kategori + oda + kim girdi +
+  tarih + sil butonu.
+- **Optimistik delete**: önce listeden filtrele, sonra await loadAll —
+  out-of-order yanıtlarda silinen kayıt geri dönmez.
+- Tüm async aksiyonlar `await loadAll()` ile sıralı (race-safe).
+
+### Veritabanı (`db.nps_surveys`)
+- Doc: `{id, tenant_id, guest_id?, booking_id?, room_number?, guest_name?,
+  nps_score (0-10), category (promoter|passive|detractor), feedback?,
+  source (manual|email|qr|api), recorded_by, recorded_by_id, responded_at}`
+- Kategori kuralı: ≤6 detractor, 7-8 passive, 9-10 promoter.
