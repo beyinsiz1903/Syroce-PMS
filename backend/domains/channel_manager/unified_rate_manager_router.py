@@ -861,7 +861,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             if pms_name and code and code not in hr_to_pms:
                 hr_to_pms[code] = pms_name
 
-    pms_types = sorted({v for v in hr_to_pms.values()})
+    pms_types = sorted(set(hr_to_pms.values()))
     pms_to_exely_codes: dict[str, list[str]] = {}
     # 1) Birincil: exely_room_mappings (legacy/exely_router seması)
     exely_mappings = await db.exely_room_mappings.find(
