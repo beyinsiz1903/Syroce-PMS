@@ -46,6 +46,11 @@ AUTOMATION_TRIGGERS = {
         "description": "Check-out'tan 2 gün sonra teşekkür / anket e-postası gönderilir",
         "default_offset_days": 2,
     },
+    "in_house_guests": {
+        "label": "Konaklayan Misafirler (Hoş Geldin)",
+        "description": "Şu an otelde konaklayan her misafire bir kez (örn. hoş geldin) e-postası gönderilir",
+        "default_offset_days": 0,
+    },
 }
 
 
@@ -260,6 +265,66 @@ async def list_recipients(
             "email": email,
         })
     return out
+
+
+# ── Quick recipient filters (today's check-in/out, in-house) ────────────
+@router.get("/recipients/quick/{filter_type}")
+async def quick_recipients(
+    filter_type: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Build a recipient list from current bookings using a simple filter:
+    - in_house    : currently staying (check_in <= today < check_out)
+    - today_in    : today's arrivals (check_in == today)
+    - today_out   : today's departures (check_out == today)
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    if filter_type not in {"in_house", "today_in", "today_out"}:
+        raise HTTPException(status_code=400, detail="Geçersiz filtre")
+    db = _db()
+    today = datetime.now(UTC).date().isoformat()
+
+    if filter_type == "today_in":
+        bq = {"tenant_id": current_user.tenant_id,
+              "check_in": {"$regex": f"^{today}"}}
+    elif filter_type == "today_out":
+        bq = {"tenant_id": current_user.tenant_id,
+              "check_out": {"$regex": f"^{today}"}}
+    else:  # in_house
+        bq = {"tenant_id": current_user.tenant_id,
+              "check_in": {"$lte": today + "T23:59:59"},
+              "check_out": {"$gt": today}}
+
+    bookings = await db.bookings.find(bq, {"_id": 0, "guest_id": 1, "guest_name": 1}).limit(RECIPIENT_FETCH_LIMIT).to_list(RECIPIENT_FETCH_LIMIT)
+    guest_ids = list({b.get("guest_id") for b in bookings if b.get("guest_id")})
+    if not guest_ids:
+        return {"filter_type": filter_type, "count": 0, "recipients": []}
+
+    guests = await db.guests.find(
+        {"id": {"$in": guest_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).to_list(len(guest_ids))
+    by_id = {g["id"]: g for g in guests if g.get("id")}
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for b in bookings:
+        gid = b.get("guest_id")
+        if not gid or gid in seen:
+            continue
+        g = by_id.get(gid)
+        if not g:
+            continue
+        email = _extract_guest_email(g)
+        if not email:
+            continue
+        seen.add(gid)
+        out.append({
+            "id": gid,
+            "name": _guest_display_name(g) or b.get("guest_name") or "Misafir",
+            "email": email,
+        })
+    return {"filter_type": filter_type, "count": len(out), "recipients": out}
 
 
 # ── Automations ────────────────────────────────────────────────────────

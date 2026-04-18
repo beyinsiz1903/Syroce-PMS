@@ -221,6 +221,35 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
           <CardDescription>{recipients.length} misafir e-postası mevcut, {selected.size} seçili</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <Button size="sm" variant="secondary" type="button"
+              onClick={async () => {
+                try {
+                  const r = await axios.get(`${API}/recipients/quick/today_in`);
+                  const ids = (r.data.recipients || []).map(x => x.id);
+                  setSelected(new Set(ids));
+                  toast.success(`Bugün girişli ${ids.length} misafir seçildi`);
+                } catch { toast.error('Filtre uygulanamadı'); }
+              }}>📥 Bugün Girişliler</Button>
+            <Button size="sm" variant="secondary" type="button"
+              onClick={async () => {
+                try {
+                  const r = await axios.get(`${API}/recipients/quick/today_out`);
+                  const ids = (r.data.recipients || []).map(x => x.id);
+                  setSelected(new Set(ids));
+                  toast.success(`Bugün çıkışlı ${ids.length} misafir seçildi`);
+                } catch { toast.error('Filtre uygulanamadı'); }
+              }}>📤 Bugün Çıkışlılar</Button>
+            <Button size="sm" variant="secondary" type="button"
+              onClick={async () => {
+                try {
+                  const r = await axios.get(`${API}/recipients/quick/in_house`);
+                  const ids = (r.data.recipients || []).map(x => x.id);
+                  setSelected(new Set(ids));
+                  toast.success(`Otelde konaklayan ${ids.length} misafir seçildi`);
+                } catch { toast.error('Filtre uygulanamadı'); }
+              }}>🏨 İçeride Konaklayanlar</Button>
+          </div>
           <div className="flex gap-2 mb-3">
             <Input placeholder="İsim veya e-posta ara…" value={search} onChange={e => setSearch(e.target.value)} />
             <Button variant="outline" onClick={toggleAll}>

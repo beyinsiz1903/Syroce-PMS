@@ -171,6 +171,13 @@ def _bookings_query_for(trigger: str, offset_days: int) -> dict:
             {"check_out": {"$regex": f"^{ds}"}},
             {"check_out": ds},
         ]}
+    if trigger == "in_house_guests":
+        # currently in house: check_in <= today AND check_out > today
+        ts = today.isoformat()
+        return {
+            "check_in": {"$lte": ts + "T23:59:59"},
+            "check_out": {"$gt": ts},
+        }
     return {}
 
 
