@@ -230,7 +230,7 @@ function TraceTimeline({ events, onLoadRaw }) {
         <Activity className="h-3.5 w-3.5 text-gray-600" />
         <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">Timeline</span>
       </div>
-      <div className="divide-y divide-zinc-800/50">
+      <div className="divide-y divide-slate-200">
         {events.map((evt, idx) => {
           const isExpanded = expandedIdx === idx;
           const hasCorrelation = !!evt.correlation_id;

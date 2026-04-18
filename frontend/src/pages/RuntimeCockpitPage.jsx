@@ -36,10 +36,10 @@ const SEVERITY_ICON = {
 };
 
 const MetricPill = ({ label, value, good, alert, testId }) => (
-  <div data-testid={testId} className="flex items-center justify-between py-2 px-3 rounded-lg bg-zinc-800/40">
-    <span className="text-xs text-zinc-500 font-medium">{label}</span>
+  <div data-testid={testId} className="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-50">
+    <span className="text-xs text-slate-500 font-medium">{label}</span>
     <span className={`text-sm font-mono font-bold ${
-      alert ? 'text-red-400' : good ? 'text-emerald-400' : 'text-zinc-200'
+      alert ? 'text-red-400' : good ? 'text-emerald-400' : 'text-slate-800'
     }`}>
       {value}
     </span>
@@ -49,17 +49,17 @@ const MetricPill = ({ label, value, good, alert, testId }) => (
 const StatusLight = ({ active, label, testId }) => (
   <div data-testid={testId} className="flex items-center gap-2">
     <span className={`w-2.5 h-2.5 rounded-full ${
-      active ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-zinc-600'
+      active ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-slate-300'
     }`} />
-    <span className="text-xs text-zinc-400">{label}</span>
+    <span className="text-xs text-slate-600">{label}</span>
   </div>
 );
 
 const Section = ({ title, icon: Icon, iconColor, children, testId, actions }) => (
-  <Card data-testid={testId} className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+  <Card data-testid={testId} className="bg-white border-slate-200">
     <CardHeader className="pb-3 pt-4 px-4">
       <div className="flex items-center justify-between">
-        <CardTitle className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <Icon className={`w-4 h-4 ${iconColor}`} />
           {title}
         </CardTitle>
@@ -74,7 +74,7 @@ const Section = ({ title, icon: Icon, iconColor, children, testId, actions }) =>
 
 const AgeBucket = ({ label, count, color }) => (
   <div className="flex items-center justify-between">
-    <span className="text-xs text-zinc-500">{label}</span>
+    <span className="text-xs text-slate-500">{label}</span>
     <Badge className={`${color} border text-[10px] px-1.5 font-mono`}>{count}</Badge>
   </div>
 );
@@ -83,10 +83,10 @@ const EventRow = ({ event }) => {
   const style = SEVERITY_STYLE[event.severity] || SEVERITY_STYLE.info;
   const time = event.timestamp ? new Date(event.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
   return (
-    <div data-testid={`event-row-${event.id}`} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/40 last:border-0">
+    <div data-testid={`event-row-${event.id}`} className="flex items-center gap-2 py-1.5 border-b border-slate-200/40 last:border-0">
       <Badge className={`${style} border text-[9px] px-1.5 uppercase`}>{event.severity}</Badge>
-      <span className="text-xs text-zinc-300 flex-1 truncate">{event.description}</span>
-      <span className="text-[10px] text-zinc-600 font-mono">{time}</span>
+      <span className="text-xs text-slate-700 flex-1 truncate">{event.description}</span>
+      <span className="text-[10px] text-slate-500 font-mono">{time}</span>
     </div>
   );
 };
@@ -99,13 +99,13 @@ const PhaseProgress = ({ phases, testId }) => (
         <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
           p.status === 'completed' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
           p.status === 'active' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/40 ring-1 ring-blue-500/20' :
-          'bg-zinc-800/40 text-zinc-600 border border-zinc-700/30'
+          'bg-slate-50 text-slate-500 border border-slate-200'
         }`}>
           {p.status === 'completed' && <CheckCircle className="w-3 h-3" />}
           {p.status === 'active' && <CircleDot className="w-3 h-3" />}
           {p.label}
         </div>
-        {i < phases.length - 1 && <ArrowRight className="w-3 h-3 text-zinc-700" />}
+        {i < phases.length - 1 && <ArrowRight className="w-3 h-3 text-slate-400" />}
       </div>
     ))}
   </div>
@@ -120,14 +120,14 @@ const ScoreRing = ({ score, testId }) => {
   return (
     <div data-testid={testId} className="relative w-24 h-24">
       <svg className="w-24 h-24 -rotate-90" viewBox="0 0 80 80">
-        <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-zinc-800" />
+        <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-slate-200" />
         <circle cx="40" cy="40" r="36" fill="none" strokeWidth="6" strokeLinecap="round"
           className={ringColor} strokeDasharray={circumference} strokeDashoffset={offset}
           style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className={`text-xl font-bold font-mono ${color}`}>{score}</span>
-        <span className="text-[9px] text-zinc-500 uppercase">/100</span>
+        <span className="text-[9px] text-slate-500 uppercase">/100</span>
       </div>
     </div>
   );
@@ -135,12 +135,12 @@ const ScoreRing = ({ score, testId }) => {
 
 /* ═══ Gate Check Row ═══ */
 const GateCheck = ({ check }) => (
-  <div data-testid={`gate-${check.name}`} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/30 last:border-0">
+  <div data-testid={`gate-${check.name}`} className="flex items-center gap-2 py-1.5 border-b border-slate-200/30 last:border-0">
     {check.passed
       ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
       : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
     }
-    <span className="text-xs text-zinc-300 flex-1">{check.label}</span>
+    <span className="text-xs text-slate-700 flex-1">{check.label}</span>
     <span className={`text-[10px] font-mono ${check.passed ? 'text-emerald-400' : 'text-red-400'}`}>
       {check.value}
     </span>
@@ -282,7 +282,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
         <div className="flex items-center justify-center h-[60vh]">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
         </div>
       </Layout>
     );
@@ -318,10 +318,10 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               }
             </div>
             <div>
-              <h1 data-testid="cockpit-title" className="text-xl font-bold text-zinc-100">
+              <h1 data-testid="cockpit-title" className="text-xl font-bold text-slate-900">
                 Runtime Cockpit
               </h1>
-              <p className="text-xs text-zinc-500">Operasyonel Uçuş Paneli</p>
+              <p className="text-xs text-slate-500">Operasyonel Uçuş Paneli</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               {h.is_production_ready ? 'PRODUCTION READY' : 'NOT READY'}
             </Badge>
             <Button data-testid="cockpit-evaluate-btn" variant="outline" size="sm"
-              onClick={handleEvaluate} className="border-zinc-700 text-zinc-400 hover:text-zinc-100">
+              onClick={handleEvaluate} className="border-slate-300 text-slate-600 hover:text-slate-900">
               <Bell className="w-3.5 h-3.5 mr-1" /> Evaluate
             </Button>
             {wsConnected && (
@@ -345,14 +345,14 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               </Badge>
             )}
             <Button data-testid="cockpit-refresh-btn" variant="outline" size="sm"
-              onClick={handleRefresh} disabled={refreshing} className="border-zinc-700 text-zinc-400 hover:text-zinc-100">
+              onClick={handleRefresh} disabled={refreshing} className="border-slate-300 text-slate-600 hover:text-slate-900">
               <RefreshCw className={`w-3.5 h-3.5 mr-1 ${refreshing ? 'animate-spin' : ''}`} /> Yenile
             </Button>
           </div>
         </div>
 
         {/* ─── Tab Navigation ──────────────────────────────── */}
-        <div className="flex gap-1 border-b border-zinc-800 pb-0">
+        <div className="flex gap-1 border-b border-slate-200 pb-0">
           {[
             { key: 'cockpit', label: 'Cockpit', icon: Gauge },
             { key: 'readiness', label: 'Why NOT READY?', icon: Target },
@@ -363,8 +363,8 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               onClick={() => setTab(t.key)}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all ${
                 tab === t.key
-                  ? 'bg-zinc-800/60 text-zinc-100 border-b-2 border-blue-500'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'
+                  ? 'bg-slate-100 text-slate-900 border-b-2 border-blue-500'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
               }`}
             >
               <t.icon className="w-3.5 h-3.5" />
@@ -378,54 +378,54 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
           <>
             {/* Live Metrics Strip (WebSocket) */}
             {liveSnapshot && wsConnected && (
-              <div data-testid="live-metrics-strip" className="flex items-center gap-3 px-3 py-2 bg-zinc-900/80 border border-zinc-800/50 rounded-lg">
+              <div data-testid="live-metrics-strip" className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
                 <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
                 <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LIVE</span>
                 <div className="flex gap-4 overflow-x-auto">
-                  <span className="text-[10px] text-zinc-400">Verify: <b className={liveSnapshot.verify_ratio >= 0.95 ? 'text-emerald-400' : 'text-red-400'}>{(liveSnapshot.verify_ratio * 100).toFixed(1)}%</b></span>
-                  <span className="text-[10px] text-zinc-400">Queue: <b className="text-zinc-200">{liveSnapshot.queue_size}</b></span>
-                  <span className="text-[10px] text-zinc-400">Emitted: <b className="text-zinc-200">{liveSnapshot.emitted}</b></span>
-                  <span className="text-[10px] text-zinc-400">HF Block: <b className={liveSnapshot.hard_fail_blocked > 0 ? 'text-red-400' : 'text-zinc-200'}>{liveSnapshot.hard_fail_blocked}</b></span>
-                  <span className="text-[10px] text-zinc-400">Quarantine: <b className={liveSnapshot.quarantine_count > 0 ? 'text-red-400' : 'text-zinc-200'}>{liveSnapshot.quarantine_count}</b></span>
-                  <span className="text-[10px] text-zinc-400">Drift: <b className={liveSnapshot.drift_count > 0 ? 'text-amber-400' : 'text-zinc-200'}>{liveSnapshot.drift_count}</b></span>
-                  <span className="text-[10px] text-zinc-400">Ready: <b className={liveSnapshot.is_production_ready ? 'text-emerald-400' : 'text-red-400'}>{liveSnapshot.is_production_ready ? 'YES' : 'NO'}</b></span>
+                  <span className="text-[10px] text-slate-600">Verify: <b className={liveSnapshot.verify_ratio >= 0.95 ? 'text-emerald-400' : 'text-red-400'}>{(liveSnapshot.verify_ratio * 100).toFixed(1)}%</b></span>
+                  <span className="text-[10px] text-slate-600">Queue: <b className="text-slate-800">{liveSnapshot.queue_size}</b></span>
+                  <span className="text-[10px] text-slate-600">Emitted: <b className="text-slate-800">{liveSnapshot.emitted}</b></span>
+                  <span className="text-[10px] text-slate-600">HF Block: <b className={liveSnapshot.hard_fail_blocked > 0 ? 'text-red-400' : 'text-slate-800'}>{liveSnapshot.hard_fail_blocked}</b></span>
+                  <span className="text-[10px] text-slate-600">Quarantine: <b className={liveSnapshot.quarantine_count > 0 ? 'text-red-400' : 'text-slate-800'}>{liveSnapshot.quarantine_count}</b></span>
+                  <span className="text-[10px] text-slate-600">Drift: <b className={liveSnapshot.drift_count > 0 ? 'text-amber-400' : 'text-slate-800'}>{liveSnapshot.drift_count}</b></span>
+                  <span className="text-[10px] text-slate-600">Ready: <b className={liveSnapshot.is_production_ready ? 'text-emerald-400' : 'text-red-400'}>{liveSnapshot.is_production_ready ? 'YES' : 'NO'}</b></span>
                 </div>
               </div>
             )}
             {/* Health Summary */}
             <div data-testid="cockpit-health-summary" className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <Card className={`bg-zinc-900/60 border-zinc-800 backdrop-blur ${!h.is_production_ready ? 'border-red-500/30 ring-1 ring-red-500/10' : 'border-emerald-500/30'}`}>
+              <Card className={`bg-white border-slate-200 ${!h.is_production_ready ? 'border-red-500/30 ring-1 ring-red-500/10' : 'border-emerald-500/30'}`}>
                 <CardContent className="p-3 text-center">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Status</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Status</p>
                   <p data-testid="health-status" className={`text-lg font-bold mt-0.5 ${h.is_production_ready ? 'text-emerald-400' : 'text-red-400'}`}>
                     {h.is_production_ready ? 'READY' : 'NOT READY'}
                   </p>
                 </CardContent>
               </Card>
-              <Card className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+              <Card className="bg-white border-slate-200">
                 <CardContent className="p-3 text-center">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Incidents</p>
-                  <p data-testid="health-incidents" className={`text-lg font-bold mt-0.5 ${h.active_incidents > 0 ? 'text-amber-400' : 'text-zinc-300'}`}>{h.active_incidents || 0}</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Incidents</p>
+                  <p data-testid="health-incidents" className={`text-lg font-bold mt-0.5 ${h.active_incidents > 0 ? 'text-amber-400' : 'text-slate-700'}`}>{h.active_incidents || 0}</p>
                 </CardContent>
               </Card>
-              <Card className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+              <Card className="bg-white border-slate-200">
                 <CardContent className="p-3 text-center">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Quarantine</p>
-                  <p data-testid="health-quarantine" className={`text-lg font-bold mt-0.5 ${h.quarantine_count > 0 ? 'text-red-400' : 'text-zinc-300'}`}>{h.quarantine_count || 0}</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Quarantine</p>
+                  <p data-testid="health-quarantine" className={`text-lg font-bold mt-0.5 ${h.quarantine_count > 0 ? 'text-red-400' : 'text-slate-700'}`}>{h.quarantine_count || 0}</p>
                 </CardContent>
               </Card>
-              <Card className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+              <Card className="bg-white border-slate-200">
                 <CardContent className="p-3 text-center">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Verify %</p>
-                  <p data-testid="health-verify-pct" className={`text-lg font-bold mt-0.5 ${h.verify_success_pct >= 95 ? 'text-emerald-400' : h.verify_success_pct > 0 ? 'text-amber-400' : 'text-zinc-300'}`}>{h.verify_success_pct || 0}%</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Verify %</p>
+                  <p data-testid="health-verify-pct" className={`text-lg font-bold mt-0.5 ${h.verify_success_pct >= 95 ? 'text-emerald-400' : h.verify_success_pct > 0 ? 'text-amber-400' : 'text-slate-700'}`}>{h.verify_success_pct || 0}%</p>
                 </CardContent>
               </Card>
-              <Card className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+              <Card className="bg-white border-slate-200">
                 <CardContent className="p-3 text-center">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Push Loop</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Push Loop</p>
                   <p data-testid="health-push-loop" className={`text-lg font-bold mt-0.5 ${
                     h.push_loop_status === 'running' ? 'text-emerald-400' :
-                    h.push_loop_status === 'paused' ? 'text-amber-400' : 'text-zinc-300'
+                    h.push_loop_status === 'paused' ? 'text-amber-400' : 'text-slate-700'
                   }`}>{(h.push_loop_status || 'stopped').toUpperCase()}</p>
                 </CardContent>
               </Card>
@@ -443,14 +443,14 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     <MetricPill label="Hard Fail Blocked" value={flow.hard_fail_blocked || 0} alert={flow.hard_fail_blocked > 0} testId="flow-hard-fail" />
                     <MetricPill label="Cycles" value={flow.cycle_count || 0} testId="flow-cycles" />
                   </div>
-                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800/50">
-                    <span className="text-xs text-zinc-500 mr-2">Push Loop:</span>
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200">
+                    <span className="text-xs text-slate-500 mr-2">Push Loop:</span>
                     <Button data-testid="push-loop-start-btn" variant="outline" size="sm" onClick={() => handlePushLoopAction('start')}
-                      className="border-zinc-700 text-emerald-400 hover:bg-emerald-500/10 h-7 px-2 text-xs"><Play className="w-3 h-3 mr-1" /> Start</Button>
+                      className="border-slate-300 text-emerald-400 hover:bg-emerald-500/10 h-7 px-2 text-xs"><Play className="w-3 h-3 mr-1" /> Start</Button>
                     <Button data-testid="push-loop-pause-btn" variant="outline" size="sm" onClick={() => handlePushLoopAction('pause')}
-                      className="border-zinc-700 text-amber-400 hover:bg-amber-500/10 h-7 px-2 text-xs"><Pause className="w-3 h-3 mr-1" /> Pause</Button>
+                      className="border-slate-300 text-amber-400 hover:bg-amber-500/10 h-7 px-2 text-xs"><Pause className="w-3 h-3 mr-1" /> Pause</Button>
                     <Button data-testid="push-loop-stop-btn" variant="outline" size="sm" onClick={() => handlePushLoopAction('stop')}
-                      className="border-zinc-700 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Square className="w-3 h-3 mr-1" /> Stop</Button>
+                      className="border-slate-300 text-red-400 hover:bg-red-500/10 h-7 px-2 text-xs"><Square className="w-3 h-3 mr-1" /> Stop</Button>
                   </div>
                 </Section>
 
@@ -487,34 +487,34 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                 {/* Quarantine */}
                 <Section title="Quarantine" icon={Lock} iconColor="text-red-400" testId="cockpit-quarantine-section">
                   <div className="text-center py-2">
-                    <p data-testid="quarantine-total" className={`text-3xl font-bold ${q.total_quarantined > 0 ? 'text-red-400' : 'text-zinc-500'}`}>{q.total_quarantined || 0}</p>
-                    <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Quarantined Items</p>
+                    <p data-testid="quarantine-total" className={`text-3xl font-bold ${q.total_quarantined > 0 ? 'text-red-400' : 'text-slate-500'}`}>{q.total_quarantined || 0}</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">Quarantined Items</p>
                   </div>
                   {q.total_quarantined > 0 && (
                     <>
-                      <div className="pt-2 border-t border-zinc-800/50">
-                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Classification</p>
+                      <div className="pt-2 border-t border-slate-200">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Classification</p>
                         {Object.entries(q.by_classification || {}).map(([type, count]) => (
                           <div key={type} className="flex items-center justify-between py-0.5">
-                            <span className="text-xs text-zinc-400">{type.replace(/_/g, ' ')}</span>
-                            <span className="text-xs font-mono text-zinc-300">{count}</span>
+                            <span className="text-xs text-slate-600">{type.replace(/_/g, ' ')}</span>
+                            <span className="text-xs font-mono text-slate-700">{count}</span>
                           </div>
                         ))}
                       </div>
-                      <div className="pt-2 border-t border-zinc-800/50">
-                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Age Distribution</p>
+                      <div className="pt-2 border-t border-slate-200">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Age Distribution</p>
                         <AgeBucket label="< 5 min" count={ageBuckets.lt_5min || 0} color="bg-emerald-500/15 text-emerald-400 border-emerald-500/30" />
                         <AgeBucket label="5-30 min" count={ageBuckets['5_30min'] || 0} color="bg-amber-500/15 text-amber-400 border-amber-500/30" />
                         <AgeBucket label="30-120 min" count={ageBuckets['30_120min'] || 0} color="bg-orange-500/15 text-orange-400 border-orange-500/30" />
                         <AgeBucket label="> 2 hours" count={ageBuckets.gt_2h || 0} color="bg-red-500/15 text-red-400 border-red-500/30" />
                       </div>
                       {Object.keys(q.by_provider || {}).length > 0 && (
-                        <div className="pt-2 border-t border-zinc-800/50">
-                          <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">By Provider</p>
+                        <div className="pt-2 border-t border-slate-200">
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">By Provider</p>
                           {Object.entries(q.by_provider).map(([prov, count]) => (
                             <div key={prov} className="flex items-center justify-between py-0.5">
                               <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border text-[10px]">{prov}</Badge>
-                              <span className="text-xs font-mono text-zinc-300">{count}</span>
+                              <span className="text-xs font-mono text-slate-700">{count}</span>
                             </div>
                           ))}
                         </div>
@@ -534,7 +534,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     <div className="grid grid-cols-4 gap-1 mb-2">
                       {['info', 'warning', 'critical', 'blocker'].map((sev) => (
                         <div key={sev} className="text-center">
-                          <p className="text-[10px] text-zinc-600 uppercase">{sev}</p>
+                          <p className="text-[10px] text-slate-500 uppercase">{sev}</p>
                           <p className={`text-sm font-bold ${
                             sev === 'blocker' ? 'text-rose-400' : sev === 'critical' ? 'text-red-400' :
                             sev === 'warning' ? 'text-amber-400' : 'text-blue-400'
@@ -545,7 +545,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                   )}
                   <div className="space-y-0.5 max-h-[300px] overflow-y-auto">
                     {events.length === 0
-                      ? <p className="text-xs text-zinc-600 text-center py-3">No events yet</p>
+                      ? <p className="text-xs text-slate-500 text-center py-3">No events yet</p>
                       : events.map((evt) => <EventRow key={evt.id} event={evt} />)
                     }
                   </div>
@@ -557,12 +557,12 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                   <MetricPill label="Open Incidents" value={hf.open_hard_fail_incidents || 0} alert={hf.open_hard_fail_incidents > 0} testId="hf-incidents" />
                   <MetricPill label="Blocks (24h)" value={hf.hard_fails_last_24h || 0} testId="hf-24h" />
                   {Object.keys(hf.by_failure_type || {}).length > 0 && (
-                    <div className="pt-2 border-t border-zinc-800/50">
-                      <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">By Type</p>
+                    <div className="pt-2 border-t border-slate-200">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">By Type</p>
                       {Object.entries(hf.by_failure_type).map(([type, count]) => (
                         <div key={type} className="flex items-center justify-between py-0.5">
-                          <span className="text-xs text-zinc-400">{type.replace(/_/g, ' ')}</span>
-                          <span className="text-xs font-mono text-zinc-300">{count}</span>
+                          <span className="text-xs text-slate-600">{type.replace(/_/g, ' ')}</span>
+                          <span className="text-xs font-mono text-slate-700">{count}</span>
                         </div>
                       ))}
                     </div>
@@ -591,7 +591,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                       const style = SEVERITY_STYLE[issue.severity] || SEVERITY_STYLE.info;
                       return (
                         <div key={i} data-testid={`readiness-issue-${i}`}
-                          className="p-3 rounded-lg bg-zinc-800/30 border border-zinc-800/50">
+                          className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                           <div className="flex items-start gap-2">
                             <Ic className={`w-4 h-4 mt-0.5 shrink-0 ${
                               issue.severity === 'blocker' ? 'text-rose-400' :
@@ -601,11 +601,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <Badge className={`${style} border text-[9px] px-1.5 uppercase`}>{issue.severity}</Badge>
-                                <span className="text-xs font-semibold text-zinc-200">{issue.title}</span>
+                                <span className="text-xs font-semibold text-slate-800">{issue.title}</span>
                               </div>
-                              <p className="text-xs text-zinc-400">{issue.detail}</p>
+                              <p className="text-xs text-slate-600">{issue.detail}</p>
                               <div className="flex items-center gap-3 mt-2">
-                                <span className="text-[10px] text-zinc-500">
+                                <span className="text-[10px] text-slate-500">
                                   <Wrench className="w-3 h-3 inline mr-1" />{issue.fix_action}
                                 </span>
                                 {issue.fix_impact > 0 && (
@@ -629,9 +629,9 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                   <div className="space-y-1.5">
                     {fixOrder.map((fix, i) => (
                       <div key={i} data-testid={`fix-order-${i}`}
-                        className="flex items-center gap-3 py-2 px-3 rounded-lg bg-zinc-800/30">
-                        <span className="text-xs font-bold text-zinc-500 w-5 text-center">{fix.step}</span>
-                        <span className="text-xs text-zinc-300 flex-1">{fix.action}</span>
+                        className="flex items-center gap-3 py-2 px-3 rounded-lg bg-slate-50">
+                        <span className="text-xs font-bold text-slate-500 w-5 text-center">{fix.step}</span>
+                        <span className="text-xs text-slate-700 flex-1">{fix.action}</span>
                         <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 border text-[10px]">{fix.impact}</Badge>
                       </div>
                     ))}
@@ -651,16 +651,16 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     {rs.is_ready ? 'PRODUCTION READY' : 'NOT READY'}
                   </Badge>
                 </div>
-                <div className="space-y-1.5 pt-2 border-t border-zinc-800/50">
+                <div className="space-y-1.5 pt-2 border-t border-slate-200">
                   {Object.entries(rs.scores || {}).map(([key, val]) => (
                     <div key={key} className="flex items-center justify-between py-1">
-                      <span className="text-xs text-zinc-400 capitalize">{key.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-slate-600 capitalize">{key.replace(/_/g, ' ')}</span>
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${val.score >= val.max ? 'bg-emerald-400' : val.score > 0 ? 'bg-amber-400' : 'bg-red-400'}`}
                             style={{ width: `${val.max > 0 ? (val.score / val.max) * 100 : 0}%` }} />
                         </div>
-                        <span className="text-[10px] font-mono text-zinc-500">{val.score}/{val.max}</span>
+                        <span className="text-[10px] font-mono text-slate-500">{val.score}/{val.max}</span>
                       </div>
                     </div>
                   ))}
@@ -675,7 +675,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Retry Safe */}
             <Section title="Retry Safe" icon={RotateCw} iconColor="text-blue-400" testId="action-retry-section">
-              <p className="text-xs text-zinc-400 mb-3">
+              <p className="text-xs text-slate-600 mb-3">
                 Başarısız (retryable) push change set'lerini yeniden deneme için kuyruğa al.
                 Idempotent: tekrar çalıştırmak zarar vermez.
               </p>
@@ -689,7 +689,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
             {/* Revalidate Mapping */}
             <Section title="Mapping Dogrulama" icon={ClipboardCheck} iconColor="text-emerald-400" testId="action-revalidate-section">
-              <p className="text-xs text-zinc-400 mb-3">
+              <p className="text-xs text-slate-600 mb-3">
                 Tum provider mapping'lerini bastan dogrula. Hatalilari ve nedenlerini detayli goster.
                 Salt okunur işlem — hicbir seyi değiştirmez.
               </p>
@@ -703,7 +703,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
             {/* Suppress Noise */}
             <Section title="Bildirim Susturma" icon={VolumeX} iconColor="text-amber-400" testId="action-suppress-section">
-              <p className="text-xs text-zinc-400 mb-3">
+              <p className="text-xs text-slate-600 mb-3">
                 Operasyonel bildirim akisini gecici olarak sustur. Max 120 dakika.
                 Idempotent: tekrar çalıştırmak süreyi uzatır.
               </p>
@@ -717,7 +717,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
             {/* Auto-Heal */}
             <Section title="Auto-Heal Calistir" icon={HeartPulse} iconColor="text-violet-400" testId="action-heal-section">
-              <p className="text-xs text-zinc-400 mb-3">
+              <p className="text-xs text-slate-600 mb-3">
                 Güvenli auto-heal döngüsü çalıştır. Sadece whitelist'teki drift tipleri heal edilir.
                 Her heal evidence kaydi uretir.
               </p>
@@ -744,10 +744,10 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
           <div className="space-y-4">
             {/* Phase Progress */}
             {phaseProgress.length > 0 && (
-              <Card className="bg-zinc-900/60 border-zinc-800 backdrop-blur">
+              <Card className="bg-white border-slate-200">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <Rocket className="w-4 h-4 text-blue-400" /> Rollout Faz Ilerleme
                     </h3>
                     {!ro.is_active && (
@@ -770,8 +770,8 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     <>
                       <div className="flex items-center gap-2 mb-3">
                         <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border text-[10px]">{ro.current_phase}</Badge>
-                        <ArrowRight className="w-3 h-3 text-zinc-600" />
-                        <Badge className="bg-zinc-800 text-zinc-400 border-zinc-700 border text-[10px]">{ro.gate_evaluation.next_phase}</Badge>
+                        <ArrowRight className="w-3 h-3 text-slate-500" />
+                        <Badge className="bg-slate-100 text-slate-600 border-slate-300 border text-[10px]">{ro.gate_evaluation.next_phase}</Badge>
                         {ro.gate_evaluation.gate_passed && <CheckCircle className="w-4 h-4 text-emerald-400" />}
                       </div>
                       <div className="space-y-0.5">
@@ -800,16 +800,16 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
                 {/* Phase History */}
                 {ro.phase_history?.length > 0 && (
-                  <Section title="Faz Geçmişi" icon={Clock} iconColor="text-zinc-400" testId="rollout-history-section">
+                  <Section title="Faz Geçmişi" icon={Clock} iconColor="text-slate-600" testId="rollout-history-section">
                     <div className="space-y-1.5">
                       {ro.phase_history.map((ph, i) => (
-                        <div key={i} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/30 last:border-0">
+                        <div key={i} className="flex items-center gap-2 py-1.5 border-b border-slate-200/30 last:border-0">
                           <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border text-[10px]">{ph.phase}</Badge>
-                          <span className="text-[10px] text-zinc-500 font-mono">
+                          <span className="text-[10px] text-slate-500 font-mono">
                             {ph.started_at ? new Date(ph.started_at).toLocaleDateString('tr-TR') : ''}
                           </span>
                           {ph.gate_results?.length > 0 && (
-                            <span className="text-[10px] text-zinc-600">{ph.gate_results.length} gate kontrolu</span>
+                            <span className="text-[10px] text-slate-500">{ph.gate_results.length} gate kontrolu</span>
                           )}
                         </div>
                       ))}
@@ -832,7 +832,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                 </Section>
 
                 <Section title="Basari Kriterleri" icon={CheckCircle} iconColor="text-emerald-400" testId="rollout-criteria-section">
-                  <div className="space-y-1.5 text-xs text-zinc-400">
+                  <div className="space-y-1.5 text-xs text-slate-600">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                       0 veri kaybi
