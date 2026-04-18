@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
 
-const API = '/api/mailing';
+const API = '/mailing';
 
 export default function MailingPage() {
   const [credits, setCredits] = useState(null);
