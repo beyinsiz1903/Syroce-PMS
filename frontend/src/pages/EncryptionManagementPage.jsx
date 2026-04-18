@@ -263,7 +263,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <Key className="h-6 w-6 text-emerald-400" />
               Şifreleme Yönetimi
             </h1>
@@ -302,7 +302,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Aktif</p>
-                  <p className="text-2xl font-bold text-white">{keysSummary.active || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{keysSummary.active || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -316,7 +316,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Rotasyonda</p>
-                  <p className="text-2xl font-bold text-white">{keysSummary.pending_rotation || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{keysSummary.pending_rotation || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -330,7 +330,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Emekli</p>
-                  <p className="text-2xl font-bold text-white">{keysSummary.retired || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{keysSummary.retired || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -344,7 +344,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">İptal</p>
-                  <p className="text-2xl font-bold text-white">{keysSummary.revoked || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{keysSummary.revoked || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -358,7 +358,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Geciken</p>
-                  <p className="text-2xl font-bold text-white">{keysSummary.overdue_count || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{keysSummary.overdue_count || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -372,7 +372,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">İşler</p>
-                  <p className="text-2xl font-bold text-white">{jobsSummary.total_jobs || 0}</p>
+                  <p className="text-2xl font-bold text-slate-900">{jobsSummary.total_jobs || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -431,7 +431,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               {/* Active Keys */}
               <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-white flex items-center gap-2">
+                  <CardTitle className="text-slate-900 flex items-center gap-2">
                     <Key className="h-5 w-5 text-emerald-400" />
                     Aktif Anahtarlar
                   </CardTitle>
@@ -445,7 +445,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                           <div className="flex items-center gap-3">
                             <Icon className="h-4 w-4 text-emerald-400" />
                             <div>
-                              <p className="text-white font-medium">{key.key_id}</p>
+                              <p className="text-slate-900 font-medium">{key.key_id}</p>
                               <p className="text-xs text-gray-600">{key.description || key.key_type}</p>
                             </div>
                           </div>
@@ -465,7 +465,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               {/* Running Jobs */}
               <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-white flex items-center gap-2">
+                  <CardTitle className="text-slate-900 flex items-center gap-2">
                     <RefreshCw className="h-5 w-5 text-blue-400" />
                     Aktif İşler
                   </CardTitle>
@@ -475,7 +475,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     {jobs.filter(j => j.state === 'running').map(job => (
                       <div key={job.job_id} className="p-3 rounded-lg bg-white">
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-white font-medium">{job.job_id}</p>
+                          <p className="text-slate-900 font-medium">{job.job_id}</p>
                           <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
                         </div>
                         <Progress value={job.progress_percent || 0} className="h-2" />
@@ -497,7 +497,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <TabsContent value="keys" className="space-y-4">
             <Card className="bg-gray-50 border-gray-200">
               <CardHeader>
-                <CardTitle className="text-white">Tum Anahtarlar</CardTitle>
+                <CardTitle className="text-slate-900">Tum Anahtarlar</CardTitle>
                 <CardDescription className="text-gray-600">
                   Kayıtlı sifreleme anahtarlari ve durumlari
                 </CardDescription>
@@ -516,7 +516,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                             <Icon className="h-5 w-5 text-emerald-400" />
                           </div>
                           <div>
-                            <p className="text-white font-medium">{key.key_id}</p>
+                            <p className="text-slate-900 font-medium">{key.key_id}</p>
                             <p className="text-sm text-gray-600">{key.description || `Tip: ${key.key_type}`}</p>
                             <div className="flex items-center gap-4 mt-1 text-xs text-gray-600">
                               <span>v{key.version}</span>
@@ -591,7 +591,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <TabsContent value="jobs" className="space-y-4">
             <Card className="bg-gray-50 border-gray-200">
               <CardHeader>
-                <CardTitle className="text-white">Yeniden Şifreleme İşleri</CardTitle>
+                <CardTitle className="text-slate-900">Yeniden Şifreleme İşleri</CardTitle>
                 <CardDescription className="text-gray-600">
                   Anahtar rotasyonu sonrasi veri migrasyonu isleri
                 </CardDescription>
@@ -602,7 +602,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                     <div key={job.job_id} className="p-4 rounded-lg bg-white border border-gray-200">
                       <div className="flex items-center justify-between mb-3">
                         <div>
-                          <p className="text-white font-medium">{job.job_id}</p>
+                          <p className="text-slate-900 font-medium">{job.job_id}</p>
                           <p className="text-sm text-gray-600">{job.description || `Key: ${job.key_id}`}</p>
                         </div>
                         <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
@@ -658,7 +658,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               {/* Key Audit */}
               <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-white flex items-center gap-2">
+                  <CardTitle className="text-slate-900 flex items-center gap-2">
                     <History className="h-5 w-5 text-emerald-400" />
                     Anahtar Islemleri
                   </CardTitle>
@@ -673,7 +673,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                           entry.severity === 'warning' ? 'bg-amber-500' : 'bg-emerald-500'
                         }`} />
                         <div className="flex-1">
-                          <p className="text-white">
+                          <p className="text-slate-900">
                             <span className="text-gray-600">{entry.key_id}</span> — {entry.action}
                           </p>
                           <p className="text-xs text-gray-600">
@@ -692,7 +692,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               {/* Job Audit */}
               <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-white flex items-center gap-2">
+                  <CardTitle className="text-slate-900 flex items-center gap-2">
                     <History className="h-5 w-5 text-blue-400" />
                     Is Islemleri
                   </CardTitle>
@@ -706,7 +706,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                           entry.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
                         }`} />
                         <div className="flex-1">
-                          <p className="text-white">
+                          <p className="text-slate-900">
                             <span className="text-gray-600">{entry.job_id}</span> — {entry.action}
                           </p>
                           <p className="text-xs text-gray-600">
@@ -729,7 +729,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
         <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
           <DialogContent className="bg-gray-50 border-gray-200">
             <DialogHeader>
-              <DialogTitle className="text-white">Yeni Anahtar Kaydet</DialogTitle>
+              <DialogTitle className="text-slate-900">Yeni Anahtar Kaydet</DialogTitle>
               <DialogDescription className="text-gray-600">
                 Yeni bir sifreleme anahtari kaydedin
               </DialogDescription>
@@ -741,13 +741,13 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   value={registerForm.key_id}
                   onChange={e => setRegisterForm({...registerForm, key_id: e.target.value})}
                   placeholder="ornek: master-key-v2"
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                 />
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-700">Tip</Label>
                 <Select value={registerForm.key_type} onValueChange={v => setRegisterForm({...registerForm, key_type: v})}>
-                  <SelectTrigger className="bg-white border-gray-200 text-white">
+                  <SelectTrigger className="bg-white border-gray-200 text-slate-900">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-gray-50 border-gray-200">
@@ -765,7 +765,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   value={registerForm.description}
                   onChange={e => setRegisterForm({...registerForm, description: e.target.value})}
                   placeholder="Anahtar aciklamasi"
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                 />
               </div>
               <div className="space-y-2">
@@ -774,7 +774,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   type="number"
                   value={registerForm.rotation_policy_days}
                   onChange={e => setRegisterForm({...registerForm, rotation_policy_days: parseInt(e.target.value) || 90})}
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                 />
               </div>
             </div>
@@ -812,7 +812,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   value={revokeReason}
                   onChange={e => setRevokeReason(e.target.value)}
                   placeholder="Anahtarin neden iptal edildigini aciklayin..."
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                   rows={3}
                 />
               </div>
@@ -837,7 +837,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
         <Dialog open={showJobDialog} onOpenChange={setShowJobDialog}>
           <DialogContent className="bg-gray-50 border-gray-200">
             <DialogHeader>
-              <DialogTitle className="text-white">Yeniden Şifreleme Isi Olustur</DialogTitle>
+              <DialogTitle className="text-slate-900">Yeniden Şifreleme Isi Olustur</DialogTitle>
               <DialogDescription className="text-gray-600">
                 Veri migrasyonu için yeni bir is oluşturun
               </DialogDescription>
@@ -846,7 +846,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
               <div className="space-y-2">
                 <Label className="text-gray-700">Anahtar ID</Label>
                 <Select value={jobForm.key_id} onValueChange={v => setJobForm({...jobForm, key_id: v})}>
-                  <SelectTrigger className="bg-white border-gray-200 text-white">
+                  <SelectTrigger className="bg-white border-gray-200 text-slate-900">
                     <SelectValue placeholder="Anahtar seçin" />
                   </SelectTrigger>
                   <SelectContent className="bg-gray-50 border-gray-200">
@@ -882,7 +882,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   type="number"
                   value={jobForm.batch_size}
                   onChange={e => setJobForm({...jobForm, batch_size: parseInt(e.target.value) || 100})}
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                 />
               </div>
               <div className="space-y-2">
@@ -891,7 +891,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   value={jobForm.description}
                   onChange={e => setJobForm({...jobForm, description: e.target.value})}
                   placeholder="Is aciklamasi"
-                  className="bg-white border-gray-200 text-white"
+                  className="bg-white border-gray-200 text-slate-900"
                 />
               </div>
             </div>
