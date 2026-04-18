@@ -805,16 +805,28 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 hr_to_pms[code] = pms_name
 
     pms_types = sorted({v for v in hr_to_pms.values()})
+    pms_to_exely_codes: dict[str, list[str]] = {}
+    # 1) Birincil: exely_room_mappings (legacy/exely_router seması)
     exely_mappings = await db.exely_room_mappings.find(
         {"tenant_id": tenant_id, "pms_room_type": {"$in": pms_types}},
         {"_id": 0, "pms_room_type": 1, "exely_room_code": 1},
     ).to_list(200)
-    pms_to_exely_codes: dict[str, list[str]] = {}
     for m in exely_mappings:
         rc = m.get("exely_room_code", "")
         pt = m.get("pms_room_type", "")
         if rc and pt:
             pms_to_exely_codes.setdefault(pt, []).append(rc)
+    # 2) Birlesik room_mappings (provider=exely): provider_room_id -> Exely API kodu
+    rm_exely = await db.room_mappings.find(
+        {"tenant_id": tenant_id, "provider": "exely",
+         "provider_room_code": {"$in": pms_types}, "is_active": True},
+        {"_id": 0, "provider_room_code": 1, "provider_room_id": 1},
+    ).to_list(200)
+    for m in rm_exely:
+        ex_code = m.get("provider_room_id") or m.get("provider_room_code")
+        pt = m.get("provider_room_code", "")
+        if ex_code and pt and ex_code not in pms_to_exely_codes.get(pt, []):
+            pms_to_exely_codes.setdefault(pt, []).append(ex_code)
 
     exely_rate_plans = [rp.get("code") for rp in (conn.get("rate_plans") or []) if rp.get("code")]
     if not exely_rate_plans:
