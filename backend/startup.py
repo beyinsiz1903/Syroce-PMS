@@ -420,6 +420,7 @@ async def on_startup(app):
     # ── Af-sadakat outbound dispatcher loop ─────────────────────────
     try:
         import asyncio as _asyncio_afs
+
         from core.afsadakat_outbound import dispatch_pending_loop as _afs_loop
         app.state.afsadakat_dispatcher_task = _asyncio_afs.create_task(
             _afs_loop(), name="afsadakat-outbound-dispatcher"
