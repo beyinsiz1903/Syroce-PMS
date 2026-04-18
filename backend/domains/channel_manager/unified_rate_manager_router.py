@@ -768,21 +768,30 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         logger.error("[UNIFIED] Exely provider olusturulamadi: %s", e)
         return 0
 
-    # ── HR room code -> pms_room_type -> exely_room_code translation ──
-    hr_codes = sorted({rt.split(":", 1)[1] if rt.startswith("HR:") else rt for rt, _ in pairs})
-    # hotelrunner_room_mappings sema: {hr_inv_code, pms_room_type, ...}
-    hr_mappings = await db.hotelrunner_room_mappings.find(
-        {"tenant_id": tenant_id, "hr_inv_code": {"$in": hr_codes}},
-        {"_id": 0, "hr_inv_code": 1, "pms_room_type": 1},
-    ).to_list(200)
+    # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
+    # Birincil kaynak: HotelRunner connection.cached_rooms
     hr_to_pms: dict[str, str] = {}
-    for m in hr_mappings:
-        pms_name = m.get("pms_room_type")
-        hr_inv = m.get("hr_inv_code")
-        if pms_name and hr_inv and hr_inv not in hr_to_pms:
-            hr_to_pms[hr_inv] = pms_name
-    # Fallback: birle\u015fik room_mappings koleksiyonu (provider=hotelrunner)
-    missing = [c for c in hr_codes if c not in hr_to_pms]
+    try:
+        hr_conn = await db.channel_connections.find_one(
+            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+            {"_id": 0, "cached_rooms": 1},
+        )
+        if hr_conn:
+            for cr in hr_conn.get("cached_rooms") or []:
+                inv = cr.get("inv_code") or ""
+                pms = cr.get("pms_code") or ""
+                if not inv or not pms:
+                    continue
+                # Hem "HR:1271568" hem "1271568" formatlarini kaydet
+                hr_to_pms[inv] = pms
+                if inv.startswith("HR:"):
+                    hr_to_pms[inv.split(":", 1)[1]] = pms
+    except Exception as e:
+        logger.warning("[UNIFIED] Exely: HR cached_rooms okunamadi: %s", e)
+
+    # Fallback: birlesik room_mappings (provider=hotelrunner)
+    rt_codes_norm = sorted({rt for rt, _ in pairs} | {rt.split(":", 1)[1] for rt, _ in pairs if rt.startswith("HR:")})
+    missing = [c for c in rt_codes_norm if c not in hr_to_pms]
     if missing:
         rm = await db.room_mappings.find(
             {"tenant_id": tenant_id, "provider": "hotelrunner",
