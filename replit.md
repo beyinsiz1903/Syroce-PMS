@@ -860,3 +860,53 @@ için `/guest-journey` sayfasına tam CRUD + analiz katmanı eklendi.
   nps_score (0-10), category (promoter|passive|detractor), feedback?,
   source (manual|email|qr|api), recorded_by, recorded_by_id, responded_at}`
 - Kategori kuralı: ≤6 detractor, 7-8 passive, 9-10 promoter.
+
+## Af-sadakat (Sadakat & Omni Inbox) Marketplace Modülü (Apr 2026)
+Müşteri, Modül Pazarı'ndan satın alıp 14 gün ücretsiz deneyebileceği harici
+modül. Otomatik provisioning + SSO + Outbound PMS API ile entegre.
+
+### Akış
+1. **Katalog**: `marketplace_products` koleksiyonunda `key=af_sadakat`
+   (₺1499/ay, trial 14 gün, `external=true`, `sso_path=/integrations/afsadakat/launch`).
+2. **Aktivasyon**: `/api/module-store/start-trial` (ödemesiz) veya
+   `/api/module-store/purchase` → callback. Her iki yol da aktivasyondan
+   sonra `provision_tenant()` çağırır.
+3. **Provisioning**: `core/afsadakat_provisioner.py` — `AFSADAKAT_BASE_URL` +
+   `AFSADAKAT_ADMIN_TOKEN` env varsa harici Af-sadakat'a HTTP çağrısı yapar;
+   yoksa local-only modda 40 char `api_key` üretip
+   `integration_afsadakat_tenants` koleksiyonuna yazar. Idempotent
+   (`$setOnInsert` + unique index).
+4. **SSO Launch**: `POST /api/integrations/afsadakat/launch` → 120 sn ömürlü
+   HS256 JWT (`iss=syroce-pms`, `aud=afsadakat`, `sub=tenant_id`) üretir,
+   `{base_url}/sso/syroce?token=...` URL'i döner. Frontend yeni sekmede açar.
+5. **Webhook**: `POST /api/integrations/afsadakat/webhook` — Bearer
+   API key auth, event `integration_afsadakat_events`'e kaydedilir.
+6. **Outbound PMS API** (`/api/pms-outbound/*`): Af-sadakat tarafından
+   tüketilir. API key bearer auth + her istekte `tenant_has_module()`
+   doğrulaması (abonelik biterse anında 403):
+   - `GET /rooms`, `GET /reservations[/{id}]`, `GET /guests[/{id}]`
+   - `POST /folio/charge` — `external_ref` üzerinden idempotent
+7. **Frontend**:
+   - `ModuleStorePage.jsx`: trial_days varsa "14 Gün Ücretsiz Dene", sahip
+     olunan `external` modüller için "Aç" butonu (launch URL'i window.open).
+   - `AfsadakatLauncher.jsx`: `/app/afsadakat` route, launch URL alıp açar.
+   - Nav: "Sadakat & Inbox" (`moduleKey: af_sadakat`).
+
+### Koleksiyonlar
+- `integration_afsadakat_tenants`: `{tenant_id, api_key, ext_tenant_id,
+  status, mode (local|external), base_url, created_at, updated_at}`
+  — unique on `tenant_id`.
+- `integration_afsadakat_events`: inbound webhook log
+  `{tenant_id, event_type, payload, received_at}` — index
+  `(tenant_id, received_at desc)`.
+
+### Env (opsiyonel)
+- `AFSADAKAT_BASE_URL`, `AFSADAKAT_ADMIN_TOKEN`: harici Af-sadakat
+  konuşlandırılınca tanımlanır. Yoksa sistem local-only modda kalır,
+  UI hata vermez.
+
+### Outbound HMAC Dispatcher (önceden tamamlandı)
+`core/afsadakat_outbound.py` — PMS olaylarını (4 tip: rezervasyon
+oluştu/değişti/iptal, misafir oluştu) HMAC-SHA256 ile imzalı outbox
+üzerinden Af-sadakat'a iletir. Bu modül Af-sadakat env tanımlıyken
+otomatik tetiklenir.
