@@ -3,6 +3,7 @@ Cache Warmer - Pre-warm critical endpoints for instant response
 Runs on startup and periodically refreshes cache
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -42,12 +43,12 @@ class CacheWarmer:
 
             # Lazy imports to avoid circular dependencies at module load
             from routers.housekeeping import (
-                get_housekeeping_tasks,
-                get_room_status_board,
-                get_due_out_rooms,
-                get_stayover_rooms,
                 get_arrival_rooms,
+                get_due_out_rooms,
+                get_housekeeping_tasks,
                 get_room_blocks,
+                get_room_status_board,
+                get_stayover_rooms,
             )
 
             await asyncio.gather(

@@ -24,7 +24,7 @@ const STATUS_CLS = (s) => {
 
 const Badge = ({ status, testId }) => {
   const color = STATUS_CLS(status);
-  const bgMap = { "text-emerald-400": "bg-emerald-500/15 border-emerald-500/30", "text-amber-400": "bg-amber-500/15 border-amber-500/30", "text-red-400": "bg-red-500/15 border-red-500/30", "text-gray-600": "bg-gray-50 border-gray-200", "text-gray-600": "bg-gray-50 border-gray-200" };
+  const bgMap = { "text-emerald-400": "bg-emerald-500/15 border-emerald-500/30", "text-amber-400": "bg-amber-500/15 border-amber-500/30", "text-red-400": "bg-red-500/15 border-red-500/30", "text-gray-600": "bg-gray-50 border-gray-200" };
   return <span data-testid={testId} className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${bgMap[color] || "bg-gray-50 border-gray-200"} ${color} uppercase tracking-wider`}>{status}</span>;
 };
 

@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as DateType
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,7 +22,7 @@ from core.security import (
 )
 from domains.revenue.pricing.pricing_service import pricing_service
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
-from models.schemas import Package, PriceAnalysis, RatePlan, User
+from models.schemas import PriceAnalysis, User
 
 logger = logging.getLogger(__name__)
 

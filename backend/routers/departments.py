@@ -5,6 +5,7 @@ Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import random
 import uuid

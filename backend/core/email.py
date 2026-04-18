@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +22,8 @@ def _provider() -> str:
     return "resend"
 
 
-async def _send_via_ses(*, to: str, subject: str, html: str, text: Optional[str],
-                       sender: str, reply_to: Optional[str]) -> dict:
+async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None,
+                       sender: str, reply_to: str | None) -> dict:
     """Send a single email via Amazon SES (used when MAIL_PROVIDER=ses)."""
     try:
         import boto3  # type: ignore
@@ -72,9 +71,9 @@ async def send_email(
     subject: str,
     html: str,
     *,
-    text: Optional[str] = None,
-    from_addr: Optional[str] = None,
-    reply_to: Optional[str] = None,
+    text: str | None = None,
+    from_addr: str | None = None,
+    reply_to: str | None = None,
 ) -> dict:
     """Send a transactional email.
 
@@ -124,7 +123,7 @@ async def send_email(
 
 def render_password_reset_email(
     *,
-    name: Optional[str],
+    name: str | None,
     reset_link: str,
     code: str,
     expires_in_minutes: int = 30,

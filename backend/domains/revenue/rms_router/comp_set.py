@@ -6,17 +6,12 @@ Revenue management system, comp-set, yield management, Faz 2 sales/revenue featu
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
 
-from core.cache import cached
 from core.database import db
-from core.security import get_current_user, security
+from core.security import get_current_user
 from models.schemas import (
     AddCompetitorRequest,
-    AutoPricingRequest,
-    DemandForecastRequest,
     ScrapePricesRequest,
     User,
 )

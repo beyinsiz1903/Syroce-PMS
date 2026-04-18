@@ -1,22 +1,20 @@
 """Auto-split from schemas.py — domain: folio."""
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
-from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from models.enums import (
-    BookingStatus, CancellationPolicyType, ChannelStatus, ChannelType,
-    ChargeCategory, CheckInStatus, CompanyStatus, ContractedRateType,
-    DepartmentType, FolioOperationType, FolioStatus, FolioType,
-    GuestRequestStatus, GuestRequestType, InspectionStatus, InvoiceStatus,
-    LostFoundStatus, LoyaltyTier, MaintenancePriority, MaintenanceTaskStatus,
-    MaintenanceType, MappingStatus, MarketSegment, MeasurementUnit,
-    OrderStatus, OTAChannel, OTAPaymentModel, OutletType, PaymentMethod,
-    PaymentStatus, PaymentType, PricingStrategy, RateType, RiskLevel,
-    RoomServiceStatus, RoomStatus, UserRole, WarehouseLocation,
+    ChargeCategory,
+    FolioOperationType,
+    FolioStatus,
+    FolioType,
+    MarketSegment,
+    PaymentMethod,
+    PaymentStatus,
+    PaymentType,
 )
+
 
 # Folio & Payment Models
 class FolioCreate(BaseModel):

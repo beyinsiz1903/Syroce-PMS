@@ -3,6 +3,7 @@ Syroce PMS - Security & Authentication Helpers
 JWT token management, password hashing, and user authentication.
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import base64
 import io

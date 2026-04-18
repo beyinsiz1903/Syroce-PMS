@@ -3,6 +3,7 @@ ML Model Trainers for Hotel PMS
 Train and save ML models for production use
 """
 import logging
+
 logger = logging.getLogger(__name__)
 
 import json

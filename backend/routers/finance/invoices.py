@@ -1,13 +1,9 @@
 """Auto-split from finance.py — section: invoices."""
-import asyncio
-import uuid
-from datetime import UTC, datetime, timedelta
-from enum import Enum
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from fastapi import APIRouter, Depends
+from fastapi.security import HTTPBearer
 
 try:
     from openpyxl import Workbook
@@ -17,20 +13,15 @@ except ImportError:
     Workbook = None
 
 from core.database import db
-from core.helpers import create_audit_log, require_module
+from core.helpers import require_module
 from core.security import get_current_user
-from core.utils import calculate_folio_balance, excel_response
-from models.enums import ChargeCategory, FolioOperationType, PaymentStatus
 from models.schemas import (
-    CashFlow, ChargeCreate, CityLedgerTransaction, ConvertCurrencyRequest,
-    CreateCurrencyRateRequest, CreateMultiCurrencyInvoiceRequest, Folio,
-    FolioCharge, FolioCreate, FolioOperation, FolioOperationCreate,
-    GenerateInvoiceFromFolioRequest, Invoice, InvoiceCreate, Payment,
-    PaymentCreate, User,
+    Invoice,
+    InvoiceCreate,
+    User,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
-from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
     from cache_manager import cached

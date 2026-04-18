@@ -14,15 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
-from common.context import OperationContext
 from core.database import db
 from core.security import (
     get_current_user,
     security,
 )
-from domains.revenue.pricing.pricing_service import pricing_service
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
-from models.schemas import Package, PriceAnalysis, RatePlan, User
 
 logger = logging.getLogger(__name__)
 

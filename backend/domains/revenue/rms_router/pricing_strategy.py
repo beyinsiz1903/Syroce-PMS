@@ -7,17 +7,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from core.cache import cached
 from core.database import db
-from core.security import get_current_user, security
+from core.security import get_current_user
 from models.schemas import (
-    AddCompetitorRequest,
     AutoPricingRequest,
-    DemandForecastRequest,
-    ScrapePricesRequest,
     User,
 )
 

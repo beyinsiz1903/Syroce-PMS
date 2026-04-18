@@ -3,20 +3,19 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from models.enums import (
-    BookingStatus, CancellationPolicyType, ChannelStatus, ChannelType,
-    ChargeCategory, CheckInStatus, CompanyStatus, ContractedRateType,
-    DepartmentType, FolioOperationType, FolioStatus, FolioType,
-    GuestRequestStatus, GuestRequestType, InspectionStatus, InvoiceStatus,
-    LostFoundStatus, LoyaltyTier, MaintenancePriority, MaintenanceTaskStatus,
-    MaintenanceType, MappingStatus, MarketSegment, MeasurementUnit,
-    OrderStatus, OTAChannel, OTAPaymentModel, OutletType, PaymentMethod,
-    PaymentStatus, PaymentType, PricingStrategy, RateType, RiskLevel,
-    RoomServiceStatus, RoomStatus, UserRole, WarehouseLocation,
+    CancellationPolicyType,
+    CompanyStatus,
+    ContractedRateType,
+    DepartmentType,
+    MarketSegment,
+    PaymentMethod,
+    RateType,
+    RiskLevel,
 )
+
 
 # Company Models
 class CompanyCreate(BaseModel):

@@ -1,0 +1,191 @@
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:102:14
+    |
+100 |     name: str = Field(..., min_length=1, max_length=160)
+101 |     template_id: Optional[str] = None
+102 |     subject: Optional[str] = None
+    |              ^^^^^^^^^^^^^
+103 |     html: Optional[str] = None
+104 |     recipient_ids: list[str] = Field(default_factory=list)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:103:11
+    |
+101 |     template_id: Optional[str] = None
+102 |     subject: Optional[str] = None
+103 |     html: Optional[str] = None
+    |           ^^^^^^^^^^^^^
+104 |     recipient_ids: list[str] = Field(default_factory=list)
+105 |     test_email: Optional[str] = None  # if set, sends only to this address (1 credit)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:105:17
+    |
+103 |     html: Optional[str] = None
+104 |     recipient_ids: list[str] = Field(default_factory=list)
+105 |     test_email: Optional[str] = None  # if set, sends only to this address (1 credit)
+    |                 ^^^^^^^^^^^^^
+    |
+help: Convert to `X | None`
+
+C416 Unnecessary dict comprehension (rewrite using `dict()`)
+   --> routers/mailing.py:407:23
+    |
+405 |         try:
+406 |             from svix.webhooks import Webhook  # type: ignore
+407 |             headers = {k: v for k, v in request.headers.items()}
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+408 |             Webhook(secret).verify(raw, headers)
+409 |         except Exception as e:
+    |
+help: Rewrite using `dict()`
+
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:568:38
+    |
+568 | def _extract_guest_email(g: dict) -> Optional[str]:
+    |                                      ^^^^^^^^^^^^^
+569 |     """Try to surface a usable email from a (possibly encrypted) guest doc."""
+570 |     raw = g.get("email")
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:594:13
+    |
+592 | @router.get("/recipients")
+593 | async def list_recipients(
+594 |     search: Optional[str] = None,
+    |             ^^^^^^^^^^^^^
+595 |     current_user: User = Depends(get_current_user),
+596 | ) -> list[dict]:
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> routers/mailing.py:755:66
+    |
+755 | def _resolve_campaign_content(payload: CampaignCreate, template: Optional[dict]) -> tuple[str, str]:
+    |                                                                  ^^^^^^^^^^^^^^
+756 |     subject = (payload.subject or (template or {}).get("subject") or "").strip()
+757 |     html = (payload.html or (template or {}).get("html") or "").strip()
+    |
+help: Convert to `X | None`
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> routers/pms_bookings.py:5:1
+  |
+3 | Booking CRUD, approval/rejection, multi-room bookings, room move history.
+4 | """
+5 | import logging
+  | ^^^^^^^^^^^^^^
+6 | logger = logging.getLogger(__name__)
+7 | import uuid
+  |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/pms_room_queue.py:12:1
+   |
+10 |   DELETE /rooms/queue/{queue_id}
+11 | """
+12 | import logging
+   | ^^^^^^^^^^^^^^
+13 | logger = logging.getLogger(__name__)
+14 | from datetime import UTC, datetime
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> routers/reports.py:4:1
+  |
+2 | REPORTS Router - Extracted from server.py
+3 | """
+4 | import logging
+  | ^^^^^^^^^^^^^^
+5 | logger = logging.getLogger(__name__)
+6 | import asyncio
+  |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/security_hardening.py:4:1
+   |
+ 2 |   Security Hardening Router - API endpoints for multi-tenant security.
+ 3 |   """
+ 4 | / from typing import Any
+ 5 | |
+ 6 | | from fastapi import APIRouter, Body, Depends, Query
+ 7 | |
+ 8 | | from modules.security_hardening.audit_completeness import audit_completeness
+ 9 | | from modules.security_hardening.credential_vault import credential_vault
+10 | | from modules.security_hardening.data_masking import data_masking
+11 | | from modules.security_hardening.property_permissions import property_permissions
+12 | | from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+13 | | from core.cache import cached
+14 | | from shared_kernel.tenancy_context import TenantContext, get_current_tenant
+   | |___________________________________________________________________________^
+15 |
+16 |   router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
+   |
+help: Organize imports
+
+UP045 [*] Use `X | None` for type annotations
+  --> workers/mailing_automation.py:25:8
+   |
+24 | _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+25 | _task: Optional[asyncio.Task] = None
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> workers/mailing_automation.py:32:22
+   |
+32 | def _safe_date(s) -> Optional[date]:
+   |                      ^^^^^^^^^^^^^^
+33 |     if not s:
+34 |         return None
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> workers/mailing_automation.py:59:85
+   |
+59 | async def _resolve_guest_email_and_name(db, tenant_id: str, guest_id: str) -> tuple[Optional[str], str]:
+   |                                                                                     ^^^^^^^^^^^^^
+60 |     """Find guest email (decrypting if needed) and display name. Tenant-scoped."""
+61 |     if not guest_id or not tenant_id:
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> workers/mailing_automation.py:129:61
+    |
+128 | async def _finalize_send(db, tenant_id: str, trigger: str, booking_id: str,
+129 |                          email: str, ok: bool, provider_id: Optional[str] = None,
+    |                                                             ^^^^^^^^^^^^^
+130 |                          err: Optional[str] = None) -> None:
+131 |     await db.mailing_automation_log.update_one(
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> workers/mailing_automation.py:130:31
+    |
+128 | async def _finalize_send(db, tenant_id: str, trigger: str, booking_id: str,
+129 |                          email: str, ok: bool, provider_id: Optional[str] = None,
+130 |                          err: Optional[str] = None) -> None:
+    |                               ^^^^^^^^^^^^^
+131 |     await db.mailing_automation_log.update_one(
+132 |         {"tenant_id": tenant_id, "trigger_type": trigger, "booking_id": booking_id},
+    |
+help: Convert to `X | None`
+
+Found 999 errors.
+[*] 998 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+Error: Process completed with exit code 1.

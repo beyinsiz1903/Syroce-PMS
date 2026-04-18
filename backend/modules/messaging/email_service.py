@@ -3,6 +3,7 @@ Email Service - AWS SES SMTP Implementation
 Gerçek e-posta gönderimi için AWS SES kullanır
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import os
 import random

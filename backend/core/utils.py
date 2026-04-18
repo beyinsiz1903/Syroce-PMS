@@ -3,6 +3,7 @@ Syroce PMS - Shared Utility Functions
 Used across multiple routers. Extracted from server.py to avoid circular imports.
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import base64
 import io

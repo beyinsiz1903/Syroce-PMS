@@ -3,6 +3,7 @@ Auto Seed Data - Creates demo data on startup if database is empty
 Generates: demo user, tenant, rooms, guests, bookings, folios, housekeeping tasks
 """
 import logging
+
 logger = logging.getLogger(__name__)
 
 import random

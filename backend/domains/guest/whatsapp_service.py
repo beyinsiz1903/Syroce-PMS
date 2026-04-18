@@ -3,6 +3,7 @@ WhatsApp Business Integration
 Simplified version - requires WhatsApp Business API credentials
 """
 import logging
+
 logger = logging.getLogger(__name__)
 
 class WhatsAppService:

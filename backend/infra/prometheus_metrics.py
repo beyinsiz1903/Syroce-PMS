@@ -3,6 +3,7 @@ Prometheus Metrics Exporter for Hotel PMS
 Exposes custom metrics for monitoring and alerting
 """
 import logging
+
 logger = logging.getLogger(__name__)
 
 import time

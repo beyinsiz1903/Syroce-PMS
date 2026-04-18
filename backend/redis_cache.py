@@ -3,6 +3,7 @@ Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
 import logging
+
 logger = logging.getLogger(__name__)
 from functools import wraps
 from typing import Any, Callable

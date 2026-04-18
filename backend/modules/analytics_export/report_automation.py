@@ -3,6 +3,7 @@ Report Automation Service
 Otomatik rapor email gönderimi, PDF generation, scheduling
 """
 import logging
+
 logger = logging.getLogger(__name__)
 
 class ReportAutomation:

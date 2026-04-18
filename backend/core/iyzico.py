@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def _env(key: str, default: Optional[str] = None) -> Optional[str]:
+def _env(key: str, default: str | None = None) -> str | None:
     v = os.getenv(key)
     return v if v not in (None, "") else default
 

@@ -3,6 +3,7 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 import logging
+
 logger = logging.getLogger(__name__)
 import uuid
 from datetime import UTC, datetime

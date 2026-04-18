@@ -12,7 +12,6 @@ import logging
 import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from typing import Optional
 
 logger = logging.getLogger("workers.mailing_automation")
 
@@ -22,14 +21,14 @@ PER_RUN_TENANT_LIMIT = 200
 PER_TRIGGER_PER_RUN_LIMIT = 100
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_task: Optional[asyncio.Task] = None
+_task: asyncio.Task | None = None
 
 
 def _today() -> date:
     return datetime.now(UTC).date()
 
 
-def _safe_date(s) -> Optional[date]:
+def _safe_date(s) -> date | None:
     if not s:
         return None
     if isinstance(s, datetime):
@@ -56,7 +55,7 @@ def _personalize(html: str, subject: str, name: str, hotel: str) -> tuple[str, s
     return subject, html
 
 
-async def _resolve_guest_email_and_name(db, tenant_id: str, guest_id: str) -> tuple[Optional[str], str]:
+async def _resolve_guest_email_and_name(db, tenant_id: str, guest_id: str) -> tuple[str | None, str]:
     """Find guest email (decrypting if needed) and display name. Tenant-scoped."""
     if not guest_id or not tenant_id:
         return None, "Misafir"
@@ -126,8 +125,8 @@ async def _claim_send(db, tenant_id: str, trigger: str, booking_id: str) -> bool
 
 
 async def _finalize_send(db, tenant_id: str, trigger: str, booking_id: str,
-                         email: str, ok: bool, provider_id: Optional[str] = None,
-                         err: Optional[str] = None) -> None:
+                         email: str, ok: bool, provider_id: str | None = None,
+                         err: str | None = None) -> None:
     await db.mailing_automation_log.update_one(
         {"tenant_id": tenant_id, "trigger_type": trigger, "booking_id": booking_id},
         {"$set": {

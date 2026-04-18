@@ -13,7 +13,7 @@ import os
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -80,7 +80,7 @@ class TemplateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     subject: str = Field(..., min_length=1, max_length=200)
     html: str = Field(..., min_length=1)
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class TemplateOut(TemplateIn):
@@ -92,17 +92,17 @@ class TemplateOut(TemplateIn):
 
 class AutomationConfig(BaseModel):
     enabled: bool = False
-    template_id: Optional[str] = None
-    offset_days: Optional[int] = None  # negative = days BEFORE event, positive = AFTER
+    template_id: str | None = None
+    offset_days: int | None = None  # negative = days BEFORE event, positive = AFTER
 
 
 class CampaignCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=160)
-    template_id: Optional[str] = None
-    subject: Optional[str] = None
-    html: Optional[str] = None
+    template_id: str | None = None
+    subject: str | None = None
+    html: str | None = None
     recipient_ids: list[str] = Field(default_factory=list)
-    test_email: Optional[str] = None  # if set, sends only to this address (1 credit)
+    test_email: str | None = None  # if set, sends only to this address (1 credit)
 
 
 # ── Credit helpers ──────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ async def resend_webhook(request: Request) -> dict:
         # Best-effort svix signature check (optional — don't break if header missing)
         try:
             from svix.webhooks import Webhook  # type: ignore
-            headers = {k: v for k, v in request.headers.items()}
+            headers = dict(request.headers.items())
             Webhook(secret).verify(raw, headers)
         except Exception as e:
             logger.warning("[mailing-webhook] signature verify failed: %s", e)
@@ -565,7 +565,7 @@ async def delete_template(template_id: str, current_user: User = Depends(get_cur
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _extract_guest_email(g: dict) -> Optional[str]:
+def _extract_guest_email(g: dict) -> str | None:
     """Try to surface a usable email from a (possibly encrypted) guest doc."""
     raw = g.get("email")
     if isinstance(raw, str) and _EMAIL_RE.match(raw):
@@ -591,7 +591,7 @@ def _guest_display_name(g: dict) -> str:
 
 @router.get("/recipients")
 async def list_recipients(
-    search: Optional[str] = None,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Return guests of this tenant who have a valid email."""
@@ -752,7 +752,7 @@ async def list_campaigns(current_user: User = Depends(get_current_user)) -> list
     return await cursor.to_list(200)
 
 
-def _resolve_campaign_content(payload: CampaignCreate, template: Optional[dict]) -> tuple[str, str]:
+def _resolve_campaign_content(payload: CampaignCreate, template: dict | None) -> tuple[str, str]:
     subject = (payload.subject or (template or {}).get("subject") or "").strip()
     html = (payload.html or (template or {}).get("html") or "").strip()
     if not subject or not html:

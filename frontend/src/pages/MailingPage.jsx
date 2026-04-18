@@ -121,7 +121,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
   const tpl = templates.find(t => t.id === templateId);
   useEffect(() => {
     if (tpl) { setSubject(tpl.subject); setHtml(tpl.html); }
-  }, [templateId]); // eslint-disable-line
+  }, [templateId, tpl]);
 
   const toggleAll = () => {
     if (selected.size === filtered.length) setSelected(new Set());

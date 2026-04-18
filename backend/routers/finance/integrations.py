@@ -1,13 +1,10 @@
 """Auto-split from finance.py — section: integrations."""
 import asyncio
 import uuid
-from datetime import UTC, datetime, timedelta
-from enum import Enum
-from typing import Any
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from fastapi import APIRouter, Depends
+from fastapi.security import HTTPBearer
 
 try:
     from openpyxl import Workbook
@@ -17,20 +14,12 @@ except ImportError:
     Workbook = None
 
 from core.database import db
-from core.helpers import create_audit_log, require_module
 from core.security import get_current_user
-from core.utils import calculate_folio_balance, excel_response
-from models.enums import ChargeCategory, FolioOperationType, PaymentStatus
 from models.schemas import (
-    CashFlow, ChargeCreate, CityLedgerTransaction, ConvertCurrencyRequest,
-    CreateCurrencyRateRequest, CreateMultiCurrencyInvoiceRequest, Folio,
-    FolioCharge, FolioCreate, FolioOperation, FolioOperationCreate,
-    GenerateInvoiceFromFolioRequest, Invoice, InvoiceCreate, Payment,
-    PaymentCreate, User,
+    User,
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
-from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
     from cache_manager import cached
@@ -52,12 +41,10 @@ class LogoConnector:
         self.base_url = os.environ.get('LOGO_API_URL', 'https://logo.example/api')
 
     async def send_invoice(self, invoice):
-        import asyncio
         await asyncio.sleep(0.1)
         return {'external_id': f"LOGO-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Logo'}
 
     async def send_payment(self, payment):
-        import asyncio
         await asyncio.sleep(0.1)
         return {'external_id': f"LOGO-PAY-{payment['id'][:8]}", 'status': 'synced', 'message': 'Payment pushed to Logo'}
 
@@ -69,7 +56,6 @@ class NetsisConnector:
         self.base_url = os.environ.get('NETSIS_API_URL', 'https://netsis.example/api')
 
     async def send_invoice(self, invoice):
-        import asyncio
         await asyncio.sleep(0.1)
         return {'external_id': f"NETSIS-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Netsis'}
 

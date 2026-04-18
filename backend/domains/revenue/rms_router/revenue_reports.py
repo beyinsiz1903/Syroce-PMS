@@ -3,23 +3,13 @@ Domain Router: RMS Revenue
 
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
-import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
 
-from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
-from models.schemas import (
-    AddCompetitorRequest,
-    AutoPricingRequest,
-    DemandForecastRequest,
-    ScrapePricesRequest,
-    User,
-)
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 

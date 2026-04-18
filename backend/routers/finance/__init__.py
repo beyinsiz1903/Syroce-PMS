@@ -1,7 +1,7 @@
 """Finance routers package — aggregates all split sub-routers."""
 from fastapi import APIRouter
 
-from . import integrations, folio, invoices, accounting, mobile, dashboards, cashiering
+from . import accounting, cashiering, dashboards, folio, integrations, invoices, mobile
 
 router = APIRouter(prefix="/api", tags=["finance"])
 
