@@ -759,6 +759,48 @@ bekleyen çağrılar otomatik tetiklenir.
   read=false, created_at}` — mevcut `/api/notifications/list`
   normalizasyonuyla (legacy `is_read` → `read`) uyumlu.
 
+## Grup Rezervasyonu — Toplu Oluşturma (Apr 2026)
+
+`/group-bookings-manage` sayfasındaki "Yeni Grup Oluştur" dialogu artık iki
+modda çalışır: **mevcut rezervasyonları grupla** (eski davranış) **veya
+aynı dialog'tan N adet yeni rezervasyon yaratıp gruba bağla**. Bu sayede
+tur/MICE grupları için önce N tane bireysel rezervasyon açma adımı
+gerekmiyor.
+
+### Backend (`backend/routers/reservation_detail.py`)
+- `GroupBookingCreate` şemasına `new_bookings: list[NewGroupBookingRow]`
+  eklendi (`guest_name, room_id, check_in, check_out, total_amount,
+  adults, children`).
+- POST `/api/pms/group-bookings` iki aşamalı işliyor:
+  1. **Pre-validate**: tüm satırlar (ad/tutar/tarih) + odalar (tek `$in`
+     sorgusu, tenant scope) + mevcut `booking_ids` (tenant guard) yazma
+     yapmadan doğrulanır. Hatada hiçbir şey yazılmaz.
+  2. **Create + compensate**: misafir (placeholder e-posta) +
+     `CreateReservationService.create()` ile rezervasyon. Servis
+     idempotency-key gerektirdiği için her satır için
+     `_request_with_idempotency_key(req, uuid4())` ile yeni `Request`
+     üretilir (scope headers'ı klonlanır). Herhangi bir satır
+     başarısız olursa önceden yaratılmış misafir+rezervasyonlar
+     `delete_many` ile geri alınır.
+- Yanıtta `created_booking_ids` listesi döner — UI bunu kullanıcıya
+  bildirim olarak gösterir.
+
+### Frontend (`frontend/src/pages/GroupBookings.jsx`)
+- Tab toggle: "Mevcut Rezervasyonları Grupla" | "Yeni Rezervasyonlar
+  Oluştur".
+- Yeni mod tablosu: misafir adı, oda dropdown (`/pms/rooms`'tan), giriş
+  tarihi, çıkış tarihi, tutar; +Satır Ekle, sıra silme.
+- "Tarihleri Eşitle" — ilk satırın tarihlerini tüm satırlara uygular
+  (turist grubu senaryosu).
+- Canlı toplam tutar.
+- Submit: istemci-tarafı pre-check + tek `POST /pms/group-bookings`.
+
+### Veri sözleşmeleri
+- Grup placeholder misafirleri `email = group-{uuid8}@placeholder.local`
+  pattern'iyle damgalanır (sonradan misafir bilgileri rezervasyon
+  detayından güncellenebilir).
+- Yaratılan rezervasyonlar `origin = ui-group` ile etiketlidir.
+
 ## Misafir Yorumları & NPS Yönetimi (Apr 2026)
 
 Müşteri ilişkileri ekibinin oda bazlı yorum + puan girip raporlayabilmesi

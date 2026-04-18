@@ -7,9 +7,23 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Users, Plus, LogIn, LogOut, Search, Building2, Calendar, Loader2, ChevronRight, X } from 'lucide-react';
+import { Users, Plus, LogIn, LogOut, Search, Loader2, ChevronRight, X, Trash2 } from 'lucide-react';
 
 const API = "";
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const tomorrowISO = () => {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
+const emptyRow = () => ({
+  guest_name: '',
+  room_id: '',
+  check_in: todayISO(),
+  check_out: tomorrowISO(),
+  total_amount: '',
+  adults: 1,
+});
 
 export default function GroupBookings({ user, tenant, onLogout }) {
   const [groups, setGroups] = useState([]);
@@ -21,6 +35,10 @@ export default function GroupBookings({ user, tenant, onLogout }) {
   const [allBookings, setAllBookings] = useState([]);
   const [selectedBookingIds, setSelectedBookingIds] = useState([]);
   const [creating, setCreating] = useState(false);
+  // YENİ: tab + yeni rezervasyon satırları
+  const [createMode, setCreateMode] = useState('existing'); // 'existing' | 'new'
+  const [allRooms, setAllRooms] = useState([]);
+  const [newRows, setNewRows] = useState([emptyRow()]);
 
   const loadGroups = useCallback(async () => {
     try {
@@ -37,22 +55,86 @@ export default function GroupBookings({ user, tenant, onLogout }) {
     } catch (e) { console.error(e); }
   };
 
+  const loadRooms = async () => {
+    try {
+      const res = await axios.get(`/pms/rooms`);
+      setAllRooms(Array.isArray(res.data) ? res.data : (res.data.rooms || []));
+    } catch (e) { console.error(e); }
+  };
+
+  const openCreateDialog = () => {
+    setShowCreate(true);
+    setCreateMode('existing');
+    setGroupName('');
+    setSelectedBookingIds([]);
+    setNewRows([emptyRow()]);
+    loadBookings();
+    loadRooms();
+  };
+
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
+  const updateRow = (idx, patch) => {
+    setNewRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
+  };
+  const addRow = () => setNewRows(prev => [...prev, emptyRow()]);
+  const removeRow = (idx) => setNewRows(prev => prev.filter((_, i) => i !== idx));
+
   const handleCreate = async () => {
-    if (!groupName.trim() || selectedBookingIds.length === 0) {
-      toast.error('Grup adı ve en az 1 rezervasyon gerekli');
+    if (!groupName.trim()) {
+      toast.error('Grup adı gerekli');
       return;
     }
+
+    let payload = { group_name: groupName.trim() };
+
+    if (createMode === 'existing') {
+      if (selectedBookingIds.length === 0) {
+        toast.error('En az 1 rezervasyon seçin');
+        return;
+      }
+      payload.booking_ids = selectedBookingIds;
+    } else {
+      // Yeni rezervasyon modu — istemci-tarafı ön doğrulama
+      const cleanRows = newRows.filter(r => r.guest_name.trim() || r.room_id);
+      if (cleanRows.length === 0) {
+        toast.error('En az 1 satır doldurun');
+        return;
+      }
+      for (let i = 0; i < cleanRows.length; i++) {
+        const r = cleanRows[i];
+        if (!r.guest_name.trim()) { toast.error(`${i+1}. satır: misafir adı zorunlu`); return; }
+        if (!r.room_id)            { toast.error(`${i+1}. satır: oda seçin`); return; }
+        if (!(parseFloat(r.total_amount) > 0)) { toast.error(`${i+1}. satır: tutar girin`); return; }
+        if (r.check_out <= r.check_in) { toast.error(`${i+1}. satır: çıkış tarihi giriş sonrası olmalı`); return; }
+      }
+      payload.new_bookings = cleanRows.map(r => ({
+        guest_name: r.guest_name.trim(),
+        room_id: r.room_id,
+        check_in: r.check_in,
+        check_out: r.check_out,
+        total_amount: parseFloat(r.total_amount),
+        adults: parseInt(r.adults) || 1,
+      }));
+    }
+
     setCreating(true);
     try {
-      await axios.post(`/pms/group-bookings`, { group_name: groupName, booking_ids: selectedBookingIds });
-      toast.success('Grup oluşturuldu');
+      const res = await axios.post(`/pms/group-bookings`, payload);
+      const created = res.data?.created_booking_ids?.length || 0;
+      toast.success(
+        created > 0
+          ? `Grup oluşturuldu (${created} yeni rezervasyon yaratıldı)`
+          : 'Grup oluşturuldu'
+      );
       setShowCreate(false);
       setGroupName('');
       setSelectedBookingIds([]);
-      loadGroups();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+      setNewRows([emptyRow()]);
+      await loadGroups();
+    } catch (e) {
+      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+    }
     setCreating(false);
   };
 
@@ -100,7 +182,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
             <h1 className="text-2xl font-bold text-gray-800">Grup Rezervasyonları</h1>
             <p className="text-sm text-gray-500 mt-1">Grup giriş/çıkış ve toplu yönetim</p>
           </div>
-          <Button onClick={() => { setShowCreate(true); loadBookings(); }} className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="create-group-btn">
+          <Button onClick={openCreateDialog} className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="create-group-btn">
             <Plus className="w-4 h-4 mr-2" /> Yeni Grup
           </Button>
         </div>
@@ -157,38 +239,153 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
         {/* Create Group Dialog */}
         <Dialog open={showCreate} onOpenChange={setShowCreate}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Yeni Grup Oluştur</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label>Grup Adı *</Label>
                 <Input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Örnek: ABC Turizm - 15 Mart" />
               </div>
-              <div>
-                <Label>Rezervasyonları Seç ({selectedBookingIds.length} seçili)</Label>
-                <div className="relative mt-1">
-                  <Search className="absolute left-2 top-2 w-4 h-4 text-gray-400" />
-                  <Input value={searchBooking} onChange={e => setSearchBooking(e.target.value)} placeholder="Misafir adı veya oda no..." className="pl-8" />
-                </div>
+
+              {/* Mode tabs */}
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setCreateMode('existing')}
+                  className={`flex-1 text-sm font-medium py-2 rounded-md transition ${createMode === 'existing' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                  data-testid="tab-existing"
+                >
+                  Mevcut Rezervasyonları Grupla
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateMode('new')}
+                  className={`flex-1 text-sm font-medium py-2 rounded-md transition ${createMode === 'new' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                  data-testid="tab-new"
+                >
+                  Yeni Rezervasyonlar Oluştur
+                </button>
               </div>
-              <div className="max-h-60 overflow-y-auto border rounded-lg">
-                {filteredBookings.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400 text-sm">Uygun rezervasyon bulunamadı</div>
-                ) : (
-                  filteredBookings.map(b => (
-                    <div key={b.id} className={`flex items-center gap-3 p-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${selectedBookingIds.includes(b.id) ? 'bg-blue-50' : ''}`}
-                      onClick={() => toggleBookingSelection(b.id)}>
-                      <input type="checkbox" checked={selectedBookingIds.includes(b.id)} onChange={() => {}} className="w-4 h-4" />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{b.guest_name || '-'}</div>
-                        <div className="text-xs text-gray-500">Oda: {b.room_number || '?'} | {b.check_in?.toString().slice(0, 10)} - {b.check_out?.toString().slice(0, 10)}</div>
-                      </div>
-                      <span className="text-sm font-medium text-gray-600">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</span>
+
+              {createMode === 'existing' ? (
+                <>
+                  <div>
+                    <Label>Rezervasyonları Seç ({selectedBookingIds.length} seçili)</Label>
+                    <div className="relative mt-1">
+                      <Search className="absolute left-2 top-2 w-4 h-4 text-gray-400" />
+                      <Input value={searchBooking} onChange={e => setSearchBooking(e.target.value)} placeholder="Misafir adı veya oda no..." className="pl-8" />
                     </div>
-                  ))
-                )}
-              </div>
-              <div className="flex justify-end gap-2">
+                  </div>
+                  <div className="max-h-60 overflow-y-auto border rounded-lg">
+                    {filteredBookings.length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm">Uygun rezervasyon bulunamadı</div>
+                    ) : (
+                      filteredBookings.map(b => (
+                        <div key={b.id} className={`flex items-center gap-3 p-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${selectedBookingIds.includes(b.id) ? 'bg-blue-50' : ''}`}
+                          onClick={() => toggleBookingSelection(b.id)}>
+                          <input type="checkbox" checked={selectedBookingIds.includes(b.id)} onChange={() => {}} className="w-4 h-4" />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">{b.guest_name || '-'}</div>
+                            <div className="text-xs text-gray-500">Oda: {b.room_number || '?'} | {b.check_in?.toString().slice(0, 10)} - {b.check_out?.toString().slice(0, 10)}</div>
+                          </div>
+                          <span className="text-sm font-medium text-gray-600">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <Label>Rezervasyonlar ({newRows.length} satır)</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button" size="sm" variant="outline"
+                        onClick={() => {
+                          // Tüm satırlara üst-satırdaki tarihleri uygula
+                          const first = newRows[0];
+                          if (!first) return;
+                          setNewRows(prev => prev.map(r => ({ ...r, check_in: first.check_in, check_out: first.check_out })));
+                          toast.success('Tarihler tüm satırlara uygulandı');
+                        }}
+                        className="h-8 text-xs"
+                      >
+                        Tarihleri Eşitle
+                      </Button>
+                      <Button type="button" size="sm" onClick={addRow} className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs">
+                        <Plus className="w-3 h-3 mr-1" /> Satır Ekle
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="max-h-[50vh] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
+                          <tr>
+                            <th className="text-left py-2 px-2 font-medium text-xs text-gray-500">Misafir *</th>
+                            <th className="text-left py-2 px-2 font-medium text-xs text-gray-500">Oda *</th>
+                            <th className="text-left py-2 px-2 font-medium text-xs text-gray-500">Giriş</th>
+                            <th className="text-left py-2 px-2 font-medium text-xs text-gray-500">Çıkış</th>
+                            <th className="text-right py-2 px-2 font-medium text-xs text-gray-500">Tutar (TL) *</th>
+                            <th className="py-2 px-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {newRows.map((r, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="py-1 px-2">
+                                <Input value={r.guest_name} onChange={e => updateRow(idx, { guest_name: e.target.value })}
+                                  placeholder="Ad Soyad" className="h-8 text-sm" />
+                              </td>
+                              <td className="py-1 px-2">
+                                <select value={r.room_id} onChange={e => updateRow(idx, { room_id: e.target.value })}
+                                  className="h-8 text-sm border rounded px-2 w-full bg-white">
+                                  <option value="">Seç...</option>
+                                  {allRooms.map(room => (
+                                    <option key={room.id} value={room.id}>
+                                      {room.room_number || room.number} {room.room_type ? `(${room.room_type})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-1 px-2">
+                                <Input type="date" value={r.check_in} onChange={e => updateRow(idx, { check_in: e.target.value })}
+                                  className="h-8 text-sm" />
+                              </td>
+                              <td className="py-1 px-2">
+                                <Input type="date" value={r.check_out} onChange={e => updateRow(idx, { check_out: e.target.value })}
+                                  className="h-8 text-sm" />
+                              </td>
+                              <td className="py-1 px-2">
+                                <Input type="number" min="0" step="0.01" value={r.total_amount}
+                                  onChange={e => updateRow(idx, { total_amount: e.target.value })}
+                                  placeholder="0" className="h-8 text-sm text-right" />
+                              </td>
+                              <td className="py-1 px-2 text-center">
+                                <button type="button" onClick={() => removeRow(idx)}
+                                  disabled={newRows.length === 1}
+                                  className="text-red-500 hover:text-red-700 disabled:opacity-30">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Toplam tutar:{' '}
+                    <strong>
+                      {newRows.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0).toLocaleString('tr-TR')} TL
+                    </strong>
+                    {' · '}
+                    Misafir adları placeholder olarak kaydedilir; sonra her rezervasyondan misafir bilgilerini güncelleyebilirsiniz.
+                  </p>
+                </>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => setShowCreate(false)}>İptal</Button>
                 <Button onClick={handleCreate} disabled={creating} className="bg-orange-500 hover:bg-orange-600 text-white">
                   {creating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null} Grup Oluştur

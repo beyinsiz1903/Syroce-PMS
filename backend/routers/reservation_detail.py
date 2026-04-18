@@ -7,12 +7,30 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
+from models.schemas.bookings import BookingCreate
+from modules.reservations.services.create_reservation_service import (
+    CreateReservationService,
+)
+
+_create_reservation_service = CreateReservationService()
+
+
+def _request_with_idempotency_key(req: Request, key: str) -> Request:
+    """Aynı HTTP isteği içinde N alt-rezervasyon yaratırken her birine
+    benzersiz Idempotency-Key enjekte eden ince sarmalayıcı."""
+    headers = [
+        (k, v) for k, v in req.scope["headers"]
+        if k.lower() != b"idempotency-key"
+    ]
+    headers.append((b"idempotency-key", key.encode()))
+    new_scope = {**req.scope, "headers": headers}
+    return Request(new_scope, req.receive)
 
 router = APIRouter(prefix="/api/pms", tags=["reservation-detail"])
 
@@ -106,9 +124,22 @@ class GuestUpdate(BaseModel):
     vip_status: bool | None = None
 
 
+class NewGroupBookingRow(BaseModel):
+    """Grup oluştururken aynı anda yaratılacak yeni rezervasyon."""
+    guest_name: str
+    room_id: str
+    check_in: str
+    check_out: str
+    total_amount: float
+    adults: int = 1
+    children: int = 0
+
+
 class GroupBookingCreate(BaseModel):
     group_name: str
     booking_ids: list[str] = []
+    # Yeni: aynı dialog'tan toplu rezervasyon yaratıp gruba bağlama
+    new_bookings: list[NewGroupBookingRow] = []
 
 
 class GroupBookingAddRoom(BaseModel):
@@ -1202,34 +1233,158 @@ async def get_available_rooms(
 @router.post("/group-bookings")
 async def create_group_booking(
     data: GroupBookingCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new group booking."""
+    """Create a new group booking.
+
+    İki mod desteklenir (ikisi aynı çağrıda birleştirilebilir):
+      1) `booking_ids`  — mevcut bireysel rezervasyonları seç ve grupla.
+      2) `new_bookings` — grup adıyla aynı anda N adet yeni rezervasyon
+         yarat ve gruba bağla. Her satır için (yoksa) misafir kaydı
+         placeholder e-posta ile açılır, sonra standart rezervasyon
+         servisi (`CreateReservationService`) çağrılır.
+    """
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    if not data.group_name.strip():
+        raise HTTPException(status_code=400, detail="Grup adı boş olamaz")
+
+    # ── Aşama 1: TÜM girdileri yazma yapmadan önce doğrula ──
+    # (Kısmi yazılmış grup oluşturmamak için).
+    for idx, row in enumerate(data.new_bookings, start=1):
+        if not row.guest_name.strip():
+            raise HTTPException(status_code=400, detail=f"{idx}. satır: misafir adı zorunlu")
+        if row.total_amount <= 0:
+            raise HTTPException(status_code=400, detail=f"{idx}. satır ({row.guest_name}): geçerli bir tutar girin")
+        try:
+            ci_dt = datetime.fromisoformat(row.check_in.replace("Z", "+00:00"))
+            co_dt = datetime.fromisoformat(row.check_out.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"{idx}. satır: tarih formatı geçersiz")
+        if co_dt <= ci_dt:
+            raise HTTPException(status_code=400, detail=f"{idx}. satır: çıkış tarihi giriş tarihinden sonra olmalı")
+
+    # Tüm odaları toplu doğrula (tenant scope)
+    requested_room_ids = list({r.room_id for r in data.new_bookings})
+    if requested_room_ids:
+        valid_room_ids = {
+            r["id"] async for r in db.rooms.find(
+                {"id": {"$in": requested_room_ids}, "tenant_id": tid}, {"id": 1}
+            )
+        }
+        for idx, row in enumerate(data.new_bookings, start=1):
+            if row.room_id not in valid_room_ids:
+                raise HTTPException(status_code=404, detail=f"{idx}. satır: oda bulunamadı")
+
+    # Mevcut booking_ids'i tenant kapsamında doğrula
+    valid_existing_ids: list[str] = []
+    if data.booking_ids:
+        existing_docs = db.bookings.find(
+            {"id": {"$in": list(set(data.booking_ids))}, "tenant_id": tid},
+            {"id": 1},
+        )
+        valid_existing_ids = [d["id"] async for d in existing_docs]
+        missing = set(data.booking_ids) - set(valid_existing_ids)
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Bu rezervasyonlar bulunamadı veya yetkiniz yok: {', '.join(list(missing)[:3])}",
+            )
+
+    if not data.new_bookings and not valid_existing_ids:
+        raise HTTPException(status_code=400, detail="Grup için en az 1 rezervasyon gerekli")
+
+    # ── Aşama 2: Yeni rezervasyonları yarat (failure'da geri al) ──
+    created_guest_ids: list[str] = []
+    new_booking_ids: list[str] = []
+    try:
+        for idx, row in enumerate(data.new_bookings, start=1):
+            guest_id = str(uuid.uuid4())
+            await db.guests.insert_one({
+                "id": guest_id,
+                "tenant_id": tid,
+                "name": row.guest_name.strip(),
+                "email": f"group-{guest_id[:8]}@placeholder.local",
+                "phone": "",
+                "id_number": "",
+                "vip_status": False,
+                "loyalty_points": 0,
+                "total_stays": 0,
+                "total_spend": 0.0,
+                "created_at": datetime.now(UTC).isoformat(),
+            })
+            created_guest_ids.append(guest_id)
+
+            booking_data = BookingCreate(
+                guest_id=guest_id,
+                room_id=row.room_id,
+                check_in=row.check_in,
+                check_out=row.check_out,
+                adults=max(1, row.adults),
+                children=max(0, row.children),
+                guests_count=max(1, row.adults + row.children),
+                total_amount=row.total_amount,
+                channel="direct",
+                source_channel="direct",
+                origin="ui-group",
+            )
+            sub_request = _request_with_idempotency_key(request, str(uuid.uuid4()))
+            result = await _create_reservation_service.create(
+                booking_data, current_user, sub_request
+            )
+            bid = (
+                result.get("booking_id")
+                or result.get("id")
+                or (result.get("booking") or {}).get("id")
+            )
+            if not bid:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"{idx}. satır rezervasyon ID'si alınamadı",
+                )
+            new_booking_ids.append(bid)
+    except Exception as exc:
+        # Compensating: önceden yarattıklarını sil
+        if new_booking_ids:
+            await db.bookings.delete_many({"id": {"$in": new_booking_ids}, "tenant_id": tid})
+        if created_guest_ids:
+            await db.guests.delete_many({"id": {"$in": created_guest_ids}, "tenant_id": tid})
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=f"Grup oluşturulurken hata: {exc}") from exc
+
+    # Birleştir (tekrarlananları at, var olanları başa al)
+    all_booking_ids = list(dict.fromkeys([*valid_existing_ids, *new_booking_ids]))
+
+    # 3) Grubu oluştur
     group_id = str(uuid.uuid4())
     group = {
         "id": group_id,
         "tenant_id": tid,
-        "group_name": data.group_name,
-        "booking_ids": data.booking_ids,
+        "group_name": data.group_name.strip(),
+        "booking_ids": all_booking_ids,
         "status": "active",
-        "total_rooms": len(data.booking_ids),
+        "total_rooms": len(all_booking_ids),
         "created_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
     }
     await db.group_bookings.insert_one({**group})
 
-    # Tag each booking with the group_booking_id
-    for bid in data.booking_ids:
+    # 4) Her bookinge group_booking_id damgala
+    for bid in all_booking_ids:
         await db.bookings.update_one(
             {"id": bid, "tenant_id": tid},
             {"$set": {"group_booking_id": group_id}},
         )
 
     group.pop("_id", None)
-    return {"success": True, "group": group}
+    return {
+        "success": True,
+        "group": group,
+        "created_booking_ids": new_booking_ids,
+    }
 
 
 @router.get("/group-bookings")
