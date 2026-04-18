@@ -31,6 +31,7 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MailingPage = lazy(() => import("@/pages/MailingPage"));
 const ModuleStorePage = lazy(() => import("@/pages/ModuleStorePage"));
+const AfsadakatLauncher = lazy(() => import("@/pages/AfsadakatLauncher"));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const PendingAR = lazy(() => import("@/pages/PendingAR"));
 const CityLedgerAccounts = lazy(() => import("@/pages/CityLedgerAccounts"));
@@ -245,6 +246,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/mailing", ...p(MailingPage) },
     { path: "/app/module-store", ...p(ModuleStorePage) },
     { path: "/module-store", ...p(ModuleStorePage) },
+    { path: "/app/afsadakat", ...p(AfsadakatLauncher) },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }) },
     { path: "/ai-pms", ...p(AIEnhancedPMS) },
     { path: "/app/ai", ...p(AIModule) },

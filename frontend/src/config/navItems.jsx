@@ -517,6 +517,15 @@ export const NAV_ITEMS = [
     navGroup: "management",
   },
   {
+    key: "afsadakat",
+    label: "Sadakat & Inbox",
+    path: "/app/afsadakat",
+    moduleKey: "af_sadakat",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     key: "messaging_dashboard",
     label: "Mesajlasma",
     path: "/messaging-dashboard",

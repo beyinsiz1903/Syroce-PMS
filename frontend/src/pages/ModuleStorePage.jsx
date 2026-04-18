@@ -6,9 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useNavigate } from "react-router-dom";
 import {
   ShoppingBag, QrCode, ScanLine, Mail, Package, Sparkles,
-  CheckCircle2, Clock, Loader2, RefreshCw,
+  CheckCircle2, Clock, Loader2, RefreshCw, Gift, ExternalLink,
 } from "lucide-react";
 
 const ICONS = { QrCode, ScanLine, Mail, Package, Sparkles };
@@ -23,9 +24,11 @@ const CATEGORY_COLOR = {
   credit_pack: "bg-emerald-100 text-emerald-800 border-emerald-200",
 };
 
-function ProductCard({ product, owned, onPurchase, buying }) {
+function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buying }) {
   const Icon = ICONS[product.icon] || Package;
   const ownedSub = owned.find((s) => s.product_key === product.key);
+  const hasTrial = !!product.trial_days;
+  const isExternal = !!product.external;
   return (
     <Card className="flex flex-col">
       <CardHeader className="pb-3">
@@ -67,23 +70,44 @@ function ProductCard({ product, owned, onPurchase, buying }) {
             </div>
           </div>
           {ownedSub ? (
-            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-              Aktif
-            </Badge>
-          ) : (
-            <Button
-              onClick={() => onPurchase(product)}
-              disabled={buying === product.key}
-              size="sm"
-            >
-              {buying === product.key ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <ShoppingBag className="w-4 h-4 mr-1" /> Satın Al
-                </>
+            <div className="flex items-center gap-2">
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                {ownedSub.trial ? "Deneme Aktif" : "Aktif"}
+              </Badge>
+              {isExternal && (
+                <Button size="sm" variant="outline" onClick={() => onLaunch(product)}>
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Aç
+                </Button>
               )}
-            </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5 items-end">
+              {hasTrial && (
+                <Button
+                  onClick={() => onStartTrial(product)}
+                  disabled={buying === product.key}
+                  size="sm"
+                  variant="outline"
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                >
+                  <Gift className="w-3.5 h-3.5 mr-1" />
+                  {product.trial_days} Gün Ücretsiz Dene
+                </Button>
+              )}
+              <Button
+                onClick={() => onPurchase(product)}
+                disabled={buying === product.key}
+                size="sm"
+              >
+                {buying === product.key ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <ShoppingBag className="w-4 h-4 mr-1" /> Satın Al
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </CardContent>
@@ -92,6 +116,7 @@ function ProductCard({ product, owned, onPurchase, buying }) {
 }
 
 export default function ModuleStorePage({ user, tenant, onLogout }) {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [subs, setSubs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +162,28 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
       toast.error(e.response?.data?.detail || "Satın alma başlatılamadı");
     }
     setBuying(null);
+  };
+
+  const handleStartTrial = async (product) => {
+    setBuying(product.key);
+    try {
+      await axios.post("/module-store/start-trial", { product_key: product.key });
+      toast.success(`${product.trial_days} günlük ücretsiz deneme başlatıldı`);
+      await load();
+      if (product.external) {
+        // For external modules, jump straight to the launcher
+        if (product.key === "af_sadakat") navigate("/app/afsadakat");
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Deneme başlatılamadı");
+    }
+    setBuying(null);
+  };
+
+  const handleLaunch = async (product) => {
+    if (product.key === "af_sadakat") {
+      navigate("/app/afsadakat");
+    }
   };
 
   const grouped = useMemo(() => {
@@ -211,6 +258,8 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
                       product={p}
                       owned={subs}
                       onPurchase={handlePurchase}
+                      onStartTrial={handleStartTrial}
+                      onLaunch={handleLaunch}
                       buying={buying}
                     />
                   ))}

@@ -674,3 +674,47 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 ### Env Vars
 - `ROOM_QR_SECRET` *(önerilen)* — HMAC secret; yoksa `JWT_SECRET` kullanılır
 - `PUBLIC_APP_URL` — QR URL'leri için; yoksa `REPLIT_DEV_DOMAIN` veya request header'dan türetilir
+
+## Faz: Af-sadakat Entegrasyon Hazırlığı (Faz 1 — DONE)
+
+Af-sadakat (github.com/beyinsiz1903/Af-sadakat) — sadakat programı, AI yorum
+yönetimi, birleşik mesaj kutusu, misafir servisleri, QR misafir paneli — Modül
+Pazarı'ndan satılabilir hale getirildi. Mimari: ayrı servis + Syroce köprüsü.
+
+### Eklenen
+- **Marketplace ürünü**: `af_sadakat` (₺1499/ay, 14 gün ücretsiz deneme,
+  `external: true`, `sso_path: /integrations/afsadakat/launch`)
+- **Trial endpoint**: `POST /api/module-store/start-trial` — ödemesiz, tek
+  kullanım, otomatik provisioning tetikler
+- **Provisioning**: `core/afsadakat_provisioner.py` — `AFSADAKAT_BASE_URL` +
+  `AFSADAKAT_ADMIN_TOKEN` env varsa harici sunucuya HTTP, yoksa local-only
+  (API key üretip DB'ye yazar). Idempotent.
+- **SSO köprüsü**: `POST /api/integrations/afsadakat/launch` — kısa ömürlü
+  (120s) HS256 JWT (aud=afsadakat, JWT_SECRET ile imzalı), redirect URL döner
+- **Inbound webhook**: `POST /api/integrations/afsadakat/webhook` — Bearer
+  API key auth, event'leri `integration_afsadakat_events` koleksiyonuna yazar
+- **Outbound PMS API** (Af-sadakat → Syroce, API key auth):
+  `GET /api/pms-outbound/rooms`, `/reservations`, `/reservations/{id}`,
+  `/guests`, `/guests/{id}`, `POST /folio/charge` (external_ref ile idempotent)
+- **Frontend**: `AfsadakatLauncher` sayfası (`/app/afsadakat`), nav'a "Sadakat
+  & Inbox" item eklendi (entitlement ile gizli/görünür, `moduleKey: af_sadakat`).
+  ModuleStorePage trial butonu + external modüller için "Aç" butonu.
+- **MODULE_ALIASES**: `af_sadakat → [af_sadakat, af_sadakat_loyalty]`
+- **Platform admin endpointleri**: `/api/integrations/afsadakat/admin/provision`
+  (force re-provision), `/admin/tenants/{id}` (api_key gizli, suffix ile)
+
+### Env Vars (opsiyonel — Faz 2'de)
+- `AFSADAKAT_BASE_URL` — harici Af-sadakat instance URL'si (örn https://afsadakat.replit.app)
+- `AFSADAKAT_ADMIN_TOKEN` — Af-sadakat'ın `/api/admin/integrations/syroce/provision`
+  endpointi için bearer token
+
+### Veritabanı koleksiyonları (platform-wide)
+- `integration_afsadakat_tenants` — { tenant_id (uniq), api_key, ext_tenant_id,
+  status, mode (local|external), base_url }
+- `integration_afsadakat_events` — webhook event log
+
+### Sonraki Faz (Faz 2 — bekliyor)
+- Af-sadakat repo'su fork edilip Syroce adapter eklenecek (mevcut
+  `pms_integration.py` adapter pattern'ine `SyroceAdapter` sınıfı ekle —
+  outbound API'leri çağıracak)
+- Ayrı Replit projesi olarak Af-sadakat deploy + env'leri PMS'e set

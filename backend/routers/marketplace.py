@@ -66,6 +66,32 @@ DEFAULT_PRODUCTS: list[dict[str, Any]] = [
         "features": ["25.000 e-posta kredisi", "Süresiz geçerli", "%20 indirim"],
         "active": True,
     },
+    {
+        "key": "af_sadakat",
+        "name": "Sadakat & Omni Inbox (Af-sadakat)",
+        "description": (
+            "Misafir sadakat programı (Silver/Gold/Platinum), AI destekli yorum "
+            "yönetimi, WhatsApp/Meta/web sohbet birleşik kutusu, oda servisi & "
+            "spa & uyandırma & misafir QR paneli. PMS ile otomatik entegre."
+        ),
+        "category": "module",
+        "billing_type": "subscription",
+        "price_try": 1499.0,
+        "duration_days": 30,
+        "trial_days": 14,
+        "icon": "Sparkles",
+        "external": True,
+        "sso_path": "/integrations/afsadakat/launch",
+        "features": [
+            "Sadakat programı: tier, puan, otomatik kazanım",
+            "Yorumlar: AI duygu analizi + AI yanıt önerileri",
+            "Birleşik mesaj kutusu: WhatsApp, Meta, web sohbet",
+            "Misafir servisleri: oda servisi, spa, çamaşır, uyandırma",
+            "QR ile misafir paneli (giriş gerektirmez)",
+            "14 gün ücretsiz deneme",
+        ],
+        "active": True,
+    },
 ]
 
 
@@ -86,17 +112,26 @@ def _now_iso() -> str:
 
 
 async def _seed_products_if_empty() -> None:
+    """Idempotent catalog upsert.
+
+    Inserts any DEFAULT_PRODUCTS entry that doesn't yet exist by key.
+    Existing entries are left untouched (so admin edits via
+    /admin/products are preserved). New products added to
+    DEFAULT_PRODUCTS in code automatically appear after restart.
+    """
     db = _db()
     await ensure_indexes()
-    count = await db.marketplace_products.count_documents({})
-    if count == 0:
-        for p in DEFAULT_PRODUCTS:
-            await db.marketplace_products.update_one(
-                {"key": p["key"]},
-                {"$setOnInsert": {**p, "created_at": _now_iso()}},
-                upsert=True,
-            )
-        logger.info("[marketplace] seeded %d default products", len(DEFAULT_PRODUCTS))
+    inserted = 0
+    for p in DEFAULT_PRODUCTS:
+        result = await db.marketplace_products.update_one(
+            {"key": p["key"]},
+            {"$setOnInsert": {**p, "created_at": _now_iso()}},
+            upsert=True,
+        )
+        if result.upserted_id is not None:
+            inserted += 1
+    if inserted:
+        logger.info("[marketplace] inserted %d new default products", inserted)
 
     # Deactivate legacy QR product — that module is included free in all plans.
     await db.marketplace_products.update_one(
@@ -115,13 +150,20 @@ class ProductIn(BaseModel):
     billing_type: str = Field(default="subscription")  # subscription|one_time
     price_try: float = 0
     duration_days: int | None = 30
+    trial_days: int | None = None
     icon: str | None = None
     credits: int | None = None
     features: list[str] = Field(default_factory=list)
+    external: bool = False
+    sso_path: str | None = None
     active: bool = True
 
 
 class PurchaseRequest(BaseModel):
+    product_key: str
+
+
+class StartTrialRequest(BaseModel):
     product_key: str
 
 
@@ -266,6 +308,113 @@ async def purchase(
     }
 
 
+# ── Free trial activation (no payment) ──────────────────────────
+@router.post("/start-trial")
+async def start_trial(
+    payload: StartTrialRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Activate a free trial for products that advertise trial_days.
+
+    One trial per (tenant, product). Idempotent: returns existing trial
+    if already started. After expiry, the entitlement check naturally
+    returns False until the tenant pays for the real subscription.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    db = _db()
+    product = await db.marketplace_products.find_one(
+        {"key": payload.product_key, "active": True}, {"_id": 0}
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    trial_days = product.get("trial_days")
+    if not trial_days or trial_days <= 0:
+        raise HTTPException(status_code=400,
+                            detail="Bu ürün için ücretsiz deneme yok")
+
+    # Atomic idempotent activation. The unique partial index on
+    # (tenant_id, product_key, status=active) guarantees only one ACTIVE
+    # sub per (tenant, product). We use update_one + $setOnInsert so:
+    #   - First call inserts a brand-new trial sub.
+    #   - Concurrent/replay calls observe the existing doc and return it
+    #     unchanged (idempotent — same response on retry).
+    now = datetime.now(UTC)
+    end = now + timedelta(days=int(trial_days))
+    new_sub_id = str(uuid.uuid4())
+    trial_order_id = f"trial-{new_sub_id}"
+
+    try:
+        await db.tenant_subscriptions.update_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "product_key": product["key"],
+                "status": "active",
+            },
+            {
+                "$setOnInsert": {
+                    "id": new_sub_id,
+                    "tenant_id": current_user.tenant_id,
+                    "product_key": product["key"],
+                    "status": "active",
+                    "trial": True,
+                    "start_date": now.isoformat(),
+                    "end_date": end.isoformat(),
+                    "order_id": trial_order_id,
+                    "created_at": _now_iso(),
+                }
+            },
+            upsert=True,
+        )
+    except Exception as e:
+        # Race: a concurrent request inserted between our upsert attempts.
+        # The partial unique index made the upsert raise — fall through
+        # to read the now-existing doc and return it idempotently.
+        logger.info("[marketplace] start-trial concurrent insert resolved: %s", e)
+
+    sub = await db.tenant_subscriptions.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "product_key": product["key"],
+            "status": "active",
+        },
+        {"_id": 0},
+    )
+    if not sub:
+        # Should never happen — upsert + read both failed.
+        raise HTTPException(status_code=500, detail="Deneme oluşturulamadı")
+
+    is_new = sub.get("id") == new_sub_id
+
+    # If a paid (non-trial) subscription already exists for this product,
+    # block trial start to avoid downgrading the user's status.
+    if not sub.get("trial") and not is_new:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu modül için zaten aktif bir ücretli abonelik var"
+        )
+
+    if is_new:
+        # Post-activation hook (provisioning) — only on first creation.
+        if product["key"] == "af_sadakat":
+            try:
+                from core.afsadakat_provisioner import provision_tenant
+                await provision_tenant(current_user.tenant_id)
+            except Exception as e:
+                logger.exception("[marketplace] afsadakat trial provision failed: %s", e)
+        logger.info("[marketplace] trial started tenant=%s product=%s until=%s",
+                    current_user.tenant_id, product["key"], sub["end_date"])
+
+    return {
+        "ok": True,
+        "subscription_id": sub["id"],
+        "product_key": product["key"],
+        "trial": bool(sub.get("trial")),
+        "end_date": sub.get("end_date"),
+        "already_existed": not is_new,
+    }
+
+
 @router.post("/purchase/callback")
 @router.get("/purchase/callback")
 async def purchase_callback(order_id: str) -> dict:
@@ -380,6 +529,16 @@ async def _activate_subscription(order: dict) -> None:
                     tenant_id, credits, product_key)
         return
 
+    # Post-activation hooks: external modules need provisioning.
+    async def _post_activate() -> None:
+        if product_key == "af_sadakat":
+            try:
+                from core.afsadakat_provisioner import provision_tenant
+                await provision_tenant(tenant_id)
+            except Exception as e:
+                logger.exception("[marketplace] afsadakat provision failed for %s: %s",
+                                 tenant_id, e)
+
     # Subscription: extend existing active sub, or create new one.
     existing = await db.tenant_subscriptions.find_one({
         "tenant_id": tenant_id,
@@ -415,6 +574,8 @@ async def _activate_subscription(order: dict) -> None:
         })
         logger.info("[marketplace] tenant=%s activated %s until %s",
                     tenant_id, product_key, new_end.isoformat())
+
+    await _post_activate()
 
 
 # ── Authorization helpers ────────────────────────────────────────

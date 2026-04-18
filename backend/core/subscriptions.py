@@ -41,6 +41,7 @@ async def get_active_subscriptions(tenant_id: str) -> list[dict[str, Any]]:
 MODULE_ALIASES: dict[str, list[str]] = {
     "mailing": ["mailing", "mailing_starter", "mailing_pro"],
     "quick_id": ["quick_id", "quick_id_integration"],
+    "af_sadakat": ["af_sadakat", "af_sadakat_loyalty"],
 }
 
 
@@ -86,6 +87,16 @@ async def ensure_indexes() -> None:
         await db.tenant_subscriptions.create_index(
             [("tenant_id", 1), ("product_key", 1)],
             name="idx_sub_tenant_product",
+        )
+        # Enforce single ACTIVE subscription per (tenant, product). Lookup
+        # for trial idempotency and prevents concurrent double-grants.
+        # Partial filter restricts uniqueness to active rows only — historic
+        # cancelled/expired subs may coexist.
+        await db.tenant_subscriptions.create_index(
+            [("tenant_id", 1), ("product_key", 1)],
+            unique=True,
+            partialFilterExpression={"status": "active"},
+            name="uniq_active_sub_per_tenant_product",
         )
         await db.tenant_subscriptions.create_index(
             "status", name="idx_sub_status"
