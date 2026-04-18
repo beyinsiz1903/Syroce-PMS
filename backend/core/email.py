@@ -32,6 +32,7 @@ async def send_email(
     *,
     text: Optional[str] = None,
     from_addr: Optional[str] = None,
+    reply_to: Optional[str] = None,
 ) -> dict:
     """Send a transactional email.
 
@@ -64,6 +65,8 @@ async def send_email(
         }
         if text:
             params["text"] = text
+        if reply_to:
+            params["reply_to"] = reply_to
         result = resend.Emails.send(params)
         msg_id = (result or {}).get("id") if isinstance(result, dict) else None
         logger.info("[email] Resend sent to=%s id=%s subject=%r", to, msg_id, subject)

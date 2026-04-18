@@ -29,6 +29,7 @@ const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const MailingPage = lazy(() => import("@/pages/MailingPage"));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const PendingAR = lazy(() => import("@/pages/PendingAR"));
 const CityLedgerAccounts = lazy(() => import("@/pages/CityLedgerAccounts"));
@@ -240,6 +241,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/dashboard", ...p(Dashboard, { modules }) },
     { path: "/app/profile", ...p(ProfilePage) },
     { path: "/profile", ...p(ProfilePage) },
+    { path: "/app/mailing", ...p(MailingPage) },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }) },
     { path: "/ai-pms", ...p(AIEnhancedPMS) },
     { path: "/app/ai", ...p(AIModule) },

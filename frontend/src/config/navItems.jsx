@@ -501,6 +501,14 @@ export const NAV_ITEMS = [
     navGroup: "advanced",
   },
   {
+    key: "mailing",
+    label: "E-posta Pazarlama",
+    path: "/app/mailing",
+    tier: "basic",
+    group: "core",
+    navGroup: "advanced",
+  },
+  {
     key: "messaging_dashboard",
     label: "Mesajlasma",
     path: "/messaging-dashboard",

@@ -70,6 +70,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.production_golive", "router", ["production-golive"], None, None),
     ("routers.report_builder", "router", ["report-builder"], None, None),
     ("routers.guest_messaging", "router", ["guest-messaging"], None, None),
+    ("routers.mailing", "router", ["mailing"], None, None),
     # Domain routers (Phase B extraction)
     ("domains.channel_manager.router", "router", ["channel-manager-domain"], None, None),
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),
