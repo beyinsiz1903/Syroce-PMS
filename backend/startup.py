@@ -550,9 +550,9 @@ async def on_startup(app):
         )
         if active_hr:
             from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
-            await hr_pull_scheduler.start(interval_seconds=300)
+            await hr_pull_scheduler.start(interval_seconds=60)
             app.state.hr_pull_scheduler = hr_pull_scheduler
-            logger.info("HotelRunner Pull Scheduler started (300s interval, adaptive backoff active)")
+            logger.info("HotelRunner Pull Scheduler started (60s interval, adaptive backoff active)")
             # Also start push queue worker for automatic retry of failed pushes
             from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
             await hr_push_worker.start()
