@@ -1,4 +1,4 @@
-import { Building2, Zap, Crown, Settings2, BarChart3, Bot, Users } from 'lucide-react';
+import { Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield } from 'lucide-react';
 
 export const PLANS = {
   basic: {
@@ -72,6 +72,7 @@ export const MODULE_GROUPS = [
       { key: 'rate_management', label: 'Rate Management', hint: 'Fiyat planı yönetimi', tier: 'professional' },
       { key: 'booking_engine', label: 'Booking Engine', hint: 'Direkt rezervasyon motoru', tier: 'professional' },
       { key: 'guest_advanced', label: 'Gelişmiş Misafir Profili', hint: 'VIP, tercihler, LTV', tier: 'professional' },
+      { key: 'mailing', label: 'Mailing & Kampanya', hint: 'E-posta şablonları, kampanyalar, otomasyon', tier: 'professional' },
     ],
   },
   {
@@ -87,6 +88,22 @@ export const MODULE_GROUPS = [
       { key: 'loyalty_program', label: 'Sadakat Programı', hint: 'Puan, tier, ödüller', tier: 'enterprise' },
       { key: 'api_access', label: 'API Erişimi', hint: 'Open API, webhook', tier: 'enterprise' },
       { key: 'audit_trail', label: 'Audit Trail', hint: 'Compliance logging', tier: 'enterprise' },
+    ],
+  },
+  {
+    id: 'ops_security',
+    title: 'Operasyon & Güvenlik',
+    icon: Shield,
+    color: 'rose',
+    items: [
+      { key: 'system_health', label: 'System Health', hint: 'Runtime izleme & operasyon konsolu', tier: 'enterprise' },
+      { key: 'security_hardening', label: 'Güvenlik Sertleştirme', hint: 'Güvenlik kontrol paneli', tier: 'enterprise' },
+      { key: 'encryption_management', label: 'Şifreleme Yönetimi', hint: 'Anahtar rotasyonu & şifreleme', tier: 'enterprise' },
+      { key: 'runtime_cockpit', label: 'Runtime Cockpit', hint: 'Canlı sistem komutası', tier: 'enterprise' },
+      { key: 'operator_incident', label: 'Operatör Olay Paneli', hint: 'Olay yönetimi', tier: 'enterprise' },
+      { key: 'control_plane', label: 'Control Plane', hint: 'Platform yönetimi', tier: 'enterprise' },
+      { key: 'lockdown', label: 'Lockdown Modu', hint: 'Acil durum kilitleme', tier: 'enterprise' },
+      { key: 'data_model', label: 'Data Model', hint: 'Şema & eşleme yönetimi', tier: 'enterprise' },
     ],
   },
   {
