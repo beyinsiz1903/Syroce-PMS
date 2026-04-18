@@ -179,6 +179,29 @@ class CreateReservationService:
                 },
             )
 
+            # Af-sadakat marketplace integration: outbound olay (best-effort)
+            try:
+                from core.afsadakat_outbound import (
+                    EV_RESERVATION_CREATED,
+                    emit_event,
+                )
+                await emit_event(
+                    tenant_context.tenant_id,
+                    EV_RESERVATION_CREATED,
+                    {
+                        "booking_id": booking_id,
+                        "guest_id": booking_data.guest_id,
+                        "room_id": booking_data.room_id,
+                        "check_in": booking_dict["check_in"],
+                        "check_out": booking_dict["check_out"],
+                        "status": booking_dict.get("status", "confirmed"),
+                        "total_amount": booking_dict.get("total_amount"),
+                        "source_channel": booking_data.source_channel or "direct",
+                    },
+                )
+            except Exception:
+                pass
+
             await audit_log(
                 actor_id=current_user.id,
                 tenant_id=tenant_context.tenant_id,

@@ -395,6 +395,23 @@ async def check_out_booking_atomic(
             }
             await db.outbox_events.insert_one(outbox_doc, session=session)
 
+    # Af-sadakat marketplace integration: outbound olay (transaction sonrası)
+    try:
+        from core.afsadakat_outbound import EV_GUEST_CHECKED_OUT, emit_event
+        await emit_event(
+            tenant_id,
+            EV_GUEST_CHECKED_OUT,
+            {
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "guest_id": booking.get("guest_id"),
+                "checked_out_at": now_iso,
+                "actor_id": actor_id,
+            },
+        )
+    except Exception:
+        pass
+
     logger.info(
         "Atomic check-out completed: booking=%s room=%s actor=%s forced=%s",
         booking_id, room_id, actor_id, force,

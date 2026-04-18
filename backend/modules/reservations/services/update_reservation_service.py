@@ -249,6 +249,34 @@ class UpdateReservationService:
                     },
                 )
 
+                # Af-sadakat marketplace integration: outbound olay (best-effort)
+                try:
+                    from core.afsadakat_outbound import (
+                        EV_RESERVATION_CANCELLED,
+                        EV_RESERVATION_UPDATED,
+                        emit_event,
+                    )
+                    _is_cancel = (
+                        new_status in ("cancelled", "no_show")
+                        and old_status not in ("cancelled", "no_show")
+                    )
+                    await emit_event(
+                        tenant_context.tenant_id,
+                        EV_RESERVATION_CANCELLED if _is_cancel else EV_RESERVATION_UPDATED,
+                        {
+                            "booking_id": booking_id,
+                            "guest_id": updated_booking.get("guest_id"),
+                            "room_id": updated_booking.get("room_id"),
+                            "check_in": updated_booking.get("check_in"),
+                            "check_out": updated_booking.get("check_out"),
+                            "status": updated_booking.get("status"),
+                            "changed_fields": list(changes.keys()),
+                            "changes": changes,
+                        },
+                    )
+                except Exception:
+                    pass
+
             # Channel availability auto-sync: müsaitlik güncelle ve kanallara push et
             _avail_sync_fields = {"status", "room_id", "check_in", "check_out"}
             if changes and _avail_sync_fields & set(changes.keys()):

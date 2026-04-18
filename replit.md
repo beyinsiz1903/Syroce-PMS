@@ -708,6 +708,27 @@ Pazarı'ndan satılabilir hale getirildi. Mimari: ayrı servis + Syroce köprüs
 - `AFSADAKAT_ADMIN_TOKEN` — Af-sadakat'ın `/api/admin/integrations/syroce/provision`
   endpointi için bearer token
 
+### Outbound webhook (Syroce → Af-sadakat) — DONE
+- **Modül**: `core/afsadakat_outbound.py` — `emit_event(tenant_id, type, payload)`
+  outbox'a yazar + fire-and-forget teslim, başarısızlar exponential backoff ile
+  yeniden denenir (max 5 deneme: 30s/2dk/8dk/30dk/2sa).
+- **İmza**: HMAC-SHA256(per-tenant `pms_api_key`, raw_body) →
+  `X-Syroce-Signature: sha256=<hex>` header'ı. Diğer header'lar:
+  `X-Syroce-Event`, `X-Syroce-Delivery` (idempotency için event_id).
+- **Hedef**: `{AFSADAKAT_BASE_URL}/api/integrations/syroce/webhook`.
+- **Hook'lanan olaylar**:
+  - `reservation.created` — `CreateReservationService.create` başarısı sonrası
+  - `reservation.updated` — `UpdateReservationService.update` (changes varsa)
+  - `reservation.cancelled` — yukarıdaki, `status` cancelled/no_show'a geçtiğinde
+  - `guest.checked_out` — `atomic_checkin_checkout.check_out_booking_atomic`
+    transaction commit sonrası
+- **Local mod davranışı**: `AFSADAKAT_BASE_URL` set değilse `emit_event` sessizce
+  no-op döner; iş akışı asla bloklanmaz/bozulmaz (try/except sarılmış).
+- **Periyodik dispatcher**: `dispatch_pending_loop()` startup'ta task olarak
+  başlatılır (`startup.py`), dakikada bir pending event'leri yeniden dener.
+- **Koleksiyon**: `db.integration_afsadakat_outbox`
+  (`status: pending|sent|failed`, `attempts`, `next_attempt_at`, `last_error`).
+
 ### Veritabanı koleksiyonları (platform-wide)
 - `integration_afsadakat_tenants` — { tenant_id (uniq), api_key, ext_tenant_id,
   status, mode (local|external), base_url }

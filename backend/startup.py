@@ -417,6 +417,17 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Outbox lifecycle worker startup warning: {e}")
 
+    # ── Af-sadakat outbound dispatcher loop ─────────────────────────
+    try:
+        import asyncio as _asyncio_afs
+        from core.afsadakat_outbound import dispatch_pending_loop as _afs_loop
+        app.state.afsadakat_dispatcher_task = _asyncio_afs.create_task(
+            _afs_loop(), name="afsadakat-outbound-dispatcher"
+        )
+        logger.info("✅ Af-sadakat outbound dispatcher started")
+    except Exception as e:
+        logger.warning(f"Af-sadakat outbound dispatcher warning: {e}")
+
     # ── Channel Manager v2 indexes ──────────────────────────────────
     try:
         from channel_manager.infrastructure.indexes import create_cm_indexes
@@ -625,6 +636,18 @@ async def on_shutdown(app):
             await inv_worker.stop()
         except Exception as e:
             logger.warning(f"Room-type inventory worker shutdown warning: {e}")
+
+    # Af-sadakat outbound dispatcher
+    afs_task = getattr(app.state, "afsadakat_dispatcher_task", None)
+    if afs_task is not None and not afs_task.done():
+        try:
+            afs_task.cancel()
+            try:
+                await afs_task
+            except (Exception, BaseException):
+                pass
+        except Exception as e:
+            logger.warning(f"Af-sadakat dispatcher shutdown warning: {e}")
 
     # OTA-002: Stop production outbox worker
     ota_worker = getattr(app.state, "outbox_ota_worker", None)
