@@ -512,7 +512,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
 
   useEffect(() => {
     if (!wsConnected) {
-      reconnectTimerRef.current = setInterval(() => fetchAll(), 30000);
+      reconnectTimerRef.current = setInterval(() => fetchAll(true), 30000);
     } else {
       if (reconnectTimerRef.current) {
         clearInterval(reconnectTimerRef.current);
@@ -523,8 +523,8 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
   }, [wsConnected]);
 
   /* ── Data Fetching ───────────────────────────────────── */
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am] = await Promise.allSettled([
         axios.get(`/channel-manager/runtime/status`, { headers }),
