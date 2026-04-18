@@ -275,6 +275,7 @@ Adapts the PMS for any accommodation type. 15 property types across 4 categories
 - Backend `/detect-provider` returns an `available[]` list of all active connections so the UI can render one tab per active provider.
 - `/grid?provider=` is **strict**: explicit "hotelrunner"/"exely" without an active connection returns an empty grid instead of falling back to the other side.
 - `/bulk-grid-update`: when `request.provider` is "hotelrunner" or "exely", **strictly** restricts the push to that single provider (was previously a fan-out hint only).
+- **Exely native-code push (Apr 2026)**: `_push_to_exely` now detects when `room_type_code` is already a native Exely code (matches `conn.room_types[].code` or any value in `pms_to_exely_codes`) and pushes directly without HR→PMS→Exely translation. Previously, requests originating from the Exely tab (which sends native Exely codes like `5001574`) silently dropped because the function assumed HR-format codes. Also now respects rate plans selected in the grid (filtered against the connection's known plans) instead of pushing to all 5 plans.
 
 ### Push Providers Endpoint
 - `/api/channel-manager/unified-rate-manager/push-providers` lists ALL active providers independently

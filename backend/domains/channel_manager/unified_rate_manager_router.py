@@ -885,26 +885,69 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         if ex_code and pt and ex_code not in pms_to_exely_codes.get(pt, []):
             pms_to_exely_codes.setdefault(pt, []).append(ex_code)
 
-    exely_rate_plans = [rp.get("code") for rp in (conn.get("rate_plans") or []) if rp.get("code")]
+    # Exely connection'in kendi room_code'lari (Exely sekmesinden gelen pair'lar zaten bu formatta)
+    native_exely_codes: set[str] = set()
+    for rt in (conn.get("room_types") or []):
+        c = rt.get("code")
+        if c:
+            native_exely_codes.add(str(c))
+    for codes in pms_to_exely_codes.values():
+        for c in codes:
+            native_exely_codes.add(str(c))
+
+    # Frontend hangi rate plan'lari sectiyse onlari kullan (Exely sekmesinden geldigi icin
+    # rate_plan_code zaten Exely plan ID'si). Liste bossa connection'daki tum planlara fallback.
+    selected_exely_plans = sorted({rp_code for _, rp_code in pairs if rp_code})
+    conn_exely_plans = [rp.get("code") for rp in (conn.get("rate_plans") or []) if rp.get("code")]
+    valid_plan_set = {str(p) for p in conn_exely_plans}
+    if valid_plan_set and selected_exely_plans:
+        # Sadece Exely connection'da bilinen plan id'lerini kullan
+        filtered = [p for p in selected_exely_plans if str(p) in valid_plan_set]
+        if not filtered:
+            logger.warning(
+                "[UNIFIED] Exely: secilen rate plan'larin hicbiri connection'da yok selected=%s valid=%s, push iptal",
+                selected_exely_plans, sorted(valid_plan_set),
+            )
+            return 0
+        exely_rate_plans = filtered
+    else:
+        exely_rate_plans = conn_exely_plans
+
     if not exely_rate_plans:
         logger.warning("[UNIFIED] Exely conn rate_plans bos, push iptal tenant=%s", tenant_id)
         return 0
 
     logger.info(
-        "[UNIFIED] Exely mapping: HR->PMS=%s PMS->Exely=%s rate_plans=%s",
-        hr_to_pms, pms_to_exely_codes, exely_rate_plans,
+        "[UNIFIED] Exely mapping: HR->PMS=%s PMS->Exely=%s native_exely=%s rate_plans=%s",
+        hr_to_pms, pms_to_exely_codes, sorted(native_exely_codes), exely_rate_plans,
     )
 
-    push_tasks = []
+    # rt_code -> liste[Exely room code] cevirisini yap (HR akisi VEYA dogrudan Exely akisi)
+    seen_exely_for_rt: dict[str, list[str]] = {}
     for rt_code, _rp_code_ignored in pairs:
-        hr_only = rt_code.split(":", 1)[1] if rt_code.startswith("HR:") else rt_code
+        if rt_code in seen_exely_for_rt:
+            continue
+        rt_str = str(rt_code)
+        # 1) Dogrudan Exely kodu mu? (Exely sekmesinden gelen kayit)
+        if rt_str in native_exely_codes:
+            seen_exely_for_rt[rt_code] = [rt_str]
+            continue
+        # 2) HR akisi: HR:xxx / xxx -> PMS -> Exely
+        hr_only = rt_str.split(":", 1)[1] if rt_str.startswith("HR:") else rt_str
         pms_type = hr_to_pms.get(hr_only)
         if not pms_type:
-            logger.warning("[UNIFIED] Exely: HR oda kodu %s icin PMS mapping yok, atlandi", rt_code)
+            logger.warning("[UNIFIED] Exely: %s icin ne native Exely kodu ne HR mapping bulundu, atlandi", rt_code)
             continue
         exely_codes = pms_to_exely_codes.get(pms_type) or []
         if not exely_codes:
             logger.warning("[UNIFIED] Exely: pms_type=%s icin exely_room_mappings yok, atlandi (rt=%s)", pms_type, rt_code)
+            continue
+        seen_exely_for_rt[rt_code] = exely_codes
+
+    push_tasks = []
+    for rt_code, _rp_code_ignored in pairs:
+        exely_codes = seen_exely_for_rt.get(rt_code)
+        if not exely_codes:
             continue
 
         rv = per_room_map.get(rt_code)
