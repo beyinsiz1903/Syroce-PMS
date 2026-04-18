@@ -645,8 +645,11 @@ async def verify_email_and_register(data: VerifyCodeRequest):
 
     # Kullanıcı tipine göre kayıt
     if verification['user_type'] == 'hotel':
-        # Hotel admin kullanıcısı
+        # Hotel admin kullanıcısı — must have hotel_id + username for new login flow
+        new_hotel_id = await _generate_unique_hotel_id()
+        new_username = (verification.get('username') or _derive_username(data.email)).strip().lower()
         tenant = Tenant(
+            hotel_id=new_hotel_id,
             name=verification['name'],
             property_name=verification.get('property_name', f"{verification['name']} Hotel"),
             email=data.email,
@@ -662,6 +665,7 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         user = User(
             tenant_id=tenant.id,
             email=data.email,
+            username=new_username,
             name=verification['name'],
             role=UserRole.ADMIN,
             phone=verification.get('phone'),
@@ -716,17 +720,31 @@ async def verify_email_and_register(data: VerifyCodeRequest):
         token = create_token(user.id, None)
         return TokenResponse(access_token=token, user=user, tenant=None)
 
+_FORGOT_GENERIC_RESPONSE = {
+    'success': True,
+    'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama bağlantısı gönderildi',
+    'expires_in_minutes': 30,
+}
+
+
 @router.post("/auth/forgot-password")
 async def forgot_password(data: ForgotPasswordRequest):
-    """Şifre sıfırlama kodu gönder"""
-    # Kullanıcı var mı kontrol et
+    """Şifre sıfırlama kodu gönder.
+
+    Returns an identical response shape regardless of whether the email exists,
+    to prevent account-enumeration attacks. Audit log records the attempt.
+    """
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "user_email": data.email,
+        "action": "password_reset_requested",
+        "resource_type": "auth",
+        "timestamp": datetime.now(UTC).isoformat(),
+    })
+
     user = await db.users.find_one(build_user_email_query(data.email))
     if not user:
-        # Güvenlik için başarılı mesajı döndür (e-posta enumeration saldırısını önle)
-        return {
-            'success': True,
-            'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama kodu gönderildi'
-        }
+        return _FORGOT_GENERIC_RESPONSE
 
     # Sıfırlama kodu oluştur
     from modules.messaging.email_service import email_service
@@ -774,12 +792,9 @@ async def forgot_password(data: ForgotPasswordRequest):
         except Exception:
             pass
 
-    return {
-        'success': True,
-        'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama bağlantısı gönderildi',
-        'expires_in_minutes': 30,
-        'email_sent': send_result.get("sent", False),
-    }
+    # Use the exact same response shape as the not-found branch to prevent
+    # account enumeration via response differences.
+    return _FORGOT_GENERIC_RESPONSE
 
 
 @router.post("/auth/reset-password-by-token")
@@ -832,6 +847,9 @@ async def reset_password_by_token(payload: dict):
 @router.post("/auth/reset-password")
 async def reset_password(data: ResetPasswordRequest):
     """Şifre sıfırlama kodunu doğrula ve yeni şifre belirle"""
+    if not data.new_password or len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı")
+
     # Sıfırlama kodunu bul
     reset = await db.password_reset_codes.find_one({
         'email': data.email,

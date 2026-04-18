@@ -127,6 +127,21 @@ Reduced from 1309 lines via dialog extraction.
 - `InvoiceFormDialog.jsx` — Invoice creation with line items and additional tax calculations
 - `AccountingDialogs.jsx` — ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog
 
+## Authentication Overhaul (Apr 2026 — hotel_id + username)
+- **Login model**: Hotel staff now authenticate with `hotel_id` (6-digit unique numeric string) + `username` (unique within tenant) + `password`. Guests still use email + password (legacy path retained in `/api/auth/login`).
+- **Demo credentials**: `hotel_id=100001`, `username=demo`, `password=demo123` (tenant `57986e4f-7977-44c9-bed9-05aadf38853b`). Shown in an info banner on the login form with a "Demo bilgileri otomatik doldur" button.
+- **Schemas** (`backend/models/schemas/identity.py`): `Tenant.hotel_id`, `User.username`, `UserLogin` (hotel_id|username|email + password), `ChangePasswordRequest`.
+- **Migration**: `backend/scripts/migrate_hotel_id_username.py` — idempotent backfill (assigns hotel_id and derives username from email local-part). Unique indexes: `tenants.hotel_id` (sparse), `users.(tenant_id, username)` partial.
+- **New endpoints**:
+  - `POST /api/auth/change-password` — authenticated; verifies current, updates hash, invalidates login cache, audit-logged.
+  - `POST /api/auth/reset-password-by-token` — link-based reset; consumes one-time token from `password_reset_codes`.
+- **Email** (`backend/core/email.py`): Generic `send_email(to, subject, html)` helper using **Resend** SDK (`RESEND_API_KEY` secret). Falls back to console logging when key missing or send fails. `render_password_reset_email` produces branded TR-localized HTML with both a clickable reset link and a 6-digit code as backup. Forgot-password endpoint generates a 30-min token, stores it alongside the legacy code, and emails it.
+  - **Resend caveat**: while using the default sender (`onboarding@resend.dev`), Resend's test mode only delivers to the account owner's verified address. To enable delivery to any guest/staff email, verify a custom domain at resend.com/domains and set `RESEND_FROM` env var (e.g. `Syroce <noreply@yourdomain.com>`).
+- **Frontend pages**:
+  - `frontend/src/pages/AuthPage.jsx` — 3-field login (Otel ID / Kullanıcı Adı / Şifre), demo banner with autofill, register form now collects username + shows generated hotel_id on success.
+  - `frontend/src/pages/ProfilePage.jsx` (route `/app/profile` and `/profile`) — displays name/username/email/phone/role/hotel_id, includes change-password form. Linked from user dropdown in `Layout.jsx`.
+  - `frontend/src/pages/ResetPasswordPage.jsx` (public route `/auth/reset-password?token=...`) — set new password from email link.
+
 ## Major Refactors (Apr 2026)
 - **`backend/models/schemas.py`** (1671 satır) → `backend/models/schemas/` paketi (16 alan modülü: identity, rooms, companies, maintenance, fnb, frontoffice, revenue, guests, bookings, folio, audit, channels, services, invoicing, loyalty, requests). `__init__.py` her şeyi re-export ediyor — 135 import noktası dokunulmadı.
 - **`backend/routers/finance.py`** (4628 satır, ~90 endpoint) → `backend/routers/finance/` paketi (7 alt-router: integrations, folio, invoices, accounting, mobile, dashboards, cashiering). `__init__.py` `APIRouter(prefix='/api')` altında `include_router()` ile birleştiriyor; `router_registry.py` import yolu (`routers.finance:router`) değişmedi. `cashiering.py` içine eksik `CityLedgerAccount` import'u eklendi (orijinal dosyada da eksikti).
