@@ -10,10 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
+import Layout from '@/components/Layout';
 
 const API = '/mailing';
 
-export default function MailingPage() {
+export default function MailingPage({ user, tenant, onLogout }) {
   const [credits, setCredits] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [recipients, setRecipients] = useState([]);
@@ -46,6 +47,7 @@ export default function MailingPage() {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mailing">
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -91,6 +93,7 @@ export default function MailingPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </Layout>
   );
 }
 
