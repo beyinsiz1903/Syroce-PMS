@@ -28,6 +28,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   // Provider detection
   const [provider, setProvider] = useState(null);
   const [providerName, setProviderName] = useState('');
+  const [providerOptions, setProviderOptions] = useState([]);
   const [detecting, setDetecting] = useState(true);
 
   // Grid data
@@ -77,8 +78,17 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
     const detect = async () => {
       try {
         const { data } = await axios.get(`${UNIFIED_PREFIX}/detect-provider`, { headers });
-        setProvider(data.provider);
-        setProviderName(data.provider_name || '');
+        const available = Array.isArray(data.available) ? data.available : [];
+        setProviderOptions(available);
+        const remembered = localStorage.getItem('unified_rm_active_provider');
+        const initial = available.find(o => o.provider === remembered) || available[0] || null;
+        if (initial) {
+          setProvider(initial.provider);
+          setProviderName(initial.provider_name || data.provider_name || '');
+        } else {
+          setProvider(data.provider);
+          setProviderName(data.provider_name || '');
+        }
       } catch {
         toast.error('Kanal saglayici tespit edilemedi');
       }
@@ -87,13 +97,24 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
     detect();
   }, []);
 
+  // Switch provider tab
+  const switchProvider = (slug) => {
+    if (!slug || slug === provider) return;
+    const opt = providerOptions.find(o => o.provider === slug);
+    setProvider(slug);
+    setProviderName(opt?.provider_name || '');
+    setSelections({}); setRoomValues({}); setExpandedRoomTypes(new Set());
+    setGridRoomType('all'); setGridRatePlan('all');
+    try { localStorage.setItem('unified_rm_active_provider', slug); } catch { /* noop */ }
+  };
+
   // Fetch grid
   const fetchGrid = useCallback(async () => {
     if (!provider) return;
     setLoading(true);
     try {
       const { data } = await axios.get(
-        `${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`,
+        `${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${provider}`,
         { headers }
       );
       setGrid(data.grid || []);
@@ -424,6 +445,34 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
             )}
           </div>
         </div>
+
+        {/* Provider tabs (HotelRunner / Exely) */}
+        {providerOptions.length > 0 && (
+          <div
+            className="flex items-center gap-1 p-1 bg-zinc-100 rounded-lg w-fit"
+            data-testid="provider-tabs"
+          >
+            {providerOptions.map(opt => {
+              const active = provider === opt.provider;
+              return (
+                <button
+                  key={opt.provider}
+                  onClick={() => switchProvider(opt.provider)}
+                  data-testid={`provider-tab-${opt.provider}`}
+                  className={
+                    'px-4 py-1.5 text-sm font-medium rounded-md transition ' +
+                    (active
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-700')
+                  }
+                >
+                  {opt.provider_name}
+                  <span className="ml-2 text-xs text-zinc-400">({opt.room_count})</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Main content with agency panel */}
         <div className="flex gap-4">

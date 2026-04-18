@@ -106,8 +106,13 @@ class PricingSettingsRequest(BaseModel):
 
 # ── Provider Detection ───────────────────────────────────────────
 
-async def _detect_active_provider(tenant_id: str) -> dict:
-    """Otelde aktif olan kanal saglayiciyi tespit et."""
+async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> dict:
+    """Otelde aktif olan kanal saglayiciyi tespit et.
+
+    `prefer`: caller explicitly asks for "hotelrunner" or "exely". When
+    that provider has an active connection, return it; otherwise fall
+    back to the default order (HR > Exely).
+    """
     hr_conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
@@ -128,6 +133,11 @@ async def _detect_active_provider(tenant_id: str) -> dict:
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
 
+    if prefer == "exely" and exely_conn:
+        return {"provider": "exely", "connection": exely_conn}
+    if prefer == "hotelrunner" and hr_conn:
+        return {"provider": "hotelrunner", "connection": hr_conn}
+
     if hr_conn and exely_conn:
         return {"provider": "hotelrunner", "connection": hr_conn}
 
@@ -143,31 +153,53 @@ async def _detect_active_provider(tenant_id: str) -> dict:
 
 @router.get("/detect-provider")
 async def detect_provider(current_user: User = Depends(get_current_user)):
-    """Aktif kanal saglayiciyi tespit et."""
-    tenant_id = current_user.tenant_id
-    result = await _detect_active_provider(tenant_id)
+    """Aktif kanal saglayicilari tespit et.
 
-    if not result["provider"]:
+    Returns the primary `provider` (back-compat) AND the full list of
+    active providers in `available` so the UI can render tabs for each.
+    Uses `_detect_active_provider` so legacy HR tenants (provider_connections
+    fallback) are also recognised.
+    """
+    tenant_id = current_user.tenant_id
+
+    # HR through canonical detector (handles legacy provider_connections)
+    hr_detect = await _detect_active_provider(tenant_id, prefer="hotelrunner")
+    hr_conn = hr_detect["connection"] if hr_detect["provider"] == "hotelrunner" else None
+
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+    )
+
+    available: list[dict] = []
+    if hr_conn:
+        available.append({
+            "provider": "hotelrunner",
+            "provider_name": "HotelRunner",
+            "room_count": len(hr_conn.get("cached_rooms", [])),
+        })
+    if exely_conn:
+        available.append({
+            "provider": "exely",
+            "provider_name": "Exely",
+            "room_count": len(exely_conn.get("room_types", [])),
+        })
+
+    if not available:
         return {
             "provider": None,
             "provider_name": None,
             "has_connection": False,
             "room_count": 0,
+            "available": [],
         }
 
-    conn = result["connection"]
-    if result["provider"] == "hotelrunner":
-        room_count = len(conn.get("cached_rooms", []))
-        provider_name = "HotelRunner"
-    else:
-        room_count = len(conn.get("room_types", []))
-        provider_name = "Exely"
-
+    primary = available[0]
     return {
-        "provider": result["provider"],
-        "provider_name": provider_name,
+        "provider": primary["provider"],
+        "provider_name": primary["provider_name"],
         "has_connection": True,
-        "room_count": room_count,
+        "room_count": primary["room_count"],
+        "available": available,
     }
 
 
@@ -177,11 +209,31 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
 async def get_unified_grid(
     start_date: str,
     end_date: str,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Aktif saglayicinin takvim grid'ini dondurur."""
+    """Aktif saglayicinin takvim grid'ini dondurur.
+
+    `provider`: opsiyonel — UI'daki sekmeye gore "hotelrunner" veya "exely"
+    secilince o saglayicinin grid'i dondurulur. Belirtilmezse otomatik
+    tespit (HR oncelikli).
+
+    STRICT mode: explicit `provider=hotelrunner|exely` istenmis ve o
+    saglayicinin aktif baglantisi yoksa, baska saglayiciya DUSULMEZ —
+    bos grid donulur. Boylece UI'da yanlis sekme + yanlis veri eslesmesi
+    olusmaz.
+    """
     tenant_id = current_user.tenant_id
-    detection = await _detect_active_provider(tenant_id)
+    explicit = provider in ("hotelrunner", "exely")
+    detection = await _detect_active_provider(tenant_id, prefer=provider)
+
+    if explicit and detection["provider"] != provider:
+        return {
+            "grid": [], "room_types": [], "rate_plans": [],
+            "pricing_settings": {}, "currency": "TRY",
+            "start_date": start_date, "end_date": end_date,
+            "provider": provider,
+        }
 
     if not detection["provider"]:
         return {
@@ -470,10 +522,11 @@ async def unified_bulk_grid_update(
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
 
-    # Resolve target providers: ALWAYS push to every active channel provider.
-    # `request.provider` is treated only as the "primary" hint (used for
-    # cal_collection choice below). A single Save → fans out to HR + Exely
-    # whenever both connections are active.
+    # Resolve target providers.
+    # If `request.provider` is one of "hotelrunner" / "exely", STRICTLY
+    # restrict the push to that single provider — the UI's per-provider
+    # tab is the source of truth and avoids cross-channel mix-ups.
+    # Otherwise (None / "all" / unknown) fan out to every active provider.
     targets: list[dict] = []
 
     hr_conn = await db.hotelrunner_connections.find_one(
@@ -491,22 +544,26 @@ async def unified_bulk_grid_update(
                         "hr_id": pc.get("credentials", {}).get("hr_id", ""),
                         "environment": pc.get("environment", "live"),
                         "cached_rooms": (legacy or {}).get("cached_rooms", [])}
-    if hr_conn:
-        targets.append({"provider": "hotelrunner", "connection": hr_conn})
 
     exely_conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
-    if exely_conn:
-        targets.append({"provider": "exely", "connection": exely_conn})
+
+    explicit = request.provider if request.provider in ("hotelrunner", "exely") else None
+    if explicit == "hotelrunner":
+        if hr_conn:
+            targets.append({"provider": "hotelrunner", "connection": hr_conn})
+    elif explicit == "exely":
+        if exely_conn:
+            targets.append({"provider": "exely", "connection": exely_conn})
+    else:
+        if hr_conn:
+            targets.append({"provider": "hotelrunner", "connection": hr_conn})
+        if exely_conn:
+            targets.append({"provider": "exely", "connection": exely_conn})
 
     if not targets:
         raise HTTPException(status_code=404, detail="Aktif kanal saglayici bulunamadi")
-
-    # If frontend explicitly asked for a primary, bring it to the front so
-    # cal_collection / provider_type below match its expectation.
-    if request.provider in ("hotelrunner", "exely"):
-        targets.sort(key=lambda t: 0 if t["provider"] == request.provider else 1)
 
     logger.info(
         "[UNIFIED] bulk-grid-update fan-out targets=%s tenant=%s primary=%s",

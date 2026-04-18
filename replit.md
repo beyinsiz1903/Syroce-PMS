@@ -271,6 +271,10 @@ Adapts the PMS for any accommodation type. 15 property types across 4 categories
 - `bulk-grid-update` accepts optional `provider` field to force target provider (otherwise auto-detects)
 - Frontend `UnifiedRateManager.jsx` sends detected `provider` in bulk update requests
 - Both providers push in parallel (asyncio.gather) for fast execution
+- **Per-provider tabs (Apr 2026)**: UnifiedRateManager UI now has a HotelRunner | Exely tab pill above the main view. Each tab loads only its own grid (`/grid?provider=...`) and saves only push to that single provider — eliminates HR/Exely mix-up.
+- Backend `/detect-provider` returns an `available[]` list of all active connections so the UI can render one tab per active provider.
+- `/grid?provider=` is **strict**: explicit "hotelrunner"/"exely" without an active connection returns an empty grid instead of falling back to the other side.
+- `/bulk-grid-update`: when `request.provider` is "hotelrunner" or "exely", **strictly** restricts the push to that single provider (was previously a fan-out hint only).
 
 ### Push Providers Endpoint
 - `/api/channel-manager/unified-rate-manager/push-providers` lists ALL active providers independently
