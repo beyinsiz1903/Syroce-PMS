@@ -718,3 +718,43 @@ Pazarı'ndan satılabilir hale getirildi. Mimari: ayrı servis + Syroce köprüs
   `pms_integration.py` adapter pattern'ine `SyroceAdapter` sınıfı ekle —
   outbound API'leri çağıracak)
 - Ayrı Replit projesi olarak Af-sadakat deploy + env'leri PMS'e set
+
+## Wake-up Call Alerts (Apr 2026)
+
+**Amaç**: Resepsiyon/operatör için sesli alarm + tarayıcı bildirimi + zil
+merkezi (`/api/notifications/list`) entegrasyonu — uyandırma saati gelen
+bekleyen çağrılar otomatik tetiklenir.
+
+### Backend (`backend/routers/hotel_services.py`)
+- `GET /api/pms/wake-up-calls` artık her cevapta:
+  - `_fire_due_wake_up_alerts(tid, calls)`: tüm `pending` + `wake_date+wake_time
+    <= Europe/Istanbul now` çağrıları için **önce** `db.notifications`'a
+    `(tenant_id, source_type=wake_up_call, source_id=call.id)` üzerinde
+    upsert (idempotent), **sonra** `wake_up_calls.alert_fired_at` set eder.
+    Sıralama önemli: notification yazımı başarısız olursa call un-fired
+    kalır → bir sonraki poll yeniden dener.
+  - `_annotate_due(calls)`: her item'a `is_due=true/false` damgalar
+    (frontend görsel ve ses tetikleyicisi).
+  - `stats.due_now` eklendi; `stats.today` artık Istanbul tarihiyle
+    hesaplanıyor (UTC değil — gece yarısı sınırında doğru "today").
+
+### Frontend (`frontend/src/pages/WakeUpCallsPage.jsx`)
+- 30 sn polling (sadece `filterDate === todayInIstanbul()` iken).
+- Tek uzun ömürlü `AudioContext` (modül-scope `_alarmCtx`) — kullanıcı
+  "Sesli Alarmı Aç" butonuyla `resume()` eder; sonraki timer-tetikli
+  alarmlarda autoplay policy bypass'lı çalar.
+- Web Audio API ile 3 ardışık bip (880-880-1100 Hz, ~1.3 s) — asset yok.
+- `Notification` API ile masaüstü bildirimi (`requireInteraction: true`,
+  `tag: wakeup-{id}` → duplicate önler); izin reddedilirse sadece toast.
+- Süresi gelmiş `is_due` çağrılar kırmızı pulsing ring + "ŞİMDİ ARA!"
+  badge ile vurgulanır.
+- `sessionStorage[wakeup-alerted-{istanbul-date}]`: günlük "alarmı
+  çalındı" cache — sayfa reload'da aynı çağrı için tekrar bip atmaz.
+- `armedRef` + state ayrımı: `fireAlertsFor` callback'i `alertsArmed`
+  değişimine bağlı değil → poller yeniden kurulmaz, duplicate fetch yok.
+
+### Bell Center entegrasyonu
+- `db.notifications` doc şeması: `{id, tenant_id, source_type=wake_up_call,
+  source_id, type=alert, severity=warning, title, message, link, icon,
+  read=false, created_at}` — mevcut `/api/notifications/list`
+  normalizasyonuyla (legacy `is_read` → `read`) uyumlu.

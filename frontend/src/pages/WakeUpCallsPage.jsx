@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -10,8 +10,60 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlarmClock, Plus, Phone, CheckCircle, XCircle, Clock,
-  Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat
+  Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff
 } from 'lucide-react';
+
+// Tek, uzun ömürlü AudioContext — kullanıcı etkileşimiyle bir kez
+// resume edildikten sonra timer-tabanlı sonraki alarmlar da çalar
+// (autoplay policy bypass'ı için kritik).
+let _alarmCtx = null;
+function getAlarmCtx() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!_alarmCtx) {
+    try { _alarmCtx = new Ctx(); } catch { return null; }
+  }
+  return _alarmCtx;
+}
+
+function playAlarmBeep() {
+  const ctx = getAlarmCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  const beep = (start, freq = 880) => {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain).connect(ctx.destination);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + 0.35);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + 0.4);
+    } catch { /* noop */ }
+  };
+  beep(0, 880);
+  beep(0.45, 880);
+  beep(0.9, 1100);
+}
+
+// Hotel-local (Istanbul) tarihi — UTC ISO yerine. Saat dilimi farkı
+// gece yarısı sınırında is_due/filterDate uyumsuzluğu yapmasın diye.
+function todayInIstanbul() {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    return fmt.format(new Date()); // YYYY-MM-DD
+  } catch {
+    const d = new Date(Date.now() + 3 * 3600 * 1000);
+    return d.toISOString().split('T')[0];
+  }
+}
 
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -31,7 +83,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
   const [calls, setCalls] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterDate, setFilterDate] = useState(todayInIstanbul());
   const [filterStatus, setFilterStatus] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showUpdate, setShowUpdate] = useState(null);
@@ -40,6 +92,61 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
     recurring: false, recurrence_end_date: '', notes: '', method: 'phone',
   });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [alertsArmed, setAlertsArmed] = useState(false);
+  const alertedIdsRef = useRef(new Set());
+  const armedRef = useRef(false);
+
+  // Bugün için zaten alarm çalmış çağrıları sessionStorage'da tutuyoruz
+  // ki sayfa kapanıp açıldığında aynı alarm tekrar çalmasın.
+  const today = todayInIstanbul();
+  const alertKey = `wakeup-alerted-${today}`;
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(alertKey) || '[]');
+      alertedIdsRef.current = new Set(saved);
+    } catch { alertedIdsRef.current = new Set(); }
+  }, [alertKey]);
+
+  const fireAlertsFor = useCallback((dueCalls) => {
+    const fresh = dueCalls.filter(c => !alertedIdsRef.current.has(c.id));
+    if (fresh.length === 0) return;
+
+    // Alarm henüz "armed" değilse: visual + toast tetikle, ama ses/desktop
+    // bildirim için izin/etkileşim gerekir. Ref kullanıyoruz ki callback
+    // her arm değişiminde yeniden oluşmasın (poller'ın yeniden kurulumunu
+    // tetikleyip duplicate fetch yapmaz).
+    if (armedRef.current) {
+      playAlarmBeep();
+    }
+
+    // Tarayıcı bildirimi — izin verildiyse her çağrı için ayrı bildirim
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      fresh.forEach(c => {
+        try {
+          const n = new Notification('⏰ Uyandırma Çağrısı Zamanı', {
+            body: `Oda ${c.room_number}${c.guest_name ? ` — ${c.guest_name}` : ''} • ${c.wake_time}`,
+            tag: `wakeup-${c.id}`,
+            requireInteraction: true,
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        } catch { /* noop */ }
+      });
+    }
+
+    // Toast (her zaman gösterilir, izin gerekmez)
+    fresh.forEach(c => {
+      toast.warning(`⏰ Oda ${c.room_number} — uyandırma saati (${c.wake_time})`, {
+        duration: 15000,
+      });
+    });
+
+    // Hatırla
+    fresh.forEach(c => alertedIdsRef.current.add(c.id));
+    try {
+      sessionStorage.setItem(alertKey, JSON.stringify([...alertedIdsRef.current]));
+    } catch { /* noop */ }
+  }, [alertKey]);
 
   const loadCalls = useCallback(async () => {
     try {
@@ -47,16 +154,52 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
       if (filterDate) params.date = filterDate;
       if (filterStatus) params.status = filterStatus;
       const res = await axios.get(`/pms/wake-up-calls`, { params });
-      setCalls(res.data?.calls || []);
+      const list = res.data?.calls || [];
+      setCalls(list);
       setStats(res.data?.stats || {});
+      // Backend `is_due` damgaladıysa alarmı tetikle
+      const due = list.filter(c => c.is_due);
+      if (due.length > 0) fireAlertsFor(due);
     } catch (e) {
       console.error('Load calls error', e);
     } finally {
       setLoading(false);
     }
-  }, [filterDate, filterStatus]);
+  }, [filterDate, filterStatus, fireAlertsFor]);
 
   useEffect(() => { loadCalls(); }, [loadCalls]);
+
+  // 30 sn'de bir poll — sadece bugün filtreliyken çalsın (mantıklı)
+  useEffect(() => {
+    if (filterDate !== today) return;
+    const interval = setInterval(() => { loadCalls(); }, 30000);
+    return () => clearInterval(interval);
+  }, [loadCalls, filterDate, today]);
+
+  // Alarm sistemini etkinleştir: izin iste + AudioContext'i kullanıcı
+  // etkileşimiyle "uyandır" (autoplay policy gereği).
+  const armAlerts = async () => {
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          toast.error('Tarayıcı bildirim izni reddedildi — sadece sesli alarm çalacak');
+        }
+      }
+      // Tek AudioContext'i bu kullanıcı gesture'ında resume et —
+      // sonraki timer-tetikli alarmlarda autoplay policy'yi bypass eder.
+      const ctx = getAlarmCtx();
+      if (ctx && ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      playAlarmBeep();
+      armedRef.current = true;
+      setAlertsArmed(true);
+      toast.success('Sesli alarm + bildirimler aktif');
+    } catch (e) {
+      toast.error('Alarm açılamadı: ' + e.message);
+    }
+  };
 
   const handleCreate = async () => {
     if (!form.room_number || !form.wake_time || !form.wake_date) {
@@ -108,6 +251,20 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
             <p className="text-sm text-gray-500 mt-1">Misafir uyandırma çağrılarını planlayıp takip edin</p>
           </div>
           <div className="flex gap-2">
+            {!alertsArmed ? (
+              <Button
+                variant="outline" size="sm"
+                onClick={armAlerts}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                data-testid="arm-alerts-btn"
+              >
+                <BellOff className="w-4 h-4 mr-1" /> Sesli Alarmı Aç
+              </Button>
+            ) : (
+              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 self-center">
+                <Bell className="w-3 h-3" /> Alarm Aktif
+              </Badge>
+            )}
             <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadCalls(); }}>
               <RefreshCw className="w-4 h-4 mr-1" /> Yenile
             </Button>
@@ -196,11 +353,15 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
         ) : (
           <div className="space-y-2">
             {calls.map(call => (
-              <Card key={call.id} className="hover:shadow-sm transition-shadow" data-testid={`call-card-${call.id}`}>
+              <Card
+                key={call.id}
+                className={`transition-shadow ${call.is_due ? 'ring-2 ring-red-400 bg-red-50/40 animate-pulse' : 'hover:shadow-sm'}`}
+                data-testid={`call-card-${call.id}`}
+              >
                 <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-4">
                     <div className="text-center min-w-[60px]">
-                      <div className="text-2xl font-bold text-indigo-600">{call.wake_time}</div>
+                      <div className={`text-2xl font-bold ${call.is_due ? 'text-red-600' : 'text-indigo-600'}`}>{call.wake_time}</div>
                       <div className="text-[10px] text-gray-400">{call.wake_date}</div>
                     </div>
                     <div>
@@ -208,6 +369,11 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                         <span className="font-semibold">Oda {call.room_number}</span>
                         {call.guest_name && <span className="text-sm text-gray-500">- {call.guest_name}</span>}
                         {call.recurring && <Badge variant="outline" className="text-[10px] gap-1"><Repeat className="w-3 h-3" />Tekrar</Badge>}
+                        {call.is_due && (
+                          <Badge className="bg-red-600 text-white text-[10px] gap-1">
+                            <AlarmClock className="w-3 h-3" /> ŞİMDİ ARA!
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge className={`text-[10px] ${STATUS_COLORS[call.status] || ''}`}>

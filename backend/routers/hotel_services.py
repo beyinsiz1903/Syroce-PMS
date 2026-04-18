@@ -3,7 +3,7 @@ Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -170,13 +170,109 @@ class WakeUpCallUpdate(BaseModel):
     response: str | None = None  # answered, no_answer, busy
 
 
+async def _fire_due_wake_up_alerts(tenant_id: str, calls: list[dict]) -> None:
+    """For each pending wake-up call whose scheduled time has arrived,
+    create a notification (idempotent — gated by `alert_fired_at`) so it
+    appears in the bell menu. Marks the call doc to prevent duplicates.
+    Mutates the call dicts in-place so the GET response carries the new
+    `alert_fired_at` value to the frontend immediately.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        now_local = datetime.now(ZoneInfo("Europe/Istanbul"))
+    except Exception:
+        now_local = datetime.now(UTC) + timedelta(hours=3)
+    today_str = now_local.strftime("%Y-%m-%d")
+    time_str = now_local.strftime("%H:%M")
+    now_iso = datetime.now(UTC).isoformat()
+
+    for call in calls:
+        if call.get("status") != "pending":
+            continue
+        if call.get("alert_fired_at"):
+            continue
+        wd = call.get("wake_date") or ""
+        wt = (call.get("wake_time") or "")[:5]  # ensure HH:MM
+        is_due = (wd < today_str) or (wd == today_str and wt <= time_str)
+        if not is_due:
+            continue
+
+        # 1) Insert bell-center notification FIRST (idempotent on source_id).
+        # Only after a successful write do we mark the call as alerted, so
+        # a transient DB hiccup leaves the call un-fired and the next poll
+        # will retry. Without this ordering, a failed notification write
+        # would silently lose the bell entry forever.
+        try:
+            await db.notifications.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "source_type": "wake_up_call",
+                    "source_id": call["id"],
+                },
+                {
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "source_type": "wake_up_call",
+                        "source_id": call["id"],
+                        "type": "alert",
+                        "severity": "warning",
+                        "title": f"Uyandırma: Oda {call.get('room_number','')}",
+                        "message": (
+                            f"Oda {call.get('room_number','')}"
+                            + (f" — {call['guest_name']}" if call.get("guest_name") else "")
+                            + f" — saat {wt} uyandırma çağrısı zamanı geldi."
+                        ),
+                        "link": "/app/pms/wake-up-calls",
+                        "icon": "alarm-clock",
+                        "read": False,
+                        "created_at": now_iso,
+                    }
+                },
+                upsert=True,
+            )
+        except Exception:
+            # Skip marking; next poll will retry the whole flow.
+            continue
+
+        # 2) Mark call as alerted (atomic; only one request wins under load).
+        await db.wake_up_calls.update_one(
+            {"id": call["id"], "tenant_id": tenant_id, "alert_fired_at": {"$exists": False}},
+            {"$set": {"alert_fired_at": now_iso}},
+        )
+        call["alert_fired_at"] = now_iso
+
+
+def _annotate_due(calls: list[dict]) -> None:
+    try:
+        from zoneinfo import ZoneInfo
+        now_local = datetime.now(ZoneInfo("Europe/Istanbul"))
+    except Exception:
+        now_local = datetime.now(UTC) + timedelta(hours=3)
+    today_str = now_local.strftime("%Y-%m-%d")
+    time_str = now_local.strftime("%H:%M")
+    for c in calls:
+        wd = c.get("wake_date") or ""
+        wt = (c.get("wake_time") or "")[:5]
+        c["is_due"] = bool(
+            c.get("status") == "pending"
+            and ((wd < today_str) or (wd == today_str and wt <= time_str))
+        )
+
+
 @router.get("/wake-up-calls")
 async def get_wake_up_calls(
     date: str | None = None,
     status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Get wake-up calls, optionally filtered by date and status."""
+    """Get wake-up calls, optionally filtered by date and status.
+
+    Side-effect: any pending call whose scheduled time has arrived gets a
+    notification created (once) so the bell-center picks it up. The
+    response also carries `is_due=true` for those rows so the UI can
+    play an alarm sound and show a desktop notification.
+    """
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -190,12 +286,22 @@ async def get_wake_up_calls(
     async for c in db.wake_up_calls.find(query, {"_id": 0}).sort([("wake_date", 1), ("wake_time", 1)]):
         calls.append(c)
 
-    # Stats
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    # Fire alerts for any newly-due pending calls in the returned set.
+    await _fire_due_wake_up_alerts(tid, calls)
+    _annotate_due(calls)
+
+    # Stats — use hotel-local (Istanbul) date, not UTC, so the dashboard
+    # matches what the front-desk operator considers "today" near midnight.
+    try:
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%Y-%m-%d")
+    except Exception:
+        today = (datetime.now(UTC) + timedelta(hours=3)).strftime("%Y-%m-%d")
     today_calls = [c for c in calls if c.get("wake_date") == today]
     pending = len([c for c in today_calls if c.get("status") == "pending"])
     completed = len([c for c in today_calls if c.get("status") == "completed"])
     missed = len([c for c in today_calls if c.get("status") == "missed"])
+    due_now = len([c for c in calls if c.get("is_due")])
 
     return {
         "calls": calls,
@@ -204,6 +310,7 @@ async def get_wake_up_calls(
             "pending": pending,
             "completed": completed,
             "missed": missed,
+            "due_now": due_now,
         }
     }
 
