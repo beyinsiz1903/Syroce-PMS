@@ -474,8 +474,35 @@ function TemplateEditor({ initial, onSave, onCancel }) {
 
 // ── History Tab ──────────────────────────────────────────────
 function HistoryTab({ campaigns, loading }) {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    axios.get(`${API}/stats`).then(r => setStats(r.data)).catch(() => {});
+  }, []);
   if (loading) return <div className="text-center py-8 text-muted-foreground">Yükleniyor…</div>;
   return (
+    <div className="space-y-4">
+      {stats && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Performans (Son 90 gün)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <StatBox label="Gönderildi"  value={stats.sent}      sub="" />
+              <StatBox label="Ulaştı"      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-blue-600" />
+              <StatBox label="Açıldı"      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-green-600" />
+              <StatBox label="Tıklandı"    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-purple-600" />
+              <StatBox label="Geri döndü"  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-red-600" />
+            </div>
+            {stats.sent === 0 && (
+              <p className="text-xs text-muted-foreground mt-3">
+                Henüz takip verisi yok. Açılma/tıklanma izleme için Resend panelinde webhook tanımlayın:
+                <code className="ml-1 px-1 bg-muted rounded text-[11px]">/api/mailing/webhook/resend</code>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     <Card>
       <CardHeader>
         <CardTitle>Gönderim Geçmişi</CardTitle>
@@ -503,6 +530,17 @@ function HistoryTab({ campaigns, loading }) {
         )}
       </CardContent>
     </Card>
+    </div>
+  );
+}
+
+function StatBox({ label, value, sub, color = "text-foreground" }) {
+  return (
+    <div className="border rounded-lg p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-2xl font-bold mt-1 ${color}`}>{value ?? 0}</div>
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
+    </div>
   );
 }
 

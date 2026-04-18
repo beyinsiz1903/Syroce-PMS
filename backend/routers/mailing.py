@@ -9,9 +9,10 @@ Syroce domain for deliverability.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -376,6 +377,129 @@ async def get_credits(current_user: User = Depends(get_current_user)) -> dict:
         "lifetime_used": doc.get("lifetime_used", 0),
         "free_granted": doc.get("free_granted", DEFAULT_FREE_CREDITS),
         "sent_today": sent_30d,
+    }
+
+
+# ── Email tracking webhook (Resend) ────────────────────────────────────
+from fastapi import Request
+
+# Map Resend webhook event types to our internal status fields
+_EVENT_MAP = {
+    "email.delivered": ("delivered_at", "delivered"),
+    "email.opened":    ("opened_at",    "opened"),
+    "email.clicked":   ("clicked_at",   "clicked"),
+    "email.bounced":   ("bounced_at",   "bounced"),
+    "email.complained":("complained_at","complained"),
+}
+
+
+@router.post("/webhook/resend")
+async def resend_webhook(request: Request) -> dict:
+    """Receive open/click/delivery events from Resend.
+    Configure in Resend dashboard → Webhooks: POST {PUBLIC_BASE_URL}/api/mailing/webhook/resend
+    Optional: set RESEND_WEBHOOK_SECRET env (svix-style) for signature verification."""
+    raw = await request.body()
+    secret = os.environ.get("RESEND_WEBHOOK_SECRET")
+    if secret:
+        # Best-effort svix signature check (optional — don't break if header missing)
+        try:
+            from svix.webhooks import Webhook  # type: ignore
+            headers = {k: v for k, v in request.headers.items()}
+            Webhook(secret).verify(raw, headers)
+        except Exception as e:
+            logger.warning("[mailing-webhook] signature verify failed: %s", e)
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    try:
+        import json as _json
+        payload = _json.loads(raw or b"{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    evt_type = payload.get("type") or ""
+    data = payload.get("data") or {}
+    email_id = data.get("email_id") or data.get("id")
+    if not email_id or evt_type not in _EVENT_MAP:
+        return {"ok": True, "ignored": True}
+
+    db = _db()
+
+    # ── Event-level dedup: ignore duplicate webhook deliveries ──
+    # Use svix-id header if present, else synthesize a stable id from payload.
+    evt_id = (
+        request.headers.get("svix-id")
+        or data.get("created_at")
+        or payload.get("created_at")
+        or ""
+    )
+    dedup_key = f"{email_id}:{evt_type}:{evt_id}"
+    try:
+        await db.mailing_webhook_events.create_index("dedup_key", unique=True, name="uniq_webhook_dedup")
+    except Exception:
+        pass
+    try:
+        await db.mailing_webhook_events.insert_one(
+            {"dedup_key": dedup_key, "received_at": _now_iso(), "type": evt_type, "email_id": email_id}
+        )
+    except Exception:
+        # Duplicate delivery — already processed
+        return {"ok": True, "duplicate": True}
+
+    field, status_label = _EVENT_MAP[evt_type]
+    now = _now_iso()
+    set_part = {"last_event": status_label, "last_event_at": now}
+
+    # ── Only-once timestamp + counter via field-not-exists filter ──
+    base_filter = {"provider_id": email_id, field: {"$exists": False}}
+    update_first = {"$set": {field: now, **set_part}}
+    if evt_type == "email.opened":
+        update_first["$inc"] = {"open_count": 1}
+    elif evt_type == "email.clicked":
+        update_first["$inc"] = {"click_count": 1}
+
+    res = await db.mailing_sends.update_one(base_filter, update_first)
+    if res.matched_count == 0:
+        # Already had this event — just refresh last_event tracker
+        res = await db.mailing_sends.update_one({"provider_id": email_id}, {"$set": set_part})
+    if res.matched_count == 0:
+        # Try automation log table
+        r2 = await db.mailing_automation_log.update_one(base_filter, update_first)
+        if r2.matched_count == 0:
+            await db.mailing_automation_log.update_one({"provider_id": email_id}, {"$set": set_part})
+
+    logger.info("[mailing-webhook] %s email_id=%s", evt_type, email_id)
+    return {"ok": True}
+
+
+# ── Stats endpoint ─────────────────────────────────────────────────────
+@router.get("/stats")
+async def mailing_stats(current_user: User = Depends(get_current_user)) -> dict:
+    """Aggregated open/click/delivery rates for this tenant (last 90 days)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    db = _db()
+    since = (datetime.now(UTC) - timedelta(days=90)).isoformat()
+    base = {"tenant_id": current_user.tenant_id, "sent_at": {"$gte": since}}
+    sent     = await db.mailing_sends.count_documents({**base, "status": "sent"})
+    delivered= await db.mailing_sends.count_documents({**base, "delivered_at": {"$exists": True}})
+    opened   = await db.mailing_sends.count_documents({**base, "opened_at":    {"$exists": True}})
+    clicked  = await db.mailing_sends.count_documents({**base, "clicked_at":   {"$exists": True}})
+    bounced  = await db.mailing_sends.count_documents({**base, "bounced_at":   {"$exists": True}})
+
+    def _rate(n: int, d: int) -> float:
+        return round((n / d) * 100, 1) if d else 0.0
+
+    return {
+        "window_days": 90,
+        "sent": sent,
+        "delivered": delivered,
+        "opened": opened,
+        "clicked": clicked,
+        "bounced": bounced,
+        "delivery_rate": _rate(delivered, sent),
+        "open_rate":     _rate(opened, delivered or sent),
+        "click_rate":    _rate(clicked, opened or delivered or sent),
+        "bounce_rate":   _rate(bounced, sent),
+        "provider": (os.environ.get("MAIL_PROVIDER") or "resend").lower(),
     }
 
 

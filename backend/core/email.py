@@ -14,6 +14,48 @@ logger = logging.getLogger(__name__)
 DEFAULT_FROM = os.environ.get("RESEND_FROM", "Syroce <onboarding@resend.dev>")
 
 
+def _provider() -> str:
+    """Choose mail provider. Defaults to resend; switch to ses by setting MAIL_PROVIDER=ses.
+    Falls back to resend if ses is requested but AWS keys are missing."""
+    p = (os.environ.get("MAIL_PROVIDER") or "").lower()
+    if p == "ses" and os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        return "ses"
+    return "resend"
+
+
+async def _send_via_ses(*, to: str, subject: str, html: str, text: Optional[str],
+                       sender: str, reply_to: Optional[str]) -> dict:
+    """Send a single email via Amazon SES (used when MAIL_PROVIDER=ses)."""
+    try:
+        import boto3  # type: ignore
+        client = boto3.client(
+            "ses",
+            region_name=os.environ.get("AWS_REGION", "eu-central-1"),
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+        )
+        body = {"Html": {"Data": html, "Charset": "UTF-8"}}
+        if text:
+            body["Text"] = {"Data": text, "Charset": "UTF-8"}
+        kwargs = {
+            "Source": sender,
+            "Destination": {"ToAddresses": [to]},
+            "Message": {
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": body,
+            },
+        }
+        if reply_to:
+            kwargs["ReplyToAddresses"] = [reply_to]
+        result = client.send_email(**kwargs)
+        msg_id = result.get("MessageId")
+        logger.info("[email] SES sent to=%s id=%s subject=%r", to, msg_id, subject)
+        return {"sent": True, "provider": "ses", "id": msg_id}
+    except Exception as exc:
+        logger.exception("[email] SES send failed: %s", exc)
+        return {"sent": False, "provider": "ses", "error": str(exc)}
+
+
 def _frontend_base_url() -> str:
     """Return the public frontend URL for building links inside emails."""
     candidates = [
@@ -42,6 +84,10 @@ async def send_email(
     """
     api_key = os.environ.get("RESEND_API_KEY")
     sender = from_addr or DEFAULT_FROM
+
+    if _provider() == "ses":
+        return await _send_via_ses(to=to, subject=subject, html=html, text=text,
+                                    sender=sender, reply_to=reply_to)
 
     if not api_key:
         logger.warning(
