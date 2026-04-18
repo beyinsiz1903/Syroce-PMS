@@ -470,33 +470,61 @@ async def unified_bulk_grid_update(
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
 
-    if request.provider:
-        if request.provider == "hotelrunner":
-            conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
-            if not conn:
-                pc = await db.provider_connections.find_one(
-                    {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
+    # Resolve target providers. If `request.provider` is unset → push to ALL
+    # active providers (HR + Exely). If explicitly set → only that one.
+    targets: list[dict] = []
+    if request.provider == "hotelrunner":
+        conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+        if not conn:
+            pc = await db.provider_connections.find_one(
+                {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
+            )
+            if pc:
+                legacy = await db.hotelrunner_connections.find_one(
+                    {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
                 )
-                if pc:
-                    legacy = await db.hotelrunner_connections.find_one(
-                        {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
-                    )
-                    conn = {"tenant_id": tenant_id, "is_active": True,
+                conn = {"tenant_id": tenant_id, "is_active": True,
+                        "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                        "environment": pc.get("environment", "live"),
+                        "cached_rooms": (legacy or {}).get("cached_rooms", [])}
+        if conn:
+            targets.append({"provider": "hotelrunner", "connection": conn})
+    elif request.provider == "exely":
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+        if conn:
+            targets.append({"provider": "exely", "connection": conn})
+    else:
+        # No explicit provider → push to every active provider on this tenant.
+        hr_conn = await db.hotelrunner_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+        )
+        if not hr_conn:
+            pc = await db.provider_connections.find_one(
+                {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
+            )
+            if pc:
+                legacy = await db.hotelrunner_connections.find_one(
+                    {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
+                )
+                hr_conn = {"tenant_id": tenant_id, "is_active": True,
                             "hr_id": pc.get("credentials", {}).get("hr_id", ""),
                             "environment": pc.get("environment", "live"),
                             "cached_rooms": (legacy or {}).get("cached_rooms", [])}
-            detection = {"provider": "hotelrunner", "connection": conn} if conn else {"provider": None, "connection": None}
-        elif request.provider == "exely":
-            conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
-            detection = {"provider": "exely", "connection": conn} if conn else {"provider": None, "connection": None}
-        else:
-            detection = await _detect_active_provider(tenant_id)
-    else:
-        detection = await _detect_active_provider(tenant_id)
+        if hr_conn:
+            targets.append({"provider": "hotelrunner", "connection": hr_conn})
 
-    if not detection["provider"]:
+        exely_conn = await db.exely_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
+        )
+        if exely_conn:
+            targets.append({"provider": "exely", "connection": exely_conn})
+
+    if not targets:
         raise HTTPException(status_code=404, detail="Aktif kanal saglayici bulunamadi")
 
+    # Keep `detection` / `provider_type` populated for downstream code that
+    # still references the "primary" provider (e.g. cal_collection choice).
+    detection = targets[0]
     provider_type = detection["provider"]
     now = datetime.now(UTC).isoformat()
 
@@ -588,12 +616,23 @@ async def unified_bulk_grid_update(
     if bulk_ops:
         await db[cal_collection].bulk_write(bulk_ops, ordered=False)
 
-    # Push to channel provider (background)
+    # Push to every resolved channel provider (background)
     channel_push_count = 0
-    if provider_type == "hotelrunner":
-        channel_push_count = await _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_fields, selected_days_set)
-    else:
-        channel_push_count = await _push_to_exely(tenant_id, detection["connection"], request, pairs, per_room_map, update_fields, selected_days_set)
+    pushed_providers: list[str] = []
+    for tgt in targets:
+        try:
+            if tgt["provider"] == "hotelrunner":
+                cnt = await _push_to_hotelrunner(
+                    tenant_id, request, pairs, per_room_map, update_fields, selected_days_set,
+                )
+            else:
+                cnt = await _push_to_exely(
+                    tenant_id, tgt["connection"], request, pairs, per_room_map, update_fields, selected_days_set,
+                )
+            channel_push_count += cnt or 0
+            pushed_providers.append(tgt["provider"])
+        except Exception as e:
+            logger.error("[UNIFIED] %s push exception: %s", tgt["provider"], e)
 
     # Push to agencies (background)
     agency_push_count = 0
