@@ -508,33 +508,137 @@ function HistoryTab({ campaigns, loading }) {
 
 // ── Credits Tab ──────────────────────────────────────────────
 function CreditsTab({ credits }) {
+  const [pkgData, setPkgData] = useState(null);
+  const [purchases, setPurchases] = useState([]);
+  const [buying, setBuying] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, h] = await Promise.all([
+          axios.get(`${API}/packages`),
+          axios.get(`${API}/purchases`),
+        ]);
+        setPkgData(p.data);
+        setPurchases(h.data || []);
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  const buy = async (code) => {
+    setBuying(code);
+    try {
+      const r = await axios.post(`${API}/purchase`, { package_code: code });
+      if (r.data.payment_page_url) {
+        toast.success('Ödeme sayfasına yönlendiriliyorsunuz…');
+        window.location.href = r.data.payment_page_url;
+      }
+    } catch (e) {
+      const msg = e.response?.data?.detail || 'Satın alma başlatılamadı';
+      toast.error(msg);
+    } finally { setBuying(null); }
+  };
+
   if (!credits) return null;
+  const ready = pkgData?.payment_ready;
+
   return (
-    <div className="grid md:grid-cols-2 gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Kredi Durumu</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex justify-between"><span className="text-muted-foreground">Kalan kredi</span><span className="font-bold text-2xl text-indigo-700">{credits.balance}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-muted-foreground">Toplam gönderilen</span><span>{credits.lifetime_used}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-muted-foreground">Hediye kredi</span><span>{credits.free_granted}</span></div>
-        </CardContent>
-      </Card>
-      <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
-        <CardHeader>
-          <CardTitle>Daha fazla mı gerekiyor?</CardTitle>
-          <CardDescription>Mailing paket satın alma yakında aktif olacak</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between p-2 bg-white rounded"><span>1.000 e-posta</span><span className="font-medium">299 ₺</span></div>
-            <div className="flex justify-between p-2 bg-white rounded"><span>5.000 e-posta</span><span className="font-medium">999 ₺</span></div>
-            <div className="flex justify-between p-2 bg-white rounded"><span>25.000 e-posta</span><span className="font-medium">3.499 ₺</span></div>
-          </div>
-          <Button className="w-full mt-4" disabled>Paket Satın Al (Yakında)</Button>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      <div className="grid md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-sm text-muted-foreground">Kalan Kredi</p>
+            <p className="font-bold text-3xl text-indigo-700 mt-1">{credits.balance}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-sm text-muted-foreground">Toplam Gönderilen</p>
+            <p className="font-bold text-3xl text-gray-700 mt-1">{credits.lifetime_used}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-sm text-muted-foreground">Hediye Kredi</p>
+            <p className="font-bold text-3xl text-green-700 mt-1">{credits.free_granted}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div>
+        <h3 className="text-lg font-semibold mb-1">Kredi Paketleri</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Tüm paketler tek seferlik satın alma — kredileriniz son kullanma tarihi olmadan kalır.
+        </p>
+        {!ready && (
+          <Card className="bg-amber-50 border-amber-200 mb-4">
+            <CardContent className="pt-4">
+              <p className="text-sm text-amber-900">
+                ℹ️ <strong>Ödeme sistemi henüz hazırlanma aşamasında.</strong> iyzico anlaşması tamamlandığında
+                paket satın alma butonları otomatik olarak aktive olacak. Şimdilik 100 ücretsiz hediye kredinizi kullanabilirsiniz.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        <div className="grid md:grid-cols-3 gap-4">
+          {(pkgData?.packages || []).map(p => (
+            <Card key={p.code} className={p.popular ? 'border-indigo-500 border-2 relative' : ''}>
+              {p.popular && (
+                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 hover:bg-indigo-600">
+                  En Popüler
+                </Badge>
+              )}
+              <CardHeader>
+                <CardTitle className="text-xl">{p.name}</CardTitle>
+                <CardDescription>{p.description}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-indigo-700">{p.price_try.toLocaleString('tr-TR')} ₺</div>
+                <p className="text-sm text-muted-foreground mb-3">KDV dahil, tek seferlik</p>
+                <div className="space-y-1 text-sm mb-4">
+                  <div className="flex items-center gap-2">✉️ <strong>{p.credits.toLocaleString('tr-TR')}</strong> e-posta kredisi</div>
+                  <div className="flex items-center gap-2">💰 E-posta başına <strong>{p.per_email.toFixed(3)} ₺</strong></div>
+                  <div className="flex items-center gap-2">⏳ Süre sınırı yok</div>
+                  <div className="flex items-center gap-2">📊 Detaylı raporlama</div>
+                </div>
+                <Button className="w-full" disabled={!ready || buying === p.code}
+                  onClick={() => buy(p.code)}>
+                  {!ready ? 'Yakında Aktif' : (buying === p.code ? 'Yönlendiriliyor…' : 'Satın Al')}
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {purchases.length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-3">Satın Alma Geçmişi</h3>
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {purchases.map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-3">
+                    <div>
+                      <p className="font-medium">{PACKAGE_LABEL(p.package_code)}</p>
+                      <p className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString('tr-TR')}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{p.price_try} ₺</p>
+                      <Badge variant={p.status === 'completed' ? 'default' : 'secondary'} className={p.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}>
+                        {STATUS_LABEL(p.status)}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
+
+const PACKAGE_LABEL = (code) => ({ starter: 'Başlangıç', growth: 'Büyüme', scale: 'Profesyonel' })[code] || code;
+const STATUS_LABEL = (s) => ({ pending: 'Bekliyor', completed: 'Tamamlandı', failed: 'Başarısız', init_failed: 'Başlatılamadı' })[s] || s;

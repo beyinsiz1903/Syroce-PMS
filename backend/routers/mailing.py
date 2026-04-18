@@ -29,6 +29,17 @@ DEFAULT_FREE_CREDITS = 100
 RECIPIENT_FETCH_LIMIT = 1000
 SEND_BATCH_LIMIT = 500  # max recipients per single campaign send
 
+# ── Kredi paketleri (TRY, KDV dahil) ────────────────────────────────────
+CREDIT_PACKAGES = [
+    {"code": "starter",  "name": "Başlangıç", "credits": 1000,  "price_try": 299,
+     "per_email": 0.299, "popular": False, "description": "Küçük kampanyalar için ideal"},
+    {"code": "growth",   "name": "Büyüme",    "credits": 5000,  "price_try": 999,
+     "per_email": 0.200, "popular": True,  "description": "En çok tercih edilen paket"},
+    {"code": "scale",    "name": "Profesyonel", "credits": 25000, "price_try": 3499,
+     "per_email": 0.140, "popular": False, "description": "Yoğun kullanım için en avantajlı"},
+]
+PACKAGE_BY_CODE = {p["code"]: p for p in CREDIT_PACKAGES}
+
 # Automation trigger types
 AUTOMATION_TRIGGERS = {
     "booking_created": {
@@ -130,6 +141,223 @@ async def _consume_credits(tenant_id: str, n: int) -> int:
             detail=f"Yetersiz mailing kredisi. Gerekli: {n}, Mevcut: {bal}. Lütfen paket yükseltin.",
         )
     return res.get("balance", 0)
+
+
+# ── Credit packages & purchase (iyzico) ────────────────────────────────
+class PurchaseRequest(BaseModel):
+    package_code: str
+
+
+_PURCHASE_INDEXES_DONE = False
+
+
+async def _ensure_purchase_indexes() -> None:
+    global _PURCHASE_INDEXES_DONE
+    if _PURCHASE_INDEXES_DONE:
+        return
+    db = _db()
+    try:
+        await db.mailing_purchases.create_index("id", unique=True, name="uniq_purchase_id")
+        await db.mailing_purchases.create_index(
+            "iyzico_payment_id", unique=True, sparse=True,
+            name="uniq_iyzico_payment_id",
+        )
+        await db.mailing_credits.create_index("tenant_id", unique=True, name="uniq_credits_tenant")
+        _PURCHASE_INDEXES_DONE = True
+    except Exception as e:
+        logger.warning("[mailing] purchase index create skipped: %s", e)
+
+
+@router.get("/packages")
+async def list_packages() -> dict:
+    """Public list of credit packages — also tells frontend if iyzico is configured."""
+    from core.iyzico import is_configured
+    await _ensure_purchase_indexes()
+    return {
+        "packages": CREDIT_PACKAGES,
+        "payment_ready": is_configured(),
+        "currency": "TRY",
+    }
+
+
+@router.post("/purchase")
+async def purchase_package(
+    payload: PurchaseRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Initiate iyzico Checkout Form. Returns paymentPageUrl for redirect."""
+    from core.iyzico import init_checkout_form, is_configured, public_callback_url
+
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    pkg = PACKAGE_BY_CODE.get(payload.package_code)
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Paket bulunamadı")
+    if not is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Ödeme sistemi henüz aktif değil. Lütfen kısa süre sonra tekrar deneyin.",
+        )
+
+    db = _db()
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
+    order_id = str(uuid.uuid4())
+    purchase_doc = {
+        "id": order_id,
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "package_code": pkg["code"],
+        "credits": pkg["credits"],
+        "price_try": pkg["price_try"],
+        "status": "pending",
+        "created_at": _now_iso(),
+    }
+    await db.mailing_purchases.insert_one({**purchase_doc})
+
+    callback = public_callback_url(f"/api/mailing/purchase/callback?order_id={order_id}")
+    buyer_name = (current_user.name or "Otel Sahibi").split()
+    first = buyer_name[0] if buyer_name else "Otel"
+    last = " ".join(buyer_name[1:]) if len(buyer_name) > 1 else "Sahibi"
+    buyer_email = (tenant or {}).get("email") or (current_user.email or "noreply@syroce.com")
+
+    iyzico_payload = {
+        "locale": "tr",
+        "conversationId": order_id,
+        "price": str(pkg["price_try"]),
+        "paidPrice": str(pkg["price_try"]),
+        "currency": "TRY",
+        "basketId": order_id,
+        "paymentGroup": "PRODUCT",
+        "callbackUrl": callback,
+        "enabledInstallments": [2, 3, 6, 9],
+        "buyer": {
+            "id": current_user.id,
+            "name": first,
+            "surname": last,
+            "gsmNumber": (tenant or {}).get("phone") or "+905555555555",
+            "email": buyer_email,
+            "identityNumber": "11111111111",
+            "registrationAddress": (tenant or {}).get("address") or "Türkiye",
+            "ip": "127.0.0.1",
+            "city": (tenant or {}).get("city") or "Istanbul",
+            "country": "Turkey",
+        },
+        "shippingAddress": {
+            "contactName": (tenant or {}).get("property_name") or "Otel",
+            "city": (tenant or {}).get("city") or "Istanbul",
+            "country": "Turkey",
+            "address": (tenant or {}).get("address") or "Türkiye",
+        },
+        "billingAddress": {
+            "contactName": (tenant or {}).get("property_name") or "Otel",
+            "city": (tenant or {}).get("city") or "Istanbul",
+            "country": "Turkey",
+            "address": (tenant or {}).get("address") or "Türkiye",
+        },
+        "basketItems": [{
+            "id": pkg["code"],
+            "name": f"Mailing Kredisi - {pkg['name']} ({pkg['credits']} adet)",
+            "category1": "Dijital",
+            "itemType": "VIRTUAL",
+            "price": str(pkg["price_try"]),
+        }],
+    }
+    res = init_checkout_form(iyzico_payload)
+    if res.get("status") != "success":
+        await db.mailing_purchases.update_one(
+            {"id": order_id},
+            {"$set": {"status": "init_failed", "error": res.get("errorMessage"),
+                      "updated_at": _now_iso()}},
+        )
+        raise HTTPException(status_code=502,
+                            detail=res.get("errorMessage") or "Ödeme başlatılamadı")
+
+    await db.mailing_purchases.update_one(
+        {"id": order_id},
+        {"$set": {"iyzico_token": res.get("token"),
+                  "payment_page_url": res.get("paymentPageUrl"),
+                  "updated_at": _now_iso()}},
+    )
+    return {
+        "order_id": order_id,
+        "payment_page_url": res.get("paymentPageUrl"),
+        "token": res.get("token"),
+    }
+
+
+@router.post("/purchase/callback")
+@router.get("/purchase/callback")
+async def purchase_callback(order_id: str) -> dict:
+    """iyzico kullanıcıyı bu URL'ye yönlendirir. Token DB'den alınır
+    (dış girdiyle override edilemez). Yanıt sıkı kontrollerden geçirilir,
+    kredi yükleme atomik+idempotent şekilde yapılır."""
+    from core.iyzico import retrieve_checkout_form
+    db = _db()
+    order = await db.mailing_purchases.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+    if order.get("status") == "completed":
+        return {"status": "already_completed", "credits": order["credits"]}
+    iyzico_token = order.get("iyzico_token")
+    if not iyzico_token:
+        raise HTTPException(status_code=400, detail="Token bulunamadı")
+
+    res = retrieve_checkout_form(iyzico_token)
+
+    # ── Strict validation: id/amount/currency must match the saved order ──
+    paid_price = res.get("paidPrice")
+    try:
+        paid_ok = paid_price is not None and float(paid_price) == float(order["price_try"])
+    except (TypeError, ValueError):
+        paid_ok = False
+    valid = (
+        res.get("status") == "success"
+        and res.get("paymentStatus") == "SUCCESS"
+        and (res.get("conversationId") == order_id or res.get("basketId") == order_id)
+        and res.get("currency") == "TRY"
+        and paid_ok
+    )
+
+    if valid:
+        # ── Atomic transition: pending → completed in a single update ──
+        # Only ONE concurrent request can win; others see modified_count == 0.
+        upd = await db.mailing_purchases.update_one(
+            {"id": order_id, "status": "pending"},
+            {"$set": {"status": "completed",
+                      "iyzico_payment_id": res.get("paymentId"),
+                      "completed_at": _now_iso()}},
+        )
+        if upd.modified_count == 1:
+            await _get_or_init_credits(order["tenant_id"])
+            await db.mailing_credits.update_one(
+                {"tenant_id": order["tenant_id"]},
+                {"$inc": {"balance": order["credits"],
+                          "lifetime_purchased": order["credits"]},
+                 "$set": {"updated_at": _now_iso()}},
+            )
+            logger.info("[mailing-purchase] tenant=%s package=%s credits=+%s OK",
+                        order["tenant_id"], order["package_code"], order["credits"])
+        return {"status": "completed", "credits": order["credits"]}
+
+    await db.mailing_purchases.update_one(
+        {"id": order_id, "status": "pending"},
+        {"$set": {"status": "failed",
+                  "error": res.get("errorMessage") or "Doğrulama hatası",
+                  "updated_at": _now_iso()}},
+    )
+    logger.warning("[mailing-purchase] tenant=%s order=%s validation failed: %s",
+                   order.get("tenant_id"), order_id, res.get("errorMessage"))
+    return {"status": "failed", "error": res.get("errorMessage", "Ödeme başarısız")}
+
+
+@router.get("/purchases")
+async def list_purchases(current_user: User = Depends(get_current_user)) -> list[dict]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    cursor = _db().mailing_purchases.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).limit(100)
+    return await cursor.to_list(100)
 
 
 # ── Credits endpoints ──────────────────────────────────────────────────

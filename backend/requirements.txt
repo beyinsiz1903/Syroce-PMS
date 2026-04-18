@@ -217,3 +217,4 @@ zope.event==6.1
 zope.interface==8.2
 zopfli==0.4.1
 resend==2.29.0
+iyzipay==1.0.46
