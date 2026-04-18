@@ -741,7 +741,13 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
 
 
 async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set):
-    """Exely'ye arka planda push gonder."""
+    """Exely'ye arka planda push gonder.
+
+    Frontend grid'i HotelRunner tabanli oda kodlari (HR:xxx) ile geliyor.
+    Exely'nin kendi room_code + rate_plan_code'larina ceviriyoruz:
+      HR:xxx -> hotelrunner_room_mappings.pms_room_type_name -> exely_room_mappings.exely_room_code
+      rate_plan -> Exely connection'daki rate_plans listesi.
+    """
     try:
         from domains.channel_manager.credential_vault import get_decrypted_credentials
         hotel_code = conn.get("hotel_code", "")
@@ -762,29 +768,75 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         logger.error("[UNIFIED] Exely provider olusturulamadi: %s", e)
         return 0
 
+    # ── HR room code -> pms_room_type -> exely_room_code translation ──
+    hr_codes = sorted({rt.split(":", 1)[1] if rt.startswith("HR:") else rt for rt, _ in pairs})
+    hr_mappings = await db.hotelrunner_room_mappings.find(
+        {"tenant_id": tenant_id, "provider_room_code": {"$in": hr_codes}},
+        {"_id": 0, "provider_room_code": 1, "pms_room_type_name": 1, "pms_room_type_id": 1},
+    ).to_list(100)
+    hr_to_pms = {}
+    for m in hr_mappings:
+        pms_name = m.get("pms_room_type_name") or m.get("pms_room_type_id")
+        if pms_name:
+            hr_to_pms[m["provider_room_code"]] = pms_name
+
+    pms_types = sorted({v for v in hr_to_pms.values()})
+    exely_mappings = await db.exely_room_mappings.find(
+        {"tenant_id": tenant_id, "pms_room_type": {"$in": pms_types}},
+        {"_id": 0, "pms_room_type": 1, "exely_room_code": 1},
+    ).to_list(200)
+    pms_to_exely_codes: dict[str, list[str]] = {}
+    for m in exely_mappings:
+        rc = m.get("exely_room_code", "")
+        pt = m.get("pms_room_type", "")
+        if rc and pt:
+            pms_to_exely_codes.setdefault(pt, []).append(rc)
+
+    exely_rate_plans = [rp.get("code") for rp in (conn.get("rate_plans") or []) if rp.get("code")]
+    if not exely_rate_plans:
+        logger.warning("[UNIFIED] Exely conn rate_plans bos, push iptal tenant=%s", tenant_id)
+        return 0
+
+    logger.info(
+        "[UNIFIED] Exely mapping: HR->PMS=%s PMS->Exely=%s rate_plans=%s",
+        hr_to_pms, pms_to_exely_codes, exely_rate_plans,
+    )
+
     push_tasks = []
-    for rt_code, rp_code in pairs:
+    for rt_code, _rp_code_ignored in pairs:
+        hr_only = rt_code.split(":", 1)[1] if rt_code.startswith("HR:") else rt_code
+        pms_type = hr_to_pms.get(hr_only)
+        if not pms_type:
+            logger.warning("[UNIFIED] Exely: HR oda kodu %s icin PMS mapping yok, atlandi", rt_code)
+            continue
+        exely_codes = pms_to_exely_codes.get(pms_type) or []
+        if not exely_codes:
+            logger.warning("[UNIFIED] Exely: pms_type=%s icin exely_room_mappings yok, atlandi (rt=%s)", pms_type, rt_code)
+            continue
+
         rv = per_room_map.get(rt_code)
         push_rate = (rv.rate if rv else request.rate) if "rate" in update_fields else None
         push_avail = (rv.availability if rv else request.availability) if "availability" in update_fields else None
         push_stop = (rv.stop_sell if rv else request.stop_sell) if "stop_sell" in update_fields else None
         push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
 
-        async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
-            try:
-                logger.info("[UNIFIED] Exely push: rt=%s rp=%s rate=%s avail=%s", rt, rp, rate, avail)
-                result = await provider.push_ari(
-                    room_type_code=rt, rate_plan_code=rp,
-                    start_date=request.start_date, end_date=request.end_date,
-                    availability=avail, rate_amount=rate,
-                    currency=conn.get("currency", "TRY"),
-                    stop_sell=stop, min_stay=minstay,
-                )
-                logger.info("[UNIFIED] Exely push result rt=%s: %s", rt, result)
-                return result
-            except Exception as e:
-                logger.error("[UNIFIED] Exely push error rt=%s: %s", rt, e)
-        push_tasks.append(_push())
+        for ex_code in exely_codes:
+            for rp in exely_rate_plans:
+                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, src=rt_code):
+                    try:
+                        logger.info("[UNIFIED] Exely push: src=%s rt=%s rp=%s rate=%s avail=%s", src, rt, rp, rate, avail)
+                        result = await provider.push_ari(
+                            room_type_code=rt, rate_plan_code=rp,
+                            start_date=request.start_date, end_date=request.end_date,
+                            availability=avail, rate_amount=rate,
+                            currency=conn.get("currency", "TRY"),
+                            stop_sell=stop, min_stay=minstay,
+                        )
+                        logger.info("[UNIFIED] Exely push result rt=%s rp=%s: %s", rt, rp, result)
+                        return result
+                    except Exception as e:
+                        logger.error("[UNIFIED] Exely push error rt=%s rp=%s: %s", rt, rp, e)
+                push_tasks.append(_push())
 
     if push_tasks:
         async def _bg(tasks):
