@@ -509,6 +509,14 @@ export const NAV_ITEMS = [
     navGroup: "advanced",
   },
   {
+    key: "module_store",
+    label: "Modül Pazarı",
+    path: "/app/module-store",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     key: "messaging_dashboard",
     label: "Mesajlasma",
     path: "/messaging-dashboard",
