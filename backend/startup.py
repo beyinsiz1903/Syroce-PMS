@@ -210,6 +210,7 @@ async def on_startup(app):
     # ── Marketplace subscription expiry worker (saatlik) ──
     try:
         import asyncio as _asyncio
+
         from workers.subscription_expiry import run_loop as _sub_loop
         _asyncio.create_task(_sub_loop(3600), name="subscription-expiry")
         logger.info("Subscription expiry worker started (3600s interval)")

@@ -15,16 +15,16 @@ status, base_url, created_at, updated_at}).
 """
 from __future__ import annotations
 
+import logging
 import os
 import secrets
-import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import jwt
 
-from core.security import JWT_SECRET, JWT_ALGORITHM
+from core.security import JWT_ALGORITHM, JWT_SECRET
 
 logger = logging.getLogger(__name__)
 

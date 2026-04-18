@@ -82,6 +82,7 @@ def _decode_tenant_from_token(token: str) -> str | None:
     """
     try:
         import jwt
+
         from core.security import JWT_SECRET
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return payload.get("tenant_id")
