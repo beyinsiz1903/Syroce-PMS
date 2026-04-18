@@ -772,8 +772,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     # Birincil kaynak: HotelRunner connection.cached_rooms
     hr_to_pms: dict[str, str] = {}
     try:
-        hr_conn = await db.channel_connections.find_one(
-            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+        hr_conn = await db.hotelrunner_connections.find_one(
+            {"tenant_id": tenant_id},
             {"_id": 0, "cached_rooms": 1},
         )
         if hr_conn:
