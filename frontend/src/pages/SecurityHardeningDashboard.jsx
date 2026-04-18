@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Shield, Lock, FileCheck, Users, Server, Eye, RefreshCw, Loader2 } from "lucide-react";
+import Layout from "@/components/Layout";
 
 const PIIStrictModeDashboard = lazy(() => import("@/pages/PIIStrictModeDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
@@ -69,11 +70,12 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
   const properties = permissions?.properties || {};
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
     <div data-testid="security-hardening-dashboard" className="space-y-6 p-6 bg-white min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Shield className="w-6 h-6 text-rose-400" />
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Shield className="w-6 h-6 text-rose-500" />
             Güvenlik & Güçlendirme
           </h1>
           <p className="text-sm text-gray-600 mt-1">Tenant izolasyon, PII koruma ve altyapı güçlendirme</p>
@@ -278,5 +280,6 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
         </TabsContent>
       </Tabs>
     </div>
+    </Layout>
   );
 }
