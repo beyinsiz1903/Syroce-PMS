@@ -39,8 +39,10 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         )
 
     def _get_db(self):
-        from core.database import db
-        return db
+        # Use raw db (not TenantAwareDBProxy) — `_dev_secrets` is a system
+        # collection and must not be auto-scoped by tenant context.
+        from core.database import _raw_db
+        return _raw_db
 
     def _build_aad(self, path: str) -> AADContext:
         """Build AAD from secret path for context binding."""

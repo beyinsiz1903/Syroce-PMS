@@ -89,18 +89,35 @@ _always_allowed = [
     "https://www.pms.syroce.com",
     "https://syroce.com",
     "http://localhost:3000",
+    "http://localhost:5000",
     "https://syroce-b2b-api.syroce.com",
 ]
 for origin in _always_allowed:
     if origin not in _cors_origins:
         _cors_origins.append(origin)
+
+# Replit dev domain auto-detection (development convenience)
+_replit_dev = os.environ.get("REPLIT_DEV_DOMAIN")
+if _replit_dev and f"https://{_replit_dev}" not in _cors_origins:
+    _cors_origins.append(f"https://{_replit_dev}")
+
+# Allow any *.replit.dev / *.replit.app preview when not in production
+_env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "development").lower()
+_cors_origin_regex = None
+if _env_mode != "production":
+    _cors_origin_regex = r"^https://[a-z0-9-]+\.(replit\.dev|replit\.app|riker\.replit\.dev)$"
+
+# Avoid the wildcard + credentials CORS protocol violation
+_allow_credentials = True
 if not _cors_origins:
     _cors_origins = ["*"]
+    _allow_credentials = False  # Cannot combine `*` with credentials per CORS spec.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
     allow_methods=["*"],
     allow_headers=["*"],
 )

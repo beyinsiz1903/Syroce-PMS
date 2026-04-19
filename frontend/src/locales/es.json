@@ -2600,7 +2600,13 @@
     "measured": "Medido",
     "pagesPrev": "Anterior",
     "pagesNext": "Siguiente",
-    "pagesOf": "de"
+    "pagesOf": "de",
+    "reason_audit_gap_detected": "{{audit_gap_count}} audit gap(s) detected",
+    "reason_compare_error": "{{compare_error_count}} compare error(s)",
+    "reason_failed_outbox_event": "{{failed_outbox_count}} failed outbox event(s)",
+    "reason_mismatch_rate_critical": "{{mismatch_endpoint}} mismatch rate {{mismatch_rate}}% (critical)",
+    "reason_mismatch_rate_warning": "{{mismatch_endpoint}} mismatch rate {{mismatch_rate}}% (warning)",
+    "reason_stale_pending_event": "{{stale_pending_count}} stale pending event(s)"
   },
   "displacement": {
     "title": "Análisis de Desplazamiento",

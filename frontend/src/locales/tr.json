@@ -2600,7 +2600,13 @@
     "measured": "Ölçüldü",
     "pagesPrev": "Önceki",
     "pagesNext": "Sonraki",
-    "pagesOf": "/"
+    "pagesOf": "/",
+    "reason_audit_gap_detected": "{{audit_gap_count}} denetim boşluğu tespit edildi",
+    "reason_compare_error": "{{compare_error_count}} karşılaştırma hatası",
+    "reason_failed_outbox_event": "{{failed_outbox_count}} başarısız outbox olayı",
+    "reason_mismatch_rate_critical": "{{mismatch_endpoint}} uyuşmazlık oranı %{{mismatch_rate}} (kritik)",
+    "reason_mismatch_rate_warning": "{{mismatch_endpoint}} uyuşmazlık oranı %{{mismatch_rate}} (uyarı)",
+    "reason_stale_pending_event": "{{stale_pending_count}} bekleyen eski olay"
   },
   "displacement": {
     "title": "Displacement Analizi",

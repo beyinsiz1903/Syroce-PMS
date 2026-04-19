@@ -59,7 +59,7 @@ class Booking:
     channel: str
     
     @strawberry.field
-    async def guest(self, info) -> Optional[Guest]:
+    async def guest(self, info: strawberry.Info) -> Optional[Guest]:
         """Lazy load guest data"""
         db = info.context["db"]
         guest_doc = await db.guests.find_one({"_id": self.guest_id})
@@ -75,7 +75,7 @@ class Booking:
         return None
     
     @strawberry.field
-    async def room(self, info) -> Optional[Room]:
+    async def room(self, info: strawberry.Info) -> Optional[Room]:
         """Lazy load room data"""
         db = info.context["db"]
         room_doc = await db.rooms.find_one({"_id": self.room_id})
@@ -144,7 +144,7 @@ class RoomFilter:
 @strawberry.type
 class Query:
     @strawberry.field
-    async def dashboard_metrics(self, info) -> DashboardMetrics:
+    async def dashboard_metrics(self, info: strawberry.Info) -> DashboardMetrics:
         """Get pre-computed dashboard metrics from materialized views"""
         materialized_views = info.context["materialized_views"]
         metrics = await materialized_views.get_view("dashboard_metrics", max_age_seconds=60)
@@ -185,7 +185,7 @@ class Query:
         )
     
     @strawberry.field
-    async def dashboard_trends(self, info) -> Optional[DashboardTrends]:
+    async def dashboard_trends(self, info: strawberry.Info) -> Optional[DashboardTrends]:
         """Get dashboard trends from materialized views"""
         materialized_views = info.context["materialized_views"]
         metrics = await materialized_views.get_view("dashboard_metrics", max_age_seconds=300)
@@ -220,7 +220,7 @@ class Query:
     @strawberry.field
     async def bookings(
         self,
-        info,
+        info: strawberry.Info,
         filter: Optional[BookingFilter] = None
     ) -> List[Booking]:
         """Get bookings with optional filtering"""
@@ -268,7 +268,7 @@ class Query:
     @strawberry.field
     async def rooms(
         self,
-        info,
+        info: strawberry.Info,
         filter: Optional[RoomFilter] = None
     ) -> List[Room]:
         """Get rooms with optional filtering"""

@@ -318,6 +318,21 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"CM 9-collection indexes error: {e}")
 
+    # ── Tenant uniqueness indexes (hotel_id, username per tenant) ──
+    try:
+        await db.tenants.create_index(
+            "hotel_id", unique=True, sparse=True, name="hotel_id_unique"
+        )
+        await db.users.create_index(
+            [("tenant_id", 1), ("username", 1)],
+            unique=True,
+            partialFilterExpression={"username": {"$type": "string"}},
+            name="tenant_username_unique",
+        )
+        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username)")
+    except Exception as e:
+        logger.warning(f"Tenant uniqueness index error: {e}")
+
     # ── Database optimization ───────────────────────────────────────
     try:
         logger.info("🚀 Running comprehensive database optimization...")

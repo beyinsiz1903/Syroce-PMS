@@ -20,7 +20,9 @@ class SecretAuditLogger:
         self._enabled = enabled
 
     def _get_db(self):
-        from core.database import db
+        # Use raw db (not TenantAwareDBProxy) — system audit logs must remain
+        # globally queryable, never auto-scoped by tenant context.
+        from core.database import _raw_db as db
         return db
 
     async def log(

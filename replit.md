@@ -915,3 +915,57 @@ modül. Otomatik provisioning + SSO + Outbound PMS API ile entegre.
 oluştu/değişti/iptal, misafir oluştu) HMAC-SHA256 ile imzalı outbox
 üzerinden Af-sadakat'a iletir. Bu modül Af-sadakat env tanımlıyken
 otomatik tetiklenir.
+
+## Sprint 14: 8-Borç Audit Temizliği (Apr 2026)
+
+Tüm A-H borçları kapatıldı:
+
+- **A — F821 import errors**: 121 → 0. Eksik Pydantic stub'lar
+  (`GuestPersona`, `MaintenanceAlert`) ve helper fonksiyonlar
+  (`distribute_tasks`, `generate_scheduling_recommendations`,
+  `get_tier_benefits`, `_collect_push_devices`, `_simulate_push_delivery`,
+  `_record_push_log`, `has_permission`, `_time_ago`,
+  `_calculate_profile_completion`) eklendi. Etkilenen modüller:
+  `ai/router.py`, `ai/service.py`, `pms/notification_router.py`,
+  `pms/misc_router.py`, `maintenance_router.py`, `pos_fnb_router.py`,
+  `guest/operations_router.py`, `guest/messaging/router.py`,
+  `readiness_validator.py`, `early_warning_engine.py`. Ayrıca
+  `get_folio_details`'te tenant izolasyon bug'ı (folio_charges/payments
+  sorgularına `tenant_id` eklendi) düzeltildi.
+
+- **B — Exely vault migration**: `backend/scripts/migrate_exely_vault.py`
+  yazıldı (idempotent, `--apply` flag'iyle yazma). Demo tenant'ın
+  plaintext credential'ları AES-256-GCM şifreli `_dev_secrets`
+  vault'una taşındı, `exely_connections.username/password` alanları
+  silindi (`vault_migrated_at` damgalandı). **Bonus fix**:
+  `core/secrets/local_provider.py` artık `_raw_db` kullanıyor
+  (TenantAwareDBProxy değil) — sistem koleksiyonu olan `_dev_secrets`'e
+  otomatik tenant_id enjeksiyonu kaldırıldı; bu bug nedeniyle vault
+  okumaları boş dönüyordu.
+
+- **C — Tenant uniqueness indexes**: `backend/startup.py` içine
+  `db.tenants.hotel_id` ve `db.users(tenant_id, username)` unique
+  index hook'u eklendi (sparse / partialFilterExpression `username:
+  string` ile mevcut indexle uyumlu).
+
+- **D — GraphQL strawberry annotations**: `_legacy/graphql_schema.py`
+  içindeki tüm resolver'lara `info: strawberry.Info` annotation
+  eklendi (`MissingArgumentsAnnotationsError` çözüldü).
+
+- **E — CORS dev default**: `backend/server.py` REPLIT_DEV_DOMAIN
+  otomatik algılama + dev için
+  `^https://[a-z0-9-]+\.(replit\.dev|replit\.app|riker\.replit\.dev)$`
+  regex; `*` + credentials protokol ihlali kaldırıldı.
+
+- **F — Locale parity**: 10 dil dosyası
+  (`tr/en/de/fr/es/it/pt/ru/ar/zh.json`) artık 2583 anahtarda eşit;
+  TR'de eksik 6 `migrationObs.reason_*` anahtarı Türkçe çevirilerle,
+  diğer dillere İngilizce fallback ile dolduruldu.
+
+- **G — RateManager dedup**: `RateManager.jsx` ve `HRRateManager.jsx`
+  `frontend/src/_archive/`'a taşındı; `/rate-manager`,
+  `/hr-rate-manager`, `/unified-rate-manager` rotaları
+  `UnifiedRateManager`'a yönlendiriliyor.
+
+- **H — React.lazy audit**: `routeDefinitions.jsx` 187 lazy import +
+  4 kasıtlı eager (AuthPage, Dashboard, LandingPage, PrivacyPolicy).

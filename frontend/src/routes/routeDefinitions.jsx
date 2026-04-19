@@ -182,8 +182,6 @@ const HRv2OpsDashboard = lazy(() => import("@/pages/HRv2OpsDashboard"));
 const ExelyIntegration = lazy(() => import("@/pages/ExelyIntegration"));
 const ChannelConnections = lazy(() => import("@/pages/ChannelConnections"));
 const ARIPushDashboard = lazy(() => import("@/pages/ARIPushDashboard"));
-const RateManager = lazy(() => import("@/pages/RateManager"));
-const HRRateManager = lazy(() => import("@/pages/HRRateManager"));
 const UnifiedRateManager = lazy(() => import("@/pages/UnifiedRateManager"));
 const WireFailureDashboard = lazy(() => import("@/pages/WireFailureDashboard"));
 const PIIStrictModeDashboard = lazy(() => import("@/pages/PIIStrictModeDashboard"));
@@ -302,8 +300,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/hrv2-ops", ...p(HRv2OpsDashboard) },
     { path: "/exely", ...p(ExelyIntegration) },
     { path: "/ari-push", ...p(ARIPushDashboard) },
-    { path: "/rate-manager", ...p(RateManager) },
-    { path: "/hr-rate-manager", ...p(HRRateManager) },
+    { path: "/rate-manager", ...p(UnifiedRateManager) },
+    { path: "/hr-rate-manager", ...p(UnifiedRateManager) },
     { path: "/unified-rate-manager", ...p(UnifiedRateManager) },
     { path: "/wire-failures", ...p(WireFailureDashboard) },
     { path: "/data-model", ...p(DataModelDashboard) },
