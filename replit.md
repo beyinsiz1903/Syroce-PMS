@@ -1109,3 +1109,60 @@ satın alınabilir, otomatik provisioning + SSO ile bağlanır hale geldi.
 - status: `entitled=true, provisioned=true, mode=local`.
 - launch: `external_ready=false` → `/integrations/afsadakat/not-deployed`
   placeholder döndü (beklenen davranış).
+
+## Sprint 18: Onboarding Wizard (Apr 2026)
+
+Yeni kiracılar için 5 adımlı kurulum sihirbazı.
+
+### Backend
+- `backend/routers/onboarding.py` (YENİ) — tenant-facing endpoints:
+  - `GET    /api/onboarding/progress` — 13 adımlı ilerleme + dismissed flag
+  - `POST   /api/onboarding/complete-step` — manuel ✓ işaretle
+  - `POST   /api/onboarding/dismiss` — sihirbazı kapat (otomatik
+    pop-up'ı engeller, ilerleme korunur)
+  - `POST   /api/onboarding/resume` — tekrar aç
+  - `PATCH  /api/onboarding/hotel-info` — Tenant alanlarını günceller
+    (`property_name, contact_phone, address, location, total_rooms`)
+    + `hotel_info_completed` adımını otomatik tamamlar
+- `backend/core/onboarding.py` — `DEFAULT_STEPS` listesine yeni adım
+  `hotel_info_completed` eklendi (manuel işaretleme).
+- `backend/bootstrap/router_registry.py` — yeni router kayıtlı.
+
+### Frontend
+- `frontend/src/pages/OnboardingWizard.jsx` (YENİ) — tek sayfada
+  5 adımlı sihirbaz:
+  1. **Otel Bilgileri** — form (mülk adı, telefon, adres, konum,
+     toplam oda) → PATCH ile kaydet
+  2. **Odalar** — toplu oda ekleme aracını açar (`pms#rooms`)
+  3. **Fiyatlar** — Tarife Yönetimi sayfasına yönlendirir
+  4. **Ekip** — Kullanıcı Yönetimine yönlendirir
+  5. **Tamamlandı** — panele git
+  - Üstte genel ilerleme yüzdesi (Progress bar) + adım strip'i
+    (her adım ✓/○ ikonuyla durum gösterir)
+  - "Şimdilik Atla" butonu → `/onboarding/dismiss` çağırır,
+    panele yönlendirir
+  - Adım 2-4 backend tarafından otomatik algılanır (rooms_configured,
+    rates_configured, team_members_added) — kullanıcı geri döndüğünde
+    ✓ işareti görünür
+- `frontend/src/config/navItems.jsx` — Yönetim grubunda
+  "Kurulum Sihirbazı" nav öğesi.
+- `frontend/src/routes/routeDefinitions.jsx` — `/app/onboarding`
+  rotası (lazy).
+
+### Smoke test (PASS, 19 Apr 2026)
+- Progress: 13 adım, %46 (mevcut tenant'ta 6 zaten tamamlanmış)
+- hotel-info PATCH: tenant doğru güncellendi, `hotel_info_completed`
+  adımı otomatik ✓
+- dismiss: `dismissed=true` döndü
+
+### Sprint 18 — Architect Güvenlik Düzeltmeleri (PASS)
+- `_require_tenant_admin()` — onboarding mutasyon endpointleri
+  (`hotel-info`, `complete-step`, `dismiss`, `resume`) artık
+  `super_admin / platform_admin / admin / owner` rollerini zorunlu
+  kılıyor. Resepsiyon/kat hizmetleri kullanıcıları sadece `progress`
+  okuyabilir.
+- `MANUAL_STEPS_ALLOWLIST = {"hotel_info_completed"}` — `complete-step`
+  artık otomatik algılanan adımları (rooms_configured, rates_configured,
+  vb.) kabul etmiyor; geçersiz `step_id` 400 döner.
+- Smoke (19 Apr 2026): admin → 200, otomatik adım → 400, bogus → 400,
+  allowlist → 200.

@@ -523,6 +523,14 @@ export const NAV_ITEMS = [
     navGroup: "advanced",
   },
   {
+    key: "onboarding_wizard",
+    label: "Kurulum Sihirbazı",
+    path: "/app/onboarding",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     key: "module_store",
     label: "Modül Pazarı",
     path: "/app/module-store",

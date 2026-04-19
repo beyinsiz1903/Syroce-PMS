@@ -21,6 +21,14 @@ DEFAULT_STEPS = [
         "order": 1,
     },
     {
+        "step_id": "hotel_info_completed",
+        "label": "Otel bilgileri girildi",
+        "description": "Mülk adı, adres, telefon ve oda kapasitesi tamamlandı",
+        "category": "setup",
+        "auto_detect": False,
+        "order": 1,
+    },
+    {
         "step_id": "rooms_configured",
         "label": "Odalar tanimlandi",
         "description": "En az 1 oda tanimlandi",
