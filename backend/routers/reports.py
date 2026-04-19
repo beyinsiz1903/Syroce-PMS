@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.database import db
+from core.email import send_email
 from core.helpers import (
     require_module,
 )
@@ -895,23 +896,33 @@ async def email_daily_flash(
         </html>
         """
 
-        # Note: Actual email sending requires SMTP configuration
-        # For MVP, we'll log the email and return success
-        # TODO: Implement actual SMTP email sending
+        subject = f"Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}"
+        results = await asyncio.gather(
+            *[send_email(to=r, subject=subject, html=email_html) for r in recipients],
+            return_exceptions=True,
+        )
+        sent = [r for r, res in zip(recipients, results, strict=False)
+                if isinstance(res, dict) and res.get("sent")]
+        failed = [r for r in recipients if r not in sent]
 
-        logger.info(f"Email would be sent to: {recipients}")
-        logger.info(f"Subject: Daily Flash Report - {datetime.now(UTC).strftime('%Y-%m-%d')}")
-        logger.info(f"Content length: {len(email_html)} characters")
+        logger.info("Daily flash email: %d/%d delivered (failed=%s)",
+                    len(sent), len(recipients), failed)
 
         return {
-            'success': True,
-            'message': f'Daily flash report email sent to {len(recipients)} recipients',
-            'recipients': recipients,
-            'note': 'Email functionality requires SMTP configuration. Currently logging only.'
+            'success': len(sent) > 0,
+            'message': f'Daily flash report sent to {len(sent)}/{len(recipients)} recipients',
+            'recipients_sent': sent,
+            'recipients_failed': failed,
+            'provider': next(
+                (r.get('provider') for r in results
+                 if isinstance(r, dict) and r.get('sent')),
+                None,
+            ),
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email sending failed: {str(e)}")
+        logger.exception("email_daily_flash failed")
+        raise HTTPException(status_code=500, detail=f"Email sending failed: {str(e)}") from e
 
 
 @router.get("/reports/daily-flash")

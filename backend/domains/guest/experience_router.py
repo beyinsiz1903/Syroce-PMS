@@ -2001,13 +2001,36 @@ async def web_checkin(
         'key_code': str(uuid.uuid4())[:8].upper()
     }
 
+    room_ready = False
+    room_status: str | None = None
+    room_id = booking.get('room_id')
+    if room_id:
+        room_doc = await db.rooms.find_one(
+            {'id': room_id, 'tenant_id': current_user.tenant_id},
+            {'status': 1, 'housekeeping_status': 1}
+        )
+        if room_doc:
+            room_status = (
+                room_doc.get('status')
+                or room_doc.get('housekeeping_status')
+                or ''
+            ).lower()
+            room_ready = room_status in {
+                'clean', 'inspected', 'ready', 'vacant_clean', 'available'
+            }
+
     return {
         'success': True,
         'message': 'Web check-in completed',
         'digital_key': digital_key,
         'qr_code_data': booking.get('qr_code_data'),
-        'room_ready': True,  # TODO: Check actual room status
-        'instructions': 'Show this QR code at the front desk or use it with smart lock'
+        'room_ready': room_ready,
+        'room_status': room_status,
+        'instructions': (
+            'Show this QR code at the front desk or use it with smart lock'
+            if room_ready else
+            'Odanız hazırlanıyor, lobide bekleyebilir veya odanız hazır olduğunda bildirim alabilirsiniz.'
+        ),
     }
 
 
