@@ -1939,80 +1939,187 @@ async def adjust_stock(
 # Approval Models
 
 
-@router.get("/pos/menu-engineering")
-async def get_menu_engineering(current_user: User = Depends(get_current_user)):
-    """Menu engineering analysis (Stars, Plowhorses, Puzzles, Dogs) - REAL DATA"""
+_ME_RECOMMENDATIONS = {
+    'Stars':       'Yıldız ürün - menüde öne çıkar, kaliteyi koru, fiyat esnekliğini test et',
+    'Plowhorses':  'İş ineği - maliyeti düşür (porsiyon/tedarikçi), üst-satış kombinasyonu öner',
+    'Puzzles':     'Bulmaca - tanıtım/sunum iyileştir, menüde üst sıraya taşı, ad değiştir',
+    'Dogs':        'Köpek - menüden çıkar veya tarifi yeniden tasarla',
+}
 
-    # Get menu items with sales data from database
-    menu_items = await db.pos_menu_items.find({
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).to_list(200)
 
-    # If no menu items, return empty structure
-    if not menu_items:
-        return {
-            'items': [],
-            'summary': {
-                'stars_count': 0,
-                'plowhorses_count': 0,
-                'puzzles_count': 0,
-                'dogs_count': 0
-            },
-            'categories': {
-                'Stars': [],
-                'Plowhorses': [],
-                'Puzzles': [],
-                'Dogs': []
-            }
+@cached(ttl=180, key_prefix="menu_engineering")
+async def _build_menu_engineering(
+    tenant_id: str,
+    start_iso: str,
+    end_iso: str,
+    outlet_id: str | None,
+) -> dict[str, Any]:
+    """Sprint 33 R9: Kasavana-Smith menu engineering matrisi.
+
+    Popülerlik eşiği = (1 / N) × %70 (klasik menu-mix ortalaması).
+    Karlılık eşiği = ağırlıklı ortalama katkı payı (CM/birim).
+    """
+    # 1) Menü kataloğu — fiyat + maliyet için
+    catalog_raw = await db.pos_menu_items.find(
+        {'tenant_id': tenant_id}, {'_id': 0}
+    ).to_list(500)
+    catalog: dict[str, dict[str, Any]] = {}
+    for it in catalog_raw:
+        nm = it.get('name') or it.get('item_name')
+        if not nm:
+            continue
+        catalog[nm] = {
+            'price': float(it.get('price', 0) or 0),
+            'cost': float(it.get('cost', 0) or 0),
+            'menu_category': it.get('category') or 'Diğer',
         }
 
-    # Calculate profitability and popularity
-    analyzed_items = []
+    # 2) Sipariş satırlarını topla
+    order_filter: dict[str, Any] = {
+        'tenant_id': tenant_id,
+        'created_at': {'$gte': start_iso, '$lte': end_iso},
+    }
+    if outlet_id:
+        order_filter['outlet_id'] = outlet_id
 
-    for item in menu_items:
-        profit_margin = item.get('profit_margin', 0)
-        sales_count = item.get('sales_count', 0)
+    orders = await db.pos_orders.find(order_filter, {'_id': 0, 'items': 1}).to_list(20000)
 
-        # Categorize based on Boston Matrix
-        if profit_margin > 50 and sales_count > 100:
-            category = 'Stars'
-        elif profit_margin <= 50 and sales_count > 100:
-            category = 'Plowhorses'
-        elif profit_margin > 50 and sales_count <= 100:
-            category = 'Puzzles'
+    agg: dict[str, dict[str, float]] = {}
+    for order in orders:
+        for line in order.get('items', []) or []:
+            nm = line.get('item_name') or line.get('name') or 'Bilinmiyor'
+            qty = float(line.get('quantity', 1) or 1)
+            line_price = float(line.get('price', 0) or 0)
+            row = agg.setdefault(nm, {'qty': 0.0, 'revenue': 0.0})
+            row['qty'] += qty
+            row['revenue'] += qty * line_price
+
+    if not agg:
+        return {
+            'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
+            'outlet_id': outlet_id,
+            'stars': 0, 'plowhorses': 0, 'puzzles': 0, 'dogs': 0,
+            'menu_items': [],
+            'thresholds': {'popularity_pct': 0, 'avg_cm_per_unit': 0},
+            'totals': {'items': 0, 'units_sold': 0, 'revenue': 0.0, 'contribution_margin': 0.0},
+        }
+
+    # 3) Birim ekonomisi — fallback maliyet %35 food-cost varsayımı
+    enriched = []
+    total_qty = 0.0
+    total_cm = 0.0
+    for nm, row in agg.items():
+        cat = catalog.get(nm, {})
+        unit_price = cat.get('price') or (row['revenue'] / row['qty'] if row['qty'] else 0)
+        unit_cost = cat.get('cost') or unit_price * 0.35
+        cost_total = unit_cost * row['qty']
+        cm_total = row['revenue'] - cost_total
+        cm_per_unit = cm_total / row['qty'] if row['qty'] else 0
+        margin_pct = (cm_total / row['revenue'] * 100) if row['revenue'] else 0
+        enriched.append({
+            '_name': nm,
+            '_menu_cat': cat.get('menu_category', 'Diğer'),
+            '_qty': row['qty'],
+            '_revenue': row['revenue'],
+            '_cost': cost_total,
+            '_cm_total': cm_total,
+            '_cm_unit': cm_per_unit,
+            '_margin_pct': margin_pct,
+            '_unit_price': unit_price,
+            '_unit_cost': unit_cost,
+        })
+        total_qty += row['qty']
+        total_cm += cm_total
+
+    # 4) Eşikler
+    n_items = len(enriched)
+    pop_threshold_pct = (1.0 / n_items) * 70.0  # menu-mix klasik %70
+    cm_threshold = (total_cm / total_qty) if total_qty else 0
+
+    # 5) Sınıflandırma
+    out_items = []
+    counts = {'Stars': 0, 'Plowhorses': 0, 'Puzzles': 0, 'Dogs': 0}
+    for e in enriched:
+        pop_pct = (e['_qty'] / total_qty * 100) if total_qty else 0
+        high_pop = pop_pct >= pop_threshold_pct
+        high_cm = e['_cm_unit'] >= cm_threshold
+        if high_pop and high_cm:
+            cls = 'Stars'
+        elif high_pop and not high_cm:
+            cls = 'Plowhorses'
+        elif not high_pop and high_cm:
+            cls = 'Puzzles'
         else:
-            category = 'Dogs'
-
-        analyzed_items.append({
-            'item_name': item.get('name'),
-            'category': item.get('category'),
-            'price': item.get('price', 0),
-            'cost': item.get('cost', 0),
-            'profit_margin': profit_margin,
-            'sales_count': sales_count,
-            'revenue': item.get('price', 0) * sales_count,
-            'classification': category,
-            'recommendation': get_menu_recommendation(category)
+            cls = 'Dogs'
+        counts[cls] += 1
+        out_items.append({
+            'item_name': e['_name'],
+            'menu_category': e['_menu_cat'],
+            'category': cls,                # frontend bunu rozet için kullanıyor
+            'classification': cls,
+            'quantity_sold': int(e['_qty']),
+            'revenue': round(e['_revenue'], 2),
+            'unit_price': round(e['_unit_price'], 2),
+            'unit_cost': round(e['_unit_cost'], 2),
+            'contribution_margin': round(e['_cm_total'], 2),
+            'cm_per_unit': round(e['_cm_unit'], 2),
+            'profit_margin': round(e['_margin_pct'], 1),
+            'popularity_pct': round(pop_pct, 2),
+            'recommendation': _ME_RECOMMENDATIONS[cls],
         })
 
-    # Group by classification
-    summary = {
-        'Stars': [i for i in analyzed_items if i['classification'] == 'Stars'],
-        'Plowhorses': [i for i in analyzed_items if i['classification'] == 'Plowhorses'],
-        'Puzzles': [i for i in analyzed_items if i['classification'] == 'Puzzles'],
-        'Dogs': [i for i in analyzed_items if i['classification'] == 'Dogs']
-    }
+    # Yıldızlar önce, köpekler sonra
+    rank = {'Stars': 0, 'Puzzles': 1, 'Plowhorses': 2, 'Dogs': 3}
+    out_items.sort(key=lambda x: (rank[x['classification']], -x['revenue']))
 
     return {
-        'items': analyzed_items,
-        'summary': {
-            'stars_count': len(summary['Stars']),
-            'plowhorses_count': len(summary['Plowhorses']),
-            'puzzles_count': len(summary['Puzzles']),
-            'dogs_count': len(summary['Dogs'])
+        'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
+        'outlet_id': outlet_id,
+        'stars': counts['Stars'],
+        'plowhorses': counts['Plowhorses'],
+        'puzzles': counts['Puzzles'],
+        'dogs': counts['Dogs'],
+        'menu_items': out_items,
+        'thresholds': {
+            'popularity_pct': round(pop_threshold_pct, 2),
+            'avg_cm_per_unit': round(cm_threshold, 2),
+            'method': 'Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)',
         },
-        'categories': summary
+        'totals': {
+            'items': n_items,
+            'units_sold': int(total_qty),
+            'revenue': round(sum(e['_revenue'] for e in enriched), 2),
+            'contribution_margin': round(total_cm, 2),
+        },
     }
+
+
+@router.get("/pos/menu-engineering")
+async def get_menu_engineering(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    outlet_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Menü mühendisliği matrisi (Stars / Plowhorses / Puzzles / Dogs).
+
+    Kasavana-Smith metodu — gerçek `pos_orders` satışlarını `pos_menu_items`
+    katalog maliyetleriyle birleştirir. Eşikler hardcoded değil; popülerlik
+    eşiği (1/N)×%70, karlılık eşiği ağırlıklı ortalama katkı payı.
+    """
+    if start_date and end_date:
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+    else:
+        end = datetime.now(UTC)
+        start = end - timedelta(days=30)
+
+    return await _build_menu_engineering(
+        current_user.tenant_id,
+        start.isoformat(),
+        end.isoformat(),
+        outlet_id,
+    )
 
 
 
