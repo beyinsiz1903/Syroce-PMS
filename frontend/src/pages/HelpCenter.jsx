@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import {
   BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
   Package, Rocket, ScrollText, Search, Tag,

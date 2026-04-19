@@ -18,6 +18,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from cache_manager import cache as _cache
+from cache_manager import cached as _cached
 from core.audit import log_audit_event
 from core.booking_atomicity import (
     is_replica_set_unavailable,
@@ -139,9 +141,6 @@ async def create_supplier(
         after_value=doc, db=db)
     _invalidate_suppliers_cache(current_user.tenant_id)
     return _strip_id(doc)
-
-
-from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_suppliers_cache(tenant_id: str) -> None:

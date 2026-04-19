@@ -18,6 +18,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
+from cache_manager import cached as _cached
 from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
@@ -74,9 +76,6 @@ class ServiceIn(BaseModel):
     requires_room_type: str | None = None  # e.g. "wet_room"
     commission_rate: float = Field(0, ge=0, le=1)
     active: bool = True
-
-
-from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_spa_services_cache(tenant_id: str) -> None:

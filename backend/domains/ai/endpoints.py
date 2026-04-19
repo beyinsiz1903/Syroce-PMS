@@ -1,16 +1,16 @@
 """
 AI Intelligence API Endpoints
 """
+import asyncio as _asyncio
 import logging
-
-logger = logging.getLogger(__name__)
-
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from domains.ai.service import get_ai_service
-from server import User, get_current_user
+from server import User, db, get_current_user
+
+logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
 
@@ -25,8 +25,6 @@ async def get_daily_briefing(
     """
     try:
         # Get data from database — all 4 collections in parallel (1 RTT).
-        import asyncio as _asyncio
-        from server import db
         rooms, all_bookings, invoices, tenant = await _asyncio.gather(
             db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None),
             db.bookings.find({"tenant_id": current_user.tenant_id}).to_list(None),

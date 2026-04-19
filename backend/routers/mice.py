@@ -19,6 +19,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
+from cache_manager import cached as _cached
 from core.audit import log_audit_event
 from core.booking_atomicity import (
     is_replica_set_unavailable,
@@ -90,9 +92,6 @@ class FunctionSpaceIn(BaseModel):
     currency: str = "TRY"
     amenities: list[str] = Field(default_factory=list)  # ["projector","stage",...]
     active: bool = True
-
-
-from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
