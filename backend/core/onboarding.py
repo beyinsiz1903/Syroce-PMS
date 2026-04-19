@@ -189,31 +189,39 @@ async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
     from core.helpers import get_tenant_modules
     modules = get_tenant_modules(tenant) if tenant else {}
 
+    # Filter steps to only those the tenant has modules for.
+    eligible_steps = [
+        s for s in DEFAULT_STEPS
+        if not s.get("requires_module") or modules.get(s["requires_module"], False)
+    ]
+
+    # Run all auto-detect probes concurrently (was: sequential per-step query).
+    import asyncio as _asyncio
+    detect_tasks = []
+    for step in eligible_steps:
+        sid = step["step_id"]
+        already = completed_steps.get(sid, False)
+        if not already and step.get("auto_detect"):
+            detect_tasks.append(_auto_detect_step(tenant_id, step))
+        else:
+            async def _noop(v=already):
+                return v
+            detect_tasks.append(_noop())
+    detect_results = await _asyncio.gather(*detect_tasks)
+
     steps_result = []
     total = 0
     done = 0
-
-    for step in DEFAULT_STEPS:
-        # Skip steps that require modules the tenant doesn't have
-        req_module = step.get("requires_module")
-        if req_module and not modules.get(req_module, False):
-            continue
-
+    for step, detected in zip(eligible_steps, detect_results, strict=True):
+        sid = step["step_id"]
         total += 1
-        is_completed = completed_steps.get(step["step_id"], False)
-
-        # Auto-detect if not manually completed
-        if not is_completed and step.get("auto_detect"):
-            is_completed = await _auto_detect_step(tenant_id, step)
-            if is_completed:
-                # Save auto-detected completion
-                completed_steps[step["step_id"]] = True
-
+        is_completed = completed_steps.get(sid, False) or bool(detected)
+        if is_completed and not completed_steps.get(sid, False):
+            completed_steps[sid] = True
         if is_completed:
             done += 1
-
         steps_result.append({
-            "step_id": step["step_id"],
+            "step_id": sid,
             "label": step["label"],
             "description": step["description"],
             "category": step["category"],

@@ -24,19 +24,15 @@ async def get_daily_briefing(
     Get AI-generated daily briefing for dashboard
     """
     try:
-        # Get data from database
+        # Get data from database — all 4 collections in parallel (1 RTT).
+        import asyncio as _asyncio
         from server import db
-
-        # Get PMS stats
-        rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-        all_bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
-
-        # Get invoice stats
-        invoices = await db.accounting_invoices.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        rooms, all_bookings, invoices, tenant = await _asyncio.gather(
+            db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None),
+            db.bookings.find({"tenant_id": current_user.tenant_id}).to_list(None),
+            db.accounting_invoices.find({"tenant_id": current_user.tenant_id}).to_list(None),
+            db.tenants.find_one({"id": current_user.tenant_id}),
+        )
 
         total_rooms = len(rooms)
 
@@ -85,8 +81,7 @@ async def get_daily_briefing(
                 if ci >= month_start:
                     monthly_revenue += float(b.get('total_amount', 0) or 0)
 
-        # Get hotel name from tenant
-        tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+        # Hotel name from tenant (already fetched above).
         hotel_name = tenant.get('property_name', 'Hotel') if tenant else 'Hotel'
 
         occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0

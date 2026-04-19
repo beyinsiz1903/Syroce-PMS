@@ -73,45 +73,47 @@ async def ops_overview(
     cutoff_24h = (now - timedelta(hours=24)).isoformat()
     cutoff_30m = (now - timedelta(minutes=30)).isoformat()
 
-    # Failure counts
-    open_count = await tracker.count_open(tenant_id=tenant_id)
-    by_severity = await tracker.count_by_severity(tenant_id=tenant_id)
-    by_type = await tracker.count_by_type(tenant_id=tenant_id)
-    by_operation = await tracker.count_by_operation(tenant_id=tenant_id)
-
-    # Outbox: stuck events (pending > 30 min)
+    # All independent counts/aggregates run concurrently (1 RTT vs 13).
+    import asyncio as _asyncio
+    cutoff_1h = (now - timedelta(hours=1)).isoformat()
     outbox_query = {"status": {"$in": ["pending", "retry"]}, "created_at": {"$lte": cutoff_30m}}
-    stuck_outbox = await db.outbox_events.count_documents(outbox_query)
-
-    # Imports: failed last 24h + pending
     import_fail_query = {"import_status": "failed", "updated_at": {"$gte": cutoff_24h}}
-    failed_imports = await db.imported_reservations.count_documents(import_fail_query)
-    pending_imports = await db.imported_reservations.count_documents(
-        {"import_status": {"$in": ["pending_auto_import", "retry"]}}
-    )
 
-    # Sync jobs: success rate
-    sync_total = await db.cp_sync_jobs.count_documents({"started_at": {"$gte": cutoff_24h}})
-    sync_success = await db.cp_sync_jobs.count_documents(
-        {"started_at": {"$gte": cutoff_24h}, "status": "completed"}
+    async def _hr_count():
+        try:
+            return await db.hotelrunner_connections.count_documents({"is_active": True})
+        except Exception:
+            return 0
+
+    (
+        open_count, by_severity, by_type, by_operation,
+        stuck_outbox, failed_imports, pending_imports,
+        sync_total, sync_success, secret_anomalies,
+        exely_connectors, hr_connectors, recent_failures,
+    ) = await _asyncio.gather(
+        tracker.count_open(tenant_id=tenant_id),
+        tracker.count_by_severity(tenant_id=tenant_id),
+        tracker.count_by_type(tenant_id=tenant_id),
+        tracker.count_by_operation(tenant_id=tenant_id),
+        db.outbox_events.count_documents(outbox_query),
+        db.imported_reservations.count_documents(import_fail_query),
+        db.imported_reservations.count_documents(
+            {"import_status": {"$in": ["pending_auto_import", "retry"]}}
+        ),
+        db.cp_sync_jobs.count_documents({"started_at": {"$gte": cutoff_24h}}),
+        db.cp_sync_jobs.count_documents(
+            {"started_at": {"$gte": cutoff_24h}, "status": "completed"}
+        ),
+        db.secret_access_audit.count_documents(
+            {"result": {"$in": ["failure", "denied", "not_found"]},
+             "timestamp": {"$gte": cutoff_24h}}
+        ),
+        db.exely_connections.count_documents({"is_active": True}),
+        _hr_count(),
+        db.cp_failures.count_documents({"created_at": {"$gte": cutoff_1h}}),
     )
     sync_rate = (sync_success / sync_total * 100) if sync_total > 0 else 100.0
-
-    # Secret access anomalies (failures in last 24h)
-    secret_anomalies = await db.secret_access_audit.count_documents(
-        {"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff_24h}}
-    )
-
-    # Active connectors
-    active_connectors = await db.exely_connections.count_documents({"is_active": True})
-    try:
-        active_connectors += await db.hotelrunner_connections.count_documents({"is_active": True})
-    except Exception:
-        pass
-
-    # Recent error rate (failures last 1h / total operations)
-    cutoff_1h = (now - timedelta(hours=1)).isoformat()
-    recent_failures = await db.cp_failures.count_documents({"created_at": {"$gte": cutoff_1h}})
+    active_connectors = exely_connectors + hr_connectors
 
     return OverviewResponse(
         open_failures=open_count,

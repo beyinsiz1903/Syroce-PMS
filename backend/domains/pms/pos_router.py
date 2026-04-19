@@ -283,48 +283,49 @@ async def get_weekly_forecast(
     """Get weekly forecast for next 4 weeks"""
     current_user = await get_current_user(credentials)
 
+    import asyncio as _asyncio
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0)
-    forecast_weeks = []
 
-    for week_num in range(4):
-        week_start = today + timedelta(days=week_num * 7)
-        week_end = week_start + timedelta(days=6)
+    # Hoist total_rooms out of the loop; build per-week windows.
+    weeks = [(week_num,
+              today + timedelta(days=week_num * 7),
+              today + timedelta(days=week_num * 7 + 6))
+             for week_num in range(4)]
 
-        # Get bookings for this week
-        bookings_count = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$gte': week_start, '$lte': week_end},
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-        })
-
-        # Calculate revenue
-        revenue_pipeline = [
-            {
-                '$match': {
-                    'tenant_id': current_user.tenant_id,
-                    'check_in': {'$gte': week_start, '$lte': week_end},
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-                }
-            },
-            {
-                '$group': {
-                    '_id': None,
-                    'total_revenue': {'$sum': '$total_amount'},
-                    'avg_rate': {'$avg': '$room_rate'}
-                }
-            }
+    async def _week_revenue(start, end):
+        pipeline = [
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'check_in': {'$gte': start, '$lte': end},
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+            }},
+            {'$group': {'_id': None,
+                        'total_revenue': {'$sum': '$total_amount'},
+                        'avg_rate': {'$avg': '$room_rate'}}}
         ]
+        async for d in db.bookings.aggregate(pipeline):
+            return d
+        return None
 
-        revenue_data = None
-        async for data in db.bookings.aggregate(revenue_pipeline):
-            revenue_data = data
+    # Run total_rooms + per-week (count + revenue) concurrently.
+    total_rooms_task = db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    booking_tasks = [
+        db.bookings.count_documents({
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$gte': s, '$lte': e},
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+        }) for (_, s, e) in weeks
+    ]
+    revenue_tasks = [_week_revenue(s, e) for (_, s, e) in weeks]
+    results = await _asyncio.gather(total_rooms_task, *booking_tasks, *revenue_tasks)
+    total_rooms = results[0]
+    booking_counts = results[1:1 + len(weeks)]
+    revenue_results = results[1 + len(weeks):]
 
-        # Get total rooms
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-
-        # Calculate occupancy
+    forecast_weeks = []
+    for (week_num, week_start, week_end), bookings_count, revenue_data in zip(
+            weeks, booking_counts, revenue_results, strict=True):
         expected_occupancy = (bookings_count / (total_rooms * 7)) * 100 if total_rooms > 0 else 0
-
         forecast_weeks.append({
             'week_number': week_num + 1,
             'start_date': week_start.date().isoformat(),
@@ -350,11 +351,12 @@ async def get_monthly_forecast(
     """Get monthly forecast for next 3 months"""
     current_user = await get_current_user(credentials)
 
+    import asyncio as _asyncio
     today = datetime.now(UTC)
-    forecast_months = []
 
+    # Build per-month windows up-front.
+    months_spec = []
     for month_offset in range(3):
-        # Calculate month start and end
         if month_offset == 0:
             month_start = today.replace(day=1, hour=0, minute=0, second=0)
         else:
@@ -364,52 +366,49 @@ async def get_monthly_forecast(
                 month = month - 12
                 year += 1
             month_start = datetime(year, month, 1, tzinfo=UTC)
-
-        # Calculate month end
         if month_start.month == 12:
             month_end = datetime(month_start.year + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
         else:
             month_end = datetime(month_start.year, month_start.month + 1, 1, tzinfo=UTC) - timedelta(days=1)
+        months_spec.append((month_start, month_end))
 
-        # Get bookings
-        bookings_count = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$gte': month_start, '$lte': month_end},
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-        })
-
-        # Calculate revenue
-        revenue_pipeline = [
-            {
-                '$match': {
-                    'tenant_id': current_user.tenant_id,
-                    'check_in': {'$gte': month_start, '$lte': month_end},
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-                }
-            },
-            {
-                '$group': {
-                    '_id': None,
-                    'total_revenue': {'$sum': '$total_amount'},
-                    'avg_rate': {'$avg': '$room_rate'}
-                }
-            }
+    async def _month_revenue(start, end):
+        pipeline = [
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'check_in': {'$gte': start, '$lte': end},
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+            }},
+            {'$group': {'_id': None,
+                        'total_revenue': {'$sum': '$total_amount'},
+                        'avg_rate': {'$avg': '$room_rate'}}}
         ]
+        async for d in db.bookings.aggregate(pipeline):
+            return d
+        return None
 
-        revenue_data = None
-        async for data in db.bookings.aggregate(revenue_pipeline):
-            revenue_data = data
+    total_rooms_task = db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    booking_tasks = [
+        db.bookings.count_documents({
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$gte': s, '$lte': e},
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+        }) for (s, e) in months_spec
+    ]
+    revenue_tasks = [_month_revenue(s, e) for (s, e) in months_spec]
+    results = await _asyncio.gather(total_rooms_task, *booking_tasks, *revenue_tasks)
+    total_rooms = results[0]
+    booking_counts = results[1:1 + len(months_spec)]
+    revenue_results = results[1 + len(months_spec):]
 
-        # Get total rooms and days
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    forecast_months = []
+    for (month_start, month_end), bookings_count, revenue_data in zip(
+            months_spec, booking_counts, revenue_results, strict=True):
         days_in_month = (month_end - month_start).days + 1
-
-        # Calculate metrics
         expected_occupancy = (bookings_count / (total_rooms * days_in_month)) * 100 if total_rooms > 0 else 0
         expected_revenue = revenue_data['total_revenue'] if revenue_data else 0
         avg_rate = revenue_data['avg_rate'] if revenue_data else 0
         revpar = expected_revenue / (total_rooms * days_in_month) if total_rooms > 0 else 0
-
         forecast_months.append({
             'month': month_start.strftime('%B %Y'),
             'month_number': month_start.month,

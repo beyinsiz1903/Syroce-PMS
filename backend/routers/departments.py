@@ -1227,10 +1227,26 @@ async def get_rate_recommendations(
     if not base_rates:
         base_rates = {'standard': 100, 'deluxe': 150, 'suite': 250}
 
+    # Hoist tenant-wide constants out of the per-day loop, then run all
+    # historical lookups concurrently to cut Atlas round-trips from 14 → 1.
+    import asyncio as _asyncio
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    target_dates = [today + timedelta(days=d) for d in range(days_ahead)]
+    same_dates_ly = [td.replace(year=td.year - 1) for td in target_dates]
+    historical_counts = await _asyncio.gather(*[
+        db.bookings.count_documents({
+            'tenant_id': current_user.tenant_id,
+            'check_in': {
+                '$gte': sd.isoformat(),
+                '$lte': (sd + timedelta(days=1)).isoformat()
+            }
+        }) for sd in same_dates_ly
+    ])
+
     recommendations = []
 
     for days in range(days_ahead):
-        target_date = today + timedelta(days=days)
+        target_date = target_dates[days]
 
         # Forecast occupancy
         base_occ = 65
@@ -1239,15 +1255,8 @@ async def get_rate_recommendations(
         variation = random.randint(-5, 8)
         forecasted_occ = min(98, base_occ + weekend_boost + seasonal + variation)
 
-        # Get historical bookings for this date range
-        same_date_last_year = target_date.replace(year=target_date.year - 1)
-        historical = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {
-                '$gte': same_date_last_year.isoformat(),
-                '$lte': (same_date_last_year + timedelta(days=1)).isoformat()
-            }
-        })
+        # Historical bookings (precomputed in parallel above).
+        historical = historical_counts[days]
 
         # Rate recommendation logic
         rate_adjustments = {}
@@ -1323,8 +1332,7 @@ async def get_rate_recommendations(
                 'suggested_promotions': ['Weekend getaway', 'Extended stay discount']
             }
 
-        # Calculate potential revenue impact
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+        # Calculate potential revenue impact (total_rooms hoisted above).
         potential_revenue_impact = sum(
             adj['adjustment_amount'] * total_rooms * (forecasted_occ / 100)
             for adj in rate_adjustments.values()
