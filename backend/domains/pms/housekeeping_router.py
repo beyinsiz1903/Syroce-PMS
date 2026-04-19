@@ -2,6 +2,7 @@
 PMS / Housekeeping Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import base64
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta

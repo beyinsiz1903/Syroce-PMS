@@ -11,11 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core.cache import cached
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import (
     CreateDepartmentFeedbackRequest,
     CreateSurveyRequest,
     ExternalReviewWebhookRequest,
+    RMSSuggestion,
     SubmitSurveyResponseRequest,
     User,
 )

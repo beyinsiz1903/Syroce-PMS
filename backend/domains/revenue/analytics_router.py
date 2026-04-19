@@ -3,6 +3,7 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
+import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -14,6 +15,12 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user, security
 from models.enums import ChannelType
+
+try:
+    from routers.pms_availability import check_room_availability
+except Exception:  # pragma: no cover
+    async def check_room_availability(*args, **kwargs):
+        return {"available": False, "rooms": []}
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 

@@ -24,6 +24,22 @@ from domains.revenue.pricing.pricing_service import pricing_service
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from models.schemas import PriceAnalysis, User
 
+
+def get_pricing_reason(strategy: str | None, demand: float | None = None) -> str:
+    """Return a human-readable rationale for a price recommendation."""
+    if not strategy:
+        return "Default rate plan applied."
+    s = strategy.lower()
+    if "high" in s or (demand is not None and demand > 0.85):
+        return "High demand detected — premium pricing applied."
+    if "low" in s or (demand is not None and demand < 0.4):
+        return "Low demand detected — discount strategy applied."
+    if "competitor" in s:
+        return "Adjusted relative to competitor benchmark."
+    if "lead_time" in s:
+        return "Lead-time based curve applied."
+    return f"Strategy '{strategy}' applied."
+
 logger = logging.getLogger(__name__)
 
 try:

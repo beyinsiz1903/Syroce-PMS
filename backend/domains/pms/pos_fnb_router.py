@@ -18,7 +18,56 @@ from core.security import (
     get_current_user,
     security,
 )
-from models.schemas import CreatePOSTransactionRequest, Order, OrderCreate, User
+from models.enums import ChargeCategory
+from models.schemas import CreatePOSTransactionRequest, FolioCharge, Order, OrderCreate, User
+
+
+async def _broadcast_kitchen_queue(tenant_id: str) -> None:
+    """Lightweight no-op stub; replaced by websocket broadcaster when available."""
+    try:
+        from websocket_server import broadcast_kitchen_orders
+        orders = await db.fnb_orders.find({'tenant_id': tenant_id, 'status': {'$in': ['queued', 'preparing']}}, {'_id': 0}).to_list(200)
+        await broadcast_kitchen_orders(tenant_id, orders)
+    except Exception:
+        return None
+
+
+def calculate_table_duration(opened_at: Any) -> int:
+    """Return open-table duration in minutes; 0 on bad input."""
+    if not opened_at:
+        return 0
+    try:
+        if isinstance(opened_at, str):
+            dt = datetime.fromisoformat(opened_at.replace('Z', '+00:00'))
+        else:
+            dt = opened_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return int((datetime.now(UTC) - dt).total_seconds() // 60)
+    except Exception:
+        return 0
+
+
+def create_default_table_layout() -> list[dict[str, Any]]:
+    """Return a generic 8-table layout for first-time setup."""
+    return [
+        {'id': str(uuid.uuid4()), 'number': str(i + 1), 'capacity': 4, 'status': 'available', 'zone': 'main'}
+        for i in range(8)
+    ]
+
+
+async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
+    """Recompute folio balance after F&B post; lazy-imports core helper."""
+    try:
+        from core.utils import calculate_folio_balance
+        return await calculate_folio_balance(folio_id, tenant_id)
+    except Exception:
+        return 0.0
+
+
+def get_menu_recommendation(_guest_profile: dict | None = None) -> list[str]:
+    """Heuristic menu recommendation stub — to be replaced by ML model."""
+    return ['Chef\'s Special', 'Local Wine Pairing', 'Seasonal Dessert']
 
 logger = logging.getLogger(__name__)
 

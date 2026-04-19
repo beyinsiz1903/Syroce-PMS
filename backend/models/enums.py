@@ -125,6 +125,12 @@ class ChannelStatus(str, Enum):
     ERROR = "error"
     SYNCING = "syncing"
 
+class ChannelHealth(str, Enum):
+    HEALTHY = "healthy"
+    DELAYED = "delayed"
+    ERROR = "error"
+    OFFLINE = "offline"
+
 class MappingStatus(str, Enum):
     MAPPED = "mapped"
     UNMAPPED = "unmapped"

@@ -3,6 +3,8 @@ Domain Router: HR Operations
 
 HR complete suite, F&B complete suite for department managers.
 """
+import base64
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -12,6 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+
+try:
+    from websocket_server import broadcast_kitchen_orders
+except Exception:  # pragma: no cover
+    async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
+        return None
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 

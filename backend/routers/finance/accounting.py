@@ -15,6 +15,7 @@ try:
 except ImportError:
     Workbook = None
 
+from _legacy.accounting_models import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from core.database import db
 from core.security import get_current_user
 from models.enums import PaymentStatus

@@ -15,6 +15,7 @@ except ImportError:
 
 from core.database import db
 from core.security import get_current_user
+from models.enums import RiskLevel
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
 
@@ -231,42 +232,6 @@ async def get_cashier_shift_report(
         'average_transaction': total_collected / transaction_count if transaction_count > 0 else 0,
         'generated_at': datetime.now(UTC).isoformat()
     }
-
-    payment_count = 0
-
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': start_of_month,
-            '$lt': end_of_month
-        }
-    }):
-        total_collected += payment.get('amount', 0)
-        payment_count += 1
-
-    # Calculate collection rate (collected vs expected)
-    total_expected = 0.0
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': start_of_month,
-            '$lt': end_of_month
-        }
-    }):
-        total_expected += booking.get('total_amount', 0)
-
-    collection_rate = (total_collected / total_expected * 100) if total_expected > 0 else 0
-
-    return {
-        'year': target_year,
-        'month': target_month,
-        'total_collected': total_collected,
-        'payment_count': payment_count,
-        'total_expected': total_expected,
-        'collection_rate': collection_rate,
-        'outstanding': total_expected - total_collected
-    }
-
 
 
 @router.get("/finance/mobile/pending-receivables")

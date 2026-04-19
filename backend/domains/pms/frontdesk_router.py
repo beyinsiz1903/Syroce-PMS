@@ -2,7 +2,9 @@
 PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import base64
 import io
+import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -19,7 +21,7 @@ from core.security import (
 )
 from domains.pms.frontdesk_service import frontdesk_service
 from models.enums import BookingStatus, ChannelType
-from models.schemas import User
+from models.schemas import Booking, FolioCharge, Guest, User
 
 logger = logging.getLogger(__name__)
 

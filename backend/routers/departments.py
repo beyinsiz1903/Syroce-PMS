@@ -1984,9 +1984,10 @@ async def export_forecast_detail_excel(
 
     NOTE: This uses get_forecast endpoint internally if available.
     """
-    # Reuse get_forecast if defined
+    # Reuse get_forecast if defined (lazy-loaded to avoid circular imports)
     try:
-        forecast_response = await get_forecast(
+        from routers.reports import get_forecast as _get_forecast
+        forecast_response = await _get_forecast(
             days=(datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days + 1,
             current_user=current_user,
             _=None,
@@ -2013,40 +2014,6 @@ async def export_forecast_detail_excel(
     )
 
     filename = f"forecast_detail_{start_date}_to_{end_date}.xlsx"
-    return excel_response(wb, filename)
-
-    # Prepare Excel
-    headers = [
-        'Date',
-        'Room Type',
-        'Rate Plan',
-        'Nights',
-        'Revenue',
-        'ADR',
-    ]
-
-    data: list[list[Any]] = []
-    for key, row in sorted(daily_stats.items(), key=lambda x: (x[1]['date'], x[1]['room_type'])):
-        nights = row['nights'] or 1
-        adr = row['revenue'] / nights
-        data.append([
-            row['date'],
-            row['room_type'],
-            row['rate_plan'],
-            row['nights'],
-            round(row['revenue'], 2),
-            round(adr, 2),
-        ])
-
-    title = f"Revenue Detail {start_date} to {end_date}"
-    wb = create_excel_workbook(
-        title=title,
-        headers=headers,
-        data=data,
-        sheet_name="Revenue Detail",
-    )
-
-    filename = f"revenue_detail_{start_date}_to_{end_date}.xlsx"
     return excel_response(wb, filename)
 
 
@@ -2557,7 +2524,60 @@ async def ai_sentiment_analysis(
     if not review_text:
         raise HTTPException(status_code=400, detail='Review text is required')
 
-    # Simple keyword-based sentiment analysis (can be replaced with actual AI API)
+    review_lower = review_text.lower()
+
+    negative_keywords = ['dirty', 'broken', 'bad', 'terrible', 'awful', 'poor', 'noise', 'smell', 'rude', 'slow']
+    positive_keywords = ['great', 'excellent', 'amazing', 'wonderful', 'clean', 'friendly', 'helpful', 'perfect', 'love']
+
+    negative_count = sum(1 for keyword in negative_keywords if keyword in review_lower)
+    positive_count = sum(1 for keyword in positive_keywords if keyword in review_lower)
+
+    if negative_count > positive_count:
+        sentiment = 'negative'
+        confidence = min(0.6 + (negative_count * 0.1), 0.95)
+    elif positive_count > negative_count:
+        sentiment = 'positive'
+        confidence = min(0.6 + (positive_count * 0.1), 0.95)
+    else:
+        sentiment = 'neutral'
+        confidence = 0.5
+
+    issues = []
+    if 'dirty' in review_lower or 'clean' in review_lower:
+        issues.append({'category': 'Cleanliness', 'description': 'Guest mentioned cleanliness concerns', 'severity': 'high' if 'dirty' in review_lower else 'medium'})
+    if 'broken' in review_lower or 'repair' in review_lower:
+        issues.append({'category': 'Maintenance', 'description': 'Equipment or room maintenance issue', 'severity': 'high'})
+    if 'noise' in review_lower:
+        issues.append({'category': 'Noise', 'description': 'Noise complaint detected', 'severity': 'medium'})
+    if 'rude' in review_lower or 'unfriendly' in review_lower:
+        issues.append({'category': 'Staff Behavior', 'description': 'Staff attitude issue mentioned', 'severity': 'high'})
+
+    highlights = []
+    if 'friendly' in review_lower or 'helpful' in review_lower:
+        highlights.append({'category': 'Staff Friendliness', 'description': 'Guest praised staff attitude'})
+    if 'clean' in review_lower and 'dirty' not in review_lower:
+        highlights.append({'category': 'Cleanliness', 'description': 'Guest appreciated room cleanliness'})
+    if 'location' in review_lower and ('great' in review_lower or 'perfect' in review_lower):
+        highlights.append({'category': 'Location', 'description': 'Guest loved the location'})
+
+    recommendations = []
+    if sentiment == 'negative':
+        recommendations.append('Contact guest immediately for service recovery')
+        recommendations.append('Assign compensation (points/discount) if appropriate')
+        if issues:
+            recommendations.append(f'Create maintenance task for {issues[0]["category"]}')
+    elif sentiment == 'positive':
+        recommendations.append('Thank guest and encourage loyalty program enrollment')
+        recommendations.append('Share review on social media (with permission)')
+
+    return {
+        'sentiment': sentiment,
+        'confidence': confidence,
+        'issues': issues,
+        'highlights': highlights,
+        'recommendations': recommendations,
+    }
+
 
 @router.post("/bookings/walk-in-quick")
 async def create_walk_in_booking(data: dict, current_user: User = Depends(get_current_user)):
@@ -2605,91 +2625,6 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
 
     return {'booking_id': booking_id, 'room_number': available_room['room_number']}
 
-
-    review_lower = review_text.lower()
-
-    # Negative keywords
-    negative_keywords = ['dirty', 'broken', 'bad', 'terrible', 'awful', 'poor', 'noise', 'smell', 'rude', 'slow']
-    # Positive keywords
-    positive_keywords = ['great', 'excellent', 'amazing', 'wonderful', 'clean', 'friendly', 'helpful', 'perfect', 'love']
-
-    negative_count = sum(1 for keyword in negative_keywords if keyword in review_lower)
-    positive_count = sum(1 for keyword in positive_keywords if keyword in review_lower)
-
-    # Determine sentiment
-    if negative_count > positive_count:
-        sentiment = 'negative'
-        confidence = min(0.6 + (negative_count * 0.1), 0.95)
-    elif positive_count > negative_count:
-        sentiment = 'positive'
-        confidence = min(0.6 + (positive_count * 0.1), 0.95)
-    else:
-        sentiment = 'neutral'
-        confidence = 0.5
-
-    # Detect issues
-    issues = []
-    if 'dirty' in review_lower or 'clean' in review_lower:
-        issues.append({
-            'category': 'Cleanliness',
-            'description': 'Guest mentioned cleanliness concerns',
-            'severity': 'high' if 'dirty' in review_lower else 'medium'
-        })
-    if 'broken' in review_lower or 'repair' in review_lower:
-        issues.append({
-            'category': 'Maintenance',
-            'description': 'Equipment or room maintenance issue',
-            'severity': 'high'
-        })
-    if 'noise' in review_lower:
-        issues.append({
-            'category': 'Noise',
-            'description': 'Noise complaint detected',
-            'severity': 'medium'
-        })
-    if 'rude' in review_lower or 'unfriendly' in review_lower:
-        issues.append({
-            'category': 'Staff Behavior',
-            'description': 'Staff attitude issue mentioned',
-            'severity': 'high'
-        })
-
-    # Detect highlights
-    highlights = []
-    if 'friendly' in review_lower or 'helpful' in review_lower:
-        highlights.append({
-            'category': 'Staff Friendliness',
-            'description': 'Guest praised staff attitude'
-        })
-    if 'clean' in review_lower and 'dirty' not in review_lower:
-        highlights.append({
-            'category': 'Cleanliness',
-            'description': 'Guest appreciated room cleanliness'
-        })
-    if 'location' in review_lower and ('great' in review_lower or 'perfect' in review_lower):
-        highlights.append({
-            'category': 'Location',
-            'description': 'Guest loved the location'
-        })
-
-    # Generate recommendations
-    recommendations = []
-    if sentiment == 'negative':
-        recommendations.append('Contact guest immediately for service recovery')
-        recommendations.append('Assign compensation (points/discount) if appropriate')
-        if issues:
-            recommendations.append(f'Create maintenance task for {issues[0]["category"]}')
-    elif sentiment == 'positive':
-        recommendations.append('Thank guest and encourage loyalty program enrollment')
-        recommendations.append('Share review on social media (with permission)')
-
-    return {
-        'sentiment': sentiment,
-        'confidence': confidence,
-        'issues': issues,
-        'highlights': highlights,
-        'recommendations': recommendations
-    }
 
 @router.get("/tasks/kanban")
 @cached(ttl=180, key_prefix="tasks_kanban")  # Cache for 3 min
@@ -2768,6 +2703,23 @@ async def update_loyalty_tier_benefits(
 
     return {'message': f'{len(tiers)} tier benefits updated successfully'}
 
+
+@router.get("/finance/mtd-cost-summary")
+@cached(ttl=600, key_prefix="finance_mtd_cost_summary")
+async def get_mtd_cost_summary(current_user: User = Depends(get_current_user)):
+    """Month-to-date cost summary by category with per-room metrics."""
+    today = datetime.now(UTC).date()
+    month_start = today.replace(day=1)
+    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
+    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+
+    purchase_orders = await db.purchase_orders.find({
+        'tenant_id': current_user.tenant_id,
+        'created_at': {
+            '$gte': month_start_dt.isoformat(),
+            '$lte': today_end.isoformat()
+        }
+    }).to_list(10000)
 
     # Map purchase order categories to cost categories
     category_mapping = {
