@@ -1703,3 +1703,72 @@ ile inceler (Opera "User Activity" ekranı muadili).
 - Versiyon kontrolü Opera User Activity ile aynı UX seviyesine çıktı: her
   kaydın geçmişi kullanıcının önündeki ikonla bir tıkla erişilir; tüm domain
   router'ları (mice + procurement) tek timeline schema'sını besliyor.
+
+---
+
+## Sprint 26 — Konaklama Vergisi Beyannamesi: Tam Otomasyon (Apr 2026)
+
+### Strateji
+Elektraweb'in en sevilen özelliği "Konaklama Vergisi Beyannamesi otomasyonu" —
+mevcut modülümüz aylık matrahı topluyordu ama her açılışta yeniden hesaplıyor,
+**onay/kilit + GİB tahakkuk numarası + ödeme izi + GİB-uyumlu XML** üretmiyordu.
+Sprint 26 bu eksiği kapatır: dönem snapshot'ı kalıcı, durum makinesi (taslak →
+onaylı → gönderildi → ödendi), denetim için XML/JSON arşiv, geçmiş listesi.
+
+### Backend (`backend/routers/finance/konaklama_vergisi.py`)
+- **Yeni koleksiyon**: `tax_declarations` — `(tenant_id, period, kind)` unique
+  + `(tenant_id, status, period DESC)` arama indeksi.
+- `POST /finance/konaklama-vergisi/declaration/finalize` — `_aggregate_period`
+  çıktısının snapshot'ını alır, `tenant` bilgilerini ekler, status="finalized"
+  ile yazar. **Idempotent**: aynı dönem için non-draft bir kayıt varsa onu
+  döner (paid → finalize = no-op, durum korunur).
+- `GET /finance/konaklama-vergisi/declarations` — geçmiş listesi (24 varsayılan,
+  120 üst sınır), satır detayları hariç (özet için).
+- `GET /finance/konaklama-vergisi/declarations/{id}` — tam kayıt.
+- `POST .../submit` — GİB tahakkuk fiş numarasını kaydeder; yalnızca
+  status="finalized" iken kabul eder, aksi 409.
+- `POST .../pay` — banka dekont referansı + tutar; status finalized/submitted
+  iken kabul eder.
+- `GET .../export?format=xml|json` — dönem snapshot'ını GİB form alanlarıyla
+  1-1 eşleşen `<KonaklamaVergisiBeyannamesi>` XML'ine veya tam JSON arşive
+  serialize eder; `Content-Disposition` ile `kvb-YYYY-MM.{xml,json}` indirir.
+- Tüm mutasyonlar `create_audit_log` ile işlenir
+  (`FINALIZE/SUBMIT/PAY_KONAKLAMA_BEYANNAME`).
+
+### Frontend (`frontend/src/pages/KonaklamaVergisiModule.jsx`)
+- Yeni "Geçmiş" sekmesi — finalize edilmiş tüm beyannameler durum rozetleriyle
+  (Taslak/Onaylı/Gönderildi/Ödendi), matrah/vergi/son tarih/tahakkuk/dekont
+  sütunları, satır başına XML indirme ikonu.
+- Beyanname sekmesi yeniden yapılandırıldı:
+  - Dönem önizlemesi yüklendiğinde mevcut snapshot var mı kontrolü
+    (`/declarations` listesi) → varsa kilitli durum şeridi (status badge,
+    onay tarihi, tahakkuk no, dekont no).
+  - Aksiyon butonları durum-bağımlı:
+    - Snapshot yoksa → **Beyannameyi Onayla & Kilitle** (confirm dialog ile).
+    - Onaylı → **GİB Tahakkuk Numarası Kaydet** (prompt).
+    - Onaylı/Gönderildi → **Ödeme Kaydet** (prompt, otomatik tutar).
+    - Snapshot var → **XML İndir (GİB)** + **JSON Arşiv** butonları.
+- Yeni `StatusBadge` reusable; `STATUS_BADGE` renk haritası.
+
+### Smoke (Atlas — 19 Apr 2026)
+- ✅ 2026-04 finalize → `9baa67b1` status="finalized" total_tax=0 (test
+  tenant'ında oda satırı yok ama akış doğrulandı).
+- ✅ İdempotent: aynı dönem yeniden finalize → aynı id, status korundu.
+- ✅ Submit `GIB-2026-04-987654` → status="submitted".
+- ✅ Pay `BANKA-TX-2026-04-001` → status="paid" paid_amount=0.
+- ✅ Paid sonrası finalize → durum "paid" korundu (no-op).
+- ✅ Paid sonrası submit → **409** "Yalnızca onaylanmış (finalized)
+  beyannameler gönderilebilir (mevcut: paid)".
+- ✅ History list → 1 kayıt, durum/tutar/referanslar görünür.
+- ✅ XML export — geçerli UTF-8 envelope, `<Donem>2026-04</Donem>`,
+  `<SonOdemeTarihi>2026-05-26</SonOdemeTarihi>`, `<OtelKodu>100001</OtelKodu>`,
+  KDV'siz matrah ve %2 oran 1-1 GİB form alanları.
+
+### Etki
+- Türk PMS rakipleri (Elektraweb) ile paritenin ötesinde: durum makinesi +
+  audit log ile dönem-bazlı denetim izi (Elektraweb'de yalnızca PDF üretir,
+  durumu siz manuel takip edersiniz). XML çıktısı muhasebe yazılımlarına
+  doğrudan import için hazır.
+- Aynı altyapı (`tax_declarations` koleksiyonu + `kind` ayrımı) ileride
+  KDV Beyannamesi, Damga Vergisi, Stopaj gibi diğer aylık beyannamelerde
+  yeniden kullanılabilir.

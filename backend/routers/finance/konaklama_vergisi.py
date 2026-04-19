@@ -15,6 +15,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -214,6 +215,272 @@ async def declaration(
         "currency": "TRY",
         "law_reference": "7194 sayılı Kanun — Konaklama Vergisi",
     }
+
+
+_DECL_INDEXES_READY = False
+
+
+async def _ensure_declaration_indexes() -> None:
+    global _DECL_INDEXES_READY
+    if _DECL_INDEXES_READY:
+        return
+    await db.tax_declarations.create_index(
+        [("tenant_id", 1), ("period", 1), ("kind", 1)], unique=True)
+    await db.tax_declarations.create_index(
+        [("tenant_id", 1), ("status", 1), ("period", -1)])
+    _DECL_INDEXES_READY = True
+
+
+def _gib_xml(decl: dict) -> str:
+    """Hand-built GİB-style XML envelope for archival/upload reference.
+
+    NOTE: GİB does not publish a public XSD for konaklama-vergisi
+    e-beyanname; operators submit via İVD web form. This XML is a
+    reproducible internal representation that mirrors form fields
+    1:1, suitable for import into 3rd-party muhasebe software.
+    """
+    t = decl.get("tenant") or {}
+
+    def _e(v: Any) -> str:
+        return xml_escape(str(v if v is not None else "").strip())
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<KonaklamaVergisiBeyannamesi xmlns="urn:syroce:kvb:v1">\n'
+        f'  <Donem>{_e(decl.get("period"))}</Donem>\n'
+        f'  <SonOdemeTarihi>{_e(decl.get("due_date"))}</SonOdemeTarihi>\n'
+        '  <Mukellef>\n'
+        f'    <UnvanAdi>{_e(t.get("hotel_name"))}</UnvanAdi>\n'
+        f'    <VergiNo>{_e(t.get("tax_no"))}</VergiNo>\n'
+        f'    <OtelKodu>{_e(t.get("hotel_id"))}</OtelKodu>\n'
+        '  </Mukellef>\n'
+        '  <Matrah>\n'
+        f'    <FolioSayisi>{int(decl.get("folio_count") or 0)}</FolioSayisi>\n'
+        f'    <ToplamGeceleme>{float(decl.get("total_nights") or 0):.2f}'
+        '</ToplamGeceleme>\n'
+        f'    <ToplamMatrah>{float(decl.get("total_base") or 0):.2f}'
+        '</ToplamMatrah>\n'
+        '    <ParaBirimi>TRY</ParaBirimi>\n'
+        '  </Matrah>\n'
+        '  <Vergi>\n'
+        f'    <Oran>{float(decl.get("rate_percent") or 0):.2f}</Oran>\n'
+        f'    <TahakkukEdenVergi>{float(decl.get("total_tax") or 0):.2f}'
+        '</TahakkukEdenVergi>\n'
+        '  </Vergi>\n'
+        f'  <KanunReferansi>{_e(decl.get("law_reference"))}</KanunReferansi>\n'
+        '</KonaklamaVergisiBeyannamesi>\n'
+    )
+
+
+class FinalizeRequest(BaseModel):
+    year: int = Field(ge=2020, le=2100)
+    month: int = Field(ge=1, le=12)
+
+
+class SubmitRequest(BaseModel):
+    submission_ref: str = Field(min_length=3, max_length=80)
+    submitted_at: str | None = None
+
+
+class PaymentRequest(BaseModel):
+    payment_ref: str = Field(min_length=3, max_length=80)
+    paid_at: str | None = None
+    amount: float | None = None
+
+
+@router.post("/declaration/finalize")
+async def finalize_declaration(
+    body: FinalizeRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Snapshot the period and persist a locked declaration record.
+
+    Idempotent: if a declaration for (tenant, period) already exists
+    in any non-draft status, returns it unchanged. A draft record is
+    overwritten with a fresh snapshot.
+    """
+    await _ensure_declaration_indexes()
+    period = f"{body.year}-{body.month:02d}"
+    existing = await db.tax_declarations.find_one(
+        {"tenant_id": current_user.tenant_id, "period": period,
+         "kind": "konaklama_vergisi"}, {"_id": 0})
+    if existing and existing.get("status") not in (None, "draft"):
+        return existing
+
+    agg = await _aggregate_period(current_user.tenant_id, body.year,
+                                  body.month)
+    tenant = await db.tenants.find_one(
+        {"id": current_user.tenant_id},
+        {"_id": 0, "hotel_name": 1, "tax_no": 1, "hotel_id": 1}) or {}
+    due_month = body.month + 1 if body.month < 12 else 1
+    due_year = body.year if body.month < 12 else body.year + 1
+    snapshot = {
+        "id": existing["id"] if existing else str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "kind": "konaklama_vergisi",
+        "period": period,
+        "year": body.year,
+        "month": body.month,
+        "due_date": f"{due_year}-{due_month:02d}-26",
+        "tenant": tenant,
+        "rate_percent": agg["rate_percent"],
+        "folio_count": agg["folio_count"],
+        "total_nights": agg["total_nights"],
+        "total_base": agg["total_base"],
+        "total_tax": agg["total_tax"],
+        "rows": agg["rows"],
+        "currency": "TRY",
+        "law_reference": "7194 sayılı Kanun — Konaklama Vergisi",
+        "status": "finalized",
+        "finalized_at": datetime.now(UTC).isoformat(),
+        "finalized_by": current_user.id,
+        "submission_ref": None,
+        "submitted_at": None,
+        "submitted_by": None,
+        "payment_ref": None,
+        "paid_at": None,
+        "paid_by": None,
+        "paid_amount": None,
+    }
+    # Atomic guard: only write if no record exists OR existing is still
+    # in draft. Prevents a concurrent/late finalize from regressing a
+    # record that another request just promoted (submitted/paid).
+    res = await db.tax_declarations.update_one(
+        {"tenant_id": current_user.tenant_id, "period": period,
+         "kind": "konaklama_vergisi",
+         "$or": [{"status": {"$in": [None, "draft"]}},
+                 {"status": {"$exists": False}}]},
+        {"$set": snapshot}, upsert=True)
+    if not (res.matched_count or res.upserted_id):
+        # Lost the race — another caller already finalized; return latest.
+        latest = await db.tax_declarations.find_one(
+            {"tenant_id": current_user.tenant_id, "period": period,
+             "kind": "konaklama_vergisi"}, {"_id": 0})
+        return latest or snapshot
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="FINALIZE_KONAKLAMA_BEYANNAME",
+        entity_type="tax_declaration", entity_id=snapshot["id"],
+        changes={"period": period, "total_tax": snapshot["total_tax"]})
+    return snapshot
+
+
+@router.get("/declarations")
+async def list_declarations(
+    limit: int = 24,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    cursor = db.tax_declarations.find(
+        {"tenant_id": current_user.tenant_id,
+         "kind": "konaklama_vergisi"}, {"_id": 0, "rows": 0}
+    ).sort("period", -1).limit(max(1, min(limit, 120)))
+    items = await cursor.to_list(length=None)
+    return {"count": len(items), "items": items}
+
+
+async def _load_decl(tenant_id: str, decl_id: str) -> dict:
+    doc = await db.tax_declarations.find_one(
+        {"id": decl_id, "tenant_id": tenant_id,
+         "kind": "konaklama_vergisi"}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Beyanname bulunamadı")
+    return doc
+
+
+@router.get("/declarations/{decl_id}")
+async def get_declaration(
+    decl_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    return await _load_decl(current_user.tenant_id, decl_id)
+
+
+@router.post("/declarations/{decl_id}/submit")
+async def submit_declaration(
+    decl_id: str, body: SubmitRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    decl = await _load_decl(current_user.tenant_id, decl_id)
+    if decl.get("status") not in ("finalized",):
+        raise HTTPException(
+            409, f"Yalnızca onaylanmış (finalized) beyannameler gönderilebilir "
+                 f"(mevcut: {decl.get('status')})")
+    upd = {
+        "status": "submitted",
+        "submission_ref": body.submission_ref.strip(),
+        "submitted_at": (body.submitted_at
+                         or datetime.now(UTC).isoformat()),
+        "submitted_by": current_user.id,
+    }
+    # Atomic transition: only flip if status is still 'finalized'.
+    res = await db.tax_declarations.update_one(
+        {"id": decl_id, "tenant_id": current_user.tenant_id,
+         "status": "finalized"},
+        {"$set": upd})
+    if not res.matched_count:
+        raise HTTPException(409, "Beyanname durumu bu arada değişti")
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="SUBMIT_KONAKLAMA_BEYANNAME",
+        entity_type="tax_declaration", entity_id=decl_id,
+        changes=upd)
+    return await _load_decl(current_user.tenant_id, decl_id)
+
+
+@router.post("/declarations/{decl_id}/pay")
+async def pay_declaration(
+    decl_id: str, body: PaymentRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    decl = await _load_decl(current_user.tenant_id, decl_id)
+    if decl.get("status") not in ("submitted", "finalized"):
+        raise HTTPException(
+            409, "Yalnızca onaylanmış/gönderilmiş beyanname için ödeme "
+                 "kaydedilebilir")
+    upd = {
+        "status": "paid",
+        "payment_ref": body.payment_ref.strip(),
+        "paid_at": body.paid_at or datetime.now(UTC).isoformat(),
+        "paid_by": current_user.id,
+        "paid_amount": (body.amount if body.amount is not None
+                        else decl.get("total_tax")),
+    }
+    # Atomic: never overwrite a record that's already paid.
+    res = await db.tax_declarations.update_one(
+        {"id": decl_id, "tenant_id": current_user.tenant_id,
+         "status": {"$in": ["finalized", "submitted"]}},
+        {"$set": upd})
+    if not res.matched_count:
+        raise HTTPException(409, "Ödeme zaten kaydedilmiş veya durum uygun değil")
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="PAY_KONAKLAMA_BEYANNAME",
+        entity_type="tax_declaration", entity_id=decl_id, changes=upd)
+    return await _load_decl(current_user.tenant_id, decl_id)
+
+
+@router.get("/declarations/{decl_id}/export")
+async def export_declaration(
+    decl_id: str, format: str = "xml",
+    current_user: User = Depends(get_current_user),
+):
+    from fastapi.responses import Response
+    decl = await _load_decl(current_user.tenant_id, decl_id)
+    fmt = (format or "xml").lower()
+    if fmt == "xml":
+        body = _gib_xml(decl)
+        return Response(
+            content=body, media_type="application/xml",
+            headers={"Content-Disposition":
+                     f'attachment; filename="kvb-{decl["period"]}.xml"'})
+    if fmt == "json":
+        import json as _json
+        body = _json.dumps(decl, ensure_ascii=False, indent=2)
+        return Response(
+            content=body, media_type="application/json",
+            headers={"Content-Disposition":
+                     f'attachment; filename="kvb-{decl["period"]}.json"'})
+    raise HTTPException(400, "format yalnızca xml|json olabilir")
 
 
 @router.post("/post-folio/{folio_id}")

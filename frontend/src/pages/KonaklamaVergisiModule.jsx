@@ -4,23 +4,37 @@ import toast from "react-hot-toast";
 import {
   Building2,
   Calculator,
+  CheckCircle2,
   ClipboardList,
   Download,
+  FileCode,
   FileText,
+  History,
   Loader2,
+  Lock,
   Percent,
   Printer,
   RefreshCw,
   Save,
+  Send,
   Settings,
+  Wallet,
 } from "lucide-react";
 
 const TABS = [
   { key: "config", label: "Yapılandırma", icon: Settings },
   { key: "report", label: "Aylık Rapor", icon: ClipboardList },
   { key: "declaration", label: "Beyanname", icon: FileText },
+  { key: "history", label: "Geçmiş", icon: History },
   { key: "calculator", label: "Hesaplayıcı", icon: Calculator },
 ];
+
+const STATUS_BADGE = {
+  draft: { label: "Taslak", cls: "bg-gray-100 text-gray-700" },
+  finalized: { label: "Onaylı", cls: "bg-amber-100 text-amber-800" },
+  submitted: { label: "Gönderildi", cls: "bg-blue-100 text-blue-800" },
+  paid: { label: "Ödendi", cls: "bg-emerald-100 text-emerald-800" },
+};
 
 function fmtTRY(v) {
   return new Intl.NumberFormat("tr-TR", {
@@ -53,9 +67,92 @@ export default function KonaklamaVergisiModule() {
 
   const [report, setReport] = useState(null);
   const [declaration, setDeclaration] = useState(null);
+  const [finalized, setFinalized] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [working, setWorking] = useState(false);
 
   const [calc, setCalc] = useState({ amount: 1000, nights: 2, exempt: false });
   const [calcResult, setCalcResult] = useState(null);
+
+  const loadHistory = async () => {
+    try {
+      const { data } = await axios.get("/finance/konaklama-vergisi/declarations");
+      setHistory(data.items || []);
+    } catch (e) {
+      toast.error("Beyanname geçmişi yüklenemedi");
+    }
+  };
+
+  const finalizeDeclaration = async () => {
+    if (!declaration) return;
+    if (!window.confirm(
+      `${declaration.period} dönemini onaylayıp kilitlemek üzeresiniz. ` +
+      `Kilitledikten sonra dönem kapanır, yalnızca gönderim ve ödeme ` +
+      `kayıtları eklenebilir. Devam edilsin mi?`)) return;
+    setWorking(true);
+    try {
+      const { data } = await axios.post(
+        "/finance/konaklama-vergisi/declaration/finalize",
+        { year, month });
+      setFinalized(data);
+      toast.success(`${data.period} dönemi onaylandı (${data.id.slice(0, 8)})`);
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Onay başarısız");
+    } finally { setWorking(false); }
+  };
+
+  const submitDeclaration = async (decl) => {
+    const ref = window.prompt(
+      "GİB / e-Beyanname tahakkuk fiş numarasını girin:");
+    if (!ref || ref.trim().length < 3) return;
+    setWorking(true);
+    try {
+      const { data } = await axios.post(
+        `/finance/konaklama-vergisi/declarations/${decl.id}/submit`,
+        { submission_ref: ref.trim() });
+      toast.success(`Beyanname gönderildi: ${data.submission_ref}`);
+      setFinalized(data);
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gönderim kaydedilemedi");
+    } finally { setWorking(false); }
+  };
+
+  const payDeclaration = async (decl) => {
+    const ref = window.prompt(
+      "Banka transfer / dekont referans numarası:");
+    if (!ref || ref.trim().length < 3) return;
+    setWorking(true);
+    try {
+      const { data } = await axios.post(
+        `/finance/konaklama-vergisi/declarations/${decl.id}/pay`,
+        { payment_ref: ref.trim(), amount: decl.total_tax });
+      toast.success(`Ödeme kaydedildi: ${data.payment_ref}`);
+      setFinalized(data);
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ödeme kaydedilemedi");
+    } finally { setWorking(false); }
+  };
+
+  const exportDecl = async (decl, fmt) => {
+    try {
+      const res = await axios.get(
+        `/finance/konaklama-vergisi/declarations/${decl.id}/export`,
+        { params: { format: fmt }, responseType: "blob" });
+      const blob = new Blob([res.data], {
+        type: fmt === "xml" ? "application/xml" : "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `kvb-${decl.period}.${fmt}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error("İndirme başarısız");
+    }
+  };
 
   const loadConfig = async () => {
     setLoading(true);
@@ -69,7 +166,7 @@ export default function KonaklamaVergisiModule() {
     }
   };
 
-  useEffect(() => { loadConfig(); }, []);
+  useEffect(() => { loadConfig(); loadHistory(); }, []);
 
   const saveConfig = async () => {
     setSaving(true);
@@ -107,8 +204,16 @@ export default function KonaklamaVergisiModule() {
   const loadDeclaration = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/finance/konaklama-vergisi/declaration", { params: { year, month } });
+      const { data } = await axios.get(
+        "/finance/konaklama-vergisi/declaration",
+        { params: { year, month } });
       setDeclaration(data);
+      // Check whether this period already has a persisted record.
+      const list = await axios.get(
+        "/finance/konaklama-vergisi/declarations");
+      const existing = (list.data?.items || [])
+        .find((d) => d.period === data.period);
+      setFinalized(existing || null);
     } catch (e) {
       toast.error("Beyanname yüklenemedi");
     } finally {
@@ -330,25 +435,149 @@ export default function KonaklamaVergisiModule() {
           )}
 
           {tab === "declaration" && declaration && (
-            <div className="border rounded-lg p-6 print:p-0 print:border-0 max-w-3xl">
-              <div className="text-center mb-4">
-                <h2 className="text-xl font-bold">KONAKLAMA VERGİSİ BEYANNAMESİ</h2>
-                <p className="text-sm text-gray-500">{declaration.law_reference}</p>
+            <div className="space-y-3">
+              {finalized && (
+                <div className="flex flex-wrap items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded p-3">
+                  <Lock className="h-4 w-4 text-amber-700" />
+                  <span className="font-medium">Bu dönem kilitli:</span>
+                  <StatusBadge status={finalized.status} />
+                  <span className="text-gray-600">
+                    Onay: {(finalized.finalized_at || "").slice(0, 16).replace("T", " ")}
+                  </span>
+                  {finalized.submission_ref && (
+                    <span className="text-gray-600">
+                      Tahakkuk: <b>{finalized.submission_ref}</b>
+                    </span>
+                  )}
+                  {finalized.payment_ref && (
+                    <span className="text-gray-600">
+                      Ödeme: <b>{finalized.payment_ref}</b>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {!finalized && (
+                  <button
+                    onClick={finalizeDeclaration}
+                    disabled={working}
+                    className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded disabled:opacity-50">
+                    <Lock className="h-4 w-4" /> Beyannameyi Onayla & Kilitle
+                  </button>
+                )}
+                {finalized && finalized.status === "finalized" && (
+                  <button
+                    onClick={() => submitDeclaration(finalized)}
+                    disabled={working}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">
+                    <Send className="h-4 w-4" /> GİB Tahakkuk Numarası Kaydet
+                  </button>
+                )}
+                {finalized && (finalized.status === "submitted" || finalized.status === "finalized") && (
+                  <button
+                    onClick={() => payDeclaration(finalized)}
+                    disabled={working}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded disabled:opacity-50">
+                    <Wallet className="h-4 w-4" /> Ödeme Kaydet
+                  </button>
+                )}
+                {finalized && (
+                  <>
+                    <button
+                      onClick={() => exportDecl(finalized, "xml")}
+                      className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
+                      <FileCode className="h-4 w-4" /> XML İndir (GİB)
+                    </button>
+                    <button
+                      onClick={() => exportDecl(finalized, "json")}
+                      className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
+                      <Download className="h-4 w-4" /> JSON Arşiv
+                    </button>
+                  </>
+                )}
               </div>
-              <DeclRow label="İşletme">{declaration.tenant?.hotel_name || "-"}</DeclRow>
-              <DeclRow label="Vergi No / Otel ID">{declaration.tenant?.tax_no || declaration.tenant?.hotel_id || "-"}</DeclRow>
-              <DeclRow label="Dönem">{declaration.period}</DeclRow>
-              <DeclRow label="Son Beyan/Ödeme Tarihi">{declaration.due_date}</DeclRow>
-              <DeclRow label="Vergi Oranı">{`%${declaration.rate_percent}`}</DeclRow>
-              <DeclRow label="Folio Sayısı">{declaration.folio_count}</DeclRow>
-              <DeclRow label="Toplam Geceleme">{declaration.total_nights}</DeclRow>
-              <DeclRow label="Matrah">{fmtTRY(declaration.total_base)}</DeclRow>
-              <DeclRow label="Tahakkuk Eden Vergi" highlight>{fmtTRY(declaration.total_tax)}</DeclRow>
-              <p className="text-xs text-gray-400 mt-6">
-                Bu özet, dahili kontrol amaçlıdır. Resmi beyanname için Gelir İdaresi Başkanlığı (GİB) e-Beyanname sistemini kullanınız.
-              </p>
+
+              <div className="border rounded-lg p-6 print:p-0 print:border-0 max-w-3xl">
+                <div className="text-center mb-4">
+                  <h2 className="text-xl font-bold">KONAKLAMA VERGİSİ BEYANNAMESİ</h2>
+                  <p className="text-sm text-gray-500">{declaration.law_reference}</p>
+                </div>
+                <DeclRow label="İşletme">{declaration.tenant?.hotel_name || "-"}</DeclRow>
+                <DeclRow label="Vergi No / Otel ID">{declaration.tenant?.tax_no || declaration.tenant?.hotel_id || "-"}</DeclRow>
+                <DeclRow label="Dönem">{declaration.period}</DeclRow>
+                <DeclRow label="Son Beyan/Ödeme Tarihi">{declaration.due_date}</DeclRow>
+                <DeclRow label="Vergi Oranı">{`%${declaration.rate_percent}`}</DeclRow>
+                <DeclRow label="Folio Sayısı">{declaration.folio_count}</DeclRow>
+                <DeclRow label="Toplam Geceleme">{declaration.total_nights}</DeclRow>
+                <DeclRow label="Matrah">{fmtTRY(declaration.total_base)}</DeclRow>
+                <DeclRow label="Tahakkuk Eden Vergi" highlight>{fmtTRY(declaration.total_tax)}</DeclRow>
+                <p className="text-xs text-gray-400 mt-6">
+                  Bu özet, dahili kontrol amaçlıdır. Resmi beyanname için Gelir
+                  İdaresi Başkanlığı (GİB) e-Beyanname sistemini kullanınız.
+                  Onayladıktan sonra XML çıktısı GİB form alanlarıyla 1-1
+                  eşleşir; muhasebe yazılımına aktarmak için kullanabilirsiniz.
+                </p>
+              </div>
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "history" && (
+        <div className="bg-white rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold flex items-center gap-2">
+              <History className="h-4 w-4" /> Beyanname Geçmişi
+            </h3>
+            <button
+              onClick={loadHistory}
+              className="text-sm flex items-center gap-1 text-blue-600 hover:underline">
+              <RefreshCw className="h-3 w-3" /> Yenile
+            </button>
+          </div>
+          <div className="overflow-auto border rounded">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-3 py-2">Dönem</th>
+                  <th className="text-left px-3 py-2">Durum</th>
+                  <th className="text-right px-3 py-2">Matrah</th>
+                  <th className="text-right px-3 py-2">Vergi</th>
+                  <th className="text-left px-3 py-2">Son Tarih</th>
+                  <th className="text-left px-3 py-2">Tahakkuk</th>
+                  <th className="text-left px-3 py-2">Ödeme</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((d) => (
+                  <tr key={d.id} className="border-t">
+                    <td className="px-3 py-2 font-mono">{d.period}</td>
+                    <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
+                    <td className="px-3 py-2 text-right">{fmtTRY(d.total_base)}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{fmtTRY(d.total_tax)}</td>
+                    <td className="px-3 py-2">{d.due_date}</td>
+                    <td className="px-3 py-2 text-xs">{d.submission_ref || "-"}</td>
+                    <td className="px-3 py-2 text-xs">{d.payment_ref || "-"}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => exportDecl(d, "xml")}
+                        title="XML indir"
+                        className="text-blue-600 hover:underline">
+                        <FileCode className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {history.length === 0 && (
+                  <tr><td colSpan={8} className="text-center text-gray-400 py-6">
+                    Henüz onaylanmış beyanname yok.
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -395,6 +624,15 @@ function KPI({ title, value, highlight }) {
       <div className="text-xs text-gray-500">{title}</div>
       <div className={`text-lg font-semibold ${highlight ? "text-amber-700" : ""}`}>{value}</div>
     </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const meta = STATUS_BADGE[status] || STATUS_BADGE.draft;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${meta.cls}`}>
+      {meta.label}
+    </span>
   );
 }
 
