@@ -547,6 +547,14 @@ export const NAV_ITEMS = [
     navGroup: "management",
   },
   {
+    key: "xchange",
+    label: "Xchange (SXI)",
+    path: "/app/xchange",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     key: "afsadakat",
     label: "Sadakat & Inbox",
     path: "/app/afsadakat",

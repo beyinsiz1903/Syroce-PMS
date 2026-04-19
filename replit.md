@@ -1321,3 +1321,75 @@ Code review (architect) ciddi güvenlik bulgularıyla döndü; hepsi kapatıldı
 - 2FA setup/confirm/challenge/verify/disable → tüm akış PASS
 - Replay testi → 401 "zaten kullanıldı" PASS
 - PCI status → met=4 / partial=5 / shared=3, score=%44 (dürüst)
+
+## Sprint 21–22 — Syroce Xchange (SXI) Bus (Apr 2026)
+**Amaç**: OPERA PMSXchange (OXI) eşdeğeri çok-kiracılı entegrasyon
+bus'ı. Otel olaylarını (rezervasyon, posting, inventory, rate)
+HTNG 2024B XML / OData V4 JSON ile kayıtlı partner adapter'larına
+güvenli ve idempotent biçimde dağıtır.
+
+### Yeni modüller
+- `backend/integrations/xchange/schemas.py` — 12 kanonik mesaj tipi
+  (RESERVATION_CREATE/MODIFY/CANCEL, POSTING_CHARGE/PAYMENT,
+  INVENTORY_UPDATE, RATE_UPDATE, NIGHT_AUDIT_CLOSE, …) + envelope.
+- `backend/integrations/xchange/htng.py` — OTA/HTNG 2024B XML
+  serializer (Reservation/Posting/Inventory/Rate + generic fallback).
+- `backend/integrations/xchange/registry.py` — partner kataloğu
+  (Sabre SynXis CRS, SAP S/4HANA Finance, Generic Webhook) +
+  config schema.
+- `backend/integrations/xchange/bus.py` — publish, retry, replay,
+  dead-letter; **atomik idempotency** unique index üzerinden
+  `(tenant_id, message_id, partner_code)`; otomatik retry worker
+  (`run_retry_cycle` / `start_retry_loop`).
+- `backend/integrations/xchange/safety.py` — **SSRF egress guard**
+  (private/loopback/link-local IP'leri engeller; allow-list env'i
+  `XCHANGE_EGRESS_ALLOWED_HOSTS`).
+- `backend/integrations/xchange/adapters/` — `base.py`,
+  `sabre_synxis.py` (HTNG XML, HTTPS Basic), `sap_s4hana.py`
+  (OData V4 + OAuth2, Journal Entry mapping), `generic_webhook.py`
+  (HMAC-SHA256 imzalı JSON).
+- `backend/routers/xchange.py` — `/api/xchange/{partners,configs,
+  deliveries,replay,test-publish}` (admin-only, tenant-scoped,
+  secret masking on GET, masked-secret preservation on PUT).
+- `frontend/src/pages/XchangePage.jsx` — partner config UI,
+  capability matrix, mesaj akışı (status/retry sayısı), replay,
+  detay modali. `/app/xchange` rotası, "Xchange (SXI)" navigasyonu.
+
+### Güvenlik & güvenilirlik kararları
+- **Dry-run gating sıkılaştırıldı**: Sabre `endpoint+username+
+  password+hotel_code`, SAP `base_url+client_id+client_secret+
+  token_url` hepsi tam değilse adapter dry-run'a düşer (yarı
+  yapılandırılmış canlı çağrı yok).
+- **Atomik idempotency**: claim-row strategy + Mongo unique index;
+  eşzamanlı publish'ler aynı `(tenant, message_id, partner)` için
+  **çift teslimat üretmez** (DuplicateKeyError → "duplicate" döner).
+- **Otomatik retry**: `_RETRY_DELAYS=[30s,2m,10m,1h]`, `_MAX_ATTEMPTS=5`;
+  `run_retry_cycle()` due deliveries'i tarar, atomik claim ile
+  yarış koşulunu engeller, başarısız 5. denemede `dead_letter`'a
+  taşır.
+- **Replay path** adapter exception'larını yakalar; replay artık
+  500 atmaz, hatayı `last_error` olarak yazar.
+- **SSRF koruması** tüm outbound URL'lerde aktif; tenant admin
+  loopback/RFC1918 hedef veremez.
+
+### Smoke (19 Apr 2026)
+- Partner katalog → 3 partner listelenir (sabre_synxis, sap_s4hana,
+  generic_webhook), capability matrix doğru.
+- Publish RESERVATION_CREATE → Sabre + Generic dry-run delivered,
+  SAP capability_unsupported (correct).
+- Publish POSTING_CHARGE → SAP + Generic dry-run delivered, Sabre
+  capability_unsupported.
+- Egress test: webhook URL `http://127.0.0.1:9999` → adapter
+  `egress_denied: 127.0.0.1` (engellendi, dış istek atılmadı).
+- Mongo indexes: `uniq_tenant_msg_partner`, `retry_scan`,
+  `uniq_tenant_partner` Atlas'ta oluşturuldu.
+
+### Sertifikasyon hattındaki bilinen eksikler (UAT öncesi yapılacak)
+1. HTNG/OTA XSD validation harness + Sabre sertifikalı örnek
+   XML diff testleri.
+2. Reservation create/modify/cancel akışına `bus.publish(...)`
+   hook'u (şu an admin `test-publish` üzerinden tetikleniyor).
+3. Inbound webhook receiver (`POST /api/xchange/inbound/{partner}`)
+   ve idempotent inbound dedup.
+4. Retry worker'ı app startup'a bağla (şu an manuel
+   `run_retry_cycle()` ile).
