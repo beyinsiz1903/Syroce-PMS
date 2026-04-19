@@ -1,6 +1,38 @@
 """
 Redis Cache Manager for High-Performance Hotel PMS
-Implements caching for frequently accessed data
+Implements caching for frequently accessed data.
+
+────────────────────────────────────────────────────────────────────────
+Sprint 32 — CANONICAL TENANT-SCOPED INVALIDATION ENFORCEMENT
+────────────────────────────────────────────────────────────────────────
+All cache invalidations against tenant namespaces (`cache:{tenant}:...`)
+MUST go through one of the following paths. Direct construction of glob
+patterns from untrusted input is prohibited.
+
+Preferred call paths (highest → lowest level):
+  1. `cache.safe_invalidate(tenant_id, entity_prefix)`
+       — explicit, returns bool, bumps success/failure metrics.
+  2. `cache.invalidate_tenant_cache(tenant_id, entity_type=None)`
+       — convenience for full-tenant or single-entity wipes.
+  3. The legacy class helpers (`DashboardCache.invalidate(...)`, etc.)
+       — kept for backward compatibility; protected by the central
+       `delete_pattern` regex guard below.
+
+Defense-in-depth layers:
+  • `_is_safe_tenant_id` — strict ASCII whitelist `[A-Za-z0-9._-]{1,128}`.
+  • `safe_invalidate` / `invalidate_tenant_cache` — input validation
+    before pattern construction (handles `:`-skew payloads).
+  • `delete_pattern` — final central guard: any pattern starting with
+    `cache:` must match `_SAFE_PATTERN_RE` (full-shape regex), otherwise
+    the call is rejected and a WARNING is logged.
+  • `invalidation_failures` / `invalidation_success` counters
+    (lock-protected) surface stale-cache risk via `health_check()` and
+    Prometheus metrics.
+
+If you need to invalidate cache from a NEW router, call
+`cache.safe_invalidate(current_user.tenant_id, "<your_entity_prefix>")`
+inside every mutation handler (POST/PUT/DELETE). Do NOT call
+`cache.delete_pattern` directly with f-string interpolation.
 """
 
 import fnmatch
@@ -177,13 +209,16 @@ class CacheManager:
             return False
 
     # Strict shape for tenant-scoped invalidation patterns:
-    #   cache:<tenant_id>:<entity>[:<sub>...]:*
-    # tenant: ASCII safe-set; entity/sub: same set (no glob meta);
-    # only the trailing `*` is allowed (and only as the final segment).
+    #   cache:<tenant_id>(:<segment>){1..8}
+    # where each segment is either:
+    #   • literal: ASCII safe-set [A-Za-z0-9._-]+ (no glob meta inside), OR
+    #   • wildcard: a single `*` standing alone as a whole segment.
+    # tenant_id itself MUST be literal (no `*` allowed in position 1).
+    # This blocks `:`-skew payloads like `cache:a:b*c:dashboard:*` because
+    # `b*c` is neither a literal nor a standalone `*`.
     _SAFE_PATTERN_RE = __import__("re").compile(
         r"^cache:[A-Za-z0-9._\-]{1,128}"
-        r"(?::[A-Za-z0-9._\-]+){1,8}"
-        r"(?::\*)?$"
+        r"(?::(?:[A-Za-z0-9._\-]+|\*)){1,8}$"
     )
 
     def delete_pattern(self, pattern: str):
@@ -288,26 +323,49 @@ class CacheManager:
                 "cache.safe_invalidate FAILED pattern=%s", pattern)
         return bool(ok)
 
+    def invalidation_metrics(self) -> dict:
+        """Snapshot of invalidation counters (per-process, approximate
+        under multi-replica deployments — aggregate at metrics layer).
+        Surface via Prometheus / health endpoint to detect:
+          • spikes in `failures` → caller misuse / unsafe payloads
+          • zero `success` for an expected entity → mutation hooks broken
+        """
+        with self._invalidation_metrics_lock:
+            return {
+                'failures': dict(self.invalidation_failures),
+                'success': dict(self.invalidation_success),
+                'total_failures': sum(self.invalidation_failures.values()),
+                'total_success': sum(self.invalidation_success.values()),
+            }
+
     def health_check(self) -> dict:
         """Check cache health"""
         if not self.enabled:
             return {
                 'status': 'disabled',
-                'message': 'Redis not available'
+                'message': 'Redis not available',
+                'invalidation': self.invalidation_metrics(),
             }
 
         try:
-            info = self.client.info()
+            info = self.client.info() if hasattr(self.client, 'info') else {}
+            dbsize = (self.client.dbsize()
+                      if hasattr(self.client, 'dbsize') else None)
             return {
                 'status': 'healthy',
-                'connected_clients': info.get('connected_clients', 0),
-                'used_memory_human': info.get('used_memory_human', 'N/A'),
-                'total_keys': self.client.dbsize()
+                'backend': self.backend,
+                'connected_clients': info.get('connected_clients', 0)
+                if isinstance(info, dict) else 0,
+                'used_memory_human': info.get('used_memory_human', 'N/A')
+                if isinstance(info, dict) else 'N/A',
+                'total_keys': dbsize,
+                'invalidation': self.invalidation_metrics(),
             }
         except Exception as e:
             return {
                 'status': 'unhealthy',
-                'error': str(e)
+                'error': str(e),
+                'invalidation': self.invalidation_metrics(),
             }
 
 # Global cache instance

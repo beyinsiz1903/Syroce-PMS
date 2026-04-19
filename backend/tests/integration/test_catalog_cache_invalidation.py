@@ -201,6 +201,54 @@ class LegacyHelperGuardrailTests(unittest.TestCase):
             self.assertTrue(ok)
             kk.assert_called_once()
 
+    def test_known_safe_legacy_paths_still_work(self):
+        """Regression: the hardening must NOT block legitimate callers.
+        Each helper with a safe tenant_id (and optional sub-id) must
+        actually reach the backend."""
+        if not cache.enabled:
+            self.skipTest("cache disabled in this env")
+        from cache_manager import (
+            DashboardCache, RoomCache, BookingCache, GuestCache,
+            ReportCache,
+        )
+        safe_tenant = "57986e4f-7977-44c9-bed9-05aadf38853b"
+        cases = [
+            # name, callable, expects_keys (pattern), expects_delete (single key)
+            ("Dashboard.invalidate",
+             lambda: DashboardCache.invalidate(safe_tenant), True, False),
+            ("Room.invalidate (no id)",
+             lambda: RoomCache.invalidate(safe_tenant), True, False),
+            ("Room.invalidate (with id)",
+             lambda: RoomCache.invalidate(safe_tenant, "room-101"),
+             False, True),
+            ("Booking.invalidate (no id)",
+             lambda: BookingCache.invalidate(safe_tenant), True, False),
+            ("Booking.invalidate (with id)",
+             lambda: BookingCache.invalidate(safe_tenant, "bk-7"),
+             True, True),
+            ("Guest.invalidate (with id)",
+             lambda: GuestCache.invalidate(safe_tenant, "g1"),
+             True, False),
+            ("Guest.invalidate (no id)",
+             lambda: GuestCache.invalidate(safe_tenant), True, False),
+            ("Report.invalidate_all",
+             lambda: ReportCache.invalidate_all(safe_tenant), True, False),
+        ]
+        for name, fn, expect_keys, expect_delete in cases:
+            with self.subTest(case=name):
+                with patch.object(cache.client, "keys",
+                                  return_value=["x"]) as kk, \
+                     patch.object(cache.client, "delete") as dd:
+                    fn()
+                    if expect_keys:
+                        self.assertTrue(
+                            kk.called,
+                            f"{name}: keys() must be invoked (not blocked)")
+                    if expect_delete:
+                        self.assertTrue(
+                            dd.called,
+                            f"{name}: delete() must be invoked")
+
 
 class FailureMetricsTests(unittest.TestCase):
     """Failure path bumps counter + emits WARNING (no silent pass)."""

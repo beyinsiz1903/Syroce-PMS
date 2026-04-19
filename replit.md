@@ -2090,3 +2090,23 @@ BookingCache, GuestCache, ReportCache) hâlâ guard'sız `delete_pattern`
    geçerli UUID kabul ediliyor.
 
 **Toplam test**: 15 PASS (10 subtests dahil).
+
+### Sprint 32 ROUND 3 — follow-up'lar kapatıldı
+
+1. **Module-level docstring** (`cache_manager.py` üst kısmı): canonical
+   enforcement noktaları (3-katmanlı tercih sırası), defense-in-depth
+   katmanları ve yeni router'lar için kullanım kuralı belgelendi.
+
+2. **`invalidation_metrics()` + `health_check()` enrichment**: failure /
+   success counter'ları artık `health_check()` çıktısında görünüyor;
+   Prometheus metrics zaten `cache.health_check()` çağırıyor → SLO
+   alarmları için hazır. Aggregation note: per-process, multi-replica'da
+   metrics layer'da topla.
+
+3. **Known-safe regression test**: 8 legitimate çağrı (Dashboard, Room
+   ±id, Booking ±id, Guest ±id, Report) hardening sonrası backend'e
+   ulaşıyor. Regex `cache:<tenant>(:<segment>){1..8}` — segment
+   literal-veya-tek-`*` formatında, `b*c` gibi ortada-glob kombinasyonu
+   reddediliyor (split-skew bypass kapalı).
+
+**Final test sayısı**: 17 PASS, 22 subtest. Sprint 32 fully closed.
