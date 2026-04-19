@@ -37,13 +37,14 @@ inside every mutation handler (POST/PUT/DELETE). Do NOT call
 
 import fnmatch
 import hashlib
+import inspect
 import json
 import logging
 import os
 import threading
 import time
 from datetime import date, datetime
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Any, Callable
 
 import redis
@@ -371,18 +372,55 @@ class CacheManager:
 # Global cache instance
 cache = CacheManager()
 
-def _extract_tenant_id(args, kwargs) -> str:
-    """Extract tenant_id from function arguments, checking User/Tenant context first."""
+@lru_cache(maxsize=1024)
+def _signature_param_names(func: Callable) -> tuple:
+    """Cache the parameter name list of a callable for fast positional → kwargs binding."""
+    try:
+        return tuple(inspect.signature(func).parameters.keys())
+    except (TypeError, ValueError):
+        return ()
+
+
+def _bind_args_to_kwargs(func: Callable | None, args, kwargs) -> tuple:
+    """If `func` is provided, fold positional args into kwargs by their parameter names.
+    Returns `(remaining_args, merged_kwargs)`. Falls back to original on signature error.
+    Sprint 33 R6: enables `_extract_tenant_id` to detect positional `tenant_id: str`.
+    """
+    if func is None:
+        return args, kwargs
+    names = _signature_param_names(func)
+    if not names:
+        return args, kwargs
+    merged = dict(kwargs)
+    consumed = 0
+    for i, val in enumerate(args):
+        if i >= len(names):
+            break
+        name = names[i]
+        if name in merged:
+            break
+        merged[name] = val
+        consumed = i + 1
+    return args[consumed:], merged
+
+
+def _extract_tenant_id(args, kwargs, func: Callable | None = None) -> str:
+    """Extract tenant_id from function arguments, checking User/Tenant context first.
+    Sprint 33 R6: when `func` is provided, positional args are bound to parameter names
+    so a positional `tenant_id: str` parameter is detected via kwargs lookup.
+    """
+    _, bound = _bind_args_to_kwargs(func, args, kwargs)
+
     # Check kwargs for any common tenant-bearing dependency
     for key in ('current_user', 'user', 'tenant', 'tenant_ctx', 'ctx'):
-        obj = kwargs.get(key)
+        obj = bound.get(key)
         if obj and hasattr(obj, 'tenant_id') and getattr(obj, 'tenant_id', None):
             return str(obj.tenant_id)
 
-    if 'tenant_id' in kwargs and kwargs['tenant_id']:
-        return str(kwargs['tenant_id'])
+    if 'tenant_id' in bound and bound['tenant_id']:
+        return str(bound['tenant_id'])
 
-    # Check positional args for objects with tenant_id
+    # Check positional args for objects with tenant_id (objects that did not bind by name)
     for arg in args:
         if hasattr(arg, 'tenant_id') and getattr(arg, 'tenant_id', None):
             return str(arg.tenant_id)
@@ -411,17 +449,27 @@ def _stable_str(value: Any) -> str:
 
 
 def _build_cache_key(func: Callable, key_prefix: str, tenant_id: str, args, kwargs) -> str:
-    """Build a stable, deterministic cache key."""
-    # Collect key-relevant parts (exclude User/tenant objects, already in tenant_id prefix)
-    skip_keys = {'current_user', 'user', 'request', 'response', 'db', 'tenant', 'tenant_ctx', 'ctx'}
+    """Build a stable, deterministic cache key.
+    Sprint 33 R6: positional args are bound to parameter names so `tenant_id` (already
+    in the namespace prefix) and `current_user`-style deps are de-duped from the hash.
+    """
+    skip_keys = {
+        'current_user', 'user', 'request', 'response', 'db',
+        'tenant', 'tenant_ctx', 'ctx', 'tenant_id',
+    }
+    remaining_args, bound = _bind_args_to_kwargs(func, args, kwargs)
+
     key_parts = []
-    for arg in args:
+    # Unbound positional args (e.g. *args overflow) — keep object filter for safety
+    for arg in remaining_args:
         if hasattr(arg, 'tenant_id'):
             continue
         key_parts.append(_stable_str(arg))
 
-    for k, v in sorted(kwargs.items()):
+    for k, v in sorted(bound.items()):
         if k in skip_keys:
+            continue
+        if hasattr(v, 'tenant_id'):  # User/Tenant objects bound by name
             continue
         key_parts.append(f"{k}={_stable_str(v)}")
 
@@ -451,7 +499,7 @@ def cached(
             if not cache.enabled:
                 return await func(*args, **kwargs)
 
-            tenant_id = _extract_tenant_id(args, kwargs)
+            tenant_id = _extract_tenant_id(args, kwargs, func)
             cache_key = _build_cache_key(func, key_prefix, tenant_id, args, kwargs)
 
             # Try to get from cache
