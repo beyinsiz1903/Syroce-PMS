@@ -15,7 +15,7 @@ from core.security import (
     security,
 )
 from models.enums import UserRole
-from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomServiceCreate, User
+from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
 
 logger = logging.getLogger(__name__)
 
@@ -1022,8 +1022,20 @@ async def get_guest_profile_enhanced(
         'stay_history': stay_history,
         'preferences': preferences,
         'tags': tags,
-        'profile_completion': calculate_profile_completion(guest, preferences, tags)
+        'profile_completion': _calculate_profile_completion(guest, preferences, tags)
     }
+
+
+def _calculate_profile_completion(guest: dict, preferences: list | None, tags: list | None) -> int:
+    """Return guest profile completion percentage (0-100)."""
+    fields = ['name', 'email', 'phone', 'birth_date', 'nationality', 'preferred_language']
+    filled = sum(1 for f in fields if guest.get(f))
+    score = (filled / len(fields)) * 70
+    if preferences:
+        score += 20
+    if tags:
+        score += 10
+    return min(100, int(round(score)))
 
 
 

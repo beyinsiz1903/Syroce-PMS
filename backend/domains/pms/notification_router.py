@@ -10,16 +10,72 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+from typing import Any
+
 from core.database import db
 from core.security import (
     get_current_user,
     security,
 )
+from domains.pms.pos_fnb.schemas import Alert
 from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
+
+
+async def _collect_push_devices(
+    tenant_id: str,
+    user_ids: list[str] | None = None,
+    departments: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve push-enabled devices for the given audience."""
+    query: dict[str, Any] = {'tenant_id': tenant_id, 'push_token': {'$exists': True, '$ne': None}}
+    or_clauses: list[dict[str, Any]] = []
+    if user_ids:
+        or_clauses.append({'user_id': {'$in': user_ids}})
+    if departments:
+        or_clauses.append({'departments': {'$in': departments}})
+    if or_clauses:
+        query['$or'] = or_clauses
+    return await db.push_devices.find(query, {'_id': 0}).to_list(2000)
+
+
+async def _simulate_push_delivery(
+    devices: list[dict[str, Any]],
+    payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Stub delivery channel — records intent without actually sending."""
+    deliveries = []
+    for d in devices:
+        deliveries.append({
+            'device_id': d.get('device_id'),
+            'user_id': d.get('user_id'),
+            'platform': d.get('platform'),
+            'status': 'queued',
+            'notification_id': payload.get('id'),
+        })
+    return deliveries
+
+
+async def _record_push_log(
+    tenant_id: str,
+    payload: dict[str, Any],
+    deliveries: list[dict[str, Any]],
+    sent_by: str,
+) -> None:
+    """Persist a delivery audit row for the push notification batch."""
+    try:
+        await db.push_notification_logs.insert_one({
+            'tenant_id': tenant_id,
+            'notification_id': payload.get('id'),
+            'sent_by': sent_by,
+            'deliveries': deliveries,
+            'queued_at': datetime.now(UTC).isoformat(),
+        })
+    except Exception:
+        logger.exception('[push] failed to persist delivery log')
 
 router = APIRouter(prefix="/api", tags=["PMS / Notifications"])
 

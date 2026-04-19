@@ -19,6 +19,100 @@ from core.security import (
     security,
 )
 from models.schemas import User
+from pydantic import BaseModel, Field as _PydField
+
+logger = logging.getLogger(__name__)
+
+
+class GuestPersona(BaseModel):
+    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    tenant_id: str
+    guest_id: str
+    persona_type: str
+    confidence_score: float
+    indicators: list[str] = []
+    recommendations: list[str] = []
+    created_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
+
+
+class MaintenanceAlert(BaseModel):
+    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    tenant_id: str
+    room_id: str
+    equipment_type: str
+    severity: str
+    prediction: str
+    indicators: list[str] = []
+    recommended_action: str
+    estimated_failure_days: int = 0
+    created_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
+
+
+async def create_predictive_maintenance_task(
+    tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str
+) -> None:
+    try:
+        await db.maintenance_tasks.insert_one({
+            'id': uuid.uuid4().hex,
+            'tenant_id': tenant_id,
+            'room_id': room_id,
+            'room_number': room_number,
+            'title': title,
+            'severity': severity,
+            'source_alert_id': alert_id,
+            'status': 'pending',
+            'source': 'predictive_ai',
+            'created_at': datetime.now(UTC).isoformat(),
+        })
+    except Exception:
+        logger.exception('[ai] failed to create predictive maintenance task')
+
+
+def distribute_tasks(rooms: list[dict], staff: list[dict], task_type: str) -> list[dict]:
+    """Round-robin task distribution across staff members."""
+    if not staff:
+        return []
+    minutes_per_task = 30 if task_type == 'checkout' else 20
+    out = []
+    for idx, room in enumerate(rooms):
+        member = staff[idx % len(staff)]
+        out.append({
+            'staff_id': member.get('id') or member.get('staff_id'),
+            'staff_name': member.get('name') or member.get('staff_name') or 'Staff',
+            'task': {
+                'room_id': room.get('id') or room.get('room_id'),
+                'type': task_type,
+                'priority': 'high' if task_type == 'checkout' else 'normal',
+                'estimated_minutes': minutes_per_task,
+            },
+            'estimated_minutes': minutes_per_task,
+        })
+    return out
+
+
+def generate_scheduling_recommendations(capacity_pct: float, staff_count: int, total_rooms: int) -> list[str]:
+    recs = []
+    if capacity_pct >= 110:
+        recs.append('Schedule additional housekeeping staff or extend shifts.')
+    elif capacity_pct >= 90:
+        recs.append('Capacity is tight — monitor task completion closely.')
+    else:
+        recs.append('Workload is healthy.')
+    if staff_count and total_rooms / max(staff_count, 1) > 18:
+        recs.append('Consider rebalancing room-to-staff ratio.')
+    return recs
+
+
+def get_tier_benefits(tier: str) -> list[str]:
+    matrix = {
+        'silver': ['Welcome drink', 'Late checkout 1h'],
+        'gold': ['Room upgrade subject to availability', 'Late checkout 2h', '10% F&B discount'],
+        'platinum': ['Guaranteed upgrade', 'Late checkout 4h', '20% F&B discount', 'Lounge access'],
+    }
+    return matrix.get((tier or '').lower(), [])
+
+import uuid  # noqa: E402  (used by helpers above)
 
 logger = logging.getLogger(__name__)
 

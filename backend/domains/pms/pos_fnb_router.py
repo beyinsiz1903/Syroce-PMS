@@ -5,6 +5,7 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials

@@ -595,17 +595,5 @@ async def run_preventive_maintenance_scheduler(
     }
 
 
-    return {
-        'contracts': contracts,
-        'summary': {
-            'total_companies': len(contracts),
-            'total_committed_nights': total_committed,
-            'total_actual_nights': total_actual,
-            'total_revenue': round(total_revenue, 2),
-            'avg_utilization_pct': avg_utilization,
-        }
-    }
-
-
 # 3. GET /api/corporate/rates - Contract rates
 

@@ -387,8 +387,8 @@ async def get_staleness_data(
     except Exception:
         age_minutes = 999
 
-    stale_warn = ew_config.get("staleness_warning_minutes", provider)
-    stale_crit = ew_config.get("staleness_critical_minutes", provider)
+    stale_warn = ew_config.get("staleness_warning_minutes", 10)
+    stale_crit = ew_config.get("staleness_critical_minutes", 30)
     staleness_level = "normal"
     if age_minutes >= stale_crit:
         staleness_level = "critical"

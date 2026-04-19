@@ -147,8 +147,7 @@ Based on this data:
 
 Format your response as JSON with keys: tomorrow_prediction, next_week_prediction, patterns, recommendations"""
 
-            user_message = UserMessage(text=prompt)
-            response = await chat.send_message(user_message)
+            response = await chat.send_message(prompt)
         except Exception as exc:
             return self._fallback_occupancy_prediction(
                 current_occupancy=current_occupancy,

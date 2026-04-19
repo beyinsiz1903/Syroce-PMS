@@ -6,6 +6,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -19,6 +20,30 @@ from core.security import (
 from models.schemas import SendEmailRequest, SendSMSRequest, SendWhatsAppRequest, User
 
 logger = logging.getLogger(__name__)
+
+def _time_ago(ts: Any) -> str:
+    """Return a short relative time string like '5m ago' for a timestamp."""
+    if not ts:
+        return ""
+    try:
+        if isinstance(ts, str):
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        else:
+            dt = ts
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        delta = datetime.now(UTC) - dt
+        seconds = int(delta.total_seconds())
+        if seconds < 60:
+            return f"{seconds}s ago"
+        if seconds < 3600:
+            return f"{seconds // 60}m ago"
+        if seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        return f"{seconds // 86400}d ago"
+    except Exception:
+        return ""
+
 
 router = APIRouter(prefix="/api", tags=["Guest / Messaging"])
 
@@ -384,7 +409,7 @@ async def get_internal_messages_inbox(
             'message_type': msg.get('message_type'),
             'read': msg.get('read'),
             'created_at': msg.get('created_at'),
-            'time_ago': calculate_time_ago(msg.get('created_at'))
+            'time_ago': _time_ago(msg.get('created_at'))
         })
 
     unread_count = await db.internal_messages.count_documents({

@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+from typing import Any
+
 from core.database import db
 from core.helpers import (
     require_module,
@@ -18,8 +20,41 @@ from core.security import (
     get_current_user,
     security,
 )
-from models.enums import CompanyStatus, UserRole
+from models.enums import ROLE_PERMISSIONS, CompanyStatus, Permission, UserRole
 from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
+
+DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
+
+
+def has_permission(role: Any, permission: Permission) -> bool:
+    """Return True if the given role has the requested permission."""
+    try:
+        return permission in ROLE_PERMISSIONS.get(role, set())
+    except Exception:
+        return False
+
+
+async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
+    try:
+        from core.utils import calculate_folio_balance as _calc
+        return await _calc(folio_id, tenant_id)
+    except Exception:
+        return 0.0
+
+
+async def get_folio_details(folio_id: str, current_user: User) -> dict:
+    """Aggregate folio + charges + payments for export endpoints (tenant-scoped)."""
+    tenant_id = current_user.tenant_id
+    folio = await db.folios.find_one({'id': folio_id, 'tenant_id': tenant_id}, {'_id': 0})
+    if not folio:
+        raise HTTPException(status_code=404, detail="Folio not found")
+    charges = await db.folio_charges.find(
+        {'folio_id': folio_id, 'tenant_id': tenant_id}, {'_id': 0}
+    ).to_list(1000)
+    payments = await db.payments.find(
+        {'folio_id': folio_id, 'tenant_id': tenant_id}, {'_id': 0}
+    ).to_list(1000)
+    return {'folio': folio, 'charges': charges, 'payments': payments}
 
 logger = logging.getLogger(__name__)
 

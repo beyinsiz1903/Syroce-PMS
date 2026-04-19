@@ -45,9 +45,10 @@ class ReadinessValidator:
 
         # 2. MongoDB cluster health
         try:
+            from core.database import db as mongo_db
             from infra.mongo_production import mongo_validator
             if mongo_validator._db is None:
-                mongo_validator.set_db(db)
+                mongo_validator.set_db(mongo_db)
             pool = await mongo_validator.get_connection_pool_info()
             checks["mongodb"] = {
                 "status": pool.get("status", "unknown"),
