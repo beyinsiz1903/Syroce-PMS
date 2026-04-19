@@ -137,10 +137,22 @@ async def create_supplier(
         action="create", entity_type="proc_supplier", entity_id=doc["id"],
         details=f"Tedarikçi: {doc['name']}", before_value=None,
         after_value=doc, db=db)
+    _invalidate_suppliers_cache(current_user.tenant_id)
     return _strip_id(doc)
 
 
+from cache_manager import cached as _cached, cache as _cache
+
+
+def _invalidate_suppliers_cache(tenant_id: str) -> None:
+    try:
+        _cache.delete_pattern(f"cache:{tenant_id}:proc_suppliers:*")
+    except Exception:
+        pass
+
+
 @router.get("/suppliers")
+@_cached(ttl=30, key_prefix="proc_suppliers")
 async def list_suppliers(
     active_only: bool = True,
     q: str | None = None,
@@ -183,6 +195,7 @@ async def update_supplier(
         action="update", entity_type="proc_supplier", entity_id=supplier_id,
         details=f"Tedarikçi güncellendi: {after.get('name')}",
         before_value=_strip_id(before), after_value=after, db=db)
+    _invalidate_suppliers_cache(current_user.tenant_id)
     return after
 
 
@@ -208,6 +221,7 @@ async def delete_supplier(
         action="delete", entity_type="proc_supplier", entity_id=supplier_id,
         details="Tedarikçi silindi", before_value=None, after_value=None,
         db=db)
+    _invalidate_suppliers_cache(current_user.tenant_id)
     return {"ok": True}
 
 

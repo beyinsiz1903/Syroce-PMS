@@ -92,7 +92,18 @@ class FunctionSpaceIn(BaseModel):
     active: bool = True
 
 
+from cache_manager import cached as _cached, cache as _cache
+
+
+def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
+    try:
+        _cache.delete_pattern(f"cache:{tenant_id}:mice_spaces:*")
+    except Exception:
+        pass
+
+
 @router.get("/spaces")
+@_cached(ttl=30, key_prefix="mice_spaces")
 async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
     await _ensure_indexes()
     db = get_system_db()
@@ -149,6 +160,7 @@ async def create_space(body: FunctionSpaceIn,
            "created_at": datetime.now(UTC).isoformat()}
     await db.mice_spaces.insert_one(doc)
     doc.pop("_id", None)
+    _invalidate_mice_spaces_cache(current_user.tenant_id)
     return doc
 
 
@@ -163,6 +175,7 @@ async def update_space(space_id: str, body: FunctionSpaceIn,
     )
     if not res.matched_count:
         raise HTTPException(404, "Mekan bulunamadı")
+    _invalidate_mice_spaces_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -173,6 +186,7 @@ async def delete_space(space_id: str,
     db = get_system_db()
     await db.mice_spaces.delete_one(
         {"id": space_id, "tenant_id": current_user.tenant_id})
+    _invalidate_mice_spaces_cache(current_user.tenant_id)
     return {"ok": True}
 
 

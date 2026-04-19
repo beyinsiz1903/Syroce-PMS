@@ -76,7 +76,18 @@ class ServiceIn(BaseModel):
     active: bool = True
 
 
+from cache_manager import cached as _cached, cache as _cache
+
+
+def _invalidate_spa_services_cache(tenant_id: str) -> None:
+    try:
+        _cache.delete_pattern(f"cache:{tenant_id}:spa_services:*")
+    except Exception:
+        pass
+
+
 @router.get("/services")
+@_cached(ttl=30, key_prefix="spa_services")
 async def list_services(current_user: User = Depends(get_current_user)) -> dict:
     await _ensure_indexes()
     db = get_system_db()
@@ -138,6 +149,7 @@ async def create_service(body: ServiceIn,
     }
     await db.spa_services.insert_one(doc)
     doc.pop("_id", None)
+    _invalidate_spa_services_cache(current_user.tenant_id)
     return doc
 
 
@@ -153,6 +165,7 @@ async def update_service(service_id: str, body: ServiceIn,
     )
     if not res.matched_count:
         raise HTTPException(404, "Hizmet bulunamadı")
+    _invalidate_spa_services_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -165,6 +178,7 @@ async def delete_service(service_id: str,
         {"id": service_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Hizmet bulunamadı")
+    _invalidate_spa_services_cache(current_user.tenant_id)
     return {"ok": True}
 
 

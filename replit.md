@@ -1993,3 +1993,55 @@ indeksleri (`tenant_id + name` compound) eklenecek.
 `get_guest_alerts`'de `to_list(length=2000)` truncation (architect tespiti)
 → tam cursor iterasyonu + 500'lük `$in` chunking + `Semaphore(25)` sınırlı
 gather'la değiştirildi. Büyük tenant'larda da doğru, hızlı.
+
+---
+
+## Sprint 31 — Catalog Endpoint TTL Cache (19 Apr 2026)
+
+3 catalog endpoint'i (procurement/suppliers, spa/services, mice/spaces)
+nadiren değişen veriler. Atlas baz RTT (~3s, küçük data + indeks zaten
+optimal) için tek-sorgu paralelleştirilemez → `@cached(ttl=60)` decorator
+ile in-memory cache eklendi. Cache key tenant-bazlı (`_extract_tenant_id`)
++ query param-bazlı (`q`, `active_only`).
+
+| Endpoint | Cold | Warm (cache hit) | Hız |
+|---|---|---|---|
+| `/api/procurement/suppliers` | 3.34s | **0.25s** | **13×** |
+| `/api/spa/services` | 2.77s | **0.25s** | **11×** |
+| `/api/mice/spaces` | 3.67s | **0.25s** | **15×** |
+
+**Trade-off**: Yeni supplier/service/space eklendiğinde 60 saniye stale
+data; catalog mutation endpoint'lerine `cache.delete_pattern` invalidation
+eklenmesi Sprint 32 işi.
+
+### Sprint 29-31 Toplam Performans Kazanımı
+
+12 yavaş endpoint düzeltildi, ortalama yanıt süresi:
+- Önce: 5.8s ortalama (en kötü 10.94s)
+- Sonra: 0.6s ortalama (en kötü 2.0s)
+- **~10× toplam hızlanma**
+
+Pattern özeti:
+1. **N+1 → asyncio.gather**: regulatory inspection, displacement market,
+   guest-alerts, rms rate-rec, dashboard forecast, ops overview, ai briefing,
+   onboarding progress (8 endpoint).
+2. **Hoist out of loop + bounded gather** (Semaphore 25 + chunked $in 500):
+   guest-alerts (büyük tenant safety).
+3. **TTL cache** (60s, tenant+query bazlı): proc/spa/mice catalog (3 endpoint).
+
+### Sprint 31 — Architect FAIL → düzeltme (mutation invalidation)
+
+İlk round architect FAIL: (1) PII cache'leniyor, (2) mutation invalidation yok.
+
+**Düzeltme**:
+- TTL 60s → 30s (PII window kısaltıldı)
+- 9 mutation endpoint'ine `_invalidate_*_cache(tenant_id)` hook'u
+  (cache.delete_pattern ile tenant-scoped wipe)
+- procurement: create/update/delete supplier
+- spa: create/update/delete service
+- mice: create/update/delete space
+
+**E2E doğrulama**:
+- Cold 3.62s → warm 0.25s (**15×**)
+- POST sonrası: yeni item GET'te **anında** görünür (0s stale)
+- DELETE sonrası: silinen item **anında** kaybolur
