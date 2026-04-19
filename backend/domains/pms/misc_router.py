@@ -1133,6 +1133,7 @@ async def switch_property(
 
 
 @router.get("/analytics/7day-trend")
+@cached(ttl=600, key_prefix="analytics_7day_trend")
 async def get_7day_trend(
     current_user: User = Depends(get_current_user)
 ):

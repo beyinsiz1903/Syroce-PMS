@@ -1295,13 +1295,13 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/executive/kpi-snapshot")
+@cached(ttl=180, key_prefix="executive_kpi")
 async def get_executive_kpi_snapshot(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get critical KPI snapshot - INSTANT RESPONSE VIA PRE-WARMED CACHE
     """
-    current_user = await get_current_user(credentials)
 
     # Check pre-warmed cache first (instant!)
     from cache_warmer import cache_warmer

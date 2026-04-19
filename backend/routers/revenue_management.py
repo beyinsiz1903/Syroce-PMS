@@ -7,6 +7,7 @@ from datetime import date as date_cls
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.security import get_current_user
 from models.schemas import User
 from modules.revenue_management.revenue_engine import RevenueManagementEngine
@@ -23,6 +24,7 @@ class ApplyRateRequest(BaseModel):
 # ── DEMAND ANALYSIS ──
 
 @router.get("/booking-pace")
+@cached(ttl=300, key_prefix="revenue_booking_pace")
 async def api_booking_pace(target_date: str, lookback_days: int = 30, current_user: User = Depends(get_current_user)):
     """Get booking pace analysis for a target date."""
     return await engine.get_booking_pace(current_user.tenant_id, target_date, lookback_days)

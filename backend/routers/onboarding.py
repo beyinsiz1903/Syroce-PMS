@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from cache_manager import cached
 from core.onboarding import (
     DEFAULT_STEPS,
     get_onboarding_progress,
@@ -64,6 +65,7 @@ def _now_iso() -> str:
 
 # ── Read progress ───────────────────────────────────────────────
 @router.get("/progress")
+@cached(ttl=60, key_prefix="onboarding_progress")
 async def progress(current_user: User = Depends(get_current_user)) -> dict:
     tenant_id = _require_tenant(current_user)
     data = await get_onboarding_progress(tenant_id)

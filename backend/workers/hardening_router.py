@@ -7,6 +7,7 @@ Thin router: delegates all business logic to WorkerRuntimeService.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from cache_manager import cached
 from common.context import OperationContext
 from core.security import get_current_user
 from models.schemas import User
@@ -20,6 +21,7 @@ def _ctx(user: User) -> OperationContext:
 
 
 @router.get("/queues/health", summary="Queue health summary")
+@cached(ttl=30, key_prefix="workers_queues_health")
 async def get_queue_health(current_user: User = Depends(get_current_user)):
     result = await worker_runtime_service.get_queue_health(_ctx(current_user))
     return result.data

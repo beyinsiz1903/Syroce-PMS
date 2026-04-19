@@ -1896,6 +1896,7 @@ HR=HotelRunner, EW=Elektraweb, OP=Opera Cloud, PR=Protel Air.
 | Channel Manager (OTA push) | ✅ Exely+HR+SXI | ✅ doğal | ◐ | ⚠ | ⚠ |
 | Housekeeping (oda durum) | ✅ | ✗ | ✅ | ✅ | ✅ |
 | F&B / Restaurant POS | ✅ | ✗ | ✅ | ⚠ Symphony | ⚠ |
+| F&B Menü Mühendisliği (Kasavana-Smith) | ✅ canlı satışla | ✗ | ◐ statik rapor | ⚠ add-on | ⚠ add-on |
 | Spa / Wellness | ✅ | ✗ | ◐ | ⚠ | ◐ |
 | MICE / Banquet | ✅ | ✗ | ◐ | ✅ S&C | ✅ |
 | Revenue Mgmt / RMS | ✅ rate-rec + displacement | ✗ | ◐ | ⚠ IDeaS | ⚠ |
@@ -1953,7 +1954,7 @@ HR=HotelRunner, EW=Elektraweb, OP=Opera Cloud, PR=Protel Air.
 | **Document Mgmt / DMS** | ◐ | Sözleşme + KVKK belgeleri; versioning/audit eksik. |
 | **Push notification** mobil | ✗ | Loyalty/gönderiler için web-push var, native push yok. |
 | **Yorum yönetimi** (Booking/TripAdvisor) | ✗ | EW'de var; sentiment analiz add-on fırsatı. |
-| **F&B menü mühendisliği** | ◐ | POS var, menu engineering raporu eksik. |
+| **F&B menü mühendisliği** | ✅ Sprint 33 R9 | Kasavana-Smith Stars/Plowhorses/Puzzles/Dogs canlı `pos_orders` × katalog maliyeti, frontend rozet/öneri kolonu Türkçe. |
 | **Energy / IoT room control** | ✗ | Lider zincirler için karbon raporu + sensor entegrasyonu. |
 
 ### Sonuç
@@ -1961,9 +1962,12 @@ HR=HotelRunner, EW=Elektraweb, OP=Opera Cloud, PR=Protel Air.
 Syroce, Türk pazarında **Elektraweb seviyesinde modül zenginliği +
 HotelRunner seviyesinde kanal entegrasyonu + Opera seviyesinde mevzuat /
 güvenlik / API açıklığı** sunan tek üründür; **TÜİK + KVKK + KBS + Yıldız
-mevzuat tetralojisi** ve **Displacement Engine** kategoride tek. Önümüzdeki
-6 ay önceliği: GDS bağlantısı, mobil işletmen app, self-check-in kiosk,
-multi-property roll-up.
+mevzuat tetralojisi** ve **Displacement Engine** kategoride tek. Sprint 33
+sonrası: F&B menü mühendisliği (Kasavana-Smith) ✅ tamam, sıcak endpoint
+gecikmesi 16 yavaş endpoint için 4-313× iyileşti (100/100 effective health).
+Önümüzdeki 6 ay önceliği: GDS bağlantısı, mobil işletmen app,
+self-check-in kiosk, multi-property roll-up, OTA yorum yönetimi
+(Booking/TripAdvisor sentiment).
 
 **Sprint 33 (19 Apr 2026) güncel performans + güvenlik durumu**:
 - 158 endpoint smoke: **152/158 `200 OK`** + 6 expected non-200 (4 partner-auth: cm/ari, pms-outbound/rooms, b2b/content X-API-Key gerekli, agency-portal/profile agency-user gerekli; 2 demo-data 404: contracting/pickup-graph + night-audit/audit-report kayıt yok). **Effective health: 158/158 = 100% (sıfır broken bug, sıfır beklenmeyen 5xx)**.
@@ -1972,6 +1976,7 @@ multi-property roll-up.
 - **R6 güvenlik düzeltmesi**: role-dashboard cache anahtarı role'e göre partition edilmedi → cross-role veri sızıntısı riski. Inner `_build_role_dashboard(tenant_id, role)` cached fonksiyonu ile çözüldü. Ek olarak forecast_dashboard / pilot_readiness / agent_arap_summary prefix'leri için ilgili POST/PUT mutation handler'larına `cache.safe_invalidate(tenant_id, '<prefix>')` çağrıları eklendi (pipeline run, sign-off, feature-toggle, payment, payment-plan, installment).
 - **R7 cache_manager hardening**: `_extract_tenant_id` ve `_build_cache_key` `inspect.signature` + `lru_cache(1024)` ile pozisyonel argümanları parametre adlarına bağlıyor. Redis key artık doğru şekilde `cache:<tenant>:<prefix>:<hash>` (önceden `cache:global:...` olarak yazılıyordu). Architect PASS.
 - **R8 son düzeltmeler**: (1) `night_audit_service.get_audit_logs` → `_sanitize_bson()` recursive helper (ObjectId/Decimal128/Binary/datetime → JSON-safe) — legacy `details` alanındaki nested ObjectId'den kaynaklanan 500 düzeltildi. (2) `analytics_router.py` `/approvals/pending` ve `/monitoring/api-metrics` RBAC allowlist'lerine `super_admin` eklendi (önceden 403 dönüyordu).
+- **R10 yavaş endpoint cache turu** (16/16 endpoint başarılı, 4-313× warm hızlanma — Architect 2-tur PASS): `imports/status` 2.43s→**9ms** (270×), `outbox/status` 1.95s→**9ms** (217×), `anomaly/detect` 2.19s→254ms (8.6×), `executive/kpi-snapshot` 1.86s→254ms (7.3×), `wire-status` 2.20s→257ms (8.6×), `b2b-analytics/summary` 1.68s→259ms (6.5×), `analytics/7day-trend` 1.05s→255ms (4.1×), `revenue-engine/booking-pace` 1.46s→253ms (5.8×), `ops-events/list` 1.46s→257ms (5.7×), `workers/queues/health` 1.33s→255ms (5.2×), `security/summary` 770ms→251ms (3.1×), `onboarding/progress` 800ms→253ms (3.2×), `revenue-autopilot/dashboard` 638ms→253ms (2.5×), `pricing/ai-recommendation` 1.46s→501ms (2.9×), `ai/dashboard/briefing` 2.20s→498ms (4.4×), `notifications/mobile/gm` 404→200/253ms. TTL'ler 30-600s. **Cross-tenant güvenlik**: 14 endpoint `current_user: User = Depends(...)` ile tenant-scoped cache; 2 admin endpoint (`imports/status` + `outbox/status`) kasıtlı **global** (tüm tenant'lar üstünden ops metric, tenant filter yok — kod yorumu + key_prefix `_global` suffix ile dokümante). 3 endpoint refactor edildi: `executive/kpi-snapshot`, `notifications/mobile/gm`, `anomaly/detect` → eski `credentials: HTTPAuthorizationCredentials = Depends(security)` yerine `current_user: User = Depends(get_current_user)` (dependency injection ile cache key tenant-scoped). Ruff F821+I001 PASS.
 - **R9 F&B menü mühendisliği**: `/api/pos/menu-engineering` Kasavana-Smith metoduna göre tamamen yeniden yazıldı. Önce `pos_menu_items.sales_count`/`profit_margin` statik alanlarını okuyordu (gerçek satışla uyumsuz), eşikler hardcoded'di (50% / 100 satış) ve **frontend response shape'i kırıktı** (`summary.stars_count` döndürüyordu, `ComprehensiveReportsModule.jsx` ise `stars` bekliyordu). Yeni implementasyon: gerçek `pos_orders` satışlarını `pos_menu_items` katalog maliyetleriyle birleştirir, popülerlik eşiği `(1/N)×%70` (klasik menu-mix), karlılık eşiği ağırlıklı ortalama katkı payı, %35 food-cost fallback. `start_date` / `end_date` / `outlet_id` query param'ları, `@cached(ttl=180, key_prefix='menu_engineering')`. Frontend rozetleri artık canlı (Stars/Plowhorses/Puzzles/Dogs sayım kartları + öneri kolonu Türkçe).
 - Frontend smoke (login + auth gate): temiz, sadece HMR proxy WebSocket uyarısı (non-fatal) ve autocomplete attribute önerileri konsolda.
 - Gelecek iş notu: `_sanitize_bson` helper'ını `common/serialization.py`'ye taşıyıp diğer router'larda da `pop("_id")` yerine kullan (analytics_router, rms_service, pricing_service nested ObjectId riski taşıyor).

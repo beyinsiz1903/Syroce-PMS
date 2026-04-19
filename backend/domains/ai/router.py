@@ -518,6 +518,7 @@ async def get_sentiment(guest_id: str, current_user: User = Depends(get_current_
 
 
 @router.get("/pricing/ai-recommendation")
+@cached(ttl=300, key_prefix="ai_pricing_rec")
 async def get_ai_pricing_recommendation(
     room_type: str | None = None,
     target_date: str | None = None,

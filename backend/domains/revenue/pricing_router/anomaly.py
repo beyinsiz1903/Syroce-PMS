@@ -20,6 +20,7 @@ from core.security import (
     security,
 )
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +119,14 @@ class RateOverrideRequest(BaseModel):
 
 
 @router.get("/anomaly/detect")
+@cached(ttl=120, key_prefix="anomaly_detect")
 async def detect_anomalies(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Detect real-time anomalies in key metrics
     Returns active anomalies with severity levels
     """
-    current_user = await get_current_user(credentials)
 
     anomalies = []
 

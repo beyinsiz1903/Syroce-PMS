@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.database import db
 from core.outbox_service import STATUS_FAILED, STATUS_PENDING, STATUS_RETRY
 
@@ -47,7 +48,10 @@ class OutboxStatusResponse(BaseModel):
     worker: dict
 
 
+# NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter
+# in the queries below). Cache key intentionally resolves to 'global' namespace.
 @outbox_admin_router.get("/status", response_model=OutboxStatusResponse)
+@cached(ttl=30, key_prefix="outbox_status_global")
 async def outbox_status():
     """Get outbox queue health and metrics."""
     now = datetime.now(UTC)

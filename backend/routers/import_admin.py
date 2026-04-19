@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.database import db
 from core.import_bridge_service import (
     COLL_IMPORTED,
@@ -48,7 +49,10 @@ class ImportActionResponse(BaseModel):
     import_id: str
 
 
+# NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter
+# in the queries below). Cache key intentionally resolves to 'global' namespace.
 @import_admin_router.get("/status", response_model=ImportStatusResponse)
+@cached(ttl=60, key_prefix="imports_status_global")
 async def import_status():
     """Get import bridge health and metrics."""
     now = datetime.now(UTC)

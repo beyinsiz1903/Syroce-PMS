@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -34,6 +35,7 @@ def _get_tenant(user: User) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/list")
+@cached(ttl=60, key_prefix="ops_events_list")
 async def list_ops_events(
     limit: int = Query(50, ge=1, le=200),
     severity: str = Query("", description="Filter by severity: info, warning, critical, success"),

@@ -7,6 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from cache_manager import cached
 from domains.ai.service import get_ai_service
 from server import User, db, get_current_user
 
@@ -16,6 +17,7 @@ api_router = APIRouter()
 
 
 @api_router.get("/ai/dashboard/briefing")
+@cached(ttl=300, key_prefix="ai_dashboard_briefing")
 async def get_daily_briefing(
     lang: str = Query("tr", description="Language code for briefing"),
     current_user: User = Depends(get_current_user)

@@ -5,6 +5,7 @@ Revenue Autopilot Router - Policy, approval queue, apply, rollback, dashboard.
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.security import get_current_user
 from models.schemas import User
 
@@ -23,6 +24,7 @@ def _get_service():
 
 
 @router.get("/dashboard")
+@cached(ttl=180, key_prefix="revenue_autopilot_dashboard")
 async def get_autopilot_dashboard(current_user: User = Depends(get_current_user)):
     svc = _get_service()
     return await svc.get_dashboard(current_user.tenant_id)

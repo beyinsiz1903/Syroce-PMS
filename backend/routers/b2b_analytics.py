@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from models.enums import UserRole
@@ -54,6 +55,7 @@ B2B_EVENT_TYPES = [
 
 
 @router.get("/summary")
+@cached(ttl=180, key_prefix="b2b_analytics_summary")
 async def get_b2b_summary(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),

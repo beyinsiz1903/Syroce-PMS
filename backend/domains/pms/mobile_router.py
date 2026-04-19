@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
+from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
@@ -162,11 +164,11 @@ async def get_recent_complaints_mobile(
 
 
 @router.get("/notifications/mobile/gm")
+@cached(ttl=60, key_prefix="notif_mobile_gm")
 async def get_gm_notifications_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
 ):
     """Get notifications for GM mobile dashboard"""
-    current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
 
     notifications = []

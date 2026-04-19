@@ -675,6 +675,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/security/summary")
+@cached(ttl=120, key_prefix="security_summary")
 async def get_security_summary(current_user: User = Depends(get_current_user)):
     """Güvenlik özet dashboard verisi."""
     now = datetime.now(UTC)
