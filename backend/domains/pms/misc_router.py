@@ -1137,54 +1137,50 @@ async def get_7day_trend(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get 7-day trend for arrivals, departures, revenue, occupancy
+    Get 7-day trend for arrivals, departures, revenue, occupancy.
+    Sprint 33: 28 sequential queries → 28 parallel via asyncio.gather (~7×).
     """
+    import asyncio as _asyncio
     try:
         today = datetime.now(UTC).date()
-        trend_data = []
+        days = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        tenant_id = current_user.tenant_id
 
-        for i in range(6, -1, -1):  # Last 7 days
-            date = today - timedelta(days=i)
+        async def _day_metrics(date):
             date_str = date.isoformat()
-
-            # Get arrivals for this date
-            arrivals = await db.bookings.count_documents({
-                'check_in': date_str,
-                'tenant_id': current_user.tenant_id
+            arrivals_q = db.bookings.count_documents({
+                'check_in': date_str, 'tenant_id': tenant_id
             })
-
-            # Get departures for this date
-            departures = await db.bookings.count_documents({
-                'check_out': date_str,
-                'tenant_id': current_user.tenant_id
+            departures_q = db.bookings.count_documents({
+                'check_out': date_str, 'tenant_id': tenant_id
             })
-
-            # Get occupancy (checked in bookings)
-            occupancy = await db.bookings.count_documents({
+            occupancy_q = db.bookings.count_documents({
                 'check_in': {'$lte': date_str},
                 'check_out': {'$gt': date_str},
                 'status': 'checked_in',
-                'tenant_id': current_user.tenant_id
+                'tenant_id': tenant_id,
             })
-
-            # Calculate revenue for the day (simplified)
-            daily_bookings = await db.bookings.find({
+            daily_bookings_q = db.bookings.find({
                 'check_in': {'$lte': date_str},
                 'check_out': {'$gt': date_str},
                 'status': {'$in': ['checked_in', 'checked_out']},
-                'tenant_id': current_user.tenant_id
+                'tenant_id': tenant_id,
             }, {'_id': 0, 'total_amount': 1}).to_list(500)
-
+            arrivals, departures, occupancy, daily_bookings = \
+                await _asyncio.gather(
+                    arrivals_q, departures_q, occupancy_q, daily_bookings_q
+                )
             daily_revenue = sum(b.get('total_amount', 0) for b in daily_bookings)
-
-            trend_data.append({
+            return {
                 'date': date_str,
                 'day_name': date.strftime('%a'),
                 'arrivals': arrivals,
                 'departures': departures,
                 'occupancy': occupancy,
-                'revenue': round(daily_revenue, 2)
-            })
+                'revenue': round(daily_revenue, 2),
+            }
+
+        trend_data = await _asyncio.gather(*(_day_metrics(d) for d in days))
 
         # Calculate changes
         if len(trend_data) >= 2:

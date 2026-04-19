@@ -3,7 +3,14 @@ Tenant Isolation — Validation & Noisy Tenant Hardening
 =======================================================
 Tenant isolation validation suite, noisy tenant detection/throttling,
 cross-tenant leak tests, resource fairness metrics.
+
+NOTE: This service uses `_raw_db` (the unwrapped Motor client) for
+diagnostic queries that intentionally probe for unscoped documents
+(`{tenant_id: {$exists: false}}`). The TenantDB wrapper would block
+such queries — but blocking them is the very thing we want to detect,
+not enforce. Raw access here is correct and required.
 """
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -18,47 +25,65 @@ class TenantIsolationService:
     """Validates tenant isolation and detects noisy tenant patterns."""
 
     def __init__(self):
-        from core.database import db
-        self._db = db
+        from core.database import _raw_db, db
+        self._db = db          # tenant-scoped wrapper (for normal queries)
+        self._raw = _raw_db    # raw Motor (for diagnostic cross-tenant probes)
 
     async def run_isolation_validation(
         self, ctx: OperationContext
     ) -> ServiceResult:
-        """Run comprehensive tenant isolation checks."""
+        """Run comprehensive tenant isolation checks (parallelized)."""
         now = datetime.now(UTC)
-        checks = []
 
-        # 1. Database query scope check
+        # 1. Database query scope check — parallel across collections via raw DB
         collections_to_check = [
             "bookings", "rooms", "guests", "folios", "folio_charges",
             "pos_orders", "pos_transactions", "housekeeping_tasks",
         ]
-        for col_name in collections_to_check:
-            col = self._db[col_name]
-            # Check for documents without tenant_id
-            unscoped = await col.count_documents({"tenant_id": {"$exists": False}})
+
+        async def _count_unscoped(name: str) -> tuple[str, int]:
+            try:
+                n = await self._raw[name].count_documents(
+                    {"tenant_id": {"$exists": False}}
+                )
+                return (name, n)
+            except Exception as e:
+                logger.warning(
+                    "isolation_check failed for %s: %s", name, e)
+                return (name, -1)
+
+        # 2 + 3 also run in parallel
+        violations_task = self._raw.tenant_guard.count_documents(
+            {"timestamp": {"$gte": (now - timedelta(hours=24)).isoformat()}}
+        )
+        unscoped_tasks_task = self._raw.task_queue.count_documents(
+            {"tenant_id": {"$exists": False}, "status": "pending"}
+        )
+
+        gathered = await asyncio.gather(
+            *(_count_unscoped(c) for c in collections_to_check),
+            violations_task,
+            unscoped_tasks_task,
+            return_exceptions=True,
+        )
+        scope_results = gathered[:len(collections_to_check)]
+        violations = gathered[-2] if not isinstance(gathered[-2], Exception) else 0
+        unscoped_tasks = gathered[-1] if not isinstance(gathered[-1], Exception) else 0
+
+        checks = []
+        for col_name, unscoped in scope_results:
             checks.append({
                 "check": f"tenant_scope_{col_name}",
                 "passed": unscoped == 0,
                 "detail": f"Unscoped docs in {col_name}: {unscoped}",
                 "unscoped_count": unscoped,
             })
-
-        # 2. Cross-tenant access audit check
-        violations = await self._db.tenant_guard.count_documents(
-            {"timestamp": {"$gte": (now - timedelta(hours=24)).isoformat()}}
-        )
         checks.append({
             "check": "cross_tenant_violations_24h",
             "passed": violations == 0,
             "detail": f"Cross-tenant violations in 24h: {violations}",
             "violations": violations,
         })
-
-        # 3. Async task scope
-        unscoped_tasks = await self._db.task_queue.count_documents(
-            {"tenant_id": {"$exists": False}, "status": "pending"}
-        )
         checks.append({
             "check": "async_task_scope",
             "passed": unscoped_tasks == 0,

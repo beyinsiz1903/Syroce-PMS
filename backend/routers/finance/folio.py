@@ -73,18 +73,27 @@ async def list_folios(
     if status:
         query['status'] = status
 
-    folios = await db.folios.find(query, {'_id': 0}).sort(
+    # Sprint 33: parallelize list + count, then BATCH-fetch bookings via $in
+    # (was N+1 — one find_one per folio causing 6.6s on 50 rows).
+    import asyncio as _asyncio
+    folios_q = db.folios.find(query, {'_id': 0}).sort(
         'created_at', -1
     ).skip(offset).limit(limit).to_list(limit)
+    total_q = db.folios.count_documents(query)
+    folios, total = await _asyncio.gather(folios_q, total_q)
 
-    total = await db.folios.count_documents(query)
+    booking_ids = [f.get('booking_id') for f in folios if f.get('booking_id')]
+    booking_map = {}
+    if booking_ids:
+        bookings = await db.bookings.find(
+            {'id': {'$in': booking_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'guest_name': 1, 'room_number': 1,
+             'room_id': 1, 'check_in': 1, 'check_out': 1}
+        ).to_list(len(booking_ids))
+        booking_map = {b['id']: b for b in bookings}
 
-    # Enrich with guest/booking info
     for folio in folios:
-        booking = await db.bookings.find_one(
-            {'id': folio.get('booking_id'), 'tenant_id': current_user.tenant_id},
-            {'_id': 0, 'guest_name': 1, 'room_number': 1, 'room_id': 1, 'check_in': 1, 'check_out': 1}
-        )
+        booking = booking_map.get(folio.get('booking_id'))
         if booking:
             folio['guest_name'] = booking.get('guest_name', '')
             folio['room_number'] = booking.get('room_number', '')

@@ -134,66 +134,52 @@ async def get_adr_mobile(
         end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
-    # Get completed bookings in date range
-    bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['checked_out', 'checked_in']},
-        'check_in': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
-
-    # Calculate room revenue from folio charges
-    total_room_revenue = 0
-    for booking in bookings:
-        charges = await db.folio_charges.find({
-            'tenant_id': current_user.tenant_id,
-            'booking_id': booking['id'],
-            'charge_category': 'room',
-            'voided': False
-        }).to_list(1000)
-        total_room_revenue += sum(c.get('total', 0) for c in charges)
-
-    # Calculate room nights
-    total_room_nights = 0
-    for booking in bookings:
-        check_in = datetime.fromisoformat(booking['check_in'])
-        check_out = datetime.fromisoformat(booking['check_out'])
-        nights = (check_out - check_in).days
-        total_room_nights += max(nights, 1)
-
-    # Calculate ADR
-    adr = round(total_room_revenue / total_room_nights, 2) if total_room_nights > 0 else 0
-
-    # Calculate comparison with previous period
+    # Sprint 33: ADR computed via parallel batched queries
+    # (replaces 2× O(N) loops over folio_charges that caused 12s timeout).
+    import asyncio as _asyncio
     prev_start = start - (end - start)
     prev_end = start
-    prev_bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['checked_out', 'checked_in']},
-        'check_in': {
-            '$gte': prev_start.isoformat(),
-            '$lte': prev_end.isoformat()
-        }
-    }).to_list(10000)
 
-    prev_room_revenue = 0
-    prev_room_nights = 0
-    for booking in prev_bookings:
-        charges = await db.folio_charges.find({
+    async def _compute_period(p_start, p_end):
+        bks = await db.bookings.find({
             'tenant_id': current_user.tenant_id,
-            'booking_id': booking['id'],
-            'charge_category': 'room',
-            'voided': False
-        }).to_list(1000)
-        prev_room_revenue += sum(c.get('total', 0) for c in charges)
+            'status': {'$in': ['checked_out', 'checked_in']},
+            'check_in': {
+                '$gte': p_start.isoformat(),
+                '$lte': p_end.isoformat()
+            }
+        }, {'_id': 0, 'id': 1, 'check_in': 1, 'check_out': 1}).to_list(10000)
+        if not bks:
+            return 0.0, 0
+        booking_ids = [b['id'] for b in bks]
+        # Aggregate room revenue in ONE query via $in
+        agg = await db.folio_charges.aggregate([
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'booking_id': {'$in': booking_ids},
+                'charge_category': 'room',
+                'voided': False,
+            }},
+            {'$group': {'_id': None, 'total': {'$sum': '$total'}}},
+        ]).to_list(1)
+        revenue = float(agg[0]['total']) if agg else 0.0
+        nights = 0
+        for b in bks:
+            try:
+                ci = datetime.fromisoformat(b['check_in'])
+                co = datetime.fromisoformat(b['check_out'])
+                nights += max((co - ci).days, 1)
+            except Exception:
+                nights += 1
+        return revenue, nights
 
-        check_in = datetime.fromisoformat(booking['check_in'])
-        check_out = datetime.fromisoformat(booking['check_out'])
-        nights = (check_out - check_in).days
-        prev_room_nights += max(nights, 1)
+    (total_room_revenue, total_room_nights), (prev_room_revenue, prev_room_nights) = \
+        await _asyncio.gather(
+            _compute_period(start, end),
+            _compute_period(prev_start, prev_end),
+        )
 
+    adr = round(total_room_revenue / total_room_nights, 2) if total_room_nights > 0 else 0
     prev_adr = round(prev_room_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
     change_pct = round(((adr - prev_adr) / prev_adr * 100), 2) if prev_adr > 0 else 0
 

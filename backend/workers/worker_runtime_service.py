@@ -25,54 +25,70 @@ class WorkerRuntimeService:
         self._failure_archive = failure_archive
 
     async def get_queue_health(self, ctx: OperationContext) -> ServiceResult:
-        """Comprehensive queue health with severity, saturation, and per-queue breakdown."""
+        """Comprehensive queue health with severity, saturation, and per-queue breakdown.
+        Sprint 33: 21 sequential count_documents → parallel asyncio.gather (~7×).
+        """
+        import asyncio as _asyncio
         try:
-            base_health = await self._task_status.get_queue_health()
+            now = datetime.now(UTC)
+            last_24h = (now - timedelta(hours=24)).isoformat()
+            today_start = now.replace(hour=0, minute=0, second=0).isoformat()
+            last_5m = (now - timedelta(minutes=5)).isoformat()
 
-            # Per-queue health breakdown
             queue_types = ["sync", "notification", "report", "audit", "import"]
-            per_queue = []
+
+            # Build all coroutines, then gather in one shot
+            base_health_q = self._task_status.get_queue_health()
+            per_queue_qs = []
             for qt in queue_types:
-                pending = await db.task_queue.count_documents({"task_type": qt, "status": "pending"})
-                processing = await db.task_queue.count_documents({"task_type": qt, "status": "processing"})
-                failed_24h = await db.task_queue.count_documents({
+                per_queue_qs.append(db.task_queue.count_documents(
+                    {"task_type": qt, "status": "pending"}))
+                per_queue_qs.append(db.task_queue.count_documents(
+                    {"task_type": qt, "status": "processing"}))
+                per_queue_qs.append(db.task_queue.count_documents({
                     "task_type": qt, "status": "failed",
-                    "started_at": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
-                })
+                    "started_at": {"$gte": last_24h},
+                }))
+            dl_total_q = db.dead_letter_tasks.count_documents({})
+            dl_today_q = db.dead_letter_tasks.count_documents({
+                "archived_at": {"$gte": today_start}
+            })
+            replay_q = db.dead_letter_tasks.count_documents({"status": "archived"})
+            recent_q = db.task_queue.count_documents({
+                "status": "completed", "started_at": {"$gte": last_5m},
+            })
+            retry_q = db.task_queue.count_documents({
+                "retry_count": {"$gt": 0}, "started_at": {"$gte": last_24h},
+            })
+
+            results = await _asyncio.gather(
+                base_health_q, *per_queue_qs,
+                dl_total_q, dl_today_q, replay_q, recent_q, retry_q,
+                return_exceptions=True,
+            )
+            def _safe(v, default=0):
+                return default if isinstance(v, Exception) else v
+            base_health = _safe(results[0], {})
+            per_q_counts = [_safe(v, 0) for v in results[1:1 + 3 * len(queue_types)]]
+            dl_total, dl_today, replay_candidates, recent_completions, retry_count_24h = \
+                [_safe(v, 0) for v in results[1 + 3 * len(queue_types):]]
+
+            per_queue = []
+            for i, qt in enumerate(queue_types):
+                pending = per_q_counts[i * 3]
+                processing = per_q_counts[i * 3 + 1]
+                failed_24h = per_q_counts[i * 3 + 2]
                 q_health = "healthy"
                 if pending > 100 or failed_24h > 10:
                     q_health = "critical"
                 elif pending > 30 or failed_24h > 3:
                     q_health = "warning"
                 per_queue.append({
-                    "queue": qt,
-                    "health": q_health,
-                    "pending": pending,
-                    "processing": processing,
+                    "queue": qt, "health": q_health,
+                    "pending": pending, "processing": processing,
                     "failed_24h": failed_24h,
                 })
-
-            # Dead-letter trend (last 7 days)
-            dl_total = await db.dead_letter_tasks.count_documents({})
-            dl_today = await db.dead_letter_tasks.count_documents({
-                "archived_at": {"$gte": datetime.now(UTC).replace(hour=0, minute=0, second=0).isoformat()}
-            })
-
-            # Replay candidates
-            replay_candidates = await db.dead_letter_tasks.count_documents({"status": "archived"})
-
-            # Worker heartbeat (simulated from task processing activity)
-            recent_completions = await db.task_queue.count_documents({
-                "status": "completed",
-                "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()}
-            })
             workers_responding = recent_completions > 0
-
-            # Retry pressure
-            retry_count_24h = await db.task_queue.count_documents({
-                "retry_count": {"$gt": 0},
-                "started_at": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
-            })
 
             # Severity calculation
             stuck = base_health.get("stuck", 0)

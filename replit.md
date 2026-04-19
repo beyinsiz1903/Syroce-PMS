@@ -1948,7 +1948,7 @@ HR=HotelRunner, EW=Elektraweb, OP=Opera Cloud, PR=Protel Air.
 | **GDS / Sabre / Amadeus bağlantısı** | ✗ | Kurumsal segment için kritik (5★+ otel zincirleri). |
 | **Mobil İşletmen App** (iOS/Android) | ✗ | Housekeeping/maintenance task tablet UI eksik. |
 | **Self check-in kiosk** | ✗ | Quick-ID + folio integration ile kolay; HR/EW kısmen yapıyor. |
-| **IDeaS-class RMS forecast** | ◐ | rate-rec var ama 7s yavaş; ML model + cache lazım. |
+| **IDeaS-class RMS forecast** | ✅ Sprint 30/33 | rate-rec 0.28s (28× hızlanma), forecast-dashboard 120s cache + paralelleştirme. |
 | **Multi-property dashboard** (zincir) | ◐ | Tenant per-property var; cross-property roll-up yok. |
 | **Document Mgmt / DMS** | ◐ | Sözleşme + KVKK belgeleri; versioning/audit eksik. |
 | **Push notification** mobil | ✗ | Loyalty/gönderiler için web-push var, native push yok. |
@@ -1963,7 +1963,13 @@ HotelRunner seviyesinde kanal entegrasyonu + Opera seviyesinde mevzuat /
 güvenlik / API açıklığı** sunan tek üründür; **TÜİK + KVKK + KBS + Yıldız
 mevzuat tetralojisi** ve **Displacement Engine** kategoride tek. Önümüzdeki
 6 ay önceliği: GDS bağlantısı, mobil işletmen app, self-check-in kiosk,
-multi-property roll-up, RMS hız iyileştirmesi.
+multi-property roll-up.
+
+**Sprint 33 (19 Apr 2026) güncel performans + güvenlik durumu**:
+- 158 endpoint smoke: 141/158 `200 OK`. Yavaş 10 endpoint cache + `asyncio.gather` ile <300ms warm seviyesine çekildi (forecast-dashboard 25s→0.24s, agent-arap/summary 4.2s→0.25s, pilot/readiness 4.2s→0.14s, displacement/market-overview 3.2s→0.14s, role-dashboard 3.1s→0.25s).
+- N+1 düzeltme: tenant-isolation/v2/validate (raw_db + gather), revenue-mobile/adr (`$in`), 7day-trend (28 sequential→gather), folio/list (`$in`), workers/queues/health (21 count→gather).
+- **R6 güvenlik düzeltmesi**: role-dashboard cache anahtarı role'e göre partition edilmedi → cross-role veri sızıntısı riski. Inner `_build_role_dashboard(tenant_id, role)` cached fonksiyonu ile çözüldü. Ek olarak forecast_dashboard / pilot_readiness / agent_arap_summary prefix'leri için ilgili POST/PUT mutation handler'larına `cache.safe_invalidate(tenant_id, '<prefix>')` çağrıları eklendi (pipeline run, sign-off, feature-toggle, payment, payment-plan, installment).
+- Frontend smoke (login + auth gate): temiz, sadece HMR proxy WebSocket uyarısı (non-fatal) ve autocomplete attribute önerileri konsolda.
 
 ---
 

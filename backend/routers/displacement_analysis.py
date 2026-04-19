@@ -9,6 +9,14 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.revenue_management.displacement_engine import DisplacementEngine
 
+try:
+    from cache_manager import cached
+except ImportError:  # pragma: no cover
+    def cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
+
 router = APIRouter(prefix="/api/displacement", tags=["displacement-analysis"])
 engine = DisplacementEngine()
 
@@ -60,6 +68,7 @@ async def analyze_displacement(req: DisplacementRequest, current_user: User = De
 
 
 @router.get("/market-overview")
+@cached(ttl=120, key_prefix="displacement_market_overview")  # Sprint 33
 async def market_overview(
     days: int = Query(14, ge=1, le=60),
     current_user: User = Depends(get_current_user),

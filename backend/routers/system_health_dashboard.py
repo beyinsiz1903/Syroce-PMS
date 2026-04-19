@@ -12,6 +12,14 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 
+try:
+    from cache_manager import cached
+except ImportError:  # pragma: no cover
+    def cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
+
 router = APIRouter(prefix="/api/system-health", tags=["System Health"])
 
 
@@ -99,49 +107,50 @@ async def _get_sync_summary(tenant_id: str) -> dict[str, Any]:
     }
 
 
-@router.get("/role-dashboard")
-async def get_role_based_dashboard(current_user: User = Depends(get_current_user)):
-    """
-    Role-scoped system health dashboard data.
-    GM: property summary, night audit, drift
-    Admin: full operational — queues, security, workers, drift, sync
-    Superadmin: global aggregation + cross-property
-    """
-    ctx = OperationContext.from_user(current_user)
-    role = str(ctx.actor_role).lower().replace("userrole.", "")
-
+@cached(ttl=60, key_prefix="role_dashboard")  # Sprint 33 R6: keyed by role to prevent cross-role leak
+async def _build_role_dashboard(tenant_id: str, role: str) -> dict[str, Any]:
+    """Inner cacheable: key includes tenant_id (auto) + role (positional str arg)."""
     base_data: dict[str, Any] = {
         "role": role,
-        "tenant_id": ctx.tenant_id,
+        "tenant_id": tenant_id,
         "scope": "property" if role == "gm" else ("tenant" if role == "admin" else "global"),
         "last_updated_at": datetime.now(UTC).isoformat(),
     }
 
     if role == "gm":
         base_data["panels"] = {
-            "night_audit": await _get_night_audit_status(ctx.tenant_id),
-            "drift_summary": await _get_drift_summary(ctx.tenant_id),
-            "sync_summary": await _get_sync_summary(ctx.tenant_id),
+            "night_audit": await _get_night_audit_status(tenant_id),
+            "drift_summary": await _get_drift_summary(tenant_id),
+            "sync_summary": await _get_sync_summary(tenant_id),
             "queue_impact": {"status": "healthy", "detail": "No blocked operations"},
         }
     elif role in ("admin", "supervisor"):
         base_data["panels"] = {
-            "queue_health": await _get_queue_health(ctx.tenant_id),
-            "security": await _get_security_summary(ctx.tenant_id),
-            "workers": await _get_worker_health(ctx.tenant_id),
-            "drift_summary": await _get_drift_summary(ctx.tenant_id),
-            "sync_summary": await _get_sync_summary(ctx.tenant_id),
-            "night_audit": await _get_night_audit_status(ctx.tenant_id),
+            "queue_health": await _get_queue_health(tenant_id),
+            "security": await _get_security_summary(tenant_id),
+            "workers": await _get_worker_health(tenant_id),
+            "drift_summary": await _get_drift_summary(tenant_id),
+            "sync_summary": await _get_sync_summary(tenant_id),
+            "night_audit": await _get_night_audit_status(tenant_id),
         }
     else:  # super_admin or other
         base_data["panels"] = {
-            "queue_health": await _get_queue_health(ctx.tenant_id),
-            "security": await _get_security_summary(ctx.tenant_id),
-            "workers": await _get_worker_health(ctx.tenant_id),
-            "drift_summary": await _get_drift_summary(ctx.tenant_id),
-            "sync_summary": await _get_sync_summary(ctx.tenant_id),
-            "night_audit": await _get_night_audit_status(ctx.tenant_id),
+            "queue_health": await _get_queue_health(tenant_id),
+            "security": await _get_security_summary(tenant_id),
+            "workers": await _get_worker_health(tenant_id),
+            "drift_summary": await _get_drift_summary(tenant_id),
+            "sync_summary": await _get_sync_summary(tenant_id),
+            "night_audit": await _get_night_audit_status(tenant_id),
             "cross_property": {"tenant_count": 1, "properties_monitored": 1},
         }
 
     return base_data
+
+
+@router.get("/role-dashboard")
+async def get_role_based_dashboard(current_user: User = Depends(get_current_user)):
+    """Role-scoped system health dashboard. Caching keyed by (tenant_id, role)
+    via inner `_build_role_dashboard` to prevent cross-role data leakage."""
+    ctx = OperationContext.from_user(current_user)
+    role = str(ctx.actor_role).lower().replace("userrole.", "")
+    return await _build_role_dashboard(ctx.tenant_id, role)

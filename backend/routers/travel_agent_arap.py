@@ -17,6 +17,24 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 
+try:
+    from cache_manager import cache, cached
+except ImportError:  # pragma: no cover
+    cache = None
+    def cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
+
+
+def _invalidate_arap(tenant_id: str):
+    """Sprint 33 R6: invalidate agent_arap_summary cache after AR/AP mutation."""
+    if cache is not None and tenant_id:
+        try:
+            cache.safe_invalidate(tenant_id, "agent_arap_summary")
+        except Exception:  # pragma: no cover
+            pass
+
 router = APIRouter(prefix="/api/agent-arap", tags=["travel-agent-arap"])
 
 
@@ -120,6 +138,7 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
 
 
 @router.get("/summary")
+@cached(ttl=120, key_prefix="agent_arap_summary")  # Sprint 33: heavy ledger aggregate
 async def get_summary(current_user: User = Depends(get_current_user)):
     ledger = await _get_agency_ledger(current_user.tenant_id)
 
@@ -266,6 +285,7 @@ async def record_payment(
     }
     await db.agency_transactions.insert_one(txn)
     txn.pop("_id", None)
+    _invalidate_arap(current_user.tenant_id)
     return {"success": True, "transaction": txn}
 
 
@@ -328,6 +348,7 @@ async def create_payment_plan(
     }
     await db.agency_payment_plans.insert_one(plan)
     plan.pop("_id", None)
+    _invalidate_arap(current_user.tenant_id)
     return {"success": True, "plan": plan}
 
 
@@ -378,6 +399,7 @@ async def update_installment(
         }
         await db.agency_transactions.insert_one(txn)
 
+    _invalidate_arap(current_user.tenant_id)
     return {"success": True, "status": new_status}
 
 

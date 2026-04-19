@@ -16,6 +16,24 @@ from modules.data_intelligence.guest_intelligence import guest_intelligence
 from modules.data_intelligence.operational_ai import operational_ai
 from modules.data_intelligence.revenue_ml_pipeline import revenue_pipeline
 
+try:
+    from cache_manager import cache, cached
+except ImportError:  # pragma: no cover
+    cache = None
+    def cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
+
+
+def _invalidate_forecast(tenant_id: str):
+    """Sprint 33 R6: invalidate forecast_dashboard cache after pipeline run."""
+    if cache is not None and tenant_id:
+        try:
+            cache.safe_invalidate(tenant_id, "forecast_dashboard")
+        except Exception:  # pragma: no cover
+            pass
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/data-intelligence", tags=["data-intelligence"])
@@ -39,17 +57,24 @@ class RunPipelineReq(BaseModel):
 async def run_revenue_pipeline(req: RunPipelineReq,
                                 current_user: User = Depends(get_current_user)):
     """Execute the full Revenue ML Pipeline."""
-    return await revenue_pipeline.run_pipeline(
+    result = await revenue_pipeline.run_pipeline(
         tenant_id=current_user.tenant_id,
         room_type=req.room_type,
         target_date=req.target_date,
         property_id=req.property_id,
     )
+    _invalidate_forecast(current_user.tenant_id)
+    return result
 
 
 @router.get("/revenue/forecast-dashboard")
+@cached(ttl=120, key_prefix="forecast_dashboard")  # Sprint 33: heavy ML aggregate
 async def get_revenue_forecast_dashboard(current_user: User = Depends(get_current_user)):
-    """Get comprehensive revenue forecast dashboard."""
+    """Get comprehensive revenue forecast dashboard.
+    Cached 120s — underlying ML models scan bookings/folio_charges (25s cold).
+    Mutations on bookings/pricing recommendations should invalidate via
+    `cache.safe_invalidate(tenant_id, 'forecast_dashboard')`.
+    """
     return await revenue_pipeline.get_forecast_dashboard(current_user.tenant_id)
 
 

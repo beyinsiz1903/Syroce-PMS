@@ -333,26 +333,37 @@ class RevenueMLPipeline:
     # ── Forecast Dashboard ──
 
     async def get_forecast_dashboard(self, tenant_id: str) -> dict[str, Any]:
-        """Get comprehensive forecast dashboard data."""
-        demand = await self.demand_model.forecast_demand(tenant_id, 14)
-        price_points = await self.elasticity_model.get_optimal_price_points(tenant_id)
-        at_risk = await self.cancellation_model.get_at_risk_bookings(tenant_id, 0.25)
-        conversion = await self.booking_prob_model.get_portfolio_conversion_rates(tenant_id)
-
-        # Recent pipeline recommendations
-        recent_recs = await db.pricing_recommendations.find(
-            {"tenant_id": tenant_id, "source": "ml_pipeline"},
-            {"_id": 0},
-        ).sort("created_at", -1).limit(20).to_list(20)
-
-        # Pipeline run history
-        recent_runs = await db.revenue_ml_snapshots.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0},
-        ).sort("generated_at", -1).limit(5).to_list(5)
-
-        # Auto-pricing dashboard
-        autopricing_dash = await autopricing.get_autopricing_dashboard(tenant_id)
+        """Get comprehensive forecast dashboard data.
+        Sprint 33: 7 sequential ML/DB calls → asyncio.gather (~5-7× speedup).
+        """
+        import asyncio as _asyncio
+        demand, price_points, at_risk, conversion, recent_recs, recent_runs, autopricing_dash = \
+            await _asyncio.gather(
+                self.demand_model.forecast_demand(tenant_id, 14),
+                self.elasticity_model.get_optimal_price_points(tenant_id),
+                self.cancellation_model.get_at_risk_bookings(tenant_id, 0.25),
+                self.booking_prob_model.get_portfolio_conversion_rates(tenant_id),
+                db.pricing_recommendations.find(
+                    {"tenant_id": tenant_id, "source": "ml_pipeline"},
+                    {"_id": 0},
+                ).sort("created_at", -1).limit(20).to_list(20),
+                db.revenue_ml_snapshots.find(
+                    {"tenant_id": tenant_id},
+                    {"_id": 0},
+                ).sort("generated_at", -1).limit(5).to_list(5),
+                autopricing.get_autopricing_dashboard(tenant_id),
+                return_exceptions=True,
+            )
+        # Defensive defaults if any call failed
+        def _ok(v, default):
+            return default if isinstance(v, Exception) else v
+        demand = _ok(demand, {})
+        price_points = _ok(price_points, [])
+        at_risk = _ok(at_risk, {})
+        conversion = _ok(conversion, {})
+        recent_recs = _ok(recent_recs, [])
+        recent_runs = _ok(recent_runs, [])
+        autopricing_dash = _ok(autopricing_dash, {})
 
         return {
             "tenant_id": tenant_id,
