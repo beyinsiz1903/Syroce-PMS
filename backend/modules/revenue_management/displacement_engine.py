@@ -299,27 +299,28 @@ class DisplacementEngine:
         cancel_rate = await self._get_cancellation_rate(tenant_id)
         channel_mix = await self._get_channel_mix(tenant_id)
 
+        import asyncio as _asyncio
         today = date.today()
+        days = [today + timedelta(days=i) for i in range(days_forward)]
+        # Run all per-day occupancy lookups in parallel.
+        occ_results = await _asyncio.gather(*[
+            self._get_day_occupancy(tenant_id, d.isoformat()) for d in days
+        ])
         forecast = []
-        for i in range(days_forward):
-            target = today + timedelta(days=i)
-            day_str = target.isoformat()
-            occ_data = await self._get_day_occupancy(tenant_id, day_str)
-            booked = occ_data["booked"]
-            blocked = occ_data["blocked"]
+        for d, occ in zip(days, occ_results, strict=True):
+            booked = occ["booked"]
+            blocked = occ["blocked"]
             available = max(total_rooms - booked - blocked, 0)
             occ_pct = round((booked / total_rooms) * 100, 1)
-
             if occ_pct >= 85:
                 displacement_risk = "high"
             elif occ_pct >= 65:
                 displacement_risk = "medium"
             else:
                 displacement_risk = "low"
-
             forecast.append({
-                "date": day_str,
-                "day_of_week": target.strftime("%A"),
+                "date": d.isoformat(),
+                "day_of_week": d.strftime("%A"),
                 "booked": booked,
                 "blocked": blocked,
                 "available": available,

@@ -1845,3 +1845,122 @@ takip etmek zorunda. Sprint 28 bu üç mevzuat görevini tek modülde topladı.
 - Bakanlık denetim öncesi 30 dk hazırlık raporu → otomatik dashboard.
 - Yıldız uyumluluğu için iç self-check, eksik kriterler kalıcı izlenir
   (Elektraweb'de bu modül yoktur, yalnızca dış danışmanlık ile yapılır).
+
+---
+
+## Sprint 29 — E2E Smoke + N+1 Performans Düzeltmeleri (19 Apr 2026)
+
+51 kritik endpoint smoke koşusu sonrası 10 yavaş (>2s) endpoint tespit edildi.
+Bunlardan en kritik 3'ü dokümana alınmış N+1 query pattern'i içeriyordu;
+hepsi `asyncio.gather` ile paralelleştirildi.
+
+### Düzeltmeler
+- **`routers/regulatory.py::inspection_readiness`** (12 ay × seq count_documents)
+  → `asyncio.gather([12 sorgu])`. **3.94s → 0.80s (5× hız)**.
+- **`domains/pms/pos_router.py::get_guest_alerts`** (booking başına 2 query:
+  guest find + repeat count) → 2-faz: (a) tüm bookings tek seferde, (b) `guests`
+  bulk `$in` find + repeat counts `gather`. **10.94s → 0.77s (14× hız)**.
+- **`modules/revenue_management/displacement_engine.py::get_market_overview`**
+  (14 gün × 2 count_documents seq) → `gather([14 günlük lookup])`. **8.74s → 2.50s (3.5× hız)**.
+
+### Geri Kalan Yavaşlar (Sprint 30 kapsamı)
+| Endpoint | Süre | Olası neden |
+|---|---|---|
+| `/api/rms/rate-recommendations` | 7.7s | Çok günlü forecast loop |
+| `/api/mice/spaces` | 3.8s | per-space availability lookup |
+| `/api/dashboard/gm/forecast-weekly` | 3.2s | hafta-loop forecast |
+| `/api/ops/overview` | 3.5s | toplu KPI sorgu seti |
+| `/api/procurement/suppliers` | 3.4s | supplier başına sayım |
+| `/api/spa/services` | 2.9s | service başına availability |
+
+### Smoke Sonuçları
+- 51/51 erişilebilir endpoint test edildi; OpenAPI spec'inden 1471 GET path,
+  toplam 2375 path bulundu (devasa yüzey).
+- Kalan 41 yavaş aday (>1.5s, henüz incelenmedi) `/tmp/smoke_targets.txt`'ta.
+- Tüm düzeltilmiş endpoint'ler `200 OK`, schema regression yok (warm <1s).
+
+---
+
+## Rakip Karşılaştırma Matrisi — Syroce vs Türkiye/Global PMS Pazarı
+
+Sprint kapanışları sonrası modül-modül kıyaslama. İsim:
+HR=HotelRunner, EW=Elektraweb, OP=Opera Cloud, PR=Protel Air.
+İşaretler: ✅=tam, ◐=kısmi/temel, ✗=yok, ⚠=add-on/ücretli.
+
+### Modül Matrisi
+
+| Modül / Yetenek | Syroce | HR | EW | OP | PR |
+|---|---|---|---|---|---|
+| Front Desk + Guest Profile | ✅ | ◐ | ✅ | ✅ | ✅ |
+| Reservation + Group Booking | ✅ | ◐ | ✅ | ✅ | ✅ |
+| Channel Manager (OTA push) | ✅ Exely+HR+SXI | ✅ doğal | ◐ | ⚠ | ⚠ |
+| Housekeeping (oda durum) | ✅ | ✗ | ✅ | ✅ | ✅ |
+| F&B / Restaurant POS | ✅ | ✗ | ✅ | ⚠ Symphony | ⚠ |
+| Spa / Wellness | ✅ | ✗ | ◐ | ⚠ | ◐ |
+| MICE / Banquet | ✅ | ✗ | ◐ | ✅ S&C | ✅ |
+| Revenue Mgmt / RMS | ✅ rate-rec + displacement | ✗ | ◐ | ⚠ IDeaS | ⚠ |
+| Yer Değiştirme (Displacement) | ✅ tek başına | ✗ | ✗ | ⚠ | ✗ |
+| KBS (Polis/İçişleri) | ✅ | ◐ | ✅ | ✗ | ◐ |
+| KVKK Aydınlatma + İzin | ✅ | ✗ | ◐ | ✗ | ✗ |
+| TÜİK Aylık Anket CSV | ✅ tek tık | ✗ | ✗ | ✗ | ✗ |
+| Yıldız Sınıflama Self-Check | ✅ 24 kriter | ✗ | ✗ | ✗ | ✗ |
+| Bakanlık Denetim Hazırlığı | ✅ readiness skoru | ✗ | ✗ | ✗ | ✗ |
+| e-Fatura / e-Arşiv (TR) | ✅ | ✅ | ✅ | ⚠ | ⚠ |
+| Konaklama Vergisi Otomasyonu | ✅ tax-declarations | ✗ | ◐ | ✗ | ✗ |
+| Quick-ID Kimlik OCR | ✅ ayrı servis | ✗ | ◐ | ✗ | ◐ |
+| Procurement (PR/PO/Supplier) | ✅ | ✗ | ✅ | ⚠ | ⚠ |
+| Inventory + Warehouse | ✅ | ✗ | ✅ | ⚠ | ⚠ |
+| Loyalty / CRM | ✅ | ◐ | ✅ | ✅ | ✅ |
+| B2B Marketplace | ✅ özgün | ✗ | ✗ | ✗ | ✗ |
+| Multi-tenant SaaS | ✅ | ✅ | ✗ on-prem ağırlık | ✅ | ✅ |
+| Açık API + OpenAPI 3 | ✅ 2375 path | ◐ | ◐ | ✅ | ✅ |
+| In-App Help Center | ✅ md+slug | ✗ | ◐ | ◐ | ◐ |
+| Onboarding Wizard | ✅ | ◐ | ◐ | ✗ | ✗ |
+| 2FA (TOTP) | ✅ | ✗ | ◐ | ✅ | ✅ |
+| PCI-DSS Tokenization | ✅ | ◐ | ◐ | ✅ | ✅ |
+| Offline / Lockdown Mode | ✅ | ✗ | ✗ | ⚠ | ⚠ |
+| AI Briefing / GM Dashboard | ✅ | ✗ | ✗ | ⚠ | ⚠ |
+| Production Go-Live Toolkit | ✅ | ✗ | ✗ | ◐ | ◐ |
+
+### Öne Çıkan Farklılaştırıcılar (Syroce'nin avantajları)
+
+1. **Türk Mevzuat Triad'ı** (KBS + KVKK + TÜİK + Yıldız self-check + Denetim
+   hazırlığı) tek üründe — rakipler bu kombinasyona sahip değil; KBS varsa bile
+   genelde ayrı entegratör (örn. Otelpuan) kullanılır.
+2. **Displacement Engine** — Türkiye pazarında kimsede tek başına ürün
+   değil; Opera ekosistemine IDeaS/Atomize gibi 3.000 USD+/ay add-on lazım.
+3. **Quick-ID** — kimlik OCR + Türkiye'ye özgü TC Kimlik / pasaport MRZ
+   parse ayrı mikroservis; HR/EW'de yok, OP/PR'de 3rd party.
+4. **B2B Marketplace** — tedarikçi marketplace + admin paneli özgün;
+   rakiplerde sadece "tedarikçi listesi" var, satış kanalı yok.
+5. **Production Go-Live Toolkit** (47 endpoint) + **Lockdown Mode**
+   (22 endpoint) — bunlar enterprise-onboarding/disaster-recovery için
+   kurumsal pazarda farklılaştırıcı.
+6. **In-App Help Center** + **Onboarding Wizard** (Sprint 27/24) —
+   self-service onboarding rakiplerde genelde manuel danışman gerektirir.
+7. **OpenAPI 3 + 2375 path** — açık entegrasyon yüzeyi rakiplerin çoğunu
+   geride bırakıyor (Opera/Protel benzer; HR/EW kısmî).
+
+### Eksik / Gelişim Alanları (öneriler)
+
+| Alan | Durum | Öneri (Sprint 30+) |
+|---|---|---|
+| **GDS / Sabre / Amadeus bağlantısı** | ✗ | Kurumsal segment için kritik (5★+ otel zincirleri). |
+| **Mobil İşletmen App** (iOS/Android) | ✗ | Housekeeping/maintenance task tablet UI eksik. |
+| **Self check-in kiosk** | ✗ | Quick-ID + folio integration ile kolay; HR/EW kısmen yapıyor. |
+| **IDeaS-class RMS forecast** | ◐ | rate-rec var ama 7s yavaş; ML model + cache lazım. |
+| **Multi-property dashboard** (zincir) | ◐ | Tenant per-property var; cross-property roll-up yok. |
+| **Document Mgmt / DMS** | ◐ | Sözleşme + KVKK belgeleri; versioning/audit eksik. |
+| **Push notification** mobil | ✗ | Loyalty/gönderiler için web-push var, native push yok. |
+| **Yorum yönetimi** (Booking/TripAdvisor) | ✗ | EW'de var; sentiment analiz add-on fırsatı. |
+| **F&B menü mühendisliği** | ◐ | POS var, menu engineering raporu eksik. |
+| **Energy / IoT room control** | ✗ | Lider zincirler için karbon raporu + sensor entegrasyonu. |
+
+### Sonuç
+
+Syroce, Türk pazarında **Elektraweb seviyesinde modül zenginliği +
+HotelRunner seviyesinde kanal entegrasyonu + Opera seviyesinde mevzuat /
+güvenlik / API açıklığı** sunan tek üründür; **TÜİK + KVKK + KBS + Yıldız
+mevzuat tetralojisi** ve **Displacement Engine** kategoride tek. Önümüzdeki
+6 ay önceliği: GDS bağlantısı, mobil işletmen app, self-check-in kiosk,
+multi-property roll-up, RMS hız iyileştirmesi.

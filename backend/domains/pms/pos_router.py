@@ -1840,11 +1840,13 @@ async def get_guest_alerts(
     """Get guest alerts (VIP, birthday, health issues, etc.)"""
     current_user = await get_current_user(credentials)
 
+    import asyncio as _asyncio
     alerts = []
     today = datetime.now(UTC).date()
 
-    # Get all in-house and arriving guests
-    async for booking in db.bookings.find({
+    # 1) Pull all relevant bookings via cursor (no truncation).
+    bookings_list: list[dict] = []
+    async for b in db.bookings.find({
         'tenant_id': current_user.tenant_id,
         '$or': [
             {'status': 'checked_in'},
@@ -1857,11 +1859,36 @@ async def get_guest_alerts(
             }
         ]
     }):
-        guest = await db.guests.find_one({
-            'id': booking.get('guest_id'),
-            'tenant_id': current_user.tenant_id
-        })
+        bookings_list.append(b)
 
+    # 2) Batch-load guests + repeat-stay counts with bounded concurrency.
+    unique_ids = list({b.get('guest_id') for b in bookings_list if b.get('guest_id')})
+
+    # Guest fetch — chunk $in to keep BSON payload safe (chunks of 500).
+    guest_map: dict[str, dict] = {}
+    for i in range(0, len(unique_ids), 500):
+        chunk = unique_ids[i:i + 500]
+        async for g in db.guests.find({
+            'id': {'$in': chunk},
+            'tenant_id': current_user.tenant_id,
+        }):
+            guest_map[g['id']] = g
+
+    # Repeat counts — gather with semaphore to cap concurrent ops at 25.
+    sem = _asyncio.Semaphore(25)
+
+    async def _count(gid: str) -> int:
+        async with sem:
+            return await db.bookings.count_documents({
+                'guest_id': gid,
+                'tenant_id': current_user.tenant_id,
+                'status': 'checked_out',
+            })
+    repeat_counts = await _asyncio.gather(*[_count(gid) for gid in unique_ids])
+    repeat_map = dict(zip(unique_ids, repeat_counts, strict=True))
+
+    for booking in bookings_list:
+        guest = guest_map.get(booking.get('guest_id'))
         if not guest:
             continue
 
@@ -1928,12 +1955,8 @@ async def get_guest_alerts(
                 }
             })
 
-        # Repeat Guest Alert
-        guest_booking_count = await db.bookings.count_documents({
-            'guest_id': guest.get('id'),
-            'tenant_id': current_user.tenant_id,
-            'status': 'checked_out'
-        })
+        # Repeat Guest Alert (precomputed)
+        guest_booking_count = repeat_map.get(guest.get('id'), 0)
 
         if guest_booking_count >= 5:
             alerts.append({

@@ -194,23 +194,30 @@ async def inspection_readiness(
     total_users = await db.users.count_documents(
         {"tenant_id": current_user.tenant_id, "active": {"$ne": False}})
 
-    # 12 aylık doluluk trend (sade)
+    # 12 aylık doluluk trend — paralel sorgular (asyncio.gather).
+    import asyncio as _asyncio
     now = datetime.now(UTC)
-    months: list[dict[str, Any]] = []
+    spec: list[tuple[int, int, datetime, datetime, int]] = []
     for i in range(11, -1, -1):
         y = now.year + ((now.month - 1 - i) // 12)
         m = ((now.month - 1 - i) % 12) + 1
         s, e = _period_bounds(y, m)
         cap = total_rooms * (e - s).days
-        bks = await db.bookings.count_documents(
-            {"tenant_id": current_user.tenant_id,
-             "status": {"$nin": ["cancelled", "no_show"]},
-             "check_in": {"$lt": e.isoformat()},
-             "check_out": {"$gt": s.isoformat()}})
-        months.append({"period": f"{y}-{m:02d}",
-                       "booking_count": bks,
-                       "capacity_room_nights": cap,
-                       "occupancy_pct": (round(bks * 100 / cap, 1) if cap else 0.0)})
+        spec.append((y, m, s, e, cap))
+    counts = await _asyncio.gather(*[
+        db.bookings.count_documents({
+            "tenant_id": current_user.tenant_id,
+            "status": {"$nin": ["cancelled", "no_show"]},
+            "check_in": {"$lt": e.isoformat()},
+            "check_out": {"$gt": s.isoformat()},
+        }) for (_, _, s, e, _) in spec
+    ])
+    months: list[dict[str, Any]] = [
+        {"period": f"{y}-{m:02d}", "booking_count": bks,
+         "capacity_room_nights": cap,
+         "occupancy_pct": (round(bks * 100 / cap, 1) if cap else 0.0)}
+        for (y, m, _, _, cap), bks in zip(spec, counts, strict=True)
+    ]
 
     # Sertifika & belge kontrolleri
     license_expiry_iso = tenant.get("license_expires_at")
