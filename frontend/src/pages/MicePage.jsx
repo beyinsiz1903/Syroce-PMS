@@ -12,7 +12,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
   Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
+  History as HistoryIcon,
 } from 'lucide-react';
+import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
 const STATUS = {
   lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
@@ -38,6 +40,7 @@ const MicePage = () => {
   const [showEventForm, setShowEventForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [beoData, setBeoData] = useState(null);
+  const [historyEvent, setHistoryEvent] = useState(null);
   const [kitchenData, setKitchenData] = useState(null);
   const [opsData, setOpsData] = useState(null);
   const [opsDate, setOpsDate] = useState(new Date().toISOString().slice(0, 10));
@@ -325,6 +328,10 @@ const MicePage = () => {
                         <Button size="sm" variant="ghost" title="Mutfak Fişi"
                                 onClick={() => showKitchen(ev.id)}>
                           <ChefHat className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" title="Değişiklik Geçmişi"
+                                onClick={() => setHistoryEvent(ev)}>
+                          <HistoryIcon className="w-4 h-4" />
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}>Düzenle</Button>
                         {ev.status !== 'completed' && ev.status !== 'cancelled' && (
@@ -891,6 +898,15 @@ const MicePage = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Entity history drawer */}
+      {historyEvent && (
+        <EntityHistoryDrawer
+          entityType="mice_event"
+          entityId={historyEvent.id}
+          title={`${historyEvent.name} (${historyEvent.start_date})`}
+          onClose={() => setHistoryEvent(null)} />
       )}
 
       {/* Ops sheet modal */}

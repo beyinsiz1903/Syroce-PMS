@@ -81,6 +81,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.xchange", "router", ["xchange"], None, None),
     ("routers.spa", "router", ["spa"], None, None),
     ("routers.mice", "router", ["mice"], None, None),
+    ("routers.procurement", "router", ["procurement"], None, None),
     # Domain routers (Phase B extraction)
     ("domains.channel_manager.router", "router", ["channel-manager-domain"], None, None),
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),

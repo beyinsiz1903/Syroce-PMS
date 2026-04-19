@@ -19,9 +19,11 @@ async def log_audit_event(
     db=None,
 ):
     """Helper function to log audit events."""
+    timestamp = datetime.now(UTC).isoformat()
     audit_log = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
+        # Legacy field names (kept for older consumers)
         "user_id": user_id,
         "action": action,
         "entity_type": entity_type,
@@ -29,9 +31,22 @@ async def log_audit_event(
         "details": details,
         "before_value": before_value,
         "after_value": after_value,
+        # New AuditTimeline-compatible field names
+        # (consumed by routers/audit_timeline.py)
+        "actor_id": user_id,
+        "actor_role": None,
+        "operation_name": action,
+        "target_type": entity_type,
+        "target_id": entity_id,
+        "before_snapshot": before_value,
+        "after_snapshot": after_value,
+        "result_status": "success",
+        "severity": "info",
+        "duration_ms": None,
+        "override_reason": None,
         "ip_address": None,
         "user_agent": None,
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": timestamp,
     }
     audit_copy = audit_log.copy()
     await db.audit_logs.insert_one(audit_copy)

@@ -24,6 +24,7 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
+from core.audit import log_audit_event
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
@@ -845,6 +846,13 @@ async def create_event(body: EventIn,
         await db.mice_events.insert_one(event_doc)
 
     event_doc.pop("_id", None)
+    await log_audit_event(
+        tenant_id=tenant_id, user_id=current_user.username,
+        action="create", entity_type="mice_event",
+        entity_id=event_doc["id"],
+        details=f"Etkinlik oluşturuldu: {event_doc.get('name')} "
+                f"({event_doc.get('start_date')})",
+        before_value=None, after_value=event_doc, db=db)
     return event_doc
 
 
@@ -894,10 +902,19 @@ async def update_event(event_id: str, body: EventIn,
         "updated_at": datetime.now(UTC).isoformat(),
     }
     update["totals"] = _compute_totals(update, spaces_by_id)
+    before = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
     res = await db.mice_events.update_one(
         {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
     if not res.matched_count:
         raise HTTPException(404, "Etkinlik bulunamadı")
+    after = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    await log_audit_event(
+        tenant_id=tenant_id, user_id=current_user.username,
+        action="update", entity_type="mice_event", entity_id=event_id,
+        details=f"Etkinlik güncellendi: {after.get('name')}",
+        before_value=before, after_value=after, db=db)
     return {"ok": True, "totals": update["totals"]}
 
 
@@ -949,6 +966,16 @@ async def change_status(event_id: str, body: StatusUpdate,
     # IMPORTANT: tenant_id in write filter (cross-tenant safety).
     await db.mice_events.update_one(
         {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+    after = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    before_clean = {k: v for k, v in event.items() if k != "_id"}
+    await log_audit_event(
+        tenant_id=tenant_id, user_id=current_user.username,
+        action=f"status:{body.status}", entity_type="mice_event",
+        entity_id=event_id,
+        details=(f"{event.get('name')}: {cur_status} → {body.status}"
+                 + (f" — {body.reason}" if body.reason else "")),
+        before_value=before_clean, after_value=after, db=db)
     return {"ok": True, "status": body.status}
 
 
@@ -1012,10 +1039,17 @@ async def delete_event(event_id: str,
                        current_user: User = Depends(get_current_user)) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
+    before = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     res = await db.mice_events.delete_one(
         {"id": event_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Etkinlik bulunamadı")
+    await log_audit_event(
+        tenant_id=current_user.tenant_id, user_id=current_user.username,
+        action="delete", entity_type="mice_event", entity_id=event_id,
+        details=f"Etkinlik silindi: {(before or {}).get('name')}",
+        before_value=before, after_value=None, db=db)
     return {"ok": True}
 
 

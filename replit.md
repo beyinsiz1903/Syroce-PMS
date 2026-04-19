@@ -1613,3 +1613,93 @@ Aşağıdaki ürün uçtan uca doğrulandı:
 - ✅ Cancel reason yokken 422; "Müşteri başka tarih istedi, mekan dolu"
   ile 200, lost_reason DB'ye yazıldı.
 - ✅ `mark-paid?reference=BANKA-TX-12345` → satır paid=true + reference.
+
+---
+
+## Sprint 25 — Procurement Modülü + Versiyonlama Görünür (Apr 2026)
+
+### Strateji
+Türk PMS rakiplerinin Inventory'si "supplier alanı + buton"da kalırken Opera/Protel
+S&C tam Procurement zinciri sunar (vendor master → PR → PO → GRN → 3-yönlü
+mutabakat). Sprint 25 bu açığı kapatır ve aynı anda tüm yazma uçlarına şeffaf
+**değişiklik geçmişi** ekler — kullanıcı her kaydın zaman çizelgesini drawer
+ile inceler (Opera "User Activity" ekranı muadili).
+
+### Backend
+- **Yeni router**: `backend/routers/procurement.py` (~520 LOC).
+  - `proc_suppliers` (vendor master): name/code/tax_no/contact/payment_terms_days/
+    categories/active. `code` unique-sparse; in-use guard delete'te.
+  - `proc_purchase_requests` (PR): department/requester/needed_by/lines[item_name,
+    sku, inventory_item_id, quantity, unit, est_unit_cost]. Status FSM
+    (draft → submitted → approved/rejected/cancelled). Red/iptal en az
+    5 karakter neden.
+  - `proc_purchase_orders` (PO): supplier snapshot (id+name+payment_terms_days),
+    source_pr_id, lines [+received_qty +line_total], subtotal/tax_total/grand_total,
+    currency/tax_rate. PR→PO conversion otomatik PR'ı `converted` yapar.
+  - `proc_goods_receipts` (GRN): partial receiving, qc_status (accepted/rejected/
+    partial); over-receiving 422; PO line.received_qty inkremental;
+    `housekeeping_inventory.current_stock` `$inc` ile **otomatik artırılır**
+    (3-yönlü mutabakat için stok-tarafı tamam).
+  - `proc_counters` koleksiyonu ile atomik `find_one_and_update($inc seq)`
+    numaralandırma: `SUP-2026-####`, `PR-2026-####`, `PO-2026-####`,
+    `GRN-2026-####` (yıl başında reset).
+  - Tüm yazmalar `log_audit_event` ile audit'e işlenir.
+  - `/api/procurement/summary` dashboard kartları için aggregate.
+- **MICE audit hookları** (`backend/routers/mice.py`): create_event /
+  update_event / change_status / delete_event uçları artık her işlemi audit'e
+  before/after snapshot ile yazıyor. Status değişimleri `status:tentative`,
+  `status:cancelled` action'ı + lost_reason snapshot'ı ile.
+- **Kritik düzeltme** `backend/core/audit.py`: `log_audit_event` artık hem
+  legacy alanları (`action/entity_type/entity_id/before_value/after_value`) hem
+  **AuditTimeline-uyumlu yeni alanları** (`operation_name/target_type/target_id/
+  actor_id/before_snapshot/after_snapshot/result_status/severity`) yazıyor —
+  böylece `GET /api/audit/timeline/{type}/{id}` endpoint'i artık tüm domain
+  router'larından gelen logları görüyor (önceden boş dönüyordu).
+- Router kaydı: `backend/bootstrap/router_registry.py`'ya `routers.procurement`
+  eklendi.
+
+### Frontend
+- **Yeni reusable**: `frontend/src/components/EntityHistoryDrawer.jsx`.
+  Sağdan açılan drawer; `entityType` + `entityId` props ile
+  `/api/audit/timeline/{type}/{id}` çağırır. Operation badge (create/update/
+  delete/status), tarih, actor; before/after diff tablosu (max 8 alan).
+- **Yeni sayfa**: `frontend/src/pages/ProcurementPage.jsx` (~570 LOC).
+  - 6 dashboard kartı (aktif tedarikçi, bekleyen PR, onaylı PR, açık PO,
+    tamamlanan PO, açık tutar — TL formatlı).
+  - 3 sekme: PRs / POs / Tedarikçiler.
+  - PR modal: departman + ihtiyaç tarihi + dinamik lines tablosu.
+  - PO modal: tedarikçi dropdown + KDV + lines + canlı subtotal/tax/total
+    hesaplama.
+  - PO Detay modal: lines + received_qty/kalan + GRN listesi + Mal Kabul butonu.
+  - GRN modal: her satır için "Bu sevkte" miktarı + qc_status + not.
+  - Tedarikçi modal: tam form + aktif/pasif toggle.
+  - PR ve PO satırlarında **Geçmiş** ikonu → EntityHistoryDrawer.
+- **MicePage'e Geçmiş entegrasyonu**: event satırına HistoryIcon butonu;
+  `EntityHistoryDrawer` ile `mice_event` türü için drawer açılır.
+- Route: `/app/procurement` `routeDefinitions.jsx`'a eklendi.
+
+### Smoke (Atlas — 19 Apr 2026)
+- ✅ Tedarikçi `AND-001 / Anadolu Tekstil A.Ş.` oluşturuldu (45 gün vade).
+- ✅ PR `PR-2026-0001` (50 adet havlu × 80 ₺) draft → submitted → approved.
+- ✅ Geçersiz FSM geçişi (approved → approved) **409**, (approved → rejected) **409**.
+- ✅ PR → PO conversion: `PO-2026-0001` subtotal=3900 KDV=780 toplam=4680 ₺;
+  PR otomatik `converted` statüsüne geçti.
+- ✅ PO `draft → sent`.
+- ✅ Stok başlangıç 100 → kısmi GRN (30 adet) → **130** (otomatik $inc).
+- ✅ Over-receiving denemesi (kalan 20'ye 25): **422** "kabul (55) sipariş
+  miktarını (50) aşıyor".
+- ✅ Kalan 20 GRN → PO status `received`, stok 150 (130+20).
+- ✅ `received → closed` 200.
+- ✅ MICE event lifecycle audit: 3 olay (create + tentative + definite),
+  her biri actor=demo, ISO timestamp.
+- ✅ Procurement audit: PR trail 3 (create + submitted + approved).
+- ✅ Frontend route `/app/procurement` ProcurementPage'i lazy-load eder;
+  drawer her tablo satırından açılabilir.
+
+### Etki
+- Türk rakiplere göre Inventory derinliği eşitlendi/aşıldı: artık vendor master,
+  approval workflow, atomik no'lu PO, kısmi GRN, 3-yönlü mutabakatın stok
+  tarafı kapalı (Invoice modülü ileride aynı PO_id'den eşleştirilecek).
+- Versiyon kontrolü Opera User Activity ile aynı UX seviyesine çıktı: her
+  kaydın geçmişi kullanıcının önündeki ikonla bir tıkla erişilir; tüm domain
+  router'ları (mice + procurement) tek timeline schema'sını besliyor.
