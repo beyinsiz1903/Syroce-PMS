@@ -19,11 +19,46 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+    with_resource_locks,
+)
 from core.security import get_current_user
+from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
 
 router = APIRouter(prefix="/api/mice", tags=["mice"])
+
+_indexes_ready = False
+
+
+async def _ensure_indexes() -> None:
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    db = get_system_db()
+    try:
+        await db.mice_events.create_index(
+            [("tenant_id", 1), ("status", 1), ("start_date", 1)],
+            name="mice_evt_status_date")
+        await db.mice_events.create_index(
+            [("tenant_id", 1), ("start_date", 1), ("end_date", 1)],
+            name="mice_evt_date_range")
+        await db.mice_events.create_index(
+            [("tenant_id", 1), ("space_bookings.space_id", 1),
+             ("status", 1)],
+            name="mice_evt_space_status")
+        await db.mice_spaces.create_index([("tenant_id", 1), ("active", 1)])
+        await db.mice_menus.create_index([("tenant_id", 1), ("type", 1)])
+        await db.mice_locks.create_index(
+            [("tenant_id", 1), ("kind", 1), ("resource_id", 1)],
+            unique=True, name="uniq_mice_lock")
+        _indexes_ready = True
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("mice").warning("Index creation deferred: %s", exc)
 
 # ── Function spaces ──────────────────────────────────────────────
 class FunctionSpaceIn(BaseModel):
@@ -45,12 +80,17 @@ class FunctionSpaceIn(BaseModel):
 
 @router.get("/spaces")
 async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
+    await _ensure_indexes()
     db = get_system_db()
     cur = db.mice_spaces.find(
         {"tenant_id": current_user.tenant_id}, {"_id": 0}
     ).sort("name", 1)
     items = [doc async for doc in cur]
     if not items:
+        try:
+            require_catalog(current_user)
+        except HTTPException:
+            return {"spaces": []}
         items = await _seed_spaces(current_user.tenant_id)
     return {"spaces": items}
 
@@ -87,6 +127,7 @@ async def _seed_spaces(tenant_id: str) -> list[dict]:
 @router.post("/spaces")
 async def create_space(body: FunctionSpaceIn,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
            "tenant_id": current_user.tenant_id,
@@ -100,6 +141,7 @@ async def create_space(body: FunctionSpaceIn,
 @router.put("/spaces/{space_id}")
 async def update_space(space_id: str, body: FunctionSpaceIn,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.mice_spaces.update_one(
         {"id": space_id, "tenant_id": current_user.tenant_id},
@@ -113,6 +155,7 @@ async def update_space(space_id: str, body: FunctionSpaceIn,
 @router.delete("/spaces/{space_id}")
 async def delete_space(space_id: str,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     await db.mice_spaces.delete_one(
         {"id": space_id, "tenant_id": current_user.tenant_id})
@@ -138,6 +181,10 @@ async def list_menus(current_user: User = Depends(get_current_user)) -> dict:
     ).sort("type", 1)
     items = [doc async for doc in cur]
     if not items:
+        try:
+            require_catalog(current_user)
+        except HTTPException:
+            return {"menus": []}
         items = await _seed_menus(current_user.tenant_id)
     return {"menus": items}
 
@@ -170,6 +217,7 @@ async def _seed_menus(tenant_id: str) -> list[dict]:
 @router.post("/menus")
 async def create_menu(body: MenuPackageIn,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
            "tenant_id": current_user.tenant_id,
@@ -183,6 +231,7 @@ async def create_menu(body: MenuPackageIn,
 @router.put("/menus/{menu_id}")
 async def update_menu(menu_id: str, body: MenuPackageIn,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.mice_menus.update_one(
         {"id": menu_id, "tenant_id": current_user.tenant_id},
@@ -196,6 +245,7 @@ async def update_menu(menu_id: str, body: MenuPackageIn,
 @router.delete("/menus/{menu_id}")
 async def delete_menu(menu_id: str,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     await db.mice_menus.delete_one(
         {"id": menu_id, "tenant_id": current_user.tenant_id})
@@ -266,7 +316,8 @@ def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
 
 
 async def _check_space_conflict(tenant_id: str, bookings: list[dict],
-                                exclude_event_id: str | None = None) -> str | None:
+                                exclude_event_id: str | None = None,
+                                session=None) -> str | None:
     db = get_system_db()
     for sb in bookings:
         s_iso = sb["starts_at"] if isinstance(sb["starts_at"], str) else sb["starts_at"].isoformat()
@@ -278,7 +329,7 @@ async def _check_space_conflict(tenant_id: str, bookings: list[dict],
         }
         if exclude_event_id:
             q["id"] = {"$ne": exclude_event_id}
-        async for ev in db.mice_events.find(q):
+        async for ev in db.mice_events.find(q, session=session):
             for other in ev.get("space_bookings", []):
                 if other.get("space_id") != sb["space_id"]:
                     continue
@@ -345,6 +396,8 @@ async def _expand_resource_prices(tenant_id: str, resources: list[dict],
 @router.post("/events")
 async def create_event(body: EventIn,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_mice_ops(current_user)
+    await _ensure_indexes()
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
@@ -355,15 +408,9 @@ async def create_event(body: EventIn,
         b["starts_at"] = b["starts_at"].isoformat() if isinstance(b["starts_at"], datetime) else b["starts_at"]
         b["ends_at"] = b["ends_at"].isoformat() if isinstance(b["ends_at"], datetime) else b["ends_at"]
 
-    if body.status in {"tentative", "definite", "confirmed"}:
-        conflict = await _check_space_conflict(tenant_id, bookings)
-        if conflict:
-            raise HTTPException(409, conflict)
-
     resources = await _expand_resource_prices(
         tenant_id, [r.model_dump() for r in body.resources], body.expected_pax,
     )
-
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find(
         {"tenant_id": tenant_id})}
     event_doc = {
@@ -378,7 +425,45 @@ async def create_event(body: EventIn,
         "created_by": current_user.username,
     }
     event_doc["totals"] = _compute_totals(event_doc, spaces_by_id)
-    await db.mice_events.insert_one(event_doc)
+
+    holds_active = body.status in {"tentative", "definite", "confirmed"}
+    space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
+
+    async def _do_insert(session) -> dict:
+        if holds_active:
+            conflict = await _check_space_conflict(
+                tenant_id, bookings, session=session)
+            if conflict:
+                raise HTTPException(409, conflict)
+        await db.mice_events.insert_one(event_doc, session=session)
+        return event_doc
+
+    try:
+        await with_resource_locks(
+            client=db.client, db=db,
+            tenant_id=tenant_id,
+            locks_collection="mice_locks",
+            resources=[("space", sid) for sid in space_ids] if holds_active else [],
+            callback=_do_insert,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail=("Etkinlik servisi şu anda atomik garanti "
+                        "sağlayamıyor (Mongo replica set gerekli)."),
+            )
+        # Dev opt-in: best-effort non-tx fallback.
+        if holds_active:
+            conflict = await _check_space_conflict(tenant_id, bookings)
+            if conflict:
+                raise HTTPException(409, conflict)
+        await db.mice_events.insert_one(event_doc)
+
     event_doc.pop("_id", None)
     return event_doc
 
@@ -397,6 +482,7 @@ async def get_event(event_id: str,
 @router.put("/events/{event_id}")
 async def update_event(event_id: str, body: EventIn,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_mice_ops(current_user)
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
@@ -436,6 +522,9 @@ class StatusUpdate(BaseModel):
 @router.post("/events/{event_id}/status")
 async def change_status(event_id: str, body: StatusUpdate,
                         current_user: User = Depends(get_current_user)) -> dict:
+    require_mice_ops(current_user)
+    if body.status == "completed":
+        require_finance(current_user)  # folio-impacting transition
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
@@ -522,6 +611,7 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
 @router.delete("/events/{event_id}")
 async def delete_event(event_id: str,
                        current_user: User = Depends(get_current_user)) -> dict:
+    require_mice_ops(current_user)
     db = get_system_db()
     res = await db.mice_events.delete_one(
         {"id": event_id, "tenant_id": current_user.tenant_id})

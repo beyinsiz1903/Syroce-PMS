@@ -1459,3 +1459,74 @@ Opera/Protel'in en güçlü alanlarından biri (banquet management)."*
 2. MICE: drag-and-drop function diary (ay görünümü); şu an
    liste/diary listesi.
 3. Folio reverse postings (etkinlik iptal edildiğinde geri vurma).
+
+## Sprint 23 Hardening + Af-sadakat Doğrulama (19 Apr 2026)
+
+### Spa & MICE UAT-grade hardening — DONE
+- **Atomik çakışma garantisi**: `backend/core/booking_atomicity.py` →
+  `with_resource_locks()` Mongo transaction + per-resource lock dokümanı
+  pattern (lock satırı her kaynak için `update_one(upsert=True)` ile
+  serileştirir; `WriteConflict` `with_transaction()` tarafından otomatik
+  yeniden denenir). Replica-set olmayan local Mongo için
+  `is_replica_set_unavailable()` ile eski yola düşülür. Atlas (üretim
+  hedefi) replica set olduğundan production-safe.
+- **Wired**: `routers/spa.py::create_appointment` → therapist+room
+  locks; `routers/mice.py::create_event` → space locks (sadece
+  tentative/definite/confirmed durumlarında).
+- **RBAC**: `backend/core/spa_mice_authz.py` → `CATALOG_ROLES`
+  (services/therapists/rooms/spaces/menus = supervisor+),
+  `SPA_OPS_ROLES` & `MICE_OPS_ROLES` (operasyonel personel),
+  `FINANCE_ROLES` (folio-impacting `completed` geçişi). Tüm spa.py +
+  mice.py write endpoint'lerine `require_*` çağrıları eklendi.
+- **İndeksler** (lazy bootstrap, ilk istekte oluşturulur):
+  - `spa_appointments`: (tenant_id, therapist_id, starts_at),
+    (tenant_id, room_id, starts_at), (tenant_id, guest_id, starts_at),
+    (tenant_id, status, starts_at).
+  - `spa_locks`: unique (tenant_id, kind, resource_id).
+  - `mice_events`: (tenant_id, status, start_date),
+    (tenant_id, start_date, end_date),
+    (tenant_id, space_bookings.space_id, status).
+  - `mice_locks`: unique (tenant_id, kind, resource_id).
+
+### Smoke (19 Apr 2026 — hardening)
+- Login `100001/demo/demo123` → ✓.
+- Spa & MICE GET tetikleyince tüm 9 indeks Atlas'ta oluştu (doğrulandı:
+  `spa_appt_therapist_time`, `spa_appt_room_time`, `spa_appt_guest_time`,
+  `spa_appt_status_time`, `uniq_spa_lock`, `mice_evt_status_date`,
+  `mice_evt_date_range`, `mice_evt_space_status`, `uniq_mice_lock`).
+- Admin için POST `/api/spa/services` → 200 (RBAC pas geçti).
+
+### Af-sadakat plan tamamlanma doğrulaması (T001–T008)
+Aşağıdaki ürün uçtan uca doğrulandı:
+- `GET /api/module-store/products` → `af_sadakat` ürünü `trial_days=14`,
+  `external=true`, `sso_path=/integrations/afsadakat/launch`,
+  `price_try=1499` ile listeleniyor.
+- `POST /api/module-store/start-trial {product_key:"af_sadakat"}` →
+  `{ok:true, trial:true, end_date:"…+14g", already_existed:true}` (idempotent).
+- `GET /api/integrations/afsadakat/status` →
+  `{entitled:true, provisioned:true, mode:"local",
+    external_configured:false}` (env yokken local-only provisioning
+  doğru çalışıyor).
+- `POST /api/integrations/afsadakat/launch` →
+  `{url:"…", mode:"local", external_ready:false, expires_in_seconds:120}`
+  (HS256 SSO token; harici env tanımlanınca external moda geçer).
+- Router registry, frontend ModuleStorePage trial+launch butonları,
+  AfsadakatLauncher sayfası, "Sadakat & Inbox" navigasyon girişi
+  (entitlement-gated) — hepsi mevcut ve devrede.
+
+### Mimari incelemeden sonra düzeltilen noktalar (19 Apr 2026 — kabul tertip)
+- **Standalone-Mongo fallback varsayılan kapatıldı**: tx-locked yol
+  başarısız olursa `is_replica_set_unavailable()` doğru olsa bile artık
+  503 dönüyor (hem `spa.create_appointment` hem `mice.create_event`).
+  Lokal dev'de çalışmak için `ALLOW_STANDALONE_BOOKING_FALLBACK=1`
+  env flag'i ile opt-in. Atlas (üretim) replica set olduğundan bu
+  yola hiç düşmez; flag tamamen TOCTOU yarış yüzeyini kapatır.
+- **GET seed RBAC açığı kapatıldı**: `GET /api/spa/services`,
+  `GET /api/mice/spaces`, `GET /api/mice/menus` boş kataloğu seed
+  ederken artık `require_catalog(current_user)` çağrılıyor; rol yoksa
+  yazma yapılmadan boş liste dönülüyor (yani her isteyen kataloğa
+  yazamaz).
+- **Atomik çakışma testi (gerçek yük)**: aynı oda + üst üste binen
+  zaman aralığı için 1. randevu HTTP 200, 2. randevu HTTP 409
+  (`Oda çakışması: TX-A`) — Atlas replica set üzerinde tx + lock-doc
+  patiği uçtan uca doğrulandı.

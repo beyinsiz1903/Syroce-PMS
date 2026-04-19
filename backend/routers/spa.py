@@ -18,11 +18,50 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+    with_resource_locks,
+)
 from core.security import get_current_user
+from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
 
 router = APIRouter(prefix="/api/spa", tags=["spa"])
+
+# ── One-time index bootstrap ────────────────────────────────────
+_indexes_ready = False
+
+
+async def _ensure_indexes() -> None:
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    db = get_system_db()
+    try:
+        await db.spa_appointments.create_index(
+            [("tenant_id", 1), ("therapist_id", 1), ("starts_at", 1)],
+            name="spa_appt_therapist_time")
+        await db.spa_appointments.create_index(
+            [("tenant_id", 1), ("room_id", 1), ("starts_at", 1)],
+            name="spa_appt_room_time")
+        await db.spa_appointments.create_index(
+            [("tenant_id", 1), ("guest_id", 1), ("starts_at", -1)],
+            name="spa_appt_guest_time")
+        await db.spa_appointments.create_index(
+            [("tenant_id", 1), ("status", 1), ("starts_at", 1)],
+            name="spa_appt_status_time")
+        await db.spa_services.create_index([("tenant_id", 1), ("category", 1)])
+        await db.spa_therapists.create_index([("tenant_id", 1), ("active", 1)])
+        await db.spa_rooms.create_index([("tenant_id", 1), ("active", 1)])
+        await db.spa_locks.create_index(
+            [("tenant_id", 1), ("kind", 1), ("resource_id", 1)],
+            unique=True, name="uniq_spa_lock")
+        _indexes_ready = True
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("spa").warning("Index creation deferred: %s", exc)
 
 # ── Catalog: Services ────────────────────────────────────────────
 class ServiceIn(BaseModel):
@@ -39,6 +78,7 @@ class ServiceIn(BaseModel):
 
 @router.get("/services")
 async def list_services(current_user: User = Depends(get_current_user)) -> dict:
+    await _ensure_indexes()
     db = get_system_db()
     cur = db.spa_services.find(
         {"tenant_id": current_user.tenant_id}, {"_id": 0}
@@ -46,6 +86,11 @@ async def list_services(current_user: User = Depends(get_current_user)) -> dict:
     items = [doc async for doc in cur]
     if not items:
         # Seed a sensible default catalog so demos have content immediately.
+        # Seeding is a write — gate it on catalog role to keep RBAC honest.
+        try:
+            require_catalog(current_user)
+        except HTTPException:
+            return {"services": []}
         items = await _seed_default_catalog(current_user.tenant_id)
     return {"services": items}
 
@@ -83,6 +128,7 @@ async def _seed_default_catalog(tenant_id: str) -> list[dict]:
 @router.post("/services")
 async def create_service(body: ServiceIn,
                          current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     doc = {
         "id": str(uuid.uuid4()),
@@ -98,6 +144,7 @@ async def create_service(body: ServiceIn,
 @router.put("/services/{service_id}")
 async def update_service(service_id: str, body: ServiceIn,
                          current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_services.update_one(
         {"id": service_id, "tenant_id": current_user.tenant_id},
@@ -112,6 +159,7 @@ async def update_service(service_id: str, body: ServiceIn,
 @router.delete("/services/{service_id}")
 async def delete_service(service_id: str,
                          current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_services.delete_one(
         {"id": service_id, "tenant_id": current_user.tenant_id})
@@ -145,6 +193,7 @@ async def list_therapists(current_user: User = Depends(get_current_user)) -> dic
 @router.post("/therapists")
 async def create_therapist(body: TherapistIn,
                            current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     doc = {
         "id": str(uuid.uuid4()),
@@ -160,6 +209,7 @@ async def create_therapist(body: TherapistIn,
 @router.put("/therapists/{therapist_id}")
 async def update_therapist(therapist_id: str, body: TherapistIn,
                            current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_therapists.update_one(
         {"id": therapist_id, "tenant_id": current_user.tenant_id},
@@ -173,6 +223,7 @@ async def update_therapist(therapist_id: str, body: TherapistIn,
 @router.delete("/therapists/{therapist_id}")
 async def delete_therapist(therapist_id: str,
                            current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     await db.spa_therapists.delete_one(
         {"id": therapist_id, "tenant_id": current_user.tenant_id})
@@ -200,6 +251,7 @@ async def list_rooms(current_user: User = Depends(get_current_user)) -> dict:
 @router.post("/rooms")
 async def create_room(body: TreatmentRoomIn,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     doc = {
         "id": str(uuid.uuid4()),
@@ -215,6 +267,7 @@ async def create_room(body: TreatmentRoomIn,
 @router.put("/rooms/{room_id}")
 async def update_room(room_id: str, body: TreatmentRoomIn,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_rooms.update_one(
         {"id": room_id, "tenant_id": current_user.tenant_id},
@@ -228,6 +281,7 @@ async def update_room(room_id: str, body: TreatmentRoomIn,
 @router.delete("/rooms/{room_id}")
 async def delete_room(room_id: str,
                       current_user: User = Depends(get_current_user)) -> dict:
+    require_catalog(current_user)
     db = get_system_db()
     await db.spa_rooms.delete_one(
         {"id": room_id, "tenant_id": current_user.tenant_id})
@@ -256,7 +310,8 @@ def _overlap(start_a: datetime, end_a: datetime,
 
 async def _check_conflict(tenant_id: str, *, therapist_id: str | None,
                           room_id: str | None, start: datetime, end: datetime,
-                          exclude_id: str | None = None) -> str | None:
+                          exclude_id: str | None = None,
+                          session=None) -> str | None:
     db = get_system_db()
     q: dict[str, Any] = {
         "tenant_id": tenant_id,
@@ -266,7 +321,7 @@ async def _check_conflict(tenant_id: str, *, therapist_id: str | None,
     }
     if exclude_id:
         q["id"] = {"$ne": exclude_id}
-    async for doc in db.spa_appointments.find(q):
+    async for doc in db.spa_appointments.find(q, session=session):
         if therapist_id and doc.get("therapist_id") == therapist_id:
             return f"Terapist çakışması: {doc.get('guest_name')}"
         if room_id and doc.get("room_id") == room_id:
@@ -302,6 +357,8 @@ async def list_appointments(
 @router.post("/appointments")
 async def create_appointment(body: AppointmentIn,
                              current_user: User = Depends(get_current_user)) -> dict:
+    require_spa_ops(current_user)
+    await _ensure_indexes()
     db = get_system_db()
     tenant_id = current_user.tenant_id
 
@@ -316,7 +373,7 @@ async def create_appointment(body: AppointmentIn,
     therapist_id = body.therapist_id
     room_id = body.room_id
 
-    # Auto-pick if not specified
+    # ── Auto-pick (best-effort outside the lock; final check is atomic) ──
     if not therapist_id:
         async for t in db.spa_therapists.find(
                 {"tenant_id": tenant_id, "active": True}):
@@ -334,14 +391,6 @@ async def create_appointment(body: AppointmentIn,
                                          room_id=r["id"], start=starts, end=ends):
                 room_id = r["id"]
                 break
-
-    # Hard conflict check on chosen resources
-    conflict = await _check_conflict(
-        tenant_id, therapist_id=therapist_id, room_id=room_id,
-        start=starts, end=ends,
-    )
-    if conflict:
-        raise HTTPException(409, conflict)
 
     appt = {
         "id": str(uuid.uuid4()),
@@ -366,7 +415,47 @@ async def create_appointment(body: AppointmentIn,
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.username,
     }
-    await db.spa_appointments.insert_one(appt)
+
+    # ── Atomic conflict re-check + insert under per-resource locks ──
+    async def _do_insert(session) -> dict:
+        conflict = await _check_conflict(
+            tenant_id, therapist_id=therapist_id, room_id=room_id,
+            start=starts, end=ends, session=session,
+        )
+        if conflict:
+            raise HTTPException(409, conflict)
+        await db.spa_appointments.insert_one(appt, session=session)
+        return appt
+
+    try:
+        await with_resource_locks(
+            client=db.client, db=db,
+            tenant_id=tenant_id,
+            locks_collection="spa_locks",
+            resources=[("therapist", therapist_id), ("room", room_id)],
+            callback=_do_insert,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            # Production-safe default: refuse rather than risk a race.
+            raise HTTPException(
+                status_code=503,
+                detail=("Rezervasyon servisi şu anda atomik garanti "
+                        "sağlayamıyor (Mongo replica set gerekli)."),
+            )
+        # Dev opt-in: best-effort non-tx fallback.
+        conflict = await _check_conflict(
+            tenant_id, therapist_id=therapist_id, room_id=room_id,
+            start=starts, end=ends,
+        )
+        if conflict:
+            raise HTTPException(409, conflict)
+        await db.spa_appointments.insert_one(appt)
+
     appt.pop("_id", None)
     return appt
 
@@ -378,6 +467,9 @@ class StatusUpdate(BaseModel):
 @router.post("/appointments/{appt_id}/status")
 async def change_status(appt_id: str, body: StatusUpdate,
                         current_user: User = Depends(get_current_user)) -> dict:
+    require_spa_ops(current_user)
+    if body.status == "completed":
+        require_finance(current_user)  # folio-impacting transition
     if body.status not in _SPA_TRANSITIONS:
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
@@ -460,6 +552,7 @@ async def _post_to_folio(tenant_id: str, appt: dict) -> None:
 @router.delete("/appointments/{appt_id}")
 async def delete_appointment(appt_id: str,
                              current_user: User = Depends(get_current_user)) -> dict:
+    require_spa_ops(current_user)
     db = get_system_db()
     res = await db.spa_appointments.delete_one(
         {"id": appt_id, "tenant_id": current_user.tenant_id})
