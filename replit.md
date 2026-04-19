@@ -969,3 +969,27 @@ Tüm A-H borçları kapatıldı:
 
 - **H — React.lazy audit**: `routeDefinitions.jsx` 187 lazy import +
   4 kasıtlı eager (AuthPage, Dashboard, LandingPage, PrivacyPolicy).
+
+## Sprint 15: Dashboard Konsolidasyonu (Apr 2026)
+
+GM/Executive ailesindeki 6 dashboard sayfası 2'ye indirildi:
+
+**Hayatta kalanlar:**
+- `Dashboard.jsx` (`/app/dashboard`) — **Operations Dashboard**, ana
+  nav girişi.
+- `ExecutiveDashboard.jsx` (`/executive`) — **Executive Dashboard**,
+  `gm_dashboards` modül kontrolü.
+
+**Arşive taşınanlar** (`frontend/src/_archive/dashboards-2026-04/`):
+- `GMDashboard.jsx` (1449 satır) → `/gm-classic` artık `/app/dashboard`'a redirect.
+- `GMEnhancedDashboard.jsx` (430 satır) → `/gm/enhanced` → `/executive`.
+- `EnhancedGMDashboard.jsx` (436 satır) → `/admin/gm-enhanced` → `/executive`.
+- `EnterpriseLiveDashboard.jsx` (576 satır) → `/enterprise-live` → `/executive`.
+
+**Altyapı değişikliği:** `App.jsx` dinamik router'a yeni
+`type: "redirect"` desteği eklendi (`<Navigate to={rc.to} replace />`).
+`routeDefinitions.jsx`'te 4 lazy import kaldırıldı, 4 rota
+redirect olarak yeniden yazıldı.
+
+**Sonuç:** ~2891 satır legacy kod canlıdan çıkarıldı, eski URL'ler
+hâlâ çalışıyor (yer imleri/derin bağlantılar bozulmuyor).

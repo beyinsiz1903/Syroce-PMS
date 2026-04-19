@@ -18,7 +18,6 @@ import LandingPage from "@/pages/LandingPage";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 
 // ── Lazy imports ───────────────────────────────────────────────────
-const GMDashboard = lazy(() => import("@/pages/GMDashboard"));
 const PMSModule = lazy(() => import("@/pages/PMSModule"));
 const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
 const RMSModule = lazy(() => import("@/pages/RMSModule"));
@@ -72,7 +71,6 @@ const MobileOrderTracking = lazy(() => import("@/pages/MobileOrderTracking"));
 const MobileInventory = lazy(() => import("@/pages/MobileInventory"));
 const MobileApprovals = lazy(() => import("@/pages/MobileApprovals"));
 const ExecutiveDashboard = lazy(() => import("@/pages/ExecutiveDashboard"));
-const GMEnhancedDashboard = lazy(() => import("@/pages/GMEnhancedDashboard"));
 const SalesCRMMobile = lazy(() => import("@/pages/SalesCRMMobile"));
 const SimpleAdminPanel = lazy(() => import("@/pages/SimpleAdminPanel"));
 const RateManagementMobile = lazy(() => import("@/pages/RateManagementMobile"));
@@ -139,7 +137,6 @@ const RevenueEngineDashboard = lazy(() => import("@/pages/RevenueEngineDashboard
 const OperationalEventDashboard = lazy(() => import("@/pages/OperationalEventDashboard"));
 const GuestJourneyDashboard = lazy(() => import("@/pages/GuestJourneyDashboard"));
 const PlatformScalingDashboard = lazy(() => import("@/pages/PlatformScalingDashboard"));
-const EnterpriseLiveDashboard = lazy(() => import("@/pages/EnterpriseLiveDashboard"));
 const DataIntelligenceDashboard = lazy(() => import("@/pages/DataIntelligenceDashboard"));
 const MessagingDashboard = lazy(() => import("@/pages/MessagingDashboard"));
 const MLSchedulerDashboard = lazy(() => import("@/pages/MLSchedulerDashboard"));
@@ -196,7 +193,6 @@ const HousekeepingStatusPage = lazy(() => import("@/pages/HousekeepingStatusPage
 const WakeUpCallsPage = lazy(() => import("@/pages/WakeUpCallsPage"));
 const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
 const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
-const EnhancedGMDashboard = lazy(() => import("@/pages/EnhancedGMDashboard"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
@@ -399,8 +395,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Executive & GM ─────────────────────────────────
     { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
-    { path: "/gm/enhanced", ...pm(GMEnhancedDashboard, "gm_dashboards") },
-    { path: "/gm-classic", ...pm(GMDashboard, "gm_dashboards") },
+    { path: "/gm/enhanced", type: "redirect", to: "/executive" },
+    { path: "/gm-classic", type: "redirect", to: "/app/dashboard" },
 
     // ── Infrastructure ─────────────────────────────────
     { path: "/data-pipeline", ...p(DataPipelineDashboard) },
@@ -412,7 +408,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/infra-hardening", ...p(InfraHardeningDashboard) },
     { path: "/production-golive", ...p(ProductionGoLiveDashboard) },
     { path: "/platform-scaling", ...p(PlatformScalingDashboard) },
-    { path: "/enterprise-live", ...p(EnterpriseLiveDashboard) },
+    { path: "/enterprise-live", type: "redirect", to: "/executive" },
     { path: "/pii-strict-mode", ...p(PIIStrictModeDashboard) },
 
     // ── Ops & Phases ───────────────────────────────────
@@ -481,6 +477,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/cost", ...p(CostManagement) },
     { path: "/app/cost-management", ...p(CostManagement) },
     { path: "/cost-management", ...p(CostManagement) },
-    { path: "/admin/gm-enhanced", ...p(EnhancedGMDashboard) },
+    { path: "/admin/gm-enhanced", type: "redirect", to: "/executive" },
   ];
 }

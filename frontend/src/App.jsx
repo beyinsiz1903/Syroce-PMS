@@ -201,7 +201,9 @@ function App() {
                   {routeConfigs.map((rc) => {
                     let element;
 
-                    if (rc.type === "public") {
+                    if (rc.type === "redirect") {
+                      element = <Navigate to={rc.to} replace />;
+                    } else if (rc.type === "public") {
                       element = <Suspense fallback={<LoadingFallback />}><rc.component {...(rc.props || {})} /></Suspense>;
                     } else if (rc.type === "memory") {
                       element = (
