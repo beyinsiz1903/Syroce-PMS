@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Hotel, User, Smartphone } from 'lucide-react';
+import { Hotel, User, Smartphone, Shield } from 'lucide-react';
 import LanguageSelector from '@/components/LanguageSelector';
 
 const AuthPage = ({ onLogin }) => {
@@ -52,6 +52,11 @@ const AuthPage = ({ onLogin }) => {
     email: '', password: '', name: '', phone: ''
   });
 
+  // 2FA challenge state — when login returns requires_2fa, we hold the
+  // challenge_token here and switch to the code-entry view.
+  const [twoFAChallenge, setTwoFAChallenge] = useState(null); // {challenge_token, user_email}
+  const [twoFACode, setTwoFACode] = useState('');
+
   const handleHotelLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -62,10 +67,36 @@ const AuthPage = ({ onLogin }) => {
         password: hotelLoginData.password,
       };
       const response = await axios.post('/auth/login', payload);
+      if (response.data?.requires_2fa) {
+        setTwoFAChallenge({
+          challenge_token: response.data.challenge_token,
+          user_email: response.data.user?.email,
+        });
+        setTwoFACode('');
+        setLoading(false);
+        return;
+      }
       onLogin(response.data.access_token, response.data.user, response.data.tenant);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTwoFAVerify = async (e) => {
+    e.preventDefault();
+    if (!twoFAChallenge?.challenge_token) return;
+    setLoading(true);
+    try {
+      const r = await axios.post('/auth/2fa/verify', {
+        challenge_token: twoFAChallenge.challenge_token,
+        code: twoFACode.trim(),
+      });
+      onLogin(r.data.access_token, r.data.user, r.data.tenant);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Doğrulama başarısız');
     } finally {
       setLoading(false);
     }
@@ -263,6 +294,43 @@ const AuthPage = ({ onLogin }) => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {twoFAChallenge ? (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <Shield className="w-10 h-10 mx-auto text-violet-600 mb-2" />
+                  <h3 className="text-lg font-semibold">İki Adımlı Doğrulama</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {twoFAChallenge.user_email}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Authenticator uygulamanızdan 6 haneli kodu veya bir
+                    yedek kodu girin.
+                  </p>
+                </div>
+                <form onSubmit={handleTwoFAVerify} className="space-y-3">
+                  <Input
+                    autoFocus
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    placeholder="123 456"
+                    value={twoFACode}
+                    onChange={(e) => setTwoFACode(e.target.value)}
+                    style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.25rem' }}
+                  />
+                  <Button type="submit" className="w-full" disabled={loading || twoFACode.trim().length < 6}>
+                    {loading ? 'Doğrulanıyor…' : 'Doğrula ve Giriş Yap'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => { setTwoFAChallenge(null); setTwoFACode(''); }}
+                  >
+                    İptal
+                  </Button>
+                </form>
+              </div>
+            ) : (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="hotel-login" data-testid="hotel-login-tab">
@@ -705,6 +773,7 @@ const AuthPage = ({ onLogin }) => {
                 </Tabs>
               </TabsContent>
             </Tabs>
+            )}
           </CardContent>
         </Card>
       </div>

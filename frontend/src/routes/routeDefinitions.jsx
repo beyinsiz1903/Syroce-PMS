@@ -28,6 +28,7 @@ const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
+const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));
 const MailingPage = lazy(() => import("@/pages/MailingPage"));
 const ModuleStorePage = lazy(() => import("@/pages/ModuleStorePage"));
 const AfsadakatLauncher = lazy(() => import("@/pages/AfsadakatLauncher"));
@@ -239,6 +240,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/dashboard", ...p(Dashboard, { modules }) },
     { path: "/app/profile", ...p(ProfilePage) },
     { path: "/profile", ...p(ProfilePage) },
+    { path: "/app/compliance/pci", ...p(PCIComplianceDashboard) },
     { path: "/app/mailing", ...p(MailingPage) },
     { path: "/app/module-store", ...p(ModuleStorePage) },
     { path: "/module-store", ...p(ModuleStorePage) },

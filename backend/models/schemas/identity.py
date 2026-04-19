@@ -99,6 +99,11 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: User
     tenant: Tenant | None = None
+    # 2FA challenge: when True, access_token is empty and the client
+    # must POST /auth/2fa/verify with `challenge_token` + 6-digit code
+    # to obtain a real access_token.
+    requires_2fa: bool = False
+    challenge_token: str | None = None
 
 class NotificationPreferences(BaseModel):
     model_config = ConfigDict(extra="ignore")

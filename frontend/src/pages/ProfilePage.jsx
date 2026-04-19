@@ -5,42 +5,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+  User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
+  Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw,
+} from 'lucide-react';
 
 const ProfilePage = ({ user, tenant }) => {
   const [me, setMe] = useState(user || null);
-  const [tenantInfo, setTenantInfo] = useState(tenant || null);
+  const [tenantInfo] = useState(tenant || null);
   const [loading, setLoading] = useState(false);
   const [pwd, setPwd] = useState({ current_password: '', new_password: '', confirm_password: '' });
 
   useEffect(() => {
-    // Refresh /auth/me to ensure we have latest fields (username, hotel_id, etc.)
     let cancelled = false;
     (async () => {
       try {
         const res = await axios.get('/auth/me');
         if (!cancelled) setMe(res.data);
-      } catch {
-        // keep existing
-      }
+      } catch { /* keep */ }
     })();
     return () => { cancelled = true; };
   }, []);
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    if (pwd.new_password.length < 6) {
-      toast.error('Yeni şifre en az 6 karakter olmalıdır.');
-      return;
-    }
-    if (pwd.new_password !== pwd.confirm_password) {
-      toast.error('Yeni şifreler eşleşmiyor.');
-      return;
-    }
-    if (pwd.new_password === pwd.current_password) {
-      toast.error('Yeni şifre eskisinden farklı olmalıdır.');
-      return;
-    }
+    if (pwd.new_password.length < 6) { toast.error('Yeni şifre en az 6 karakter olmalıdır.'); return; }
+    if (pwd.new_password !== pwd.confirm_password) { toast.error('Yeni şifreler eşleşmiyor.'); return; }
+    if (pwd.new_password === pwd.current_password) { toast.error('Yeni şifre eskisinden farklı olmalıdır.'); return; }
     setLoading(true);
     try {
       await axios.post('/auth/change-password', {
@@ -51,9 +43,7 @@ const ProfilePage = ({ user, tenant }) => {
       setPwd({ current_password: '', new_password: '', confirm_password: '' });
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Şifre değiştirilemedi.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const Field = ({ icon: Icon, label, value }) => (
@@ -70,7 +60,7 @@ const ProfilePage = ({ user, tenant }) => {
     <div className="max-w-3xl mx-auto p-4 space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Profilim</h1>
-        <p className="text-sm text-gray-500">Hesap bilgilerinizi görüntüleyin ve şifrenizi değiştirin.</p>
+        <p className="text-sm text-gray-500">Hesap bilgilerinizi görüntüleyin, şifrenizi değiştirin ve güvenliğinizi yönetin.</p>
       </div>
 
       <Card>
@@ -90,6 +80,8 @@ const ProfilePage = ({ user, tenant }) => {
         </CardContent>
       </Card>
 
+      <TwoFactorSection />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -101,36 +93,22 @@ const ProfilePage = ({ user, tenant }) => {
           <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
             <div>
               <Label>Mevcut Şifre</Label>
-              <Input
-                type="password"
-                value={pwd.current_password}
+              <Input type="password" value={pwd.current_password}
                 onChange={(e) => setPwd({ ...pwd, current_password: e.target.value })}
-                required
-                autoComplete="current-password"
-              />
+                required autoComplete="current-password" />
             </div>
             <div>
               <Label>Yeni Şifre</Label>
-              <Input
-                type="password"
-                value={pwd.new_password}
+              <Input type="password" value={pwd.new_password}
                 onChange={(e) => setPwd({ ...pwd, new_password: e.target.value })}
-                required
-                minLength={6}
-                autoComplete="new-password"
-              />
+                required minLength={6} autoComplete="new-password" />
               <p className="text-xs text-gray-500 mt-1">En az 6 karakter olmalı.</p>
             </div>
             <div>
               <Label>Yeni Şifre (Tekrar)</Label>
-              <Input
-                type="password"
-                value={pwd.confirm_password}
+              <Input type="password" value={pwd.confirm_password}
                 onChange={(e) => setPwd({ ...pwd, confirm_password: e.target.value })}
-                required
-                minLength={6}
-                autoComplete="new-password"
-              />
+                required minLength={6} autoComplete="new-password" />
             </div>
             <Button type="submit" disabled={loading}>
               {loading ? 'Güncelleniyor…' : 'Şifremi Güncelle'}
@@ -141,5 +119,225 @@ const ProfilePage = ({ user, tenant }) => {
     </div>
   );
 };
+
+// ── 2FA Management ─────────────────────────────────────────────────
+function TwoFactorSection() {
+  const [status, setStatus] = useState(null);
+  const [setup, setSetup] = useState(null); // {secret, qr_code, otpauth_uri}
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [backupCodes, setBackupCodes] = useState(null);
+  const [disableForm, setDisableForm] = useState({ open: false, password: '', code: '' });
+
+  const loadStatus = async () => {
+    try {
+      const r = await axios.get('/2fa/status');
+      setStatus(r.data);
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { loadStatus(); }, []);
+
+  const startSetup = async () => {
+    setBusy(true);
+    try {
+      const r = await axios.post('/2fa/setup');
+      setSetup(r.data);
+      setCode('');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Başlatılamadı');
+    } finally { setBusy(false); }
+  };
+
+  const confirmSetup = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await axios.post('/2fa/setup/confirm', { code: code.trim() });
+      setBackupCodes(r.data.backup_codes);
+      setSetup(null);
+      setCode('');
+      await loadStatus();
+      toast.success('2FA etkinleştirildi');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Doğrulama hatası');
+    } finally { setBusy(false); }
+  };
+
+  const disable = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await axios.post('/2fa/disable', {
+        password: disableForm.password,
+        code: disableForm.code.trim(),
+      });
+      toast.success('2FA devre dışı bırakıldı');
+      setDisableForm({ open: false, password: '', code: '' });
+      await loadStatus();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Devre dışı bırakılamadı');
+    } finally { setBusy(false); }
+  };
+
+  const regen = async () => {
+    const c = window.prompt('Yedek kodları yenilemek için 6 haneli mevcut TOTP kodunu girin:');
+    if (!c) return;
+    setBusy(true);
+    try {
+      const r = await axios.post('/2fa/regenerate-backup-codes', { code: c.trim() });
+      setBackupCodes(r.data.backup_codes);
+      await loadStatus();
+      toast.success('Yedek kodlar yenilendi');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Yenilenemedi');
+    } finally { setBusy(false); }
+  };
+
+  const copyCodes = () => {
+    if (!backupCodes) return;
+    navigator.clipboard.writeText(backupCodes.join('\n')).then(
+      () => toast.success('Yedek kodlar panoya kopyalandı'),
+      () => toast.error('Kopyalanamadı')
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Smartphone className="w-5 h-5" /> İki Adımlı Doğrulama (2FA)
+          {status?.enabled && (
+            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+              <CheckCircle2 className="w-3 h-3 mr-1" /> Etkin
+            </Badge>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Google/Microsoft Authenticator gibi bir uygulama ile hesabınıza ek bir güvenlik katmanı ekleyin.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Backup codes display (one-time) */}
+        {backupCodes && (
+          <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-amber-900 font-semibold">
+              <AlertTriangle className="w-4 h-4" /> Yedek Kodlarınız
+            </div>
+            <p className="text-xs text-amber-800">
+              Telefonunuzu kaybederseniz bu kodlardan birini kullanarak giriş yapabilirsiniz.
+              <strong> Bu kodlar bir daha gösterilmeyecek</strong> — güvenli bir yere kaydedin.
+            </p>
+            <div className="grid grid-cols-2 gap-2 font-mono text-sm bg-white rounded p-2">
+              {backupCodes.map((c) => <div key={c}>{c}</div>)}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={copyCodes}>
+                <Copy className="w-3 h-3 mr-1" /> Kopyala
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setBackupCodes(null)}>
+                Kaydettim, kapat
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Setup flow */}
+        {setup && (
+          <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
+            <p className="text-sm">1) Authenticator uygulamanızla bu QR kodu tarayın:</p>
+            <div className="flex justify-center">
+              <img src={setup.qr_code} alt="2FA QR" className="w-48 h-48 bg-white p-2 rounded" />
+            </div>
+            <details className="text-xs text-gray-600">
+              <summary className="cursor-pointer">Manuel kod (QR taranamıyorsa)</summary>
+              <div className="mt-1 font-mono break-all bg-white p-2 rounded">{setup.secret}</div>
+            </details>
+            <form onSubmit={confirmSetup} className="space-y-2">
+              <Label>2) Uygulamadan gelen 6 haneli kodu girin:</Label>
+              <Input
+                autoFocus
+                inputMode="numeric"
+                placeholder="123 456"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                style={{ textAlign: 'center', letterSpacing: '0.3em' }}
+              />
+              <div className="flex gap-2">
+                <Button type="submit" disabled={busy || code.trim().length < 6}>
+                  {busy ? 'Doğrulanıyor…' : 'Etkinleştir'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => { setSetup(null); setCode(''); }}>
+                  İptal
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Default state controls */}
+        {!setup && !status?.enabled && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">2FA şu anda kapalı.</p>
+            <Button onClick={startSetup} disabled={busy}>
+              <Smartphone className="w-4 h-4 mr-2" />
+              {busy ? 'Hazırlanıyor…' : '2FA Etkinleştir'}
+            </Button>
+          </div>
+        )}
+
+        {!setup && status?.enabled && (
+          <div className="space-y-3">
+            <div className="text-sm text-gray-700 space-y-1">
+              <div>Etkinleştirilme: <span className="font-mono text-xs">{status.enabled_at?.slice(0, 19)}</span></div>
+              <div>Son kullanım: <span className="font-mono text-xs">{status.last_used_at?.slice(0, 19) || 'Henüz yok'}</span></div>
+              <div>Kalan yedek kod: <strong>{status.backup_codes_remaining}</strong> / 10</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={regen} disabled={busy}>
+                <RefreshCw className="w-4 h-4 mr-2" /> Yedek Kodları Yenile
+              </Button>
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => setDisableForm({ open: true, password: '', code: '' })}
+              >
+                2FA'yı Kapat
+              </Button>
+            </div>
+
+            {disableForm.open && (
+              <form onSubmit={disable} className="space-y-2 border-t pt-3">
+                <p className="text-xs text-gray-500">
+                  Devre dışı bırakmak için parolanızı ve mevcut bir 2FA kodunu girin.
+                </p>
+                <div>
+                  <Label>Parola</Label>
+                  <Input type="password" value={disableForm.password}
+                    onChange={(e) => setDisableForm((f) => ({ ...f, password: e.target.value }))}
+                    required autoComplete="current-password" />
+                </div>
+                <div>
+                  <Label>2FA Kodu (TOTP veya yedek kod)</Label>
+                  <Input value={disableForm.code} inputMode="numeric"
+                    onChange={(e) => setDisableForm((f) => ({ ...f, code: e.target.value }))}
+                    required />
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" variant="destructive" disabled={busy}>
+                    {busy ? 'İşleniyor…' : 'Onayla ve Kapat'}
+                  </Button>
+                  <Button type="button" variant="ghost"
+                    onClick={() => setDisableForm({ open: false, password: '', code: '' })}>
+                    İptal
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default ProfilePage;

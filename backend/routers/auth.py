@@ -296,7 +296,34 @@ async def login(data: UserLogin):
     cache_key = f"login:{_hl.sha256(cache_seed.encode()).hexdigest()[:24]}"
     cached = _login_cache.get(cache_key)
     if cached:
-        return TokenResponse(**cached)
+        # Verify the cached non-2FA response is still valid: if the
+        # user has since enabled 2FA, the cached `access_token` must
+        # NOT be honored — fall through to the full login path so the
+        # caller is forced through the challenge flow.
+        try:
+            cached_user = cached.get("user")
+            cached_uid = (
+                getattr(cached_user, "id", None)
+                if cached_user is not None
+                else None
+            )
+            if cached_uid:
+                u = await db.users.find_one(
+                    {"id": cached_uid},
+                    {"_id": 0, "two_factor_enabled": 1},
+                )
+                if u and u.get("two_factor_enabled"):
+                    _login_cache.set(cache_key, None, ttl=1)  # evict
+                    # fall through to full login path → challenge flow
+                else:
+                    return TokenResponse(**cached)
+            else:
+                return TokenResponse(**cached)
+        except Exception:
+            # FAIL-CLOSED: if the recheck fails (DB error, etc.), do NOT
+            # honor the cached token — fall through to full login path so
+            # bcrypt + 2FA gate are re-evaluated against live data.
+            _login_cache.set(cache_key, None, ttl=1)  # evict
 
     user_doc = None
 
@@ -370,6 +397,46 @@ async def login(data: UserLogin):
         "timestamp": datetime.now(UTC).isoformat(),
     })
 
+    # ── 2FA challenge gate ──────────────────────────────────────
+    # If the user has enabled TOTP, do NOT issue a real access token
+    # yet. Mint a short-lived (5 min) challenge token; the client must
+    # exchange it via POST /auth/2fa/verify with a valid 6-digit code.
+    if user_doc.get("two_factor_enabled"):
+        import uuid as _uuid
+
+        import jwt as _jwt
+
+        from core.security import JWT_ALGORITHM, JWT_SECRET
+        challenge_jti = str(_uuid.uuid4())
+        challenge = _jwt.encode(
+            {
+                "user_id": user.id,
+                "tenant_id": user.tenant_id,
+                "purpose": "2fa_challenge",
+                "jti": challenge_jti,
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            JWT_SECRET,
+            algorithm=JWT_ALGORITHM,
+        )
+        await db.audit_logs.insert_one({
+            "id": str(__import__('uuid').uuid4()),
+            "tenant_id": user.tenant_id,
+            "user_id": user.id,
+            "user_email": user.email,
+            "action": "login_2fa_required",
+            "resource_type": "auth",
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+        # Do NOT cache challenge responses.
+        return TokenResponse(
+            access_token="",
+            user=user,
+            tenant=tenant,
+            requires_2fa=True,
+            challenge_token=challenge,
+        )
+
     token = create_token(user.id, user.tenant_id)
     response = TokenResponse(access_token=token, user=user, tenant=tenant)
 
@@ -389,6 +456,139 @@ async def login(data: UserLogin):
     }, ttl=300)
 
     return response
+
+
+# ── 2FA verify (exchange challenge_token for real access_token) ──
+class TwoFAVerifyIn(BaseModel):
+    challenge_token: str
+    code: str
+
+
+@router.post("/auth/2fa/verify", response_model=TokenResponse)
+async def verify_2fa_login(payload: TwoFAVerifyIn):
+    import jwt as _jwt
+
+    from core.security import JWT_ALGORITHM, JWT_SECRET
+    from core.twofa import (
+        consume_backup_code,
+        decrypt_secret,
+        verify_totp,
+    )
+
+    try:
+        decoded = _jwt.decode(
+            payload.challenge_token, JWT_SECRET, algorithms=[JWT_ALGORITHM]
+        )
+    except _jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Doğrulama süresi doldu, tekrar giriş yapın")
+    except _jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+    if decoded.get("purpose") != "2fa_challenge":
+        raise HTTPException(status_code=401, detail="Yanlış belirteç türü")
+    jti = decoded.get("jti")
+    if not jti:
+        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+    # One-time use: refuse if this jti has already been consumed.
+    from infra.simple_cache import simple_cache as _consumed_cache
+    consumed_key = f"2fa_jti_consumed:{jti}"
+    if _consumed_cache.get(consumed_key):
+        raise HTTPException(status_code=401, detail="Doğrulama belirteci zaten kullanıldı")
+    user_id = decoded.get("user_id")
+
+    user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user_doc or not user_doc.get("two_factor_enabled"):
+        raise HTTPException(status_code=401, detail="2FA durumu bulunamadı")
+    user_doc = decrypt_user_doc(user_doc)
+
+    secret_enc = user_doc.get("two_factor_secret_enc", "")
+    try:
+        secret = decrypt_secret(secret_enc)
+    except ValueError:
+        raise HTTPException(status_code=500, detail="2FA gizli anahtar çözülemedi")
+
+    code = (payload.code or "").strip()
+    matched_totp = verify_totp(secret, code)
+    matched_backup = False
+    matched_hash = None
+    if not matched_totp:
+        backup_hashes = user_doc.get("two_factor_backup_codes") or []
+        # Identify which stored hash matches (no DB write yet).
+        from core.twofa import _pwd as _bcrypt_ctx
+        norm = code.upper().replace("-", "").replace(" ", "")
+        for h in backup_hashes:
+            try:
+                if _bcrypt_ctx.verify(norm, h):
+                    matched_hash = h
+                    matched_backup = True
+                    break
+            except Exception:
+                continue
+
+    if not (matched_totp or matched_backup):
+        await db.audit_logs.insert_one({
+            "id": str(__import__('uuid').uuid4()),
+            "tenant_id": user_doc.get("tenant_id"),
+            "user_id": user_id,
+            "action": "login_2fa_failed",
+            "resource_type": "auth",
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=401, detail="2FA kodu hatalı")
+
+    # Atomic single-use enforcement for backup codes:
+    # use $pull keyed on the exact hash; if two requests race for the
+    # same code, only one of them will modify_count==1, the other 0.
+    if matched_backup and matched_hash is not None:
+        pull_res = await db.users.update_one(
+            {"id": user_id, "two_factor_backup_codes": matched_hash},
+            {
+                "$pull": {"two_factor_backup_codes": matched_hash},
+                "$set": {"two_factor_last_used_at": datetime.now(UTC).isoformat()},
+            },
+        )
+        if pull_res.modified_count == 0:
+            await db.audit_logs.insert_one({
+                "id": str(__import__('uuid').uuid4()),
+                "tenant_id": user_doc.get("tenant_id"),
+                "user_id": user_id,
+                "action": "login_2fa_failed",
+                "resource_type": "auth",
+                "details": "backup_code_race_lost",
+                "timestamp": datetime.now(UTC).isoformat(),
+            })
+            raise HTTPException(status_code=401, detail="Yedek kod zaten kullanıldı")
+    else:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {"two_factor_last_used_at": datetime.now(UTC).isoformat()}},
+        )
+
+    # Mark the challenge jti as consumed (TTL = remaining token lifetime).
+    _consumed_cache.set(consumed_key, True, ttl=600)
+
+    user = User(**{k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']})
+    tenant = None
+    if user.tenant_id:
+        tenant_doc = await load_tenant_doc(user.tenant_id)
+        if tenant_doc:
+            if not tenant_doc.get("subscription_plan"):
+                tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
+            tenant_doc["features"] = resolve_tenant_features(tenant_doc)
+            tenant = Tenant(**tenant_doc)
+
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "tenant_id": user.tenant_id,
+        "user_id": user.id,
+        "user_email": user.email,
+        "action": "login_2fa_success",
+        "resource_type": "auth",
+        "details": "backup_code" if matched_backup else "totp",
+        "timestamp": datetime.now(UTC).isoformat(),
+    })
+
+    token = create_token(user.id, user.tenant_id)
+    return TokenResponse(access_token=token, user=user, tenant=tenant)
 
 @router.get("/auth/me", response_model=User)
 async def get_me(current_user: User = Depends(get_current_user)):

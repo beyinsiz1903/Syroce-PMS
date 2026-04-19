@@ -1177,3 +1177,147 @@ Yeni kiracılar için 5 adımlı kurulum sihirbazı.
   sayesinde 3+ adımı tamamlamış sayıldığı için etkilenmez.
 - Kullanıcı sihirbazda "Şimdilik Atla" derse `dismiss=true` olur ve
   bir daha otomatik yönlenmez (menüden manuel açılabilir).
+
+## Sprint 19: 2FA / TOTP (Apr 2026) — KURUMSAL ZORUNLULUK ✅
+
+Kurumsal müşteri satın alma zorunluluğu için RFC 6238 TOTP tabanlı
+iki adımlı doğrulama.
+
+### Backend
+- `backend/core/twofa.py` (YENİ) — TOTP secret üretimi (160-bit base32),
+  Fernet ile AES şifreli depolama (JWT_SECRET türevli ayrı domain key),
+  10 adet 8-haneli yedek kod üretimi (bcrypt-hash, tek kullanımlık).
+- `backend/routers/security_2fa.py` (YENİ):
+  - `GET  /api/2fa/status`
+  - `POST /api/2fa/setup` → secret + QR data URL + otpauth URI
+    (pending slot, henüz aktif değil; tekrar çağırılabilir)
+  - `POST /api/2fa/setup/confirm` → kod doğrula → aktifleştir +
+    yedek kodları **tek seferlik** döndür
+  - `POST /api/2fa/disable` → parola + (TOTP **veya** yedek kod)
+  - `POST /api/2fa/regenerate-backup-codes` → TOTP gerekli, eski
+    kodlar iptal
+  - `GET  /api/2fa/policy` → tenant düzeyinde 2FA zorunluluğu okuma
+- `backend/routers/auth.py` — login akışına 2FA gate:
+  - `two_factor_enabled=true` ise `access_token=""`,
+    `requires_2fa=true`, kısa ömürlü (5dk) `challenge_token` döner
+  - **Cache geçerlilik kontrolü**: cached login response 2FA
+    aktiveden önce alınmışsa db'den taze flag okunur, eski cache
+    eviktedilir
+- `POST /api/auth/2fa/verify` (YENİ) — challenge_token + 6-haneli
+  kod (TOTP veya yedek kod) → gerçek `access_token`. Yedek kod
+  kullanılırsa o kodun bcrypt hash'i listeden silinir
+  (tek kullanımlık).
+- Audit log eventleri: `2fa_enabled`, `2fa_disabled`,
+  `2fa_backup_regenerated`, `login_2fa_required`,
+  `login_2fa_failed`, `login_2fa_success` (details: totp/backup_code).
+
+### Frontend
+- `frontend/src/pages/AuthPage.jsx` — login response'ta
+  `requires_2fa=true` ise tüm tab UI gizlenir, 6 haneli kod giriş
+  ekranı gösterilir; submit → `/auth/2fa/verify` → `onLogin(...)`
+- `frontend/src/pages/ProfilePage.jsx` — yeni `<TwoFactorSection>`
+  bileşeni:
+  - Etkin değilse: "2FA Etkinleştir" → QR kod + manuel secret +
+    6-haneli doğrulama → backup kodlarını **tek kez** gösterir
+    (kopyala butonu)
+  - Etkinse: durum (etkinleşme tarihi, son kullanım, kalan yedek
+    kod sayısı), yedek kod yenileme, devre dışı bırakma
+    (parola + 2FA kodu zorunlu)
+
+### Smoke (PASS, 19 Apr 2026)
+1. Setup → secret üretildi, QR base64 PNG döndü
+2. Confirm valid TOTP → enabled=true, 10 backup code
+3. Login → requires_2fa=true, challenge token üretildi
+   (cache invalidation çalıştı)
+4. Verify wrong code → 401
+5. Verify valid TOTP → real access_token
+6. Backup code login → token alındı, kalan=9
+7. Disable → 2FA flag kaldırıldı
+8. Login plain → eski akışa döndü
+
+### Veri modeli (User dokümanı)
+- `two_factor_enabled: bool`
+- `two_factor_secret_enc: str` (AES/Fernet)
+- `two_factor_backup_codes: list[str]` (bcrypt hashes)
+- `two_factor_enabled_at`, `two_factor_last_used_at`
+- `two_factor_secret_pending_enc` (geçici, confirm'da silinir)
+
+### Güvenlik notları
+- TOTP secret JWT_SECRET'tan domain-separated SHA256 ile türetilen
+  Fernet key ile şifrelenir → JWT_SECRET sızsa bile 2FA secrets
+  çözülmez (TWOFA_SECRET ile ayrıca override edilebilir).
+- Yedek kodlar bcrypt ile hashlenir, plaintext **asla** disk'te
+  durmaz (sadece bir kez kullanıcıya gösterilir).
+- Disable 2 faktörlü gereksinim taşır (parola + kod) — saldırgan
+  oturumu çalsa bile devre dışı bırakamaz.
+- Challenge token 5dk ömürlü, `purpose=2fa_challenge` claim'i ile
+  domain-separated.
+
+## Sprint 20: PCI-DSS Compliance Dashboard (Apr 2026) ✅
+
+Kurumsal otel müşterilerinin satın alma süreçlerinde talep ettiği
+PCI-DSS uyum durumunun şeffaf gösterimi.
+
+### Backend
+- `backend/core/pci_dss.py` (YENİ) — PCI-DSS v4.0'ın 12
+  gereksinimini Syroce'nin teknik kontrollerine eşleyen
+  `evaluate_controls()` ve özet skor üreten `summary()`.
+  Status değerleri: `met` / `partial` / `shared` / `not_applicable`.
+- `backend/routers/pci_compliance.py` (YENİ, admin-only):
+  - `GET /api/compliance/pci/status` — özet skor (uygulama %)
+  - `GET /api/compliance/pci/controls` — 12 gereksinim detayı
+    (kanıtlar + öneriler)
+  - `GET /api/compliance/pci/report.csv` — Excel uyumlu (BOM'lu)
+    CSV indir
+  - `GET /api/compliance/pci/attestation` — RFP/satın alma için
+    JSON beyan paketi (issuer, tenant, summary, controls, disclaimer)
+- Yetki: `super_admin / platform_admin / admin / owner` rolleri.
+
+### Frontend
+- `frontend/src/pages/PCIComplianceDashboard.jsx` (YENİ):
+  - Skor kartları (uygulama %, met/partial/shared sayıları)
+  - 12 gereksinim için kart listesi (sol border renkli, status
+    badge, kanıt + öneri listesi)
+  - CSV ve JSON beyan paketi indirme butonları
+  - QSA disclaimer bandı
+- Route: `/app/compliance/pci`
+- Nav: "PCI-DSS Uyum" → management grubu (Modül Pazarı altı)
+
+### Skor (demo tenant, 19 Apr 2026)
+- Uygulama Skoru: **%67** (6 met / 9 in-scope)
+- Karşılanan (met=6): Req 2, 3, 4, 7, 8, 10
+- Eylem Gerekli (partial=3): Req 6 (CI'de SAST otomasyonu),
+  Req 11 (yıllık pen-test), Req 12 (politika dokümantasyonu)
+- Paylaşılan (shared=3): Req 1, 5, 9 (cloud sağlayıcı sorumluluğu)
+
+### Notlar
+- Bu öz-değerlendirmedir, resmi PCI sertifikası için QSA gerekli.
+- Yeni güvenlik modülleri eklendikçe `evaluate_controls()` içindeki
+  `_has_module()` probları otomatik yansır.
+
+### Sprint 19/20 Architect-Driven Sertleştirmeler (19 Apr 2026)
+Code review (architect) ciddi güvenlik bulgularıyla döndü; hepsi kapatıldı:
+
+1. **2FA challenge token replay koruması**: challenge JWT'sine `jti`
+   eklendi; başarılı verify sonrası jti `simple_cache`'de
+   "consumed" olarak 10dk işaretlenir → aynı token ikinci kez
+   kullanılamaz. Smoke ile doğrulandı (2. verify → 401 "zaten kullanıldı").
+2. **Login cache fail-closed**: 2FA flag rechek sırasında istisna
+   olursa cache **evict** edilir ve tam login yoluna düşülür
+   (eski davranış: cached token döndürülürdü).
+3. **2FA Fernet key fallback kaldırıldı**: `core/twofa.py` artık
+   TWOFA_SECRET / JWT_SECRET (env veya runtime sabiti) yoksa
+   `RuntimeError` atar; sabit fallback string silindi.
+4. **Atomik backup code tüketimi**: `consume_backup_code` artık
+   sadece eşleşen hash'i tespit ediyor; DB'de `$pull` ile filtre
+   üzerinden silindiği için iki paralel istek aynı kodu kullanamaz
+   (`modify_count==0` → 401 "yedek kod zaten kullanıldı").
+5. **PCI evaluator dürüstleştirildi**: Req 4 (TLS) HSTS middleware
+   veya `FORCE_HTTPS=true` yoksa `partial`; Req 6 (CI scan)
+   `CI_SECURITY_SCAN_ENABLED=true` yoksa `partial`. Demo skor
+   gerçekçi şekilde %67 → **%44** düştü.
+
+### Smoke (post-fix, 19 Apr 2026)
+- 2FA setup/confirm/challenge/verify/disable → tüm akış PASS
+- Replay testi → 401 "zaten kullanıldı" PASS
+- PCI status → met=4 / partial=5 / shared=3, score=%44 (dürüst)

@@ -539,6 +539,14 @@ export const NAV_ITEMS = [
     navGroup: "management",
   },
   {
+    key: "pci_compliance",
+    label: "PCI-DSS Uyum",
+    path: "/app/compliance/pci",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     key: "afsadakat",
     label: "Sadakat & Inbox",
     path: "/app/afsadakat",
