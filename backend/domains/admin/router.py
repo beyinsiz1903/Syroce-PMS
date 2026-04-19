@@ -21,8 +21,18 @@ from core.security import (
 require_super_admin = require_super_admin_guard()
 from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings
 from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
-from models.enums import UserRole
+from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 from models.schemas import Tenant, TenantRegister, UpdateUserRoleRequest, User
+
+
+def _has_permission(role: UserRole | str, perm: Permission) -> bool:
+    """Lightweight helper: ROLE_PERMISSIONS lookup."""
+    role_key = role if isinstance(role, UserRole) else UserRole(role) if role in {r.value for r in UserRole} else None
+    if role_key is None:
+        return False
+    perms = ROLE_PERMISSIONS.get(role_key, [])
+    perm_value = perm.value if isinstance(perm, Permission) else perm
+    return any((p.value if isinstance(p, Permission) else p) == perm_value for p in perms)
 from security.encrypted_lookup import (
     build_user_email_query,
     decrypt_user_doc,
@@ -82,7 +92,7 @@ async def check_permission(
 
     try:
         perm = Permission(request.permission)
-        has_perm = has_permission(current_user.role, perm)
+        has_perm = _has_permission(current_user.role, perm)
         return {
             'user_role': current_user.role,
             'permission': request.permission,
@@ -105,26 +115,17 @@ async def get_resource_permissions(
     Get detailed permissions for a resource based on user role
     RBAC 2.0 - Granular access control
     """
-    if user_role.value not in RBAC_V2_PERMISSIONS:
+    # RBAC v2 detayli izin matrisi henuz tamamlanmadi; ROLE_PERMISSIONS uzerinden
+    # kaynak bazli kaba bir hak ozeti dondururuz.
+    if user_role not in ROLE_PERMISSIONS:
         raise HTTPException(status_code=404, detail="Role not found")
-
-    role_permissions = RBAC_V2_PERMISSIONS[user_role.value]
-
-    if resource not in role_permissions:
-        return {
-            'user_role': user_role.value,
-            'resource': resource,
-            'permissions': PermissionSet().model_dump(),
-            'has_access': False
-        }
-
-    permissions = role_permissions[resource]
-
+    role_perms = {(p.value if isinstance(p, Permission) else p) for p in ROLE_PERMISSIONS[user_role]}
+    resource_match = [p for p in role_perms if resource.lower() in p.lower()]
     return {
         'user_role': user_role.value,
         'resource': resource,
-        'permissions': permissions.model_dump(),
-        'has_access': permissions.view
+        'permissions': {p: True for p in resource_match},
+        'has_access': bool(resource_match),
     }
 
 
@@ -137,19 +138,14 @@ async def get_my_permissions(
     """Get current user's all resource permissions"""
     user_role = current_user.role
 
-    if user_role.value not in RBAC_V2_PERMISSIONS:
+    if user_role not in ROLE_PERMISSIONS:
         return {'error': 'Invalid role'}
-
-    all_permissions = RBAC_V2_PERMISSIONS[user_role.value]
-
+    perms = [(p.value if isinstance(p, Permission) else p) for p in ROLE_PERMISSIONS[user_role]]
     return {
         'user_id': current_user.id,
         'user_name': current_user.name,
         'user_role': user_role.value,
-        'permissions': {
-            resource: perms.model_dump()
-            for resource, perms in all_permissions.items()
-        }
+        'permissions': perms,
     }
 
 
@@ -1473,6 +1469,17 @@ async def admin_export_pms_lite_leads_csv(
 
     now = datetime.now(UTC)
 
+    def _parse_iso_dt(v):
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v if v.tzinfo else v.replace(tzinfo=UTC)
+        try:
+            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+        except Exception:
+            return None
+
     if follow_up:
         filtered: list[dict[str, Any]] = []
         for lead in docs:
@@ -1743,13 +1750,21 @@ async def get_system_performance(
         try:
             apm_summary = _apm_store_ref.get_summary(minutes=minutes)
         except Exception:
-            apm_summary = apm_store.get_summary(minutes=minutes) if hasattr(apm_store, 'get_summary') else {}
+            try:
+                from apm_middleware import apm_store as _apm
+                apm_summary = _apm.get_summary(minutes=minutes) if hasattr(_apm, 'get_summary') else {}
+            except Exception:
+                apm_summary = {}
 
         # Get rate limit stats
         try:
             rl_stats = _get_rl_stats()
         except Exception:
-            rl_stats = get_rate_limit_stats() if callable(get_rate_limit_stats) else {}
+            try:
+                from apm_middleware import get_rate_limit_stats as _rl
+                rl_stats = _rl()
+            except Exception:
+                rl_stats = {}
 
         # Get recent errors
         try:

@@ -263,11 +263,30 @@ class CacheWarmer:
         return None
 
     async def background_refresh(self, tenant_id: str):
-        """Background cache refresh every 15 seconds (aggressive)"""
+        """Background cache refresh.
+
+        Önceden 15s idi: her tenant icin saniyede 6 cache pass uretiyordu
+        (housekeeping/frontdesk/booking/room/dashboard/kpi) → log spam'i ve
+        gereksiz DB yuku. Artik 120s + her 5 turdan birinde tam refresh,
+        diger turlarda sadece KPI dashboard.
+        """
+        import os
+        interval = int(os.getenv("CACHE_WARMER_INTERVAL_SEC", "120"))
+        full_every = int(os.getenv("CACHE_WARMER_FULL_EVERY_N", "5"))
+        cycle = 0
         while True:
             try:
-                await asyncio.sleep(15)  # Refresh every 15 seconds for max freshness
-                await self.warm_all_caches(tenant_id)
+                await asyncio.sleep(interval)
+                cycle += 1
+                if cycle % full_every == 0:
+                    await self.warm_all_caches(tenant_id)
+                else:
+                    # Hafif refresh: sadece dashboard + kpi
+                    await asyncio.gather(
+                        self.warm_dashboard_cache(tenant_id),
+                        self.warm_kpi_cache(tenant_id),
+                        return_exceptions=True,
+                    )
             except Exception as e:
                 logger.info(f"Background cache refresh error: {e}")
 

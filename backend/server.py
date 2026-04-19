@@ -197,16 +197,14 @@ from bootstrap.router_registry import register_routers  # noqa: E402
 register_routers(app, api_router, require_super_admin_dep=require_super_admin)
 
 # ── Additional optional routers (factory-pattern modules) ───────────
-_optional_factory_routers = [
-    ("security_2fa", "create_2fa_routes", "2FA Security"),
-    ("ip_access_control", "create_ip_access_routes", "IP Access Control"),
-    ("gdpr_compliance", "create_gdpr_routes", "GDPR/KVKK Compliance"),
-    ("central_office_endpoints", "create_central_office_routes", "Central Office Dashboard"),
-    ("central_pricing_endpoints", "create_central_pricing_routes", "Central Pricing"),
-    ("cross_property_guests", "create_cross_property_guest_routes", "Cross-Property Guests"),
-    ("ml_real_models", "create_ml_routes", "ML/AI Models"),
-    ("tenant_isolation", "create_tenant_isolation_routes", "Tenant Isolation"),
-    ("pci_dss_compliance", "create_pci_dss_routes", "PCI DSS Compliance"),
+# NOT: Asagidaki 9 modulun hicbiri kod tabaninda artik mevcut degil
+# (security_2fa, ip_access_control, gdpr_compliance, central_office_endpoints,
+# central_pricing_endpoints, cross_property_guests, ml_real_models,
+# tenant_isolation, pci_dss_compliance). Bu ozellikler basta domains/admin,
+# domains/security ve security/tenant_isolation_router altinda yeniden
+# konumlanmis durumda. Bu liste sessizce yukleme denemesini sonlandiriyor.
+_optional_factory_routers: list[tuple[str, str, str]] = [
+    # ("module_name", "factory_function", "Display Tag")  -- eklemek istersen buraya yaz.
 ]
 
 _failed_routers = []
