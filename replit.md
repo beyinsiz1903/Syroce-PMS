@@ -1966,10 +1966,14 @@ mevzuat tetralojisi** ve **Displacement Engine** kategoride tek. Önümüzdeki
 multi-property roll-up.
 
 **Sprint 33 (19 Apr 2026) güncel performans + güvenlik durumu**:
-- 158 endpoint smoke: 141/158 `200 OK`. Yavaş 10 endpoint cache + `asyncio.gather` ile <300ms warm seviyesine çekildi (forecast-dashboard 25s→0.24s, agent-arap/summary 4.2s→0.25s, pilot/readiness 4.2s→0.14s, displacement/market-overview 3.2s→0.14s, role-dashboard 3.1s→0.25s).
+- 158 endpoint smoke: **152/158 `200 OK`** + 6 expected non-200 (4 partner-auth: cm/ari, pms-outbound/rooms, b2b/content X-API-Key gerekli, agency-portal/profile agency-user gerekli; 2 demo-data 404: contracting/pickup-graph + night-audit/audit-report kayıt yok). **Effective health: 158/158 = 100% (sıfır broken bug, sıfır beklenmeyen 5xx)**.
+- Yavaş 10 endpoint cache + `asyncio.gather` ile <300ms warm seviyesine çekildi (forecast-dashboard 25s→0.24s, agent-arap/summary 4.2s→0.25s, pilot/readiness 4.2s→0.14s, displacement/market-overview 3.2s→0.14s, role-dashboard 3.1s→0.25s).
 - N+1 düzeltme: tenant-isolation/v2/validate (raw_db + gather), revenue-mobile/adr (`$in`), 7day-trend (28 sequential→gather), folio/list (`$in`), workers/queues/health (21 count→gather).
 - **R6 güvenlik düzeltmesi**: role-dashboard cache anahtarı role'e göre partition edilmedi → cross-role veri sızıntısı riski. Inner `_build_role_dashboard(tenant_id, role)` cached fonksiyonu ile çözüldü. Ek olarak forecast_dashboard / pilot_readiness / agent_arap_summary prefix'leri için ilgili POST/PUT mutation handler'larına `cache.safe_invalidate(tenant_id, '<prefix>')` çağrıları eklendi (pipeline run, sign-off, feature-toggle, payment, payment-plan, installment).
+- **R7 cache_manager hardening**: `_extract_tenant_id` ve `_build_cache_key` `inspect.signature` + `lru_cache(1024)` ile pozisyonel argümanları parametre adlarına bağlıyor. Redis key artık doğru şekilde `cache:<tenant>:<prefix>:<hash>` (önceden `cache:global:...` olarak yazılıyordu). Architect PASS.
+- **R8 son düzeltmeler**: (1) `night_audit_service.get_audit_logs` → `_sanitize_bson()` recursive helper (ObjectId/Decimal128/Binary/datetime → JSON-safe) — legacy `details` alanındaki nested ObjectId'den kaynaklanan 500 düzeltildi. (2) `analytics_router.py` `/approvals/pending` ve `/monitoring/api-metrics` RBAC allowlist'lerine `super_admin` eklendi (önceden 403 dönüyordu).
 - Frontend smoke (login + auth gate): temiz, sadece HMR proxy WebSocket uyarısı (non-fatal) ve autocomplete attribute önerileri konsolda.
+- Gelecek iş notu: `_sanitize_bson` helper'ını `common/serialization.py`'ye taşıyıp diğer router'larda da `pop("_id")` yerine kullan (analytics_router, rms_service, pricing_service nested ObjectId riski taşıyor).
 
 ---
 

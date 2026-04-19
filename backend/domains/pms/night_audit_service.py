@@ -7,10 +7,33 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from bson import Binary, ObjectId
+from bson.decimal128 import Decimal128
+
 from common.context import OperationContext
 from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_bson(obj: Any) -> Any:
+    """Recursively convert BSON ObjectId / datetime to JSON-safe primitives.
+    Sprint 33: fixes 500 on `/api/audit-logs` when nested `details` field
+    contained an ObjectId from legacy log entries.
+    """
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, Decimal128):
+        return float(obj.to_decimal())
+    if isinstance(obj, Binary):
+        return obj.hex()
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _sanitize_bson(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_bson(v) for v in obj]
+    return obj
 
 
 class NightAuditService:
@@ -49,9 +72,10 @@ class NightAuditService:
             }
 
         logs = await self._db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+        sanitized = _sanitize_bson(logs)
         return ServiceResult.success({
-            "logs": logs,
-            "count": len(logs),
+            "logs": sanitized,
+            "count": len(sanitized),
             "filters_applied": {k: v for k, v in query.items() if k != "tenant_id"},
         })
 

@@ -1565,8 +1565,8 @@ async def get_pending_approvals(
     """Get all pending approval requests"""
     current_user = await get_current_user(credentials)
 
-    # Only managers and admins can see approvals
-    if current_user.role not in ['admin', 'manager', 'gm']:
+    # Only managers and admins can see approvals (Sprint 33: super_admin included)
+    if current_user.role not in ['admin', 'manager', 'gm', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     approvals = []
@@ -2137,7 +2137,7 @@ async def get_api_metrics(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager']:
+    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Mock API metrics (in production, collect from actual monitoring)
@@ -2172,7 +2172,7 @@ async def get_system_health_detailed(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager']:
+    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     import platform
@@ -2297,7 +2297,7 @@ async def set_alert_threshold(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager']:
+    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     threshold = {
