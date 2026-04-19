@@ -1393,3 +1393,69 @@ güvenli ve idempotent biçimde dağıtır.
    ve idempotent inbound dedup.
 4. Retry worker'ı app startup'a bağla (şu an manuel
    `run_retry_cycle()` ile).
+
+## Sprint 23 — Spa & MICE/Banquet Derinleştirme (19 Apr 2026)
+**Amaç**: Mevcut "şablon" Spa sayfası yerine gerçek kaynak yönetimi
+ve OPERA/Protel seviyesinde banquet/etkinlik yönetimi. Kullanıcı
+geri bildirimi: *"Spa modülü sadece şablon... MICE modülü zayıf —
+Opera/Protel'in en güçlü alanlarından biri (banquet management)."*
+
+### Backend yeni modüller
+- `backend/routers/spa.py`
+  - Hizmet kataloğu CRUD (kategori, süre, fiyat, komisyon,
+    `requires_room_type`); ilk GET'te 8 hizmetlik Türkçe seed.
+  - Terapist roster (uzmanlıklar, mesai saatleri, renk).
+  - Tedavi odası CRUD (tip, kapasite, ekipman).
+  - Çakışma kontrollü randevu — **terapist VE oda** çakışması
+    aynı anda kontrol edilir; otomatik terapist/oda seçimi
+    (uzmanlık eşleşmesi + müsaitlik).
+  - Status flow: scheduled → in_progress → completed/no_show/
+    cancelled. `completed` + `charge_to_room` ⇒ folio_postings'e
+    yazar, Xchange `POSTING_CHARGE` event yayınlar.
+  - Misafir geçmişi (`/api/spa/guests/{id}/history`) ve günlük
+    özet (`/api/spa/daily-summary`).
+- `backend/routers/mice.py`
+  - **Function spaces** — alan, 6 düzen kapasitesi (theatre,
+    classroom, banquet, cocktail, u_shape, boardroom), saatlik/
+    günlük tarife, amenities; 4 mekan seed.
+  - **Menü & paket kataloğu** — F&B / AV / decor; per-pax veya
+    flat fiyat; 5 paket seed.
+  - **Etkinlik döngüsü** — lead → tentative → definite →
+    confirmed → completed/cancelled. Tentative+ statüde mekan
+    çakışması bloklanır; `completed` ⇒ folio + Xchange.
+  - **Otomatik fiyatlama** — mekan tarifesi (≥6 saat ⇒ daily,
+    aksi halde hourly × saat); per-pax menüler beklenen pax ile
+    çarpılır; flat menüler quantity ile.
+  - **Function diary** (`/api/mice/diary`) ve **BEO**
+    (`/api/mice/events/{id}/beo`) endpoints.
+
+### Frontend yeniden yazımları
+- `frontend/src/pages/SpaWellness.jsx` — 261 satırlık şablon yerine
+  4 sekmeli yönetim ekranı (Randevular / Hizmetler / Terapistler
+  / Odalar), günlük özet kartları, randevu modal'ı (auto-pick
+  desteği), durum aksiyon butonları, oda hesabına yansıt
+  switch'i.
+- `frontend/src/pages/MicePage.jsx` (YENİ) — etkinlik tablosu,
+  çoklu mekan + kaynak satırlı tek modal, status pipeline kartları,
+  function diary tab'ı, BEO yazdırılabilir modal, status değiştirme
+  dropdown'ı, silme/düzenleme aksiyonları.
+- `routeDefinitions.jsx` + `navItems.jsx` — `/app/mice` rotası,
+  "MICE & Banquet" navigasyonu (operations grubu, basic tier).
+
+### Smoke (19 Apr 2026)
+- Spa: 8 hizmet seed, terapist+oda yaratıldı, randevu OK.
+  Aynı saat aralığında ikinci randevu → `409 Terapist çakışması`.
+- MICE: 4 mekan + 5 menü seed. Gala (200 pax, 18:00–01:00,
+  Boardroom + Coffee Break per-pax + AV flat) → `grand_total =
+  ₺200,500` doğru hesaplandı (mekan ₺6,000 + kaynaklar ₺194,500;
+  per-pax menü 200 ile çarpıldı). Çakışan tentative ekleme →
+  `409 Mekan çakışması: Gala 2026 (2026-05-15T18:00)`. BEO
+  endpoint mekan + kaynak hatlarını ve toplamı döndürdü.
+  Function diary mayıs ayı listesini doğru getirdi.
+
+### Sertifikasyon hattındaki bilinen eksikler
+1. Spa: terapist takvimi/scheduler grid (Gantt-stili) UI; şu an
+   tablo görünümü.
+2. MICE: drag-and-drop function diary (ay görünümü); şu an
+   liste/diary listesi.
+3. Folio reverse postings (etkinlik iptal edildiğinde geri vurma).

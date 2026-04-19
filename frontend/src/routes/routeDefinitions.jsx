@@ -30,6 +30,7 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));
 const XchangePage = lazy(() => import("@/pages/XchangePage"));
+const MicePage = lazy(() => import("@/pages/MicePage"));
 const MailingPage = lazy(() => import("@/pages/MailingPage"));
 const ModuleStorePage = lazy(() => import("@/pages/ModuleStorePage"));
 const AfsadakatLauncher = lazy(() => import("@/pages/AfsadakatLauncher"));
@@ -243,6 +244,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/profile", ...p(ProfilePage) },
     { path: "/app/compliance/pci", ...p(PCIComplianceDashboard) },
     { path: "/app/xchange", ...p(XchangePage) },
+    { path: "/app/mice", ...p(MicePage) },
     { path: "/app/mailing", ...p(MailingPage) },
     { path: "/app/module-store", ...p(ModuleStorePage) },
     { path: "/module-store", ...p(ModuleStorePage) },

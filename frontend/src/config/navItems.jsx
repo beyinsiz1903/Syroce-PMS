@@ -555,6 +555,14 @@ export const NAV_ITEMS = [
     navGroup: "management",
   },
   {
+    key: "mice",
+    label: "MICE & Banquet",
+    path: "/app/mice",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+  },
+  {
     key: "afsadakat",
     label: "Sadakat & Inbox",
     path: "/app/afsadakat",
