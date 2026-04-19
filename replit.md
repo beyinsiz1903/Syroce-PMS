@@ -1772,3 +1772,76 @@ onaylı → gönderildi → ödendi), denetim için XML/JSON arşiv, geçmiş li
 - Aynı altyapı (`tax_declarations` koleksiyonu + `kind` ayrımı) ileride
   KDV Beyannamesi, Damga Vergisi, Stopaj gibi diğer aylık beyannamelerde
   yeniden kullanılabilir.
+
+## Sprint 27 — In-App Help Center (Apr 2026)
+
+### Bağlam
+PMS modülleri (folio, KVB, satınalma, mevzuat) sayıca arttıkça kullanıcılar
+için kontekstli yardım kritik hale geldi. Sprint 27'de hafif bir Yardım
+Merkezi (markdown tabanlı) eklendi.
+
+### Backend
+- `routers/help.py` — okuma-only API. Slug regex (`^[a-z0-9-]{1,80}$`) +
+  `CONTENT_DIR` containment guard ile path traversal koruması.
+  - `GET /api/help/index` — kategori ağacı + makale başlıkları
+  - `GET /api/help/articles/{slug}` — markdown içerik + meta
+  - `GET /api/help/search?q=` — title/body/tag substring (snippet üretir)
+- `help_content/` — 10 makale, 5 kategori (Başlangıç, Operasyon, Finans,
+  Satınalma, Mevzuat). `_index.json` katalog.
+
+### Frontend
+- `pages/HelpCenter.jsx` — sol kategori menüsü + sağ makale + üst arama.
+  Markdown'ı dış paket olmadan basit (heading/list/table/code/link) parser
+  ile render eder. İçerik `[başlık](#/help/slug)` linklerini intercept edip
+  yan-makaleye geçer (data-slug attribute click handler).
+- Nav: "Yardım Merkezi" → `/app/help` (yonetim grubu, starter tier).
+
+### Smoke (Atlas — 19 Apr 2026)
+- ✅ index → 5 kategori, 10 makale
+- ✅ article load → markdown + meta dönüyor
+- ✅ slug guard → `../etc/passwd` 404
+- ✅ search "vergi" → 5 isabet, "Konaklama Vergisi Beyannamesi" en yüksek skorlu
+
+## Sprint 28 — Mevzuat Raporları (TÜİK / Bakanlık) (Apr 2026)
+
+### Bağlam
+Türk konaklama tesisleri her ay TÜİK aylık konaklama anketini doldurmak,
+yıldız sınıflama kriterleriyle uyumluluğu ve Bakanlık denetimine hazırlığı
+takip etmek zorunda. Sprint 28 bu üç mevzuat görevini tek modülde topladı.
+
+### Backend
+- `routers/regulatory.py` — 3 endpoint:
+  - `GET /api/regulatory/tuik/monthly?year=&month=` — kapasite (oda + yatak),
+    satılan oda-gece, doluluk %, yerli/yabancı kişi-gece, ALOS, ülke top-20
+    (TR alias normalizasyonu) + "Diğer". Booking tz-naive/aware uyumlu.
+  - `GET /api/regulatory/inspection-readiness` — tesis künyesi snapshot,
+    7 kontrol noktası (künye, vergi no, işletme belgesi + süresi, yıldız,
+    oda envanteri, personel) + readiness score + 12 aylık rezervasyon trend.
+  - `GET/POST /api/regulatory/star-classification/checklist` — 24 kriter,
+    8 kategori, hedef yıldıza göre `required` flag'i, partial=0.5 ağırlık,
+    `regulatory_star_checklists` koleksiyonunda upsert + audit log.
+
+### Frontend
+- `pages/MevzuatRaporlari.jsx` — 3 sekme:
+  - **TÜİK Aylık**: yıl/ay seçici + KPI kartları + ülke tablosu + CSV indir
+    (UTF-8 BOM, TÜİK e-Anket'e veri girişi için) + Yazdır.
+  - **Denetim Hazırlık**: readiness skoru, 7 kontrol listesi (✓/⚠ ikonları),
+    12 aylık trend tablosu, işletme belgesi gün sayacı (<30 gün → uyarı).
+  - **Yıldız Self-Check**: hedef yıldız seçici, kategori-grouplu kriter
+    listesi, her kriter Var/Kısmen/Yok select, kaydet + canlı skor.
+- Nav: "Mevzuat Raporları" → `/app/mevzuat-raporlari` (reports grubu,
+  professional tier, basic_reporting modül).
+
+### Smoke (Atlas — 19 Apr 2026)
+- ✅ TÜİK 2026-04 → 30 oda, 60 yatak, 45 booking, 179 oda-gece, %19.89
+  doluluk, ALOS 1.52, ülke top-20 (test data nationality boş → "Belirtilmemiş").
+- ✅ Inspection readiness → 30 oda, 5 aktif user, score 29 (5 künye check
+  eksik — test tenant'ında doldurulmamış alanlar).
+- ✅ Star checklist GET → 24 item, 4★ hedef → 21 zorunlu, score 0 (boş başlangıç).
+- ✅ POST 5 entry (3 yes, 1 partial, 1 no) → score 17, missing 18, audit log.
+
+### Etki
+- TÜİK e-Anket için manuel tablo doldurma süresi (yarım gün) → tek tık CSV.
+- Bakanlık denetim öncesi 30 dk hazırlık raporu → otomatik dashboard.
+- Yıldız uyumluluğu için iç self-check, eksik kriterler kalıcı izlenir
+  (Elektraweb'de bu modül yoktur, yalnızca dış danışmanlık ile yapılır).

@@ -233,6 +233,23 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "finance",
   },
+  {
+    key: "mevzuat_raporlari",
+    label: "Mevzuat Raporlari",
+    path: "/app/mevzuat-raporlari",
+    moduleKey: "basic_reporting",
+    tier: "professional",
+    group: "professional",
+    navGroup: "reports",
+  },
+  {
+    key: "help_center",
+    label: "Yardim Merkezi",
+    path: "/app/help",
+    tier: "starter",
+    group: "starter",
+    navGroup: "management",
+  },
 
   // ──── CHANNELS GROUP — Normal kullanici (otel personeli) ─────────
   {

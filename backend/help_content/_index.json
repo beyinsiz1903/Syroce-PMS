@@ -1,0 +1,49 @@
+{
+  "categories": [
+    {
+      "key": "baslangic",
+      "title": "Başlangıç",
+      "icon": "Rocket",
+      "articles": [
+        {"slug": "hizli-baslangic", "title": "Hızlı Başlangıç Rehberi", "tags": ["genel", "kurulum"]},
+        {"slug": "kullanici-rolleri", "title": "Kullanıcı Rolleri ve Yetkilendirme", "tags": ["yetki"]}
+      ]
+    },
+    {
+      "key": "operasyon",
+      "title": "Ön Büro Operasyon",
+      "icon": "Hotel",
+      "articles": [
+        {"slug": "rezervasyon-olusturma", "title": "Rezervasyon Oluşturma", "tags": ["rezervasyon", "front-office"]},
+        {"slug": "check-in-checkout", "title": "Check-in / Check-out Akışı", "tags": ["pms"]}
+      ]
+    },
+    {
+      "key": "finans",
+      "title": "Finans & Vergi",
+      "icon": "DollarSign",
+      "articles": [
+        {"slug": "konaklama-vergisi", "title": "Konaklama Vergisi Beyannamesi", "tags": ["vergi", "kvb", "elektraweb"]},
+        {"slug": "folio-yonetimi", "title": "Folio ve Adisyon Yönetimi", "tags": ["folio", "muhasebe"]}
+      ]
+    },
+    {
+      "key": "satinalma",
+      "title": "Satın Alma & Stok",
+      "icon": "Package",
+      "articles": [
+        {"slug": "satinalma-zinciri", "title": "Satın Alma Zinciri (Talep → Teklif → Sipariş → Mal Kabul)", "tags": ["procurement", "grn"]}
+      ]
+    },
+    {
+      "key": "mevzuat",
+      "title": "Mevzuat & Bildirimler",
+      "icon": "ScrollText",
+      "articles": [
+        {"slug": "kbs-bildirim", "title": "KBS (Konaklama Bildirim Sistemi)", "tags": ["kbs", "polis"]},
+        {"slug": "tuik-anketi", "title": "TÜİK Aylık Konaklama İstatistikleri", "tags": ["tuik", "istatistik"]},
+        {"slug": "yildiz-siniflama", "title": "Yıldız Sınıflama Self-Check", "tags": ["bakanlik", "yildiz"]}
+      ]
+    }
+  ]
+}

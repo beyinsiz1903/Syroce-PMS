@@ -225,6 +225,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_contracts", "admin_router", ["Marketplace v1 / Admin"], None, None),
     # KBS — Konaklama Bildirim Sistemi (PMS kullanıcı oturumuyla, key gerekmez)
     ("routers.kbs", "router", ["KBS"], None, None),
+    ("routers.help", "router", ["help"], None, None),
+    ("routers.regulatory", "router", ["regulatory"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms
     ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
