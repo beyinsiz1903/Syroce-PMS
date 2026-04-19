@@ -1530,3 +1530,86 @@ Aşağıdaki ürün uçtan uca doğrulandı:
   zaman aralığı için 1. randevu HTTP 200, 2. randevu HTTP 409
   (`Oda çakışması: TX-A`) — Atlas replica set üzerinde tx + lock-doc
   patiği uçtan uca doğrulandı.
+
+## Sprint 24 — MICE/Banquet Opera/Protel S&C derinliği (19 Apr 2026)
+
+### Backend (`backend/routers/mice.py`, ~1235 LOC)
+- **Hesap & Kişi mini-CRM**: yeni koleksiyonlar `mice_accounts`
+  (kurumsal müşteri: vergi no, sektör, kredi limiti, vade gün), `mice_contacts`
+  (kişi: ad, unvan, e-posta, telefon, account_id, is_primary). CRUD endpoint'leri
+  + indexler (tenant_id, q-text-search, account_id). Etkinliğe
+  `client_account_id` + `client_contact_id` bağlandı; hesabın silinmesi aktif
+  etkinlik varsa 409 ile reddediliyor.
+- **F&B menü detayı**: `MenuPackageIn` artık `courses[]`
+  (course_type, name, description), `allergens[]`, `dietary_tags[]`
+  (vegan/vegetarian/gluten_free/halal/kosher), `prep_lead_minutes`,
+  `min_guests` taşıyor. Mevcut menüler geri uyumlu (varsayılan boş listeler).
+- **Kaynak envanteri + çapraz-event çakışma**: `mice_resources`
+  (id, name, type, total_stock, unit, unit_price). Event create/update'te
+  `_check_resource_inventory_conflict` çalışır: aynı zaman zarfında diğer
+  aktif (tentative/definite/confirmed) etkinliklerin aynı `inventory_id`
+  kullanımları toplanır; eklenmek istenen miktarla `total_stock`'u aşarsa
+  HTTP 409 (örn: "4K Projeksiyon envanteri yetersiz: stok 5, … zaten 3
+  ayrılmış, talep 3"). Tx + lock-doc altında çalışır.
+- **Fonksiyon Sheet (agenda)**: `EventIn.agenda[]` (AgendaItemIn:
+  starts_at, ends_at, title, kind∈{session,meal,break,av,logistics,other},
+  location, owner, notes). BEO çıktısına da girer.
+- **Ödeme takvimi**: `EventIn.payment_schedule[]`
+  (PaymentScheduleItemIn: due_date, label, amount, paid, paid_at, reference).
+  Ek endpoint'ler: `POST /api/mice/events/{id}/payment-schedule` (replace)
+  ve `POST /api/mice/events/{id}/payment-schedule/{idx}/mark-paid?reference=…`
+  (yalnız finance rolü).
+- **Kurulum stili kapasite kontrolü**: `_validate_setup_capacity`
+  her space_booking için `expected_pax > space.capacity_<style>` ise
+  HTTP 422 net Türkçe mesajla reddediyor ("Boardroom mekanı 'boardroom'
+  düzeninde en fazla 14 kişi alır (talep: 30)").
+- **Lost-business sebep zorunluluğu**: `StatusUpdate` modeline `reason`
+  alanı eklendi; `status=cancelled` çağrılarında reason ≥10 char değilse
+  422; aksi halde `lost_reason` + `lost_at` DB'ye yazılıyor (Opera S&C
+  "lost business reason code" muadili).
+- **Mutfak fişi**: `GET /api/mice/events/{id}/kitchen-ticket` →
+  her F&B menü hattı için kurslar, alerjen/dietary etiket toplulamı,
+  agenda'daki en erken meal/break'ten geriye `prep_lead_minutes`
+  düşülerek hazırlık deadline'ı hesaplanır.
+- **Günlük operasyon sheet'i**: `GET /api/mice/ops-sheet?date=YYYY-MM-DD`
+  → o güne giren tüm aktif etkinliklerin space_booking satırları
+  (mekan, saat, setup, pax, organizatör) + o güne ait ajanda kalemleri
+  özetiyle, başlangıç saatine göre sıralı.
+
+### Pydantic/BSON düzeltmesi
+- `body.model_dump(mode="json")` kullanılarak agenda[].starts_at +
+  payment_schedule[].due_date için ISO string serileştirme zorlandı.
+  Önceki `model_dump()` çağrısı `datetime.date` döndürüyordu; PyMongo
+  bunu reddedip `bson.errors.InvalidDocument` fırlatıyordu.
+
+### Frontend (`frontend/src/pages/MicePage.jsx`, ~1273 LOC)
+- Yeni "Müşteriler" tab'ı: hesap listesi, expand ile alt-kişi tablosu,
+  yeni hesap + yeni kişi modalları.
+- Yeni "Envanter" tab'ı: AV/decor stok kartları + ekle/sil.
+- Etkinlik modal'ı 4 sekmeli oldu: **Temel** (artık `client_account_id`
+  dropdown), **Mekan & Kaynak** (envanter dropdown'ı eklendi),
+  **Fonksiyon Sheet** (dakika bazlı agenda satırları), **Ödeme Takvimi**
+  (taksit grid'i + canlı toplam).
+- Üst bar'da date-picker + "Günün Ops Sheet'i" butonu (yazdırılabilir
+  tablo modal'ı; ajanda özet'i dahil).
+- Etkinlik satırında "Mutfak Fişi" butonu (yazdırılabilir kurs/alerjen
+  bozumu + prep deadline + tüm alerjen/diyet özet bantları).
+- Status değiştirici cancelled seçildiğinde prompt ile sebep ister
+  (≥10 char client-side validation), backend'e `reason` ile gönderir;
+  satırda lost_reason kısa preview gösterilir.
+- BEO modal'ı genişletildi: agenda + ödeme takvimi tabloları + lost
+  reason + ödenmemiş satırlar için "Öde" inline butonu (`mark-paid`
+  endpoint'ini çağırır).
+
+### Smoke (kabul testleri — Atlas replica set üzerinde 19 Apr 2026)
+- ✅ Hesap+kişi+envanter CRUD (200 OK).
+- ✅ Boardroom (cap=14) için 30 pax → 422 net mesaj.
+- ✅ 5 stoklu projektör için 3+3=6 → 409 envanter mesajı; 3+2=5 → 200.
+- ✅ Tam zenginleştirilmiş etkinlik yarat (account, agenda 3 kalem,
+  ödeme 2 taksit, F&B menüsü 80 pax, AV 3 adet) → 200, totals dolu.
+- ✅ Mutfak fişi: prep_by = 08:00 − 45dk = 07:15 doğru hesaplandı,
+  3 kurs + 3 alerjen + 2 diyet etiketi yazıldı.
+- ✅ Ops sheet 2026-09-15 için 1 satır + 3 ajanda kalemi gösteriyor.
+- ✅ Cancel reason yokken 422; "Müşteri başka tarih istedi, mekan dolu"
+  ile 200, lost_reason DB'ye yazıldı.
+- ✅ `mark-paid?reference=BANKA-TX-12345` → satır paid=true + reference.

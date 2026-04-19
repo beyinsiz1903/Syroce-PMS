@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
-  Trash2, FileText, Users, Sparkles,
+  Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
 } from 'lucide-react';
 
 const STATUS = {
@@ -25,24 +25,34 @@ const STATUS = {
 
 const SETUPS = ['theatre', 'classroom', 'banquet', 'cocktail', 'u_shape', 'boardroom'];
 const EVENT_TYPES = ['meeting', 'conference', 'wedding', 'gala', 'training', 'other'];
+const AGENDA_KINDS = ['session', 'meal', 'break', 'av', 'logistics', 'other'];
 
 const MicePage = () => {
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
   const [spaces, setSpaces] = useState([]);
   const [menus, setMenus] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showEventForm, setShowEventForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [beoData, setBeoData] = useState(null);
+  const [kitchenData, setKitchenData] = useState(null);
+  const [opsData, setOpsData] = useState(null);
+  const [opsDate, setOpsDate] = useState(new Date().toISOString().slice(0, 10));
+  const [eventTab, setEventTab] = useState('basics');
 
   const blankEvent = {
     name: '', client_name: '', client_email: '', client_phone: '',
+    client_account_id: '', client_contact_id: '',
     organizer_user: '', event_type: 'meeting', status: 'lead',
     expected_pax: 50, start_date: '', end_date: '',
     space_bookings: [{ space_id: '', starts_at: '', ends_at: '',
                        setup_style: 'theatre', expected_pax: 50 }],
     resources: [],
+    agenda: [],
+    payment_schedule: [],
     notes: '', reservation_id: '',
   };
   const [form, setForm] = useState(blankEvent);
@@ -50,15 +60,19 @@ const MicePage = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const [e, s, m] = await Promise.all([
+      const [e, s, m, a, r] = await Promise.all([
         axios.get('/mice/events'),
         axios.get('/mice/spaces'),
         axios.get('/mice/menus'),
+        axios.get('/mice/accounts'),
+        axios.get('/mice/resources'),
       ]);
       setEvents(e.data.events);
       setSummary(e.data.summary || {});
       setSpaces(s.data.spaces);
       setMenus(m.data.menus);
+      setAccounts(a.data.accounts || []);
+      setResources(r.data.resources || []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
     } finally { setLoading(false); }
@@ -66,19 +80,26 @@ const MicePage = () => {
   useEffect(() => { load(); }, []);
 
   const spaceById = useMemo(() => Object.fromEntries(spaces.map((s) => [s.id, s])), [spaces]);
+  const accountById = useMemo(() => Object.fromEntries(accounts.map((a) => [a.id, a])), [accounts]);
 
-  const openNew = () => { setEditing(null); setForm(blankEvent); setShowEventForm(true); };
+  const openNew = () => { setEditing(null); setForm(blankEvent); setEventTab('basics'); setShowEventForm(true); };
   const openEdit = (ev) => {
     setEditing(ev.id);
     setForm({
       name: ev.name, client_name: ev.client_name, client_email: ev.client_email || '',
-      client_phone: ev.client_phone || '', organizer_user: ev.organizer_user || '',
+      client_phone: ev.client_phone || '',
+      client_account_id: ev.client_account_id || '',
+      client_contact_id: ev.client_contact_id || '',
+      organizer_user: ev.organizer_user || '',
       event_type: ev.event_type, status: ev.status, expected_pax: ev.expected_pax,
       start_date: ev.start_date, end_date: ev.end_date,
       space_bookings: ev.space_bookings?.length ? ev.space_bookings : blankEvent.space_bookings,
       resources: ev.resources || [],
+      agenda: ev.agenda || [],
+      payment_schedule: ev.payment_schedule || [],
       notes: ev.notes || '', reservation_id: ev.reservation_id || '',
     });
+    setEventTab('basics');
     setShowEventForm(true);
   };
 
@@ -97,8 +118,18 @@ const MicePage = () => {
   };
 
   const changeStatus = async (id, status) => {
+    let body = { status };
+    if (status === 'cancelled') {
+      const reason = prompt('İptal/lost-business sebebi (en az 10 karakter):', '');
+      if (reason === null) return;
+      if (reason.trim().length < 10) {
+        toast.error('En az 10 karakter sebep gereklidir');
+        return;
+      }
+      body.reason = reason.trim();
+    }
     try {
-      await axios.post(`/mice/events/${id}/status`, { status });
+      await axios.post(`/mice/events/${id}/status`, body);
       toast.success('Durum güncellendi');
       await load();
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
@@ -112,7 +143,27 @@ const MicePage = () => {
 
   const showBeo = async (id) => {
     try { const r = await axios.get(`/mice/events/${id}/beo`); setBeoData(r.data); }
-    catch (err) { toast.error('BEO alınamadı'); }
+    catch { toast.error('BEO alınamadı'); }
+  };
+  const showKitchen = async (id) => {
+    try { const r = await axios.get(`/mice/events/${id}/kitchen-ticket`); setKitchenData(r.data); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Mutfak fişi alınamadı'); }
+  };
+  const showOpsSheet = async () => {
+    try { const r = await axios.get('/mice/ops-sheet', { params: { date: opsDate } }); setOpsData(r.data); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Ops sheet alınamadı'); }
+  };
+
+  const markPaid = async (eventId, idx) => {
+    const ref = prompt('Ödeme referansı (banka/işlem no):', '') || '';
+    try {
+      await axios.post(`/mice/events/${eventId}/payment-schedule/${idx}/mark-paid`,
+        null, { params: ref ? { reference: ref } : {} });
+      toast.success('Ödeme işaretlendi');
+      await load();
+      // refresh BEO if open
+      if (beoData?.event?.id === eventId) showBeo(eventId);
+    } catch (err) { toast.error(err.response?.data?.detail || 'İşaretlenemedi'); }
   };
 
   // ── Form helpers ──
@@ -136,10 +187,36 @@ const MicePage = () => {
   };
   const addRes = () => setForm({
     ...form, resources: [...form.resources, {
-      menu_id: '', name: '', type: 'fb', quantity: 1, unit: 'pax', unit_price: 0,
+      menu_id: '', inventory_id: '', name: '', type: 'fb',
+      quantity: 1, unit: 'pax', unit_price: 0,
     }],
   });
   const rmRes = (i) => setForm({ ...form, resources: form.resources.filter((_, k) => k !== i) });
+
+  const setAg = (i, patch) => {
+    const next = [...form.agenda]; next[i] = { ...next[i], ...patch };
+    setForm({ ...form, agenda: next });
+  };
+  const addAg = () => setForm({
+    ...form, agenda: [...form.agenda, {
+      starts_at: '', ends_at: '', title: '', kind: 'session',
+      location: '', owner: '', notes: '',
+    }],
+  });
+  const rmAg = (i) => setForm({ ...form, agenda: form.agenda.filter((_, k) => k !== i) });
+
+  const setPs = (i, patch) => {
+    const next = [...form.payment_schedule]; next[i] = { ...next[i], ...patch };
+    setForm({ ...form, payment_schedule: next });
+  };
+  const addPs = () => setForm({
+    ...form, payment_schedule: [...form.payment_schedule, {
+      due_date: '', label: 'Depozito', amount: 0, paid: false,
+    }],
+  });
+  const rmPs = (i) => setForm({
+    ...form, payment_schedule: form.payment_schedule.filter((_, k) => k !== i),
+  });
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">
@@ -148,6 +225,7 @@ const MicePage = () => {
   }
 
   const totalPipeline = Object.values(summary).reduce((a, b) => a + (b.total_value || 0), 0);
+  const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
 
   return (
     <div className="max-w-7xl mx-auto p-4 space-y-4">
@@ -161,7 +239,12 @@ const MicePage = () => {
             Toplantı, konferans, gala ve düğün etkinliklerinin tam satış döngüsü.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Input type="date" value={opsDate} onChange={(e) => setOpsDate(e.target.value)}
+                 className="max-w-[160px]" />
+          <Button variant="outline" onClick={showOpsSheet}>
+            <ClipboardList className="w-4 h-4 mr-1" /> Günün Ops Sheet'i
+          </Button>
           <Button variant="outline" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-1" /> Yenile
           </Button>
@@ -184,8 +267,10 @@ const MicePage = () => {
         <TabsList>
           <TabsTrigger value="events">Etkinlikler</TabsTrigger>
           <TabsTrigger value="diary">Function Diary</TabsTrigger>
+          <TabsTrigger value="accounts">Müşteriler ({accounts.length})</TabsTrigger>
           <TabsTrigger value="spaces">Mekanlar ({spaces.length})</TabsTrigger>
           <TabsTrigger value="menus">Menüler & Paketler ({menus.length})</TabsTrigger>
+          <TabsTrigger value="resources">Envanter ({resources.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="events">
@@ -204,13 +289,19 @@ const MicePage = () => {
                   Etkinlik yok.</td></tr>}
                 {events.map((ev) => {
                   const st = STATUS[ev.status] || STATUS.lead;
+                  const acct = ev.client_account_id && accountById[ev.client_account_id];
                   return (
                     <tr key={ev.id} className="border-b hover:bg-slate-50">
                       <td className="p-2">
                         <div className="font-semibold">{ev.name}</div>
                         <div className="text-xs text-gray-500">{ev.event_type}</div>
                       </td>
-                      <td className="p-2">{ev.client_name}</td>
+                      <td className="p-2">
+                        <div>{ev.client_name}</div>
+                        {acct && <div className="text-xs text-indigo-600 flex items-center gap-1">
+                          <Briefcase className="w-3 h-3" /> {acct.name}
+                        </div>}
+                      </td>
                       <td className="p-2 font-mono text-xs">{ev.start_date} → {ev.end_date}</td>
                       <td className="p-2 text-center">{ev.expected_pax}</td>
                       <td className="p-2">
@@ -223,11 +314,17 @@ const MicePage = () => {
                       <td className="p-2 font-semibold">₺{(ev.totals?.grand_total || 0).toLocaleString('tr-TR')}</td>
                       <td className="p-2">
                         <Badge className={`${st.cls} border-0`}>{st.label}</Badge>
+                        {ev.lost_reason && <div className="text-xs text-red-600 mt-1 max-w-[160px]"
+                          title={ev.lost_reason}>↳ {ev.lost_reason.slice(0, 30)}…</div>}
                       </td>
-                      <td className="p-2 text-right space-x-1">
+                      <td className="p-2 text-right space-x-1 whitespace-nowrap">
                         <Button size="sm" variant="ghost" title="BEO"
                                 onClick={() => showBeo(ev.id)}>
                           <FileText className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" title="Mutfak Fişi"
+                                onClick={() => showKitchen(ev.id)}>
+                          <ChefHat className="w-4 h-4" />
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}>Düzenle</Button>
                         {ev.status !== 'completed' && ev.status !== 'cancelled' && (
@@ -252,6 +349,10 @@ const MicePage = () => {
 
         <TabsContent value="diary">
           <DiaryView spaceById={spaceById} />
+        </TabsContent>
+
+        <TabsContent value="accounts">
+          <AccountsView accounts={accounts} reload={load} />
         </TabsContent>
 
         <TabsContent value="spaces">
@@ -300,6 +401,9 @@ const MicePage = () => {
                   </CardTitle>
                   <CardDescription>
                     <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                    {m.dietary_tags?.length > 0 && m.dietary_tags.map((d) =>
+                      <Badge key={d} variant="outline" className="text-xs ml-1">{d}</Badge>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -310,10 +414,24 @@ const MicePage = () => {
                     <div className="text-xl font-bold">₺{m.flat_price.toLocaleString('tr-TR')}
                       <span className="text-xs text-gray-500"> sabit</span></div>
                   )}
+                  {m.courses?.length > 0 && (
+                    <div className="text-xs text-gray-600 mt-2">
+                      {m.courses.length} kurs: {m.courses.map((c) => c.name).join(', ')}
+                    </div>
+                  )}
+                  {m.allergens?.length > 0 && (
+                    <div className="text-xs text-red-600 mt-1">
+                      Alerjenler: {m.allergens.join(', ')}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="resources">
+          <ResourcesView resources={resources} reload={load} />
         </TabsContent>
       </Tabs>
 
@@ -321,115 +439,229 @@ const MicePage = () => {
       {showEventForm && (
         <Modal title={editing ? 'Etkinlik Düzenle' : 'Yeni Etkinlik'}
                onClose={() => setShowEventForm(false)} wide>
-          <form onSubmit={submit} className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Etkinlik Adı"><Input required value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-              <Field label="Müşteri"><Input required value={form.client_name}
-                onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></Field>
-              <Field label="Müşteri E-posta"><Input value={form.client_email}
-                onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
-              <Field label="Müşteri Telefon"><Input value={form.client_phone}
-                onChange={(e) => setForm({ ...form, client_phone: e.target.value })} /></Field>
-              <Field label="Tip">
-                <select className="w-full border rounded px-2 py-1.5" value={form.event_type}
-                        onChange={(e) => setForm({ ...form, event_type: e.target.value })}>
-                  {EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}
-                </select>
-              </Field>
-              <Field label="Durum">
-                <select className="w-full border rounded px-2 py-1.5" value={form.status}
-                        onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  {Object.entries(STATUS).map(([k, v]) =>
-                    <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </Field>
-              <Field label="Beklenen Pax"><Input type="number" required value={form.expected_pax}
-                onChange={(e) => setForm({ ...form, expected_pax: +e.target.value })} /></Field>
-              <Field label="PMS Rezervasyon ID"><Input value={form.reservation_id}
-                onChange={(e) => setForm({ ...form, reservation_id: e.target.value })} /></Field>
-              <Field label="Başlangıç Tarihi"><Input type="date" required value={form.start_date}
-                onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></Field>
-              <Field label="Bitiş Tarihi"><Input type="date" required value={form.end_date}
-                onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></Field>
-            </div>
+          <form onSubmit={submit} className="space-y-3">
+            <Tabs value={eventTab} onValueChange={setEventTab}>
+              <TabsList>
+                <TabsTrigger value="basics">Temel</TabsTrigger>
+                <TabsTrigger value="spaces">Mekan & Kaynak</TabsTrigger>
+                <TabsTrigger value="agenda">Fonksiyon Sheet</TabsTrigger>
+                <TabsTrigger value="payment">Ödeme Takvimi</TabsTrigger>
+              </TabsList>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-sm font-semibold">Mekan Rezervasyonları</Label>
-                <Button type="button" size="sm" variant="outline" onClick={addSb}>
-                  <Plus className="w-3 h-3 mr-1" /> Mekan Ekle
-                </Button>
-              </div>
-              {form.space_bookings.map((sb, i) => (
-                <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                  <select className="col-span-3 border rounded px-1 py-1 text-xs"
-                          value={sb.space_id}
-                          onChange={(e) => setSb(i, { space_id: e.target.value })}>
-                    <option value="">Mekan…</option>
-                    {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <Input className="col-span-3 text-xs" type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''}
-                         onChange={(e) => setSb(i, { starts_at: e.target.value })} />
-                  <Input className="col-span-3 text-xs" type="datetime-local" value={sb.ends_at?.slice(0, 16) || ''}
-                         onChange={(e) => setSb(i, { ends_at: e.target.value })} />
-                  <select className="col-span-2 border rounded px-1 py-1 text-xs"
-                          value={sb.setup_style}
-                          onChange={(e) => setSb(i, { setup_style: e.target.value })}>
-                    {SETUPS.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                  <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                          onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
+              <TabsContent value="basics" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Etkinlik Adı"><Input required value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+                  <Field label="Müşteri Adı"><Input required value={form.client_name}
+                    onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></Field>
+                  <Field label="Kurumsal Hesap (opsiyonel)">
+                    <select className="w-full border rounded px-2 py-1.5"
+                            value={form.client_account_id}
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              const acct = accountById[id];
+                              setForm({ ...form, client_account_id: id,
+                                client_name: acct?.name || form.client_name });
+                            }}>
+                      <option value="">— Seçilmedi —</option>
+                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Organizatör Kullanıcı"><Input value={form.organizer_user}
+                    onChange={(e) => setForm({ ...form, organizer_user: e.target.value })} /></Field>
+                  <Field label="Müşteri E-posta"><Input value={form.client_email}
+                    onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
+                  <Field label="Müşteri Telefon"><Input value={form.client_phone}
+                    onChange={(e) => setForm({ ...form, client_phone: e.target.value })} /></Field>
+                  <Field label="Tip">
+                    <select className="w-full border rounded px-2 py-1.5" value={form.event_type}
+                            onChange={(e) => setForm({ ...form, event_type: e.target.value })}>
+                      {EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Durum">
+                    <select className="w-full border rounded px-2 py-1.5" value={form.status}
+                            onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                      {Object.entries(STATUS).map(([k, v]) =>
+                        <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Beklenen Pax"><Input type="number" required value={form.expected_pax}
+                    onChange={(e) => setForm({ ...form, expected_pax: +e.target.value })} /></Field>
+                  <Field label="PMS Rezervasyon ID"><Input value={form.reservation_id}
+                    onChange={(e) => setForm({ ...form, reservation_id: e.target.value })} /></Field>
+                  <Field label="Başlangıç Tarihi"><Input type="date" required value={form.start_date}
+                    onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></Field>
+                  <Field label="Bitiş Tarihi"><Input type="date" required value={form.end_date}
+                    onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></Field>
                 </div>
-              ))}
-            </div>
+                <Field label="Notlar">
+                  <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]"
+                            value={form.notes}
+                            onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                </Field>
+              </TabsContent>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-sm font-semibold">Kaynak / Menü Hatları</Label>
-                <Button type="button" size="sm" variant="outline" onClick={addRes}>
-                  <Plus className="w-3 h-3 mr-1" /> Kaynak Ekle
-                </Button>
-              </div>
-              {form.resources.map((r, i) => (
-                <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                  <select className="col-span-4 border rounded px-1 py-1 text-xs"
-                          value={r.menu_id || ''}
-                          onChange={(e) => {
-                            const m = menus.find((x) => x.id === e.target.value);
-                            setRes(i, {
-                              menu_id: e.target.value,
-                              name: m?.name || r.name,
-                              type: m?.type || r.type,
-                            });
-                          }}>
-                    <option value="">— Özel —</option>
-                    {menus.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  <Input className="col-span-3 text-xs" placeholder="Açıklama" value={r.name}
-                         onChange={(e) => setRes(i, { name: e.target.value })} />
-                  <Input className="col-span-2 text-xs" type="number" placeholder="Adet" value={r.quantity}
-                         onChange={(e) => setRes(i, { quantity: +e.target.value })} />
-                  <Input className="col-span-2 text-xs" type="number" placeholder="Birim ₺" value={r.unit_price}
-                         onChange={(e) => setRes(i, { unit_price: +e.target.value })} />
-                  <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                          onClick={() => rmRes(i)}><Trash2 className="w-3 h-3" /></Button>
+              <TabsContent value="spaces" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-sm font-semibold">Mekan Rezervasyonları</Label>
+                    <Button type="button" size="sm" variant="outline" onClick={addSb}>
+                      <Plus className="w-3 h-3 mr-1" /> Mekan Ekle
+                    </Button>
+                  </div>
+                  {form.space_bookings.map((sb, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
+                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
+                              value={sb.space_id}
+                              onChange={(e) => setSb(i, { space_id: e.target.value })}>
+                        <option value="">Mekan…</option>
+                        {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      <Input className="col-span-3 text-xs" type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''}
+                             onChange={(e) => setSb(i, { starts_at: e.target.value })} />
+                      <Input className="col-span-3 text-xs" type="datetime-local" value={sb.ends_at?.slice(0, 16) || ''}
+                             onChange={(e) => setSb(i, { ends_at: e.target.value })} />
+                      <select className="col-span-2 border rounded px-1 py-1 text-xs"
+                              value={sb.setup_style}
+                              onChange={(e) => setSb(i, { setup_style: e.target.value })}>
+                        {SETUPS.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                      <Button type="button" size="sm" variant="ghost" className="col-span-1"
+                              onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {form.resources.length > 0 && (
-                <p className="text-xs text-gray-500">
-                  Menü seçilirse fiyat ve birim otomatik dolar (Per-person menüler beklenen pax sayısıyla çarpılır).
-                </p>
-              )}
-            </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-sm font-semibold">Kaynak / Menü Hatları</Label>
+                    <Button type="button" size="sm" variant="outline" onClick={addRes}>
+                      <Plus className="w-3 h-3 mr-1" /> Kaynak Ekle
+                    </Button>
+                  </div>
+                  {form.resources.map((r, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
+                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
+                              value={r.menu_id || ''}
+                              onChange={(e) => {
+                                const m = menus.find((x) => x.id === e.target.value);
+                                setRes(i, {
+                                  menu_id: e.target.value,
+                                  inventory_id: '',
+                                  name: m?.name || r.name,
+                                  type: m?.type || r.type,
+                                });
+                              }}>
+                        <option value="">— Menü —</option>
+                        {menus.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
+                              value={r.inventory_id || ''}
+                              onChange={(e) => {
+                                const inv = resources.find((x) => x.id === e.target.value);
+                                setRes(i, {
+                                  inventory_id: e.target.value,
+                                  menu_id: '',
+                                  name: inv?.name || r.name,
+                                  type: inv?.type || r.type,
+                                  unit_price: inv?.unit_price || r.unit_price,
+                                });
+                              }}>
+                        <option value="">— Envanter —</option>
+                        {resources.map((x) => <option key={x.id} value={x.id}>{x.name} (stok {x.total_stock})</option>)}
+                      </select>
+                      <Input className="col-span-2 text-xs" placeholder="Ad" value={r.name}
+                             onChange={(e) => setRes(i, { name: e.target.value })} />
+                      <Input className="col-span-1 text-xs" type="number" placeholder="Adet" value={r.quantity}
+                             onChange={(e) => setRes(i, { quantity: +e.target.value })} />
+                      <Input className="col-span-2 text-xs" type="number" placeholder="Birim ₺" value={r.unit_price}
+                             onChange={(e) => setRes(i, { unit_price: +e.target.value })} />
+                      <Button type="button" size="sm" variant="ghost" className="col-span-1"
+                              onClick={() => rmRes(i)}><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                  ))}
+                  {form.resources.length > 0 && (
+                    <p className="text-xs text-gray-500">
+                      Envanter seçilirse sistem tüm aktif etkinliklerdeki kullanım toplanır; stok aşılırsa 409.
+                    </p>
+                  )}
+                </div>
+              </TabsContent>
 
-            <Field label="Notlar">
-              <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]"
-                        value={form.notes}
-                        onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </Field>
+              <TabsContent value="agenda" className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-semibold">
+                    Dakika Bazlı Fonksiyon Sheet ({form.agenda.length} kalem)
+                  </Label>
+                  <Button type="button" size="sm" variant="outline" onClick={addAg}>
+                    <Plus className="w-3 h-3 mr-1" /> Satır Ekle
+                  </Button>
+                </div>
+                {form.agenda.length === 0 && (
+                  <p className="text-xs text-gray-500 text-center p-4 border rounded">
+                    Karşılama, açılış, ana yemek, AV testi gibi kalemleri ekleyerek tam fonksiyon sheet oluşturun.
+                  </p>
+                )}
+                {form.agenda.map((a, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
+                    <Input className="col-span-2 text-xs" type="datetime-local"
+                           value={a.starts_at?.slice(0, 16) || ''}
+                           onChange={(e) => setAg(i, { starts_at: e.target.value })} required />
+                    <Input className="col-span-2 text-xs" type="datetime-local"
+                           value={a.ends_at?.slice(0, 16) || ''}
+                           onChange={(e) => setAg(i, { ends_at: e.target.value })} required />
+                    <Input className="col-span-3 text-xs" placeholder="Başlık" value={a.title}
+                           onChange={(e) => setAg(i, { title: e.target.value })} required />
+                    <select className="col-span-2 border rounded px-1 py-1 text-xs"
+                            value={a.kind}
+                            onChange={(e) => setAg(i, { kind: e.target.value })}>
+                      {AGENDA_KINDS.map((k) => <option key={k}>{k}</option>)}
+                    </select>
+                    <Input className="col-span-2 text-xs" placeholder="Sorumlu" value={a.owner || ''}
+                           onChange={(e) => setAg(i, { owner: e.target.value })} />
+                    <Button type="button" size="sm" variant="ghost" className="col-span-1"
+                            onClick={() => rmAg(i)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                ))}
+              </TabsContent>
 
-            <div className="flex justify-end gap-2 pt-2">
+              <TabsContent value="payment" className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-semibold">
+                    Ödeme Takvimi ({form.payment_schedule.length} satır, toplam ₺{psTotal.toLocaleString('tr-TR')})
+                  </Label>
+                  <Button type="button" size="sm" variant="outline" onClick={addPs}>
+                    <Plus className="w-3 h-3 mr-1" /> Taksit Ekle
+                  </Button>
+                </div>
+                {form.payment_schedule.length === 0 && (
+                  <p className="text-xs text-gray-500 text-center p-4 border rounded">
+                    Depozito + bakiye taksit planı ekleyebilirsiniz.
+                  </p>
+                )}
+                {form.payment_schedule.map((p, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
+                    <Input className="col-span-3 text-xs" type="date" value={p.due_date || ''}
+                           onChange={(e) => setPs(i, { due_date: e.target.value })} required />
+                    <Input className="col-span-4 text-xs" placeholder="Etiket (Depozito %30)"
+                           value={p.label}
+                           onChange={(e) => setPs(i, { label: e.target.value })} required />
+                    <Input className="col-span-3 text-xs" type="number" placeholder="Tutar ₺"
+                           value={p.amount}
+                           onChange={(e) => setPs(i, { amount: +e.target.value })} required />
+                    <label className="col-span-1 text-xs text-center flex items-center gap-1">
+                      <input type="checkbox" checked={p.paid || false}
+                             onChange={(e) => setPs(i, { paid: e.target.checked })} />
+                      Öd.
+                    </label>
+                    <Button type="button" size="sm" variant="ghost" className="col-span-1"
+                            onClick={() => rmPs(i)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                ))}
+              </TabsContent>
+            </Tabs>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
               <Button type="button" variant="ghost" onClick={() => setShowEventForm(false)}>İptal</Button>
               <Button type="submit">{editing ? 'Güncelle' : 'Oluştur'}</Button>
             </div>
@@ -448,6 +680,9 @@ const MicePage = () => {
               <Info l="Tarih" v={`${beoData.event.start_date} → ${beoData.event.end_date}`} />
               <Info l="E-posta" v={beoData.event.client_email} />
               <Info l="Telefon" v={beoData.event.client_phone} />
+              {beoData.event.lost_reason && (
+                <Info l="Lost/Cancel Sebebi" v={beoData.event.lost_reason} cls="text-red-600" />
+              )}
             </CardContent></Card>
 
             <div>
@@ -474,6 +709,32 @@ const MicePage = () => {
               </table>
             </div>
 
+            {beoData.agenda?.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1">Fonksiyon Sheet</h4>
+                <table className="w-full text-xs border-collapse">
+                  <thead className="bg-slate-50"><tr>
+                    <th className="border p-1">Saat</th>
+                    <th className="border p-1 text-left">Başlık</th>
+                    <th className="border p-1">Tip</th>
+                    <th className="border p-1">Sorumlu</th>
+                  </tr></thead>
+                  <tbody>
+                    {beoData.agenda.map((a, i) => (
+                      <tr key={i}>
+                        <td className="border p-1 font-mono">
+                          {a.starts_at?.slice(11, 16)}–{a.ends_at?.slice(11, 16)}
+                        </td>
+                        <td className="border p-1">{a.title}</td>
+                        <td className="border p-1 text-center">{a.kind}</td>
+                        <td className="border p-1">{a.owner || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div>
               <h4 className="font-semibold text-sm mb-1">Kaynaklar</h4>
               <table className="w-full text-xs border-collapse">
@@ -491,7 +752,7 @@ const MicePage = () => {
                       <td className="border p-1 text-center">{r.type}</td>
                       <td className="border p-1 text-center">{r.quantity}</td>
                       <td className="border p-1 text-right">{r.unit_price?.toLocaleString('tr-TR')}</td>
-                      <td className="border p-1 text-right font-semibold">
+                      <td className="border p-1 text-right">
                         ₺{(r.quantity * r.unit_price).toLocaleString('tr-TR')}
                       </td>
                     </tr>
@@ -499,6 +760,43 @@ const MicePage = () => {
                 </tbody>
               </table>
             </div>
+
+            {beoData.payment_schedule?.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1">Ödeme Takvimi</h4>
+                <table className="w-full text-xs border-collapse">
+                  <thead className="bg-slate-50"><tr>
+                    <th className="border p-1">Vade</th>
+                    <th className="border p-1 text-left">Etiket</th>
+                    <th className="border p-1 text-right">Tutar</th>
+                    <th className="border p-1">Durum</th>
+                    <th className="border p-1">Aksiyon</th>
+                  </tr></thead>
+                  <tbody>
+                    {beoData.payment_schedule.map((p, i) => (
+                      <tr key={i}>
+                        <td className="border p-1 font-mono">{p.due_date}</td>
+                        <td className="border p-1">{p.label}</td>
+                        <td className="border p-1 text-right">₺{p.amount?.toLocaleString('tr-TR')}</td>
+                        <td className="border p-1 text-center">
+                          {p.paid ? <Badge className="bg-emerald-100 text-emerald-800 border-0">Ödendi</Badge>
+                                  : <Badge className="bg-amber-100 text-amber-800 border-0">Bekliyor</Badge>}
+                          {p.reference && <div className="text-[10px] text-gray-500 mt-0.5">Ref: {p.reference}</div>}
+                        </td>
+                        <td className="border p-1 text-center">
+                          {!p.paid && (
+                            <Button size="sm" variant="ghost"
+                                    onClick={() => markPaid(beoData.event.id, i)}>
+                              Öde
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
               <Info l="Mekan Toplamı" v={`₺${(beoData.event.totals?.space_total || 0).toLocaleString('tr-TR')}`} />
@@ -510,6 +808,140 @@ const MicePage = () => {
             <div className="text-right">
               <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
               <Button variant="ghost" onClick={() => setBeoData(null)}>Kapat</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Kitchen ticket modal */}
+      {kitchenData && (
+        <Modal title={`Mutfak Fişi — ${kitchenData.event_name}`}
+               onClose={() => setKitchenData(null)} wide>
+          <div className="space-y-3 text-sm">
+            <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
+              <Info l="Beklenen Pax" v={kitchenData.expected_pax} />
+              <Info l="İlk Servis" v={kitchenData.first_service_at?.slice(0, 16) || '—'} />
+              <Info l="Toplam Hat" v={kitchenData.tickets.length} />
+            </CardContent></Card>
+
+            {kitchenData.all_allergens?.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded p-2 text-xs">
+                <strong className="text-red-700">⚠ Alerjenler:</strong> {kitchenData.all_allergens.join(', ')}
+              </div>
+            )}
+            {kitchenData.all_dietary_tags?.length > 0 && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-xs">
+                <strong className="text-emerald-700">Diyet Etiketleri:</strong> {kitchenData.all_dietary_tags.join(', ')}
+              </div>
+            )}
+
+            {kitchenData.tickets.length === 0 ? (
+              <p className="text-center text-gray-500 p-4">F&B menü hattı yok.</p>
+            ) : (
+              kitchenData.tickets.map((t, i) => (
+                <Card key={i}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ChefHat className="w-4 h-4 text-amber-600" />
+                      {t.menu_name} × {t.qty_pax} pax
+                    </CardTitle>
+                    <CardDescription>
+                      Hazırlık tamamlanmalı: <span className="font-mono font-bold text-red-600">
+                        {t.prep_by?.slice(0, 16) || '—'}
+                      </span> ({t.prep_lead_minutes}dk lead)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {t.courses?.length > 0 && (
+                      <table className="w-full text-xs border-collapse">
+                        <thead className="bg-slate-50"><tr>
+                          <th className="border p-1">Kurs</th>
+                          <th className="border p-1 text-left">Yemek</th>
+                          <th className="border p-1 text-left">Açıklama</th>
+                        </tr></thead>
+                        <tbody>
+                          {t.courses.map((c, j) => (
+                            <tr key={j}>
+                              <td className="border p-1 text-center">{c.course_type}</td>
+                              <td className="border p-1 font-semibold">{c.name}</td>
+                              <td className="border p-1 text-gray-600">{c.description || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {t.allergens?.length > 0 && (
+                      <div className="text-xs text-red-600 mt-2">
+                        Alerjenler: {t.allergens.join(', ')}
+                      </div>
+                    )}
+                    {t.dietary_tags?.length > 0 && (
+                      <div className="text-xs text-emerald-600 mt-1">
+                        Diyet: {t.dietary_tags.join(', ')}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+
+            <div className="text-right">
+              <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
+              <Button variant="ghost" onClick={() => setKitchenData(null)}>Kapat</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Ops sheet modal */}
+      {opsData && (
+        <Modal title={`Günün Ops Sheet'i — ${opsData.date}`}
+               onClose={() => setOpsData(null)} wide>
+          <div className="space-y-3 text-sm">
+            {opsData.rows.length === 0 ? (
+              <p className="text-center text-gray-500 p-4">Bu tarih için aktif etkinlik yok.</p>
+            ) : (
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-slate-50"><tr>
+                  <th className="border p-1">Saat</th>
+                  <th className="border p-1 text-left">Etkinlik</th>
+                  <th className="border p-1 text-left">Müşteri</th>
+                  <th className="border p-1">Mekan</th>
+                  <th className="border p-1">Düzen / Pax</th>
+                  <th className="border p-1">Sorumlu</th>
+                  <th className="border p-1 text-left">Ajanda Özeti</th>
+                </tr></thead>
+                <tbody>
+                  {opsData.rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="border p-1 font-mono">
+                        {r.starts_at?.slice(11, 16)}–{r.ends_at?.slice(11, 16)}
+                      </td>
+                      <td className="border p-1 font-semibold">{r.event_name}</td>
+                      <td className="border p-1">{r.client_name}</td>
+                      <td className="border p-1">{r.space_name}</td>
+                      <td className="border p-1 text-center">{r.setup_style} / {r.expected_pax}</td>
+                      <td className="border p-1">{r.organizer_user || '—'}</td>
+                      <td className="border p-1">
+                        {r.agenda_summary?.length === 0 ? <span className="text-gray-400">—</span> : (
+                          <ul className="text-[11px] space-y-0.5">
+                            {r.agenda_summary.map((a, j) => (
+                              <li key={j}>
+                                <span className="font-mono">{a.starts_at?.slice(11, 16)}</span>
+                                {' '}{a.title} <span className="text-gray-400">[{a.kind}]</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="text-right">
+              <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
+              <Button variant="ghost" onClick={() => setOpsData(null)}>Kapat</Button>
             </div>
           </div>
         </Modal>
@@ -563,6 +995,258 @@ const DiaryView = ({ spaceById }) => {
   );
 };
 
+const AccountsView = ({ accounts, reload }) => {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', tax_no: '', city: '', industry: 'corporate',
+                                     credit_limit: 0, payment_terms_days: 30 });
+  const [expandedId, setExpandedId] = useState(null);
+  const [contactsCache, setContactsCache] = useState({});
+  const [contactForm, setContactForm] = useState(null); // {account_id, name, title, email, phone}
+
+  const create = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('/mice/accounts', form);
+      toast.success('Hesap oluşturuldu');
+      setShowForm(false);
+      setForm({ name: '', tax_no: '', city: '', industry: 'corporate',
+                credit_limit: 0, payment_terms_days: 30 });
+      await reload();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
+  };
+  const remove = async (id) => {
+    if (!confirm('Hesap silinsin mi?')) return;
+    try { await axios.delete(`/mice/accounts/${id}`); await reload(); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+  const expand = async (id) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (!contactsCache[id]) {
+      try {
+        const r = await axios.get(`/mice/accounts/${id}/contacts`);
+        setContactsCache((c) => ({ ...c, [id]: r.data.contacts }));
+      } catch { toast.error('Kişiler yüklenemedi'); }
+    }
+  };
+  const addContact = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`/mice/accounts/${contactForm.account_id}/contacts`, contactForm);
+      const r = await axios.get(`/mice/accounts/${contactForm.account_id}/contacts`);
+      setContactsCache((c) => ({ ...c, [contactForm.account_id]: r.data.contacts }));
+      setContactForm(null);
+      toast.success('Kişi eklendi');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Eklenemedi'); }
+  };
+
+  return (
+    <Card><CardContent className="p-3">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-semibold">Kurumsal Müşteriler ({accounts.length})</h3>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="w-3 h-3 mr-1" /> Yeni Hesap
+        </Button>
+      </div>
+      {accounts.length === 0 && <p className="text-center text-gray-500 p-4">Henüz hesap yok.</p>}
+      <div className="space-y-1">
+        {accounts.map((a) => (
+          <div key={a.id} className="border rounded">
+            <div className="flex items-center gap-2 p-2 hover:bg-slate-50 cursor-pointer"
+                 onClick={() => expand(a.id)}>
+              <Briefcase className="w-4 h-4 text-indigo-600" />
+              <div className="flex-1">
+                <div className="font-semibold text-sm">{a.name}</div>
+                <div className="text-xs text-gray-500">
+                  {a.tax_no && `VKN ${a.tax_no} • `}{a.city || ''} • {a.industry}
+                  {a.credit_limit > 0 && ` • Kredi limiti ₺${a.credit_limit.toLocaleString('tr-TR')}`}
+                </div>
+              </div>
+              <Badge variant="outline" className="text-xs">
+                {a.payment_terms_days}gün vade
+              </Badge>
+              <Button size="sm" variant="ghost" onClick={(e) => {
+                e.stopPropagation();
+                setContactForm({ account_id: a.id, name: '', title: '', email: '', phone: '', is_primary: false });
+              }}>
+                <Plus className="w-3 h-3" /> Kişi
+              </Button>
+              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); remove(a.id); }}>
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
+            {expandedId === a.id && (
+              <div className="bg-slate-50 p-2 border-t">
+                {(contactsCache[a.id] || []).length === 0 ? (
+                  <p className="text-xs text-gray-500">Henüz kişi yok.</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-gray-500">
+                      <th className="text-left p-1">Ad</th>
+                      <th className="text-left p-1">Unvan</th>
+                      <th className="text-left p-1">E-posta</th>
+                      <th className="text-left p-1">Telefon</th>
+                      <th>Birincil</th>
+                    </tr></thead>
+                    <tbody>
+                      {(contactsCache[a.id] || []).map((c) => (
+                        <tr key={c.id} className="border-t">
+                          <td className="p-1 font-medium">{c.name}</td>
+                          <td className="p-1">{c.title}</td>
+                          <td className="p-1">{c.email}</td>
+                          <td className="p-1">{c.phone}</td>
+                          <td className="p-1 text-center">{c.is_primary ? '✓' : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <Modal title="Yeni Kurumsal Hesap" onClose={() => setShowForm(false)}>
+          <form onSubmit={create} className="space-y-2">
+            <Field label="Şirket Adı"><Input required value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Vergi No"><Input value={form.tax_no}
+                onChange={(e) => setForm({ ...form, tax_no: e.target.value })} /></Field>
+              <Field label="Şehir"><Input value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })} /></Field>
+              <Field label="Sektör">
+                <select className="w-full border rounded px-2 py-1.5" value={form.industry}
+                        onChange={(e) => setForm({ ...form, industry: e.target.value })}>
+                  {['corporate', 'travel_agency', 'government', 'ngo', 'other'].map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Vade (gün)"><Input type="number" value={form.payment_terms_days}
+                onChange={(e) => setForm({ ...form, payment_terms_days: +e.target.value })} /></Field>
+              <Field label="Kredi Limiti ₺"><Input type="number" value={form.credit_limit}
+                onChange={(e) => setForm({ ...form, credit_limit: +e.target.value })} /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button type="submit">Oluştur</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {contactForm && (
+        <Modal title="Yeni Kişi" onClose={() => setContactForm(null)}>
+          <form onSubmit={addContact} className="space-y-2">
+            <Field label="Ad Soyad"><Input required value={contactForm.name}
+              onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })} /></Field>
+            <Field label="Unvan"><Input value={contactForm.title}
+              onChange={(e) => setContactForm({ ...contactForm, title: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="E-posta"><Input type="email" value={contactForm.email}
+                onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} /></Field>
+              <Field label="Telefon"><Input value={contactForm.phone}
+                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })} /></Field>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={contactForm.is_primary}
+                     onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })} />
+              Birincil kişi
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setContactForm(null)}>İptal</Button>
+              <Button type="submit">Ekle</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </CardContent></Card>
+  );
+};
+
+const ResourcesView = ({ resources, reload }) => {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', type: 'av', total_stock: 1, unit: 'unit',
+                                     unit_price: 0, currency: 'TRY' });
+  const create = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('/mice/resources', form);
+      toast.success('Envanter eklendi');
+      setShowForm(false);
+      setForm({ name: '', type: 'av', total_stock: 1, unit: 'unit', unit_price: 0, currency: 'TRY' });
+      await reload();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
+  };
+  const remove = async (id) => {
+    if (!confirm('Silinsin mi?')) return;
+    try { await axios.delete(`/mice/resources/${id}`); await reload(); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
+  return (
+    <Card><CardContent className="p-3">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-semibold">Kaynak Envanteri (AV / Dekor)</h3>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="w-3 h-3 mr-1" /> Yeni Kaynak
+        </Button>
+      </div>
+      {resources.length === 0 && <p className="text-center text-gray-500 p-4">Envanter yok.</p>}
+      <div className="grid md:grid-cols-3 gap-2">
+        {resources.map((r) => (
+          <Card key={r.id}>
+            <CardContent className="p-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="font-semibold">{r.name}</div>
+                  <div className="text-xs text-gray-500">{r.type}</div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
+              <div className="mt-2 text-sm">
+                Stok: <span className="font-bold">{r.total_stock}</span> {r.unit}
+              </div>
+              <div className="text-sm">
+                Birim: <span className="font-bold">₺{r.unit_price?.toLocaleString('tr-TR')}</span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {showForm && (
+        <Modal title="Yeni Kaynak" onClose={() => setShowForm(false)}>
+          <form onSubmit={create} className="space-y-2">
+            <Field label="Ad"><Input required value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Tip">
+                <select className="w-full border rounded px-2 py-1.5" value={form.type}
+                        onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                  {['av', 'decor', 'fb', 'other'].map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Birim"><Input value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
+              <Field label="Toplam Stok"><Input type="number" required value={form.total_stock}
+                onChange={(e) => setForm({ ...form, total_stock: +e.target.value })} /></Field>
+              <Field label="Birim ₺"><Input type="number" value={form.unit_price}
+                onChange={(e) => setForm({ ...form, unit_price: +e.target.value })} /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button type="submit">Oluştur</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </CardContent></Card>
+  );
+};
+
 const Stat = ({ label, value, cls = 'text-gray-900' }) => (
   <Card><CardContent className="p-4">
     <div className="text-xs text-gray-500">{label}</div>
@@ -577,9 +1261,10 @@ const Info = ({ l, v, cls = '' }) => (
 );
 const Modal = ({ title, onClose, children, wide }) => (
   <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-    <Card className={`w-full ${wide ? 'max-w-4xl' : 'max-w-lg'}`} onClick={(e) => e.stopPropagation()}>
+    <Card className={`w-full ${wide ? 'max-w-5xl' : 'max-w-lg'} max-h-[90vh] overflow-hidden flex flex-col`}
+          onClick={(e) => e.stopPropagation()}>
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="overflow-y-auto">{children}</CardContent>
     </Card>
   </div>
 );
