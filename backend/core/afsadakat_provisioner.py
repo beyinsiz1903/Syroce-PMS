@@ -21,10 +21,23 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import hashlib
+
 import httpx
 import jwt
 
 from core.security import JWT_ALGORITHM, JWT_SECRET
+
+# Domain-separated signing key — guarantees an Af-sadakat SSO JWT cannot
+# be replayed against the PMS auth endpoint (which verifies with raw
+# JWT_SECRET). If AFSADAKAT_SSO_SECRET is set explicitly, prefer it.
+def _sso_signing_key() -> str:
+    explicit = os.environ.get("AFSADAKAT_SSO_SECRET")
+    if explicit:
+        return explicit
+    return hashlib.sha256(
+        f"afsadakat-sso-v1::{JWT_SECRET}".encode()
+    ).hexdigest()
 
 logger = logging.getLogger(__name__)
 
@@ -206,13 +219,16 @@ def mint_sso_token(tenant_id: str, user: dict[str, Any]) -> str:
         "sub": tenant_id,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=SSO_TOKEN_TTL_SECONDS)).timestamp()),
+        "token_type": "afsadakat_sso",
         "user_id": user.get("id"),
         "username": user.get("username"),
         "name": user.get("name"),
         "email": user.get("email"),
         "role": user.get("role"),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    # Signed with a separate key from the PMS auth secret — even if this
+    # token leaks (URL transport), it cannot authenticate to PMS APIs.
+    return jwt.encode(payload, _sso_signing_key(), algorithm=JWT_ALGORITHM)
 
 
 def build_launch_url(creds: dict[str, Any], sso_token: str) -> str:

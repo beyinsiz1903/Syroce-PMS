@@ -115,5 +115,22 @@ async def ensure_indexes() -> None:
         await db.marketplace_orders.create_index(
             "tenant_id", name="idx_order_tenant"
         )
+        # Atomic activation marker: any callback (paid OR trial) inserts
+        # one row per order_id. Unique index makes concurrent/replayed
+        # callbacks fail-fast on the second insert, preventing duplicate
+        # entitlement grants in the "extend existing sub" branch where
+        # tenant_subscriptions.order_id is not always written.
+        await db.tenant_subscription_activations.create_index(
+            "order_id", unique=True, name="uniq_activation_order_id"
+        )
+        # Outbound folio-charge idempotency: enforce uniqueness on the
+        # caller-supplied external_ref scoped per (tenant, source).
+        # Sparse so charges without external_ref are not constrained.
+        await db.folio_charges.create_index(
+            [("tenant_id", 1), ("source", 1), ("external_ref", 1)],
+            unique=True,
+            partialFilterExpression={"external_ref": {"$type": "string"}},
+            name="uniq_folio_charge_external_ref",
+        )
     except Exception:
         pass

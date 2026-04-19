@@ -190,17 +190,10 @@ async def post_folio_charge(
     if not res:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    if payload.external_ref:
-        existing = await db.folio_charges.find_one({
-            "tenant_id": tenant_id,
-            "external_ref": payload.external_ref,
-            "source": payload.source,
-        }, {"_id": 0, "id": 1})
-        if existing:
-            return {"ok": True, "charge_id": existing["id"], "duplicate": True}
-
     import uuid
     from datetime import UTC, datetime
+
+    from pymongo.errors import DuplicateKeyError
     charge_id = str(uuid.uuid4())
     doc = {
         "id": charge_id,
@@ -213,7 +206,22 @@ async def post_folio_charge(
         "external_ref": payload.external_ref,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    await db.folio_charges.insert_one(doc)
+    # Atomic idempotency: rely on the unique partial index over
+    # (tenant_id, source, external_ref) to make concurrent inserts with
+    # the same external_ref fail-fast. On duplicate, look the existing
+    # charge up and return it — no double-charge race.
+    try:
+        await db.folio_charges.insert_one(doc)
+    except DuplicateKeyError:
+        existing = await db.folio_charges.find_one({
+            "tenant_id": tenant_id,
+            "source": payload.source,
+            "external_ref": payload.external_ref,
+        }, {"_id": 0, "id": 1})
+        if existing:
+            return {"ok": True, "charge_id": existing["id"], "duplicate": True}
+        # Index hit but doc not found → race against deletion; rethrow
+        raise
     logger.info("[pms-outbound] tenant=%s folio charge %s amount=%s source=%s",
                 tenant_id, charge_id, payload.amount, payload.source)
     return {"ok": True, "charge_id": charge_id, "duplicate": False}

@@ -37,6 +37,11 @@ export const NAV_GROUPS = [
     icon: "Zap",
   },
   {
+    id: "management",
+    label: "Yonetim",
+    icon: "Settings",
+  },
+  {
     id: "infrastructure",
     label: "Altyapi",
     icon: "Server",

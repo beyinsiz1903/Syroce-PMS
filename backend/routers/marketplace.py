@@ -491,11 +491,22 @@ async def _activate_subscription(order: dict) -> None:
     credits = order.get("credits")
     now = datetime.now(UTC)
 
-    # Idempotency guard: if a subscription record already exists for this
-    # exact order, activation has already happened — no-op.
-    already = await db.tenant_subscriptions.find_one({"order_id": order["order_id"]})
-    if already:
-        logger.info("[marketplace] order=%s already activated, skipping",
+    # Atomic idempotency guard: insert a marker row keyed by order_id
+    # BEFORE any entitlement mutation. Unique index on order_id (see
+    # core.subscriptions.ensure_indexes) makes the second insert raise
+    # DuplicateKeyError, so concurrent callbacks and replays cannot
+    # double-extend a subscription — even in the "extend existing"
+    # branch where tenant_subscriptions.order_id is not persisted.
+    from pymongo.errors import DuplicateKeyError
+    try:
+        await db.tenant_subscription_activations.insert_one({
+            "order_id": order["order_id"],
+            "tenant_id": tenant_id,
+            "product_key": product_key,
+            "activated_at": _now_iso(),
+        })
+    except DuplicateKeyError:
+        logger.info("[marketplace] order=%s already activated (atomic guard)",
                     order["order_id"])
         return
 

@@ -1033,3 +1033,79 @@ tam entegre modül.
   vergi no, dönem, son tarih, oran, matrah, vergi).
 - Nav: Finance grubunda "Konaklama Vergisi" (`moduleKey: invoices`).
 - Route: `/app/konaklama-vergisi` (lazy, `pm()`).
+
+## Sprint 17: Af-sadakat Marketplace Entegrasyonu (Apr 2026)
+
+Af-sadakat (Sadakat & Omni Inbox) modülü Modül Pazarı üzerinden
+satın alınabilir, otomatik provisioning + SSO ile bağlanır hale geldi.
+
+### Backend
+- `backend/routers/marketplace.py` — `af_sadakat` ürünü kataloga
+  eklendi (₺1499/ay, 14 gün trial, `external=true`,
+  `sso_path=/integrations/afsadakat/launch`).
+  - `ProductIn` şemasına `trial_days, external, sso_path` eklendi.
+  - Yeni `POST /api/module-store/start-trial` (ödemesiz, idempotent;
+    `(tenant, product, status=active)` partial unique index ile
+    yarış koşullarına karşı korunuyor).
+  - `_activate_subscription` post-activation hook'u: ürün anahtarı
+    `af_sadakat` ise `provision_tenant()` çağrılır (hem ücretli hem
+    trial yolunda).
+- `backend/core/subscriptions.py` — `MODULE_ALIASES` içinde
+  `af_sadakat` mevcut.
+- `backend/core/afsadakat_provisioner.py` (YENİ) — iki modlu
+  provisioning:
+  - `AFSADAKAT_BASE_URL + AFSADAKAT_ADMIN_TOKEN` set ise harici
+    Af-sadakat'a HTTP `POST /api/admin/integrations/syroce/provision`
+    çağrısı yapılır, `ext_tenant_id` saklanır (mode=external).
+  - Set değilse local-only mod: API key (token_urlsafe(40)) üretilir
+    ve `integration_afsadakat_tenants` koleksiyonuna yazılır.
+  - `mint_sso_token`: HS256 JWT, 120s TTL, aud=afsadakat.
+  - `find_tenant_by_api_key`: outbound endpoint'lerin auth'u için.
+  - Atomic upsert ile concurrent activation'da api_key churn yok.
+- `backend/routers/integrations_afsadakat.py` (YENİ):
+  - `GET  /api/integrations/afsadakat/status` — entitled/provisioned/
+    mode bilgileri
+  - `POST /api/integrations/afsadakat/launch` — SSO token üretip URL
+    döner; lazy-provision destekli
+  - `POST /api/integrations/afsadakat/webhook` — Bearer API key auth,
+    eventleri `integration_afsadakat_events`'a yazar
+  - `POST /api/integrations/afsadakat/admin/provision` — platform
+    admin için zorla yeniden provisioning
+  - `GET  /api/integrations/afsadakat/admin/tenants/{id}` — api_key
+    son 6 hane suffix olarak gösterilir, tam key sızdırılmaz
+- `backend/routers/pms_outbound.py` (YENİ) — Af-sadakat'ın PMS'e
+  okuma/yazma için kullandığı outbound API:
+  - `GET /api/pms-outbound/rooms`
+  - `GET /api/pms-outbound/reservations[/{id}]`
+  - `GET /api/pms-outbound/guests[/{id}]`
+  - `POST /api/pms-outbound/folio/charge` — `external_ref` ile
+    idempotent folio satırı
+  - Auth: API key + canlı `tenant_has_module` kontrolü
+    (abonelik bittiyse 403, credentials silinmese de erişim kapanır).
+- `backend/bootstrap/router_registry.py` — yeni iki router kayıtlı.
+
+### Frontend
+- `frontend/src/pages/ModuleStorePage.jsx` — `trial_days` varsa
+  "14 Gün Ücretsiz Dene" butonu, `external` ürünlerde sahip
+  olunan abonelik için "Aç" butonu (af_sadakat → `/app/afsadakat`).
+- `frontend/src/pages/AfsadakatLauncher.jsx` (YENİ) — bağlantı
+  durumu kartı (abonelik / hazırlık / mod), local-only modda
+  bilgilendirme uyarısı, "Sadakat & Inbox'ı Yeni Sekmede Aç"
+  butonu.
+- `frontend/src/config/navItems.jsx` — "Sadakat & Inbox" nav
+  öğesi (`moduleKey: af_sadakat`).
+- `frontend/src/routes/routeDefinitions.jsx` — `/app/afsadakat`
+  rotası (lazy).
+
+### Env
+- Mevcut: `AFSADAKAT_ADMIN_TOKEN` (zaten set).
+- Eksik: `AFSADAKAT_BASE_URL` — set edilene kadar local-only mod
+  (UI uyarı veriyor, abonelik kapatılmıyor).
+
+### Smoke test (PASS, 19 Apr 2026)
+- Catalog: af_sadakat ürünü `trial_days=14, external=true`
+  doğru görünüyor.
+- start-trial: idempotent (`already_existed=true`).
+- status: `entitled=true, provisioned=true, mode=local`.
+- launch: `external_ready=false` → `/integrations/afsadakat/not-deployed`
+  placeholder döndü (beklenen davranış).
