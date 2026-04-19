@@ -71,6 +71,7 @@ const MobileOrderTracking = lazy(() => import("@/pages/MobileOrderTracking"));
 const MobileInventory = lazy(() => import("@/pages/MobileInventory"));
 const MobileApprovals = lazy(() => import("@/pages/MobileApprovals"));
 const ExecutiveDashboard = lazy(() => import("@/pages/ExecutiveDashboard"));
+const KonaklamaVergisiModule = lazy(() => import("@/pages/KonaklamaVergisiModule"));
 const SalesCRMMobile = lazy(() => import("@/pages/SalesCRMMobile"));
 const SimpleAdminPanel = lazy(() => import("@/pages/SimpleAdminPanel"));
 const RateManagementMobile = lazy(() => import("@/pages/RateManagementMobile"));
@@ -394,6 +395,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/mobile/logs", ...p(MobileLogViewer) },
 
     // ── Executive & GM ─────────────────────────────────
+    { path: "/app/konaklama-vergisi", ...pm(KonaklamaVergisiModule, "invoices") },
     { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
     { path: "/gm/enhanced", type: "redirect", to: "/executive" },
     { path: "/gm-classic", type: "redirect", to: "/app/dashboard" },

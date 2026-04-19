@@ -993,3 +993,43 @@ redirect olarak yeniden yazıldı.
 
 **Sonuç:** ~2891 satır legacy kod canlıdan çıkarıldı, eski URL'ler
 hâlâ çalışıyor (yer imleri/derin bağlantılar bozulmuyor).
+
+## Sprint 16: Konaklama Vergisi Otomasyonu (Apr 2026)
+
+Türkiye Konaklama Vergisi (7194 sayılı Kanun, varsayılan %2) için
+tam entegre modül.
+
+### Backend
+- `backend/routers/finance/konaklama_vergisi.py` (YENİ) — finance
+  paketi `__init__.py`'a eklendi, prefix `/api/finance/konaklama-vergisi`.
+- Mevcut `db.city_tax_rules` koleksiyonu config olarak yeniden
+  kullanıldı (`tax_percentage` alanı `rate_percent`'e alias'landı,
+  `auto_post`, `exempt_segments`, `effective_from`, `notes` alanları
+  eklendi).
+- Posting izi: `db.accommodation_tax_postings` (idempotency anahtarı:
+  `tenant_id + folio_id`).
+- `ChargeCategory.CITY_TAX` enum değeri folio satırına yazılırken
+  kullanıldı.
+
+### Endpoints (tümü tenant-scoped)
+- `GET  /api/finance/konaklama-vergisi/config` — yapılandırma oku
+- `PUT  /api/finance/konaklama-vergisi/config` — oran/aktif/auto_post
+- `POST /api/finance/konaklama-vergisi/calculate` — ad-hoc hesap
+- `GET  /api/finance/konaklama-vergisi/report?year=&month=` —
+  aylık matrah/vergi/folio listesi
+- `GET  /api/finance/konaklama-vergisi/declaration?year=&month=` —
+  GİB beyanname özeti (son ödeme: takip ayın 26'sı, otomatik hesap)
+- `POST /api/finance/konaklama-vergisi/post-folio/{folio_id}` —
+  manuel posting (idempotent; oda satırlarından matrah toplar,
+  CITY_TAX satırı atar, folio bakiyesini günceller)
+- `GET  /api/finance/konaklama-vergisi/postings?limit=` — geçmiş
+
+### Frontend
+- `frontend/src/pages/KonaklamaVergisiModule.jsx` (YENİ) — 4 sekme:
+  Yapılandırma · Aylık Rapor · Beyanname · Hesaplayıcı.
+- Rapor sekmesi: ay/yıl seçici, KPI kartları (folio/geceleme/matrah/
+  vergi), folio bazlı tablo, CSV indir.
+- Beyanname sekmesi: yazdırılabilir GİB formatlı özet (işletme,
+  vergi no, dönem, son tarih, oran, matrah, vergi).
+- Nav: Finance grubunda "Konaklama Vergisi" (`moduleKey: invoices`).
+- Route: `/app/konaklama-vergisi` (lazy, `pm()`).

@@ -219,6 +219,15 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "finance",
   },
+  {
+    key: "konaklama_vergisi",
+    label: "Konaklama Vergisi",
+    path: "/app/konaklama-vergisi",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
+    navGroup: "finance",
+  },
 
   // ──── CHANNELS GROUP — Normal kullanici (otel personeli) ─────────
   {
