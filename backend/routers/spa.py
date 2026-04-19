@@ -80,10 +80,7 @@ from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_spa_services_cache(tenant_id: str) -> None:
-    try:
-        _cache.delete_pattern(f"cache:{tenant_id}:spa_services:*")
-    except Exception:
-        pass
+    _cache.safe_invalidate(tenant_id, "spa_services")
 
 
 @router.get("/services")

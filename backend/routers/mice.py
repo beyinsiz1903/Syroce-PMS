@@ -96,10 +96,7 @@ from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
-    try:
-        _cache.delete_pattern(f"cache:{tenant_id}:mice_spaces:*")
-    except Exception:
-        pass
+    _cache.safe_invalidate(tenant_id, "mice_spaces")
 
 
 @router.get("/spaces")

@@ -176,11 +176,32 @@ class CacheManager:
             logger.error(f"Cache delete error for key {key}: {e}")
             return False
 
+    # Strict shape for tenant-scoped invalidation patterns:
+    #   cache:<tenant_id>:<entity>[:<sub>...]:*
+    # tenant: ASCII safe-set; entity/sub: same set (no glob meta);
+    # only the trailing `*` is allowed (and only as the final segment).
+    _SAFE_PATTERN_RE = __import__("re").compile(
+        r"^cache:[A-Za-z0-9._\-]{1,128}"
+        r"(?::[A-Za-z0-9._\-]+){1,8}"
+        r"(?::\*)?$"
+    )
+
     def delete_pattern(self, pattern: str):
-        """Delete all keys matching pattern"""
+        """Delete all keys matching pattern.
+        Sprint 32: central guard — any pattern starting with `cache:`
+        must conform to the strict tenant-scoped shape, otherwise it is
+        rejected. This protects legacy helpers (DashboardCache.invalidate,
+        etc.) from a future caller passing an untrusted tenant_id with
+        glob meta or `:`-skew payloads (e.g. `a:b*c`). Non-`cache:`
+        patterns (custom prefixes outside tenant namespace) pass through."""
         if not self.enabled:
             return False
-
+        if pattern.startswith("cache:"):
+            if not self._SAFE_PATTERN_RE.match(pattern):
+                logger.warning(
+                    "cache.delete_pattern REJECTED malformed/unsafe "
+                    "pattern=%r", pattern)
+                return False
         try:
             keys = self.client.keys(pattern)
             if keys:
@@ -191,13 +212,81 @@ class CacheManager:
             return False
 
     def invalidate_tenant_cache(self, tenant_id: str, entity_type: str = None):
-        """Invalidate all cache for a tenant or specific entity type"""
+        """Invalidate all cache for a tenant or specific entity type.
+        Tenant_id is validated up-front to prevent any glob meta from
+        leaking into the pattern (defense-in-depth alongside the
+        delete_pattern central guard)."""
+        if not self._is_safe_tenant_id(tenant_id):
+            logger.warning(
+                "cache.invalidate_tenant_cache REJECTED unsafe tenant_id "
+                "(entity=%s, tenant_repr=%r)", entity_type, tenant_id)
+            return False
+        if entity_type and any(c in entity_type for c in "*?[]\\:"):
+            logger.warning(
+                "cache.invalidate_tenant_cache REJECTED unsafe entity=%r",
+                entity_type)
+            return False
         if entity_type:
             pattern = f"cache:{tenant_id}:{entity_type}:*"
         else:
             pattern = f"cache:{tenant_id}:*"
 
         return self.delete_pattern(pattern)
+
+    # ── Sprint 32: hardened invalidation ────────────────────────────
+    # Counters are bumped on every safe_invalidate path; protected by a
+    # threading.Lock so concurrent FastAPI workers (thread-pool) don't
+    # lose increments. Counters are per-process; if SLO alerts are wired,
+    # aggregate across replicas at the metrics layer.
+    invalidation_failures: dict = {}
+    invalidation_success: dict = {}
+    _invalidation_metrics_lock = threading.Lock()
+
+    # Strict ASCII whitelist — `str.isalnum()` would also accept Unicode
+    # alphanumerics (e.g. Cyrillic, fullwidth digits) which could collide
+    # with key namespaces or evade ops review.
+    _SAFE_TENANT_RE = __import__("re").compile(r"^[A-Za-z0-9._\-]{1,128}$")
+
+    @classmethod
+    def _is_safe_tenant_id(cls, tenant_id: str) -> bool:
+        """Tenant id must be ASCII [A-Za-z0-9._-], length 1..128.
+        Blocks Redis KEYS glob metacharacters (*, ?, [, ], \\) which could
+        otherwise broaden a delete_pattern scope across tenants, plus any
+        non-ASCII alphanumeric forms."""
+        if not tenant_id or not isinstance(tenant_id, str):
+            return False
+        return bool(cls._SAFE_TENANT_RE.match(tenant_id))
+
+    def _bump(self, bucket: dict, key: str) -> None:
+        with self._invalidation_metrics_lock:
+            bucket[key] = bucket.get(key, 0) + 1
+
+    def safe_invalidate(self, tenant_id: str, entity_prefix: str) -> bool:
+        """Tenant-scoped, glob-safe invalidation with metrics + warning logs.
+        Returns True on success, False on validation/backend failure."""
+        key = f"{entity_prefix}"
+        if not self._is_safe_tenant_id(tenant_id):
+            self._bump(self.invalidation_failures, key)
+            logger.warning(
+                "cache.safe_invalidate REJECTED unsafe tenant_id "
+                "(prefix=%s, tenant_repr=%r)", entity_prefix, tenant_id)
+            return False
+        if not entity_prefix or any(
+                c in entity_prefix for c in "*?[]\\:"):
+            self._bump(self.invalidation_failures, key)
+            logger.warning(
+                "cache.safe_invalidate REJECTED unsafe entity_prefix=%r",
+                entity_prefix)
+            return False
+        pattern = f"cache:{tenant_id}:{entity_prefix}:*"
+        ok = self.delete_pattern(pattern)
+        if ok:
+            self._bump(self.invalidation_success, key)
+        else:
+            self._bump(self.invalidation_failures, key)
+            logger.warning(
+                "cache.safe_invalidate FAILED pattern=%s", pattern)
+        return bool(ok)
 
     def health_check(self) -> dict:
         """Check cache health"""

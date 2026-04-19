@@ -145,10 +145,7 @@ from cache_manager import cached as _cached, cache as _cache
 
 
 def _invalidate_suppliers_cache(tenant_id: str) -> None:
-    try:
-        _cache.delete_pattern(f"cache:{tenant_id}:proc_suppliers:*")
-    except Exception:
-        pass
+    _cache.safe_invalidate(tenant_id, "proc_suppliers")
 
 
 @router.get("/suppliers")

@@ -2045,3 +2045,48 @@ Pattern özeti:
 - Cold 3.62s → warm 0.25s (**15×**)
 - POST sonrası: yeni item GET'te **anında** görünür (0s stale)
 - DELETE sonrası: silinen item **anında** kaybolur
+
+---
+
+## Sprint 32 — Cache Hardening (19 Apr 2026)
+
+Architect-flagged Sprint 31 backlog'u kapatıldı:
+
+1. **`cache.safe_invalidate(tenant_id, entity_prefix)`** merkezi helper:
+   - Tenant-id charset whitelist: `[A-Za-z0-9._-]`, max 128 char.
+   - Glob metakarakterleri (`*?[]\\:`) reddedilir → cross-tenant wipe önlendi.
+   - Entity prefix de aynı şekilde validate.
+   - `invalidation_failures` / `invalidation_success` counter dict'leri
+     /metrics dashboard için.
+   - Başarısızlıkta `logger.warning` (önceki silent `pass` kaldırıldı).
+
+2. **Router'lar yeni API'ye geçti**: `procurement._invalidate_suppliers_cache`,
+   `spa._invalidate_spa_services_cache`, `mice._invalidate_mice_spaces_cache`
+   artık tek satırlık `_cache.safe_invalidate(...)` çağırıyor.
+
+3. **Integration test suite** (`backend/tests/integration/
+   test_catalog_cache_invalidation.py`, **10 test PASS**):
+   - Tenant-id validation (UUID, alphanumeric, glob meta, empty, overlong).
+   - Cached varyant invalidation: `?q=`, `?active_only=` farklı key'leri
+     mutation sonrası TÜMÜ wipe edilir.
+   - Cross-tenant izolasyon: A'nın invalidation'ı B'nin cache'ini etkilemez.
+   - Failure path: hatada warning log + counter increment doğrulandı.
+
+### Sprint 32 ROUND 2 — defense-in-depth
+
+Architect 2. round'da `cache_manager.py` içindeki 5 legacy helper'ın
+(invalidate_tenant_cache, DashboardCache.invalidate, RoomCache,
+BookingCache, GuestCache, ReportCache) hâlâ guard'sız `delete_pattern`
+çağırdığını yakaladı.
+
+**Düzeltme — 2 katmanlı savunma**:
+1. `delete_pattern` içine merkezi guard: `cache:` ile başlayan pattern'lerde
+   tenant segmenti `_is_safe_tenant_id`'den geçer.
+2. `invalidate_tenant_cache` içinde input validation (tenant_id ve
+   entity_type için): `tenant_id` `:` içerirse split yanılır → giriş
+   validasyonu defense-in-depth.
+3. 3 yeni guardrail testi: `DashboardCache.invalidate` unsafe tenant'ta
+   keys/delete çağırmıyor, `invalidate_tenant_cache` `a:b*c` reddediyor,
+   geçerli UUID kabul ediliyor.
+
+**Toplam test**: 15 PASS (10 subtests dahil).
