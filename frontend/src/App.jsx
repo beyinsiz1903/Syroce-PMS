@@ -107,6 +107,26 @@ function App() {
     setIsAuthenticated(true);
     fetchModules();
 
+    // ── Auto-redirect to Onboarding Wizard ───────────────────────
+    // For tenant admins on a fresh setup (not dismissed, fewer than
+    // 3 steps complete), land them on the wizard instead of the
+    // dashboard. A deep-link in postLoginRedirect always wins.
+    const ADMIN_ROLES = new Set([
+      "super_admin", "platform_admin", "admin", "owner",
+    ]);
+    const role = (canonicalUser?.role || "").toLowerCase();
+    const isTenantAdmin = ADMIN_ROLES.has(role) && !!canonicalUser?.tenant_id;
+    const hasDeepLink = !!sessionStorage.getItem("postLoginRedirect");
+    if (isTenantAdmin && !hasDeepLink) {
+      try {
+        const r = await axios.get("/onboarding/progress");
+        const d = r?.data || {};
+        if (d.dismissed === false && (d.completed ?? 0) < 3) {
+          sessionStorage.setItem("postLoginRedirect", "/app/onboarding");
+        }
+      } catch { /* non-fatal */ }
+    }
+
     const redirectAfterLogin = sessionStorage.getItem("postLoginRedirect");
     if (redirectAfterLogin) {
       sessionStorage.removeItem("postLoginRedirect");

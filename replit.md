@@ -1166,3 +1166,14 @@ Yeni kiracılar için 5 adımlı kurulum sihirbazı.
   vb.) kabul etmiyor; geçersiz `step_id` 400 döner.
 - Smoke (19 Apr 2026): admin → 200, otomatik adım → 400, bogus → 400,
   allowlist → 200.
+
+### Sprint 18 — Otomatik Yönlendirme (Apr 2026)
+- `frontend/src/App.jsx` `handleLogin` içinde: tenant admin
+  (`super_admin/platform_admin/admin/owner`) ise ve `postLoginRedirect`
+  deep-link YOKSA, `/onboarding/progress` çağrılır.
+- `dismissed=false` ve `completed<3` ise `sessionStorage.postLoginRedirect`
+  `/app/onboarding` olarak ayarlanır → `PostAuthRedirect` sihirbaza yönlendirir.
+- Mevcut kurulu tenant'lar (oda/misafir verisi olan) auto-detect
+  sayesinde 3+ adımı tamamlamış sayıldığı için etkilenmez.
+- Kullanıcı sihirbazda "Şimdilik Atla" derse `dismiss=true` olur ve
+  bir daha otomatik yönlenmez (menüden manuel açılabilir).
