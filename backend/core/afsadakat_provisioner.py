@@ -15,18 +15,18 @@ status, base_url, created_at, updated_at}).
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import hashlib
-
 import httpx
 import jwt
 
 from core.security import JWT_ALGORITHM, JWT_SECRET
+
 
 # Domain-separated signing key — guarantees an Af-sadakat SSO JWT cannot
 # be replayed against the PMS auth endpoint (which verifies with raw

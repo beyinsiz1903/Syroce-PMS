@@ -470,7 +470,6 @@ async def verify_2fa_login(payload: TwoFAVerifyIn):
 
     from core.security import JWT_ALGORITHM, JWT_SECRET
     from core.twofa import (
-        consume_backup_code,
         decrypt_secret,
         verify_totp,
     )

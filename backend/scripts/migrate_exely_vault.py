@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 # core.database expects MONGO_URL; alias from MONGO_ATLAS_URI when only the latter is provided
 if not os.environ.get("MONGO_URL") and os.environ.get("MONGO_ATLAS_URI"):
@@ -41,8 +42,8 @@ async def migrate(apply: bool) -> dict:
     failed = 0
 
     cursor = db.exely_connections.find({
-        "username": {"$exists": True, "$ne": None, "$ne": ""},
-        "password": {"$exists": True, "$ne": None, "$ne": ""},
+        "username": {"$exists": True, "$nin": [None, ""]},
+        "password": {"$exists": True, "$nin": [None, ""]},
     })
     async for conn in cursor:
         tenant_id = conn.get("tenant_id")

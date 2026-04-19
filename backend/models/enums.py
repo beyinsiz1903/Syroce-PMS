@@ -215,12 +215,6 @@ class ParityStatus(str, Enum):
     EQUAL = "equal"  # Same rate
     UNKNOWN = "unknown"
 
-class ChannelHealth(str, Enum):
-    HEALTHY = "healthy"
-    DELAYED = "delayed"
-    ERROR = "error"
-    OFFLINE = "offline"
-
 class FolioType(str, Enum):
     GUEST = "guest"
     COMPANY = "company"

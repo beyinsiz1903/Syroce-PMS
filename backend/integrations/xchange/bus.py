@@ -22,8 +22,8 @@ from core.tenant_db import get_system_db
 from .adapters.base import BaseAdapter, DeliveryResult
 from .registry import PARTNERS, get_partner
 from .schemas import (
-    Direction,
     DeliveryStatus,
+    Direction,
     MessageType,
     XchangeEnvelope,
 )

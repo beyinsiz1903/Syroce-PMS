@@ -5,12 +5,11 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-
-from typing import Any
 
 from core.database import db
 from core.helpers import (

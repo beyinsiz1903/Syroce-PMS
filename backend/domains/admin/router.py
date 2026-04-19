@@ -124,7 +124,7 @@ async def get_resource_permissions(
     return {
         'user_role': user_role.value,
         'resource': resource,
-        'permissions': {p: True for p in resource_match},
+        'permissions': dict.fromkeys(resource_match, True),
         'has_access': bool(resource_match),
     }
 

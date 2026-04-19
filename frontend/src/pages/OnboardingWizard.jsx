@@ -100,7 +100,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
   };
 
   const handleFinish = async () => {
-    try { await axios.post("/onboarding/dismiss"); } catch {}
+    try { await axios.post("/onboarding/dismiss"); } catch { /* ignore */ }
     navigate("/app/dashboard");
   };
 

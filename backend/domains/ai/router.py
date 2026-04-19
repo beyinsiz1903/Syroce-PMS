@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from pydantic import Field as _PydField
 
 from core.database import db
 from core.helpers import (
@@ -19,7 +21,6 @@ from core.security import (
     security,
 )
 from models.schemas import User
-from pydantic import BaseModel, Field as _PydField
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,6 @@ def get_tier_benefits(tier: str) -> list[str]:
     }
     return matrix.get((tier or '').lower(), [])
 
-import uuid  # noqa: E402  (used by helpers above)
 
 logger = logging.getLogger(__name__)
 
