@@ -121,6 +121,15 @@ class SplitFolioRequest(BaseModel):
     target_folio_type: str = "guest"
     reason: str
 
+class FolioSplitItem(BaseModel):
+    amount: float
+    target_folio_type: str = "guest"
+
+class SplitFolioByAmountRequest(BaseModel):
+    source_folio_id: str
+    splits: list[FolioSplitItem]
+    reason: str
+
 class CityLedgerTransferRequest(BaseModel):
     folio_id: str
     account_id: str
@@ -345,6 +354,18 @@ async def api_split_folio(req: SplitFolioRequest, current_user: User = Depends(g
     """Split charges from one folio to a new one."""
     perm_svc.enforce_permission(current_user.role, "split_folio")
     result = await folio_svc.split_folio(current_user.tenant_id, req.source_folio_id, req.charge_ids, req.target_folio_type, req.reason, current_user.id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+@router.post("/folio/split-by-amount", tags=["folio"])
+async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, current_user: User = Depends(get_current_user)):
+    """Split a folio by transferring monetary amounts (even or custom)."""
+    perm_svc.enforce_permission(current_user.role, "split_folio")
+    splits = [s.model_dump() for s in req.splits]
+    result = await folio_svc.split_folio_by_amounts(
+        current_user.tenant_id, req.source_folio_id, splits, req.reason, current_user.id
+    )
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     return result

@@ -265,6 +265,140 @@ class FolioHardeningService:
         new_folio.pop("_id", None)
         return {"success": True, "new_folio": new_folio, "transferred_charges": len(charges), "transferred_amount": round(transferred_total, 2)}
 
+    # ── SPLIT FOLIO BY AMOUNT (even / custom) ──
+
+    async def split_folio_by_amounts(self, tenant_id: str, source_folio_id: str,
+                                     splits: list[dict], reason: str, performed_by: str) -> dict:
+        """Split a folio by transferring monetary amounts (not specific charges).
+
+        For each item in `splits` ({amount, target_folio_type}) a new folio is
+        created with a single positive 'Folio bölme aktarımı' adjustment charge.
+        A single negative adjustment charge is posted on the source folio for
+        the total transferred amount, so balances reconcile via the standard
+        recalculation pipeline.
+        """
+        from core.utils import generate_folio_number
+
+        source_folio = await db.folios.find_one({"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0})
+        if not source_folio:
+            return {"success": False, "error": "Source folio not found"}
+        if source_folio.get("status") != "open":
+            return {"success": False, "error": f"Folio is {source_folio.get('status')}, cannot split"}
+
+        if not splits:
+            return {"success": False, "error": "En az bir hedef folio gerekli"}
+
+        # Validate amounts
+        cleaned: list[dict] = []
+        for s in splits:
+            amt = round(float(s.get("amount", 0) or 0), 2)
+            if amt <= 0:
+                return {"success": False, "error": "Her bölme tutarı 0'dan büyük olmalı"}
+            cleaned.append({"amount": amt, "target_folio_type": s.get("target_folio_type") or "guest"})
+
+        total_transfer = round(sum(s["amount"] for s in cleaned), 2)
+        source_balance = round(float(source_folio.get("balance", 0) or 0), 2)
+
+        if source_balance <= 0:
+            return {"success": False, "error": "Kaynak folio bakiyesi 0 veya negatif, bölünemez"}
+        if total_transfer >= source_balance:
+            return {
+                "success": False,
+                "error": (
+                    f"Aktarılacak toplam (${total_transfer:.2f}) kaynak folio bakiyesinden "
+                    f"(${source_balance:.2f}) küçük olmalı — orijinalde en az bir miktar kalmalı"
+                ),
+            }
+
+        now = datetime.now(UTC)
+        new_folios: list[dict] = []
+
+        # 1) Create target folios + positive adjustment charges
+        for idx, s in enumerate(cleaned, start=1):
+            new_folio_id = str(uuid.uuid4())
+            new_folio = {
+                "id": new_folio_id,
+                "tenant_id": tenant_id,
+                "booking_id": source_folio.get("booking_id"),
+                "folio_number": await generate_folio_number(tenant_id),
+                "folio_type": s["target_folio_type"],
+                "status": "open",
+                "guest_id": source_folio.get("guest_id"),
+                "company_id": source_folio.get("company_id"),
+                "balance": 0.0,
+                "notes": f"Split from {source_folio.get('folio_number')} (#{idx}/{len(cleaned)}): {reason}",
+                "created_at": now.isoformat(),
+            }
+            await db.folios.insert_one(new_folio)
+
+            charge_doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "folio_id": new_folio_id,
+                "booking_id": source_folio.get("booking_id"),
+                "charge_category": "split_adjustment",
+                "description": f"Folio bölme aktarımı — kaynak {source_folio.get('folio_number')}",
+                "unit_price": s["amount"],
+                "quantity": 1.0,
+                "amount": s["amount"],
+                "tax_rate": 0,
+                "tax_amount": 0,
+                "total": s["amount"],
+                "department": "folio_ops",
+                "posted_by": performed_by,
+                "date": now.isoformat(),
+                "voided": False,
+            }
+            await db.folio_charges.insert_one(charge_doc)
+
+            await self._recalculate_folio_balance(tenant_id, new_folio_id)
+            new_folio.pop("_id", None)
+            new_folios.append({**new_folio, "transferred_amount": s["amount"]})
+
+        # 2) Single negative adjustment on source folio
+        source_adjust = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "folio_id": source_folio_id,
+            "booking_id": source_folio.get("booking_id"),
+            "charge_category": "split_adjustment",
+            "description": f"Folio bölme: {len(cleaned)} hedefe aktarım",
+            "unit_price": -total_transfer,
+            "quantity": 1.0,
+            "amount": -total_transfer,
+            "tax_rate": 0,
+            "tax_amount": 0,
+            "total": -total_transfer,
+            "department": "folio_ops",
+            "posted_by": performed_by,
+            "date": now.isoformat(),
+            "voided": False,
+        }
+        await db.folio_charges.insert_one(source_adjust)
+        await self._recalculate_folio_balance(tenant_id, source_folio_id)
+
+        # 3) Operation log + audit
+        await db.folio_operations.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "operation_type": "split_by_amount",
+            "from_folio_id": source_folio_id,
+            "to_folio_ids": [f["id"] for f in new_folios],
+            "amount": total_transfer,
+            "reason": reason,
+            "performed_by": performed_by,
+            "performed_at": now.isoformat(),
+        })
+        await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split_by_amount", performed_by,
+                              {"target_count": len(new_folios), "total_transferred": total_transfer})
+
+        return {
+            "success": True,
+            "new_folios": new_folios,
+            "transferred_amount": total_transfer,
+            "target_count": len(new_folios),
+        }
+
     # ── TAX BREAKDOWN ──
 
     async def get_tax_breakdown(self, tenant_id: str, folio_id: str) -> dict:
