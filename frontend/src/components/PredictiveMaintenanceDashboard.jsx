@@ -33,7 +33,7 @@ const PredictiveMaintenanceDashboard = () => {
         source: 'sensor',
         description: `[Predictive] ${alert.prediction || alert.equipment}. Recommended: ${alert.recommended_action || ''}`.trim(),
       };
-      await axios.post(`/api/maintenance/work-orders`, payload, {
+      await axios.post(`/maintenance/work-orders`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAssignedIds((s) => ({ ...s, [idx]: true }));

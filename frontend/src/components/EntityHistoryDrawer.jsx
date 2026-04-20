@@ -55,7 +55,7 @@ const EntityHistoryDrawer = ({ entityType, entityId, title, onClose }) => {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    axios.get(`/api/audit/timeline/${entityType}/${entityId}?limit=100`)
+    axios.get(`/audit/timeline/${entityType}/${entityId}?limit=100`)
       .then((r) => { if (alive) setTrail(r.data?.trail || []); })
       .catch(() => { if (alive) setTrail([]); })
       .finally(() => { if (alive) setLoading(false); });

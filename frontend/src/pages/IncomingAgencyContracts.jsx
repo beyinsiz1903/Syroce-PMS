@@ -194,7 +194,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     try {
       const status = tabToStatus[tab];
       const params = status ? { status } : {};
-      const { data } = await axios.get('/api/marketplace/incoming-requests', { params });
+      const { data } = await axios.get('/marketplace/incoming-requests', { params });
       let list = data.contracts || [];
       if (tab === 'history') {
         list = list.filter(c => ['rejected', 'terminated', 'expired', 'withdrawn'].includes(c.status));
@@ -225,7 +225,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
         notes: approveNotes,
         commission_pct_override: !isNaN(override) && override !== approveDlg.commission_pct ? override : null,
       };
-      await axios.post(`/api/marketplace/incoming-requests/${approveDlg.id}/approve`, body);
+      await axios.post(`/marketplace/incoming-requests/${approveDlg.id}/approve`, body);
       toast.success('Sözleşme onaylandı — acente artık otelinize rezervasyon yapabilir');
       setApproveDlg(null);
       fetchContracts();
@@ -245,7 +245,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     if (!rejectDlg) return;
     setActing(true);
     try {
-      await axios.post(`/api/marketplace/incoming-requests/${rejectDlg.id}/reject`, { reason: rejectReason });
+      await axios.post(`/marketplace/incoming-requests/${rejectDlg.id}/reject`, { reason: rejectReason });
       toast.success('Sözleşme reddedildi');
       setRejectDlg(null);
       fetchContracts();
@@ -265,7 +265,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     if (!terminateDlg) return;
     setActing(true);
     try {
-      await axios.post(`/api/marketplace/incoming-requests/${terminateDlg.id}/terminate`,
+      await axios.post(`/marketplace/incoming-requests/${terminateDlg.id}/terminate`,
         { reason: terminateReason });
       toast.success('Sözleşme feshedildi — yeni rezervasyonlar engellenecek');
       setTerminateDlg(null);

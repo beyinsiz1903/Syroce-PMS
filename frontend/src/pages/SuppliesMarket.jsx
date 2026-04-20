@@ -53,7 +53,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
 
   const loadCategories = async () => {
     try {
-      const { data } = await axios.get("/api/supplies-market/categories");
+      const { data } = await axios.get("/supplies-market/categories");
       setCategories(data || []);
     } catch (e) {
       console.error(e);
@@ -63,7 +63,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
   const loadProducts = async (cat = "") => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/api/supplies-market/products", {
+      const { data } = await axios.get("/supplies-market/products", {
         params: cat ? { category: cat } : {},
       });
       setProducts(data || []);
@@ -77,7 +77,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/api/supplies-market/orders/mine");
+      const { data } = await axios.get("/supplies-market/orders/mine");
       setOrders(data || []);
     } catch (e) {
       toast.error("Siparişler yüklenemedi");
@@ -171,7 +171,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
           quantity: it.qty,
         })),
       };
-      const { data } = await axios.post("/api/supplies-market/orders", payload);
+      const { data } = await axios.post("/supplies-market/orders", payload);
       toast.success(`Sipariş oluşturuldu: ${data.order_no}`);
       setCart({});
       setShowCheckout(false);
@@ -192,7 +192,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
 
   const confirmDelivery = async (orderId) => {
     try {
-      await axios.post(`/api/supplies-market/orders/${orderId}/confirm-delivery`);
+      await axios.post(`/supplies-market/orders/${orderId}/confirm-delivery`);
       toast.success("Teslim alındı olarak işaretlendi");
       loadOrders();
     } catch (e) {

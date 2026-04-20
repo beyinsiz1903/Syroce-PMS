@@ -58,7 +58,7 @@ const MarketOverviewTab = ({ user, tenant, onLogout }) => {
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/displacement/market-overview?days=${days}`);
+      const res = await axios.get(`/displacement/market-overview?days=${days}`);
       setData(res.data);
     } catch (e) {
       console.error('Market overview error:', e);
@@ -169,7 +169,7 @@ const AnalysisTab = ({ user, tenant, onLogout }) => {
     setLoading(true);
     setResult(null);
     try {
-      const res = await axios.post('/api/displacement/analyze', {
+      const res = await axios.post('/displacement/analyze', {
         ...form,
         rooms_requested: Number(form.rooms_requested),
         proposed_rate: Number(form.proposed_rate),
@@ -187,7 +187,7 @@ const AnalysisTab = ({ user, tenant, onLogout }) => {
   const saveAnalysis = async () => {
     setSaving(true);
     try {
-      await axios.post('/api/displacement/save', {
+      await axios.post('/displacement/save', {
         ...form,
         rooms_requested: Number(form.rooms_requested),
         proposed_rate: Number(form.proposed_rate),
@@ -404,7 +404,7 @@ const CompareTab = ({ user, tenant, onLogout }) => {
     setLoading(true);
     setResult(null);
     try {
-      const res = await axios.post('/api/displacement/compare', {
+      const res = await axios.post('/displacement/compare', {
         check_in: form.check_in,
         check_out: form.check_out,
         rooms_requested: Number(form.rooms_requested),
@@ -560,7 +560,7 @@ const HistoryTab = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await axios.get('/api/displacement/history?limit=20');
+        const res = await axios.get('/displacement/history?limit=20');
         setData(Array.isArray(res.data) ? res.data : []);
       } catch (e) {
         console.error('History error:', e);
