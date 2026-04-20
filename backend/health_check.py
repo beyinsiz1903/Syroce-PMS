@@ -192,17 +192,8 @@ async def detailed_health_check(db=None, redis_client=None):
     if checks["system"]["status"] != "healthy":
         overall_status = "degraded"
 
-    # Check optimization systems
-    try:
-        from optimization_endpoints import archival_manager, cache_manager, materialized_views_manager
-
-        checks["optimization"] = {
-            "data_archival": archival_manager is not None,
-            "materialized_views": materialized_views_manager is not None,
-            "cache_manager": cache_manager is not None
-        }
-    except Exception:
-        checks["optimization"] = {"status": "not_available"}
+    # Legacy optimization_endpoints module was removed; capability now reported as N/A.
+    checks["optimization"] = {"status": "not_available"}
 
     response = {
         "status": overall_status,

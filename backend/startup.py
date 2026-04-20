@@ -293,20 +293,8 @@ async def on_startup(app):
         )
         if not any_rms_enabled:
             logger.info("ℹ️ No orgs with RMS enabled; skipping optimization init")
-        else:
-            import redis
-
-            from optimization_endpoints import init_optimization_managers
-            redis_client = redis.Redis(host="127.0.0.1", port=6379, db=0, socket_connect_timeout=2, decode_responses=False)
-            redis_client.ping()
-            init_optimization_managers(_raw_db, redis_client)
-            from optimization_endpoints import archival_manager, materialized_views_manager
-            if archival_manager:
-                await archival_manager.setup_indexes()
-            if materialized_views_manager:
-                await materialized_views_manager.setup_indexes()
-                await materialized_views_manager.refresh_dashboard_metrics()
-            logger.info("🎉 Enterprise optimization systems ready!")
+        # Note: legacy `optimization_endpoints` module was removed; archival/materialized
+        # views are now handled by domain-specific routers and scheduled jobs.
     except Exception as e:
         logger.warning(f"Optimization system initialization error: {e}")
 
