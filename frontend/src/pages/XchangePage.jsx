@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import Layout from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +35,7 @@ const STATUS_META = {
   skipped: { cls: 'bg-gray-100 text-gray-600', icon: Power },
 };
 
-const XchangePage = () => {
+const XchangePage = ({ user, tenant, onLogout }) => {
   const [partners, setPartners] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
@@ -136,17 +137,17 @@ const XchangePage = () => {
   }
 
   return (
+    <Layout
+      user={user}
+      tenant={tenant}
+      onLogout={onLogout}
+      currentModule="xchange"
+      title="Syroce Xchange (SXI)"
+      subtitle="GDS, CRS ve ERP partner'larıyla HTNG 2024B mesaj bus'ı. OPERA PMSXchange (OXI) eşdeğeri."
+    >
     <div className="max-w-7xl mx-auto p-4 space-y-4">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Network className="w-6 h-6 text-indigo-600" />
-            Syroce Xchange (SXI)
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            GDS, CRS ve ERP partner'larıyla HTNG 2024B mesaj bus'ı. OPERA PMSXchange (OXI) eşdeğeri.
-          </p>
-        </div>
+      <div className="flex items-start justify-end flex-wrap gap-3">
+        <div className="hidden"></div>
         <Button variant="outline" onClick={load}>
           <RefreshCw className="w-4 h-4 mr-2" /> Yenile
         </Button>
@@ -365,6 +366,7 @@ const XchangePage = () => {
         </div>
       )}
     </div>
+    </Layout>
   );
 };
 
