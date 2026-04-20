@@ -246,13 +246,16 @@ const AuthPage = ({ onLogin }) => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: isMobile 
-        ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' 
-        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, #1e1b4b 0%, #1e3a8a 50%, #0f172a 100%)',
       padding: isMobile ? '10px' : '20px',
-      position: 'relative'
+      position: 'relative',
+      overflow: 'hidden'
     }}>
-      <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px' }}>
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '10%', left: '8%', width: '380px', height: '380px', background: '#3b82f6', borderRadius: '9999px', mixBlendMode: 'screen', filter: 'blur(80px)', opacity: 0.35 }} />
+        <div style={{ position: 'absolute', bottom: '5%', right: '10%', width: '460px', height: '460px', background: '#8b5cf6', borderRadius: '9999px', mixBlendMode: 'screen', filter: 'blur(90px)', opacity: 0.3 }} />
+      </div>
+      <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px', position: 'relative', zIndex: 1 }}>
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
             <img 

@@ -98,8 +98,12 @@ function VendorAuth({ onAuthed }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 relative">
-      <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #1e3a8a 50%, #0f172a 100%)' }}>
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[10%] left-[8%] w-[380px] h-[380px] bg-blue-500 rounded-full mix-blend-screen filter blur-[80px] opacity-35" />
+        <div className="absolute bottom-[5%] right-[10%] w-[460px] h-[460px] bg-purple-500 rounded-full mix-blend-screen filter blur-[90px] opacity-30" />
+      </div>
+      <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative z-10">
         <div className="text-center mb-6">
           <Store className="w-12 h-12 mx-auto text-blue-600 mb-2" />
           <h1 className="text-2xl font-bold">Toptancı Portalı</h1>
