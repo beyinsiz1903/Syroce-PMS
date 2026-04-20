@@ -138,6 +138,7 @@ class InventoryItem(BaseModel):
     supplier_id: str | None = None
     location: str | None = None
     notes: str | None = None
+    is_consumable: bool = True  # False = çok kullanımlık (havlu, nevresim vb.) — stoktan düşmez
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class StockMovement(BaseModel):

@@ -129,6 +129,7 @@ class InventoryItem(BaseModel):
     supplier_id: str | None = None
     location: str | None = None
     notes: str | None = None
+    is_consumable: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

@@ -198,6 +198,7 @@ async def create_inventory_item(
     supplier_id: str | None = None,
     location: str | None = None,
     notes: str | None = None,
+    is_consumable: bool = True,
     current_user: User = Depends(get_current_user)
 ):
     from accounting_models import InventoryItem
@@ -212,12 +213,34 @@ async def create_inventory_item(
         reorder_level=reorder_level,
         supplier_id=supplier_id,
         location=location,
-        notes=notes
+        notes=notes,
+        is_consumable=is_consumable,
     )
     item_dict = item.model_dump()
     item_dict['created_at'] = item_dict['created_at'].isoformat()
     await db.inventory_items.insert_one(item_dict)
     return item
+
+@api_router.patch("/accounting/inventory/{item_id}")
+async def update_inventory_item(
+    item_id: str,
+    payload: dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Belirli alanları güncelle (örn. is_consumable, reorder_level, unit_cost, notes)."""
+    allowed = {'is_consumable', 'reorder_level', 'unit_cost', 'notes', 'location', 'supplier_id', 'category', 'name', 'sku', 'unit'}
+    updates = {k: v for k, v in payload.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail='Güncellenecek alan yok')
+    if 'is_consumable' in updates:
+        updates['is_consumable'] = bool(updates['is_consumable'])
+    res = await db.inventory_items.update_one(
+        {'id': item_id, 'tenant_id': current_user.tenant_id},
+        {'$set': updates},
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail='Ürün bulunamadı')
+    return {'ok': True, 'updated': updates}
 
 @api_router.get("/accounting/inventory")
 async def get_inventory(current_user: User = Depends(get_current_user)):
@@ -367,7 +390,8 @@ async def apply_setup_kit(
 
     # Önceden yeterlilik kontrolü (kullanıcıya hızlı geri bildirim)
     shortages = []
-    needs = []
+    needs = []        # tüketilecek (stoktan düşecek) kalemler
+    reusables = []    # çok kullanımlık — sadece hatırlatma
     for ln in kit['lines']:
         try:
             line_qty = float(ln.get('quantity') or 0)
@@ -382,7 +406,16 @@ async def apply_setup_kit(
         )
         if not item:
             shortages.append({'item_name': ln.get('item_name', '?'), 'reason': 'Ürün bulunamadı'})
-        elif (item.get('quantity') or 0) < needed:
+            continue
+        # Çok kullanımlık (havlu, nevresim vb.) — stoktan düşmez
+        if item.get('is_consumable', True) is False:
+            reusables.append({
+                'item_name': ln['item_name'],
+                'quantity': needed,
+                'unit': ln.get('unit'),
+            })
+            continue
+        if (item.get('quantity') or 0) < needed:
             shortages.append({
                 'item_name': ln['item_name'],
                 'needed': needed,
@@ -457,6 +490,7 @@ async def apply_setup_kit(
         'kit_name': kit['name'],
         'multiplier': multiplier,
         'applied': applied,
+        'reusables': reusables,
     }
 
 # ============= ADVANCED INVOICING =============

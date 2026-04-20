@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 const EMPTY_ITEM = {
   name: '', sku: '', category: 'Oda Ürünleri', unit: 'adet',
   quantity: 0, unit_cost: 0, reorder_level: 0, location: '', notes: '',
+  is_consumable: true,
 };
 
 const CATEGORIES = ['Oda Ürünleri', 'Banyo Ürünleri', 'Yatak Ürünleri', 'Temizlik', 'F&B', 'Kırtasiye', 'Diğer'];
@@ -65,6 +66,15 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Kit kaydedilemedi');
     } finally { setSaving(false); }
+  };
+
+  const toggleConsumable = async (item) => {
+    const newVal = !(item.is_consumable !== false);
+    try {
+      await axios.patch(`/accounting/inventory/${item.id}`, { is_consumable: newVal });
+      toast.success(newVal ? `${item.name}: tek kullanımlık` : `${item.name}: çok kullanımlık (stoktan düşmez)`);
+      loadInventory();
+    } catch { toast.error('Güncellenemedi'); }
   };
 
   const deleteKit = async (id) => {
@@ -158,6 +168,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
           sku: newItem.sku || undefined,
           location: newItem.location || undefined,
           notes: newItem.notes || undefined,
+          is_consumable: newItem.is_consumable !== false,
         },
       });
       toast.success(`${newItem.name} eklendi`);
@@ -382,7 +393,14 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                               <CardContent className="p-4">
                                 <div className="flex justify-between items-start mb-2">
                                   <div>
-                                    <p className="font-semibold">{item.name}</p>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <p className="font-semibold">{item.name}</p>
+                                      {item.is_consumable === false && (
+                                        <Badge className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0">
+                                          🛏️ Çok Kullanımlık
+                                        </Badge>
+                                      )}
+                                    </div>
                                     <p className="text-sm text-gray-600">{item.sku}</p>
                                   </div>
                                   <Badge className={status.color}>{status.label}</Badge>
@@ -431,6 +449,14 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     title="Sayım sonucu düzeltme"
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline"
+                                    className={`text-xs px-2 ${item.is_consumable === false ? 'border-purple-300 text-purple-700' : 'border-gray-300'}`}
+                                    onClick={() => toggleConsumable(item)}
+                                    title={item.is_consumable === false ? 'Çok kullanımlık (stoktan düşmez) — değiştir' : 'Tek kullanımlık — değiştir'}
+                                  >
+                                    {item.is_consumable === false ? '🛏️' : '🧴'}
                                   </Button>
                                 </div>
                                 {item.quantity <= item.reorder_level && (
@@ -736,7 +762,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                         <option value="">— Ürün seç —</option>
                         {inventory.map((it) => (
                           <option key={it.id} value={it.id}>
-                            {it.name} ({it.quantity} {it.unit})
+                            {it.name} ({it.quantity} {it.unit}){it.is_consumable === false ? ' — çok kullanımlık' : ''}
                           </option>
                         ))}
                       </select>
@@ -798,19 +824,48 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                 <Input type="number" min="1" autoFocus value={applyKit.multiplier}
                   onChange={(e) => setApplyKit({ ...applyKit, multiplier: e.target.value })} />
               </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                <p className="font-medium text-gray-700 mb-2">Toplam stoktan düşecek:</p>
-                <ul className="space-y-1">
-                  {applyKit.kit.lines.map((ln, i) => (
-                    <li key={i} className="flex justify-between">
-                      <span className="text-gray-700">{ln.item_name}</span>
-                      <span className="font-semibold">
-                        {(ln.quantity * (Number(applyKit.multiplier) || 0)).toFixed(2).replace(/\.?0+$/, '')} {ln.unit}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {(() => {
+                const m = Number(applyKit.multiplier) || 0;
+                const consumables = applyKit.kit.lines.filter((ln) => {
+                  const it = inventory.find((x) => x.id === ln.item_id);
+                  return !it || it.is_consumable !== false;
+                });
+                const reusables = applyKit.kit.lines.filter((ln) => {
+                  const it = inventory.find((x) => x.id === ln.item_id);
+                  return it && it.is_consumable === false;
+                });
+                const fmt = (q) => (q).toFixed(2).replace(/\.?0+$/, '');
+                return (
+                  <>
+                    {consumables.length > 0 && (
+                      <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 text-sm">
+                        <p className="font-medium text-orange-900 mb-2">🧴 Stoktan düşecek (tek kullanımlık):</p>
+                        <ul className="space-y-1">
+                          {consumables.map((ln, i) => (
+                            <li key={i} className="flex justify-between">
+                              <span className="text-gray-700">{ln.item_name}</span>
+                              <span className="font-semibold">{fmt(ln.quantity * m)} {ln.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {reusables.length > 0 && (
+                      <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm">
+                        <p className="font-medium text-purple-900 mb-2">🛏️ Sadece odaya konacak (çok kullanımlık — stoktan düşmez):</p>
+                        <ul className="space-y-1">
+                          {reusables.map((ln, i) => (
+                            <li key={i} className="flex justify-between">
+                              <span className="text-gray-700">{ln.item_name}</span>
+                              <span className="font-semibold">{fmt(ln.quantity * m)} {ln.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div>
                 <Label>Açıklama (opsiyonel)</Label>
                 <Input value={applyKit.notes} placeholder="Örn: 12.04 sabah hazırlığı"
@@ -984,6 +1039,23 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                   <Label>Notlar</Label>
                   <Input value={newItem.notes}
                     onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Ürün Tipi</Label>
+                  <div className="flex gap-2 mt-1">
+                    <button type="button"
+                      className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable !== false ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                      onClick={() => setNewItem({ ...newItem, is_consumable: true })}>
+                      <div className="font-semibold text-sm">🧴 Tek Kullanımlık</div>
+                      <div className="text-xs text-gray-600 mt-0.5">Kullanınca tükenir, stoktan düşer (şampuan, sabun, kahve)</div>
+                    </button>
+                    <button type="button"
+                      className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable === false ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
+                      onClick={() => setNewItem({ ...newItem, is_consumable: false })}>
+                      <div className="font-semibold text-sm">🛏️ Çok Kullanımlık</div>
+                      <div className="text-xs text-gray-600 mt-0.5">Tekrar tekrar kullanılır, stoktan düşmez (havlu, nevresim, bornoz)</div>
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-900">
