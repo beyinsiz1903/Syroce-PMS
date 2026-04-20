@@ -5,9 +5,11 @@ Mounted under /api/supplies-market/vendor.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from .models import (
     OrderOut,
@@ -145,6 +147,35 @@ async def vendor_delete_product(
     if res.deleted_count == 0:
         raise HTTPException(404, "Ürün bulunamadı")
     return {"deleted": True}
+
+
+_UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "backend/uploads"))
+_ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+@router.post("/products/upload-image")
+async def vendor_upload_product_image(
+    file: UploadFile = File(...),
+    vendor_id: str = Depends(get_current_vendor_id),
+):
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Sadece görsel dosyalar yüklenebilir")
+    ext = Path(file.filename or "").suffix.lower()[:10]
+    if ext not in _ALLOWED_EXT:
+        ext = ".jpg"
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Dosya boş")
+    if len(content) > _MAX_BYTES:
+        raise HTTPException(400, "Dosya çok büyük (max 5 MB)")
+
+    folder = _UPLOAD_DIR / "vendors" / vendor_id / "products"
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4()}{ext}"
+    (folder / filename).write_bytes(content)
+    url = f"/api/uploads/vendors/{vendor_id}/products/{filename}"
+    return {"url": url}
 
 
 # ── Orders ───────────────────────────────────────────────────────────────────

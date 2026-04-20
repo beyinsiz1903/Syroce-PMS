@@ -654,7 +654,8 @@ function VendorDashboard({ vendor, onLogout }) {
 }
 
 function ProductModal({ product, onClose, onSave }) {
-  const [form, setForm] = useState(product);
+  const [form, setForm] = useState({ ...product, images: product.images || [] });
+  const [uploading, setUploading] = useState(false);
   const submit = (e) => {
     e.preventDefault();
     onSave({
@@ -664,6 +665,41 @@ function ProductModal({ product, onClose, onSave }) {
       moq: parseInt(form.moq) || 1,
       stock: parseInt(form.stock) || 0,
     });
+  };
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    const uploaded = [];
+    for (const f of files) {
+      if (f.size > 5 * 1024 * 1024) {
+        toast.error(`${f.name}: 5 MB üzerinde, atlandı`);
+        continue;
+      }
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const { data } = await vendorApi.post(
+          "/supplies-market/vendor/products/upload-image",
+          fd,
+          { headers: { "Content-Type": "multipart/form-data" } },
+        );
+        if (data?.url) uploaded.push(data.url);
+      } catch (err) {
+        toast.error(`${f.name} yüklenemedi`);
+      }
+    }
+    if (uploaded.length) {
+      setForm((p) => ({ ...p, images: [...(p.images || []), ...uploaded] }));
+      toast.success(`${uploaded.length} görsel yüklendi`);
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const removeImage = (url) => {
+    setForm((p) => ({ ...p, images: (p.images || []).filter((u) => u !== url) }));
   };
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -744,6 +780,40 @@ function ProductModal({ product, onClose, onSave }) {
               className="w-full border rounded p-2 text-sm"
             />
           </label>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Ürün Görselleri</span>
+            <label className="cursor-pointer text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200">
+              {uploading ? "Yükleniyor…" : "+ Görsel Ekle"}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFiles}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {form.images?.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {form.images.map((url) => (
+                <div key={url} className="relative group aspect-square border rounded overflow-hidden bg-gray-50">
+                  <img src={url} alt="ürün" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(url)}
+                    className="absolute top-1 right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition"
+                    title="Kaldır"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="text-xs text-gray-400">JPG, PNG, WEBP · max 5 MB · birden fazla seçebilirsiniz</div>
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input
