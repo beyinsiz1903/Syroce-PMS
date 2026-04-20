@@ -42,6 +42,7 @@ const CityLedgerAccounts = lazy(() => import("@/pages/CityLedgerAccounts"));
 const LoyaltyModule = lazy(() => import("@/pages/LoyaltyModule"));
 const MarketplaceModule = lazy(() => import("@/pages/MarketplaceModule"));
 const SuppliesMarket = lazy(() => import("@/pages/SuppliesMarket"));
+const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
 const HotelInventory = lazy(() => import("@/pages/HotelInventory"));
 const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
@@ -353,6 +354,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/marketplace", type: "feature", featureKey: "hidden_marketplace", ...p(MarketplaceModule) },
     { path: "/app/marketplace", ...p(MarketplaceModule) },
     { path: "/app/supplies-market", ...p(SuppliesMarket) },
+    { path: "/vendor", type: "public", component: VendorPortal },
+    { path: "/vendor/*", type: "public", component: VendorPortal },
 
     // ── Loyalty & Inventory ────────────────────────────
     { path: "/loyalty", ...p(LoyaltyModule) },

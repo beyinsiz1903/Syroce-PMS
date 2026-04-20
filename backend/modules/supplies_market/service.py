@@ -140,18 +140,39 @@ async def place_order(
         "created_at": now,
         "updated_at": now,
     }
-    await orders_col.insert_one(order_doc)
-
-    # Decrement stock (best-effort; tolerated to fail without rolling order back
-    # because admins can adjust stock from the vendor panel)
-    for line in payload.lines:
-        try:
-            await products_col.update_one(
-                {"id": line.product_id},
+    # Atomic stock decrement BEFORE insert: only succeeds if stock >= qty.
+    # Roll back any successful decrements if a later line fails.
+    decremented: list[tuple[str, int]] = []
+    try:
+        for line in payload.lines:
+            res = await products_col.update_one(
+                {"id": line.product_id, "stock": {"$gte": line.quantity}},
                 {"$inc": {"stock": -line.quantity}, "$set": {"updated_at": now}},
             )
-        except Exception:
-            logger.warning("supplies_market: stock decrement failed for %s", line.product_id, exc_info=True)
+            if res.modified_count != 1:
+                # Roll back previously decremented lines
+                for pid, qty in decremented:
+                    await products_col.update_one(
+                        {"id": pid},
+                        {"$inc": {"stock": qty}},
+                    )
+                p = p_map.get(line.product_id, {})
+                raise HTTPException(
+                    409,
+                    f"Stock unavailable for '{p.get('name', line.product_id)}' (concurrent order)",
+                )
+            decremented.append((line.product_id, line.quantity))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("supplies_market: atomic stock decrement failed")
+        for pid, qty in decremented:
+            try:
+                await products_col.update_one({"id": pid}, {"$inc": {"stock": qty}})
+            except Exception:
+                logger.exception("supplies_market: rollback failed for %s", pid)
+        raise HTTPException(500, "Order could not be placed; stock not changed")
 
+    await orders_col.insert_one(order_doc)
     order_doc.pop("_id", None)
     return order_doc
