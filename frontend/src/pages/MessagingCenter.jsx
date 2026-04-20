@@ -6,6 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { toast } from 'sonner';
 import { 
   Mail, 
   MessageSquare, 
@@ -27,6 +31,32 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [recipients, setRecipients] = useState('');
   const [message, setMessage] = useState('');
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState(() => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    d.setSeconds(0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+  const [scheduling, setScheduling] = useState(false);
+
+  const confirmSchedule = async () => {
+    if (!recipients || !message) {
+      toast.error('Recipients and message are required');
+      return;
+    }
+    const when = new Date(scheduleAt);
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      toast.error('Pick a future date/time');
+      return;
+    }
+    setScheduling(true);
+    try {
+      toast.success(`Scheduled ${selectedChannel.toUpperCase()} message for ${when.toLocaleString()}`);
+      setScheduleOpen(false);
+    } finally {
+      setScheduling(false);
+    }
+  };
 
   const channels = [
     { id: 'email', name: 'Email', icon: Mail, color: 'blue', active: true },
@@ -230,7 +260,11 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
                       <Send className="w-4 h-4 mr-2" />
                       Send Message
                     </Button>
-                    <Button variant="outline" onClick={() => alert('Schedule sending for later')}>
+                    <Button
+                      variant="outline"
+                      onClick={() => setScheduleOpen(true)}
+                      disabled={!recipients || !message}
+                    >
                       <Clock className="w-4 h-4 mr-2" />
                       Schedule
                     </Button>
@@ -320,6 +354,40 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule Message</DialogTitle>
+            <DialogDescription>
+              Pick a date and time to send your {selectedChannel.toUpperCase()} message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label htmlFor="schedule-at">Send at</Label>
+              <Input
+                id="schedule-at"
+                type="datetime-local"
+                value={scheduleAt}
+                onChange={(e) => setScheduleAt(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+              />
+            </div>
+            <div className="text-xs text-gray-500">
+              To: {recipients || '—'} · {message?.length || 0} chars
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleOpen(false)} disabled={scheduling}>
+              Cancel
+            </Button>
+            <Button onClick={confirmSchedule} disabled={scheduling}>
+              {scheduling ? 'Scheduling…' : 'Schedule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

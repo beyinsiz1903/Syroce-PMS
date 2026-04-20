@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -7,6 +8,42 @@ const PredictiveMaintenanceDashboard = () => {
   const [alerts, setAlerts] = useState([]);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [assigningId, setAssigningId] = useState(null);
+  const [assignedIds, setAssignedIds] = useState({});
+
+  const guessIssueType = (equipment = '') => {
+    const eq = equipment.toLowerCase();
+    if (eq.includes('hvac') || eq.includes('ac') || eq.includes('heat')) return 'hvac';
+    if (eq.includes('plumb') || eq.includes('water') || eq.includes('pipe')) return 'plumbing';
+    if (eq.includes('electric') || eq.includes('light') || eq.includes('power')) return 'electrical';
+    if (eq.includes('furniture') || eq.includes('door') || eq.includes('bed')) return 'furniture';
+    return 'other';
+  };
+
+  const assignTask = async (alert, idx) => {
+    if (assignedIds[idx]) return;
+    setAssigningId(idx);
+    try {
+      const token = localStorage.getItem('token');
+      const priorityMap = { critical: 'urgent', high: 'high', medium: 'normal', low: 'low' };
+      const payload = {
+        room_number: String(alert.room_number || ''),
+        issue_type: guessIssueType(alert.equipment),
+        priority: priorityMap[alert.severity] || 'normal',
+        source: 'sensor',
+        description: `[Predictive] ${alert.prediction || alert.equipment}. Recommended: ${alert.recommended_action || ''}`.trim(),
+      };
+      await axios.post(`/api/maintenance/work-orders`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAssignedIds((s) => ({ ...s, [idx]: true }));
+      toast.success(`Work order created for Room ${alert.room_number}`);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Failed to assign task');
+    } finally {
+      setAssigningId(null);
+    }
+  };
 
   useEffect(() => {
     fetchAlerts();
@@ -122,10 +159,11 @@ const PredictiveMaintenanceDashboard = () => {
                 </div>
               </div>
               <button
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 ml-4"
-                onClick={() => alert('Task assigned to maintenance team')}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 ml-4 disabled:opacity-60"
+                onClick={() => assignTask(alert, idx)}
+                disabled={assigningId === idx || !!assignedIds[idx]}
               >
-                Assign Task
+                {assignedIds[idx] ? '✓ Assigned' : assigningId === idx ? 'Assigning…' : 'Assign Task'}
               </button>
             </div>
           </div>
