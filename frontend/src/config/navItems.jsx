@@ -64,6 +64,16 @@ export const NAV_ITEMS = [
     navGroup: null, // standalone button - always visible
   },
 
+  // ──── TEDARİK PAZARI (B2B Supplies Marketplace) ────
+  {
+    key: "supplies_market",
+    label: "Tedarik Pazarı",
+    path: "/app/supplies-market",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+  },
+
   // ──── OPERATIONS GROUP ─────────────────────────────
   {
     key: "reservation_calendar",

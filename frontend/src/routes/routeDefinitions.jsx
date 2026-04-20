@@ -41,6 +41,7 @@ const PendingAR = lazy(() => import("@/pages/PendingAR"));
 const CityLedgerAccounts = lazy(() => import("@/pages/CityLedgerAccounts"));
 const LoyaltyModule = lazy(() => import("@/pages/LoyaltyModule"));
 const MarketplaceModule = lazy(() => import("@/pages/MarketplaceModule"));
+const SuppliesMarket = lazy(() => import("@/pages/SuppliesMarket"));
 const HotelInventory = lazy(() => import("@/pages/HotelInventory"));
 const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
@@ -351,6 +352,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Marketplace (feature-gated) ────────────────────
     { path: "/marketplace", type: "feature", featureKey: "hidden_marketplace", ...p(MarketplaceModule) },
     { path: "/app/marketplace", ...p(MarketplaceModule) },
+    { path: "/app/supplies-market", ...p(SuppliesMarket) },
 
     // ── Loyalty & Inventory ────────────────────────────
     { path: "/loyalty", ...p(LoyaltyModule) },

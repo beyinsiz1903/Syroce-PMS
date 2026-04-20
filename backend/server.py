@@ -255,6 +255,25 @@ try:
 except Exception as _gm_err:
     logger.warning("Guest Messaging router skipped: %s", _gm_err)
 
+# Supplies Marketplace (B2B) — vendor portal + hotel storefront + admin
+try:
+    from modules.supplies_market.repository import ensure_indexes as _sm_ensure_indexes
+    from modules.supplies_market.router_admin import router as _sm_admin_router
+    from modules.supplies_market.router_hotel import router as _sm_hotel_router
+    from modules.supplies_market.router_vendor import router as _sm_vendor_router
+
+    app.include_router(_sm_vendor_router)
+    app.include_router(_sm_hotel_router)
+    app.include_router(_sm_admin_router)
+
+    @app.on_event("startup")
+    async def _supplies_market_indexes():
+        await _sm_ensure_indexes()
+
+    logger.info("✅ Supplies Marketplace routers mounted")
+except Exception as _sm_err:
+    logger.warning("Supplies Marketplace router skipped: %s", _sm_err)
+
 # GraphQL
 try:
     from strawberry.fastapi import GraphQLRouter

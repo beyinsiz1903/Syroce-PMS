@@ -46,6 +46,7 @@ const ICON_BY_KEY = {
   rms: TrendingUp,
   ai: Bot,
   marketplace: ShoppingCart,
+  supplies_market: ShoppingCart,
   admin_tenants: Shield,
   admin_module_report: FileText,
   admin_leads: Users,
