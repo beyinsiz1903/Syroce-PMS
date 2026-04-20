@@ -444,8 +444,8 @@ async def _startup():
     except Exception as _e:
         logging.getLogger(__name__).warning("integration credentials startup skipped: %s", _e)
     try:
-        from scripts.ensure_demo_user import ensure_demo_user
         from core.database import db as _db
+        from scripts.ensure_demo_user import ensure_demo_user
         await ensure_demo_user(_db)
     except Exception as _e:
         logging.getLogger(__name__).warning("demo user seed skipped: %s", _e)

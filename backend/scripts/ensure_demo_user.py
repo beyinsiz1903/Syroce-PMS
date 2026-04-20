@@ -9,7 +9,7 @@ an existing user's password.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -34,7 +34,7 @@ async def ensure_demo_user(db: AsyncIOMotorDatabase) -> None:
 
         from core.security import hash_password
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.users.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
