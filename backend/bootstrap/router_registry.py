@@ -136,6 +136,9 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # Phase 5 — Production Hardening
     ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
     ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
+    # Semantic Layer (ADR read models for BI/SDK/partner consumers)
+    ("modules.stays.router", "router", ["Semantic Stays"], None, None),
+    ("modules.inventory.router", "router", ["Semantic Inventory"], None, None),
     ("modules.observability.alert_router", "router", ["Alert Enrichment"], None, None),
     ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
