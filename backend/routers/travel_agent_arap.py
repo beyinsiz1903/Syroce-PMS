@@ -77,7 +77,7 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "agency_id": aid, "status": {"$nin": ["cancelled"]}},
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1, "status": 1, "created_at": 1},
-        ).to_list(5000)
+        ).to_list(1000)
 
         total_bookings_revenue = sum(b.get("total_amount", 0) for b in bookings)
         commission_rate = agency.get("commission_rate", 10) / 100
@@ -85,7 +85,7 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
 
         txns = await db.agency_transactions.find(
             {"tenant_id": tenant_id, "agency_id": aid},
-        ).to_list(5000)
+        ).to_list(1000)
 
         total_paid = sum(t.get("amount", 0) for t in txns if t.get("type") == "payment")
         total_adjustments = sum(t.get("amount", 0) for t in txns if t.get("type") == "adjustment")

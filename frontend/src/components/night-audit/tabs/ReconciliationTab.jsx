@@ -60,7 +60,7 @@ export default function ReconciliationTab(props) {
                 </div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {reconciliation.discrepancies.map((d, i) => (
+                  {(reconciliation?.discrepancies || []).map((d, i) => (
                     <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 border rounded-lg">
                       <div className={`rounded-lg p-1.5 flex-shrink-0 ${
                         d.severity === "error" ? "bg-red-100" : "bg-amber-100"

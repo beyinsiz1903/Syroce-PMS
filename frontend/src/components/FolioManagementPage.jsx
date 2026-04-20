@@ -37,7 +37,7 @@ const FolioManagementPage = () => {
       
       // Fetch all bookings to get folios
       const bookingsResponse = await fetch(
-        `/api/bookings`,
+        `/api/pms/bookings`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

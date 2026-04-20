@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -26,6 +28,22 @@ const SalesModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('pipeline');
+  const [detailItem, setDetailItem] = useState(null);
+  const [detailKind, setDetailKind] = useState('opportunity');
+
+  const openDetail = (kind, item) => {
+    setDetailKind(kind);
+    setDetailItem(item);
+  };
+  const sendProposalEmail = (opp) => {
+    const subject = encodeURIComponent(`Teklif: ${opp.name}`);
+    const body = encodeURIComponent(
+      `Sayin ${opp.contact},\n\n${opp.name} icin ${opp.rooms} oda x ${opp.nights} gece, tahmini deger $${opp.value.toLocaleString()}.\n\nGirisim tarihi: ${opp.arrival}\n\nDetayli teklifimizi ekte bulabilirsiniz.\n\nIyi gunler.`,
+    );
+    window.location.href = `mailto:${opp.email}?subject=${subject}&body=${body}`;
+  };
+  const notifyComingSoon = (label) =>
+    toast.info?.(`${label} ozelligi yakinda eklenecek.`) ?? toast(`${label} ozelligi yakinda eklenecek.`);
 
   const opportunities = [
     { 
@@ -183,7 +201,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">MICE, Corporate Contracts & Group Bookings</p>
           </div>
           <div className="flex space-x-2">
-            <Button onClick={() => alert('Create new opportunity')}>
+            <Button onClick={() => notifyComingSoon('Yeni firsat olusturma')}>
               <Plus className="w-4 h-4 mr-2" />
               New Opportunity
             </Button>
@@ -336,15 +354,15 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                     </div>
 
                     <div className="flex flex-col space-y-2 ml-4">
-                      <Button size="sm" onClick={() => alert('View full details')}>
+                      <Button size="sm" onClick={() => openDetail('opportunity', opp)}>
                         <FileText className="w-4 h-4 mr-1" />
                         Details
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => alert('Send proposal')}>
+                      <Button size="sm" variant="outline" onClick={() => sendProposalEmail(opp)}>
                         <Mail className="w-4 h-4 mr-1" />
                         Proposal
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => alert('Convert to booking')}>
+                      <Button size="sm" variant="outline" onClick={() => notifyComingSoon('Rezervasyona donusturme')}>
                         <CheckCircle className="w-4 h-4 mr-1" />
                         Convert
                       </Button>
@@ -456,11 +474,11 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                     </div>
 
                     <div className="flex flex-col space-y-2 ml-4">
-                      <Button size="sm" onClick={() => alert('View contract details')}>
+                      <Button size="sm" onClick={() => openDetail('contract', contract)}>
                         <FileText className="w-4 h-4 mr-1" />
                         Contract
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => alert('Usage report')}>
+                      <Button size="sm" variant="outline" onClick={() => notifyComingSoon('Kullanim raporu')}>
                         <TrendingUp className="w-4 h-4 mr-1" />
                         Report
                       </Button>
@@ -478,6 +496,32 @@ const SalesModule = ({ user, tenant, onLogout }) => {
           </div>
         )}
       </div>
+
+      <Dialog open={!!detailItem} onOpenChange={(o) => !o && setDetailItem(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {detailKind === 'opportunity' ? detailItem?.name : detailItem?.company}
+            </DialogTitle>
+            <DialogDescription>
+              {detailKind === 'opportunity' ? 'Firsat detaylari' : 'Kurumsal sozlesme detaylari'}
+            </DialogDescription>
+          </DialogHeader>
+          {detailItem && (
+            <div className="space-y-2 text-sm">
+              {Object.entries(detailItem).map(([k, v]) => (
+                <div key={k} className="flex justify-between border-b py-1">
+                  <span className="text-gray-500 capitalize">{k}</span>
+                  <span className="font-medium">{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailItem(null)}>Kapat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

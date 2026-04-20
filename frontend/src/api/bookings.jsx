@@ -44,11 +44,10 @@ async function _fetchJson(url, { method = "GET", token, body } = {}) {
 
 /**
  * List pending bookings.
- * Assumption: GET /api/bookings?status=pending
- * If your backend path differs, only change this one line.
+ * Backend route: GET /api/pms/bookings?status=pending
  */
 export async function listPendingBookings({ baseUrl = DEFAULT_BASE_URL, token } = {}) {
-  const url = _joinUrl(baseUrl, "/api/bookings?status=pending");
+  const url = _joinUrl(baseUrl, "/api/pms/bookings?status=pending");
   return _fetchJson(url, { method: "GET", token });
 }
 

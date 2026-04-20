@@ -234,6 +234,15 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
     # PMS Operations — Concierge, Banquet, KBS, KVKK, Guest Prefs, Room Features
     ("domains.pms.operations_router", "router", ["PMS / Operations"], None, None),
+    # Ops Telemetry — Operational events, webhook DLQ, channel health
+    ("routers.ops_events_router", "router", ["Ops Events & Telemetry"], None, None),
+    ("routers.ops_timeline_router", "router", ["Ops Timeline & Incidents"], None, None),
+    ("routers.early_warning_router", "router", ["Early Warning & Predictive"], None, None),
+    # Outbox / Import admin
+    ("routers.outbox_admin", "outbox_admin_router", ["Outbox Admin"], "/api", None),
+    ("routers.import_admin", "import_admin_router", ["Import Admin"], "/api", None),
+    # Room QR Requests — Per-room QR codes for guest service requests
+    ("routers.room_qr_requests", "router", ["Room QR Requests"], "/api", None),
 ]
 
 # Optional routers with special import paths
@@ -251,7 +260,10 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
         router = _safe_import(mod_path, attr)
         if router is not None:
             try:
-                app.include_router(router, tags=tags)
+                kwargs = {"tags": tags}
+                if prefix_override:
+                    kwargs["prefix"] = prefix_override
+                app.include_router(router, **kwargs)
                 logger.info(f"  ✅ {mod_path}")
             except Exception as e:
                 logger.info(f"  ❌ {mod_path}: {e}")

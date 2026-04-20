@@ -324,7 +324,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
                 </CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2" data-testid="hk-overdue-list">
-                    {hkBoard.overdue_alerts.map((a, i) => (
+                    {(hkBoard?.overdue_alerts || []).map((a, i) => (
                       <div key={i} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
                         {a.event_type?.replace(/_/g, ' ')} - {JSON.stringify(a.payload).slice(0, 80)}
                       </div>

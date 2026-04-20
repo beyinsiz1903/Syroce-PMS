@@ -75,7 +75,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
     today_checkins = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$regex': f'^{today}'}
+        'check_in': {'$gte': today, '$lt': f'{today}\uffff'}
     })
 
     # Total active guests
@@ -123,7 +123,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
 
     arrivals_today = await db.bookings.find(
         {"tenant_id": tenant_id, "status": {"$in": ["confirmed", "guaranteed"]},
-         "check_in": {"$regex": f"^{today}"}},
+         "check_in": {"$gte": today, "$lt": f"{today}\uffff"}},
         {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1}
     ).to_list(200)
 
@@ -220,7 +220,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     # 4) Today's departures with balance
     departures_with_balance = await db.bookings.find(
         {"tenant_id": tenant_id, "status": "checked_in",
-         "check_out": {"$regex": f"^{today}"},
+         "check_out": {"$gte": today, "$lt": f"{today}\uffff"},
          "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
         {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1}
     ).to_list(200)
@@ -250,7 +250,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     all_arrivals_count = len(arrivals_today)
     active_statuses = ["confirmed", "guaranteed", "checked_in"]
     departures_today = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$regex": f"^{today}"}}
+        {"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$gte": today, "$lt": f"{today}\uffff"}}
     )
     inhouse_count = await db.bookings.count_documents(
         {"tenant_id": tenant_id, "status": {"$in": active_statuses},

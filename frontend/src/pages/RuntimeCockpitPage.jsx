@@ -92,9 +92,9 @@ const EventRow = ({ event }) => {
 };
 
 /* ═══ Phase Progress Bar ═══ */
-const PhaseProgress = ({ phases, testId }) => (
+const PhaseProgress = ({ phases = [], testId }) => (
   <div data-testid={testId} className="flex items-center gap-1">
-    {phases.map((p, i) => (
+    {(phases || []).map((p, i) => (
       <div key={p.phase} className="flex items-center gap-1">
         <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
           p.status === 'completed' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
