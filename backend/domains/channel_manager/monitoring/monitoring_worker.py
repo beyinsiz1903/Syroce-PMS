@@ -11,6 +11,7 @@ Background worker running every 60 seconds:
 """
 import asyncio
 import logging
+import os as _os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,7 +24,6 @@ logger = logging.getLogger("monitoring.worker")
 
 COLL_METRICS_HISTORY = "monitoring_metrics_history"
 
-import os as _os
 _monitoring_state = {
     "running": False,
     "last_run": None,

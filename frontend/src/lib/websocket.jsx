@@ -52,10 +52,6 @@ class WebSocketManager {
     }
   }
 
-  isConnected() {
-    return !!this.socket?.connected && !this.disabled;
-  }
-
   _getNoopSocket() {
     // No-op socket so callers don't crash; real-time features are simply inactive.
     return {
