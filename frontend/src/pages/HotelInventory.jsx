@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen, X,
+  ArrowDownCircle, ArrowUpCircle, Edit3,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +29,45 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
   const [newItem, setNewItem] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [movement, setMovement] = useState(null); // { item, type, quantity, reference, notes }
+
+  const openMovement = (item, type) => {
+    setMovement({
+      item,
+      type,
+      quantity: type === 'adjustment' ? (item.quantity || 0) : 1,
+      reference: '',
+      notes: '',
+    });
+  };
+
+  const saveMovement = async () => {
+    const qty = Number(movement.quantity);
+    if (!qty || qty < 0) { toast.error('Geçerli bir miktar girin'); return; }
+    if (movement.type === 'out' && qty > (movement.item.quantity || 0)) {
+      toast.error(`Stokta sadece ${movement.item.quantity} ${movement.item.unit} var`); return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/accounting/inventory/movement', null, {
+        params: {
+          item_id: movement.item.id,
+          movement_type: movement.type,
+          quantity: qty,
+          unit_cost: movement.item.unit_cost || 0,
+          reference: movement.reference || undefined,
+          notes: movement.notes || undefined,
+        },
+      });
+      const labels = { in: 'eklendi', out: 'düşürüldü', adjustment: 'güncellendi' };
+      toast.success(`${movement.item.name} stoğu ${labels[movement.type]}`);
+      setMovement(null);
+      loadInventory();
+      loadAlerts();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Stok hareketi kaydedilemedi');
+    } finally { setSaving(false); }
+  };
 
   const saveNewItem = async () => {
     if (!newItem.name?.trim() || newItem.name.trim().length < 2) {
@@ -290,10 +330,36 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     <span className="font-semibold">₺{(item.quantity * item.unit_cost).toFixed(2)}</span>
                                   </div>
                                 </div>
+                                <div className="flex gap-1 mt-3">
+                                  <Button
+                                    size="sm" variant="outline"
+                                    className="flex-1 text-xs px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                    onClick={() => openMovement(item, 'out')}
+                                    title="Stoktan düş (kullanım/tüketim)"
+                                  >
+                                    <ArrowDownCircle className="w-3.5 h-3.5 mr-1" /> Düş
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline"
+                                    className="flex-1 text-xs px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => openMovement(item, 'in')}
+                                    title="Stoğa ekle (manuel giriş)"
+                                  >
+                                    <ArrowUpCircle className="w-3.5 h-3.5 mr-1" /> Ekle
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline"
+                                    className="text-xs px-2"
+                                    onClick={() => openMovement(item, 'adjustment')}
+                                    title="Sayım sonucu düzeltme"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
                                 {item.quantity <= item.reorder_level && (
                                   <Button
                                     size="sm"
-                                    className="w-full mt-3 bg-blue-600 hover:bg-blue-700"
+                                    className="w-full mt-2 bg-blue-600 hover:bg-blue-700"
                                     onClick={() => createPRForItem(item, Math.max(1, item.reorder_level * 2 - item.quantity))}
                                   >
                                     <Plus className="w-3.5 h-3.5 mr-1" />
@@ -459,6 +525,95 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* ── Stok Hareketi Modal ────────────────────────── */}
+      {movement && (() => {
+        const cfg = {
+          out:        { title: 'Stoktan Düş',     desc: 'Tüketim, kullanım veya kayıp girişi.', headerCls: 'bg-orange-50',  iconCls: 'text-orange-600',  icon: ArrowDownCircle },
+          in:         { title: 'Stoğa Ekle',      desc: 'Manuel giriş (mal kabul dışında).',    headerCls: 'bg-emerald-50', iconCls: 'text-emerald-600', icon: ArrowUpCircle },
+          adjustment: { title: 'Sayım Düzeltmesi', desc: 'Fiziksel sayım sonucu yeni miktarı girin.', headerCls: 'bg-slate-50',  iconCls: 'text-slate-600',   icon: Edit3 },
+        }[movement.type];
+        const Ic = cfg.icon;
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+               onClick={() => !saving && setMovement(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className={`border-b p-4 flex items-center justify-between ${cfg.headerCls}`}>
+                <div className="flex items-center gap-3">
+                  <Ic className={`w-6 h-6 ${cfg.iconCls}`} />
+                  <div>
+                    <h2 className="font-bold">{cfg.title}</h2>
+                    <p className="text-xs text-gray-600">{movement.item.name} · Mevcut: {movement.item.quantity} {movement.item.unit}</p>
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setMovement(null)} disabled={saving}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="p-5 space-y-3">
+                <p className="text-xs text-gray-600">{cfg.desc}</p>
+                <div>
+                  <Label>
+                    {movement.type === 'adjustment' ? `Yeni Miktar (${movement.item.unit})` : `Miktar (${movement.item.unit})`}
+                  </Label>
+                  <Input type="number" min="0" autoFocus value={movement.quantity}
+                    onChange={(e) => setMovement({ ...movement, quantity: e.target.value })} />
+                  {movement.type === 'out' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Kalan: {Math.max(0, (movement.item.quantity || 0) - (Number(movement.quantity) || 0))} {movement.item.unit}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Neden / Referans</Label>
+                  <select className="w-full border rounded-md p-2 text-sm"
+                    value={movement.reference}
+                    onChange={(e) => setMovement({ ...movement, reference: e.target.value })}>
+                    <option value="">— Seç —</option>
+                    {movement.type === 'out' && <>
+                      <option value="housekeeping">Housekeeping kullanımı</option>
+                      <option value="guest_consumption">Misafir tüketimi</option>
+                      <option value="fnb">F&B / Mutfak</option>
+                      <option value="maintenance">Bakım/Onarım</option>
+                      <option value="damage">Kırık/Bozuk</option>
+                      <option value="lost">Kayıp</option>
+                      <option value="transfer">Departman transferi</option>
+                    </>}
+                    {movement.type === 'in' && <>
+                      <option value="manual_in">Manuel giriş</option>
+                      <option value="return">İade</option>
+                      <option value="found">Bulunan ürün</option>
+                      <option value="transfer">Departman transferi</option>
+                    </>}
+                    {movement.type === 'adjustment' && <>
+                      <option value="stock_count">Sayım</option>
+                      <option value="correction">Hata düzeltme</option>
+                    </>}
+                  </select>
+                </div>
+                <div>
+                  <Label>Açıklama</Label>
+                  <Input value={movement.notes} placeholder="Örn: 5 oda hazırlığı için"
+                    onChange={(e) => setMovement({ ...movement, notes: e.target.value })} />
+                </div>
+              </div>
+              <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+                <Button variant="outline" onClick={() => setMovement(null)} disabled={saving}>Vazgeç</Button>
+                <Button
+                  className={
+                    movement.type === 'out' ? 'bg-orange-600 hover:bg-orange-700' :
+                    movement.type === 'in'  ? 'bg-emerald-600 hover:bg-emerald-700' :
+                                              'bg-blue-600 hover:bg-blue-700'
+                  }
+                  onClick={saveMovement} disabled={saving}>
+                  {saving ? 'Kaydediliyor…' : 'Onayla'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Yeni Ürün Modal ────────────────────────────── */}
       {newItem && (
