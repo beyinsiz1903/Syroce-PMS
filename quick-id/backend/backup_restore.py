@@ -13,7 +13,7 @@ import json
 import os
 
 
-BACKUP_DIR = "/app/backups"
+BACKUP_DIR = os.environ.get("QUICKID_BACKUP_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backups"))
 
 # Yedeklenecek koleksiyonlar
 BACKUP_COLLECTIONS = [

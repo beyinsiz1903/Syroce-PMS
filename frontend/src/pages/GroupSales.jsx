@@ -540,12 +540,86 @@ const GroupSales = () => {
                     <CardTitle>Master Folio Özeti</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-center py-8">
-                      <DollarSign className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600">
-                        Master folio özelliği yakında aktif olacak
-                      </p>
-                    </div>
+                    {(() => {
+                      const bookings = groupDetails.bookings || [];
+                      const total = bookings.reduce((s, b) => s + Number(b.total_amount || 0), 0);
+                      const nightsTotal = bookings.reduce((s, b) => {
+                        const ci = new Date(b.check_in);
+                        const co = new Date(b.check_out);
+                        const n = Math.max(0, Math.round((co - ci) / 86400000));
+                        return s + n;
+                      }, 0);
+                      const avgPerBooking = bookings.length > 0 ? total / bookings.length : 0;
+                      const adr = nightsTotal > 0 ? total / nightsTotal : 0;
+                      const totalRooms = groupDetails.pickup?.total_rooms || 0;
+                      const pickedUp = groupDetails.pickup?.rooms_picked_up || 0;
+                      return (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-purple-50 border border-purple-100 rounded p-3">
+                              <div className="text-xs text-purple-700">Toplam Folio Tutarı</div>
+                              <div className="text-2xl font-bold text-purple-900">€{total.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 rounded p-3">
+                              <div className="text-xs text-blue-700">Toplam Geceleme</div>
+                              <div className="text-2xl font-bold text-blue-900">{nightsTotal}</div>
+                            </div>
+                            <div className="bg-green-50 border border-green-100 rounded p-3">
+                              <div className="text-xs text-green-700">Ortalama Gecelik (ADR)</div>
+                              <div className="text-2xl font-bold text-green-900">€{adr.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-orange-50 border border-orange-100 rounded p-3">
+                              <div className="text-xs text-orange-700">Pickup / Toplam Oda</div>
+                              <div className="text-2xl font-bold text-orange-900">{pickedUp} / {totalRooms}</div>
+                            </div>
+                          </div>
+
+                          <div className="border rounded">
+                            <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 grid grid-cols-12 gap-2">
+                              <div className="col-span-1">#</div>
+                              <div className="col-span-4">Misafir</div>
+                              <div className="col-span-3">Tarih</div>
+                              <div className="col-span-2 text-right">Gece</div>
+                              <div className="col-span-2 text-right">Tutar</div>
+                            </div>
+                            {bookings.length === 0 ? (
+                              <div className="p-6 text-center text-gray-400 text-sm">
+                                Henüz rezervasyon yok
+                              </div>
+                            ) : (
+                              bookings.map((b, idx) => {
+                                const ci = new Date(b.check_in);
+                                const co = new Date(b.check_out);
+                                const n = Math.max(0, Math.round((co - ci) / 86400000));
+                                return (
+                                  <div key={b.id} className="px-3 py-2 text-sm border-t grid grid-cols-12 gap-2 hover:bg-gray-50">
+                                    <div className="col-span-1 text-gray-500">{idx + 1}</div>
+                                    <div className="col-span-4 font-mono text-xs">{(b.guest_id || "").slice(0, 12)}</div>
+                                    <div className="col-span-3 text-xs text-gray-600">
+                                      {ci.toLocaleDateString("tr-TR")} → {co.toLocaleDateString("tr-TR")}
+                                    </div>
+                                    <div className="col-span-2 text-right">{n}</div>
+                                    <div className="col-span-2 text-right font-medium">€{Number(b.total_amount || 0).toFixed(2)}</div>
+                                  </div>
+                                );
+                              })
+                            )}
+                            {bookings.length > 0 && (
+                              <div className="px-3 py-2 text-sm border-t bg-purple-50 grid grid-cols-12 gap-2 font-bold">
+                                <div className="col-span-8 text-right">TOPLAM</div>
+                                <div className="col-span-2 text-right">{nightsTotal}</div>
+                                <div className="col-span-2 text-right text-purple-700">€{total.toFixed(2)}</div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-gray-400">
+                            * Master folio: Gruba bağlı tüm rezervasyonların konsolide finansal özeti.
+                            Ödeme tahsilatı ana otelin folio modülünden takip edilir.
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
               </TabsContent>

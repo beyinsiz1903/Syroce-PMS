@@ -20,6 +20,7 @@ import Layout from "@/components/Layout";
 const PAYMENT_LABELS = {
   cash_on_delivery: "Kapıda Ödeme",
   bank_transfer: "Havale / EFT",
+  credit_card: "Kredi Kartı",
 };
 
 const STATUS_LABELS = {
@@ -516,15 +517,19 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                     <Banknote className="w-4 h-4 text-blue-600" />
                     <span className="text-sm">Havale / EFT</span>
                   </label>
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full flex items-center gap-2 p-2 border rounded bg-gray-50 cursor-not-allowed opacity-60"
-                    title="Yakında: iyzico Marketplace V2"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span className="text-sm">Kredi Kartı (Yakında)</span>
-                  </button>
+                  <label className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      name="pay"
+                      checked={checkout.payment_method === "credit_card"}
+                      onChange={() =>
+                        setCheckout({ ...checkout, payment_method: "credit_card" })
+                      }
+                    />
+                    <CreditCard className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm">Kredi Kartı</span>
+                    <span className="text-xs text-gray-400 ml-auto">3D Secure</span>
+                  </label>
                 </div>
               </div>
 

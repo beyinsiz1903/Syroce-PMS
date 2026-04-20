@@ -16,7 +16,7 @@ ProductCategory = Literal[
     "kirtasiye",      # kalem, defter, ofis
     "diger",
 ]
-PaymentMethod = Literal["cash_on_delivery", "bank_transfer"]
+PaymentMethod = Literal["cash_on_delivery", "bank_transfer", "credit_card"]
 OrderStatus = Literal[
     "pending",        # otel oluşturdu, toptancı onayı bekliyor
     "confirmed",      # toptancı onayladı
