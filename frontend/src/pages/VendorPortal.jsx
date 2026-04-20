@@ -78,8 +78,8 @@ function VendorAuth({ onAuthed }) {
     try {
       const url =
         mode === "login"
-          ? "/api/supplies-market/vendor/login"
-          : "/api/supplies-market/vendor/register";
+          ? "/supplies-market/vendor/login"
+          : "/supplies-market/vendor/register";
       const payload =
         mode === "login"
           ? { email: form.email, password: form.password }
@@ -244,7 +244,7 @@ function VendorDashboard({ vendor, onLogout }) {
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const { data } = await vendorApi.get("/api/supplies-market/vendor/products");
+      const { data } = await vendorApi.get("/supplies-market/vendor/products");
       setProducts(data || []);
     } catch (e) {
       toast.error("Ürünler yüklenemedi");
@@ -256,7 +256,7 @@ function VendorDashboard({ vendor, onLogout }) {
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const { data } = await vendorApi.get("/api/supplies-market/vendor/orders");
+      const { data } = await vendorApi.get("/supplies-market/vendor/orders");
       setOrders(data || []);
     } catch (e) {
       toast.error("Siparişler yüklenemedi");
@@ -273,10 +273,10 @@ function VendorDashboard({ vendor, onLogout }) {
   const saveProduct = async (form) => {
     try {
       if (form.id) {
-        await vendorApi.put(`/api/supplies-market/vendor/products/${form.id}`, form);
+        await vendorApi.put(`/supplies-market/vendor/products/${form.id}`, form);
         toast.success("Ürün güncellendi");
       } else {
-        await vendorApi.post("/api/supplies-market/vendor/products", form);
+        await vendorApi.post("/supplies-market/vendor/products", form);
         toast.success("Ürün eklendi");
       }
       setEditing(null);
@@ -289,7 +289,7 @@ function VendorDashboard({ vendor, onLogout }) {
   const deleteProduct = async (id) => {
     if (!confirm("Ürünü silmek istediğinize emin misiniz?")) return;
     try {
-      await vendorApi.delete(`/api/supplies-market/vendor/products/${id}`);
+      await vendorApi.delete(`/supplies-market/vendor/products/${id}`);
       toast.success("Silindi");
       loadProducts();
     } catch (e) {
@@ -299,7 +299,7 @@ function VendorDashboard({ vendor, onLogout }) {
 
   const confirmOrder = async (id) => {
     try {
-      await vendorApi.post(`/api/supplies-market/vendor/orders/${id}/confirm`);
+      await vendorApi.post(`/supplies-market/vendor/orders/${id}/confirm`);
       toast.success("Sipariş onaylandı");
       loadOrders();
     } catch (e) {
@@ -310,7 +310,7 @@ function VendorDashboard({ vendor, onLogout }) {
   const cancelOrder = async (id) => {
     if (!confirm("Sipariş iptal edilsin mi? Stok iade edilecek.")) return;
     try {
-      await vendorApi.post(`/api/supplies-market/vendor/orders/${id}/cancel`);
+      await vendorApi.post(`/supplies-market/vendor/orders/${id}/cancel`);
       toast.success("Sipariş iptal edildi");
       loadOrders();
     } catch (e) {
@@ -322,7 +322,7 @@ function VendorDashboard({ vendor, onLogout }) {
     e.preventDefault();
     try {
       await vendorApi.post(
-        `/api/supplies-market/vendor/orders/${shipModal.id}/ship`,
+        `/supplies-market/vendor/orders/${shipModal.id}/ship`,
         shipForm,
       );
       toast.success("Kargo bilgisi kaydedildi");
@@ -778,7 +778,7 @@ export default function VendorPortal() {
       return;
     }
     vendorApi
-      .get("/api/supplies-market/vendor/me")
+      .get("/supplies-market/vendor/me")
       .then(({ data }) => setVendor(data))
       .catch(() => {
         localStorage.removeItem(VENDOR_TOKEN_KEY);
