@@ -8,8 +8,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from cache_manager import cached
+from core.database import db
+from core.security import get_current_user
 from domains.ai.service import get_ai_service
-from server import User, db, get_current_user
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +187,7 @@ async def predict_occupancy(
     Get AI-powered occupancy predictions
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         # Use count queries instead of fetching full documents
         total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
@@ -225,7 +227,7 @@ async def analyze_guest_patterns(
     Analyze check-in/check-out patterns
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         bookings = await db.bookings.find({
             "tenant_id": current_user.tenant_id
@@ -303,7 +305,7 @@ async def detect_invoice_anomalies(
     Detect anomalies in invoices
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         invoices = await db.accounting_invoices.find({
             "tenant_id": current_user.tenant_id
@@ -333,7 +335,7 @@ async def segment_guests(
     AI-powered guest segmentation for loyalty programs
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         guests = await db.guests.find({
             "tenant_id": current_user.tenant_id
@@ -360,7 +362,7 @@ async def predict_churn_risk(
     Predict churn risk for a specific guest
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         # Get guest data
         guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id})
@@ -407,7 +409,7 @@ async def get_product_recommendations(
     AI-powered product recommendations
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         products = await db.marketplace_products.find({
             "tenant_id": current_user.tenant_id
@@ -439,7 +441,7 @@ async def analyze_revenue(
     AI-powered revenue trend analysis
     """
     try:
-        from server import db
+        pass  # db imported at module level
 
         # Get invoice data
         invoices = await db.accounting_invoices.find({
