@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { preloadRoute } from '@/routes/preload';
@@ -103,6 +103,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
 
   const isSuperAdmin = user?.role === 'super_admin';
+  const navRef = useRef(null);
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
   const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);
@@ -116,6 +117,16 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const tierConfig = TIER_CONFIG[currentTier] || TIER_CONFIG.basic;
   const TierIcon = tierConfig.icon;
+
+  // Auto-scroll active nav button into view when route changes
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const active = nav.querySelector('button.bg-blue-600');
+    if (active && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [location.pathname, currentModule]);
 
   const getUpgradeTier = (itemTier) => itemTier === 'professional' ? 'professional' : 'enterprise';
 
@@ -297,7 +308,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </div>
 
             {/* Desktop Navigation - scrollable */}
-            <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
+            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
               {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
