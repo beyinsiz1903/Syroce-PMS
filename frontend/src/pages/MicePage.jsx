@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import SalesPipelineTab from '@/components/mice/SalesPipelineTab';
+import PackagesTab from '@/components/mice/PackagesTab';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
   Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
@@ -274,6 +276,8 @@ const MicePage = () => {
           <TabsTrigger value="spaces">Mekanlar ({spaces.length})</TabsTrigger>
           <TabsTrigger value="menus">Menüler & Paketler ({menus.length})</TabsTrigger>
           <TabsTrigger value="resources">Envanter ({resources.length})</TabsTrigger>
+          <TabsTrigger value="pipeline">Satış Pipeline</TabsTrigger>
+          <TabsTrigger value="packages">Paketler</TabsTrigger>
         </TabsList>
 
         <TabsContent value="events">
@@ -439,6 +443,14 @@ const MicePage = () => {
 
         <TabsContent value="resources">
           <ResourcesView resources={resources} reload={load} />
+        </TabsContent>
+
+        <TabsContent value="pipeline">
+          <SalesPipelineTab accounts={accounts} />
+        </TabsContent>
+
+        <TabsContent value="packages">
+          <PackagesTab />
         </TabsContent>
       </Tabs>
 

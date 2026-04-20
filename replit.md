@@ -2128,3 +2128,42 @@ BookingCache, GuestCache, ReportCache) hâlâ guard'sız `delete_pattern`
    reddediliyor (split-skew bypass kapalı).
 
 **Final test sayısı**: 17 PASS, 22 subtest. Sprint 32 fully closed.
+
+## Sprint 33 — Sales & Catering + Cross-Property Loyalty Network (20 Apr 2026)
+
+OPERA / Marriott-Bonvoy parite kapatma çalışması.
+
+### Yeni Backend Modülleri
+- **`backend/routers/sales_catering.py`** (`/api/mice/sales/*`) — Opportunity
+  pipeline (lead→qualified→proposal→contract→won/lost), activity log
+  (call/email/meeting/site_visit), pipeline summary (count + total + olasılık-
+  ağırlıklı + win rate), wedding/conference/corporate paketleri (base+per_pax+
+  items) ve quote endpoint. Mutating endpointler `require_mice_ops` /
+  `require_catalog` ile korunuyor.
+- **`backend/routers/cross_property.py`** (`/api/cross-property/guests/*`) —
+  Chain genelinde guest arama, birleşik profil (lifetime stays/nights/spend/
+  properties), sadakat özeti (multi-property guests), profile merge.
+  - Chain üyeliği `tenants.chain_id` ile çözülüyor; super_admin tüm tenant'ları
+    görür. Chain field yoksa kendi tenant'ına düşer.
+  - Tenant guard'ı bypass etmek için `get_system_db()` kullanıyor; her
+    sorguda `_chain_tenant_ids()` ile manuel chain scoping yapıyor.
+  - Merge: SUPER_ADMIN/ADMIN/SUPERVISOR rol gate, immutable `_id` ile pin,
+    `dup_aliases = {id, guest_id, payload.target_id}` üzerinde `$in` ile
+    repoint, repoint=0 ama linked record varsa **409** safety guard.
+
+### Yeni Frontend
+- **`frontend/src/components/mice/SalesPipelineTab.jsx`** — pipeline kartları,
+  fırsat tablosu, oluştur/düzenle/sil/aşama-geçişi/aktivite dialogları.
+- **`frontend/src/components/mice/PackagesTab.jsx`** — paket listesi/CRUD/
+  quote (pax girince anlık fiyat hesabı).
+- **`frontend/src/pages/MicePage.jsx`** — 2 yeni sekme: Satış Pipeline + Paketler.
+- `CrossPropertyGuests.jsx` (mevcut) zaten yeni endpoint'lere bağlı.
+
+### Yeni Koleksiyonlar
+`mice_opportunities`, `mice_opportunity_activities`, `mice_packages` —
+indexler `_ensure_indexes()` ile lazy oluşturuluyor.
+
+### Architect İncelemesi
+3 round (HIGH bulgular sırasıyla giderildi): merge tenant scope, sales authz,
+merge rol gate, merge id/guest_id alias kanonikleştirmesi + safety guard.
+**Final verdict: PASS**.
