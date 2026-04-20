@@ -99,12 +99,6 @@ function VendorAuth({ onAuthed }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 relative">
-      <a
-        href="/"
-        className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-blue-600 bg-white/80 hover:bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200 transition"
-      >
-        ← Ana Sayfa
-      </a>
       <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
         <div className="text-center mb-6">
           <Store className="w-12 h-12 mx-auto text-blue-600 mb-2" />

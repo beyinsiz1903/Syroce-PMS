@@ -252,31 +252,6 @@ const AuthPage = ({ onLogin }) => {
       padding: isMobile ? '10px' : '20px',
       position: 'relative'
     }}>
-      <a
-        href="/"
-        style={{
-          position: 'absolute',
-          top: '16px',
-          left: '16px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '14px',
-          color: 'white',
-          background: 'rgba(255,255,255,0.15)',
-          padding: '8px 14px',
-          borderRadius: '999px',
-          textDecoration: 'none',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255,255,255,0.25)',
-          fontWeight: 500,
-          zIndex: 10,
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
-      >
-        ← Ana Sayfa
-      </a>
       <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px' }}>
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
@@ -431,7 +406,7 @@ const AuthPage = ({ onLogin }) => {
                             onChange={(e) => setHotelLoginData({...hotelLoginData, password: e.target.value})}
                             required
                             data-testid="hotel-login-password"
-                            placeholder={isMobile ? "••••••••" : ""}
+                            placeholder="••••••••"
                             style={isMobile ? { fontSize: '16px' } : {}}
                           />
                         </div>
@@ -714,7 +689,7 @@ const AuthPage = ({ onLogin }) => {
                           onChange={(e) => setGuestLoginData({...guestLoginData, email: e.target.value})}
                           required
                           data-testid="guest-login-email"
-                          placeholder={isMobile ? "your@email.com" : ""}
+                          placeholder="ornek@hotel.com"
                           style={isMobile ? { fontSize: '16px' } : {}}
                         />
                       </div>
@@ -726,7 +701,7 @@ const AuthPage = ({ onLogin }) => {
                           onChange={(e) => setGuestLoginData({...guestLoginData, password: e.target.value})}
                           required
                           data-testid="guest-login-password"
-                          placeholder={isMobile ? "••••••••" : ""}
+                          placeholder="••••••••"
                           style={isMobile ? { fontSize: '16px' } : {}}
                         />
                       </div>
