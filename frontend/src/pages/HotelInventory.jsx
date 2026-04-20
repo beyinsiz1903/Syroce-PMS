@@ -9,13 +9,53 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Package, AlertTriangle, TrendingDown, ShoppingCart,
-  RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen,
+  RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen, X,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
+
+const EMPTY_ITEM = {
+  name: '', sku: '', category: 'Oda Ürünleri', unit: 'adet',
+  quantity: 0, unit_cost: 0, reorder_level: 0, location: '', notes: '',
+};
+
+const CATEGORIES = ['Oda Ürünleri', 'Banyo Ürünleri', 'Yatak Ürünleri', 'Temizlik', 'F&B', 'Kırtasiye', 'Diğer'];
+const UNITS = ['adet', 'kg', 'gr', 'lt', 'ml', 'paket', 'kutu', 'metre'];
 
 const HotelInventory = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [newItem, setNewItem] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const saveNewItem = async () => {
+    if (!newItem.name?.trim() || newItem.name.trim().length < 2) {
+      toast.error('Ürün adı en az 2 karakter olmalı'); return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/accounting/inventory', null, {
+        params: {
+          name: newItem.name.trim(),
+          category: newItem.category,
+          unit: newItem.unit,
+          quantity: Number(newItem.quantity) || 0,
+          unit_cost: Number(newItem.unit_cost) || 0,
+          reorder_level: Number(newItem.reorder_level) || 0,
+          sku: newItem.sku || undefined,
+          location: newItem.location || undefined,
+          notes: newItem.notes || undefined,
+        },
+      });
+      toast.success(`${newItem.name} eklendi`);
+      setNewItem(null);
+      loadInventory();
+      loadAlerts();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Ürün eklenemedi');
+    } finally { setSaving(false); }
+  };
 
   const createPRForItem = (item, suggestedQty) => {
     navigate('/app/procurement', {
@@ -110,18 +150,22 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
             <h1 className="text-3xl font-bold">Otel Ekipman Stok Yönetimi</h1>
             <p className="text-gray-600 mt-1">Oda malzemeleri ve ekipman takibi</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={() => navigate('/app/stock-rehber')}>
               <BookOpen className="w-4 h-4 mr-2" />
               Nasıl Çalışır?
             </Button>
-            <Button onClick={() => {
+            <Button variant="outline" onClick={() => {
               loadInventory();
               loadAlerts();
               toast.success('Veriler yenilendi');
             }}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Yenile
+            </Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setNewItem({ ...EMPTY_ITEM })}>
+              <Plus className="w-4 h-4 mr-2" />
+              Yeni Ürün
             </Button>
           </div>
         </div>
@@ -415,6 +459,91 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* ── Yeni Ürün Modal ────────────────────────────── */}
+      {newItem && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+             onClick={() => !saving && setNewItem(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="border-b p-4 flex items-center justify-between sticky top-0 bg-white">
+              <div>
+                <h2 className="font-bold text-lg">Yeni Ürün Ekle</h2>
+                <p className="text-xs text-gray-500">Stoğunuza yeni bir kalem ekleyin.</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setNewItem(null)} disabled={saving}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <Label>Ürün Adı *</Label>
+                  <Input value={newItem.name} autoFocus
+                    placeholder="Örn: Şampuan, Havlu, Çay…"
+                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Kategori</Label>
+                  <select className="w-full border rounded-md p-2 text-sm"
+                    value={newItem.category}
+                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>SKU / Kod</Label>
+                  <Input value={newItem.sku} placeholder="İsteğe bağlı"
+                    onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Birim</Label>
+                  <select className="w-full border rounded-md p-2 text-sm"
+                    value={newItem.unit}
+                    onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}>
+                    {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Mevcut Miktar</Label>
+                  <Input type="number" min="0" value={newItem.quantity}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Birim Fiyat (₺)</Label>
+                  <Input type="number" min="0" step="0.01" value={newItem.unit_cost}
+                    onChange={(e) => setNewItem({ ...newItem, unit_cost: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Kritik Seviye (Min. Stok)</Label>
+                  <Input type="number" min="0" value={newItem.reorder_level}
+                    onChange={(e) => setNewItem({ ...newItem, reorder_level: e.target.value })} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Konum</Label>
+                  <Input value={newItem.location} placeholder="Örn: Depo A, Raf 3"
+                    onChange={(e) => setNewItem({ ...newItem, location: e.target.value })} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Notlar</Label>
+                  <Input value={newItem.notes}
+                    onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })} />
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-900">
+                <strong>Kritik seviye nedir?</strong> Bu kalemin altına düşünce sistem uyarı verir
+                ve "Talep Oluştur" butonu görünür. Sıkça biten ürünleriniz için doğru bir değer girmeniz önemlidir.
+              </div>
+            </div>
+            <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+              <Button variant="outline" onClick={() => setNewItem(null)} disabled={saving}>Vazgeç</Button>
+              <Button className="bg-blue-600 hover:bg-blue-700" onClick={saveNewItem} disabled={saving}>
+                {saving ? 'Kaydediliyor…' : 'Ürünü Ekle'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
