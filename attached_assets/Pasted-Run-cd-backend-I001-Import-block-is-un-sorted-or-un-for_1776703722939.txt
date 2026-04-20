@@ -1,0 +1,1749 @@
+Run cd backend
+I001 [*] Import block is un-sorted or un-formatted
+  --> domains/accounting/endpoints.py:2:1
+   |
+ 1 |   # Accounting Endpoints to be integrated into server.py
+ 2 | / from fastapi import APIRouter, HTTPException, Depends
+ 3 | | from datetime import datetime, timezone, timedelta
+ 4 | | from typing import Optional, List, Dict, Any
+ 5 | | import uuid
+ 6 | |
+ 7 | | from core.database import db
+ 8 | | from core.security import get_current_user
+ 9 | | from models.schemas import User
+   | |_______________________________^
+10 |
+11 |   api_router = APIRouter(prefix="/api")
+   |
+help: Organize imports
+
+F401 [*] `fastapi.HTTPException` imported but unused
+ --> domains/accounting/endpoints.py:2:32
+  |
+1 | # Accounting Endpoints to be integrated into server.py
+2 | from fastapi import APIRouter, HTTPException, Depends
+  |                                ^^^^^^^^^^^^^
+3 | from datetime import datetime, timezone, timedelta
+4 | from typing import Optional, List, Dict, Any
+  |
+help: Remove unused import: `fastapi.HTTPException`
+
+F401 [*] `datetime.timedelta` imported but unused
+ --> domains/accounting/endpoints.py:3:42
+  |
+1 | # Accounting Endpoints to be integrated into server.py
+2 | from fastapi import APIRouter, HTTPException, Depends
+3 | from datetime import datetime, timezone, timedelta
+  |                                          ^^^^^^^^^
+4 | from typing import Optional, List, Dict, Any
+5 | import uuid
+  |
+help: Remove unused import: `datetime.timedelta`
+
+F401 [*] `uuid` imported but unused
+ --> domains/accounting/endpoints.py:5:8
+  |
+3 | from datetime import datetime, timezone, timedelta
+4 | from typing import Optional, List, Dict, Any
+5 | import uuid
+  |        ^^^^
+6 |
+7 | from core.database import db
+  |
+help: Remove unused import: `uuid`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:20:17
+   |
+18 | async def create_supplier(
+19 |     name: str,
+20 |     tax_office: Optional[str] = None,
+   |                 ^^^^^^^^^^^^^
+21 |     tax_number: Optional[str] = None,
+22 |     email: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:21:17
+   |
+19 |     name: str,
+20 |     tax_office: Optional[str] = None,
+21 |     tax_number: Optional[str] = None,
+   |                 ^^^^^^^^^^^^^
+22 |     email: Optional[str] = None,
+23 |     phone: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:22:12
+   |
+20 |     tax_office: Optional[str] = None,
+21 |     tax_number: Optional[str] = None,
+22 |     email: Optional[str] = None,
+   |            ^^^^^^^^^^^^^
+23 |     phone: Optional[str] = None,
+24 |     address: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:23:12
+   |
+21 |     tax_number: Optional[str] = None,
+22 |     email: Optional[str] = None,
+23 |     phone: Optional[str] = None,
+   |            ^^^^^^^^^^^^^
+24 |     address: Optional[str] = None,
+25 |     category: str = "general",
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:24:14
+   |
+22 |     email: Optional[str] = None,
+23 |     phone: Optional[str] = None,
+24 |     address: Optional[str] = None,
+   |              ^^^^^^^^^^^^^
+25 |     category: str = "general",
+26 |     current_user: User = Depends(get_current_user)
+   |
+help: Convert to `X | None`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> domains/accounting/endpoints.py:50:54
+   |
+49 | @api_router.put("/accounting/suppliers/{supplier_id}")
+50 | async def update_supplier(supplier_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+   |                                                      ^^^^
+51 |     await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+52 |     supplier = await db.suppliers.find_one({'id': supplier_id}, {'_id': 0})
+   |
+help: Replace with `dict`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/endpoints.py:62:11
+   |
+60 |     bank_name: str,
+61 |     account_number: str,
+62 |     iban: Optional[str] = None,
+   |           ^^^^^^^^^^^^^
+63 |     currency: str = "USD",
+64 |     balance: float = 0.0,
+   |
+help: Convert to `X | None`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> domains/accounting/endpoints.py:88:57
+   |
+87 | @api_router.put("/accounting/bank-accounts/{account_id}")
+88 | async def update_bank_account(account_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+   |                                                         ^^^^
+89 |     await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+90 |     account = await db.bank_accounts.find_one({'id': account_id}, {'_id': 0})
+   |
+help: Replace with `dict`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:102:18
+    |
+100 |     vat_rate: float,
+101 |     date: str,
+102 |     supplier_id: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+103 |     payment_method: Optional[str] = None,
+104 |     receipt_url: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:103:21
+    |
+101 |     date: str,
+102 |     supplier_id: Optional[str] = None,
+103 |     payment_method: Optional[str] = None,
+    |                     ^^^^^^^^^^^^^
+104 |     receipt_url: Optional[str] = None,
+105 |     notes: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:104:18
+    |
+102 |     supplier_id: Optional[str] = None,
+103 |     payment_method: Optional[str] = None,
+104 |     receipt_url: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+105 |     notes: Optional[str] = None,
+106 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:105:12
+    |
+103 |     payment_method: Optional[str] = None,
+104 |     receipt_url: Optional[str] = None,
+105 |     notes: Optional[str] = None,
+    |            ^^^^^^^^^^^^^
+106 |     current_user: User = Depends(get_current_user)
+107 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:109:1
+    |
+107 | ):
+108 |     from accounting_models import Expense
+109 |     
+    | ^^^^
+110 |     count = await db.expenses.count_documents({'tenant_id': current_user.tenant_id})
+111 |     expense_number = f"EXP-{count + 1:05d}"
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:112:1
+    |
+110 |     count = await db.expenses.count_documents({'tenant_id': current_user.tenant_id})
+111 |     expense_number = f"EXP-{count + 1:05d}"
+112 |     
+    | ^^^^
+113 |     vat_amount = amount * (vat_rate / 100)
+114 |     total_amount = amount + vat_amount
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:115:1
+    |
+113 |     vat_amount = amount * (vat_rate / 100)
+114 |     total_amount = amount + vat_amount
+115 |     
+    | ^^^^
+116 |     expense = Expense(
+117 |         tenant_id=current_user.tenant_id,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:132:1
+    |
+130 |         created_by=current_user.name
+131 |     )
+132 |     
+    | ^^^^
+133 |     expense_dict = expense.model_dump()
+134 |     expense_dict['date'] = expense_dict['date'].isoformat()
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:137:1
+    |
+135 |     expense_dict['created_at'] = expense_dict['created_at'].isoformat()
+136 |     await db.expenses.insert_one(expense_dict)
+137 |     
+    | ^^^^
+138 |     # Update supplier balance if applicable
+139 |     if supplier_id:
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:144:1
+    |
+142 |             {'$inc': {'account_balance': total_amount}}
+143 |         )
+144 |     
+    | ^^^^
+145 |     # Create cash flow entry
+146 |     from accounting_models import CashFlow
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:162:1
+    |
+160 |     cf_dict['created_at'] = cf_dict['created_at'].isoformat()
+161 |     await db.cash_flow.insert_one(cf_dict)
+162 |     
+    | ^^^^
+163 |     return expense
+    |
+help: Remove whitespace from blank line
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:167:17
+    |
+165 | @api_router.get("/accounting/expenses")
+166 | async def get_expenses(
+167 |     start_date: Optional[str] = None,
+    |                 ^^^^^^^^^^^^^
+168 |     end_date: Optional[str] = None,
+169 |     category: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:168:15
+    |
+166 | async def get_expenses(
+167 |     start_date: Optional[str] = None,
+168 |     end_date: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+169 |     category: Optional[str] = None,
+170 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:169:15
+    |
+167 |     start_date: Optional[str] = None,
+168 |     end_date: Optional[str] = None,
+169 |     category: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+170 |     current_user: User = Depends(get_current_user)
+171 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:177:1
+    |
+175 |     if category:
+176 |         query['category'] = category
+177 |     
+    | ^^^^
+178 |     expenses = await db.expenses.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
+179 |     return expenses
+    |
+help: Remove whitespace from blank line
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> domains/accounting/endpoints.py:182:52
+    |
+181 | @api_router.put("/accounting/expenses/{expense_id}")
+182 | async def update_expense(expense_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+    |                                                    ^^^^
+183 |     await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+184 |     expense = await db.expenses.find_one({'id': expense_id}, {'_id': 0})
+    |
+help: Replace with `dict`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:197:10
+    |
+195 |     unit_cost: float = 0.0,
+196 |     reorder_level: float = 0.0,
+197 |     sku: Optional[str] = None,
+    |          ^^^^^^^^^^^^^
+198 |     supplier_id: Optional[str] = None,
+199 |     location: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:198:18
+    |
+196 |     reorder_level: float = 0.0,
+197 |     sku: Optional[str] = None,
+198 |     supplier_id: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+199 |     location: Optional[str] = None,
+200 |     notes: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:199:15
+    |
+197 |     sku: Optional[str] = None,
+198 |     supplier_id: Optional[str] = None,
+199 |     location: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+200 |     notes: Optional[str] = None,
+201 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:200:12
+    |
+198 |     supplier_id: Optional[str] = None,
+199 |     location: Optional[str] = None,
+200 |     notes: Optional[str] = None,
+    |            ^^^^^^^^^^^^^
+201 |     current_user: User = Depends(get_current_user)
+202 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:225:1
+    |
+223 | async def get_inventory(current_user: User = Depends(get_current_user)):
+224 |     items = await db.inventory_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+225 |     
+    | ^^^^
+226 |     # Get low stock items
+227 |     low_stock = [item for item in items if item['quantity'] <= item['reorder_level']]
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:228:1
+    |
+226 |     # Get low stock items
+227 |     low_stock = [item for item in items if item['quantity'] <= item['reorder_level']]
+228 |     
+    | ^^^^
+229 |     return {
+230 |         'items': items,
+    |
+help: Remove whitespace from blank line
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:241:16
+    |
+239 |     quantity: float,
+240 |     unit_cost: float,
+241 |     reference: Optional[str] = None,
+    |                ^^^^^^^^^^^^^
+242 |     notes: Optional[str] = None,
+243 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:242:12
+    |
+240 |     unit_cost: float,
+241 |     reference: Optional[str] = None,
+242 |     notes: Optional[str] = None,
+    |            ^^^^^^^^^^^^^
+243 |     current_user: User = Depends(get_current_user)
+244 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:246:1
+    |
+244 | ):
+245 |     from accounting_models import StockMovement
+246 |     
+    | ^^^^
+247 |     movement = StockMovement(
+248 |         tenant_id=current_user.tenant_id,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:257:1
+    |
+255 |         created_by=current_user.name
+256 |     )
+257 |     
+    | ^^^^
+258 |     movement_dict = movement.model_dump()
+259 |     movement_dict['created_at'] = movement_dict['created_at'].isoformat()
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:261:1
+    |
+259 |     movement_dict['created_at'] = movement_dict['created_at'].isoformat()
+260 |     await db.stock_movements.insert_one(movement_dict)
+261 |     
+    | ^^^^
+262 |     # Update inventory quantity
+263 |     if movement_type == 'in':
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:278:1
+    |
+276 |             {'$set': {'quantity': quantity}}
+277 |         )
+278 |     
+    | ^^^^
+279 |     return movement
+    |
+help: Remove whitespace from blank line
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:287:21
+    |
+285 |     invoice_type: str,
+286 |     customer_name: str,
+287 |     customer_email: Optional[str] = None,
+    |                     ^^^^^^^^^^^^^
+288 |     customer_tax_office: Optional[str] = None,
+289 |     customer_tax_number: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:288:26
+    |
+286 |     customer_name: str,
+287 |     customer_email: Optional[str] = None,
+288 |     customer_tax_office: Optional[str] = None,
+    |                          ^^^^^^^^^^^^^
+289 |     customer_tax_number: Optional[str] = None,
+290 |     customer_address: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:289:26
+    |
+287 |     customer_email: Optional[str] = None,
+288 |     customer_tax_office: Optional[str] = None,
+289 |     customer_tax_number: Optional[str] = None,
+    |                          ^^^^^^^^^^^^^
+290 |     customer_address: Optional[str] = None,
+291 |     items: List[Dict[str, Any]] = [],
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:290:23
+    |
+288 |     customer_tax_office: Optional[str] = None,
+289 |     customer_tax_number: Optional[str] = None,
+290 |     customer_address: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+291 |     items: List[Dict[str, Any]] = [],
+292 |     due_date: str = None,
+    |
+help: Convert to `X | None`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+   --> domains/accounting/endpoints.py:291:12
+    |
+289 |     customer_tax_number: Optional[str] = None,
+290 |     customer_address: Optional[str] = None,
+291 |     items: List[Dict[str, Any]] = [],
+    |            ^^^^
+292 |     due_date: str = None,
+293 |     booking_id: Optional[str] = None,
+    |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> domains/accounting/endpoints.py:291:17
+    |
+289 |     customer_tax_number: Optional[str] = None,
+290 |     customer_address: Optional[str] = None,
+291 |     items: List[Dict[str, Any]] = [],
+    |                 ^^^^
+292 |     due_date: str = None,
+293 |     booking_id: Optional[str] = None,
+    |
+help: Replace with `dict`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:293:17
+    |
+291 |     items: List[Dict[str, Any]] = [],
+292 |     due_date: str = None,
+293 |     booking_id: Optional[str] = None,
+    |                 ^^^^^^^^^^^^^
+294 |     notes: Optional[str] = None,
+295 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:294:12
+    |
+292 |     due_date: str = None,
+293 |     booking_id: Optional[str] = None,
+294 |     notes: Optional[str] = None,
+    |            ^^^^^^^^^^^^^
+295 |     current_user: User = Depends(get_current_user)
+296 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:298:1
+    |
+296 | ):
+297 |     from accounting_models import AccountingInvoice, AccountingInvoiceItem
+298 |     
+    | ^^^^
+299 |     count = await db.accounting_invoices.count_documents({'tenant_id': current_user.tenant_id})
+300 |     invoice_number = f"INV-{datetime.now().year}-{count + 1:05d}"
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:301:1
+    |
+299 |     count = await db.accounting_invoices.count_documents({'tenant_id': current_user.tenant_id})
+300 |     invoice_number = f"INV-{datetime.now().year}-{count + 1:05d}"
+301 |     
+    | ^^^^
+302 |     invoice_items = []
+303 |     subtotal = 0.0
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:307:1
+    |
+305 |     vat_withholding = 0.0
+306 |     total_additional_taxes = 0.0
+307 |     
+    | ^^^^
+308 |     for item_data in items:
+309 |         item = AccountingInvoiceItem(**item_data)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:313:1
+    |
+311 |         subtotal += item.quantity * item.unit_price
+312 |         total_vat += item.vat_amount
+313 |         
+    | ^^^^^^^^
+314 |         # Calculate additional taxes if present
+315 |         if item.additional_taxes:
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:336:1
+    |
+334 |                         total_additional_taxes += tax.amount
+335 |                         tax.calculated_amount = tax.amount
+336 |     
+    | ^^^^
+337 |     total = subtotal + total_vat + total_additional_taxes - vat_withholding
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:338:1
+    |
+337 |     total = subtotal + total_vat + total_additional_taxes - vat_withholding
+338 |     
+    | ^^^^
+339 |     invoice = AccountingInvoice(
+340 |         tenant_id=current_user.tenant_id,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:358:1
+    |
+356 |         created_by=current_user.name
+357 |     )
+358 |     
+    | ^^^^
+359 |     invoice_dict = invoice.model_dump()
+360 |     invoice_dict['issue_date'] = invoice_dict['issue_date'].isoformat()
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:364:1
+    |
+362 |     invoice_dict['created_at'] = invoice_dict['created_at'].isoformat()
+363 |     await db.accounting_invoices.insert_one(invoice_dict)
+364 |     
+    | ^^^^
+365 |     # Create cash flow entry
+366 |     from accounting_models import CashFlow
+    |
+help: Remove whitespace from blank line
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/endpoints.py:375:27
+    |
+373 |         reference_id=invoice.id,
+374 |         reference_type='invoice',
+375 |         date=datetime.now(timezone.utc),
+    |                           ^^^^^^^^^^^^
+376 |         created_by=current_user.name
+377 |     )
+    |
+help: Convert to `datetime.UTC` alias
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:382:1
+    |
+380 |     cf_dict['created_at'] = cf_dict['created_at'].isoformat()
+381 |     await db.cash_flow.insert_one(cf_dict)
+382 |     
+    | ^^^^
+383 |     return invoice
+    |
+help: Remove whitespace from blank line
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:387:17
+    |
+385 | @api_router.get("/accounting/invoices")
+386 | async def get_accounting_invoices(
+387 |     start_date: Optional[str] = None,
+    |                 ^^^^^^^^^^^^^
+388 |     end_date: Optional[str] = None,
+389 |     invoice_type: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:388:15
+    |
+386 | async def get_accounting_invoices(
+387 |     start_date: Optional[str] = None,
+388 |     end_date: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+389 |     invoice_type: Optional[str] = None,
+390 |     status: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:389:19
+    |
+387 |     start_date: Optional[str] = None,
+388 |     end_date: Optional[str] = None,
+389 |     invoice_type: Optional[str] = None,
+    |                   ^^^^^^^^^^^^^
+390 |     status: Optional[str] = None,
+391 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:390:13
+    |
+388 |     end_date: Optional[str] = None,
+389 |     invoice_type: Optional[str] = None,
+390 |     status: Optional[str] = None,
+    |             ^^^^^^^^^^^^^
+391 |     current_user: User = Depends(get_current_user)
+392 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:400:1
+    |
+398 |     if status:
+399 |         query['status'] = status
+400 |     
+    | ^^^^
+401 |     invoices = await db.accounting_invoices.find(query, {'_id': 0}).sort('issue_date', -1).to_list(1000)
+402 |     return invoices
+    |
+help: Remove whitespace from blank line
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> domains/accounting/endpoints.py:405:63
+    |
+404 | @api_router.put("/accounting/invoices/{invoice_id}")
+405 | async def update_accounting_invoice(invoice_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+    |                                                               ^^^^
+406 |     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
+407 |         updates['payment_date'] = datetime.now(timezone.utc).isoformat()
+    |
+help: Replace with `dict`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/endpoints.py:407:48
+    |
+405 | async def update_accounting_invoice(invoice_id: str, updates: Dict[str, Any], current_user: User = Depends(get_current_user)):
+406 |     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
+407 |         updates['payment_date'] = datetime.now(timezone.utc).isoformat()
+    |                                                ^^^^^^^^^^^^
+408 |     
+409 |     await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+    |
+help: Convert to `datetime.UTC` alias
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:408:1
+    |
+406 |     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
+407 |         updates['payment_date'] = datetime.now(timezone.utc).isoformat()
+408 |     
+    | ^^^^
+409 |     await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+410 |     invoice = await db.accounting_invoices.find_one({'id': invoice_id}, {'_id': 0})
+    |
+help: Remove whitespace from blank line
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:417:17
+    |
+415 | @api_router.get("/accounting/cash-flow")
+416 | async def get_cash_flow(
+417 |     start_date: Optional[str] = None,
+    |                 ^^^^^^^^^^^^^
+418 |     end_date: Optional[str] = None,
+419 |     transaction_type: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:418:15
+    |
+416 | async def get_cash_flow(
+417 |     start_date: Optional[str] = None,
+418 |     end_date: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+419 |     transaction_type: Optional[str] = None,
+420 |     current_user: User = Depends(get_current_user)
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/endpoints.py:419:23
+    |
+417 |     start_date: Optional[str] = None,
+418 |     end_date: Optional[str] = None,
+419 |     transaction_type: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+420 |     current_user: User = Depends(get_current_user)
+421 | ):
+    |
+help: Convert to `X | None`
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:427:1
+    |
+425 |     if transaction_type:
+426 |         query['transaction_type'] = transaction_type
+427 |     
+    | ^^^^
+428 |     flows = await db.cash_flow.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:429:1
+    |
+428 |     flows = await db.cash_flow.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
+429 |     
+    | ^^^^
+430 |     total_income = sum(f['amount'] for f in flows if f['transaction_type'] == 'income')
+431 |     total_expense = sum(f['amount'] for f in flows if f['transaction_type'] == 'expense')
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:433:1
+    |
+431 |     total_expense = sum(f['amount'] for f in flows if f['transaction_type'] == 'expense')
+432 |     net_cash_flow = total_income - total_expense
+433 |     
+    | ^^^^
+434 |     return {
+435 |         'transactions': flows,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:455:1
+    |
+453 |         'issue_date': {'$gte': start_date, '$lte': end_date}
+454 |     }, {'_id': 0}).to_list(1000)
+455 |     
+    | ^^^^
+456 |     # Get all expenses
+457 |     expenses = await db.expenses.find({
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:461:1
+    |
+459 |         'date': {'$gte': start_date, '$lte': end_date}
+460 |     }, {'_id': 0}).to_list(1000)
+461 |     
+    | ^^^^
+462 |     total_revenue = sum(inv['total'] for inv in invoices)
+463 |     total_expenses = sum(exp['total_amount'] for exp in expenses)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:466:1
+    |
+464 |     gross_profit = total_revenue - total_expenses
+465 |     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
+466 |     
+    | ^^^^
+467 |     # Revenue breakdown
+468 |     revenue_by_category = {}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:473:1
+    |
+471 |             desc = item['description']
+472 |             revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item['total']
+473 |     
+    | ^^^^
+474 |     # Expense breakdown
+475 |     expense_by_category = {}
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:479:1
+    |
+477 |         cat = exp['category']
+478 |         expense_by_category[cat] = expense_by_category.get(cat, 0) + exp['total_amount']
+479 |     
+    | ^^^^
+480 |     return {
+481 |         'period': {'start': start_date, 'end': end_date},
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:501:1
+    |
+499 |         'issue_date': {'$gte': start_date, '$lte': end_date}
+500 |     }, {'_id': 0}).to_list(1000)
+501 |     
+    | ^^^^
+502 |     sales_vat = sum(inv['total_vat'] for inv in invoices)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:503:1
+    |
+502 |     sales_vat = sum(inv['total_vat'] for inv in invoices)
+503 |     
+    | ^^^^
+504 |     # Purchase VAT (paid)
+505 |     expenses = await db.expenses.find({
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:509:1
+    |
+507 |         'date': {'$gte': start_date, '$lte': end_date}
+508 |     }, {'_id': 0}).to_list(1000)
+509 |     
+    | ^^^^
+510 |     purchase_vat = sum(exp['vat_amount'] for exp in expenses)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:511:1
+    |
+510 |     purchase_vat = sum(exp['vat_amount'] for exp in expenses)
+511 |     
+    | ^^^^
+512 |     vat_payable = sales_vat - purchase_vat
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:513:1
+    |
+512 |     vat_payable = sales_vat - purchase_vat
+513 |     
+    | ^^^^
+514 |     return {
+515 |         'period': {'start': start_date, 'end': end_date},
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:526:1
+    |
+524 |     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+525 |     total_cash = sum(acc['balance'] for acc in bank_accounts)
+526 |     
+    | ^^^^
+527 |     inventory = await db.inventory_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+528 |     total_inventory = sum(item['quantity'] * item['unit_cost'] for item in inventory)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:529:1
+    |
+527 |     inventory = await db.inventory_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+528 |     total_inventory = sum(item['quantity'] * item['unit_cost'] for item in inventory)
+529 |     
+    | ^^^^
+530 |     # Receivables (unpaid invoices)
+531 |     receivables = await db.accounting_invoices.find({
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:536:1
+    |
+534 |     }, {'_id': 0}).to_list(1000)
+535 |     total_receivables = sum(inv['total'] for inv in receivables)
+536 |     
+    | ^^^^
+537 |     total_assets = total_cash + total_inventory + total_receivables
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:538:1
+    |
+537 |     total_assets = total_cash + total_inventory + total_receivables
+538 |     
+    | ^^^^
+539 |     # Liabilities
+540 |     payables = await db.expenses.find({
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:545:1
+    |
+543 |     }, {'_id': 0}).to_list(1000)
+544 |     total_payables = sum(exp['total_amount'] for exp in payables)
+545 |     
+    | ^^^^
+546 |     # Equity
+547 |     total_equity = total_assets - total_payables
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:548:1
+    |
+546 |     # Equity
+547 |     total_equity = total_assets - total_payables
+548 |     
+    | ^^^^
+549 |     return {
+550 |         'assets': {
+    |
+help: Remove whitespace from blank line
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/endpoints.py:568:26
+    |
+566 | async def get_accounting_dashboard(current_user: User = Depends(get_current_user)):
+567 |     # Get current month data
+568 |     today = datetime.now(timezone.utc)
+    |                          ^^^^^^^^^^^^
+569 |     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
+570 |     month_end = today.isoformat()
+    |
+help: Convert to `datetime.UTC` alias
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:571:1
+    |
+569 |     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
+570 |     month_end = today.isoformat()
+571 |     
+    | ^^^^
+572 |     invoices = await db.accounting_invoices.find({
+573 |         'tenant_id': current_user.tenant_id,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:576:1
+    |
+574 |         'issue_date': {'$gte': month_start, '$lte': month_end}
+575 |     }, {'_id': 0}).to_list(1000)
+576 |     
+    | ^^^^
+577 |     expenses = await db.expenses.find({
+578 |         'tenant_id': current_user.tenant_id,
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:581:1
+    |
+579 |         'date': {'$gte': month_start, '$lte': month_end}
+580 |     }, {'_id': 0}).to_list(1000)
+581 |     
+    | ^^^^
+582 |     total_income = sum(inv['total'] for inv in invoices if inv['status'] == 'paid')
+583 |     total_expenses = sum(exp['total_amount'] for exp in expenses)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:586:1
+    |
+584 |     pending_invoices = len([inv for inv in invoices if inv['status'] == 'pending'])
+585 |     overdue_invoices = len([inv for inv in invoices if inv['status'] == 'overdue'])
+586 |     
+    | ^^^^
+587 |     # Get bank balances
+588 |     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> domains/accounting/endpoints.py:590:1
+    |
+588 |     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+589 |     total_bank_balance = sum(acc['balance'] for acc in bank_accounts)
+590 |     
+    | ^^^^
+591 |     return {
+592 |         'monthly_income': round(total_income, 2),
+    |
+help: Remove whitespace from blank line
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> domains/accounting/models_legacy.py:1:1
+  |
+1 | / from pydantic import BaseModel, Field, ConfigDict, EmailStr
+2 | | from typing import List, Optional
+3 | | from datetime import datetime, timezone
+4 | | from enum import Enum
+5 | | import uuid
+  | |___________^
+6 |
+7 |   # ============= ACCOUNTING ENUMS =============
+  |
+help: Organize imports
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:84:17
+   |
+82 |     tenant_id: str
+83 |     name: str
+84 |     tax_office: Optional[str] = None
+   |                 ^^^^^^^^^^^^^
+85 |     tax_number: Optional[str] = None
+86 |     email: Optional[EmailStr] = None
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:85:17
+   |
+83 |     name: str
+84 |     tax_office: Optional[str] = None
+85 |     tax_number: Optional[str] = None
+   |                 ^^^^^^^^^^^^^
+86 |     email: Optional[EmailStr] = None
+87 |     phone: Optional[str] = None
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:86:12
+   |
+84 |     tax_office: Optional[str] = None
+85 |     tax_number: Optional[str] = None
+86 |     email: Optional[EmailStr] = None
+   |            ^^^^^^^^^^^^^^^^^^
+87 |     phone: Optional[str] = None
+88 |     address: Optional[str] = None
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:87:12
+   |
+85 |     tax_number: Optional[str] = None
+86 |     email: Optional[EmailStr] = None
+87 |     phone: Optional[str] = None
+   |            ^^^^^^^^^^^^^
+88 |     address: Optional[str] = None
+89 |     account_balance: float = 0.0
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:88:14
+   |
+86 |     email: Optional[EmailStr] = None
+87 |     phone: Optional[str] = None
+88 |     address: Optional[str] = None
+   |              ^^^^^^^^^^^^^
+89 |     account_balance: float = 0.0
+90 |     category: str = "general"
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/accounting/models_legacy.py:91:12
+   |
+89 |     account_balance: float = 0.0
+90 |     category: str = "general"
+91 |     notes: Optional[str] = None
+   |            ^^^^^^^^^^^^^
+92 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+   |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+  --> domains/accounting/models_legacy.py:92:71
+   |
+90 |     category: str = "general"
+91 |     notes: Optional[str] = None
+92 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+   |                                                                       ^^^^^^^^^^^^
+93 |
+94 | class BankAccount(BaseModel):
+   |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:101:11
+    |
+ 99 |     bank_name: str
+100 |     account_number: str
+101 |     iban: Optional[str] = None
+    |           ^^^^^^^^^^^^^
+102 |     currency: str = "USD"
+103 |     balance: float = 0.0
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:105:71
+    |
+103 |     balance: float = 0.0
+104 |     is_active: bool = True
+105 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+106 |
+107 | class Expense(BaseModel):
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:112:18
+    |
+110 |     tenant_id: str
+111 |     expense_number: str
+112 |     supplier_id: Optional[str] = None
+    |                  ^^^^^^^^^^^^^
+113 |     category: ExpenseCategory
+114 |     description: str
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:121:21
+    |
+119 |     date: datetime
+120 |     payment_status: PaymentStatus = PaymentStatus.PENDING
+121 |     payment_method: Optional[str] = None
+    |                     ^^^^^^^^^^^^^
+122 |     receipt_url: Optional[str] = None
+123 |     notes: Optional[str] = None
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:122:18
+    |
+120 |     payment_status: PaymentStatus = PaymentStatus.PENDING
+121 |     payment_method: Optional[str] = None
+122 |     receipt_url: Optional[str] = None
+    |                  ^^^^^^^^^^^^^
+123 |     notes: Optional[str] = None
+124 |     created_by: str
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:123:12
+    |
+121 |     payment_method: Optional[str] = None
+122 |     receipt_url: Optional[str] = None
+123 |     notes: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+124 |     created_by: str
+125 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:125:71
+    |
+123 |     notes: Optional[str] = None
+124 |     created_by: str
+125 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+126 |
+127 | class InventoryItem(BaseModel):
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:132:10
+    |
+130 |     tenant_id: str
+131 |     name: str
+132 |     sku: Optional[str] = None
+    |          ^^^^^^^^^^^^^
+133 |     category: str
+134 |     unit: str
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:138:18
+    |
+136 |     unit_cost: float = 0.0
+137 |     reorder_level: float = 0.0
+138 |     supplier_id: Optional[str] = None
+    |                  ^^^^^^^^^^^^^
+139 |     location: Optional[str] = None
+140 |     notes: Optional[str] = None
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:139:15
+    |
+137 |     reorder_level: float = 0.0
+138 |     supplier_id: Optional[str] = None
+139 |     location: Optional[str] = None
+    |               ^^^^^^^^^^^^^
+140 |     notes: Optional[str] = None
+141 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:140:12
+    |
+138 |     supplier_id: Optional[str] = None
+139 |     location: Optional[str] = None
+140 |     notes: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+141 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:141:71
+    |
+139 |     location: Optional[str] = None
+140 |     notes: Optional[str] = None
+141 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+142 |
+143 | class StockMovement(BaseModel):
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:151:16
+    |
+149 |     quantity: float
+150 |     unit_cost: float
+151 |     reference: Optional[str] = None
+    |                ^^^^^^^^^^^^^
+152 |     notes: Optional[str] = None
+153 |     created_by: str
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:152:12
+    |
+150 |     unit_cost: float
+151 |     reference: Optional[str] = None
+152 |     notes: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+153 |     created_by: str
+154 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:154:71
+    |
+152 |     notes: Optional[str] = None
+153 |     created_by: str
+154 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+155 |
+156 | class AdditionalTax(BaseModel):
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:159:11
+    |
+157 |     tax_type: AdditionalTaxType
+158 |     tax_name: str  # Display name
+159 |     rate: Optional[float] = None  # For percentage-based taxes
+    |           ^^^^^^^^^^^^^^^
+160 |     amount: Optional[float] = None  # For fixed amount taxes
+161 |     is_percentage: bool = True
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:160:13
+    |
+158 |     tax_name: str  # Display name
+159 |     rate: Optional[float] = None  # For percentage-based taxes
+160 |     amount: Optional[float] = None  # For fixed amount taxes
+    |             ^^^^^^^^^^^^^^^
+161 |     is_percentage: bool = True
+162 |     withholding_rate: Optional[str] = None  # For withholding taxes (e.g., "7/10")
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:162:23
+    |
+160 |     amount: Optional[float] = None  # For fixed amount taxes
+161 |     is_percentage: bool = True
+162 |     withholding_rate: Optional[str] = None  # For withholding taxes (e.g., "7/10")
+    |                       ^^^^^^^^^^^^^
+163 |     calculated_amount: float = 0.0
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:172:23
+    |
+170 |     vat_amount: float
+171 |     total: float
+172 |     additional_taxes: Optional[List[AdditionalTax]] = []
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+173 |
+174 | class AccountingInvoice(BaseModel):
+    |
+help: Convert to `X | None`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+   --> domains/accounting/models_legacy.py:172:32
+    |
+170 |     vat_amount: float
+171 |     total: float
+172 |     additional_taxes: Optional[List[AdditionalTax]] = []
+    |                                ^^^^
+173 |
+174 | class AccountingInvoice(BaseModel):
+    |
+help: Replace with `list`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:181:21
+    |
+179 |     invoice_type: InvoiceType
+180 |     customer_name: str
+181 |     customer_email: Optional[str] = None
+    |                     ^^^^^^^^^^^^^
+182 |     customer_tax_office: Optional[str] = None
+183 |     customer_tax_number: Optional[str] = None
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:182:26
+    |
+180 |     customer_name: str
+181 |     customer_email: Optional[str] = None
+182 |     customer_tax_office: Optional[str] = None
+    |                          ^^^^^^^^^^^^^
+183 |     customer_tax_number: Optional[str] = None
+184 |     customer_address: Optional[str] = None
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:183:26
+    |
+181 |     customer_email: Optional[str] = None
+182 |     customer_tax_office: Optional[str] = None
+183 |     customer_tax_number: Optional[str] = None
+    |                          ^^^^^^^^^^^^^
+184 |     customer_address: Optional[str] = None
+185 |     items: List[AccountingInvoiceItem]
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:184:23
+    |
+182 |     customer_tax_office: Optional[str] = None
+183 |     customer_tax_number: Optional[str] = None
+184 |     customer_address: Optional[str] = None
+    |                       ^^^^^^^^^^^^^
+185 |     items: List[AccountingInvoiceItem]
+186 |     subtotal: float
+    |
+help: Convert to `X | None`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+   --> domains/accounting/models_legacy.py:185:12
+    |
+183 |     customer_tax_number: Optional[str] = None
+184 |     customer_address: Optional[str] = None
+185 |     items: List[AccountingInvoiceItem]
+    |            ^^^^
+186 |     subtotal: float
+187 |     total_vat: float
+    |
+help: Replace with `list`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:192:71
+    |
+190 |     total: float
+191 |     status: PaymentStatus = PaymentStatus.PENDING
+192 |     issue_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+193 |     due_date: datetime
+194 |     payment_date: Optional[datetime] = None
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:194:19
+    |
+192 |     issue_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+193 |     due_date: datetime
+194 |     payment_date: Optional[datetime] = None
+    |                   ^^^^^^^^^^^^^^^^^^
+195 |     notes: Optional[str] = None
+196 |     booking_id: Optional[str] = None
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:195:12
+    |
+193 |     due_date: datetime
+194 |     payment_date: Optional[datetime] = None
+195 |     notes: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+196 |     booking_id: Optional[str] = None
+197 |     created_by: str
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:196:17
+    |
+194 |     payment_date: Optional[datetime] = None
+195 |     notes: Optional[str] = None
+196 |     booking_id: Optional[str] = None
+    |                 ^^^^^^^^^^^^^
+197 |     created_by: str
+198 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:198:71
+    |
+196 |     booking_id: Optional[str] = None
+197 |     created_by: str
+198 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+199 |
+200 | class CashFlow(BaseModel):
+    |
+help: Convert to `datetime.UTC` alias
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:208:22
+    |
+206 |     amount: float
+207 |     description: str
+208 |     bank_account_id: Optional[str] = None
+    |                      ^^^^^^^^^^^^^
+209 |     reference_id: Optional[str] = None
+210 |     reference_type: Optional[str] = None  # invoice, expense, booking
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:209:19
+    |
+207 |     description: str
+208 |     bank_account_id: Optional[str] = None
+209 |     reference_id: Optional[str] = None
+    |                   ^^^^^^^^^^^^^
+210 |     reference_type: Optional[str] = None  # invoice, expense, booking
+211 |     date: datetime
+    |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+   --> domains/accounting/models_legacy.py:210:21
+    |
+208 |     bank_account_id: Optional[str] = None
+209 |     reference_id: Optional[str] = None
+210 |     reference_type: Optional[str] = None  # invoice, expense, booking
+    |                     ^^^^^^^^^^^^^
+211 |     date: datetime
+212 |     created_by: str
+    |
+help: Convert to `X | None`
+
+UP017 [*] Use `datetime.UTC` alias
+   --> domains/accounting/models_legacy.py:213:71
+    |
+211 |     date: datetime
+212 |     created_by: str
+213 |     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    |                                                                       ^^^^^^^^^^^^
+    |
+help: Convert to `datetime.UTC` alias
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> integrations/booking_availability.py:6:1
+  |
+4 | payloads that a future real integration can reuse.
+5 | """
+6 | from typing import Dict, Any, List
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: Organize imports
+
+UP006 [*] Use `list` instead of `List` for type annotation
+  --> integrations/booking_availability.py:10:12
+   |
+ 9 | def normalize_availability_response(
+10 |     rooms: List[Dict[str, Any]],
+   |            ^^^^
+11 |     check_in: str,
+12 |     check_out: str,
+   |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> integrations/booking_availability.py:10:17
+   |
+ 9 | def normalize_availability_response(
+10 |     rooms: List[Dict[str, Any]],
+   |                 ^^^^
+11 |     check_in: str,
+12 |     check_out: str,
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+  --> integrations/booking_availability.py:13:6
+   |
+11 |     check_in: str,
+12 |     check_out: str,
+13 | ) -> List[Dict[str, Any]]:
+   |      ^^^^
+14 |     """Convert /pms/rooms/availability response into a compact per-room-type
+15 |     availability summary that would be suitable for Booking mapping.
+   |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> integrations/booking_availability.py:13:11
+   |
+11 |     check_in: str,
+12 |     check_out: str,
+13 | ) -> List[Dict[str, Any]]:
+   |           ^^^^
+14 |     """Convert /pms/rooms/availability response into a compact per-room-type
+15 |     availability summary that would be suitable for Booking mapping.
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> integrations/booking_availability.py:38:14
+   |
+36 |     ]
+37 |     """
+38 |     by_type: Dict[str, Dict[str, Any]] = {}
+   |              ^^^^
+39 |     for room in rooms:
+40 |         rt = room.get('room_type') or 'Unknown'
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> integrations/booking_availability.py:38:24
+   |
+36 |     ]
+37 |     """
+38 |     by_type: Dict[str, Dict[str, Any]] = {}
+   |                        ^^^^
+39 |     for room in rooms:
+40 |         rt = room.get('room_type') or 'Unknown'
+   |
+help: Replace with `dict`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/finance/accounting.py:19:1
+   |
+17 |       Workbook = None
+18 |
+19 | / from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
+20 | | from core.database import db
+21 | | from core.security import get_current_user
+22 | | from models.enums import PaymentStatus
+23 | | from models.schemas import (
+24 | |     CashFlow,
+25 | |     ConvertCurrencyRequest,
+26 | |     CreateCurrencyRateRequest,
+27 | |     CreateMultiCurrencyInvoiceRequest,
+28 | |     GenerateInvoiceFromFolioRequest,
+29 | |     User,
+30 | | )
+31 | | from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
+32 | | from modules.folio.services.open_folio_service import OpenFolioService
+   | |______________________________________________________________________^
+33 |
+34 |   try:
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/integration_credentials.py:17:1
+   |
+15 |   single source of truth both for the UI and for the startup loader.
+16 |   """
+17 | / from __future__ import annotations
+18 | |
+19 | | import logging
+20 | | import os
+21 | | from datetime import UTC, datetime
+22 | | from typing import Any
+23 | |
+24 | | from fastapi import APIRouter, Depends, HTTPException
+25 | |
+26 | | from core.crypto import get_crypto_service
+27 | | from core.database import db
+28 | | from core.helpers import require_super_admin_guard
+29 | | from core.security import get_current_user
+30 | | from pydantic import BaseModel, Field
+   | |_____________________________________^
+31 |
+32 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+
+Found 145 errors.
+[*] 145 fixable with the `--fix` option.
+Error: Process completed with exit code 1.

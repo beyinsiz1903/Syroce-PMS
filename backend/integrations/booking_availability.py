@@ -3,14 +3,14 @@
 This does not perform real Booking.com API calls yet. It only prepares
 payloads that a future real integration can reuse.
 """
-from typing import Dict, Any, List
+from typing import Any
 
 
 def normalize_availability_response(
-    rooms: List[Dict[str, Any]],
+    rooms: list[dict[str, Any]],
     check_in: str,
     check_out: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Convert /pms/rooms/availability response into a compact per-room-type
     availability summary that would be suitable for Booking mapping.
 
@@ -35,7 +35,7 @@ def normalize_availability_response(
       ...
     ]
     """
-    by_type: Dict[str, Dict[str, Any]] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     for room in rooms:
         rt = room.get('room_type') or 'Unknown'
         entry = by_type.setdefault(rt, {
