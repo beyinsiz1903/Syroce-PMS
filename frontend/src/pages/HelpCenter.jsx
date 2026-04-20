@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import Layout from "@/components/Layout";
 import {
   BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
   Package, Rocket, ScrollText, Search, Tag,
@@ -90,7 +91,7 @@ function renderMarkdown(src) {
   return { __html: out.join("\n") };
 }
 
-export default function HelpCenter() {
+export default function HelpCenter({ user, tenant, onLogout }) {
   const [index, setIndex] = useState(null);
   const [activeSlug, setActiveSlug] = useState(null);
   const [article, setArticle] = useState(null);
@@ -135,16 +136,16 @@ export default function HelpCenter() {
   const html = useMemo(() => renderMarkdown(article?.body_markdown), [article]);
 
   return (
+    <Layout
+      user={user}
+      tenant={tenant}
+      onLogout={onLogout}
+      currentModule="help"
+      title="Yardım Merkezi"
+      subtitle="Modül rehberleri, sık sorulanlar ve mevzuat bilgileri."
+    >
     <div className="p-4 lg:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <LifeBuoy className="h-6 w-6 text-indigo-600" /> Yardım Merkezi
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Modül rehberleri, sık sorulanlar ve mevzuat bilgileri.
-          </p>
-        </div>
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-2 w-full max-w-md">
           <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -237,5 +238,6 @@ export default function HelpCenter() {
         </main>
       </div>
     </div>
+    </Layout>
   );
 }

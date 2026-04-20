@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import Layout from "@/components/Layout";
 import {
   AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck,
   Download, FileText, Loader2, RefreshCw, ScrollText, Save, ShieldCheck,
@@ -23,7 +24,7 @@ function downloadCSV(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function MevzuatRaporlari() {
+export default function MevzuatRaporlari({ user, tenant, onLogout }) {
   const [tab, setTab] = useState("tuik");
 
   // ── TÜİK
@@ -105,15 +106,15 @@ export default function MevzuatRaporlari() {
   const yearOpts = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
 
   return (
+    <Layout
+      user={user}
+      tenant={tenant}
+      onLogout={onLogout}
+      currentModule="mevzuat-raporlari"
+      title="Mevzuat Raporları"
+      subtitle="TÜİK Aylık Konaklama Anketi · Bakanlık Denetim Hazırlığı · Yıldız Sınıflama Self-Check"
+    >
     <div className="p-4 lg:p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ScrollText className="h-6 w-6 text-emerald-700" /> Mevzuat Raporları
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          TÜİK Aylık Konaklama Anketi · Bakanlık Denetim Hazırlığı · Yıldız Sınıflama Self-Check
-        </p>
-      </div>
 
       <div className="border-b">
         <div className="flex flex-wrap gap-1">
@@ -375,6 +376,7 @@ export default function MevzuatRaporlari() {
         </div>
       )}
     </div>
+    </Layout>
   );
 }
 
