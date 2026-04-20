@@ -211,6 +211,7 @@ const EncryptionManagementPage = lazy(() => import("@/pages/EncryptionManagement
 const WebhookOutboxAdmin = lazy(() => import("@/pages/WebhookOutboxAdmin"));
 const EarlyWarningDashboard = lazy(() => import("@/pages/EarlyWarningDashboard"));
 const ModuleDiscovery = lazy(() => import("@/pages/ModuleDiscovery"));
+const IntegrationCredentials = lazy(() => import("@/pages/IntegrationCredentials"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -501,6 +502,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/webhook-outbox", ...p(WebhookOutboxAdmin) },
     { path: "/admin/early-warning", ...p(EarlyWarningDashboard) },
     { path: "/admin/module-discovery", ...p(ModuleDiscovery) },
+    { path: "/admin/integration-credentials", ...p(IntegrationCredentials) },
     { path: "/app/cost-management", ...p(CostManagement) },
     { path: "/cost-management", ...p(CostManagement) },
     { path: "/admin/gm-enhanced", type: "redirect", to: "/executive" },

@@ -508,6 +508,16 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     hidden: true,
   },
+  {
+    key: "integration_credentials",
+    label: "Entegrasyon Anahtarları",
+    path: "/admin/integration-credentials",
+    moduleKey: "admin_panel",
+    tier: "professional",
+    group: "professional",
+    navGroup: "admin",
+    requireSuperAdmin: true,
+  },
 
   // ──── REPORTS GROUP ────────────────────────────────
   {

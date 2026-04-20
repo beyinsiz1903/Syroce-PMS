@@ -153,6 +153,13 @@ Reduced from 1309 lines via dialog extraction.
   - **8+ N+1 düzeltildi** (batch `$in` lookup pattern): housekeeping rooms, dashboard (VIP+frontdesk arrivals), pms_reservations (double-booking), pms_bookings (search), finance/mobile pending-receivables, mobile_router overbookings, pos_router cleaning_delay, pos_fnb floor-plan, messaging auto-messages.
   - **23 tenant-prefixed compound MongoDB indeksi** eklendi (`infra/database_optimizer.create_tenant_compound_indexes`): bookings/rooms/guests/folios/folio_charges/housekeeping_tasks/users/notifications/communication_logs/booking_guests/deposits/room_notes — hepsi `tenant_id` prefix'iyle. Tenant-scoped sorgular artık index plan'a girer.
 
+## Integration Credentials Admin (Apr 2026)
+- **`backend/routers/integration_credentials.py`** — Super-admin only katalog + CRUD for 3rd-party API keys (OpenAI, Gemini, Anthropic, Resend, Sentry, AWS/KMS, Quick-ID, AF Sadakat, Marketplace, alert webhooks, MongoDB Atlas). Values encrypted via `get_crypto_service()` into `integration_credentials` collection.
+- **Runtime injection**: `upsert` writes `os.environ[KEY] = value` immediately — existing `os.getenv(...)` call-sites pick up new values without restart or code changes.
+- **Startup hook**: `load_credentials_to_env()` is called from `server.py` `_startup()` after `on_startup(app)`; decrypts DB records and hydrates `os.environ`. Env vars already set (Replit Secrets) take precedence over DB values.
+- **Frontend**: `frontend/src/pages/IntegrationCredentials.jsx` — grouped cards by category (AI, Email, Monitoring, Infrastructure, Integrations, AWS) with masked preview, show/hide toggle, save/delete. Route `/admin/integration-credentials`, nav item "Entegrasyon Anahtarları" under admin group (super_admin only).
+- **Catalog is the single source of truth**: to add a new credential slot, append to `CREDENTIAL_DEFINITIONS` — UI and loader both pick it up automatically.
+
 ## Cleanup & Refactor Pass-2 (Apr 2026)
 - **`backend/domains/revenue/pricing_router.py`** (2962 satır, 43 endpoint) → `pricing_router/` paketi: 7 alt-modül (rms, rates, ai_pricing, contracted_rates, revenue_mobile, revenue_analysis, anomaly).
 - **`backend/domains/revenue/rms_router.py`** (2773 satır, 46 endpoint) → `rms_router/` paketi: 9 alt-modül (comp_set, pricing_strategy, demand_forecast, sales, revenue_reports, security_mobile, housekeeping_inventory, notifications_mobile, dashboards).

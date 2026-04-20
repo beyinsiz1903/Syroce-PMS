@@ -438,6 +438,11 @@ from startup import on_shutdown, on_startup  # noqa: E402
 @app.on_event("startup")
 async def _startup():
     await on_startup(app)
+    try:
+        from routers.integration_credentials import load_credentials_to_env
+        await load_credentials_to_env()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("integration credentials startup skipped: %s", _e)
 
 
 @app.on_event("shutdown")
