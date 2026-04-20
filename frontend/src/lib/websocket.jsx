@@ -19,9 +19,9 @@ class WebSocketManager {
   }
 
   async connect() {
-    // If disabled after max attempts, return a mock socket
+    // If disabled after max attempts, return a no-op socket (real-time updates unavailable)
     if (this.disabled) {
-      return this._getMockSocket();
+      return this._getNoopSocket();
     }
 
     if (this.socket?.connected) {
@@ -45,14 +45,19 @@ class WebSocketManager {
       this.setupEventHandlers();
       return this.socket;
     } catch (err) {
-      // If socket.io is not available, disable gracefully
+      // If socket.io fails to load, disable gracefully but warn loudly
+      console.warn('[WebSocket] socket.io unavailable; real-time updates disabled.', err);
       this.disabled = true;
-      return this._getMockSocket();
+      return this._getNoopSocket();
     }
   }
 
-  _getMockSocket() {
-    // Return a mock socket that does nothing (prevents errors)
+  isConnected() {
+    return !!this.socket?.connected && !this.disabled;
+  }
+
+  _getNoopSocket() {
+    // No-op socket so callers don't crash; real-time features are simply inactive.
     return {
       connected: false,
       on: () => {},
@@ -71,10 +76,10 @@ class WebSocketManager {
 
     this.socket.on('disconnect', () => {});
 
-    this.socket.on('connect_error', () => {
+    this.socket.on('connect_error', (err) => {
       this.reconnectAttempts++;
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        // Silently disable WebSocket after max attempts
+        console.warn('[WebSocket] connection failed after retries; real-time updates disabled.', err?.message || err);
         this.disabled = true;
         if (this.socket) {
           this.socket.disconnect();

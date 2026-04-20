@@ -437,6 +437,50 @@ async def get_maintenance_sla(
     }
 
 
+@router.get("/maintenance/parts-inventory")
+async def get_maintenance_parts_inventory(
+    category: str | None = None,
+    low_stock_only: bool = False,
+    current_user: User = Depends(get_current_user),
+):
+    """List spare parts inventory for the maintenance team."""
+    query: dict = {'tenant_id': current_user.tenant_id}
+    if category:
+        query['category'] = category
+    parts = await db.maintenance_parts.find(query, {'_id': 0}).sort('name', 1).to_list(2000)
+    if low_stock_only:
+        parts = [p for p in parts if (p.get('stock') or 0) < (p.get('min_stock') or 0)]
+    return {'parts': parts, 'count': len(parts)}
+
+
+@router.post("/maintenance/parts-inventory")
+async def create_or_update_part(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """Create or upsert a maintenance spare part."""
+    if not payload.get('name'):
+        raise HTTPException(status_code=400, detail='name is required')
+    part = {
+        'id': payload.get('id') or str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'name': payload.get('name'),
+        'category': payload.get('category') or 'Genel',
+        'stock': int(payload.get('stock') or 0),
+        'min_stock': int(payload.get('min_stock') or 0),
+        'unit_price': float(payload.get('unit_price') or 0),
+        'unit': payload.get('unit') or 'adet',
+        'location': payload.get('location') or '',
+        'updated_at': datetime.now(UTC).isoformat(),
+    }
+    await db.maintenance_parts.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': part['id']},
+        {'$set': part, '$setOnInsert': {'created_at': part['updated_at']}},
+        upsert=True,
+    )
+    return part
+
+
 @router.get("/maintenance/tasks")
 @cached(ttl=180, key_prefix="maintenance_tasks")  # Cache for 3 min
 async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):

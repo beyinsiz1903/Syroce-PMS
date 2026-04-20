@@ -346,16 +346,9 @@ const MobileMaintenance = ({ user }) => {
       setPartsInventory(res.data.parts || []);
       setPartsInventoryModalOpen(true);
     } catch (error) {
-      // Mock data if API fails
-      setPartsInventory([
-        { id: 1, name: 'HVAC Filtresi', category: 'HVAC', stock: 45, min_stock: 20, unit_price: 125, unit: 'adet', location: 'Depo A-12' },
-        { id: 2, name: 'LED Ampul (E27)', category: 'Elektrik', stock: 8, min_stock: 15, unit_price: 35, unit: 'adet', location: 'Depo B-5' },
-        { id: 3, name: 'Lavabo Sifonu', category: 'Tesisat', stock: 32, min_stock: 10, unit_price: 85, unit: 'adet', location: 'Depo C-3' },
-        { id: 4, name: 'Duvar Boyası (Beyaz)', category: 'Yapısal', stock: 5, min_stock: 8, unit_price: 450, unit: 'litre', location: 'Depo D-1' },
-        { id: 5, name: 'Vida & Dübel Seti', category: 'Genel', stock: 150, min_stock: 50, unit_price: 15, unit: 'set', location: 'Depo A-8' },
-        { id: 6, name: 'Kapı Menteşesi', category: 'Mobilya', stock: 3, min_stock: 12, unit_price: 95, unit: 'adet', location: 'Depo C-7' },
-        { id: 7, name: 'Termostat', category: 'HVAC', stock: 18, min_stock: 8, unit_price: 320, unit: 'adet', location: 'Depo A-15' }
-      ]);
+      console.error('Parts inventory load failed:', error);
+      toast.error(error?.response?.data?.detail || 'Parça envanteri yüklenemedi');
+      setPartsInventory([]);
       setPartsInventoryModalOpen(true);
     }
   };

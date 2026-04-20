@@ -60,68 +60,23 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
 
   const loadChartData = useCallback(async () => {
-    try {
-      // Load occupancy trend (last 30 days)
-      const occupancyRes = await axios.get('/analytics/occupancy-trend?days=30');
-      setOccupancyData(occupancyRes.data.trend || []);
-      
-      // Load revenue trend
-      const revenueRes = await axios.get('/analytics/revenue-trend?days=30');
-      setRevenueData(revenueRes.data.trend || []);
-      
-      // Load booking trends
-      const trendRes = await axios.get('/analytics/booking-trends?days=30');
-      setTrendData(trendRes.data.trend || []);
-      
-      // Load heatmap data
-      const heatmapRes = await axios.get('/rms/demand-heatmap?days=30');
-      setHeatmapData(heatmapRes.data.heatmap || []);
-    } catch (error) {
-      console.error('Failed to load chart data:', error);
-      // Generate mock data for demo
-      generateMockChartData();
-    }
+    const endpoints = [
+      { url: '/analytics/occupancy-trend?days=30',  key: 'trend',   set: setOccupancyData },
+      { url: '/analytics/revenue-trend?days=30',    key: 'trend',   set: setRevenueData },
+      { url: '/analytics/booking-trends?days=30',   key: 'trend',   set: setTrendData },
+      { url: '/rms/demand-heatmap?days=30',         key: 'heatmap', set: setHeatmapData },
+    ];
+    const results = await Promise.allSettled(endpoints.map((e) => axios.get(e.url)));
+    results.forEach((res, i) => {
+      const { key, set, url } = endpoints[i];
+      if (res.status === 'fulfilled') {
+        set(res.value.data?.[key] || []);
+      } else {
+        console.error(`Failed to load ${url}:`, res.reason);
+        set([]);
+      }
+    });
   }, []);
-
-  const generateMockChartData = () => {
-    // Mock occupancy data for last 30 days
-    const occupancy = [];
-    const revenue = [];
-    const trends = [];
-    
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      
-      occupancy.push({
-        date: dateStr,
-        occupancy_rate: 60 + Math.random() * 30,
-        available_rooms: Math.floor(50 + Math.random() * 50),
-        occupied_rooms: Math.floor(100 + Math.random() * 100)
-      });
-      
-      revenue.push({
-        date: dateStr,
-        room_revenue: 5000 + Math.random() * 5000,
-        fnb_revenue: 1000 + Math.random() * 2000,
-        other_revenue: 500 + Math.random() * 1000,
-        total_revenue: 6500 + Math.random() * 8000
-      });
-      
-      trends.push({
-        date: dateStr,
-        bookings: Math.floor(5 + Math.random() * 15),
-        adr: 100 + Math.random() * 100,
-        revpar: 80 + Math.random() * 120
-      });
-    }
-    
-    setOccupancyData(occupancy);
-    setRevenueData(revenue);
-    setTrendData(trends);
-  };
-
 
   const loadDashboardStats = useCallback(async () => {
     try {

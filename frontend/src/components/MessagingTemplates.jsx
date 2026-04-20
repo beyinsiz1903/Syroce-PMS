@@ -59,8 +59,10 @@ const MessagingTemplates = () => {
 
       toast.success(
         <div>
-          <p className="font-semibold">Message Sent! (Mock)</p>
-          <p className="text-xs">{response.data.note}</p>
+          <p className="font-semibold">Message sent</p>
+          {response.data?.delivery_id && (
+            <p className="text-xs">Delivery ID: {response.data.delivery_id}</p>
+          )}
         </div>
       );
       
@@ -259,7 +261,7 @@ const MessagingTemplates = () => {
             <div className="flex space-x-2">
               <Button onClick={handleSendMessage} className="flex-1">
                 <Send className="w-4 h-4 mr-2" />
-                Send Message (Mock)
+                Send Message
               </Button>
               <Button
                 variant="outline"
@@ -273,12 +275,10 @@ const MessagingTemplates = () => {
               </Button>
             </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-              <p className="text-xs text-yellow-700">
-                ⚠️ <strong>Mock Mode:</strong> This is a demonstration. Real WhatsApp/SMS integration 
-                requires API keys and setup with providers like Twilio, WhatsApp Business API, etc.
-              </p>
-            </div>
+            <p className="text-xs text-gray-500">
+              Delivery uses your tenant's configured provider (Twilio, WhatsApp Business API, SMTP, etc.).
+              Configure providers under Settings → Messaging if a channel fails.
+            </p>
           </CardContent>
         </Card>
       )}
