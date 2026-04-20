@@ -249,8 +249,34 @@ const AuthPage = ({ onLogin }) => {
       background: isMobile 
         ? 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' 
         : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: isMobile ? '10px' : '20px'
+      padding: isMobile ? '10px' : '20px',
+      position: 'relative'
     }}>
+      <a
+        href="/"
+        style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '14px',
+          color: 'white',
+          background: 'rgba(255,255,255,0.15)',
+          padding: '8px 14px',
+          borderRadius: '999px',
+          textDecoration: 'none',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,255,255,0.25)',
+          fontWeight: 500,
+          zIndex: 10,
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+      >
+        ← Ana Sayfa
+      </a>
       <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px' }}>
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
