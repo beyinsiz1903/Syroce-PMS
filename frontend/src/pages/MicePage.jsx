@@ -17,6 +17,7 @@ import {
   History as HistoryIcon,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
+import Layout from '@/components/Layout';
 
 const STATUS = {
   lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
@@ -31,7 +32,7 @@ const SETUPS = ['theatre', 'classroom', 'banquet', 'cocktail', 'u_shape', 'board
 const EVENT_TYPES = ['meeting', 'conference', 'wedding', 'gala', 'training', 'other'];
 const AGENDA_KINDS = ['session', 'meal', 'break', 'av', 'logistics', 'other'];
 
-const MicePage = () => {
+const MicePage = ({ user, tenant, onLogout }) => {
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
   const [spaces, setSpaces] = useState([]);
@@ -233,6 +234,7 @@ const MicePage = () => {
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mice">
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -975,6 +977,7 @@ const MicePage = () => {
         </Modal>
       )}
     </div>
+    </Layout>
   );
 };
 

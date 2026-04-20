@@ -13,6 +13,7 @@ import {
   Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw,
   Trash2, Send, History as HistoryIcon, X,
 } from 'lucide-react';
+import Layout from '@/components/Layout';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
 const PR_STATUS = {
@@ -49,7 +50,7 @@ const Modal = ({ title, children, onClose, wide }) => (
   </div>
 );
 
-const ProcurementPage = () => {
+const ProcurementPage = ({ user, tenant, onLogout }) => {
   const [tab, setTab] = useState('summary');
   const [summary, setSummary] = useState({});
   const [suppliers, setSuppliers] = useState([]);
@@ -244,6 +245,7 @@ const ProcurementPage = () => {
   };
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="procurement">
     <div className="p-6 max-w-7xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <div>
@@ -813,6 +815,7 @@ const ProcurementPage = () => {
           onClose={() => setHistory(null)} />
       )}
     </div>
+    </Layout>
   );
 };
 

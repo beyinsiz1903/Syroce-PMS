@@ -15,6 +15,7 @@ import {
   Banknote,
   Store,
 } from "lucide-react";
+import Layout from "@/components/Layout";
 
 const PAYMENT_LABELS = {
   cash_on_delivery: "Kapıda Ödeme",
@@ -32,7 +33,7 @@ const STATUS_LABELS = {
 const fmt = (n) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
 
-export default function SuppliesMarket() {
+export default function SuppliesMarket({ user, tenant, onLogout }) {
   const [tab, setTab] = useState("catalog");
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
@@ -200,6 +201,7 @@ export default function SuppliesMarket() {
   };
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="supplies_market">
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -551,5 +553,6 @@ export default function SuppliesMarket() {
         </div>
       )}
     </div>
+    </Layout>
   );
 }
