@@ -606,6 +606,14 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "module_discovery",
+    label: "Modül Keşfi",
+    path: "/admin/module-discovery",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     key: "xchange",
     label: "Xchange (SXI)",
     path: "/app/xchange",
