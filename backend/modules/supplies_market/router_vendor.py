@@ -191,6 +191,90 @@ async def vendor_list_orders(vendor_id: str = Depends(get_current_vendor_id)):
     return [_order_to_out(d) for d in docs]
 
 
+@router.get("/earnings")
+async def vendor_earnings(vendor_id: str = Depends(get_current_vendor_id)):
+    """Kazanç ve komisyon özeti — tüm zamanlar, son 30 gün, aylık trend, durum kırılımı."""
+    from collections import defaultdict
+    from datetime import datetime, timedelta, timezone
+
+    docs = await orders_col.find({"vendor_id": vendor_id}).to_list(length=5000)
+
+    # Earned (gelir sayılan) durumlar: confirmed, shipped, delivered, completed
+    EARNED_STATES = {"confirmed", "shipped", "delivered", "completed"}
+    PENDING_STATES = {"pending"}
+    CANCELLED_STATES = {"cancelled", "refunded"}
+
+    now = datetime.now(timezone.utc)
+    last30 = now - timedelta(days=30)
+
+    def bucket():
+        return {"orders": 0, "gross": 0.0, "commission": 0.0, "net": 0.0}
+
+    all_time = bucket()
+    last_30d = bucket()
+    pending_b = bucket()
+    cancelled_b = bucket()
+    monthly = defaultdict(bucket)
+
+    for d in docs:
+        gross = float(d.get("subtotal", 0))
+        commission = float(d.get("commission_amount", 0))
+        net = float(d.get("vendor_payout", gross - commission))
+        status = d.get("status", "pending")
+        created = d.get("created_at", "")
+
+        if status in EARNED_STATES:
+            for b in (all_time,):
+                b["orders"] += 1
+                b["gross"] += gross
+                b["commission"] += commission
+                b["net"] += net
+            try:
+                dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt >= last30:
+                    last_30d["orders"] += 1
+                    last_30d["gross"] += gross
+                    last_30d["commission"] += commission
+                    last_30d["net"] += net
+                key = dt.strftime("%Y-%m")
+                m = monthly[key]
+                m["orders"] += 1
+                m["gross"] += gross
+                m["commission"] += commission
+                m["net"] += net
+            except Exception:
+                pass
+        elif status in PENDING_STATES:
+            pending_b["orders"] += 1
+            pending_b["gross"] += gross
+            pending_b["commission"] += commission
+            pending_b["net"] += net
+        elif status in CANCELLED_STATES:
+            cancelled_b["orders"] += 1
+            cancelled_b["gross"] += gross
+            cancelled_b["commission"] += commission
+            cancelled_b["net"] += net
+
+    def round_b(b):
+        return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in b.items()}
+
+    monthly_list = sorted(
+        [{"month": k, **round_b(v)} for k, v in monthly.items()],
+        key=lambda x: x["month"],
+    )[-12:]
+
+    return {
+        "all_time": round_b(all_time),
+        "last_30_days": round_b(last_30d),
+        "pending": round_b(pending_b),
+        "cancelled": round_b(cancelled_b),
+        "monthly": monthly_list,
+        "currency": "TRY",
+    }
+
+
 @router.post("/orders/{order_id}/confirm", response_model=OrderOut)
 async def vendor_confirm_order(order_id: str, vendor_id: str = Depends(get_current_vendor_id)):
     doc = await orders_col.find_one({"id": order_id, "vendor_id": vendor_id})

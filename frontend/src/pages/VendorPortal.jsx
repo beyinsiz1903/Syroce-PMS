@@ -13,6 +13,8 @@ import {
   XCircle,
   LogOut,
   Loader2,
+  Wallet,
+  TrendingUp,
 } from "lucide-react";
 
 const VENDOR_TOKEN_KEY = "vendor_token";
@@ -236,6 +238,7 @@ function VendorDashboard({ vendor, onLogout }) {
   const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [earnings, setEarnings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(null);
   const [shipModal, setShipModal] = useState(null);
@@ -265,9 +268,22 @@ function VendorDashboard({ vendor, onLogout }) {
     }
   };
 
+  const loadEarnings = async () => {
+    setLoading(true);
+    try {
+      const { data } = await vendorApi.get("/supplies-market/vendor/earnings");
+      setEarnings(data);
+    } catch (e) {
+      toast.error("Kazanç verileri yüklenemedi");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (tab === "products") loadProducts();
     if (tab === "orders") loadOrders();
+    if (tab === "earnings") loadEarnings();
   }, [tab]);
 
   const saveProduct = async (form) => {
@@ -396,7 +412,19 @@ function VendorDashboard({ vendor, onLogout }) {
           >
             <ClipboardList className="w-4 h-4 inline mr-1" /> Siparişler
           </button>
+          <button
+            onClick={() => setTab("earnings")}
+            className={`px-4 py-2 rounded font-medium text-sm ${
+              tab === "earnings" ? "bg-blue-600 text-white" : "bg-white border"
+            }`}
+          >
+            <Wallet className="w-4 h-4 inline mr-1" /> Kazançlarım
+          </button>
         </div>
+
+        {tab === "earnings" && (
+          <EarningsPanel data={earnings} loading={loading} commissionPct={vendor?.commission_pct} />
+        )}
 
         {tab === "products" && (
           <>
@@ -649,6 +677,126 @@ function VendorDashboard({ vendor, onLogout }) {
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Earnings Panel ──────────────────────────────────────
+function EarningsPanel({ data, loading, commissionPct }) {
+  const fmt = (n) =>
+    new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
+
+  if (loading || !data) {
+    return (
+      <div className="flex items-center justify-center py-12 text-gray-500">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Yükleniyor…
+      </div>
+    );
+  }
+
+  const { all_time, last_30_days, pending, cancelled, monthly } = data;
+  const maxNet = Math.max(1, ...monthly.map((m) => m.net));
+
+  const Card = ({ icon: Icon, title, value, sub, color }) => (
+    <div className="bg-white rounded-lg border p-4">
+      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+        <Icon className={`w-4 h-4 ${color}`} /> {title}
+      </div>
+      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+      {sub && <div className="text-xs text-gray-400 mt-1">{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Üst özet kartları */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Card
+          icon={Wallet}
+          title="Net Kazancım (Tüm Zamanlar)"
+          value={fmt(all_time.net)}
+          sub={`${all_time.orders} tamamlanan sipariş`}
+          color="text-green-600"
+        />
+        <Card
+          icon={TrendingUp}
+          title="Son 30 Gün Net"
+          value={fmt(last_30_days.net)}
+          sub={`${last_30_days.orders} sipariş`}
+          color="text-blue-600"
+        />
+        <Card
+          icon={XCircle}
+          title="Toplam Komisyon Gideri"
+          value={fmt(all_time.commission)}
+          sub={commissionPct ? `Komisyon oranı: %${commissionPct}` : null}
+          color="text-orange-600"
+        />
+        <Card
+          icon={ClipboardList}
+          title="Bekleyen Siparişler"
+          value={fmt(pending.gross)}
+          sub={`${pending.orders} sipariş onay bekliyor`}
+          color="text-yellow-600"
+        />
+      </div>
+
+      {/* Brüt / Komisyon / Net özet */}
+      <div className="bg-white rounded-lg border p-4">
+        <h3 className="text-sm font-semibold mb-3">Tüm Zamanlar Özeti</h3>
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-gray-500">Brüt Satış</div>
+            <div className="font-semibold text-gray-900">{fmt(all_time.gross)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Komisyon Gideri (-)</div>
+            <div className="font-semibold text-orange-600">- {fmt(all_time.commission)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Net Kazanç</div>
+            <div className="font-semibold text-green-600">{fmt(all_time.net)}</div>
+          </div>
+        </div>
+        {cancelled.orders > 0 && (
+          <div className="mt-3 pt-3 border-t text-xs text-gray-500">
+            İptal/iade: <span className="font-medium text-red-600">{cancelled.orders} sipariş</span> ·{" "}
+            {fmt(cancelled.gross)}
+          </div>
+        )}
+      </div>
+
+      {/* Aylık trend */}
+      <div className="bg-white rounded-lg border p-4">
+        <h3 className="text-sm font-semibold mb-3">Aylık Net Kazanç (son 12 ay)</h3>
+        {monthly.length === 0 ? (
+          <div className="text-sm text-gray-400 py-6 text-center">
+            Henüz tamamlanmış sipariş yok.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {monthly.map((m) => (
+              <div key={m.month} className="flex items-center gap-3 text-xs">
+                <div className="w-16 text-gray-600 font-mono">{m.month}</div>
+                <div className="flex-1 bg-gray-100 rounded h-6 overflow-hidden relative">
+                  <div
+                    className="h-full bg-gradient-to-r from-green-400 to-green-600 rounded"
+                    style={{ width: `${(m.net / maxNet) * 100}%` }}
+                  />
+                  <div className="absolute inset-0 flex items-center px-2 text-xs font-medium text-gray-800">
+                    {fmt(m.net)} <span className="ml-2 text-gray-500">· komisyon {fmt(m.commission)}</span>
+                  </div>
+                </div>
+                <div className="w-12 text-right text-gray-500">{m.orders}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-xs text-gray-400">
+        * Net kazanç = Brüt satış − Platform komisyonu. Sadece onaylı/kargolanan/teslim edilmiş siparişler gelire dahil edilir.
+      </div>
     </div>
   );
 }
