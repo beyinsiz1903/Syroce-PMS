@@ -831,6 +831,14 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "admin_vendors",
+    label: "Tedarikci Yonetimi",
+    path: "/admin/vendors",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+  },
+  {
     key: "admin_module_report",
     label: "Modul Raporu",
     path: "/admin/module-report",

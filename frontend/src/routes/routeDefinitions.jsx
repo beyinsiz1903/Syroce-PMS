@@ -99,6 +99,7 @@ const FeaturesShowcase = lazy(() => import("@/pages/FeaturesShowcase"));
 const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDashboard"));
 const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
 const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
+const AdminVendors = lazy(() => import("@/pages/AdminVendors"));
 const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
 const RoomQrCodes = lazy(() => import("@/pages/admin/RoomQrCodes"));
 const RoomRequests = lazy(() => import("@/pages/RoomRequests"));
@@ -499,6 +500,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Admin ──────────────────────────────────────────
     { path: "/admin/tenants", ...pa(AdminTenants) },
+    { path: "/admin/vendors", ...pa(AdminVendors) },
     { path: "/admin/quick-id", ...pa(QuickIdSettings) },
     { path: "/admin/room-qr-codes", ...pa(RoomQrCodes) },
     { path: "/app/room-requests", ...p(RoomRequests) },
