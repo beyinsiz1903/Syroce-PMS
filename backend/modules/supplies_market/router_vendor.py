@@ -195,7 +195,7 @@ async def vendor_list_orders(vendor_id: str = Depends(get_current_vendor_id)):
 async def vendor_earnings(vendor_id: str = Depends(get_current_vendor_id)):
     """Kazanç ve komisyon özeti — tüm zamanlar, son 30 gün, aylık trend, durum kırılımı."""
     from collections import defaultdict
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
     docs = await orders_col.find({"vendor_id": vendor_id}).to_list(length=5000)
 
@@ -204,7 +204,7 @@ async def vendor_earnings(vendor_id: str = Depends(get_current_vendor_id)):
     PENDING_STATES = {"pending"}
     CANCELLED_STATES = {"cancelled", "refunded"}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last30 = now - timedelta(days=30)
 
     def bucket():
@@ -232,7 +232,7 @@ async def vendor_earnings(vendor_id: str = Depends(get_current_vendor_id)):
             try:
                 dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 if dt >= last30:
                     last_30d["orders"] += 1
                     last_30d["gross"] += gross
