@@ -63,6 +63,10 @@ localPort = 5000
 externalPort = 5000
 
 [[ports]]
+localPort = 5001
+externalPort = 3000
+
+[[ports]]
 localPort = 6379
 externalPort = 80
 
@@ -88,3 +92,4 @@ QUICKID_URL = "http://localhost:8099"
 ENABLE_QUICKID_DEMO = "true"
 AFSADAKAT_ADMIN_TOKEN = "42b91b913f623686d32828696918781893e53a9bf9b49a754709248738889e4c"
 CM_KEY_VERSION = "v1"
+CORS_ORIGINS = "https://4ea80cc3-9968-43ee-8874-a90d4da6e55f-00-fh9lwt15azcz.sisko.replit.dev,http://localhost:5000,http://localhost:5173"
