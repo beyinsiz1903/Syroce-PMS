@@ -249,6 +249,14 @@ function App() {
                       } else {
                         element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
                       }
+                    } else if (rc.requireSuperAdmin) {
+                      if (!isAuthenticated) {
+                        element = <Navigate to="/auth" replace />;
+                      } else if (user?.role !== "super_admin") {
+                        element = <Navigate to="/app/dashboard" replace />;
+                      } else {
+                        element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
+                      }
                     } else {
                       element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
                     }

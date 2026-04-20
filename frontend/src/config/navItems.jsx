@@ -606,6 +606,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "core",
     navGroup: "admin",
+    requireSuperAdmin: true,
   },
   {
     key: "early_warning_dashboard",
@@ -614,6 +615,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "core",
     navGroup: "admin",
+    requireSuperAdmin: true,
   },
   {
     key: "module_discovery",
@@ -622,6 +624,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "admin",
+    requireSuperAdmin: true,
   },
   {
     key: "xchange",
@@ -870,6 +873,7 @@ export const NAV_ITEMS = [
     icon: "QrCode",
     moduleKey: "room_qr_requests",
     tier: "basic",
+    requireSuperAdmin: true,
   },
   {
     key: "api_docs",
