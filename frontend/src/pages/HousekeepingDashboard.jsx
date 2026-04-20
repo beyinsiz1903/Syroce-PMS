@@ -52,7 +52,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={() => navigate('/features')}>
+            <Button variant="outline" onClick={() => navigate('/admin/features')}>
               <Sparkles className="w-4 h-4 mr-2" />
               {t('hkDashboard.moreFeatures')}
             </Button>

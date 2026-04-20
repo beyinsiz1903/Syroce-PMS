@@ -29,7 +29,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">{t('fnb.suiteSubtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={() => navigate('/pos')}>
+            <Button variant="outline" onClick={() => navigate('/admin/pos')}>
               <Monitor className="w-4 h-4 mr-2" />
               {t('fnb.posRestaurant')}
             </Button>

@@ -572,7 +572,7 @@ const ExecutiveDashboard = ({ user }) => {
                   <Button
                     variant="outline"
                     className="w-full border-white/20 text-white hover:bg-white/10 mt-4"
-                    onClick={() => navigate('/alerts')}
+                    onClick={() => navigate('/executive')}
                   >
                     Tüm Uyarıları Gör ({alerts.length})
                     <ChevronRight className="h-4 w-4 ml-2" />
