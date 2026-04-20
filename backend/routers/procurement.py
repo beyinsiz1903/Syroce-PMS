@@ -148,7 +148,7 @@ def _invalidate_suppliers_cache(tenant_id: str) -> None:
 
 
 @router.get("/suppliers")
-@_cached(ttl=30, key_prefix="proc_suppliers")
+@_cached(ttl=120, key_prefix="proc_suppliers")
 async def list_suppliers(
     active_only: bool = True,
     q: str | None = None,
