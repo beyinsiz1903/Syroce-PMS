@@ -34,7 +34,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd frontend && yarn run start"
+args = "cd frontend && npm run start"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -60,11 +60,7 @@ waitForPort = 8099
 
 [[ports]]
 localPort = 5000
-externalPort = 5000
-
-[[ports]]
-localPort = 5001
-externalPort = 3000
+externalPort = 80
 
 [[ports]]
 localPort = 6379
