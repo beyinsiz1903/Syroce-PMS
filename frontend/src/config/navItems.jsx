@@ -73,6 +73,22 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "operations",
   },
+  {
+    key: "procurement",
+    label: "Satınalma",
+    path: "/app/procurement",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+  },
+  {
+    key: "audit_timeline",
+    label: "Denetim Zaman Çizelgesi",
+    path: "/audit-timeline",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
 
   // ──── OPERATIONS GROUP ─────────────────────────────
   {

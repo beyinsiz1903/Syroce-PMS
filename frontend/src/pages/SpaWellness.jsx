@@ -74,7 +74,7 @@ const SpaWellness = () => {
       toast.error(e.response?.data?.detail || 'Yüklenemedi');
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [filter]); // eslint-disable-line
+  useEffect(() => { load(); }, [filter]);
 
   const therapistById = useMemo(() => Object.fromEntries(therapists.map((t) => [t.id, t])), [therapists]);
   const roomById = useMemo(() => Object.fromEntries(rooms.map((r) => [r.id, r])), [rooms]);

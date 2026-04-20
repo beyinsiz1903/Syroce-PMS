@@ -292,7 +292,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/pending-ar", ...p(PendingAR) },
     { path: "/city-ledger", ...p(CityLedgerAccounts) },
     { path: "/efatura", ...p(EFaturaModule) },
-    { path: "/e-fatura", ...p(EFaturaModule) },
 
     // ── Settings ───────────────────────────────────────
     { path: "/settings", ...p(Settings) },
