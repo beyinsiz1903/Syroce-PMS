@@ -119,7 +119,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout title="Modül Keşfi" subtitle="Sidebar'da görünmeyen sayfalar dahil tüm uygulama rotaları">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-discovery" title="Modül Keşfi" subtitle="Sidebar'da görünmeyen sayfalar dahil tüm uygulama rotaları">
       <div className="p-4 space-y-4">
         {/* Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
