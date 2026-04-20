@@ -69,10 +69,10 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const [s, sup, pr, po] = await Promise.all([
-        axios.get('/api/procurement/summary'),
-        axios.get('/api/procurement/suppliers?active_only=false'),
-        axios.get('/api/procurement/purchase-requests'),
-        axios.get('/api/procurement/purchase-orders'),
+        axios.get('/procurement/summary'),
+        axios.get('/procurement/suppliers?active_only=false'),
+        axios.get('/procurement/purchase-requests'),
+        axios.get('/procurement/purchase-orders'),
       ]);
       setSummary(s.data || {});
       setSuppliers(sup.data?.items || []);
@@ -95,10 +95,10 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
         toast.error('İsim zorunlu (≥2 karakter)'); return;
       }
       if (supplierForm.id) {
-        await axios.put(`/api/procurement/suppliers/${supplierForm.id}`, body);
+        await axios.put(`/procurement/suppliers/${supplierForm.id}`, body);
         toast.success('Tedarikçi güncellendi');
       } else {
-        await axios.post('/api/procurement/suppliers', body);
+        await axios.post('/procurement/suppliers', body);
         toast.success('Tedarikçi eklendi');
       }
       setSupplierForm(null);
@@ -110,7 +110,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const deleteSupplier = async (id) => {
     if (!window.confirm('Tedarikçi silinsin mi?')) return;
     try {
-      await axios.delete(`/api/procurement/suppliers/${id}`);
+      await axios.delete(`/procurement/suppliers/${id}`);
       toast.success('Silindi');
       refresh();
     } catch (e) {
@@ -124,7 +124,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       if (!prForm.department || !prForm.lines?.length) {
         toast.error('Departman ve en az bir kalem gerekli'); return;
       }
-      await axios.post('/api/procurement/purchase-requests', prForm);
+      await axios.post('/procurement/purchase-requests', prForm);
       toast.success('Talep oluşturuldu');
       setPrForm(null); refresh();
     } catch (e) {
@@ -140,7 +140,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           toast.error('Neden en az 5 karakter olmalı'); return;
         }
       }
-      await axios.post(`/api/procurement/purchase-requests/${id}/status`,
+      await axios.post(`/procurement/purchase-requests/${id}/status`,
         { status, reason });
       toast.success('Durum güncellendi');
       refresh();
@@ -171,7 +171,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       if (!poForm.supplier_id || !poForm.lines?.length) {
         toast.error('Tedarikçi ve en az bir kalem gerekli'); return;
       }
-      await axios.post('/api/procurement/purchase-orders', poForm);
+      await axios.post('/procurement/purchase-orders', poForm);
       toast.success('Sipariş oluşturuldu');
       setPoForm(null); refresh();
     } catch (e) {
@@ -187,7 +187,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           toast.error('Neden en az 5 karakter olmalı'); return;
         }
       }
-      await axios.post(`/api/procurement/purchase-orders/${id}/status`,
+      await axios.post(`/procurement/purchase-orders/${id}/status`,
         { status, reason });
       toast.success('Durum güncellendi');
       refresh();
@@ -198,7 +198,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   };
   const openPo = async (id) => {
     try {
-      const r = await axios.get(`/api/procurement/purchase-orders/${id}`);
+      const r = await axios.get(`/procurement/purchase-orders/${id}`);
       setSelectedPo(r.data);
     } catch { toast.error('PO yüklenemedi'); }
   };
@@ -233,7 +233,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
         toast.error('En az bir kalem için miktar girin'); return;
       }
       const r = await axios.post(
-        `/api/procurement/purchase-orders/${grnForm.po.id}/grn`,
+        `/procurement/purchase-orders/${grnForm.po.id}/grn`,
         { notes: grnForm.notes, lines });
       toast.success(`GRN ${r.data.grn?.grn_no} oluşturuldu — PO: ${r.data.po_status}`);
       setGrnForm(null);
