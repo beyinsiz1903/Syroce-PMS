@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
@@ -83,10 +84,10 @@ const AIRMSDashboard = () => {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert(`Success! ${response.data.rates_published} rates published. Avg rate: $${response.data.avg_rate}`);
+      toast.success(`${response.data.rates_published} fiyat yayınlandı • Ort. fiyat: $${response.data.avg_rate}`);
     } catch (error) {
       console.error('Error publishing rates:', error);
-      alert('Fiyatlar yayınlanamadı');
+      toast.error('Fiyatlar yayınlanamadı');
     } finally {
       setLoading(false);
     }

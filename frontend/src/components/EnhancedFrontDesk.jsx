@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -50,11 +51,11 @@ const EnhancedFrontDesk = () => {
         { image_base64: imageBase64, booking_id: bookingId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Passport scanned successfully!');
+      toast.success('Pasaport başarıyla tarandı');
       return response.data.extracted_data;
     } catch (error) {
       console.error('Error scanning passport:', error);
-      alert('Pasaport taranamadı');
+      toast.error('Pasaport taranamadı');
     }
   };
 
@@ -66,12 +67,12 @@ const EnhancedFrontDesk = () => {
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert(`Walk-in booking created! Folio: ${response.data.folio_number}`);
+      toast.success(`Walk-in rezervasyon oluşturuldu • Folyo: ${response.data.folio_number}`);
       setShowWalkIn(false);
       fetchTodayArrivals();
     } catch (error) {
       console.error('Error creating walk-in:', error);
-      alert('Walk-in rezervasyon oluşturulamadı');
+      toast.error('Walk-in rezervasyon oluşturulamadı');
     }
   };
 
@@ -83,11 +84,11 @@ const EnhancedFrontDesk = () => {
         { booking_id: bookingId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Guest checked in successfully!');
+      toast.success('Misafir girişi başarıyla tamamlandı');
       fetchTodayArrivals();
     } catch (error) {
       console.error('Error checking in:', error);
-      alert('Misafir giriş yapılamadı');
+      toast.error('Misafir giriş yapılamadı');
     }
   };
 

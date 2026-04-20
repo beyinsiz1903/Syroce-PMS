@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import SplitFolioDialog from './SplitFolioDialog';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
@@ -41,12 +42,12 @@ const EnhancedFolioManager = ({ bookingId }) => {
         { ...chargeData, folio_id: folio.id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Charge posted successfully');
+      toast.success('Masraf başarıyla kaydedildi');
       setShowChargeModal(false);
       fetchFolio();
     } catch (error) {
       console.error('Error posting charge:', error);
-      alert('Masraf kaydedilemedi');
+      toast.error('Masraf kaydedilemedi');
     }
   };
 
@@ -58,12 +59,12 @@ const EnhancedFolioManager = ({ bookingId }) => {
         { ...paymentData, folio_id: folio.id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Payment posted successfully');
+      toast.success('Ödeme başarıyla kaydedildi');
       setShowPaymentModal(false);
       fetchFolio();
     } catch (error) {
       console.error('Error posting payment:', error);
-      alert('Ödeme kaydedilemedi');
+      toast.error('Ödeme kaydedilemedi');
     }
   };
 
@@ -77,11 +78,11 @@ const EnhancedFolioManager = ({ bookingId }) => {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Guest checked out successfully');
+      toast.success('Misafir çıkışı başarıyla tamamlandı');
       fetchFolio();
     } catch (error) {
       console.error('Error checking out:', error);
-      alert('Çıkış yapılamadı');
+      toast.error('Çıkış yapılamadı');
     }
   };
 

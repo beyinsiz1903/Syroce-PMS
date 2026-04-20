@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -61,7 +62,7 @@ const EnhancedReservationCalendar = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setAiPricing(response.data);
-      alert(`AI Pricing: ${response.data.rates_published} rates published`);
+      toast.success(`AI Fiyatlama: ${response.data.rates_published} fiyat yayınlandı`);
     } catch (error) {
       console.error('Error fetching AI pricing:', error);
     }
@@ -79,12 +80,12 @@ const EnhancedReservationCalendar = () => {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      alert('Rate override successful');
+      toast.success('Fiyat geçersiz kılma başarılı');
       setShowRateOverride(false);
       fetchRooms();
     } catch (error) {
       console.error('Error overriding rate:', error);
-      alert('Fiyat geçersiz kılınamadı');
+      toast.error('Fiyat geçersiz kılınamadı');
     }
   };
 
