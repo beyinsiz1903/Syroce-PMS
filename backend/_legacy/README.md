@@ -1,17 +1,27 @@
 # _legacy/
 
-Quarantined legacy Python modules that are **not imported** by any active application code.
+Quarantined legacy Python modules preserved here because active application code still imports them.
 
-These files were originally in `/app/backend/` root and were moved here during the enterprise codebase cleanup (2026-03-22).
+Files moved to this directory during the enterprise codebase cleanup (2026-03-22).
 
-## Why not deleted?
+## ⚠️ Still in use
 
-Some modules contain domain logic or data models that may be useful as reference during future feature development.
+Do **not** delete the following files without first migrating their contents:
 
-## Can I delete them?
+| File | Imported by |
+| --- | --- |
+| `accounting_endpoints.py` | `backend/domains/accounting/router.py` |
+| `accounting_models.py` | `backend/routers/finance/accounting.py` |
+| `booking_availability.py` | `backend/integrations/booking_adapter.py` |
+| `graphql_schema.py` | `backend/server.py` (optional GraphQL mount) |
 
-Yes. The application runs without any of these files. They are safe to remove entirely.
+## Cleanup history
 
-## File count
+- 2026-04-20: Removed `payment_gateway_models.py` (no references in codebase) and `__pycache__/`.
+- Prior READMEs incorrectly claimed all files were safe to delete — this was out of date.
 
-67 modules (endpoints, models, utilities, seed scripts)
+## Future removal
+
+These files should be migrated out of `_legacy/` into their logical module homes
+(e.g. `domains/accounting/`) and this directory removed entirely. That is a larger
+refactor and should be tracked as a dedicated task.
