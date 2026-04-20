@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import Layout from "@/components/Layout";
 import {
   Building2,
   Calculator,
@@ -55,7 +56,7 @@ function downloadCSV(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function KonaklamaVergisiModule() {
+export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   const [tab, setTab] = useState("config");
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -246,18 +247,15 @@ export default function KonaklamaVergisiModule() {
   const yearOptions = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
 
   return (
-    <div className="p-4 lg:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Building2 className="h-6 w-6 text-amber-600" />
-            Konaklama Vergisi Otomasyonu
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            7194 sayılı Kanun — Türkiye Konaklama Vergisi (varsayılan %2). Aylık beyanname takip eden ayın 26'sına kadar verilir.
-          </p>
-        </div>
-      </div>
+    <Layout
+      user={user}
+      tenant={tenant}
+      onLogout={onLogout}
+      currentModule="konaklama-vergisi"
+      title="Konaklama Vergisi Otomasyonu"
+      subtitle="7194 sayılı Kanun — Türkiye Konaklama Vergisi (varsayılan %2). Aylık beyanname takip eden ayın 26'sına kadar verilir."
+    >
+      <div className="p-4 lg:p-6 space-y-4">
 
       <div className="border-b">
         <div className="flex flex-wrap gap-1">
@@ -614,7 +612,8 @@ export default function KonaklamaVergisiModule() {
           )}
         </div>
       )}
-    </div>
+      </div>
+    </Layout>
   );
 }
 
