@@ -12,7 +12,7 @@ python -m pip install "litellm>=1.83.2" --no-deps --quiet
 
 echo "Verifying..."
 python3 -c "
-import litellm, openai, emergentintegrations
+import litellm, openai
 print(f'litellm: OK')
 print(f'openai: {openai.__version__}')
 print('All imports OK')
