@@ -105,7 +105,9 @@ function VendorAuth({ onAuthed }) {
       </div>
       <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative z-10">
         <div className="text-center mb-6">
-          <Store className="w-12 h-12 mx-auto text-blue-600 mb-2" />
+          <a href="/" title="Ana sayfaya dön" className="inline-block">
+            <Store className="w-12 h-12 mx-auto text-blue-600 mb-2 hover:text-blue-700 transition" />
+          </a>
           <h1 className="text-2xl font-bold">Toptancı Portalı</h1>
           <p className="text-sm text-gray-500">Syroce Tedarik Pazarı</p>
         </div>

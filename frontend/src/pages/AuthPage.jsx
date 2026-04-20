@@ -258,15 +258,17 @@ const AuthPage = ({ onLogin }) => {
       <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px', position: 'relative', zIndex: 1 }}>
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
-            <img 
-              src="/syroce-logo.svg"
-              alt="Syroce Logo" 
-              style={{ 
-                height: isMobile ? '60px' : '70px', 
-                width: 'auto',
-                filter: 'brightness(0) invert(1)'
-              }} 
-            />
+            <a href="/" title="Ana sayfaya dön" style={{ display: 'inline-block', cursor: 'pointer' }}>
+              <img 
+                src="/syroce-logo.svg"
+                alt="Syroce Logo" 
+                style={{ 
+                  height: isMobile ? '60px' : '70px', 
+                  width: 'auto',
+                  filter: 'brightness(0) invert(1)'
+                }} 
+              />
+            </a>
           </div>
           <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: isMobile ? '0.875rem' : '1rem', marginBottom: '0.75rem', fontWeight: '500' }}>
             {isMobile ? t('auth.mobileHotelMgmt') : t('auth.completeHotelPlatform')}
