@@ -443,6 +443,12 @@ async def _startup():
         await load_credentials_to_env()
     except Exception as _e:
         logging.getLogger(__name__).warning("integration credentials startup skipped: %s", _e)
+    try:
+        from scripts.ensure_demo_user import ensure_demo_user
+        from core.database import db as _db
+        await ensure_demo_user(_db)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("demo user seed skipped: %s", _e)
 
 
 @app.on_event("shutdown")
