@@ -278,6 +278,187 @@ async def create_stock_movement(
 
     return movement
 
+# ============= SETUP KITS (Oda Hazırlık Standardı) =============
+
+import uuid
+from fastapi import HTTPException, Body
+
+@api_router.get("/accounting/setup-kits")
+async def list_setup_kits(current_user: User = Depends(get_current_user)):
+    kits = await db.setup_kits.find(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0}
+    ).sort('created_at', -1).to_list(500)
+    return {'items': kits}
+
+@api_router.post("/accounting/setup-kits")
+async def create_setup_kit(
+    payload: dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user)
+):
+    name = (payload.get('name') or '').strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail='Kit adı en az 2 karakter olmalı')
+    lines = payload.get('lines') or []
+    if not lines:
+        raise HTTPException(status_code=400, detail='En az bir kalem ekleyin')
+
+    clean_lines = []
+    for ln in lines:
+        item_id = ln.get('item_id')
+        qty = float(ln.get('quantity') or 0)
+        if not item_id or qty <= 0:
+            continue
+        clean_lines.append({
+            'item_id': item_id,
+            'item_name': ln.get('item_name') or '',
+            'unit': ln.get('unit') or 'adet',
+            'quantity': qty,
+        })
+    if not clean_lines:
+        raise HTTPException(status_code=400, detail='Geçerli kalem yok')
+
+    kit = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'name': name,
+        'description': (payload.get('description') or '').strip(),
+        'category': payload.get('category') or 'room_setup',
+        'lines': clean_lines,
+        'created_at': datetime.now(UTC).isoformat(),
+        'created_by': current_user.name,
+    }
+    await db.setup_kits.insert_one(dict(kit))
+    kit.pop('_id', None)
+    return kit
+
+@api_router.delete("/accounting/setup-kits/{kit_id}")
+async def delete_setup_kit(kit_id: str, current_user: User = Depends(get_current_user)):
+    r = await db.setup_kits.delete_one(
+        {'id': kit_id, 'tenant_id': current_user.tenant_id}
+    )
+    if not r.deleted_count:
+        raise HTTPException(status_code=404, detail='Kit bulunamadı')
+    return {'ok': True}
+
+@api_router.post("/accounting/setup-kits/{kit_id}/apply")
+async def apply_setup_kit(
+    kit_id: str,
+    payload: dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user)
+):
+    import math
+    try:
+        multiplier = float(payload.get('multiplier') or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail='Çarpan geçersiz')
+    if not math.isfinite(multiplier) or multiplier <= 0 or multiplier > 10000:
+        raise HTTPException(status_code=400, detail='Çarpan 0 ile 10000 arasında olmalı')
+
+    reference = payload.get('reference') or 'room_setup'
+    notes = payload.get('notes') or ''
+    tenant_id = current_user.tenant_id
+
+    kit = await db.setup_kits.find_one(
+        {'id': kit_id, 'tenant_id': tenant_id}, {'_id': 0}
+    )
+    if not kit:
+        raise HTTPException(status_code=404, detail='Kit bulunamadı')
+
+    # Önceden yeterlilik kontrolü (kullanıcıya hızlı geri bildirim)
+    shortages = []
+    needs = []
+    for ln in kit['lines']:
+        try:
+            line_qty = float(ln.get('quantity') or 0)
+        except (TypeError, ValueError):
+            line_qty = 0
+        if not math.isfinite(line_qty) or line_qty <= 0:
+            shortages.append({'item_name': ln.get('item_name', '?'), 'reason': 'Geçersiz miktar'})
+            continue
+        needed = line_qty * multiplier
+        item = await db.inventory_items.find_one(
+            {'id': ln['item_id'], 'tenant_id': tenant_id}, {'_id': 0}
+        )
+        if not item:
+            shortages.append({'item_name': ln.get('item_name', '?'), 'reason': 'Ürün bulunamadı'})
+        elif (item.get('quantity') or 0) < needed:
+            shortages.append({
+                'item_name': ln['item_name'],
+                'needed': needed,
+                'available': item.get('quantity') or 0,
+                'unit': ln.get('unit'),
+            })
+        else:
+            needs.append((ln, needed))
+    if shortages:
+        raise HTTPException(status_code=400, detail={
+            'message': 'Yetersiz stok',
+            'shortages': shortages,
+        })
+
+    # Atomik koşullu decrement — her satır için tenant filtresi + quantity yeterli koşulu.
+    # Başarısız olursa şimdiye kadar uygulananları telafi et (compensating reversals).
+    applied = []
+    rollback_log = []  # [(item_id, qty_to_restore, movement_id_to_delete), ...]
+    try:
+        for ln, deducted in needs:
+            res = await db.inventory_items.update_one(
+                {
+                    'id': ln['item_id'],
+                    'tenant_id': tenant_id,
+                    'quantity': {'$gte': deducted},
+                },
+                {'$inc': {'quantity': -deducted}},
+            )
+            if res.modified_count != 1:
+                raise HTTPException(status_code=409, detail={
+                    'message': 'Stok yarışı tespit edildi, tekrar deneyin',
+                    'item_name': ln['item_name'],
+                })
+            movement_id = str(uuid.uuid4())
+            movement = {
+                'id': movement_id,
+                'tenant_id': tenant_id,
+                'item_id': ln['item_id'],
+                'movement_type': 'out',
+                'quantity': deducted,
+                'unit_cost': 0.0,
+                'reference': reference,
+                'notes': notes or f"{kit['name']} × {multiplier:g}",
+                'created_by': current_user.name,
+                'created_at': datetime.now(UTC).isoformat(),
+                'kit_id': kit_id,
+            }
+            await db.stock_movements.insert_one(dict(movement))
+            rollback_log.append((ln['item_id'], deducted, movement_id))
+            applied.append({
+                'item_name': ln['item_name'],
+                'deducted': deducted,
+                'unit': ln.get('unit'),
+            })
+    except Exception as e:
+        # Telafi: uygulanmış satırları geri al (best-effort)
+        for item_id, qty, mv_id in rollback_log:
+            try:
+                await db.inventory_items.update_one(
+                    {'id': item_id, 'tenant_id': tenant_id},
+                    {'$inc': {'quantity': qty}},
+                )
+                await db.stock_movements.delete_one({'id': mv_id, 'tenant_id': tenant_id})
+            except Exception:
+                pass
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail='Kit uygulanamadı, geri alındı')
+
+    return {
+        'ok': True,
+        'kit_name': kit['name'],
+        'multiplier': multiplier,
+        'applied': applied,
+    }
+
 # ============= ADVANCED INVOICING =============
 
 @api_router.post("/accounting/invoices")
