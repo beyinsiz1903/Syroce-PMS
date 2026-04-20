@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Layout from "../components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -14,10 +15,10 @@ const API = "";
 
 function SeverityBadge({ severity }) {
   const map = {
-    critical: "bg-red-500/20 text-red-300 border-red-500/40",
-    high: "bg-orange-500/20 text-orange-300 border-orange-500/40",
-    warning: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-    info: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+    critical: "bg-red-100 text-red-700 border-red-300",
+    high: "bg-orange-100 text-orange-700 border-orange-300",
+    warning: "bg-amber-100 text-amber-800 border-amber-300",
+    info: "bg-sky-100 text-sky-700 border-sky-300",
   };
   return (
     <span data-testid={`severity-${severity}`} className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${map[severity] || map.info}`}>
@@ -49,19 +50,19 @@ function DiffView({ before, after }) {
 function TimelineEvent({ event, expanded, onToggle }) {
   const time = event.timestamp ? new Date(event.timestamp).toLocaleString("tr-TR") : "—";
   return (
-    <div data-testid={`timeline-event-${event.id || event.operation_name}`} className="border-l-2 border-zinc-700 pl-4 pb-4 relative">
-      <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-zinc-500" />
+    <div data-testid={`timeline-event-${event.id || event.operation_name}`} className="border-l-2 border-gray-200 pl-4 pb-4 relative">
+      <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-gray-400" />
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-zinc-200">{event.operation_name || event.action}</span>
+            <span className="text-sm font-medium text-gray-900">{event.operation_name || event.action}</span>
             <SeverityBadge severity={event.severity || "info"} />
-            <Badge variant="outline" className="text-[10px] bg-zinc-800/50 text-zinc-400 border-zinc-700">{event.target_type}</Badge>
-            <Badge variant="outline" className={`text-[10px] border-zinc-700 ${event.result_status === "success" ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"}`}>
+            <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{event.target_type}</Badge>
+            <Badge variant="outline" className={`text-[10px] ${event.result_status === "success" ? "text-emerald-700 bg-emerald-50 border-emerald-300" : "text-red-700 bg-red-50 border-red-300"}`}>
               {event.result_status}
             </Badge>
           </div>
-          <div className="flex items-center gap-3 mt-1 text-[11px] text-zinc-500">
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
             <span className="flex items-center gap-1"><User className="w-3 h-3" />{event.actor_role || "system"}</span>
             {event.target_id && <span className="font-mono">{event.target_id.substring(0, 8)}...</span>}
@@ -69,7 +70,7 @@ function TimelineEvent({ event, expanded, onToggle }) {
           </div>
         </div>
         {(event.before_snapshot || event.after_snapshot) && (
-          <Button size="sm" variant="ghost" className="h-6 text-xs text-zinc-500" onClick={onToggle}>
+          <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-500" onClick={onToggle}>
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </Button>
         )}
@@ -79,7 +80,7 @@ function TimelineEvent({ event, expanded, onToggle }) {
   );
 }
 
-export default function AuditTimelinePage() {
+export default function AuditTimelinePage({ user, tenant, onLogout }) {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -137,21 +138,21 @@ export default function AuditTimelinePage() {
   };
 
   return (
-    <div data-testid="audit-timeline-page" className="min-h-screen bg-zinc-950 text-zinc-100">
+    <Layout
+      user={user}
+      tenant={tenant}
+      onLogout={onLogout}
+      currentModule="audit-timeline"
+      title="Audit Timeline"
+      subtitle="Compliance & operational audit trail"
+    >
+    <div data-testid="audit-timeline-page" className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-zinc-400">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Back
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold text-zinc-100">Audit Timeline</h1>
-              <p className="text-xs text-zinc-500">Compliance & operational audit trail</p>
-            </div>
-          </div>
-          <Button data-testid="refresh-timeline-btn" size="sm" variant="outline" onClick={fetchTimeline}
-            className="border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-gray-600">
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back
+          </Button>
+          <Button data-testid="refresh-timeline-btn" size="sm" variant="outline" onClick={fetchTimeline}>
             {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
             Refresh
           </Button>
@@ -160,28 +161,28 @@ export default function AuditTimelinePage() {
         {/* Summary Cards */}
         {summary && (
           <div data-testid="audit-summary" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-zinc-500">Total Events (24h)</p>
-                <p className="text-2xl font-bold text-zinc-100">{summary.total_events || 0}</p>
+                <p className="text-xs text-gray-500">Total Events (24h)</p>
+                <p className="text-2xl font-bold text-gray-900">{summary.total_events || 0}</p>
               </CardContent>
             </Card>
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-zinc-500">Critical</p>
-                <p className="text-2xl font-bold text-red-400">{summary.by_severity?.critical || 0}</p>
+                <p className="text-xs text-gray-500">Critical</p>
+                <p className="text-2xl font-bold text-red-600">{summary.by_severity?.critical || 0}</p>
               </CardContent>
             </Card>
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-zinc-500">Warning</p>
-                <p className="text-2xl font-bold text-amber-400">{summary.by_severity?.warning || 0}</p>
+                <p className="text-xs text-gray-500">Warning</p>
+                <p className="text-2xl font-bold text-amber-600">{summary.by_severity?.warning || 0}</p>
               </CardContent>
             </Card>
-            <Card className="bg-zinc-900/60 border-zinc-800">
+            <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-zinc-500">Info</p>
-                <p className="text-2xl font-bold text-sky-400">{summary.by_severity?.info || 0}</p>
+                <p className="text-xs text-gray-500">Info</p>
+                <p className="text-2xl font-bold text-sky-600">{summary.by_severity?.info || 0}</p>
               </CardContent>
             </Card>
           </div>
@@ -191,19 +192,19 @@ export default function AuditTimelinePage() {
           {/* Filters + Timeline */}
           <div className="lg:col-span-2 space-y-4">
             {/* Filters */}
-            <Card data-testid="timeline-filters" className="bg-zinc-900/60 border-zinc-800">
+            <Card data-testid="timeline-filters">
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Filter className="w-4 h-4 text-zinc-500" />
+                  <Filter className="w-4 h-4 text-gray-500" />
                   <select data-testid="filter-severity" value={filters.severity} onChange={(e) => setFilters(p => ({...p, severity: e.target.value}))}
-                    className="bg-zinc-800 border border-zinc-700 rounded text-xs px-2 py-1 text-zinc-300">
+                    className="bg-white border border-gray-300 rounded text-xs px-2 py-1 text-gray-700">
                     <option value="">All Severity</option>
                     <option value="critical">Critical</option>
                     <option value="warning">Warning</option>
                     <option value="info">Info</option>
                   </select>
                   <select data-testid="filter-entity" value={filters.entity_type} onChange={(e) => setFilters(p => ({...p, entity_type: e.target.value}))}
-                    className="bg-zinc-800 border border-zinc-700 rounded text-xs px-2 py-1 text-zinc-300">
+                    className="bg-white border border-gray-300 rounded text-xs px-2 py-1 text-gray-700">
                     <option value="">All Entities</option>
                     <option value="booking">Booking</option>
                     <option value="folio">Folio</option>
@@ -214,26 +215,26 @@ export default function AuditTimelinePage() {
                   </select>
                   <Input data-testid="filter-actor" placeholder="Actor..." value={filters.actor}
                     onChange={(e) => setFilters(p => ({...p, actor: e.target.value}))}
-                    className="bg-zinc-800 border-zinc-700 text-xs h-7 w-32 text-zinc-300" />
+                    className="text-xs h-7 w-32" />
                 </div>
               </CardContent>
             </Card>
 
             {/* Timeline Events */}
-            <Card className="bg-zinc-950 border-zinc-800/70">
+            <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-zinc-300 flex items-center gap-2">
+                <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                   <Clock className="w-4 h-4" /> Event Timeline
-                  <Badge variant="outline" className="text-[10px] bg-zinc-800/50 text-zinc-400 border-zinc-700">{events.length} events</Badge>
+                  <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{events.length} events</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
                 {loading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
                 ) : events.length === 0 ? (
-                  <div className="text-center py-8 text-zinc-500 text-sm">No audit events found</div>
+                  <div className="text-center py-8 text-gray-500 text-sm">No audit events found</div>
                 ) : (
                   events.map((ev, idx) => (
                     <TimelineEvent
@@ -251,16 +252,16 @@ export default function AuditTimelinePage() {
           {/* Entity Search + Sidebar */}
           <div className="space-y-4">
             {/* Entity Trail Search */}
-            <Card data-testid="entity-search" className="bg-zinc-900/60 border-zinc-800">
+            <Card data-testid="entity-search">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-zinc-300 flex items-center gap-2">
+                <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                   <Search className="w-4 h-4" /> Entity Audit Trail
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <select data-testid="entity-type-select" value={searchEntity.type}
                   onChange={(e) => setSearchEntity(p => ({...p, type: e.target.value}))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded text-xs px-2 py-1.5 text-zinc-300">
+                  className="w-full bg-white border border-gray-300 rounded text-xs px-2 py-1.5 text-gray-700">
                   <option value="">Select Entity Type</option>
                   <option value="booking">Booking</option>
                   <option value="folio">Folio</option>
@@ -269,19 +270,19 @@ export default function AuditTimelinePage() {
                 </select>
                 <Input data-testid="entity-id-input" placeholder="Entity ID..." value={searchEntity.id}
                   onChange={(e) => setSearchEntity(p => ({...p, id: e.target.value}))}
-                  className="bg-zinc-800 border-zinc-700 text-xs text-zinc-300" />
+                  className="text-xs" />
                 <Button data-testid="search-entity-btn" size="sm" onClick={fetchEntityTrail}
-                  className="w-full bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs" disabled={!searchEntity.type || !searchEntity.id}>
+                  className="w-full text-xs" disabled={!searchEntity.type || !searchEntity.id}>
                   <Eye className="w-3 h-3 mr-1" /> View Trail
                 </Button>
 
                 {entityTrail && (
                   <div className="mt-3 space-y-2">
-                    <p className="text-xs text-zinc-400">{entityTrail.entity_type}: {entityTrail.entity_id} ({entityTrail.count || 0} events)</p>
+                    <p className="text-xs text-gray-600">{entityTrail.entity_type}: {entityTrail.entity_id} ({entityTrail.count || 0} events)</p>
                     {(entityTrail.trail || []).map((t, i) => (
-                      <div key={i} className="bg-zinc-800/50 rounded p-2 text-xs">
-                        <p className="text-zinc-300">{t.operation_name || t.action}</p>
-                        <p className="text-zinc-500">{t.timestamp ? new Date(t.timestamp).toLocaleString("tr-TR") : "—"}</p>
+                      <div key={i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+                        <p className="text-gray-800">{t.operation_name || t.action}</p>
+                        <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString("tr-TR") : "—"}</p>
                       </div>
                     ))}
                   </div>
@@ -291,17 +292,17 @@ export default function AuditTimelinePage() {
 
             {/* Summary by Operation */}
             {summary && summary.by_operation && (
-              <Card className="bg-zinc-900/60 border-zinc-800">
+              <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-zinc-300 flex items-center gap-2">
+                  <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                     <FileText className="w-4 h-4" /> By Operation
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {Object.entries(summary.by_operation).map(([op, count]) => (
                     <div key={op} className="flex justify-between items-center py-1 text-xs">
-                      <span className="text-zinc-400 font-mono">{op}</span>
-                      <span className="text-zinc-300">{count}</span>
+                      <span className="text-gray-600 font-mono">{op}</span>
+                      <span className="text-gray-900 font-semibold">{count}</span>
                     </div>
                   ))}
                 </CardContent>
@@ -310,17 +311,17 @@ export default function AuditTimelinePage() {
 
             {/* Summary by Actor */}
             {summary && summary.by_actor && (
-              <Card className="bg-zinc-900/60 border-zinc-800">
+              <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-zinc-300 flex items-center gap-2">
+                  <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                     <User className="w-4 h-4" /> By Actor
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {Object.entries(summary.by_actor).map(([actor, count]) => (
                     <div key={actor} className="flex justify-between items-center py-1 text-xs">
-                      <span className="text-zinc-400">{actor}</span>
-                      <span className="text-zinc-300">{count}</span>
+                      <span className="text-gray-600">{actor}</span>
+                      <span className="text-gray-900 font-semibold">{count}</span>
                     </div>
                   ))}
                 </CardContent>
@@ -330,5 +331,6 @@ export default function AuditTimelinePage() {
         </div>
       </div>
     </div>
+    </Layout>
   );
 }
