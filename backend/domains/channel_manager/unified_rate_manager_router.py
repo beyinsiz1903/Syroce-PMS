@@ -24,6 +24,7 @@ Endpoints:
 """
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -1325,6 +1326,105 @@ async def get_stop_sale_summary(
         })
 
     return {"stops": stops}
+
+
+# ── Stop Sale Schedules (CRUD) ───────────────────────────────────
+
+class StopSaleScheduleCreate(BaseModel):
+    name: str
+    holiday_key: str | None = None
+    start_date: str
+    end_date: str
+    room_type_codes: list[str] = []
+    auto_apply: bool = False
+
+
+class StopSaleScheduleUpdate(BaseModel):
+    name: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    room_type_codes: list[str] | None = None
+    auto_apply: bool | None = None
+
+
+@router.get("/stop-sale-schedules")
+async def list_unified_stop_sale_schedules(
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+    docs = await db.stop_sale_schedules.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("start_date", 1).to_list(200)
+    return {"schedules": docs}
+
+
+@router.post("/stop-sale-schedules")
+async def create_unified_stop_sale_schedule(
+    request: StopSaleScheduleCreate,
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+    now = datetime.now(UTC).isoformat()
+    schedule = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "name": request.name,
+        "holiday_key": request.holiday_key,
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+        "room_type_codes": request.room_type_codes,
+        "auto_apply": request.auto_apply,
+        "applied": False,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": current_user.id,
+    }
+    await db.stop_sale_schedules.insert_one(schedule)
+    schedule.pop("_id", None)
+    return {"schedule": schedule, "message": "Zamanlayici olusturuldu"}
+
+
+@router.delete("/stop-sale-schedules/{schedule_id}")
+async def delete_unified_stop_sale_schedule(
+    schedule_id: str,
+    remove_stop_sale: bool = False,
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+    result = await db.stop_sale_schedules.delete_one(
+        {"tenant_id": tenant_id, "id": schedule_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
+    return {"message": "Zamanlayici silindi"}
+
+
+@router.patch("/stop-sale-schedules/{schedule_id}")
+async def update_unified_stop_sale_schedule(
+    schedule_id: str,
+    request: StopSaleScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+    now = datetime.now(UTC).isoformat()
+    update_fields = {"updated_at": now}
+    if request.name is not None:
+        update_fields["name"] = request.name
+    if request.start_date is not None:
+        update_fields["start_date"] = request.start_date
+    if request.end_date is not None:
+        update_fields["end_date"] = request.end_date
+    if request.room_type_codes is not None:
+        update_fields["room_type_codes"] = request.room_type_codes
+    if request.auto_apply is not None:
+        update_fields["auto_apply"] = request.auto_apply
+    result = await db.stop_sale_schedules.update_one(
+        {"tenant_id": tenant_id, "id": schedule_id},
+        {"$set": update_fields},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
+    return {"message": "Zamanlayici guncellendi"}
 
 
 # ── Holidays ─────────────────────────────────────────────────────
