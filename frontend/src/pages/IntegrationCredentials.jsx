@@ -108,16 +108,16 @@ export default function IntegrationCredentials() {
         </div>
 
         {/* Security warning */}
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="border-amber-300 bg-amber-50">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <Shield className="w-5 h-5 text-amber-400 mt-0.5" />
-              <div className="text-sm text-amber-100/80">
-                <p className="font-medium text-amber-300">Güvenlik</p>
+              <Shield className="w-5 h-5 text-amber-700 mt-0.5" />
+              <div className="text-sm text-amber-900">
+                <p className="font-semibold text-amber-900">Güvenlik</p>
                 <p className="mt-1">
                   Tüm değerler şifreli saklanır ve sadece super admin tarafından düzenlenebilir.
-                  Kaydedilen değerler hemen <code className="px-1 py-0.5 rounded bg-slate-800/60">os.environ</code>&apos;a yansır —
-                  backend'in tüm <code className="px-1 py-0.5 rounded bg-slate-800/60">os.getenv(...)</code> çağırdığı yerler otomatik bu değeri kullanır.
+                  Kaydedilen değerler hemen <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.environ</code>&apos;a yansır —
+                  backend'in tüm <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.getenv(...)</code> çağırdığı yerler otomatik bu değeri kullanır.
                   Restart, yeniden deploy ya da kod değişikliği gerekmez.
                 </p>
               </div>
