@@ -555,9 +555,10 @@ async def on_startup(app):
         )
         if active_exely:
             from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
-            await exely_pull_scheduler.start(interval_seconds=30)
+            _exely_int = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", "180"))
+            await exely_pull_scheduler.start(interval_seconds=_exely_int)
             app.state.exely_pull_scheduler = exely_pull_scheduler
-            logger.info("✅ Exely Pull Scheduler started (60s interval, auto-import enabled)")
+            logger.info(f"✅ Exely Pull Scheduler started ({_exely_int}s interval, auto-import enabled)")
         else:
             logger.info("ℹ️ No active Exely connections; pull scheduler not started")
     except Exception as e:
@@ -570,9 +571,10 @@ async def on_startup(app):
         )
         if active_hr:
             from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
-            await hr_pull_scheduler.start(interval_seconds=60)
+            _hr_int = int(os.getenv("SYROCE_HR_PULL_INTERVAL", "180"))
+            await hr_pull_scheduler.start(interval_seconds=_hr_int)
             app.state.hr_pull_scheduler = hr_pull_scheduler
-            logger.info("HotelRunner Pull Scheduler started (60s interval, adaptive backoff active)")
+            logger.info(f"HotelRunner Pull Scheduler started ({_hr_int}s interval, adaptive backoff active)")
             # Also start push queue worker for automatic retry of failed pushes
             from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
             await hr_push_worker.start()

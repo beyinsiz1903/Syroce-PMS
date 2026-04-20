@@ -19,11 +19,31 @@ else
     mongod --dbpath /tmp/mongodb-data --port 27017 --fork --logpath /tmp/mongod.log
     sleep 2
   fi
+  export MONGO_URL="${MONGO_URL:-mongodb://localhost:27017}"
+  export DB_NAME="${DB_NAME:-syroce-pms}"
 fi
 
-# Redis disabled in Replit environment to avoid port 6379 conflict with external proxy port 80.
-# Backend gracefully falls back when REDIS_URL is unset.
-echo "ℹ️  Redis devre dışı (Replit port çakışması). Backend fallback modunda çalışacak."
+# Redis: yerel instance'ı 6380 portunda başlat (6379 Replit proxy ile çakışıyor).
+REDIS_PORT="${SYROCE_REDIS_PORT:-6380}"
+if ! redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
+  if command -v redis-server > /dev/null 2>&1; then
+    redis-server --port "$REDIS_PORT" --daemonize yes --dir /tmp/redis-data \
+      --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru \
+      --logfile /tmp/redis.log > /dev/null 2>&1 || true
+    sleep 1
+  fi
+fi
+if redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
+  export REDIS_URL="${REDIS_URL:-redis://localhost:$REDIS_PORT/0}"
+  echo "✅ Redis: localhost:$REDIS_PORT"
+else
+  echo "ℹ️  Redis başlatılamadı, in-memory fallback kullanılacak."
+fi
+
+# Cron sıklık ayarları (log spam'ini azaltmak için varsayılanlar artırıldı)
+export SYROCE_EXELY_PULL_INTERVAL="${SYROCE_EXELY_PULL_INTERVAL:-180}"
+export SYROCE_HR_PULL_INTERVAL="${SYROCE_HR_PULL_INTERVAL:-180}"
+export SYROCE_MONITOR_INTERVAL="${SYROCE_MONITOR_INTERVAL:-300}"
 
 cd "$(dirname "$0")"
 exec python -m uvicorn server:app --host 0.0.0.0 --port 8000

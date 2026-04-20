@@ -264,8 +264,13 @@ class RedisPubSubBackend:
 
     async def _listen_loop(self):
         """Background listener for incoming Redis pub/sub messages."""
+        _last_err = None
         try:
             while self._conn_mgr.connected and self._pubsub:
+                # Hicbir abone yoksa pubsub connection acilmamistir; sessizce bekle.
+                if not self._subscriptions:
+                    await asyncio.sleep(5)
+                    continue
                 try:
                     message = await asyncio.wait_for(
                         self._pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
@@ -274,7 +279,6 @@ class RedisPubSubBackend:
                     if message and message["type"] == "message":
                         channel = message["channel"]
                         data = json.loads(message["data"])
-                        # Dispatch to subscribed callbacks
                         for sub_info in self._subscriptions.values():
                             if sub_info["channel"] == channel:
                                 try:
@@ -287,8 +291,11 @@ class RedisPubSubBackend:
                 except TimeoutError:
                     continue
                 except Exception as e:
-                    logger.warning(f"Listener error: {e}")
-                    await asyncio.sleep(1)
+                    msg = str(e)
+                    if msg != _last_err:
+                        logger.warning(f"Listener error: {e}")
+                        _last_err = msg
+                    await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
         except Exception as e:

@@ -23,10 +23,11 @@ logger = logging.getLogger("monitoring.worker")
 
 COLL_METRICS_HISTORY = "monitoring_metrics_history"
 
+import os as _os
 _monitoring_state = {
     "running": False,
     "last_run": None,
-    "interval_seconds": 60,
+    "interval_seconds": int(_os.getenv("SYROCE_MONITOR_INTERVAL", "300")),
     "runs_total": 0,
     "last_metrics": None,
     "last_alert_result": None,
@@ -129,7 +130,7 @@ async def start_monitoring_worker():
         return
     state["running"] = True
     _task = asyncio.create_task(_monitoring_loop())
-    logger.info("Monitoring worker started (60s interval)")
+    logger.info(f"Monitoring worker started ({_monitoring_state['interval_seconds']}s interval)")
 
 
 async def stop_monitoring_worker():
