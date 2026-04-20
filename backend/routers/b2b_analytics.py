@@ -284,7 +284,7 @@ async def export_b2b_data(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     period: str = Query("30d"),
-    export_type: str = Query("bookings", regex="^(bookings|agencies|usage)$"),
+    export_type: str = Query("bookings", pattern="^(bookings|agencies|usage)$"),
     current_user: User = Depends(get_current_user),
 ):
     _require_hotel_role(current_user)

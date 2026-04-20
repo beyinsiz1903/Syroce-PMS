@@ -45,5 +45,10 @@ export SYROCE_EXELY_PULL_INTERVAL="${SYROCE_EXELY_PULL_INTERVAL:-180}"
 export SYROCE_HR_PULL_INTERVAL="${SYROCE_HR_PULL_INTERVAL:-180}"
 export SYROCE_MONITOR_INTERVAL="${SYROCE_MONITOR_INTERVAL:-300}"
 
+# Dev fallbacks for non-production startup checks (silences harmless warnings)
+export CORS_ORIGINS="${CORS_ORIGINS:-*}"
+export CM_MASTER_KEY_CURRENT="${CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}"
+export CM_KEY_VERSION="${CM_KEY_VERSION:-v1}"
+
 cd "$(dirname "$0")"
 exec python -m uvicorn server:app --host 0.0.0.0 --port 8000
