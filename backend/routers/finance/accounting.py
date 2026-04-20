@@ -1,4 +1,5 @@
 """Auto-split from finance.py — section: accounting."""
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -685,29 +686,62 @@ async def get_vat_report(
 
 
 @router.get("/accounting/reports/balance-sheet")
+@cached(ttl=300, key_prefix="report_balance_sheet")  # Cache for 5 minutes
 async def get_balance_sheet(current_user: User = Depends(get_current_user)):
-    # Assets
-    bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    total_cash = sum(acc['balance'] for acc in bank_accounts)
+    tenant_id = current_user.tenant_id
 
-    inventory = await db.inventory_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    total_inventory = sum(item['quantity'] * item['unit_cost'] for item in inventory)
+    async def _sum_cash():
+        pipeline = [
+            {'$match': {'tenant_id': tenant_id}},
+            {'$group': {'_id': None, 'total': {'$sum': '$balance'}}},
+        ]
+        cur = db.bank_accounts.aggregate(pipeline)
+        docs = await cur.to_list(1)
+        return docs[0]['total'] if docs else 0
 
-    # Receivables (unpaid invoices)
-    receivables = await db.accounting_invoices.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['pending', 'partial']}
-    }, {'_id': 0}).to_list(1000)
-    total_receivables = sum(inv['total'] for inv in receivables)
+    async def _sum_inventory():
+        pipeline = [
+            {'$match': {'tenant_id': tenant_id}},
+            {'$group': {'_id': None, 'total': {
+                '$sum': {'$multiply': [
+                    {'$ifNull': ['$quantity', 0]},
+                    {'$ifNull': ['$unit_cost', 0]},
+                ]}
+            }}},
+        ]
+        cur = db.inventory_items.aggregate(pipeline)
+        docs = await cur.to_list(1)
+        return docs[0]['total'] if docs else 0
+
+    async def _sum_receivables():
+        pipeline = [
+            {'$match': {
+                'tenant_id': tenant_id,
+                'status': {'$in': ['pending', 'partial']},
+            }},
+            {'$group': {'_id': None, 'total': {'$sum': '$total'}}},
+        ]
+        cur = db.accounting_invoices.aggregate(pipeline)
+        docs = await cur.to_list(1)
+        return docs[0]['total'] if docs else 0
+
+    async def _sum_payables():
+        pipeline = [
+            {'$match': {
+                'tenant_id': tenant_id,
+                'payment_status': 'pending',
+            }},
+            {'$group': {'_id': None, 'total': {'$sum': '$total_amount'}}},
+        ]
+        cur = db.expenses.aggregate(pipeline)
+        docs = await cur.to_list(1)
+        return docs[0]['total'] if docs else 0
+
+    total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(
+        _sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables()
+    )
 
     total_assets = total_cash + total_inventory + total_receivables
-
-    # Liabilities
-    payables = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_status': 'pending'
-    }, {'_id': 0}).to_list(1000)
-    total_payables = sum(exp['total_amount'] for exp in payables)
 
     # Equity
     total_equity = total_assets - total_payables
