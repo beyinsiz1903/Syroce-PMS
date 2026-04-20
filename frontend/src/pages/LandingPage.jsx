@@ -117,8 +117,14 @@ const LandingPage = () => {
             <a href="#ozellikler" className={`text-sm font-medium transition ${scrolled ? 'text-gray-700 hover:text-blue-600' : 'text-white/90 hover:text-white'}`}>Özellikler</a>
             <a href="#fiyatlar" className={`text-sm font-medium transition ${scrolled ? 'text-gray-700 hover:text-blue-600' : 'text-white/90 hover:text-white'}`}>Fiyatlar</a>
             <a href="#iletisim" className={`text-sm font-medium transition ${scrolled ? 'text-gray-700 hover:text-blue-600' : 'text-white/90 hover:text-white'}`}>İletişim</a>
+            <button
+              onClick={() => navigate('/vendor')}
+              className={`text-sm font-medium transition ${scrolled ? 'text-gray-700 hover:text-blue-600' : 'text-white/90 hover:text-white'}`}
+            >
+              Tedarikçi Girişi
+            </button>
             <Button onClick={() => navigate('/auth')} className="bg-blue-600 hover:bg-blue-700 text-white shadow-md">
-              Giriş Yap
+              Otel Girişi
             </Button>
           </div>
         </div>
