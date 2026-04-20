@@ -20,7 +20,7 @@ const CATEGORY_META = {
   aws:           { label: "AWS & KMS",            icon: Cloud,    color: "from-orange-500/10 to-red-500/10",    border: "border-orange-500/30" },
 };
 
-export default function IntegrationCredentials() {
+export default function IntegrationCredentials({ user, tenant, onLogout }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [inputs, setInputs] = useState({});
@@ -87,7 +87,7 @@ export default function IntegrationCredentials() {
   }, [items]);
 
   return (
-    <Layout>
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="integration-credentials">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
