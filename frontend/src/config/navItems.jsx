@@ -598,6 +598,14 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "early_warning_dashboard",
+    label: "Erken Uyarı Motoru",
+    path: "/admin/early-warning",
+    tier: "professional",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     key: "xchange",
     label: "Xchange (SXI)",
     path: "/app/xchange",
