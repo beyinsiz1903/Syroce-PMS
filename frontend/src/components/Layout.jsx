@@ -235,11 +235,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
           {(() => {
             const normalItems = items.filter(i => !i.requireSuperAdmin);
             const adminItems = items.filter(i => i.requireSuperAdmin);
+            const groupHasPathMatch = items.some(i => location.pathname === i.path);
             return (
               <>
                 {normalItems.map((item) => {
                   const Icon = ICON_BY_KEY[item.key] || Home;
-                  const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                  const isItemActive = location.pathname === item.path || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
                   return (
                     <DropdownMenuItem
                       key={item.key}
@@ -262,7 +263,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                     </DropdownMenuLabel>
                     {adminItems.map((item) => {
                       const Icon = ICON_BY_KEY[item.key] || Home;
-                      const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                      const isItemActive = location.pathname === item.path || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
                       return (
                         <DropdownMenuItem
                           key={item.key}
