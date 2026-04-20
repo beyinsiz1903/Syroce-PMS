@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -51,11 +52,14 @@ const Modal = ({ title, children, onClose, wide }) => (
 );
 
 const ProcurementPage = ({ user, tenant, onLogout }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('summary');
   const [summary, setSummary] = useState({});
   const [suppliers, setSuppliers] = useState([]);
   const [prs, setPrs] = useState([]);
   const [pos, setPos] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState(null);
 
@@ -68,21 +72,62 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const refresh = async () => {
     setLoading(true);
     try {
-      const [s, sup, pr, po] = await Promise.all([
+      const [s, sup, pr, po, inv] = await Promise.all([
         axios.get('/procurement/summary'),
         axios.get('/procurement/suppliers?active_only=false'),
         axios.get('/procurement/purchase-requests'),
         axios.get('/procurement/purchase-orders'),
+        axios.get('/accounting/inventory').catch(() => ({ data: { items: [] } })),
       ]);
       setSummary(s.data || {});
       setSuppliers(sup.data?.items || []);
       setPrs(pr.data?.items || []);
       setPos(po.data?.items || []);
+      setInventoryItems(inv.data?.items || []);
     } catch (e) {
       toast.error('Satınalma verileri alınamadı');
     } finally { setLoading(false); }
   };
   useEffect(() => { refresh(); }, []);
+
+  // Stok ekranından "Talep Oluştur" ile gelindiğinde formu otomatik aç
+  useEffect(() => {
+    const seed = location.state?.newPRItem;
+    if (seed) {
+      setPrForm({
+        department: seed.department || '',
+        requester: '',
+        notes: `${seed.name} stoğu kritik seviyenin altına düştü.`,
+        lines: [{
+          item_name: seed.name || '',
+          sku: seed.sku || '',
+          inventory_item_id: seed.id || null,
+          quantity: seed.suggested_quantity || Math.max(1, (seed.reorder_level || 0) * 2 - (seed.quantity || 0)),
+          unit: seed.unit || 'adet',
+          est_unit_cost: seed.unit_cost || 0,
+        }],
+      });
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state]);
+
+  const inventoryByName = useMemo(
+    () => Object.fromEntries(inventoryItems.map((i) => [i.name, i])), [inventoryItems]);
+
+  const fillFromInventory = (lines, idx, value, costKey) => {
+    const next = [...lines];
+    next[idx] = { ...next[idx], item_name: value };
+    const match = inventoryByName[value];
+    if (match) {
+      next[idx].sku = match.sku || next[idx].sku;
+      next[idx].unit = match.unit || next[idx].unit;
+      next[idx].inventory_item_id = match.id || match._id || null;
+      if (costKey && (!next[idx][costKey] || next[idx][costKey] === 0)) {
+        next[idx][costKey] = match.unit_cost || 0;
+      }
+    }
+    return next;
+  };
 
   const supplierMap = useMemo(
     () => Object.fromEntries(suppliers.map((s) => [s.id, s])), [suppliers]);
@@ -545,11 +590,14 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               <tbody>
                 {prForm.lines.map((l, i) => (
                   <tr key={i}>
-                    <td className="p-1"><Input value={l.item_name}
-                      onChange={(e) => {
-                        const lines = [...prForm.lines]; lines[i].item_name = e.target.value;
-                        setPrForm({ ...prForm, lines });
-                      }} /></td>
+                    <td className="p-1">
+                      <Input value={l.item_name} list="inv-items-pr"
+                        placeholder="Stoktan seç veya yaz…"
+                        onChange={(e) => setPrForm({
+                          ...prForm,
+                          lines: fillFromInventory(prForm.lines, i, e.target.value, 'est_unit_cost'),
+                        })} />
+                    </td>
                     <td className="p-1"><Input value={l.sku || ''}
                       onChange={(e) => {
                         const lines = [...prForm.lines]; lines[i].sku = e.target.value;
@@ -579,6 +627,19 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 ))}
               </tbody>
             </table>
+            <datalist id="inv-items-pr">
+              {inventoryItems.map((it) => (
+                <option key={it.id || it._id || it.name} value={it.name}>
+                  {it.sku ? `${it.sku} · ` : ''}Mevcut: {it.quantity} {it.unit}
+                </option>
+              ))}
+            </datalist>
+            {inventoryItems.length > 0 && (
+              <p className="text-xs text-slate-500 mt-2">
+                İpucu: Kalem adı kutusuna yazmaya başlayın, stoğunuzdaki kalemler otomatik önerilir.
+                Seçtiğinizde birim ve fiyat otomatik dolar.
+              </p>
+            )}
           </div>
           <div className="mt-4 text-right space-x-2">
             <Button variant="outline" onClick={() => setPrForm(null)}>Vazgeç</Button>
@@ -626,11 +687,14 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               <tbody>
                 {poForm.lines.map((l, i) => (
                   <tr key={i}>
-                    <td className="p-1"><Input value={l.item_name}
-                      onChange={(e) => {
-                        const lines = [...poForm.lines]; lines[i].item_name = e.target.value;
-                        setPoForm({ ...poForm, lines });
-                      }} /></td>
+                    <td className="p-1">
+                      <Input value={l.item_name} list="inv-items-po"
+                        placeholder="Stoktan seç veya yaz…"
+                        onChange={(e) => setPoForm({
+                          ...poForm,
+                          lines: fillFromInventory(poForm.lines, i, e.target.value, 'unit_cost'),
+                        })} />
+                    </td>
                     <td className="p-1"><Input value={l.sku || ''}
                       onChange={(e) => {
                         const lines = [...poForm.lines]; lines[i].sku = e.target.value;
@@ -686,6 +750,13 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 </tr>
               </tfoot>
             </table>
+            <datalist id="inv-items-po">
+              {inventoryItems.map((it) => (
+                <option key={it.id || it._id || it.name} value={it.name}>
+                  {it.sku ? `${it.sku} · ` : ''}Mevcut: {it.quantity} {it.unit}
+                </option>
+              ))}
+            </datalist>
           </div>
           <div className="mt-4 text-right space-x-2">
             <Button variant="outline" onClick={() => setPoForm(null)}>Vazgeç</Button>

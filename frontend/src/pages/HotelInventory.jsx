@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -7,13 +8,32 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Package, AlertTriangle, TrendingDown, ShoppingCart, 
-  RefreshCw, FileText, BarChart3, CheckCircle 
+  Package, AlertTriangle, TrendingDown, ShoppingCart,
+  RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const HotelInventory = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+
+  const createPRForItem = (item, suggestedQty) => {
+    navigate('/app/procurement', {
+      state: {
+        newPRItem: {
+          id: item.id || item._id,
+          name: item.name || item.item_name,
+          sku: item.sku,
+          unit: item.unit || 'adet',
+          unit_cost: item.unit_cost || 0,
+          quantity: item.quantity ?? item.current_stock ?? 0,
+          reorder_level: item.reorder_level ?? item.critical_level ?? 0,
+          suggested_quantity: suggestedQty,
+          department: item.category || '',
+        },
+      },
+    });
+  };
   const [inventory, setInventory] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -90,14 +110,20 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
             <h1 className="text-3xl font-bold">Otel Ekipman Stok Yönetimi</h1>
             <p className="text-gray-600 mt-1">Oda malzemeleri ve ekipman takibi</p>
           </div>
-          <Button onClick={() => {
-            loadInventory();
-            loadAlerts();
-            toast.success('Veriler yenilendi');
-          }}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Yenile
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate('/app/stock-rehber')}>
+              <BookOpen className="w-4 h-4 mr-2" />
+              Nasıl Çalışır?
+            </Button>
+            <Button onClick={() => {
+              loadInventory();
+              loadAlerts();
+              toast.success('Veriler yenilendi');
+            }}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Yenile
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -220,6 +246,16 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     <span className="font-semibold">₺{(item.quantity * item.unit_cost).toFixed(2)}</span>
                                   </div>
                                 </div>
+                                {item.quantity <= item.reorder_level && (
+                                  <Button
+                                    size="sm"
+                                    className="w-full mt-3 bg-blue-600 hover:bg-blue-700"
+                                    onClick={() => createPRForItem(item, Math.max(1, item.reorder_level * 2 - item.quantity))}
+                                  >
+                                    <Plus className="w-3.5 h-3.5 mr-1" />
+                                    Talep Oluştur
+                                  </Button>
+                                )}
                               </CardContent>
                             </Card>
                           );
@@ -289,13 +325,25 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                 </div>
                               </div>
                             </div>
-                            <Button 
-                              size="sm" 
-                              className="ml-4"
-                              onClick={() => toast.success(`${alert.item_name} için sipariş hazırlandı`)}
+                            <Button
+                              size="sm"
+                              className="ml-4 bg-blue-600 hover:bg-blue-700"
+                              onClick={() => createPRForItem(
+                                {
+                                  id: alert.item_id || alert.id,
+                                  name: alert.item_name,
+                                  sku: alert.sku,
+                                  unit: alert.unit || 'adet',
+                                  unit_cost: alert.unit_cost || (alert.estimated_cost && alert.suggested_order_quantity
+                                    ? alert.estimated_cost / alert.suggested_order_quantity : 0),
+                                  quantity: alert.current_stock,
+                                  reorder_level: alert.critical_level,
+                                },
+                                alert.suggested_order_quantity,
+                              )}
                             >
-                              <ShoppingCart className="w-4 h-4 mr-1" />
-                              Sipariş Ver
+                              <Plus className="w-4 h-4 mr-1" />
+                              Talep Oluştur
                             </Button>
                           </div>
                         </CardContent>
@@ -346,9 +394,13 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                         </div>
                       </div>
                     </div>
-                    <Button className="w-full" size="lg">
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      size="lg"
+                      onClick={() => navigate('/app/procurement')}
+                    >
                       <ShoppingCart className="w-5 h-5 mr-2" />
-                      Tüm Ürünler İçin Sipariş Oluştur
+                      Satın Alma Ekranına Git
                     </Button>
                   </div>
                 ) : (

@@ -82,6 +82,14 @@ export const NAV_ITEMS = [
     navGroup: "operations",
   },
   {
+    key: "stock_rehber",
+    label: "Stok Rehberi",
+    path: "/app/stock-rehber",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+  },
+  {
     key: "audit_timeline",
     label: "Denetim Zaman Çizelgesi",
     path: "/audit-timeline",
