@@ -24,7 +24,7 @@ from typing import Any
 
 import httpx
 
-from _legacy.booking_availability import normalize_availability_response
+from integrations.booking_availability import normalize_availability_response
 
 logger = logging.getLogger(__name__)
 

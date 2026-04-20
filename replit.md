@@ -948,7 +948,7 @@ Tüm A-H borçları kapatıldı:
   index hook'u eklendi (sparse / partialFilterExpression `username:
   string` ile mevcut indexle uyumlu).
 
-- **D — GraphQL strawberry annotations**: `_legacy/graphql_schema.py`
+- **D — GraphQL strawberry annotations**: `graphql_api/schema.py` (migrated from `_legacy/`, 2026-04-20)
   içindeki tüm resolver'lara `info: strawberry.Info` annotation
   eklendi (`MissingArgumentsAnnotationsError` çözüldü).
 

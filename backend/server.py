@@ -278,7 +278,7 @@ except Exception as _sm_err:
 try:
     from strawberry.fastapi import GraphQLRouter
 
-    from _legacy.graphql_schema import schema
+    from graphql_api.schema import schema
 
     graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])
