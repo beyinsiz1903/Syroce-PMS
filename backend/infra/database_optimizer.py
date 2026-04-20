@@ -6,8 +6,23 @@ import logging
 from datetime import datetime
 
 from pymongo import ASCENDING, DESCENDING, TEXT
+from pymongo.errors import OperationFailure
 
 logger = logging.getLogger(__name__)
+
+
+def _log_index_error(coll_name: str, e: Exception) -> None:
+    """Log index creation errors. Treats IndexOptionsConflict (code 85) as
+    cosmetic — it just means an index with the same key spec already exists
+    under a different name and is safe to ignore."""
+    if isinstance(e, OperationFailure) and getattr(e, "code", None) == 85:
+        logger.debug(
+            "Index for %s already exists with a different name (cosmetic, skipping): %s",
+            coll_name, e,
+        )
+    else:
+        logger.warning("Index creation warning for %s: %s", coll_name, e)
+
 
 class DatabaseOptimizer:
     def __init__(self, db):
@@ -120,7 +135,7 @@ class DatabaseOptimizer:
                     await coll.create_index(spec, **opts)
                     total += 1
                 except Exception as e:
-                    logger.warning(f"Tenant-compound index warning for {coll_name}: {e}")
+                    _log_index_error(coll_name, e)
 
         return {"created": total}
 
@@ -159,7 +174,7 @@ class DatabaseOptimizer:
                 result = await bookings.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for bookings: {e}")
+                _log_index_error("bookings", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -195,7 +210,7 @@ class DatabaseOptimizer:
                 result = await guests.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for guests: {e}")
+                _log_index_error("guests", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -217,7 +232,7 @@ class DatabaseOptimizer:
                 result = await rooms.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for rooms: {e}")
+                _log_index_error("rooms", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -240,7 +255,7 @@ class DatabaseOptimizer:
                 result = await folios.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for folios: {e}")
+                _log_index_error("folios", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -260,7 +275,7 @@ class DatabaseOptimizer:
                 result = await users.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for users: {e}")
+                _log_index_error("users", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -283,7 +298,7 @@ class DatabaseOptimizer:
                 result = await tasks.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for tasks: {e}")
+                _log_index_error("tasks", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -307,7 +322,7 @@ class DatabaseOptimizer:
                 result = await audit_logs.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for audit_logs: {e}")
+                _log_index_error("audit_logs", e)
 
         return {"created": len(created), "indexes": created}
 
@@ -326,7 +341,7 @@ class DatabaseOptimizer:
                 result = await reports.create_index(index_spec, **options)
                 created.append(result)
             except Exception as e:
-                logger.warning(f"Index creation warning for reports: {e}")
+                _log_index_error("reports", e)
 
         return {"created": len(created), "indexes": created}
 

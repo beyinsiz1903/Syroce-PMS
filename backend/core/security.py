@@ -5,6 +5,13 @@ JWT token management, password hashing, and user authentication.
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Silence harmless passlib/bcrypt version-detection warning emitted on import.
+# passlib 1.7.4 reads `bcrypt.__about__.__version__` which was removed in
+# bcrypt>=4.1, producing a noisy "(trapped) error reading bcrypt version"
+# warning even though hashing works correctly.
+logging.getLogger("passlib").setLevel(logging.ERROR)
+
 import base64
 import io
 import os

@@ -363,7 +363,11 @@ async def on_startup(app):
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
         logger.info("✅ Performance indexes created successfully!")
     except Exception as e:
-        logger.warning(f"Index creation warning: {e}")
+        from pymongo.errors import OperationFailure
+        if isinstance(e, OperationFailure) and getattr(e, "code", None) == 85:
+            logger.debug(f"Performance index already exists with different name (cosmetic): {e}")
+        else:
+            logger.warning(f"Index creation warning: {e}")
 
     # ── Entitlement, Metering & Feature Flag indexes ───────────────
     try:
