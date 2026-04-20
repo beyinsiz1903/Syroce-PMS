@@ -21,16 +21,9 @@ else
   fi
 fi
 
-if ! redis-server --version > /dev/null 2>&1; then
-  echo "ERROR: redis-server not found in PATH"
-  exit 1
-fi
-
-if ! redis-cli -p 6379 ping > /dev/null 2>&1; then
-  echo "Starting Redis..."
-  redis-server --daemonize yes --dir /tmp/redis-data --port 6379
-  sleep 1
-fi
+# Redis disabled in Replit environment to avoid port 6379 conflict with external proxy port 80.
+# Backend gracefully falls back when REDIS_URL is unset.
+echo "ℹ️  Redis devre dışı (Replit port çakışması). Backend fallback modunda çalışacak."
 
 cd "$(dirname "$0")"
 exec python -m uvicorn server:app --host 0.0.0.0 --port 8000
