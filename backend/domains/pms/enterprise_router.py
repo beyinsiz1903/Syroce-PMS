@@ -6,7 +6,21 @@ Critical features, task management, RBAC, enterprise audit logging.
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+
+
+def _jsonable(value):
+    """Recursively convert BSON types (ObjectId, datetime) to JSON-safe values."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    return value
 from fastapi.security import HTTPAuthorizationCredentials
 
 from core.cache import cached
@@ -1050,6 +1064,7 @@ async def get_audit_logs(
         {'_id': 0}
     ).sort('timestamp', -1).limit(limit).to_list(limit)
 
+    logs = _jsonable(logs)
     return {'logs': logs, 'count': len(logs)}
 
 @router.get("/admin/audit-logs/critical")
@@ -1071,6 +1086,7 @@ async def get_critical_audit_logs(
         'action': {'$in': critical_actions},
         'timestamp': {'$gte': start_date}
     }, {'_id': 0}).sort('timestamp', -1).to_list(1000)
+    logs = _jsonable(logs)
 
     # Group by action
     by_action = {}
