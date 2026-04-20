@@ -18,6 +18,7 @@ import { RoomChangeTab, CancelTab } from './reservation-detail/OperationTabs';
 import { CommunicationTab, NotesTab, HistoryTab } from './reservation-detail/GuestServiceTabs';
 import { DepositsTab, VoucherTab, InvoiceTab } from './reservation-detail/DocumentTabs';
 import { OnlinePaymentTab } from './reservation-detail/OnlinePaymentTab';
+import { VCCTab } from './reservation-detail/VCCTab';
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
   const [data, setData] = useState(null);
@@ -57,6 +58,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     { id: 'general', label: 'Genel Bilgiler', icon: FileText },
     { id: 'guests', label: `Misafirler (${guests?.length || 0})`, icon: Users },
     { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
+    { id: 'vcc', label: 'Sanal Kart', icon: Shield },
     { id: 'folios', label: 'Folyolar', icon: DollarSign },
     { id: 'daily_rates', label: 'Gunluk Fiyatlar', icon: Calendar },
     { id: 'extras', label: 'Ek Ucretler', icon: Receipt },
@@ -226,6 +228,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
