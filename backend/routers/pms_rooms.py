@@ -4,6 +4,7 @@ Room CRUD, bulk operations, CSV import, image upload.
 """
 import csv
 import io
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -12,6 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from core.database import db
 from core.helpers import require_module, require_super_admin_guard
@@ -156,7 +159,7 @@ async def get_rooms(
                     # Filter virtual from cached data
                     return [r for r in cached if not r.get('is_virtual')]
         except Exception:
-            pass
+            logger.debug("pms_rooms: redis cache read failed", exc_info=True)
 
         # Check pre-warmed cache second
         from cache_warmer import cache_warmer
@@ -240,7 +243,7 @@ async def get_rooms(
                 cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
                 redis_cache.set(cache_key, rooms, ttl=30)
         except Exception:
-            pass
+            logger.debug("pms_rooms: redis cache write failed", exc_info=True)
 
     return rooms
 

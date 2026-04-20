@@ -7,8 +7,11 @@ A tenant has access to a module/integration when EITHER:
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _db():
@@ -133,4 +136,4 @@ async def ensure_indexes() -> None:
             name="uniq_folio_charge_external_ref",
         )
     except Exception:
-        pass
+        logger.warning("subscriptions: failed to ensure folio_charge external_ref index", exc_info=True)

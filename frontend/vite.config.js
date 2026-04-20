@@ -131,16 +131,50 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router')) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router') || id.includes('node_modules/scheduler')) {
             return 'vendor-react';
           }
           if (id.includes('node_modules/@tanstack')) {
             return 'vendor-query';
           }
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor')) {
             return 'vendor-charts';
           }
-          if (id.includes('node_modules/axios') || id.includes('node_modules/date-fns')) {
+          if (id.includes('node_modules/@radix-ui')) {
+            return 'vendor-radix';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+          if (
+            id.includes('node_modules/react-hook-form') ||
+            id.includes('node_modules/@hookform') ||
+            id.includes('node_modules/zod') ||
+            id.includes('node_modules/yup')
+          ) {
+            return 'vendor-forms';
+          }
+          if (
+            id.includes('node_modules/i18next') ||
+            id.includes('node_modules/react-i18next')
+          ) {
+            return 'vendor-i18n';
+          }
+          if (id.includes('node_modules/html5-qrcode') || id.includes('node_modules/qrcode')) {
+            return 'vendor-qr';
+          }
+          if (id.includes('node_modules/framer-motion')) {
+            return 'vendor-motion';
+          }
+          if (
+            id.includes('node_modules/axios') ||
+            id.includes('node_modules/date-fns') ||
+            id.includes('node_modules/clsx') ||
+            id.includes('node_modules/tailwind-merge') ||
+            id.includes('node_modules/class-variance-authority') ||
+            id.includes('node_modules/sonner')
+          ) {
             return 'vendor-ui';
           }
         },

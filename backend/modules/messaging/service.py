@@ -52,7 +52,7 @@ class MessagingService:
             if creds:
                 return creds
         except Exception:
-            pass
+            logger.warning("messaging: credential vault lookup failed; falling back to config", exc_info=True)
         return config.get("credentials_encrypted", {})
 
     async def _check_consent(self, tenant_id: str, recipient: str, channel: str) -> bool:
@@ -188,7 +188,7 @@ class MessagingService:
             from modules.observability.metrics_collector import metrics as obs_metrics
             obs_metrics.record_messaging_delivery(provider_type, result.get("success", False))
         except Exception:
-            pass
+            logger.debug("messaging: observability metric record failed", exc_info=True)
 
         if result.get("success"):
             self._provider_successes[provider_type] = self._provider_successes.get(provider_type, 0) + 1

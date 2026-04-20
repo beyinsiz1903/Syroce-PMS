@@ -109,7 +109,7 @@ class ConnectorHealthService:
             rp_metrics = await rpt_svc.get_metrics(tenant_id, connector_id)
             rate_push_success_rate = rp_metrics.get("rate_push_success_rate", 100.0)
         except Exception:
-            pass
+            logger.warning("connector_health: rate-push metrics fetch failed", exc_info=True)
 
         # Health score
         health_score = self._calc_health_score(
@@ -133,7 +133,7 @@ class ConnectorHealthService:
                 rate_push_success_rate=rate_push_success_rate,
             )
         except Exception:
-            pass
+            logger.warning("connector_health: trend snapshot record failed", exc_info=True)
 
         return {
             "connector_id": connector_id,

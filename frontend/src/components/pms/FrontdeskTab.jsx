@@ -27,6 +27,7 @@ const FrontdeskTab = ({
   loadFrontDeskData,
   loading,
   error,
+  tenant,
 }) => {
   const { t } = useTranslation();
   const tf = (k) => t(`pmsComponents.frontdesk.${k}`);
@@ -348,7 +349,7 @@ const FrontdeskTab = ({
                       )}
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>{tf('folio')}</Button>
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500"
-                        onClick={() => printRegistrationCard(booking, booking.guest, booking.room)}>
+                        onClick={() => printRegistrationCard(booking, booking.guest, booking.room, tenant)}>
                         <Printer className="w-3 h-3 mr-1" /> {tf('regCard')}
                       </Button>
                     </div>

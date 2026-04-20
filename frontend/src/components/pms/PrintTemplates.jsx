@@ -1,11 +1,52 @@
-export function printRegistrationCard(booking, guest, room, hotelName = 'Syroce Hotel') {
+/**
+ * Print templates for guest registration card, folio statement, and proforma invoice.
+ *
+ * Each function accepts an optional `hotelInfo` object so the printed header
+ * shows real hotel contact details from the tenant settings instead of
+ * placeholders. Backward compatible: when callers pass only `hotelName` (the
+ * legacy 4th arg as a string) we still honour it.
+ */
+const DEFAULT_HOTEL_INFO = {
+  name: 'Syroce Hotel',
+  address: '',
+  phone: '',
+  email: '',
+  tax_no: '',
+  tax_office: '',
+};
+
+function normalizeHotelInfo(arg) {
+  if (!arg) return { ...DEFAULT_HOTEL_INFO };
+  if (typeof arg === 'string') return { ...DEFAULT_HOTEL_INFO, name: arg };
+  return {
+    ...DEFAULT_HOTEL_INFO,
+    name: arg.name || arg.hotel_name || arg.org_name || DEFAULT_HOTEL_INFO.name,
+    address: arg.address || arg.hotel_address || '',
+    phone: arg.phone || arg.hotel_phone || arg.contact_phone || '',
+    email: arg.email || arg.hotel_email || arg.contact_email || '',
+    tax_no: arg.tax_no || arg.tax_number || arg.vergi_no || '',
+    tax_office: arg.tax_office || arg.vergi_dairesi || '',
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+export function printRegistrationCard(booking, guest, room, hotelArg) {
+  const hotel = normalizeHotelInfo(hotelArg);
   const w = window.open('', '_blank');
   if (!w) return;
-  w.document.write(`<html><head><title>Kayıt Karti - ${guest?.name || ''}</title>
+  w.document.write(`<html><head><title>Kayıt Karti - ${escapeHtml(guest?.name || '')}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:12px;color:#333}
     h1{font-size:16px;text-align:center;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:16px}
     .hotel-name{font-size:20px;text-align:center;font-weight:bold;margin-bottom:4px}
+    .hotel-meta{text-align:center;font-size:10px;color:#666;margin-bottom:8px;line-height:1.5}
     .subtitle{text-align:center;font-size:11px;color:#666;margin-bottom:20px}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
     .field{border-bottom:1px dotted #ccc;padding:4px 0}
@@ -18,34 +59,37 @@ export function printRegistrationCard(booking, guest, room, hotelName = 'Syroce 
     .kvkk{margin-top:24px;font-size:8px;color:#999;line-height:1.4;border:1px solid #eee;padding:8px;border-radius:4px}
     @media print{body{padding:20px}}
   </style></head><body>
-  <div class="hotel-name">${hotelName}</div>
+  <div class="hotel-name">${escapeHtml(hotel.name)}</div>
+  <div class="hotel-meta">
+    ${[hotel.address, hotel.phone, hotel.email].filter(Boolean).map(escapeHtml).join(' &nbsp;·&nbsp; ')}
+  </div>
   <div class="subtitle">MISAFIR KAYIT KARTI / GUEST REGISTRATION CARD</div>
   <div class="grid">
-    <div class="field"><div class="label">Ad Soyad / Full Name</div><div class="value">${guest?.name || ''}</div></div>
-    <div class="field"><div class="label">TC/Pasaport No / ID/Passport</div><div class="value">${guest?.id_number || guest?.passport_number || ''}</div></div>
-    <div class="field"><div class="label">Uyruk / Nationality</div><div class="value">${guest?.nationality || 'TC'}</div></div>
-    <div class="field"><div class="label">Dogum Tarihi / Birth Date</div><div class="value">${guest?.birth_date || ''}</div></div>
-    <div class="field"><div class="label">E-posta / Email</div><div class="value">${guest?.email || ''}</div></div>
-    <div class="field"><div class="label">Telefon / Phone</div><div class="value">${guest?.phone || ''}</div></div>
-    <div class="field"><div class="label">Adres / Address</div><div class="value">${guest?.address || ''}</div></div>
-    <div class="field"><div class="label">Sirket / Company</div><div class="value">${booking?.company_name || ''}</div></div>
+    <div class="field"><div class="label">Ad Soyad / Full Name</div><div class="value">${escapeHtml(guest?.name || '')}</div></div>
+    <div class="field"><div class="label">TC/Pasaport No / ID/Passport</div><div class="value">${escapeHtml(guest?.id_number || guest?.passport_number || '')}</div></div>
+    <div class="field"><div class="label">Uyruk / Nationality</div><div class="value">${escapeHtml(guest?.nationality || 'TC')}</div></div>
+    <div class="field"><div class="label">Dogum Tarihi / Birth Date</div><div class="value">${escapeHtml(guest?.birth_date || '')}</div></div>
+    <div class="field"><div class="label">E-posta / Email</div><div class="value">${escapeHtml(guest?.email || '')}</div></div>
+    <div class="field"><div class="label">Telefon / Phone</div><div class="value">${escapeHtml(guest?.phone || '')}</div></div>
+    <div class="field"><div class="label">Adres / Address</div><div class="value">${escapeHtml(guest?.address || '')}</div></div>
+    <div class="field"><div class="label">Sirket / Company</div><div class="value">${escapeHtml(booking?.company_name || '')}</div></div>
   </div>
   <div class="section">
     <div class="section-title">Konaklama Bilgileri / Stay Details</div>
     <div class="grid">
-      <div class="field"><div class="label">Oda No / Room No</div><div class="value">${booking?.room_number || room?.room_number || ''}</div></div>
-      <div class="field"><div class="label">Oda Tipi / Room Type</div><div class="value">${room?.room_type || booking?.room_type || ''}</div></div>
-      <div class="field"><div class="label">Giris / Check-in</div><div class="value">${booking?.check_in?.toString().slice(0, 10) || ''}</div></div>
-      <div class="field"><div class="label">Cikis / Check-out</div><div class="value">${booking?.check_out?.toString().slice(0, 10) || ''}</div></div>
+      <div class="field"><div class="label">Oda No / Room No</div><div class="value">${escapeHtml(booking?.room_number || room?.room_number || '')}</div></div>
+      <div class="field"><div class="label">Oda Tipi / Room Type</div><div class="value">${escapeHtml(room?.room_type || booking?.room_type || '')}</div></div>
+      <div class="field"><div class="label">Giris / Check-in</div><div class="value">${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div></div>
+      <div class="field"><div class="label">Cikis / Check-out</div><div class="value">${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div></div>
       <div class="field"><div class="label">Yetiskin / Adults</div><div class="value">${booking?.adults || 1}</div></div>
       <div class="field"><div class="label">Cocuk / Children</div><div class="value">${booking?.children || 0}</div></div>
-      <div class="field"><div class="label">Pansiyon / Board</div><div class="value">${booking?.board_type || 'Oda+Kahvalti'}</div></div>
-      <div class="field"><div class="label">Kanal / Channel</div><div class="value">${booking?.channel || booking?.source_channel || 'Direkt'}</div></div>
+      <div class="field"><div class="label">Pansiyon / Board</div><div class="value">${escapeHtml(booking?.board_type || 'Oda+Kahvalti')}</div></div>
+      <div class="field"><div class="label">Kanal / Channel</div><div class="value">${escapeHtml(booking?.channel || booking?.source_channel || 'Direkt')}</div></div>
     </div>
   </div>
   <div class="section">
     <div class="section-title">Ozel Istekler / Special Requests</div>
-    <div class="field"><div class="value" style="min-height:40px">${booking?.special_requests || guest?.notes || ''}</div></div>
+    <div class="field"><div class="value" style="min-height:40px">${escapeHtml(booking?.special_requests || guest?.notes || '')}</div></div>
   </div>
   <div class="kvkk">
     KVKK AYDINLATMA METNI: Kisisel verileriniz, 6698 sayili Kisisel Verilerin Korunmasi Kanunu kapsaminda, konaklama hizmetlerinin sunulmasi, yasal yukumluluklerin yerine getirilmesi ve guvenlik amaciyla islenmektedir. Detayli bilgi için resepsiyondan KVKK aydinlatma metnini talep edebilirsiniz.
@@ -61,17 +105,19 @@ export function printRegistrationCard(booking, guest, room, hotelName = 'Syroce 
   w.print();
 }
 
-export function printFolio(folioData, hotelName = 'Syroce Hotel') {
+export function printFolio(folioData, hotelArg) {
+  const hotel = normalizeHotelInfo(hotelArg);
   const w = window.open('', '_blank');
   if (!w) return;
   const folio = folioData?.folio;
   const summary = folioData?.summary;
   const timeline = folioData?.timeline || [];
-  w.document.write(`<html><head><title>Folio - ${folio?.folio_number || ''}</title>
+  w.document.write(`<html><head><title>Folio - ${escapeHtml(folio?.folio_number || '')}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:11px;color:#333}
     .header{text-align:center;margin-bottom:20px}
     .hotel-name{font-size:20px;font-weight:bold}
+    .hotel-meta{font-size:10px;color:#666;margin-top:4px;line-height:1.5}
     .subtitle{color:#666;font-size:11px}
     .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:11px}
     .info-item{display:flex;gap:4px}
@@ -90,27 +136,31 @@ export function printFolio(folioData, hotelName = 'Syroce Hotel') {
     @media print{body{padding:15px}}
   </style></head><body>
   <div class="header">
-    <div class="hotel-name">${hotelName}</div>
+    <div class="hotel-name">${escapeHtml(hotel.name)}</div>
+    <div class="hotel-meta">
+      ${[hotel.address, hotel.phone, hotel.email].filter(Boolean).map(escapeHtml).join(' &nbsp;·&nbsp; ')}
+      ${hotel.tax_no ? `<br/>Vergi No: ${escapeHtml(hotel.tax_no)}${hotel.tax_office ? ' · Vergi Dairesi: ' + escapeHtml(hotel.tax_office) : ''}` : ''}
+    </div>
     <div class="subtitle">MISAFIR HESAP DOKUMU / GUEST FOLIO</div>
   </div>
   <div class="info-grid">
-    <div class="info-item"><span class="info-label">Folio No:</span><span class="info-value">${folio?.folio_number || folio?.id?.slice(0, 12) || ''}</span></div>
+    <div class="info-item"><span class="info-label">Folio No:</span><span class="info-value">${escapeHtml(folio?.folio_number || folio?.id?.slice(0, 12) || '')}</span></div>
     <div class="info-item"><span class="info-label">Tarih:</span><span class="info-value">${new Date().toLocaleDateString('tr-TR')}</span></div>
-    <div class="info-item"><span class="info-label">Misafir:</span><span class="info-value">${folio?.guest_name || ''}</span></div>
-    <div class="info-item"><span class="info-label">Oda No:</span><span class="info-value">${folio?.room_number || ''}</span></div>
-    <div class="info-item"><span class="info-label">Giris:</span><span class="info-value">${folio?.check_in?.toString().slice(0, 10) || ''}</span></div>
-    <div class="info-item"><span class="info-label">Cikis:</span><span class="info-value">${folio?.check_out?.toString().slice(0, 10) || ''}</span></div>
-    <div class="info-item"><span class="info-label">Durum:</span><span class="info-value">${folio?.status || ''}</span></div>
-    <div class="info-item"><span class="info-label">Tip:</span><span class="info-value">${folio?.folio_type || ''}</span></div>
+    <div class="info-item"><span class="info-label">Misafir:</span><span class="info-value">${escapeHtml(folio?.guest_name || '')}</span></div>
+    <div class="info-item"><span class="info-label">Oda No:</span><span class="info-value">${escapeHtml(folio?.room_number || '')}</span></div>
+    <div class="info-item"><span class="info-label">Giris:</span><span class="info-value">${escapeHtml(folio?.check_in?.toString().slice(0, 10) || '')}</span></div>
+    <div class="info-item"><span class="info-label">Cikis:</span><span class="info-value">${escapeHtml(folio?.check_out?.toString().slice(0, 10) || '')}</span></div>
+    <div class="info-item"><span class="info-label">Durum:</span><span class="info-value">${escapeHtml(folio?.status || '')}</span></div>
+    <div class="info-item"><span class="info-label">Tip:</span><span class="info-value">${escapeHtml(folio?.folio_type || '')}</span></div>
   </div>
   <table>
     <thead><tr><th>Tarih</th><th>Aciklama</th><th>Kategori</th><th style="text-align:right">Borc</th><th style="text-align:right">Alacak</th><th style="text-align:right">Bakiye</th></tr></thead>
     <tbody>
     ${timeline.map(e => `
       <tr class="${e.voided ? 'voided' : ''}">
-        <td>${e.timestamp?.slice(0, 10) || ''}</td>
-        <td>${e.description || e.type || ''}</td>
-        <td>${e.category || ''}</td>
+        <td>${escapeHtml(e.timestamp?.slice(0, 10) || '')}</td>
+        <td>${escapeHtml(e.description || e.type || '')}</td>
+        <td>${escapeHtml(e.category || '')}</td>
         <td style="text-align:right" class="amount-out">${e.type === 'charge' ? (e.amount || 0).toFixed(2) : ''}</td>
         <td style="text-align:right" class="amount-in">${e.type === 'payment' ? (e.amount || 0).toFixed(2) : ''}</td>
         <td style="text-align:right">${e.running_balance?.toFixed(2) || ''}</td>
@@ -125,14 +175,15 @@ export function printFolio(folioData, hotelName = 'Syroce Hotel') {
   </div>
   <div class="footer">
     <p>Bu belge ${new Date().toLocaleString('tr-TR')} tarihinde olusturulmustur.</p>
-    <p>${hotelName} - Tum haklar saklidir</p>
+    <p>${escapeHtml(hotel.name)} - Tum haklar saklidir</p>
   </div>
   </body></html>`);
   w.document.close();
   w.print();
 }
 
-export function printProformaInvoice(booking, guest, charges, hotelName = 'Syroce Hotel') {
+export function printProformaInvoice(booking, guest, charges, hotelArg) {
+  const hotel = normalizeHotelInfo(hotelArg);
   const w = window.open('', '_blank');
   if (!w) return;
   const totalAmount = booking?.total_amount || charges?.reduce((s, c) => s + (c.amount || 0), 0) || 0;
@@ -161,12 +212,13 @@ export function printProformaInvoice(booking, guest, charges, hotelName = 'Syroc
   </style></head><body>
   <div class="header">
     <div>
-      <div class="hotel-name">${hotelName}</div>
+      <div class="hotel-name">${escapeHtml(hotel.name)}</div>
       <div class="hotel-info">
-        Adres: Otel Adresi<br/>
-        Tel: +90 XXX XXX XX XX<br/>
-        E-posta: info@hotel.com<br/>
-        Vergi No: XXXXXXXXXX
+        ${hotel.address ? 'Adres: ' + escapeHtml(hotel.address) + '<br/>' : ''}
+        ${hotel.phone ? 'Tel: ' + escapeHtml(hotel.phone) + '<br/>' : ''}
+        ${hotel.email ? 'E-posta: ' + escapeHtml(hotel.email) + '<br/>' : ''}
+        ${hotel.tax_no ? 'Vergi No: ' + escapeHtml(hotel.tax_no) : ''}
+        ${hotel.tax_office ? ' · Vergi Dairesi: ' + escapeHtml(hotel.tax_office) : ''}
       </div>
     </div>
     <div>
@@ -178,16 +230,16 @@ export function printProformaInvoice(booking, guest, charges, hotelName = 'Syroc
   <div class="parties">
     <div class="party">
       <div class="party-title">Misafir Bilgileri</div>
-      <div>${guest?.name || booking?.guest_name || ''}</div>
-      <div>${guest?.email || ''}</div>
-      <div>${guest?.phone || ''}</div>
-      <div>${guest?.address || ''}</div>
+      <div>${escapeHtml(guest?.name || booking?.guest_name || '')}</div>
+      <div>${escapeHtml(guest?.email || '')}</div>
+      <div>${escapeHtml(guest?.phone || '')}</div>
+      <div>${escapeHtml(guest?.address || '')}</div>
     </div>
     <div class="party">
       <div class="party-title">Konaklama Bilgileri</div>
-      <div>Oda: ${booking?.room_number || ''} (${booking?.room_type || ''})</div>
-      <div>Giris: ${booking?.check_in?.toString().slice(0, 10) || ''}</div>
-      <div>Cikis: ${booking?.check_out?.toString().slice(0, 10) || ''}</div>
+      <div>Oda: ${escapeHtml(booking?.room_number || '')} (${escapeHtml(booking?.room_type || '')})</div>
+      <div>Giris: ${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div>
+      <div>Cikis: ${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div>
       <div>Misafir: ${booking?.adults || 1} Yetiskin, ${booking?.children || 0} Cocuk</div>
     </div>
   </div>
@@ -198,14 +250,13 @@ export function printProformaInvoice(booking, guest, charges, hotelName = 'Syroc
     </tbody>
   </table>
   <div class="total-section">
-    <div class="total-row"><span>Ara Toplam:</span><span>${netAmount.toFixed(2)} TL</span></div>
-    <div class="total-row"><span>KDV (%${(taxRate * 100).toFixed(0)}):</span><span>${taxAmount.toFixed(2)} TL</span></div>
-    <div class="total-row grand"><span>GENEL TOPLAM:</span><span>${totalAmount.toFixed(2)} TL</span></div>
+    <div class="total-row"><span>Net:</span><span>${netAmount.toFixed(2)} TL</span></div>
+    <div class="total-row"><span>KDV (%10):</span><span>${taxAmount.toFixed(2)} TL</span></div>
+    <div class="total-row grand"><span>TOPLAM:</span><span>${totalAmount.toFixed(2)} TL</span></div>
   </div>
   <div style="clear:both"></div>
   <div class="note">
-    <p><strong>NOT:</strong> Bu belge proforma nitelikte olup, kesin fatura yerine gecmez. Konaklama sonrasinda kesin fatura duzenlenecektir.</p>
-    <p>Ödeme kosullari: Giris aninda tam ödeme veya kredi karti garantisi gerekmektedir.</p>
+    <strong>Not:</strong> Bu bir proforma faturadir; resmi fatura yerine gecmez. Odeme yapildiginda resmi e-Fatura/e-Arsiv duzenlenecektir.
   </div>
   </body></html>`);
   w.document.close();

@@ -119,6 +119,6 @@ def consume_backup_code(stored_hashes: list[str], code: str) -> tuple[bool, list
                     matched = True
                     continue  # drop this hash
             except Exception:
-                pass
+                logger.warning("2FA: backup-code hash verify failed; treating as no-match", exc_info=True)
         remaining.append(h)
     return matched, remaining

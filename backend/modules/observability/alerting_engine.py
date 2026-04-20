@@ -108,7 +108,7 @@ class ProductionAlertEngine:
                 if alert:
                     alerts.append(alert)
         except Exception:
-            pass
+            logger.warning("alerting: redis_disconnected check failed", exc_info=True)
 
         # 2. Event drop spike
         try:
@@ -125,7 +125,7 @@ class ProductionAlertEngine:
                 if alert:
                     alerts.append(alert)
         except Exception:
-            pass
+            logger.warning("alerting: event_drop_spike check failed", exc_info=True)
 
         # 3. Messaging failure spike
         try:
@@ -145,7 +145,7 @@ class ProductionAlertEngine:
                 if alert:
                     alerts.append(alert)
         except Exception:
-            pass
+            logger.warning("alerting: messaging_failure_spike check failed", exc_info=True)
 
         # 4. Slow endpoint breach
         try:
@@ -163,7 +163,7 @@ class ProductionAlertEngine:
                         alerts.append(alert)
                     break  # Only one slow endpoint alert per evaluation
         except Exception:
-            pass
+            logger.warning("alerting: slow_endpoint_breach check failed", exc_info=True)
 
         # 5. High error rate
         try:
@@ -182,7 +182,7 @@ class ProductionAlertEngine:
                 if alert:
                     alerts.append(alert)
         except Exception:
-            pass
+            logger.warning("alerting: high_error_rate check failed", exc_info=True)
 
         # 6. Abnormal retry burst
         try:
@@ -201,7 +201,7 @@ class ProductionAlertEngine:
                 if alert:
                     alerts.append(alert)
         except Exception:
-            pass
+            logger.warning("alerting: abnormal_retry_burst check failed", exc_info=True)
 
         # 7. DB connection check
         try:

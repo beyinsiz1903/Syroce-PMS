@@ -234,10 +234,10 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
               <Button variant="outline" size="sm" onClick={() => setShowChargeForm(true)} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
                 <Plus className="w-4 h-4 mr-2" /> Masraf Ekle
               </Button>
-              <Button variant="outline" size="sm" onClick={() => printFolio(data)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
+              <Button variant="outline" size="sm" onClick={() => printFolio(data, tenant)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
                 <Printer className="w-4 h-4 mr-2" /> Yazdir
               </Button>
-              <Button variant="outline" size="sm" onClick={() => printProformaInvoice({ ...folio, total_amount: summary?.total_charges }, null, [])} className="border-purple-200 text-purple-700 hover:bg-purple-50">
+              <Button variant="outline" size="sm" onClick={() => printProformaInvoice({ ...folio, total_amount: summary?.total_charges }, null, [], tenant)} className="border-purple-200 text-purple-700 hover:bg-purple-50">
                 <FileText className="w-4 h-4 mr-2" /> Proforma
               </Button>
               <Button variant="outline" size="sm" onClick={() => fetchDetail(propFolioId || folioId)} className="border-gray-200">

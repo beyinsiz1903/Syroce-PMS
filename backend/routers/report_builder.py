@@ -3,6 +3,7 @@ Report Builder Router - Özel Rapor Oluşturucu
 Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktarmasını sağlar.
 """
 import io
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -10,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports/builder", tags=["report-builder"])
 
@@ -430,7 +433,7 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
                 if cell.value and len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
             except Exception:
-                pass
+                logger.debug("report_builder: column width calc failed for cell", exc_info=True)
         ws.column_dimensions[column_letter].width = min(max_length + 3, 50)
 
     output = io.BytesIO()
