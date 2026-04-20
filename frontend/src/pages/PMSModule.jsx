@@ -202,7 +202,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, [isLite]);
 
   useEffect(() => {
-    if (!isLite) return;
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
     const tenantId = tenant?.id || tenant?._id || tenant?.tenant_id || 'unknown';
     const key = `pms_open_dialog_once:${tenantId}`;
@@ -211,7 +210,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setOpenDialog(val);
       window.localStorage.removeItem(key);
     }
-  }, [isLite, tenant, activeTab]);
+  }, [tenant, activeTab]);
 
   useEffect(() => {
     if (!isLite || openDialog !== 'booking') return;
