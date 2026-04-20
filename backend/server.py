@@ -316,6 +316,14 @@ try:
 except Exception as _outbox_err:
     logger.warning("Outbox Admin router skipped: %s", _outbox_err)
 
+# Webhook Admin endpoints (deliveries, DLQ, manual retry)
+try:
+    from routers.webhook_admin import webhook_admin_router
+    app.include_router(webhook_admin_router, prefix="/api", tags=["Webhook Admin"])
+    logger.info("  ✅ Webhook Admin router loaded (deliveries/DLQ/retry)")
+except Exception as _wh_err:
+    logger.warning("Webhook Admin router skipped: %s", _wh_err)
+
 # DATA-001: Import Admin endpoints (review queue, retry, approve, dismiss)
 try:
     from routers.import_admin import import_admin_router

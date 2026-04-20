@@ -12,16 +12,23 @@ Endpoints:
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from cache_manager import cached
 from core.database import db
+from core.helpers import require_super_admin_guard
 from core.outbox_service import STATUS_FAILED, STATUS_PENDING, STATUS_RETRY
 
 logger = logging.getLogger("routers.outbox_admin")
 
-outbox_admin_router = APIRouter(prefix="/outbox", tags=["outbox-admin"])
+require_super_admin = require_super_admin_guard()
+
+outbox_admin_router = APIRouter(
+    prefix="/outbox",
+    tags=["outbox-admin"],
+    dependencies=[Depends(require_super_admin)],
+)
 
 
 class RequeueResponse(BaseModel):

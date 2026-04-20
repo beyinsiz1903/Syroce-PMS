@@ -590,6 +590,14 @@ export const NAV_ITEMS = [
     navGroup: "management",
   },
   {
+    key: "webhook_outbox_admin",
+    label: "Outbox & Webhook DLQ",
+    path: "/admin/webhook-outbox",
+    tier: "professional",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     key: "xchange",
     label: "Xchange (SXI)",
     path: "/app/xchange",
