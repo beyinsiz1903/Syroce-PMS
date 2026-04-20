@@ -88,8 +88,15 @@ const Guest360Dialog = ({
         <div className="flex gap-2 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
           <Button 
             onClick={() => {
-              toast.success('Opening offer creation for ' + guest360Data.guest?.name);
-              // TODO: Navigate to offer creation or open offer dialog
+              const g = guest360Data.guest || {};
+              const params = new URLSearchParams({
+                action: 'offer',
+                guest: g.id || selectedGuest360 || '',
+                name: g.name || '',
+                ...(g.email ? { email: g.email } : {}),
+                ...(g.phone ? { phone: g.phone } : {}),
+              }).toString();
+              window.location.href = `/ota-messaging-hub?${params}`;
             }}
             className="flex-1 bg-green-600 hover:bg-green-700"
           >

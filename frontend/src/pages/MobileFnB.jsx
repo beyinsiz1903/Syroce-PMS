@@ -827,7 +827,29 @@ const MobileFnB = ({ user }) => {
 
             <Button 
               className="w-full bg-purple-600 hover:bg-purple-700"
-              onClick={() => toast.info('Yeni ürün ekleme özelliği yakında...')}
+              onClick={async () => {
+                const name = window.prompt('Ürün adı:')?.trim();
+                if (!name) return;
+                const priceStr = window.prompt('Fiyat (TL):')?.trim();
+                const price = parseFloat((priceStr || '').replace(',', '.'));
+                if (!price || price <= 0) {
+                  toast.error('Geçerli bir fiyat girin');
+                  return;
+                }
+                const category = (window.prompt(
+                  'Kategori (food/drink/dessert/appetizer/alcohol):',
+                  'food'
+                ) || 'food').trim().toLowerCase();
+                try {
+                  const res = await axios.post('/pos/menu-item', {
+                    name, price, category, available: true
+                  });
+                  toast.success(`✅ "${res.data?.name || name}" eklendi`);
+                  loadData?.();
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Ürün eklenemedi');
+                }
+              }}
             >
               <Plus className="w-4 h-4 mr-2" />
               Yeni Ürün Ekle

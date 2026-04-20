@@ -437,13 +437,28 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-red-600 hover:bg-red-700 text-white p-1"
-            onClick={() => {
-              // Mark no-show functionality
-              const noShows = todayArrivals.filter(b => b.status === 'confirmed');
-              if (noShows.length > 0) {
-                toast.info('🔄 No-show işlemi hazırlanıyor...');
-              } else {
+            onClick={async () => {
+              const candidates = todayArrivals.filter(b => b.status === 'confirmed');
+              if (candidates.length === 0) {
                 toast.error('⚠️ İşaretlenecek rezervasyon yok');
+                return;
+              }
+              const target = candidates[0];
+              const guestLabel = target.guest_name || target.id;
+              if (!window.confirm(`"${guestLabel}" no-show olarak işaretlensin mi?`)) return;
+              try {
+                const res = await axios.post('/frontdesk/mobile/process-no-show', {
+                  booking_id: target.id
+                });
+                const fee = res.data?.no_show_fee;
+                toast.success(
+                  fee > 0
+                    ? `✅ No-show işlendi • ücret: ${fee} TL`
+                    : '✅ No-show işlendi'
+                );
+                loadData?.();
+              } catch (err) {
+                toast.error(err?.response?.data?.detail || 'No-show işlenemedi');
               }
             }}
           >

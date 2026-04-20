@@ -101,10 +101,16 @@ const PmsLiteLanding = () => {
   };
 
   const openWhatsApp = () => {
-    const phone = "+905555555555"; // TODO: Gerçek WhatsApp numarası ile değiştir
+    const phone = (import.meta.env.VITE_SALES_WHATSAPP || "").replace(/[^0-9]/g, "");
     const text = encodeURIComponent(
       "Merhaba, PMS Lite hakkında demo talep etmek istiyorum."
     );
+    if (!phone) {
+      toast.info(
+        "WhatsApp hattı henüz tanımlanmamış. Lütfen yandaki formu doldurun, sizi arayalım."
+      );
+      return;
+    }
     window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
   };
 
@@ -331,7 +337,11 @@ const PmsLiteLanding = () => {
                     size="sm"
                     className="bg-green-600 hover:bg-green-700 text-white"
                     onClick={() => {
-                      const phone = "+905555555555";
+                      const phone = (import.meta.env.VITE_SALES_WHATSAPP || "").replace(/[^0-9]/g, "");
+                      if (!phone) {
+                        toast.info("WhatsApp hattı henüz tanımlanmamış. Talebiniz alındı, sizi arayacağız.");
+                        return;
+                      }
                       const text = encodeURIComponent(lastLead.message);
                       window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
                     }}
