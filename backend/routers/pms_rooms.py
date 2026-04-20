@@ -456,7 +456,7 @@ async def bulk_delete_rooms(
 @router.post("/pms/rooms/import-csv", response_model=RoomCsvImportResponse)
 async def import_rooms_csv(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_super_admin_guard(not_found=False)),
     _: None = Depends(require_module("pms")),
 ):
     # CSV rows limit safety

@@ -871,10 +871,10 @@ const Settings = ({ user, tenant, onLogout }) => {
                       <CardDescription>Otel odalarını ekleyin, düzenleyin veya silin</CardDescription>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn">
+                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn" disabled={user?.role !== 'super_admin'} title={user?.role !== 'super_admin' ? 'Yalnızca süper-admin' : undefined}>
                         <Plus className="w-4 h-4 mr-1" /> Toplu Oda Ekle
                       </Button>
-                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn">
+                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn" disabled={user?.role !== 'super_admin'} title={user?.role !== 'super_admin' ? 'Yalnızca süper-admin' : undefined}>
                         <Plus className="w-4 h-4 mr-1" /> Tek Oda Ekle
                       </Button>
                     </div>
@@ -1066,6 +1066,7 @@ const Settings = ({ user, tenant, onLogout }) => {
         open={showBulkRoomsDialog}
         onClose={() => setShowBulkRoomsDialog(false)}
         onRoomsCreated={loadRooms}
+        user={user}
       />
     </Layout>
   );

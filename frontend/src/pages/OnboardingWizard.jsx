@@ -247,11 +247,15 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
           <ActionStep
             icon={BedDouble}
             title="Odalarınızı tanımlayın"
-            description="Sistem oda kayıtlarınızı algıladığında bu adım otomatik olarak ✓ işaretlenir. Hızlı toplu ekleme aracını açabilirsiniz."
+            description={user?.role === 'super_admin'
+              ? "Oda oluşturma yalnızca süper-admin kullanıcılar tarafından yapılabilir. Toplu eklemeden önce oda numaraları önizlenir ve onayınız istenir."
+              : "Oda oluşturma yetkisi yalnızca süper-admin kullanıcılara aittir. Lütfen süper-admin ile iletişime geçin."}
             done={!!stepStatus.rooms_configured}
             primary={{
-              label: "Toplu Oda Ekle",
+              label: user?.role === 'super_admin' ? "Toplu Oda Ekle (önizlemeli)" : "Yetki Gerekli",
+              disabled: user?.role !== 'super_admin',
               action: () => {
+                if (user?.role !== 'super_admin') return;
                 window.localStorage.setItem(
                   `pms_open_dialog_once:${tenant?.id || "x"}`, "bulk-rooms"
                 );
@@ -349,7 +353,7 @@ function ActionStep({ icon: Icon, title, description, done, primary }) {
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <Button onClick={primary.action} size="lg" className="w-full">
+        <Button onClick={primary.action} size="lg" className="w-full" disabled={!!primary.disabled}>
           {primary.label} <ArrowRight className="w-4 h-4 ml-1" />
         </Button>
       </CardContent>
