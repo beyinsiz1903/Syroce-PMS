@@ -88,7 +88,7 @@ function KPICard({ icon: Icon, label, value, sub, tone = "blue" }) {
   );
 }
 
-export default function EarlyWarningDashboard() {
+export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
@@ -157,7 +157,7 @@ export default function EarlyWarningDashboard() {
   const running = !!engineStatus?.running;
 
   return (
-    <Layout title="Erken Uyarı Motoru" subtitle="Tahminsel operasyonel sinyaller ve trend analizi">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="early-warning" title="Erken Uyarı Motoru" subtitle="Tahminsel operasyonel sinyaller ve trend analizi">
       <div className="space-y-6 p-4">
         {error && (
           <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200 text-sm">{error}</div>
