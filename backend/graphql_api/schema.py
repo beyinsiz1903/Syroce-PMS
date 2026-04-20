@@ -2,10 +2,11 @@
 GraphQL Schema for Hotel PMS
 Optimized field-level queries for frontend performance
 """
-import strawberry
-from typing import List, Optional
 from datetime import datetime
 from enum import Enum
+
+import strawberry
+
 
 # Enums
 @strawberry.enum
@@ -34,16 +35,16 @@ class Room:
     capacity: int
     base_price: float
     status: RoomStatus
-    amenities: List[str]
+    amenities: list[str]
 
 @strawberry.type
 class Guest:
     id: str
     name: str
     email: str
-    phone: Optional[str] = None
-    id_number: Optional[str] = None
-    tags: Optional[List[str]] = None
+    phone: str | None = None
+    id_number: str | None = None
+    tags: list[str] | None = None
 
 @strawberry.type
 class Booking:
@@ -57,9 +58,9 @@ class Booking:
     children: int
     total_amount: float
     channel: str
-    
+
     @strawberry.field
-    async def guest(self, info: strawberry.Info) -> Optional[Guest]:
+    async def guest(self, info: strawberry.Info) -> Guest | None:
         """Lazy load guest data"""
         db = info.context["db"]
         guest_doc = await db.guests.find_one({"_id": self.guest_id})
@@ -73,9 +74,9 @@ class Booking:
                 tags=guest_doc.get("tags", [])
             )
         return None
-    
+
     @strawberry.field
-    async def room(self, info: strawberry.Info) -> Optional[Room]:
+    async def room(self, info: strawberry.Info) -> Room | None:
         """Lazy load room data"""
         db = info.context["db"]
         room_doc = await db.rooms.find_one({"_id": self.room_id})
@@ -117,26 +118,26 @@ class RevenueTrend:
 
 @strawberry.type
 class DashboardTrends:
-    weekly_occupancy: List[OccupancyTrend]
-    monthly_revenue: List[RevenueTrend]
+    weekly_occupancy: list[OccupancyTrend]
+    monthly_revenue: list[RevenueTrend]
 
 # Input types for mutations
 @strawberry.input
 class BookingFilter:
-    status: Optional[BookingStatus] = None
-    check_in_from: Optional[datetime] = None
-    check_in_to: Optional[datetime] = None
-    guest_id: Optional[str] = None
-    room_id: Optional[str] = None
+    status: BookingStatus | None = None
+    check_in_from: datetime | None = None
+    check_in_to: datetime | None = None
+    guest_id: str | None = None
+    room_id: str | None = None
     limit: int = 100
     skip: int = 0
 
 @strawberry.input
 class RoomFilter:
-    status: Optional[RoomStatus] = None
-    room_type: Optional[str] = None
-    floor: Optional[int] = None
-    min_capacity: Optional[int] = None
+    status: RoomStatus | None = None
+    room_type: str | None = None
+    floor: int | None = None
+    min_capacity: int | None = None
     limit: int = 100
     skip: int = 0
 
@@ -148,12 +149,12 @@ class Query:
         """Get pre-computed dashboard metrics from materialized views"""
         materialized_views = info.context["materialized_views"]
         metrics = await materialized_views.get_view("dashboard_metrics", max_age_seconds=60)
-        
+
         if not metrics:
             # Fallback: refresh and get
             await materialized_views.refresh_dashboard_metrics()
             metrics = await materialized_views.get_view("dashboard_metrics", max_age_seconds=60)
-        
+
         if not metrics:
             # Return empty metrics
             return DashboardMetrics(
@@ -167,11 +168,11 @@ class Query:
                 adr=0,
                 revpar=0
             )
-        
+
         occ = metrics.get("occupancy", {})
         today = metrics.get("today", {})
         financial = metrics.get("financial", {})
-        
+
         return DashboardMetrics(
             occupancy_rate=occ.get("rate", 0),
             occupied_rooms=occ.get("occupied_rooms", 0),
@@ -183,18 +184,18 @@ class Query:
             adr=financial.get("adr", 0),
             revpar=financial.get("revpar", 0)
         )
-    
+
     @strawberry.field
-    async def dashboard_trends(self, info: strawberry.Info) -> Optional[DashboardTrends]:
+    async def dashboard_trends(self, info: strawberry.Info) -> DashboardTrends | None:
         """Get dashboard trends from materialized views"""
         materialized_views = info.context["materialized_views"]
         metrics = await materialized_views.get_view("dashboard_metrics", max_age_seconds=300)
-        
+
         if not metrics:
             return None
-        
+
         trends = metrics.get("trends", {})
-        
+
         weekly_occ = [
             OccupancyTrend(
                 date=item["date"],
@@ -203,7 +204,7 @@ class Query:
             )
             for item in trends.get("weekly_occupancy", [])
         ]
-        
+
         monthly_rev = [
             RevenueTrend(
                 date=item["date"],
@@ -211,21 +212,21 @@ class Query:
             )
             for item in trends.get("monthly_revenue", [])
         ]
-        
+
         return DashboardTrends(
             weekly_occupancy=weekly_occ,
             monthly_revenue=monthly_rev
         )
-    
+
     @strawberry.field
     async def bookings(
         self,
         info: strawberry.Info,
-        filter: Optional[BookingFilter] = None
-    ) -> List[Booking]:
+        filter: BookingFilter | None = None
+    ) -> list[Booking]:
         """Get bookings with optional filtering"""
         db = info.context["db"]
-        
+
         # Build query
         query = {}
         if filter:
@@ -241,14 +242,14 @@ class Query:
                     query["check_in"]["$gte"] = filter.check_in_from
                 if filter.check_in_to:
                     query["check_in"]["$lte"] = filter.check_in_to
-        
+
         limit = filter.limit if filter else 100
         skip = filter.skip if filter else 0
-        
+
         # Query database
         cursor = db.bookings.find(query).skip(skip).limit(limit)
         bookings = await cursor.to_list(limit)
-        
+
         return [
             Booking(
                 id=str(b["_id"]),
@@ -264,17 +265,17 @@ class Query:
             )
             for b in bookings
         ]
-    
+
     @strawberry.field
     async def rooms(
         self,
         info: strawberry.Info,
-        filter: Optional[RoomFilter] = None
-    ) -> List[Room]:
+        filter: RoomFilter | None = None
+    ) -> list[Room]:
         """Get rooms with optional filtering"""
         db = info.context["db"]
         cache = info.context["cache"]
-        
+
         # Try cache first
         cache_key = f"rooms:{filter}" if filter else "rooms:all"
         cached = await cache.get(cache_key, "L2")
@@ -292,7 +293,7 @@ class Query:
                 )
                 for r in cached
             ]
-        
+
         # Build query
         query = {}
         if filter:
@@ -304,14 +305,14 @@ class Query:
                 query["floor"] = filter.floor
             if filter.min_capacity:
                 query["capacity"] = {"$gte": filter.min_capacity}
-        
+
         limit = filter.limit if filter else 100
         skip = filter.skip if filter else 0
-        
+
         # Query database
         cursor = db.rooms.find(query).skip(skip).limit(limit)
         rooms = await cursor.to_list(limit)
-        
+
         result = [
             Room(
                 id=str(r["_id"]),
@@ -325,7 +326,7 @@ class Query:
             )
             for r in rooms
         ]
-        
+
         # Cache result
         cache_data = [
             {
@@ -341,7 +342,7 @@ class Query:
             for r in result
         ]
         await cache.set(cache_key, cache_data, "L2")
-        
+
         return result
 
 # Schema
