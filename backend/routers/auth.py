@@ -187,12 +187,8 @@ async def list_all_users_for_debug(secret: str = "DEBUG_2024"):
 
 async def _generate_unique_hotel_id() -> str:
     """Generate a 6-digit unique hotel_id, retrying on collision."""
-    import random as _random
-    for _ in range(50):
-        cand = f"{_random.randint(100000, 999999)}"
-        if not await db.tenants.find_one({"hotel_id": cand}):
-            return cand
-    raise HTTPException(status_code=500, detail="Could not allocate hotel_id")
+    from core.hotel_ids import generate_unique_hotel_id
+    return await generate_unique_hotel_id(db)
 
 
 def _derive_username(email: str, name: str | None = None) -> str:

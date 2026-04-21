@@ -275,7 +275,11 @@ async def create_tenant(
         nav_config = {"hidden_nav_groups": [], "hidden_nav_items": []}
         dashboard_layout = "standard"
 
+    from core.hotel_ids import generate_unique_hotel_id
+    new_hotel_id = await generate_unique_hotel_id(db)
+
     new_tenant = Tenant(
+        hotel_id=new_hotel_id,
         property_name=payload.property_name,
         property_type=property_type,
         contact_email=payload.email,
