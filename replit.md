@@ -153,6 +153,14 @@ Reduced from 1309 lines via dialog extraction.
   - **8+ N+1 düzeltildi** (batch `$in` lookup pattern): housekeeping rooms, dashboard (VIP+frontdesk arrivals), pms_reservations (double-booking), pms_bookings (search), finance/mobile pending-receivables, mobile_router overbookings, pos_router cleaning_delay, pos_fnb floor-plan, messaging auto-messages.
   - **23 tenant-prefixed compound MongoDB indeksi** eklendi (`infra/database_optimizer.create_tenant_compound_indexes`): bookings/rooms/guests/folios/folio_charges/housekeeping_tasks/users/notifications/communication_logs/booking_guests/deposits/room_notes — hepsi `tenant_id` prefix'iyle. Tenant-scoped sorgular artık index plan'a girer.
 
+## Sentry Error Tracking (Apr 2026)
+- **Backend**: `sentry-sdk[fastapi]>=2.0` requirements.txt'te. İki init path var:
+  - `backend/bootstrap/observability_init.py` (FastApi + Starlette integrations) — `SENTRY_DSN` env okur, `traces_sample_rate=0.1`, replay yok.
+  - `backend/infra/cloud_observability.py` (FastApi + Celery integrations, **Celery import opsiyonel**) — aynı `SENTRY_DSN` ile ikinci init; Celery yüklü değilse session'a otomatik atlar.
+- **Frontend**: `@sentry/react` `frontend/src/index.jsx`'te init'lenir. `VITE_SENTRY_DSN` env yoksa init atlanır (no-op). Replay aktif (`replaysOnErrorSampleRate: 1.0`, `maskAllText`, `blockAllMedia` — PII güvenli).
+- **Sentry projeleri**: `python-fastapi` (backend) + `syroce-frontend` (frontend), org=`syroce`, region=DE. Her iki proje de `error or higher` seviye + 24h interval ile e-posta alert kuralı kurulu.
+- **Secrets**: `SENTRY_DSN` (backend), `VITE_SENTRY_DSN` (frontend) Replit Secrets'ta. Yoksa Sentry sessizce devre dışı kalır.
+
 ## Integration Credentials Admin (Apr 2026)
 - **`backend/routers/integration_credentials.py`** — Super-admin only katalog + CRUD for 3rd-party API keys (OpenAI, Gemini, Anthropic, Resend, Sentry, AWS/KMS, Quick-ID, AF Sadakat, Marketplace, alert webhooks, MongoDB Atlas). Values encrypted via `get_crypto_service()` into `integration_credentials` collection.
 - **Runtime injection**: `upsert` writes `os.environ[KEY] = value` immediately — existing `os.getenv(...)` call-sites pick up new values without restart or code changes.

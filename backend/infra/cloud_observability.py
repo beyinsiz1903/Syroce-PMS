@@ -105,8 +105,9 @@ class SentryIntegration:
         try:
             import sentry_sdk
             from sentry_sdk.integrations.fastapi import FastApiIntegration
+            from sentry_sdk.integrations.starlette import StarletteIntegration
 
-            integrations = [FastApiIntegration()]
+            integrations = [StarletteIntegration(), FastApiIntegration()]
             try:
                 from sentry_sdk.integrations.celery import CeleryIntegration
                 integrations.append(CeleryIntegration())

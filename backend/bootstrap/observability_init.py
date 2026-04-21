@@ -17,22 +17,8 @@ def init_observability() -> None:
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
 
-    # Sentry
-    sentry_dsn = os.environ.get("SENTRY_DSN")
-    if sentry_dsn:
-        try:
-            import sentry_sdk
-            from sentry_sdk.integrations.fastapi import FastApiIntegration
-            from sentry_sdk.integrations.starlette import StarletteIntegration
-            sentry_sdk.init(
-                dsn=sentry_dsn,
-                integrations=[StarletteIntegration(), FastApiIntegration()],
-                traces_sample_rate=float(os.environ.get("SENTRY_TRACES_RATE", "0.1")),
-                environment=os.environ.get("ENVIRONMENT", "development"),
-            )
-            logging.info("Sentry initialized")
-        except ImportError:
-            logging.warning("sentry-sdk not installed – skipping Sentry init")
+    # Sentry init handled by infra/cloud_observability.py (single source of truth)
+    # to avoid double sentry_sdk.init() which overwrites SDK state.
 
     # Prometheus metrics endpoint is handled by prometheus_metrics.py
     try:
