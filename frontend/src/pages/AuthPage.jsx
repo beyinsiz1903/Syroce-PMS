@@ -37,7 +37,7 @@ const AuthPage = ({ onLogin }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
   
-  const [hotelLoginData, setHotelLoginData] = useState({ hotel_id: '', username: '', password: '' });
+  const [hotelLoginData, setHotelLoginData] = useState({ email: '', password: '' });
   const [guestLoginData, setGuestLoginData] = useState({ email: '', password: '' });
   const [forgotEmail, setForgotEmail] = useState('');
 
@@ -62,8 +62,7 @@ const AuthPage = ({ onLogin }) => {
     setLoading(true);
     try {
       const payload = {
-        hotel_id: String(hotelLoginData.hotel_id || '').trim(),
-        username: String(hotelLoginData.username || '').trim().toLowerCase(),
+        email: String(hotelLoginData.email || '').trim().toLowerCase(),
         password: hotelLoginData.password,
       };
       const response = await axios.post('/auth/login', payload);
@@ -360,46 +359,18 @@ const AuthPage = ({ onLogin }) => {
                   <TabsContent value="login">
                     {!showForgotPassword ? (
                       <form onSubmit={handleHotelLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
-                        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg">
-                          <p className="text-xs font-semibold text-amber-900 mb-1">🔑 Demo Hesabı</p>
-                          <p className="text-xs text-amber-800 leading-relaxed">
-                            Otel ID: <strong>100001</strong> &nbsp;|&nbsp;
-                            Kullanıcı: <strong>demo</strong> &nbsp;|&nbsp;
-                            Şifre: <strong>demo123</strong>
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setHotelLoginData({ hotel_id: '100001', username: 'demo', password: 'demo123' })}
-                            className="text-xs text-amber-700 hover:text-amber-900 underline mt-1"
-                          >
-                            Demo bilgileri otomatik doldur
-                          </button>
-                        </div>
                         <div>
-                          <Label>Otel ID</Label>
+                          <Label>E-posta</Label>
                           <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={hotelLoginData.hotel_id}
-                            onChange={(e) => setHotelLoginData({...hotelLoginData, hotel_id: e.target.value.replace(/\D/g, '').slice(0, 6)})}
+                            type="email"
+                            value={hotelLoginData.email}
+                            onChange={(e) => setHotelLoginData({...hotelLoginData, email: e.target.value})}
                             required
-                            data-testid="hotel-login-hotel-id"
-                            placeholder="6 haneli otel kimliği"
-                            maxLength={6}
-                            style={isMobile ? { fontSize: '16px' } : {}}
-                          />
-                        </div>
-                        <div>
-                          <Label>Kullanıcı Adı</Label>
-                          <Input
-                            type="text"
-                            value={hotelLoginData.username}
-                            onChange={(e) => setHotelLoginData({...hotelLoginData, username: e.target.value})}
-                            required
-                            data-testid="hotel-login-username"
-                            placeholder="ör. demo"
+                            data-testid="hotel-login-email"
+                            placeholder="ornek@hotel.com"
                             autoCapitalize="none"
                             autoCorrect="off"
+                            autoComplete="email"
                             style={isMobile ? { fontSize: '16px' } : {}}
                           />
                         </div>
