@@ -360,6 +360,25 @@ async def auto_seed_if_empty(db):
     admin_user = _encrypt_doc(admin_user, "users")
     await db.users.insert_one(admin_user)
 
+    # Backward-compatible alias account (used by legacy tests / docs).
+    # Same role + password, separate user id and email.
+    legacy_admin = {
+        "id": _uuid(),
+        "tenant_id": tenant_id,
+        "agency_id": None,
+        "email": "demo@hotel.com",
+        "name": "Demo Admin (Legacy)",
+        "role": "super_admin",
+        "phone": "+905551234567",
+        "is_active": True,
+        "email_verified": True,
+        "email_verified_at": _now().isoformat(),
+        "hashed_password": pwd_context.hash(DEMO_PASSWORD),
+        "created_at": _now().isoformat(),
+    }
+    legacy_admin = _encrypt_doc(legacy_admin, "users")
+    await db.users.insert_one(legacy_admin)
+
     # Extra staff users
     staff_users = [
         {"name": "Front Desk Agent", "email": "frontdesk@hotel.com", "role": "front_desk"},
