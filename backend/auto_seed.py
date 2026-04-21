@@ -14,7 +14,7 @@ from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-DEMO_EMAIL = "demo@hotel.com"
+DEMO_EMAIL = "info@syroce.com"
 DEMO_PASSWORD = "demo123"
 DEMO_HOTEL_NAME = "Syroce Demo Hotel"
 
@@ -259,7 +259,7 @@ async def _ensure_agencies_seeded(db):
                 "payment_method": random.choice(["bank_transfer", "check", "credit_card", "wire_transfer"]),
                 "reference": f"PAY-{random.randint(10000, 99999)}",
                 "notes": f"Commission payment for {adef['name']}",
-                "recorded_by": "demo@hotel.com",
+                "recorded_by": "info@syroce.com",
                 "created_at": payment_date.isoformat(),
             }
             all_transactions.append(txn)
