@@ -104,15 +104,21 @@ class SentryIntegration:
 
         try:
             import sentry_sdk
-            from sentry_sdk.integrations.celery import CeleryIntegration
             from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+            integrations = [FastApiIntegration()]
+            try:
+                from sentry_sdk.integrations.celery import CeleryIntegration
+                integrations.append(CeleryIntegration())
+            except (ImportError, Exception):
+                pass
 
             sentry_sdk.init(
                 dsn=self._dsn,
                 environment=self._environment,
                 traces_sample_rate=0.1,
                 profiles_sample_rate=0.1,
-                integrations=[FastApiIntegration(), CeleryIntegration()],
+                integrations=integrations,
                 send_default_pii=False,
             )
             self._active = True
