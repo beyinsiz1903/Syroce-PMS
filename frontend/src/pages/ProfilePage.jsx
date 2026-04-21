@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
 import {
   User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
-  Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw,
+  Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil,
 } from 'lucide-react';
 
 const ProfilePage = ({ user, tenant, onLogout }) => {
@@ -17,6 +17,9 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
   const [tenantInfo] = useState(tenant || null);
   const [loading, setLoading] = useState(false);
   const [pwd, setPwd] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', phone: '' });
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +31,33 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const startEdit = () => {
+    setEditForm({ name: me?.name || '', phone: me?.phone || '' });
+    setEditing(true);
+  };
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    if (editForm.name.trim().length < 2) {
+      toast.error('Ad Soyad en az 2 karakter olmalıdır.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const res = await axios.put('/auth/me', {
+        name: editForm.name.trim(),
+        phone: editForm.phone.trim(),
+      });
+      setMe(res.data);
+      setEditing(false);
+      toast.success('Profil bilgileriniz güncellendi.');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Profil güncellenemedi.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -62,19 +92,56 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
     <div className="max-w-3xl mx-auto p-4 space-y-4">
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <UserIcon className="w-5 h-5" /> Kullanıcı Bilgileri
-          </CardTitle>
-          <CardDescription>Sistemdeki kayıtlı bilgileriniz</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <UserIcon className="w-5 h-5" /> Kullanıcı Bilgileri
+            </CardTitle>
+            <CardDescription>Sistemdeki kayıtlı bilgileriniz</CardDescription>
+          </div>
+          {!editing && (
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <Pencil className="w-3.5 h-3.5 mr-1" /> Düzenle
+            </Button>
+          )}
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-          <Field icon={UserIcon} label="Ad Soyad" value={me?.name} />
-          <Field icon={KeyRound} label="Kullanıcı Adı" value={me?.username} />
-          <Field icon={Mail} label="E-posta" value={me?.email} />
-          <Field icon={Phone} label="Telefon" value={me?.phone} />
-          <Field icon={Shield} label="Rol" value={me?.role} />
-          <Field icon={Hotel} label="Otel ID" value={tenantInfo?.hotel_id} />
+        <CardContent>
+          {editing ? (
+            <form onSubmit={saveProfile} className="space-y-4 max-w-md">
+              <div>
+                <Label>Ad Soyad</Label>
+                <Input value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  required minLength={2} autoFocus />
+              </div>
+              <div>
+                <Label>Telefon</Label>
+                <Input value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  placeholder="+90 555 123 45 67" />
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={savingProfile}>
+                  {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setEditing(false)} disabled={savingProfile}>
+                  İptal
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                E-posta, kullanıcı adı ve rol değiştirilemez. Bu bilgilerin değişmesi gerekiyorsa sistem yöneticinizle iletişime geçin.
+              </p>
+            </form>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+              <Field icon={UserIcon} label="Ad Soyad" value={me?.name} />
+              <Field icon={KeyRound} label="Kullanıcı Adı" value={me?.username} />
+              <Field icon={Mail} label="E-posta" value={me?.email} />
+              <Field icon={Phone} label="Telefon" value={me?.phone} />
+              <Field icon={Shield} label="Rol" value={me?.role} />
+              <Field icon={Hotel} label="Otel ID" value={tenantInfo?.hotel_id} />
+            </div>
+          )}
         </CardContent>
       </Card>
 

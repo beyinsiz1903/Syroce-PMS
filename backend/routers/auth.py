@@ -594,6 +594,47 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+class UpdateMeRequest(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+
+
+@router.put("/auth/me", response_model=User)
+async def update_me(
+    data: UpdateMeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Allow the authenticated user to update their own name and phone."""
+    update_fields: dict = {}
+    if data.name is not None:
+        cleaned = data.name.strip()
+        if len(cleaned) < 2:
+            raise HTTPException(status_code=400, detail="Ad Soyad en az 2 karakter olmalı")
+        update_fields["name"] = cleaned
+    if data.phone is not None:
+        update_fields["phone"] = data.phone.strip() or None
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
+
+    await db.users.update_one({"id": current_user.id}, {"$set": update_fields})
+
+    await db.audit_logs.insert_one({
+        "id": str(__import__('uuid').uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "action": "profile_updated",
+        "resource_type": "user",
+        "details": ",".join(update_fields.keys()),
+        "timestamp": datetime.now(UTC).isoformat(),
+    })
+
+    refreshed = await db.users.find_one({"id": current_user.id})
+    refreshed.pop("_id", None)
+    refreshed = decrypt_user_doc(refreshed)
+    return User(**{k: v for k, v in refreshed.items() if k in User.model_fields})
+
+
 @router.post("/auth/change-password")
 async def change_password(
     data: ChangePasswordRequest,

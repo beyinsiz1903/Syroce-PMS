@@ -294,6 +294,8 @@ async def auto_seed_if_empty(db):
     # ── 1. Tenant ──────────────────────────────────────────
     tenant = {
         "id": tenant_id,
+        "hotel_id": "100001",
+        "name": DEMO_HOTEL_NAME,
         "property_name": DEMO_HOTEL_NAME,
         "property_type": "hotel",
         "contact_email": DEMO_EMAIL,
