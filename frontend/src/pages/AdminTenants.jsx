@@ -160,11 +160,14 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
   };
 
   const filteredTenants = useMemo(() => {
+    const q = filter.trim().toLowerCase();
     let list = tenants.filter((t) => {
       const name = (t.property_name || t.name || '').toLowerCase();
-      const matchName = !filter || name.includes(filter.toLowerCase());
+      const hotelId = String(t.hotel_id || '').toLowerCase();
+      const email = String(t.email || t.contact_email || '').toLowerCase();
+      const matchQuery = !q || name.includes(q) || hotelId.includes(q) || email.includes(q);
       const matchTier = tierFilter === 'all' || (t.subscription_tier || 'basic') === tierFilter;
-      return matchName && matchTier;
+      return matchQuery && matchTier;
     });
     list.sort((a, b) => {
       let va = a[sortField] || '';
@@ -255,7 +258,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
             <input
               data-testid="tenant-search"
               type="text"
-              placeholder="Otel adına göre filtrele..."
+              placeholder="Otel ID, otel adı veya e-posta ile ara..."
               className="w-full border rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -311,6 +314,11 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-gray-900 truncate">{t.property_name || t.name || 'Otel'}</h3>
                           <PlanBadge tier={tier} />
+                          {t.hotel_id && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              ID: {t.hotel_id}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
                           {t.location && <span>{t.location}</span>}
