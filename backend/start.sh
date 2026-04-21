@@ -10,13 +10,20 @@ if [ -n "$MONGO_ATLAS_URI" ]; then
   echo "✅ MongoDB: Atlas Cloud kullanılıyor (DB: $DB_NAME)"
 else
   echo "⚠️  MONGO_ATLAS_URI tanımlı değil, local MongoDB başlatılıyor..."
-  mkdir -p /tmp/mongodb-data
+  # KALICI dbpath: /tmp Replit restart'ta silinir, workspace kalır.
+  MONGO_DBPATH="${SYROCE_MONGO_DBPATH:-$HOME/.syroce-mongodb-data}"
+  mkdir -p "$MONGO_DBPATH"
+  # Eski /tmp verisini bir kez taşı (varsa ve hedef boşsa)
+  if [ -d /tmp/mongodb-data ] && [ -z "$(ls -A "$MONGO_DBPATH" 2>/dev/null)" ]; then
+    echo "ℹ️  /tmp/mongodb-data → $MONGO_DBPATH (kalıcı konuma taşınıyor)"
+    cp -a /tmp/mongodb-data/. "$MONGO_DBPATH/" 2>/dev/null || true
+  fi
   if ! mongod --version > /dev/null 2>&1; then
     echo "ERROR: mongod not found in PATH"
     exit 1
   fi
   if ! python -c "import pymongo; pymongo.MongoClient('localhost', 27017, serverSelectionTimeoutMS=1000).admin.command('ping')" 2>/dev/null; then
-    mongod --dbpath /tmp/mongodb-data --port 27017 --fork --logpath /tmp/mongod.log
+    mongod --dbpath "$MONGO_DBPATH" --port 27017 --fork --logpath /tmp/mongod.log
     sleep 2
   fi
   export MONGO_URL="${MONGO_URL:-mongodb://localhost:27017}"
