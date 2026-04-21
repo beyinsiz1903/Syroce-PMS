@@ -507,14 +507,13 @@ export const NAV_ITEMS = [
   },
   {
     key: "admin_control_panel",
-    label: "Admin Control Panel",
+    label: "Yönetim Kontrol Paneli",
     path: "/app/admin-control-panel",
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "channels",
+    navGroup: "admin",
     requireSuperAdmin: true,
-    hidden: true,
   },
   {
     key: "integration_credentials",
