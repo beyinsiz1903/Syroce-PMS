@@ -172,9 +172,9 @@ async def deliver_webhook_with_retry(
 
             # SSRF guard at delivery time (DNS rebinding protection): re-resolve and reject internal hosts
             try:
-                from urllib.parse import urlparse as _urlparse
                 import ipaddress as _ipa
                 import socket as _sock
+                from urllib.parse import urlparse as _urlparse
                 _p = _urlparse(webhook_url)
                 _h = (_p.hostname or "").lower()
                 if (not _h

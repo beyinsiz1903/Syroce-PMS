@@ -3,7 +3,7 @@ PMS Guests Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Guest CRUD and search with field-level PII encryption.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.helpers import require_module

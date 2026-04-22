@@ -12,7 +12,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -21,10 +20,10 @@ from core.security import (
     get_current_user,
     security,
 )
-from domains.pms.frontdesk_service import frontdesk_service
 from core.utils import generate_folio_number
+from domains.pms.frontdesk_service import frontdesk_service
 from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
-from models.schemas import Booking, FolioCharge, Guest, User
+from models.schemas import Booking, Guest, User
 
 logger = logging.getLogger(__name__)
 

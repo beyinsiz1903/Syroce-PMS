@@ -768,9 +768,9 @@ async def b2b_register_webhook(
 
     # SSRF guard: localhost, link-local, private network, metadata endpoints reddedilir
     try:
-        from urllib.parse import urlparse
         import ipaddress
         import socket
+        from urllib.parse import urlparse
         parsed = urlparse(data.url)
         host = (parsed.hostname or "").lower()
         if not host:

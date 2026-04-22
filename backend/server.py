@@ -190,7 +190,9 @@ except ImportError:
 # Pydantic 422 hatalarında payload input'u response'a yansıtılır;
 # Starlette JSONResponse `allow_nan=False` kullandığından NaN/Inf 500 verir.
 import math as _math
+
 from fastapi.exceptions import RequestValidationError
+
 
 def _scrub_non_finite(obj):
     if isinstance(obj, float):

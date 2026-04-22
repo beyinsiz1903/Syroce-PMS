@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -39,7 +39,6 @@ from models.enums import (
 from models.schemas import (
     Booking,
     BookingCreate,
-    BookingExtended,
     Folio,
     Guest,
     GuestCreate,
