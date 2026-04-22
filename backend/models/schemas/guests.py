@@ -20,9 +20,9 @@ class Guest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     name: str
-    email: str = ""
-    phone: str
-    id_number: str
+    email: str | None = ""
+    phone: str | None = ""
+    id_number: str | None = ""
     nationality: str | None = None
     address: str | None = None
     vip_status: bool = False

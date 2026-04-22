@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -199,8 +199,8 @@ async def create_quick_booking(
 
 @router.get("/pms/bookings")
 async def get_bookings(
-    limit: int = 30,  # Further reduced for instant response
-    offset: int = 0,
+    limit: int = Query(30, ge=1, le=500, description="1-500 arası"),
+    offset: int = Query(0, ge=0),
     start_date: str | None = None,
     end_date: str | None = None,
     status: str | None = None,

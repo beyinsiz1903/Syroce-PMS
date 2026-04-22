@@ -638,10 +638,21 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `routers/reservation_detail.py:1218` her iki tarih varsa format ve sıra doğrulaması yapıyor; geçersizse 422
 - Backward-compat: tarihler boşsa hâlâ tüm odaları döndürür (frontend room-change selector buna bağlı)
 
-### Scenario Test Suite (April 2026)
-- **Konum**: `.local/scripts/scenario_tests.sh` — bash + curl, idempotent, tek komutla çalışır
-- **Kapsam (35 senaryo)**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A regresyon, Reports/Revenue (Bug B regresyon), Housekeeping, Rates & Availability (Bug D regresyon), Multi-tenancy, Rate limit
-- **Çalıştır**: `bash .local/scripts/scenario_tests.sh`
+### Guest Schema Nullable Fix (Bug E — April 2026)
+- **Bug**: `GET /api/pms/guests` HTTP 500 — Pydantic response validation `email`/`id_number`/`phone` alanlarını `str` olarak zorluyordu ama eski misafir kayıtlarında `None` vardı (130+ guest)
+- **Fix**: `models/schemas/guests.py` Guest schema'sında `email`, `phone`, `id_number` artık `str | None = ""` (response'a `null` veya `""` ile akabilir)
+- Etki: misafir listesi sayfası tamamen kırıktı, çalışır oldu
+
+### Pagination Validation Fix (Bug F — April 2026)
+- **Bug**: `GET /api/pms/bookings?limit=-5` HTTP 500 — `motor.cursor.to_list(length=-5)` `ValueError` atıyordu
+- **Fix**: `routers/pms_bookings.py:get_bookings` artık `Query(ge=1, le=500)` ile sınırlı; geçersiz limit → 422
+- **Follow-up önerisi**: Aynı `limit: int = N` (Query'siz) pattern'i şu dosyalarda da var ve potansiyel olarak kırılabilir: `integrations/booking.py`, `modules/supplies_market/router_hotel.py`, `domains/channel_manager/ari/repositories.py`. İleride ortak `PaginationParams` dependency oluşturulması önerilir.
+
+### Scenario Test Suite v1 + v2 (April 2026)
+- **Konum**: `.local/scripts/scenario_tests.sh` (35 senaryo) ve `.local/scripts/scenario_tests_v2.sh` (53 senaryo)
+- **v1 Kapsam**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A, Reports/Revenue + Bug B, Housekeeping, Availability + Bug D, Multi-tenancy, Rate limit
+- **v2 Kapsam**: Health, Guests CRUD, Room move, Refund/void, Group booking, Rates/admin, Channel/OTA, Accounting, Alerts, Audit, Analytics, Pagination + Bug F, Performance, Content-type guards, NoSQL/XSS injection, Large payload, **40 endpoint 5xx avı (Bug E ortaya çıkardı)**
+- **Çalıştır**: `bash .local/scripts/scenario_tests.sh && bash .local/scripts/scenario_tests_v2.sh`
 - Her major değişiklik öncesi/sonrası çalıştırılması önerilir — gizli regresyonları yakalar
 
 ## Quick-ID Microservice Integration (April 2026)
