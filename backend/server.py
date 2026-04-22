@@ -218,9 +218,45 @@ def _scrub_non_finite(obj):
             return str(obj)
     return obj
 
+_PII_FIELD_PATTERNS = (
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "authorization", "card", "credit_card", "cvv", "cvc", "pan",
+    "iban", "ssn", "tckn", "tc_kimlik", "passport", "otp", "pin",
+    "private_key", "client_secret", "session", "cookie",
+)
+
+def _redact_pii(value):
+    """Recursively redact PII-suspicious fields and any string longer than 200 chars."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            kl = str(k).lower()
+            if any(p in kl for p in _PII_FIELD_PATTERNS):
+                out[k] = "***REDACTED***"
+            else:
+                out[k] = _redact_pii(v)
+        return out
+    if isinstance(value, list):
+        return [_redact_pii(v) for v in value]
+    if isinstance(value, str) and len(value) > 200:
+        return value[:50] + "...[truncated]"
+    return value
+
 @app.exception_handler(RequestValidationError)
 async def _validation_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"detail": _scrub_non_finite(exc.errors())})
+    # Strip echoed `input` (which contains raw request body, often with PII like
+    # credit cards, passwords, tokens). Replace with a redacted summary so debugging
+    # is still possible without leaking sensitive data.
+    safe_errors = []
+    for err in _scrub_non_finite(exc.errors()):
+        if isinstance(err, dict):
+            err = dict(err)
+            if "input" in err:
+                err["input"] = _redact_pii(err["input"])
+            # Drop the pydantic doc URL which is verbose and not needed by clients
+            err.pop("url", None)
+        safe_errors.append(err)
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
 
 # ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter

@@ -665,6 +665,19 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v24 turu — Bug AG bulundu (PII leak) + cross-tenant + idempotency teyit (April 2026)
+- **Suite** (19 test, 9 bölüm): PII redaction (kart/parola/api_key/TCKN), no-auth 5 endpoint, ghost-id cross-tenant probe, booking cancel race (8 paralel PUT), negatif/devasa payment (-100/-1e99/+1e99), idempotency-key body mismatch, CM-v2 DLQ (1 + 1000 ghost), Quick-ID OCR no-auth, 10KB guest_name.
+- **Bug AG — Pydantic 422 PII echo (KRİTİK PCI/KVKK ihlali)**:
+  - **Sorun**: FastAPI'nin default `RequestValidationError` handler'ı request body'sini olduğu gibi `input` alanında geri yansıtıyordu. Test çağrısı `credit_card="4242424242424242"`, `password="hunter2"`, `api_key="sk-LIVE..."`, `tckn="..."` → hata cevabında **plaintext** olarak görülüyor; ayrıca Sentry/log pipeline'larına da bu şekilde gidiyor. Kart numarası → PCI ihlali; parola/token → kimlik avı/hesap ele geçirme.
+  - **Fix**: `backend/server.py:224-262` — `_redact_pii()` özyinelemeli redaktör (alan adı `password|secret|token|api_key|card|cvv|pan|iban|ssn|tckn|passport|otp|pin|private_key|client_secret|session|cookie` içeriyorsa `***REDACTED***`; 200 char üstü string'ler `truncated`); `_validation_handler` her error'un `input`'unu redaktörden geçiriyor + verbose `url` (pydantic doc) drop. Doğrulandı: redacted → leak yok.
+- **Diğer bulgular (defansif teyit, bug yok)**:
+  - Ghost-id cross-tenant probe (`folio-ledger/folios`, `pms/guests`, `pms/bookings/.../folio`) hepsi 404 — tenant filter sağlam.
+  - 8 paralel cancel race → 5xx=0 (atomic update sağlam).
+  - Negatif/sonsuz payment → 404 (booking'de folio/payments açık değil — separate flow); validator zaten v21'de eklendi.
+  - Idempotency mismatch → **409** (correct).
+  - CM-v2 1000 ghost ID bulk-retry → 404 (no timeout, no 5xx).
+- **Sonuç**: v24 19/19 GREEN, regression v21+v22+v23 (70 test) GREEN. Bug katalogu: J–AG.
+
 ### v23 turu — Bug AF bulundu + 3 sertleştirme (April 2026)
 - **Suite** (5 test): GraphQL shallow + 12-derinlikte introspection, e-fatura XML escape, B2B webhook URL SSRF guard logic.
 - **Bug AF — `/api/accounting/invoices` POST 5xx (item alanları eksikse)**:
