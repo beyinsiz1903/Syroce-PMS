@@ -285,10 +285,12 @@ async def add_folio_payment(
 
 
 @router.get("/frontdesk/folio/{booking_id}")
-@cached(ttl=180, key_prefix="frontdesk_folio")
 async def get_folio(booking_id: str, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_folio(ctx, booking_id)
+    if not result.ok:
+        code = 404 if result.code == "NOT_FOUND" else 400
+        raise HTTPException(status_code=code, detail=result.error)
     return result.data
 
 

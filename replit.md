@@ -610,6 +610,12 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - Fixed `HousekeepingMobileApp.jsx`: endpoint `/housekeeping/rooms` → `/pms/housekeeping/rooms` with `status_filter` param
 - Fixed `HousekeepingDashboard.jsx`: reads `status_counts.*` from API (was looking for `summary.*`)
 
+### GET Folio Validation Bug (frontdesk_service.py + frontdesk_router.py)
+- **Bug**: `GET /api/frontdesk/folio/{booking_id}` returned HTTP 200 with empty/null body for non-existent bookings (no booking validation, only queried charges/payments)
+- **Fix 1**: `frontdesk_service.get_folio` now validates booking exists in tenant scope first, returns `ServiceResult.fail("Booking not found", "NOT_FOUND")` if not found
+- **Fix 2**: Endpoint translates `result.ok=False` + `code=NOT_FOUND` → HTTP 404; removed `@cached(ttl=180)` decorator since folio is real-time financial data and the cache hid error states + risked stale balances after charges/payments
+- Other endpoints in same router already use `result.ok` (per `backend/common/result.py`); this fix aligns the folio endpoint with the same pattern
+
 ## Quick-ID Microservice Integration (April 2026)
 
 ### Architecture

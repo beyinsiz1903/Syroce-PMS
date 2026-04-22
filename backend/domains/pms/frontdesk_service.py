@@ -378,6 +378,11 @@ class FrontdeskService:
     # Folio
     # ------------------------------------------------------------------
     async def get_folio(self, ctx: OperationContext, booking_id: str) -> ServiceResult:
+        booking = await self._db.bookings.find_one(
+            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1},
+        )
+        if not booking:
+            return ServiceResult.fail("Booking not found", "NOT_FOUND")
         charges = await self._db.folio_charges.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
         payments = await self._db.payments.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
         total_charges = sum(c["total"] for c in charges)
