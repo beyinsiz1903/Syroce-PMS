@@ -701,8 +701,16 @@ async def get_revenue_report(
     end = datetime.fromisoformat(end_date)
     bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['checked_in', 'checked_out']},
                                        'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}}, {'_id': 0}).to_list(1000)
-    total_revenue = sum(b['total_amount'] for b in bookings)
-    total_room_nights = sum((datetime.fromisoformat(b['check_out']) - datetime.fromisoformat(b['check_in'])).days for b in bookings)
+    total_revenue = sum(float(b.get('total_amount') or 0) for b in bookings)
+    total_room_nights = 0
+    for b in bookings:
+        ci, co = b.get('check_in'), b.get('check_out')
+        if not ci or not co:
+            continue
+        try:
+            total_room_nights += (datetime.fromisoformat(co) - datetime.fromisoformat(ci)).days
+        except (ValueError, TypeError):
+            continue
     adr = (total_revenue / total_room_nights) if total_room_nights > 0 else 0
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     days = (end - start).days + 1
@@ -711,8 +719,8 @@ async def get_revenue_report(
     folio_charges = await db.folio_charges.find({'tenant_id': current_user.tenant_id, 'date': {'$gte': start.isoformat(), '$lte': end.isoformat()}}, {'_id': 0}).to_list(1000)
     revenue_by_type = {}
     for charge in folio_charges:
-        charge_type = charge['charge_type']
-        revenue_by_type[charge_type] = revenue_by_type.get(charge_type, 0.0) + charge['total']
+        charge_type = charge.get('charge_type') or 'unknown'
+        revenue_by_type[charge_type] = revenue_by_type.get(charge_type, 0.0) + float(charge.get('total') or 0)
     return {'start_date': start_date, 'end_date': end_date, 'total_revenue': round(total_revenue, 2), 'room_nights_sold': total_room_nights,
             'adr': round(adr, 2), 'rev_par': round(rev_par, 2), 'revenue_by_type': revenue_by_type, 'bookings_count': len(bookings)}
 

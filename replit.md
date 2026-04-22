@@ -665,6 +665,12 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug AC — Reports/Revenue 300-yıllık aralıkta KeyError 500 (April 2026 — v17 turunda buldu)
+- **Test**: `GET /api/reports/revenue?start_date=1900-01-01&end_date=2200-12-31` → **500 Internal Server Error** (`KeyError: 'total_amount'`).
+- **Kök neden** (`reports.py:704`): `sum(b['total_amount'] for b in bookings)` ve `(check_out - check_in).days` doğrudan dict erişimi yapıyordu; geniş tarih penceresi eski/eksik booking dökümanlarını da yakalayınca eksik alan → 500.
+- **Düzeltme**: `b.get('total_amount') or 0` + `check_in`/`check_out` için `try/except` + `b.get(...)`; folio_charges'da da aynı pattern (`charge.get('charge_type') or 'unknown'`, `charge.get('total') or 0`).
+- **Sonuç**: 300-yıllık aralık 200 döner; v17 GREEN (68/68); v14-v16 regression GREEN.
+
 ### v16 turu — Yeni bug bulunmadı (April 2026)
 - **Suite** (83 test, 10 bölüm): revenue-engine (apply-rate, booking-pace), revenue-autopilot v2 (queue/policy/process), inventory reconcile (reverse range, 300-yıl pencere), housekeeping (tasks, room-status, room-blocks CRUD + 5 paralel race), JWT manipulation (alg=none, 100K karakter, bozuk imza, Basic scheme), multi-tenant data isolation (cross-tenant UUID + X-Tenant header spoof), path traversal (`../../etc/passwd`), SSRF (169.254.169.254, file://), negatif/overflow tarihler (`0000-00-00`, `9999-99-99`, `2026-13-45`), departments smoke.
 - **Sonuç**: 83/83 GREEN, **yeni bug yok**. Bug J-AB hâlâ kapalı; v9-v15 regression GREEN.
