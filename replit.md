@@ -665,6 +665,10 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v19 turu — Yeni bug bulunmadı (April 2026)
+- **Suite** (69 test, 10 bölüm): module-store (purchase/trial/callback edge cases), marketplace B2B v1 (agencies CRUD, listings/me, hotels search X-API-Key), MICE (spaces/menus/accounts/contacts/resources tüm CRUD), B2B loyalty (negatif/overflow puan), cross-property (search/profile/merge ghost+self), Quick-ID OCR (cost-estimate path traversal, no-auth fallback), CSRF / double-Authorization / form-urlencoded mismatch, 5 paralel trial abuse, NaN/null/-1e100 folio amount, 3 paralel agency create.
+- **Sonuç**: 69/69 GREEN, **yeni bug yok**. Notlar: cross-property merge self ve ghost→ghost 422 ile reddediliyor; folio amount NaN/null/overflow Pydantic'te 422; OCR fallback uçları auth gerektiriyor (401); `/api/cross-property/guests/profile/ghost` 404; CSRF korumalı (cookie tek başına yetkilendirme yapmıyor — JWT zorunlu).
+
 ### v18 turu — Yeni bug bulunmadı (April 2026)
 - **Suite** (68 test, 10 bölüm): data-intelligence (revenue/operations/guests sub-modules), data-pipeline (feature-store/datasets/models/predictions), B2B API (api-keys CRUD + content/availability/rates X-API-Key auth), CM-v2 audit/admin (issue retry-ack/revalidate-mapping/send-to-review/scheduler trigger), entitlement bypass (X-Tenant swap, Method-Override, double/trailing slash, _method query), pms-outbound, deep-nested JSON (5K seviye), 5MB body, 5K bulk-dismiss IDs, 5 paralel retry-sync race, header smuggling (XFF chain, TE+CL, X-Real-IP path traversal, Host override), login DoS (20 paralel).
 - **Sonuç**: 68/68 GREEN, **yeni bug yok**. Notlar: outbound 401 (X-API-Key gerektiriyor), entitlement middleware JWT'den tenant_id okuyor (X-Tenant header güvenli şekilde yoksayılıyor), TE+CL smuggle 400 ile reddediliyor.
