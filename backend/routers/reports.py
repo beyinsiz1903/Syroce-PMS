@@ -1119,10 +1119,23 @@ async def run_night_audit(
     audit_results['status'] = 'completed'
     audit_results['completed_at'] = datetime.now(UTC).isoformat()
 
-    # Store audit record
-    await db.night_audit_logs.insert_one(audit_results)
+    # Store audit record (Bug AA fix: insert mutates dict adding _id;
+    # recursively strip ObjectId / _id so JSON encoder doesn't crash)
+    def _clean_bson(obj):
+        try:
+            from bson import ObjectId
+        except Exception:
+            ObjectId = None  # type: ignore
+        if isinstance(obj, dict):
+            return {k: _clean_bson(v) for k, v in obj.items() if k != "_id"}
+        if isinstance(obj, list):
+            return [_clean_bson(v) for v in obj]
+        if ObjectId is not None and isinstance(obj, ObjectId):
+            return str(obj)
+        return obj
 
-    return audit_results
+    await db.night_audit_logs.insert_one(dict(audit_results))
+    return _clean_bson(audit_results)
 
 
 

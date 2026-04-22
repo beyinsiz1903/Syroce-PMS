@@ -665,6 +665,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug AA — Night-Audit run-night-audit ObjectId leak (April 2026 — v14 turunda buldu)
+- **Sorun**: `POST /api/night-audit/run-night-audit` boş body ile çağrıldığında **500 Internal Server Error**. Stack trace: `ValueError: TypeError("'ObjectId' object is not iterable")`. Sebep: `db.night_audit_logs.insert_one(audit_results)` çağrısı dict'e Mongo'nun eklediği `_id: ObjectId(...)` alanını **mutate ederek** dolduruyor; ardından handler dict'i direkt return ediyor → FastAPI jsonable_encoder ObjectId'yi serialize edemeyip 500 dönüyor.
+- **Fix** (`reports.py:run_night_audit`): `insert_one(dict(audit_results))` ile shallow-copy üzerinden insert + `_clean_bson()` recursive helper ile `_id` ve `ObjectId` instance'larını response'tan temizle.
+- **Doğrulama** (v14 §7): boş body 422 (validation), valid body 200 + temiz JSON.
+
 ### Bug Z — Multi-room Idempotency (April 2026 — architect v13 turunda buldu)
 - **Sorun**: `POST /api/pms/bookings/multi-room` Idempotency-Key header'ını **hiç umursamıyordu**. Aynı key ile retry → her seferinde yeni `group_booking_id` + duplicate booking grupları. Ağ kopması/CDN retry senaryosunda kritik finansal risk.
 - **Fix** (`pms_bookings.py:create_multi_room_booking`):
