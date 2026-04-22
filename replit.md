@@ -627,6 +627,23 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `pos_router.py:1697` artık hem `datetime` hem `str` tipini güvenle handle ediyor (`hasattr(...,'isoformat')` kontrolü)
 - Bulunan sorun: `cancelled_at` storage tipi tutarsız (bazı yerler datetime, bazı yerler ISO string) — gelecek refactor için not
 
+### Quick-Booking Idempotency Fix (Bug C — April 2026)
+- **Bug**: `POST /api/pms/quick-booking` aynı `Idempotency-Key` ile ikinci kez çağrıldığında 409 "Idempotency key already used with a different payload" hatası alıyordu — yani retry'lar deduplicate edilmiyordu
+- **Sebep**: `routers/pms_bookings.py` her çağrıda `uuid.uuid4()` ile YENİ walk-in `guest_id` üretiyordu → downstream `CreateReservationService._build_request_hash()` her seferinde farklı hash hesaplıyordu
+- **Fix**: Walk-in misafir için `guest_id`, idempotency key'den deterministic türetiliyor (`uuid.uuid5(NAMESPACE_OID, "{tenant}:walkin:{idem_key}")`) + insert öncesi find-or-create kontrolü
+- Test: Aynı Idempotency-Key ile 2x quick-booking → tek booking, aynı id ✅
+
+### Available-Rooms Validation Fix (Bug D — April 2026)
+- **Bug**: `GET /api/pms/available-rooms` ters tarih (`check_out < check_in`) verildiğinde tüm odaları boşmuş gibi 200 dönüyordu — yanıltıcı UX
+- **Fix**: `routers/reservation_detail.py:1218` her iki tarih varsa format ve sıra doğrulaması yapıyor; geçersizse 422
+- Backward-compat: tarihler boşsa hâlâ tüm odaları döndürür (frontend room-change selector buna bağlı)
+
+### Scenario Test Suite (April 2026)
+- **Konum**: `.local/scripts/scenario_tests.sh` — bash + curl, idempotent, tek komutla çalışır
+- **Kapsam (35 senaryo)**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A regresyon, Reports/Revenue (Bug B regresyon), Housekeeping, Rates & Availability (Bug D regresyon), Multi-tenancy, Rate limit
+- **Çalıştır**: `bash .local/scripts/scenario_tests.sh`
+- Her major değişiklik öncesi/sonrası çalıştırılması önerilir — gizli regresyonları yakalar
+
 ## Quick-ID Microservice Integration (April 2026)
 
 ### Architecture

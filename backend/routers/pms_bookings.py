@@ -151,22 +151,31 @@ async def create_quick_booking(
             raise HTTPException(status_code=404, detail="Secilen misafir bulunamadi")
         guest_id = data.guest_id
     else:
-        guest_id = str(uuid.uuid4())
-        now_ts = datetime.now(UTC)
-        guest_doc = {
-            "id": guest_id,
-            "tenant_id": tenant_id,
-            "name": data.guest_name.strip(),
-            "email": f"walk-in-{guest_id[:8]}@placeholder.local",
-            "phone": "",
-            "id_number": "",
-            "vip_status": False,
-            "loyalty_points": 0,
-            "total_stays": 0,
-            "total_spend": 0.0,
-            "created_at": now_ts.isoformat(),
-        }
-        await db.guests.insert_one(guest_doc)
+        # Deterministic guest_id from idempotency key so retries with the same
+        # Idempotency-Key produce the same guest_id (otherwise the downstream
+        # request_hash differs and idempotency check fails).
+        idem_key = request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or ""
+        if idem_key:
+            guest_id = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{tenant_id}:walkin:{idem_key}"))
+        else:
+            guest_id = str(uuid.uuid4())
+        existing_walkin = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
+        if not existing_walkin:
+            now_ts = datetime.now(UTC)
+            guest_doc = {
+                "id": guest_id,
+                "tenant_id": tenant_id,
+                "name": data.guest_name.strip(),
+                "email": f"walk-in-{guest_id[:8]}@placeholder.local",
+                "phone": "",
+                "id_number": "",
+                "vip_status": False,
+                "loyalty_points": 0,
+                "total_stays": 0,
+                "total_spend": 0.0,
+                "created_at": now_ts.isoformat(),
+            }
+            await db.guests.insert_one(guest_doc)
 
     # 3) Build BookingCreate and delegate to the standard service
     booking_data = BookingCreate(

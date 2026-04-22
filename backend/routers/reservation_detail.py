@@ -1212,6 +1212,16 @@ async def get_available_rooms(
     if not check_in or not check_out:
         return {"rooms": all_rooms}
 
+    # Validate date format & ordering (her iki tarih varsa)
+    try:
+        from datetime import date as _date
+        ci_d = _date.fromisoformat(check_in[:10])
+        co_d = _date.fromisoformat(check_out[:10])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="check_in ve check_out YYYY-MM-DD formatında olmalı")
+    if co_d <= ci_d:
+        raise HTTPException(status_code=422, detail="check_out tarihi check_in'den sonra olmalı")
+
     # Find bookings that overlap the date range
     occupied_room_ids = set()
     async for b in db.bookings.find({
