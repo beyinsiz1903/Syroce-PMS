@@ -665,6 +665,12 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug AB — Channel-Manager v2 reliability/property/{id} 500 (April 2026 — v15 turunda buldu)
+- **Test**: `GET /api/channel-manager/v2/reliability/property/ghost` → **500 Internal Server Error**
+- **Kök neden**: Handler `svc.get_property_reliability(...)` çağırıyordu ama `ReliabilityService` üzerinde böyle bir method **yok**; gerçek isim `get_reliability_by_property`. Yanlış method çağrısı her property_id için `AttributeError` → 500.
+- **Düzeltme** (`backend/channel_manager/interfaces/routers/alert_router.py:175`): `svc.get_property_reliability` → `svc.get_reliability_by_property` (architect önerisiyle bare-except yaklaşımı reddedildi; gerçek typo bulundu). Servis zaten unknown property için `{"connectors": [], "count": 0}` döndürdüğünden 200 boş payload döner — dashboard semantiğiyle uyumlu.
+- **v15 sonuç**: 79/79 GREEN, ghost property_id artık 200 boş set; v9-v14 regression GREEN.
+
 ### Bug AA — Night-Audit run-night-audit ObjectId leak (April 2026 — v14 turunda buldu)
 - **Sorun**: `POST /api/night-audit/run-night-audit` boş body ile çağrıldığında **500 Internal Server Error**. Stack trace: `ValueError: TypeError("'ObjectId' object is not iterable")`. Sebep: `db.night_audit_logs.insert_one(audit_results)` çağrısı dict'e Mongo'nun eklediği `_id: ObjectId(...)` alanını **mutate ederek** dolduruyor; ardından handler dict'i direkt return ediyor → FastAPI jsonable_encoder ObjectId'yi serialize edemeyip 500 dönüyor.
 - **Fix** (`reports.py:run_night_audit`): `insert_one(dict(audit_results))` ile shallow-copy üzerinden insert + `_clean_bson()` recursive helper ile `_id` ve `ObjectId` instance'larını response'tan temizle.

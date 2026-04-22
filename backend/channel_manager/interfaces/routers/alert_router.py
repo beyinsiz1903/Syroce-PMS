@@ -171,7 +171,10 @@ async def get_property_reliability(
     current_user: User = Depends(get_current_user),
 ):
     svc = ReliabilityService()
-    return await svc.get_property_reliability(current_user.tenant_id, property_id)
+    result = await svc.get_reliability_by_property(current_user.tenant_id, property_id)
+    if isinstance(result, dict) and "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 
 # ─── Multi-Property Dashboard ────────────────────────────────────
