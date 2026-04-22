@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.helpers import create_audit_log, require_module
+from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 
@@ -199,8 +200,7 @@ async def create_quick_booking(
 
 @router.get("/pms/bookings")
 async def get_bookings(
-    limit: int = Query(30, ge=1, le=500, description="1-500 arası"),
-    offset: int = Query(0, ge=0),
+    p: PaginationParams = Depends(paginate(default_limit=30, max_limit=500)),
     start_date: str | None = None,
     end_date: str | None = None,
     status: str | None = None,
@@ -209,6 +209,7 @@ async def get_bookings(
     _: None = Depends(require_module("pms")),
 ):
     """Get bookings - INSTANT RESPONSE"""
+    limit, offset = p.limit, p.offset
     current_user = await get_current_user(credentials)
 
     # If search is provided, do a text search across bookings

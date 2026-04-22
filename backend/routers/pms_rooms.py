@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 from core.database import db
 from core.helpers import require_module, require_super_admin_guard
+from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from models.enums import CompanyStatus
 from models.schemas import Room, RoomCreate, User
@@ -133,8 +134,7 @@ async def create_room(
 
 @router.get("/pms/rooms", response_model=list[Room])
 async def get_rooms(
-    limit: int = Query(100, ge=1, le=2000),
-    offset: int = Query(0, ge=0),
+    p: PaginationParams = Depends(paginate(default_limit=100, max_limit=2000)),
     status: str | None = None,
     room_type: str | None = None,
     view: str | None = None,
@@ -144,6 +144,7 @@ async def get_rooms(
     _: None = Depends(require_module("pms")),
 ):
     """Get rooms with pagination - Optimized for large properties (550+ rooms)"""
+    limit, offset = p.limit, p.offset
 
     # For small queries with filters, skip cache
     use_cache = (offset == 0 and not status and not room_type and not view and not amenity and not include_virtual and limit >= 100)

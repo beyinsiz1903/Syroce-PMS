@@ -18,6 +18,7 @@ except ImportError:
 
 from core.database import db
 from core.helpers import create_audit_log
+from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import calculate_folio_balance, excel_response
 from models.enums import ChargeCategory, FolioOperationType
@@ -64,11 +65,11 @@ async def create_folio(
 @router.get("/folio/list")
 async def list_folios(
     status: str | None = None,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=1_000_000),
+    p: PaginationParams = Depends(paginate(default_limit=50, max_limit=500)),
     current_user: User = Depends(get_current_user)
 ):
     """List all folios for the current tenant with optional status filter."""
+    limit, offset = p.limit, p.offset
     query = {'tenant_id': current_user.tenant_id}
     if status:
         query['status'] = status

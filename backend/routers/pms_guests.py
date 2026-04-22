@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
 from core.helpers import require_module
+from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from models.schemas import Guest, GuestCreate, User
 
@@ -60,11 +61,11 @@ async def create_guest(
 @router.get("/pms/guests", response_model=list[Guest])
 @cached(ttl=300, key_prefix="pms_guests")  # Cache for 5 minutes
 async def get_guests(
-    limit: int = Query(1000, ge=1, le=5000),
-    offset: int = Query(0, ge=0),
+    p: PaginationParams = Depends(paginate(default_limit=1000, max_limit=5000)),
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
+    limit, offset = p.limit, p.offset
     guests_raw = await db.guests.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).skip(offset).limit(limit).to_list(limit)
 
     # Map database fields to model fields
@@ -92,10 +93,11 @@ async def get_guests(
 @router.get("/pms/guests/search")
 async def search_guests(
     q: str = "",
-    limit: int = Query(10, ge=1, le=100),
+    p: PaginationParams = Depends(paginate(default_limit=10, max_limit=100)),
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
+    limit = p.limit
     """Misafir arama: ad, e-posta, telefon veya kimlik numarasina gore arar."""
     q = q.strip()
     if not q or len(q) < 2:

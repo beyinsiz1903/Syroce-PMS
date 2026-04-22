@@ -655,10 +655,15 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Yan etki düzeltildi**: `routers/pms_reservations.py` (rezervasyon search: query/phone/email) ve `routers/procurement.py` (tedarikçi name search) aynı zafiyete sahipti — hepsi `re.escape` ile sarıldı
 - **Kalan risk (admin)**: `mailing.py` zaten escape kullanıyor ✓; `report_builder.py`, `early_warning_engine.py` admin-only ve trusted input olduğu için bırakıldı
 
-### Pagination Bug I (April 2026)
+### Pagination Bug I + Ortak `PaginationParams` Dependency (April 2026)
 - **Bug**: `/api/folio/list?limit=-1` HTTP 500 — Bug F/G ile aynı pattern, `routers/finance/folio.py:list_folios` `Query(ge=...)` bound'u eksikti
-- **Fix**: `limit: int = Query(50, ge=1, le=500)`, `offset: int = Query(0, ge=0, le=1_000_000)` + `Query` import
-- **Follow-up**: `routers/finance/*.py` içindeki diğer list endpoint'lerinde (cashiering city-ledger, ar-aging-report list-tipi vs.) aynı denetim önerilir. Ortak `PaginationParams` dependency hâlâ yapılmamış.
+- **Fix**: `limit: int = Query(50, ge=1, le=500)`, `offset: int = Query(0, ge=0, le=1_000_000)`
+- **Refactor**: `core/pagination.py` oluşturuldu — `PaginationParams` + `paginate(default_limit, max_limit, max_offset)` factory dependency'si. 4 endpoint (`pms_bookings`, `pms_guests` (list+search), `pms_rooms`, `finance/folio:list_folios`) bu ortak dependency'ye taşındı. Yeni list endpoint'leri yazarken **standart**: `p: PaginationParams = Depends(paginate(default_limit=N, max_limit=M))` → otomatik 422 üretir.
+
+### Reconciliation N+1 Performans Düzeltmesi (April 2026)
+- **Sorun**: `/api/folio-ledger/reconciliation/run` 100 açık folio için 200 round-trip yapıyordu (her folio için ayrı `compute_balance` aggregate + `folios.find_one`) → 8s+ timeout
+- **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
+- **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
 ### Scenario Test Suite v1 + v2 + v3 + v4 + v5 (April 2026)
 - **Konum**: `.local/scripts/scenario_tests.sh` (35), `..._v2.sh` (53), `..._v3.sh` (153), `..._v4.sh` (113), `..._v5.sh` (~100 assertion) — toplam **~454 noktalı düzenli regresyon**

@@ -383,6 +383,9 @@ class ReconciliationEngine:
         report_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
 
+        # Sprint 35 perf fix: was N+1 (per-folio aggregate + find_one).
+        # 100 open folios → 200 round-trips → 8s+ timeouts.
+        # Now: 2 queries total — bulk folio scan + single grouped ledger aggregation.
         open_folios = await db.folios.find(
             {"tenant_id": tenant_id, "status": "open"},
             {"_id": 0, "id": 1, "booking_id": 1, "balance": 1},
@@ -392,23 +395,37 @@ class ReconciliationEngine:
         balanced_count = 0
         error_count = 0
 
-        for folio in open_folios:
+        if open_folios:
+            folio_ids = [f["id"] for f in open_folios]
+            # ONE aggregate: tüm açık folio'ların ledger toplamlarını grup başına döndür.
+            pipeline = [
+                {"$match": {"tenant_id": tenant_id, "folio_id": {"$in": folio_ids}}},
+                {"$group": {"_id": "$folio_id", "total": {"$sum": "$amount"}}},
+            ]
             try:
-                result = await self.ledger.reconcile_folio(tenant_id, folio["id"])
-                if result["balanced"]:
+                ledger_rows = await self.ledger.coll.aggregate(pipeline).to_list(len(folio_ids))
+                ledger_balances = {r["_id"]: round(r["total"], 2) for r in ledger_rows}
+            except Exception as e:
+                logger.error(f"Reconciliation aggregate failed: {e}")
+                ledger_balances = {}
+                error_count = len(open_folios)
+
+            for folio in open_folios:
+                fid = folio["id"]
+                ledger_balance = ledger_balances.get(fid, 0.0)
+                folio_balance = round(folio.get("balance", 0.0) or 0.0, 2)
+                difference = round(ledger_balance - folio_balance, 2)
+                if abs(difference) < 0.01:
                     balanced_count += 1
                 else:
                     mismatches.append({
-                        "folio_id": folio["id"],
+                        "folio_id": fid,
                         "booking_id": folio.get("booking_id", ""),
-                        "ledger_balance": result["ledger_balance"],
-                        "folio_balance": result["folio_balance"],
-                        "difference": result["difference"],
+                        "ledger_balance": ledger_balance,
+                        "folio_balance": folio_balance,
+                        "difference": difference,
                         "probable_cause": "ledger_folio_drift",
                     })
-            except Exception as e:
-                error_count += 1
-                logger.error(f"Reconciliation error for folio {folio['id']}: {e}")
 
         status = "balanced" if not mismatches and not error_count else ("mismatch" if mismatches else "error")
 
