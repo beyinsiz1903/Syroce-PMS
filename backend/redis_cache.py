@@ -3,6 +3,7 @@ Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 from functools import wraps
@@ -11,11 +12,18 @@ from typing import Any, Callable
 import orjson
 import redis
 
+_DEFAULT_REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+_DEFAULT_REDIS_PORT = int(os.getenv("REDIS_PORT", "6380"))
+_DEFAULT_REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+
 
 class RedisCache:
     """Redis-based cache for ultra-fast distributed caching"""
 
-    def __init__(self, host='127.0.0.1', port=6379, db=0):
+    def __init__(self, host=None, port=None, db=None):
+        host = host or _DEFAULT_REDIS_HOST
+        port = port if port is not None else _DEFAULT_REDIS_PORT
+        db = db if db is not None else _DEFAULT_REDIS_DB
         self.redis_client = redis.Redis(
             host=host,
             port=port,
