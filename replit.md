@@ -655,13 +655,19 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Yan etki düzeltildi**: `routers/pms_reservations.py` (rezervasyon search: query/phone/email) ve `routers/procurement.py` (tedarikçi name search) aynı zafiyete sahipti — hepsi `re.escape` ile sarıldı
 - **Kalan risk (admin)**: `mailing.py` zaten escape kullanıyor ✓; `report_builder.py`, `early_warning_engine.py` admin-only ve trusted input olduğu için bırakıldı
 
-### Scenario Test Suite v1 + v2 + v3 + v4 (April 2026)
-- **Konum**: `.local/scripts/scenario_tests.sh` (35), `..._v2.sh` (53), `..._v3.sh` (153), `..._v4.sh` (113 assertion) — toplam **354 noktalı düzenli regresyon**
+### Pagination Bug I (April 2026)
+- **Bug**: `/api/folio/list?limit=-1` HTTP 500 — Bug F/G ile aynı pattern, `routers/finance/folio.py:list_folios` `Query(ge=...)` bound'u eksikti
+- **Fix**: `limit: int = Query(50, ge=1, le=500)`, `offset: int = Query(0, ge=0, le=1_000_000)` + `Query` import
+- **Follow-up**: `routers/finance/*.py` içindeki diğer list endpoint'lerinde (cashiering city-ledger, ar-aging-report list-tipi vs.) aynı denetim önerilir. Ortak `PaginationParams` dependency hâlâ yapılmamış.
+
+### Scenario Test Suite v1 + v2 + v3 + v4 + v5 (April 2026)
+- **Konum**: `.local/scripts/scenario_tests.sh` (35), `..._v2.sh` (53), `..._v3.sh` (153), `..._v4.sh` (113), `..._v5.sh` (~100 assertion) — toplam **~454 noktalı düzenli regresyon**
 - **v1 Kapsam**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A, Reports/Revenue + Bug B, Housekeeping, Availability + Bug D, Multi-tenancy, Rate limit
 - **v2 Kapsam**: Health, Guests CRUD, Room move, Refund/void, Group booking, Rates/admin, Channel/OTA, Accounting, Alerts, Audit, Analytics, Pagination + Bug F, Performance, Content-type guards, NoSQL/XSS injection, Large payload, **40 endpoint 5xx avı (Bug E ortaya çıkardı)**
 - **v3 Kapsam (edge & adversarial)**: 25 list endpoint × 5 negatif/aşırı pagination (**Bug G ortaya çıkardı**), JWT manipülasyonu, idempotency replay, concurrency overbook (atomic lock kanıtı), tarih ekstremleri, finansal hassasiyet, cross-tenant sızıntı, header/MIME, Unicode/NULL byte, bulk + hammer
 - **v4 Kapsam (deep adversarial)**: Auth flow (login/forgot/reset/change-password), RBAC/permission endpoint'leri, **regex DoS (Bug H ortaya çıkardı)**, room-block lifecycle, bulk room ops (range/delete/import-csv), CSV upload edge (boş/bozuk/sahte MIME/1MB), folio close/refund/void/split/transfer/city-ledger, refund-deposit + çift cancel idempotency, housekeeping bulk-status, webhook + messaging, **44 status/health endpoint smoke**, cache invalidation (yeni booking → liste güncel mi), content negotiation (XML/br), rate periods bulk, guest merge edge, no-show handling
-- **Çalıştır**: `bash .local/scripts/scenario_tests.sh && bash .local/scripts/scenario_tests_v2.sh && bash .local/scripts/scenario_tests_v3.sh && bash .local/scripts/scenario_tests_v4.sh`
+- **v5 Kapsam (yepyeni alanlar)**: Timezone/DST geçişi, leap year (2028 ✓ / 2027 reddedildi), sıfır-gece day-use, ISO+TZ datetime, oturum yönetimi (refresh-token/me/security summary), email RFC sınırı (65char local part, 250char domain, IDN unicode, XSS payload), forgot/reset edge, **booking modify/extend/shorten**, walk-in quick-booking, multi-room group + boş array, payment edge (0/negatif/3-ondalık/1 trilyon/exotic currency XYZ/method=telepati), charge negatif qty, folio Excel export, booking-holds lifecycle (TTL negatif/aşırı), room-type inventory + reconcile, cashiering (city-ledger/ar-aging/credit-limit/split-payment), audit timeline tarih extreme + filtreler, messaging templates CRUD + 50KB body, dashboards/finance pagination (**Bug I ortaya çıkardı**), 8 dilli Accept-Language smoke, folio reconciliation, 5 paralel concurrent modify
+- **Çalıştır**: `bash .local/scripts/scenario_tests.sh && bash .local/scripts/scenario_tests_v2.sh && bash .local/scripts/scenario_tests_v3.sh && bash .local/scripts/scenario_tests_v4.sh && bash .local/scripts/scenario_tests_v5.sh`
 - Her major değişiklik öncesi/sonrası çalıştırılması önerilir — gizli regresyonları yakalar
 
 ## Quick-ID Microservice Integration (April 2026)
