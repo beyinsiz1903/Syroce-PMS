@@ -99,7 +99,8 @@ async def search_guests(
 ):
     limit = p.limit
     """Misafir arama: ad, e-posta, telefon veya kimlik numarasina gore arar."""
-    q = q.strip()
+    # Null byte ve diger kontrol karakterlerini temizle (MongoDB regex null byte kabul etmez)
+    q = q.replace("\x00", "").strip()
     if not q or len(q) < 2:
         return []
 

@@ -47,12 +47,25 @@ async def get_hotel_room_services(current_user: User = Depends(get_current_user)
     return services
 
 
+_ROOM_SERVICE_UPDATE_ALLOWED = {
+    "service_type", "description", "status", "priority", "assigned_to",
+    "scheduled_at", "completed_at", "notes", "amount", "quantity",
+    "room_id", "guest_id", "metadata",
+}
+
 @router.put("/pms/room-services/{service_id}")
 async def update_room_service(service_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
-    if 'status' in updates and updates['status'] == 'completed':
-        updates['completed_at'] = datetime.now(UTC).isoformat()
-    await db.room_services.update_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+    if not isinstance(updates, dict):
+        raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
+    safe = {k: v for k, v in updates.items() if k in _ROOM_SERVICE_UPDATE_ALLOWED}
+    if not safe:
+        raise HTTPException(status_code=400, detail="Guncellenecek izinli alan yok")
+    if safe.get('status') == 'completed':
+        safe['completed_at'] = datetime.now(UTC).isoformat()
+    await db.room_services.update_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'$set': safe})
     service = await db.room_services.find_one({'id': service_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    if not service:
+        raise HTTPException(status_code=404, detail="Hizmet bulunamadi")
     return service
 
 

@@ -665,8 +665,23 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
-### Scenario Test Suite v1 + v2 + v3 + v4 + v5 (April 2026)
-- **Konum**: `.local/scripts/scenario_tests.sh` (35), `..._v2.sh` (53), `..._v3.sh` (153), `..._v4.sh` (113), `..._v5.sh` (~100 assertion) — toplam **~454 noktalı düzenli regresyon**
+### Bug J + K + L + M + N Düzeltmeleri (April 2026 — v6 suite ortaya çıkardı)
+- **Bug J — NaN/Infinity validation echo crash (HTTP 500)**
+  - Sebep: `daily_rate=NaN` gibi geçersiz float → Pydantic 422 yanıtında `input` field değeri echo'lanırken Starlette `JSONResponse` (allow_nan=False) → `ValueError: Out of range float values are not JSON compliant`
+  - Fix: `backend/server.py` global `RequestValidationError` handler eklendi — `_scrub_non_finite()` ile NaN/Inf değerler `str`'e çevriliyor, ayrıca `bytes`/JSON-incompat objeler de fallback'ten geçiyor
+- **Bug L — Null byte query string crash (HTTP 500)**
+  - Sebep: `/api/pms/guests/search?q=test%00admin` → Mongo `OperationFailure: Regular expression cannot contain an embedded null byte`
+  - Fix: `routers/pms_guests.py:search_guests` — `q.replace("\x00", "")` ile null byte temizleniyor
+- **Bug M — Room PUT mass-assignment + invalid status persistence (Cascade 500)**
+  - Sebep: `PUT /api/pms/rooms/{id}` raw `dict[str,Any]` kabul ediyordu — `{"status":"telepati"}` gibi enum-dışı değer DB'ye yazılıyor, sonraki tüm `GET /pms/rooms` çağrıları `ResponseValidationError` ile 500 dönüyordu (RoomStatus enum parse edemiyor)
+  - Fix: `routers/pms_rooms.py:update_room` — allowlist (`_ROOM_UPDATE_ALLOWED`) + status enum validation + price/base_rate negatif check + 404; mevcut bozuk DB kayıtları temizlendi (2 telepati → available)
+- **Bug N — text/plain POST 500 (Bug J fix'inin yan etkisi)**
+  - Sebep: yanlış content-type body bytes olarak Pydantic input'a giriyor, validation handler `bytes` objesini json.dumps edemiyor
+  - Fix: `_scrub_non_finite()` artık `bytes/bytearray` → `decode('utf-8',errors='replace')` + JSON-serialize edilemeyen tüm objeler için `str()` fallback
+
+### Scenario Test Suite v1 + v2 + v3 + v4 + v5 + v6 (April 2026)
+- **Konum**: `..._v2.sh` (53), `..._v3.sh` (153), `..._v4.sh` (113), `..._v5.sh` (95), `..._v6.sh` (95) — toplam **509 düzenli regresyon noktası**
+- **v6 Kapsam (deeper attack surfaces)**: 2FA + register flow, JWT alg=none, file upload security (SVG XSS / polyglot / path traversal / sahte MIME / 10MB), numeric edge (NaN/Infinity/exponent → **Bug J**), Unicode normalization (NFC/NFD/RLO/ZWSP/emoji/10K), mass assignment + cross-tenant write attempt, JSON depth bomb + prototype pollution, header injection (CRLF), URL encoding (%00→**Bug L**, %2F, %252F, trailing slash, uppercase, unicode), CORS preflight + HEAD/OPTIONS + Origin spoofing, idempotency-key edge (cross-endpoint shared key, empty, newline, 10KB), departments dashboards (front-office/housekeeping/finance/sales/IT/guest-relations + revenue suggestions + AI activity-feed), reports + Excel exports + invalid date, room assign/virtual + room PUT validation (**Bug M**), bulk range/delete edge, race condition (10 paralel folio charge), channel-manager alerts, HTTP verb misuse (DELETE/PATCH/TRACE/CONNECT), text/plain content-type (**Bug N — Bug J fix yan etkisi**)
 - **v1 Kapsam**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A, Reports/Revenue + Bug B, Housekeeping, Availability + Bug D, Multi-tenancy, Rate limit
 - **v2 Kapsam**: Health, Guests CRUD, Room move, Refund/void, Group booking, Rates/admin, Channel/OTA, Accounting, Alerts, Audit, Analytics, Pagination + Bug F, Performance, Content-type guards, NoSQL/XSS injection, Large payload, **40 endpoint 5xx avı (Bug E ortaya çıkardı)**
 - **v3 Kapsam (edge & adversarial)**: 25 list endpoint × 5 negatif/aşırı pagination (**Bug G ortaya çıkardı**), JWT manipülasyonu, idempotency replay, concurrency overbook (atomic lock kanıtı), tarih ekstremleri, finansal hassasiyet, cross-tenant sızıntı, header/MIME, Unicode/NULL byte, bulk + hammer

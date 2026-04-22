@@ -595,10 +595,40 @@ async def upload_room_images(
     return {"success": True, "uploaded": len(saved_urls), "images": updated.get('images', [])}
 
 
+_ROOM_UPDATE_ALLOWED = {
+    "room_number", "floor", "room_type", "view", "amenities",
+    "status", "price", "base_rate", "max_occupancy", "max_adults",
+    "max_children", "is_active", "notes", "smoking", "accessible",
+    "connecting_room_id", "images", "name", "description",
+}
+_ROOM_VALID_STATUS = {"available", "occupied", "dirty", "cleaning", "inspected", "maintenance", "out_of_order"}
+
 @router.put("/pms/rooms/{room_id}")
 async def update_room(room_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
-    await db.rooms.update_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
+    if not isinstance(updates, dict):
+        raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
+    # Sadece izinli alanlari ele al — mass-assignment ve gecersiz status'u DB'ye yazmasin
+    safe = {k: v for k, v in updates.items() if k in _ROOM_UPDATE_ALLOWED}
+    if "status" in safe and safe["status"] not in _ROOM_VALID_STATUS:
+        raise HTTPException(status_code=422, detail=f"Gecersiz oda durumu: izinli={sorted(_ROOM_VALID_STATUS)}")
+    if "price" in safe:
+        try:
+            if float(safe["price"]) < 0:
+                raise HTTPException(status_code=422, detail="price negatif olamaz")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="price sayi olmali")
+    if "base_rate" in safe:
+        try:
+            if float(safe["base_rate"]) < 0:
+                raise HTTPException(status_code=422, detail="base_rate negatif olamaz")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="base_rate sayi olmali")
+    if not safe:
+        raise HTTPException(status_code=400, detail="Guncellenecek izinli alan yok")
+    await db.rooms.update_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'$set': safe})
     room_doc = await db.rooms.find_one({'id': room_id}, {'_id': 0})
+    if not room_doc:
+        raise HTTPException(status_code=404, detail="Oda bulunamadi")
     return room_doc
 
 
@@ -615,9 +645,11 @@ async def get_pms_companies(
         query['status'] = status
 
     if search:
+        import re as _re
+        safe_s = _re.escape(search.replace("\x00", ""))
         query['$or'] = [
-            {'name': {'$regex': search, '$options': 'i'}},
-            {'corporate_code': {'$regex': search, '$options': 'i'}},
+            {'name': {'$regex': safe_s, '$options': 'i'}},
+            {'corporate_code': {'$regex': safe_s, '$options': 'i'}},
         ]
 
     companies = await db.companies.find(query, {'_id': 0}).to_list(1000)

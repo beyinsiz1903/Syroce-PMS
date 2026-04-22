@@ -186,6 +186,42 @@ try:
 except ImportError:
     pass
 
+# ── 422 validation handler: NaN/Infinity input echo'sunu temizle ───────
+# Pydantic 422 hatalarında payload input'u response'a yansıtılır;
+# Starlette JSONResponse `allow_nan=False` kullandığından NaN/Inf 500 verir.
+import math as _math
+from fastapi.exceptions import RequestValidationError
+
+def _scrub_non_finite(obj):
+    if isinstance(obj, float):
+        if _math.isnan(obj) or _math.isinf(obj):
+            return str(obj)
+        return obj
+    if isinstance(obj, (bytes, bytearray)):
+        try:
+            return obj.decode("utf-8", errors="replace")
+        except Exception:
+            return repr(obj)
+    if isinstance(obj, list):
+        return [_scrub_non_finite(x) for x in obj]
+    if isinstance(obj, tuple):
+        return tuple(_scrub_non_finite(x) for x in obj)
+    if isinstance(obj, dict):
+        return {k: _scrub_non_finite(v) for k, v in obj.items()}
+    # Fallback: JSON-serialize edilemeyen herhangi bir tip → str
+    if not isinstance(obj, (str, int, bool, type(None))):
+        try:
+            import json as _json
+            _json.dumps(obj)
+            return obj
+        except (TypeError, ValueError):
+            return str(obj)
+    return obj
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": _scrub_non_finite(exc.errors())})
+
 # ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter
 

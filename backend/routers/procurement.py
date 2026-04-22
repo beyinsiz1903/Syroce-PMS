@@ -161,7 +161,7 @@ async def list_suppliers(
         query["active"] = True
     if q:
         import re as _re
-        query["name"] = {"$regex": _re.escape(q), "$options": "i"}
+        query["name"] = {"$regex": _re.escape(q.replace("\x00", "")), "$options": "i"}
     items = await db.proc_suppliers.find(query, {"_id": 0}) \
         .sort("name", 1).to_list(500)
     return {"items": items, "count": len(items)}
