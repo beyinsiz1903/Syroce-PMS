@@ -551,8 +551,36 @@ async def create_multi_room_booking(
     if not guest_id:
         raise HTTPException(status_code=400, detail="guest_id or guest details must be provided")
 
-    check_in_dt = datetime.fromisoformat(payload.arrival_date.replace("Z", "+00:00"))
-    check_out_dt = datetime.fromisoformat(payload.departure_date.replace("Z", "+00:00"))
+    try:
+        check_in_dt = datetime.fromisoformat(payload.arrival_date.replace("Z", "+00:00"))
+        check_out_dt = datetime.fromisoformat(payload.departure_date.replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError) as _e:
+        raise HTTPException(status_code=400, detail=f"Gecersiz tarih formati: {_e}")
+    if check_out_dt <= check_in_dt:
+        raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
+
+    if not isinstance(payload.rooms, list) or not payload.rooms:
+        raise HTTPException(status_code=400, detail="En az bir oda gerekli")
+    if len(payload.rooms) > 50:
+        raise HTTPException(status_code=400, detail="Cok fazla oda (max 50)")
+
+    # PRE-VALIDATE: tum oda ID'leri once dogrula — partial booking olmasin
+    requested_room_ids = []
+    for room_data in payload.rooms:
+        if not isinstance(room_data, dict):
+            raise HTTPException(status_code=400, detail="Her oda bir obje olmalidir")
+        rid = room_data.get("room_id")
+        if not rid or not isinstance(rid, str):
+            raise HTTPException(status_code=400, detail="Her oda icin gecerli room_id gerekli")
+        requested_room_ids.append(rid)
+    found_rooms = await db.rooms.find(
+        {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id},
+        {"id": 1, "_id": 0},
+    ).to_list(length=len(requested_room_ids))
+    found_set = {r["id"] for r in found_rooms}
+    missing = [r for r in requested_room_ids if r not in found_set]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Oda(lar) bulunamadi: {missing[:5]}")
 
     group_id = str(uuid.uuid4())
     created_bookings: list[Booking] = []

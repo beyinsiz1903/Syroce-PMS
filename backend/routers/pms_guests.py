@@ -103,6 +103,9 @@ async def search_guests(
     q = q.replace("\x00", "").strip()
     if not q or len(q) < 2:
         return []
+    # DoS guard: cok uzun query string mongo regex compile'i patlatabilir
+    if len(q) > 200:
+        q = q[:200]
 
     tenant_id = current_user.tenant_id
     import re as _re

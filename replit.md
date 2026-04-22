@@ -665,6 +665,13 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug R + S + T Düzeltmeleri (April 2026 — v9 suite ortaya çıkardı)
+- **Bug R — Misafir aramasında 100K karakter sorgu → 500 (Mongo regex crash)**
+  - `backend/routers/pms_guests.py:search_guests`: `q` 200 karakteri aşarsa kırpılıyor (DoS guard).
+- **Bug S — Multi-room booking ghost room ile 500 (atomic-rollback yok)**
+  - `backend/routers/pms_bookings.py:create_multi_room_booking`: Tüm `room_id`'ler için ön-doğrulama eklendi (404), ters/geçersiz tarih için 400, fazla oda için 50 limit (en fazla 50).
+- **Bug T (notu) — Resend webhook signature opsiyonel** (`RESEND_WEBHOOK_SECRET` env yoksa imza kontrolü atlanıyor). Production'da bu secret zorunlu kılınmalı; test bunu bilgilendirici olarak 200/4xx ikisini de kabul ediyor.
+
 ### Bug Q Düzeltmesi (April 2026 — v8 suite ortaya çıkardı)
 - **Bug Q — Integer overflow on `guests_count` → MongoDB BSON crash (HTTP 500)**
   - Sebep: `BookingCreate.guests_count: int` üst sınırsız → `2^63` ve üzeri (`9223372036854775808`, `99999999999999999999999999`) Pydantic'ten geçiyordu, MongoDB BSON int64 sınırını aştığında `OverflowError` ile 500 dönüyordu
