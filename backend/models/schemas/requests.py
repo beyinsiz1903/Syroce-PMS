@@ -1,7 +1,29 @@
 """Auto-split from schemas.py — domain: requests."""
 from typing import Any
 
-from pydantic import BaseModel
+import math
+
+from pydantic import BaseModel, Field, field_validator
+
+
+def _finite_positive(v: float, field: str = "value", *, allow_zero: bool = False) -> float:
+    if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+        raise ValueError(f"{field} sonlu bir sayı olmalı (NaN/Infinity kabul edilmiyor)")
+    if not allow_zero and v <= 0:
+        raise ValueError(f"{field} sıfırdan büyük olmalı")
+    return float(v)
+
+
+def _finite(v: float, field: str = "value") -> float:
+    if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+        raise ValueError(f"{field} sonlu bir sayı olmalı")
+    return float(v)
+
+
+def _iso_currency(v: str, field: str = "currency") -> str:
+    if not isinstance(v, str) or len(v) != 3 or not v.isalpha():
+        raise ValueError(f"{field} 3 harfli ISO 4217 kodu olmalı (örn: USD, EUR, TRY)")
+    return v.upper()
 
 # ============= NEW FEATURES PYDANTIC MODELS =============
 
@@ -176,6 +198,16 @@ class CreateCurrencyRateRequest(BaseModel):
     rate: float
     effective_date: str
 
+    @field_validator("from_currency", "to_currency")
+    @classmethod
+    def _v_curr(cls, v):
+        return _iso_currency(v, "currency")
+
+    @field_validator("rate")
+    @classmethod
+    def _v_rate(cls, v):
+        return _finite_positive(v, "rate")
+
 class CreateMultiCurrencyInvoiceRequest(BaseModel):
     customer_name: str
     customer_email: str
@@ -196,6 +228,16 @@ class ConvertCurrencyRequest(BaseModel):
     from_currency: str
     to_currency: str
     date: str | None = None  # Use specific date rate, or latest if None
+
+    @field_validator("from_currency", "to_currency")
+    @classmethod
+    def _v_curr(cls, v):
+        return _iso_currency(v, "currency")
+
+    @field_validator("amount")
+    @classmethod
+    def _v_amt(cls, v):
+        return _finite(v, "amount")
 
 # Rate Code & Calendar Models
 class CreateRateCodeRequest(BaseModel):

@@ -665,6 +665,13 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v21 turu — Bug AD bulundu ve düzeltildi (April 2026)
+- **Suite** (38 test, 10 bölüm): currency-rate CRUD (negatif/sıfır/NaN/7-char kod), convert-currency (NaN/overflow/ghost currency), multi-currency invoice, report-builder PDF/Excel (geniş tarih+ghost source+100 sütun), analytics export, bookings deep filter (NoSQL inj+5K guest_name), CM-v2 error-queue (500 ID bulk-retry+ghost), retry-acks, idempotency replay (aynı key farklı body), 5 paralel currency rate.
+- **Bug AD — Currency rate ve convert-currency validasyon eksik (KRİTİK veri bütünlüğü)**:
+  - **Sorun**: `/api/accounting/currency-rates` POST: `rate=-100`, `rate=NaN` (null oluyor), USD→USD `rate=1.5`, `from_currency="GHOSTXX"` (7 karakter) hepsi 200 dönüyor ve DB'ye yazılıyor. Convert-currency: NaN amount → null sonuç. Veri bütünlüğü tamamen tehlikede.
+  - **Fix**: `backend/models/schemas/requests.py` — `_finite_positive`, `_finite`, `_iso_currency` helper'ları + `CreateCurrencyRateRequest.rate` (>0, finite) ve `from/to_currency` (3 char ISO 4217) validators; `ConvertCurrencyRequest.amount` (finite) + currency validator. Pydantic v2 `field_validator`.
+  - **Sonuç**: neg/NaN/7-char artık 422, valid 200. v21 GREEN, v18-v20 regression GREEN (175 test).
+
 ### v20 turu — Yeni bug bulunmadı (April 2026)
 - **Suite** (38 test, 10 bölüm): webhook admin (status/deliveries/dlq + retry/dismiss ghost + NoSQL injection + huge/neg limit + date traversal), folio refund/void/split (negatif/overflow amount, boş body, finance + ledger void), deposit refund (ghost + negatif + boş), 8 paralel cache race (departments/front-office), booking cancel race, scheduled-tasks/cron health, 5K karakter + RTL+null reason, 4 paralel void same charge, X-Property-Id swap entitlement.
 - **Sonuç**: 38/38 GREEN, **yeni bug yok**. Notlar: webhook DLQ retry/dismiss ghost 400/404, deliveries query injection güvenli (Pydantic limit -1/99M → 422), folio/void/refund hep 404/422 (servis seviyesinde validation), X-Property-Id swap yoksayılıyor (JWT claim'inden okunuyor), 4 paralel void aynı charge'ta race-condition yok, scheduled-tasks endpoint'leri henüz public route değil (404 normal).
