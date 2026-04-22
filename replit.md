@@ -665,6 +665,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug U Düzeltmesi (April 2026 — v10 suite ortaya çıkardı)
+- **Bug U — Multi-room booking handler `Booking` modeli yanlış kullanımı → 500**
+  - Sebep: `models/schemas/bookings.py:Booking` modeli `extra="ignore"` ile tanımlı ve sadece `id, tenant_id, guest_id, room_id` alanlarını içeriyor (genişletilmiş hali `BookingExtended`'de). `routers/pms_bookings.py:create_multi_room_booking` `Booking(check_in=..., check_out=..., qr_code=..., ...)` çağırınca alanlar sessizce siliniyor → `model_dump()` 4 alan döndürüyor → `booking_dict["check_in"]` ve `booking.qr_code = ...` `KeyError`/`ValueError` ile 500.
+  - Fix: Multi-room handler artık `Booking` modeli üzerinden geçmiyor; `booking_dict` doğrudan dict olarak kuruluyor (tüm gerekli alanlar + qr_code + isoformat dates + enum.value normalize). `created_bookings.append(booking_dict)`.
+
 ### Bug R + S + T Düzeltmeleri (April 2026 — v9 suite ortaya çıkardı)
 - **Bug R — Misafir aramasında 100K karakter sorgu → 500 (Mongo regex crash)**
   - `backend/routers/pms_guests.py:search_guests`: `q` 200 karakteri aşarsa kırpılıyor (DoS guard).

@@ -598,45 +598,45 @@ async def create_multi_room_booking(
         rate_plan = room_data.get("rate_plan")
         package_code = room_data.get("package_code")
 
-        booking = Booking(
-            tenant_id=current_user.tenant_id,
-            guest_id=guest_id,
-            room_id=room_id,
-            check_in=check_in_dt,
-            check_out=check_out_dt,
-            adults=adults,
-            children=children,
-            children_ages=children_ages,
-            guests_count=adults + children,
-            total_amount=total_amount,
-            base_rate=base_rate,
-            channel=payload.channel,
-            rate_plan=rate_plan,
-            special_requests=payload.special_requests,
-            company_id=payload.company_id,
-            # Apply corporate / contracted booking attributes from payload
-            contracted_rate=payload.contracted_rate,
-            rate_type=payload.rate_type,
-            market_segment=payload.market_segment,
-            cancellation_policy=payload.cancellation_policy,
-            group_booking_id=group_id,
-        )
-
-        # Attach basic package info as note if provided
+        # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
+        special_req = payload.special_requests
         if package_code:
             note = f"Package: {package_code}"
-            booking.special_requests = f"{booking.special_requests} | {note}" if booking.special_requests else note
+            special_req = f"{special_req} | {note}" if special_req else note
 
-        qr_token = generate_time_based_qr_token(booking.id, expiry_hours=72)
-        qr_data = f"booking:{booking.id}:token:{qr_token}"
+        booking_id = str(uuid.uuid4())
+        qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
+        qr_data = f"booking:{booking_id}:token:{qr_token}"
         qr_code = generate_qr_code(qr_data)
-        booking.qr_code = qr_code
-        booking.qr_code_data = qr_token
 
-        booking_dict = booking.model_dump()
-        booking_dict["check_in"] = booking_dict["check_in"].isoformat()
-        booking_dict["check_out"] = booking_dict["check_out"].isoformat()
-        booking_dict["created_at"] = booking_dict["created_at"].isoformat()
+        booking_dict = {
+            "id": booking_id,
+            "tenant_id": current_user.tenant_id,
+            "guest_id": guest_id,
+            "room_id": room_id,
+            "check_in": check_in_dt.isoformat(),
+            "check_out": check_out_dt.isoformat(),
+            "adults": adults,
+            "children": children,
+            "children_ages": children_ages,
+            "guests_count": adults + children,
+            "total_amount": total_amount,
+            "base_rate": base_rate,
+            "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
+            "rate_plan": rate_plan or "Standard",
+            "special_requests": special_req,
+            "company_id": payload.company_id,
+            "contracted_rate": getattr(payload.contracted_rate, "value", payload.contracted_rate) if payload.contracted_rate else None,
+            "rate_type": getattr(payload.rate_type, "value", payload.rate_type) if payload.rate_type else None,
+            "market_segment": getattr(payload.market_segment, "value", payload.market_segment) if payload.market_segment else None,
+            "cancellation_policy": getattr(payload.cancellation_policy, "value", payload.cancellation_policy) if payload.cancellation_policy else None,
+            "group_booking_id": group_id,
+            "status": "pending",
+            "qr_code": qr_code,
+            "qr_code_data": qr_token,
+            "created_at": datetime.utcnow().isoformat(),
+            "paid_amount": 0.0,
+        }
         from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
             await create_booking_atomic(booking_dict)
@@ -646,7 +646,7 @@ async def create_multi_room_booking(
         folio_number = await generate_folio_number(current_user.tenant_id)
         folio = Folio(
             tenant_id=current_user.tenant_id,
-            booking_id=booking.id,
+            booking_id=booking_id,
             folio_number=folio_number,
             folio_type=FolioType.GUEST,
             guest_id=guest_id,
@@ -655,6 +655,6 @@ async def create_multi_room_booking(
         folio_dict["created_at"] = folio_dict["created_at"].isoformat()
         await db.folios.insert_one(folio_dict)
 
-        created_bookings.append(booking)
+        created_bookings.append(booking_dict)
 
     return created_bookings
