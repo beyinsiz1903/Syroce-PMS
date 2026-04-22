@@ -133,8 +133,11 @@ async def create_quick_booking(
     if data.total_amount <= 0:
         raise HTTPException(status_code=400, detail="Gecerli bir fiyat giriniz")
 
-    ci_dt = datetime.fromisoformat(data.check_in.replace('Z', '+00:00'))
-    co_dt = datetime.fromisoformat(data.check_out.replace('Z', '+00:00'))
+    try:
+        ci_dt = datetime.fromisoformat(data.check_in.replace('Z', '+00:00'))
+        co_dt = datetime.fromisoformat(data.check_out.replace('Z', '+00:00'))
+    except (ValueError, AttributeError, TypeError) as _e:
+        raise HTTPException(status_code=400, detail=f"Gecersiz tarih formati: {_e}")
     if co_dt <= ci_dt:
         raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
 

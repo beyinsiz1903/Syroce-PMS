@@ -665,6 +665,14 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug O + P Düzeltmeleri (April 2026 — v7 suite ortaya çıkardı)
+- **Bug O — Geçersiz tarih formatları HTTP 500**
+  - Sebep: `datetime.fromisoformat()` `2026-02-29`, `2026-13-01`, `2026-04-31`, `0000-01-01`, `2026-04-22T25:00:00`, `2026-04-22T23:60:00` gibi geçersiz girdilerde `ValueError` atıyor; rezervasyon servislerinde catch yoktu → 500
+  - Fix: `modules/reservations/services/create_reservation_service.py` ve `routers/pms_bookings.py:create_quick_booking` — `try/except (ValueError, AttributeError, TypeError)` → 400 "Gecersiz tarih formati"
+- **Bug P — `/auth/me` hashed_password leak (PII/secret sızıntı)**
+  - Sebep: `User` modeli `extra="allow"` → DB'den dönen `hashed_password` extra alan olarak Pydantic dump'ına dahil ediliyor; `GET /auth/me` response'unda **bcrypt hash sızıyordu**
+  - Fix: `routers/auth.py:get_me` — `User.model_fields` allowlist'i ile sadece bilinen güvenli field'ları döndüren explicit `User(**safe)` reconstruction + `response_model_exclude={"password"}`
+
 ### Bug J + K + L + M + N Düzeltmeleri (April 2026 — v6 suite ortaya çıkardı)
 - **Bug J — NaN/Infinity validation echo crash (HTTP 500)**
   - Sebep: `daily_rate=NaN` gibi geçersiz float → Pydantic 422 yanıtında `input` field değeri echo'lanırken Starlette `JSONResponse` (allow_nan=False) → `ValueError: Out of range float values are not JSON compliant`

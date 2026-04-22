@@ -59,8 +59,14 @@ class CreateReservationService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
-            check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
-            check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
+            try:
+                check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
+                check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
+            except (ValueError, AttributeError, TypeError) as _e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Gecersiz tarih formati: {_e}",
+                )
 
             # Geçmiş tarih kontrolü — bugün veya business_date'den hangisi ilerdeyse onu kullan
             from core.database import db as _db

@@ -585,9 +585,14 @@ async def verify_2fa_login(payload: TwoFAVerifyIn):
     token = create_token(user.id, user.tenant_id)
     return TokenResponse(access_token=token, user=user, tenant=tenant)
 
-@router.get("/auth/me", response_model=User)
+_USER_RESPONSE_SAFE = set(User.model_fields.keys())
+
+@router.get("/auth/me", response_model=User, response_model_exclude={"password"})
 async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    # User modeli extra="allow" oldugu icin hashed_password gibi sizinti riski tasiyan
+    # alanlari kasten ayikla — sadece bilinen guvenli field'lari geri don.
+    safe = {k: v for k, v in current_user.model_dump().items() if k in _USER_RESPONSE_SAFE}
+    return User(**safe)
 
 
 class UpdateMeRequest(BaseModel):
