@@ -665,6 +665,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v18 turu — Yeni bug bulunmadı (April 2026)
+- **Suite** (68 test, 10 bölüm): data-intelligence (revenue/operations/guests sub-modules), data-pipeline (feature-store/datasets/models/predictions), B2B API (api-keys CRUD + content/availability/rates X-API-Key auth), CM-v2 audit/admin (issue retry-ack/revalidate-mapping/send-to-review/scheduler trigger), entitlement bypass (X-Tenant swap, Method-Override, double/trailing slash, _method query), pms-outbound, deep-nested JSON (5K seviye), 5MB body, 5K bulk-dismiss IDs, 5 paralel retry-sync race, header smuggling (XFF chain, TE+CL, X-Real-IP path traversal, Host override), login DoS (20 paralel).
+- **Sonuç**: 68/68 GREEN, **yeni bug yok**. Notlar: outbound 401 (X-API-Key gerektiriyor), entitlement middleware JWT'den tenant_id okuyor (X-Tenant header güvenli şekilde yoksayılıyor), TE+CL smuggle 400 ile reddediliyor.
+- **Gözlem (kritik değil)**: `/api/auth/login` üzerinde rate-limiter aktif değil (20 paralel = 0 429). Kullanıcı isterse fail2ban tarzı brute-force koruma eklenebilir.
+
 ### Bug AC — Reports/Revenue 300-yıllık aralıkta KeyError 500 (April 2026 — v17 turunda buldu)
 - **Test**: `GET /api/reports/revenue?start_date=1900-01-01&end_date=2200-12-31` → **500 Internal Server Error** (`KeyError: 'total_amount'`).
 - **Kök neden** (`reports.py:704`): `sum(b['total_amount'] for b in bookings)` ve `(check_out - check_in).days` doğrudan dict erişimi yapıyordu; geniş tarih penceresi eski/eksik booking dökümanlarını da yakalayınca eksik alan → 500.
