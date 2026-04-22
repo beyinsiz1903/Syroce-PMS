@@ -586,76 +586,121 @@ async def create_multi_room_booking(
     group_id = str(uuid.uuid4())
     created_bookings: list[Booking] = []
 
+    async def _rollback_group(reason: str):
+        """Saga compensation: delete all bookings+folios in this group and release locks.
+        Bug Y fix: rollback failures artık sessiz yutulmuyor, logger ile rapor ediliyor."""
+        from core.atomic_booking import release_booking_nights
+        compensation_errors = []
+        for b in created_bookings:
+            bid = b.get("id")
+            if not bid:
+                continue
+            try:
+                await db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
+                await db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
+                await release_booking_nights(current_user.tenant_id, bid, reason=reason)
+            except Exception as ce:
+                compensation_errors.append(f"booking={bid}: {ce}")
+        if compensation_errors:
+            logger.error("SAGA COMPENSATION PARTIAL FAILURE group=%s reason=%s errors=%s",
+                         group_id, reason, compensation_errors)
+
     for room_data in payload.rooms:
-        room_id = room_data.get("room_id")
-        if not room_id:
-            raise HTTPException(status_code=400, detail="room_id is required for each room")
+      try:
+          room_id = room_data.get("room_id")
+          if not room_id:
+              raise HTTPException(status_code=400, detail="room_id is required for each room")
 
-        adults = int(room_data.get("adults", 1))
-        children = int(room_data.get("children", 0))
-        children_ages = room_data.get("children_ages", [])
-        total_amount = float(room_data.get("total_amount", 0.0))
-        base_rate = room_data.get("base_rate")
-        rate_plan = room_data.get("rate_plan")
-        package_code = room_data.get("package_code")
+          adults = int(room_data.get("adults", 1))
+          children = int(room_data.get("children", 0))
+          children_ages = room_data.get("children_ages", [])
+          total_amount = float(room_data.get("total_amount", 0.0))
+          base_rate = room_data.get("base_rate")
+          rate_plan = room_data.get("rate_plan")
+          package_code = room_data.get("package_code")
 
-        # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
-        special_req = payload.special_requests
-        if package_code:
-            note = f"Package: {package_code}"
-            special_req = f"{special_req} | {note}" if special_req else note
+          # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
+          special_req = payload.special_requests
+          if package_code:
+              note = f"Package: {package_code}"
+              special_req = f"{special_req} | {note}" if special_req else note
 
-        booking_id = str(uuid.uuid4())
-        qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
-        qr_data = f"booking:{booking_id}:token:{qr_token}"
-        qr_code = generate_qr_code(qr_data)
+          booking_id = str(uuid.uuid4())
+          qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
+          qr_data = f"booking:{booking_id}:token:{qr_token}"
+          qr_code = generate_qr_code(qr_data)
 
-        booking_dict = {
-            "id": booking_id,
-            "tenant_id": current_user.tenant_id,
-            "guest_id": guest_id,
-            "room_id": room_id,
-            "check_in": check_in_dt.isoformat(),
-            "check_out": check_out_dt.isoformat(),
-            "adults": adults,
-            "children": children,
-            "children_ages": children_ages,
-            "guests_count": adults + children,
-            "total_amount": total_amount,
-            "base_rate": base_rate,
-            "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
-            "rate_plan": rate_plan or "Standard",
-            "special_requests": special_req,
-            "company_id": payload.company_id,
-            "contracted_rate": getattr(payload.contracted_rate, "value", payload.contracted_rate) if payload.contracted_rate else None,
-            "rate_type": getattr(payload.rate_type, "value", payload.rate_type) if payload.rate_type else None,
-            "market_segment": getattr(payload.market_segment, "value", payload.market_segment) if payload.market_segment else None,
-            "cancellation_policy": getattr(payload.cancellation_policy, "value", payload.cancellation_policy) if payload.cancellation_policy else None,
-            "group_booking_id": group_id,
-            "status": "pending",
-            "qr_code": qr_code,
-            "qr_code_data": qr_token,
-            "created_at": datetime.utcnow().isoformat(),
-            "paid_amount": 0.0,
-        }
-        from core.atomic_booking import BookingConflictError, create_booking_atomic
-        try:
-            await create_booking_atomic(booking_dict)
-        except BookingConflictError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+          booking_dict = {
+              "id": booking_id,
+              "tenant_id": current_user.tenant_id,
+              "guest_id": guest_id,
+              "room_id": room_id,
+              "check_in": check_in_dt.isoformat(),
+              "check_out": check_out_dt.isoformat(),
+              "adults": adults,
+              "children": children,
+              "children_ages": children_ages,
+              "guests_count": adults + children,
+              "total_amount": total_amount,
+              "base_rate": base_rate,
+              "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
+              "rate_plan": rate_plan or "Standard",
+              "special_requests": special_req,
+              "company_id": payload.company_id,
+              "contracted_rate": getattr(payload.contracted_rate, "value", payload.contracted_rate) if payload.contracted_rate else None,
+              "rate_type": getattr(payload.rate_type, "value", payload.rate_type) if payload.rate_type else None,
+              "market_segment": getattr(payload.market_segment, "value", payload.market_segment) if payload.market_segment else None,
+              "cancellation_policy": getattr(payload.cancellation_policy, "value", payload.cancellation_policy) if payload.cancellation_policy else None,
+              "group_booking_id": group_id,
+              "status": "pending",
+              "qr_code": qr_code,
+              "qr_code_data": qr_token,
+              "created_at": datetime.utcnow().isoformat(),
+              "paid_amount": 0.0,
+          }
+          from core.atomic_booking import BookingConflictError, create_booking_atomic
+          try:
+              await create_booking_atomic(booking_dict)
+          except BookingConflictError as e:
+              await _rollback_group(reason="group_conflict_rollback")
+              raise HTTPException(status_code=409, detail=str(e))
+          except Exception as e:
+              await _rollback_group(reason="group_unknown_rollback")
+              raise HTTPException(status_code=500, detail=f"Booking creation failed: {e}")
 
-        folio_number = await generate_folio_number(current_user.tenant_id)
-        folio = Folio(
-            tenant_id=current_user.tenant_id,
-            booking_id=booking_id,
-            folio_number=folio_number,
-            folio_type=FolioType.GUEST,
-            guest_id=guest_id,
-        )
-        folio_dict = folio.model_dump()
-        folio_dict["created_at"] = folio_dict["created_at"].isoformat()
-        await db.folios.insert_one(folio_dict)
+          # Folio insert — Saga: fail olursa az önceki booking + tüm grup geri al
+          try:
+              folio_number = await generate_folio_number(current_user.tenant_id)
+              folio = Folio(
+                  tenant_id=current_user.tenant_id,
+                  booking_id=booking_id,
+                  folio_number=folio_number,
+                  folio_type=FolioType.GUEST,
+                  guest_id=guest_id,
+              )
+              folio_dict = folio.model_dump()
+              folio_dict["created_at"] = folio_dict["created_at"].isoformat()
+              await db.folios.insert_one(folio_dict)
+          except Exception as e:
+              # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle
+              try:
+                  from core.atomic_booking import release_booking_nights
+                  await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+                  await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
+              except Exception:
+                  pass
+              await _rollback_group(reason="folio_insert_failed")
+              raise HTTPException(status_code=500, detail=f"Folio creation failed, group rolled back: {e}")
 
-        created_bookings.append(booking_dict)
+          created_bookings.append(booking_dict)
+
+      except HTTPException:
+          # rollback grup, sonra orijinal HTTPException'i yeniden firlat
+          await _rollback_group(reason="iter_http_error")
+          raise
+      except Exception as e:
+          await _rollback_group(reason="iter_unexpected_error")
+          logger.exception("Multi-room loop unexpected error: %s", e)
+          raise HTTPException(status_code=500, detail="Multi-room booking failed; group rolled back")
 
     return created_bookings

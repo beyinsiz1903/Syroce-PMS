@@ -665,6 +665,22 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug Y Düzeltmesi (April 2026 — architect v12 turunda buldu)
+- **Bug Y — Multi-room loop body içindeki parse/QR exception'ları Saga'yı atlıyordu.**
+  - İlk Saga implementasyonu sadece `create_booking_atomic` ve `folios.insert_one` çağrılarını try/except ile sarıyordu. Loop içinde önceki adımlar (`int(...)`, `float(...)`, `generate_qr_code(...)`) hata fırlatırsa rollback çalışmıyordu → grup partial kalıyordu.
+  - **Fix:** Tüm iteration body `try` ile sarmalandı; `except HTTPException → _rollback_group + raise`, `except Exception → _rollback_group + 500`. Ayrıca `_rollback_group` artık compensation hatalarını sessiz yutmuyor — `logger.error` ile group_id + booking_id bilgisi yazıyor.
+  - **Doğrulama:** v12 64/64 GREEN, regresyon (v6-v11) hepsi GREEN.
+
+### v12 — Saga Compensation (April 2026)
+- **Multi-room booking + folio Saga uygulandı** (`pms_bookings.py:create_multi_room_booking`):
+  - `_rollback_group(reason)` helper: grup içindeki tüm booking'leri sil + folio'ları sil + room-night locks release.
+  - Conflict (BookingConflictError) → grup geri alınır.
+  - Folio insert exception → o anki booking + grup geri alınır.
+  - Genel exception (atomic insert fail) → grup geri alınır.
+- **Doğrulama:** v12 test 1 — multi-room iki oda → DB'de her booking için folio_count=1 (Mongo direct query).
+- **v12 64/64 GREEN.** Yeni alanlar test edildi: konaklama-vergisi, cashiering, invoices, accounting, audit-timeline, housekeeping (room-blocks dahil), B2B API (X-API-Key auth), guest-journey, early-warning, data-intelligence, event-bus, departments, help, infra-hardening, idempotency-replay, cascade-delete koruması.
+- **v12 false-alarm not:** İlk test versiyonu `/api/pms/folios?booking_id=...` endpoint'ini sorguluyordu (yok → 404), Saga'yı yanlış ORPHAN olarak raporladı. DB'ye doğrudan query (Motor) ile gerçek durum doğrulandı: tüm folio'lar mevcut. Test düzeltildi.
+
 ### Bug V+W Düzeltmesi (April 2026 — v11 suite ortaya çıkardı, architect 2 iterasyonda buldu)
 - **Bug V — Multi-room response_model `list[Booking]` (dar 4-alan) → check_in/qr_code/total_amount kayıp.**
   - İlk fix denemesi: `response_model=list[BookingExtended]`. Ama:
