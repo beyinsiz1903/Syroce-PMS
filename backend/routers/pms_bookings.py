@@ -37,6 +37,7 @@ from models.enums import (
 from models.schemas import (
     Booking,
     BookingCreate,
+    BookingExtended,
     Folio,
     Guest,
     GuestCreate,
@@ -525,7 +526,7 @@ async def create_room_move_history(
     return {"message": "Room move logged successfully", "history": record}
 
 
-@router.post("/pms/bookings/multi-room", response_model=list[Booking])
+@router.post("/pms/bookings/multi-room")
 async def create_multi_room_booking(
     payload: MultiRoomBookingCreate,
     current_user: User = Depends(get_current_user)

@@ -665,6 +665,19 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug V+W Düzeltmesi (April 2026 — v11 suite ortaya çıkardı, architect 2 iterasyonda buldu)
+- **Bug V — Multi-room response_model `list[Booking]` (dar 4-alan) → check_in/qr_code/total_amount kayıp.**
+  - İlk fix denemesi: `response_model=list[BookingExtended]`. Ama:
+- **Bug W (architect ikinci tur) — `BookingExtended` `id/tenant_id/guest_id/room_id` içermiyor!**
+  - İki model birbirini tamamlıyor ama hiçbiri tek başına yetmiyor. `Booking` = sadece 4 identity alanı, `BookingExtended` = sadece geniş alanlar.
+  - **Final fix:** `response_model` tamamen kaldırıldı (handler zaten dict listesi dönüyor). FastAPI artık dict'leri olduğu gibi serialize ediyor → contract'ta hem `id/guest_id/room_id` hem `check_in/qr_code/total_amount` mevcut.
+  - **Doğrulama:** v11 test 17 — 8 zorunlu alan (`id, guest_id, room_id, check_in, check_out, total_amount, status, qr_code`) hepsi response'ta var.
+- **Açık kalan mimari risk (architect 3. uyarı):** Booking insert + folio insert tek transaction değil. Folio fail olursa orphan booking kalabilir. Bir sonraki turda compensating-Saga ekleyeceğiz.
+- **Mimari notlar (v11 confirmed-OK):**
+  - Multi-room **grup atomicity** çalışıyor: oda-3 conflict olduğunda oda-1/oda-2 otomatik geri alınıyor (TAM ATOMİK — v11 test 1 doğruladı).
+  - Multi-room race (5 paralel, aynı oda/tarih): oversell yok, en fazla 1 başarı (v11 test 16).
+  - PMS-Outbound API'leri Bearer auth gerektiriyor (anonim 401), sızma yok.
+
 ### Bug U Düzeltmesi (April 2026 — v10 suite ortaya çıkardı)
 - **Bug U — Multi-room booking handler `Booking` modeli yanlış kullanımı → 500**
   - Sebep: `models/schemas/bookings.py:Booking` modeli `extra="ignore"` ile tanımlı ve sadece `id, tenant_id, guest_id, room_id` alanlarını içeriyor (genişletilmiş hali `BookingExtended`'de). `routers/pms_bookings.py:create_multi_room_booking` `Booking(check_in=..., check_out=..., qr_code=..., ...)` çağırınca alanlar sessizce siliniyor → `model_dump()` 4 alan döndürüyor → `booking_dict["check_in"]` ve `booking.qr_code = ...` `KeyError`/`ValueError` ile 500.
