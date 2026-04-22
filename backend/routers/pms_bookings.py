@@ -5,6 +5,8 @@ Booking CRUD, approval/rejection, multi-room bookings, room move history.
 import logging
 
 logger = logging.getLogger(__name__)
+import hashlib
+import json as _json
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
@@ -529,6 +531,7 @@ async def create_room_move_history(
 @router.post("/pms/bookings/multi-room")
 async def create_multi_room_booking(
     payload: MultiRoomBookingCreate,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ):
     """Create a multi-room booking under one group_booking_id.
@@ -536,7 +539,39 @@ async def create_multi_room_booking(
     - If guest_id is not provided but guest info is, creates the guest first.
     - Creates one Booking per room and links them with group_booking_id.
     - Auto-creates folio for each booking (same behavior as single booking).
+
+    Bug Z fix: Idempotency-Key header verildiyse, aynı key + aynı payload retry'ı
+    cached response döner; aynı key + farklı payload → 409. Hiç key yoksa
+    her istek random group oluşturur (geri uyumlu).
     """
+    # ── Bug Z: Idempotency enforcement ──────────────────────────────────
+    idem_key = (request.headers.get("Idempotency-Key") or
+                request.headers.get("idempotency-key") or "").strip()
+    payload_hash = None
+    if idem_key:
+        try:
+            raw = _json.dumps(payload.model_dump(), sort_keys=True, default=str)
+            payload_hash = hashlib.sha256(raw.encode()).hexdigest()
+        except Exception:
+            payload_hash = None
+        deterministic_group = str(uuid.uuid5(
+            uuid.NAMESPACE_OID,
+            f"{current_user.tenant_id}:multiroom:{idem_key}"
+        ))
+        existing = await db.bookings.find(
+            {"group_booking_id": deterministic_group, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        ).to_list(length=100)
+        if existing:
+            existing_hash = existing[0].get("idempotency_payload_hash")
+            if payload_hash and existing_hash and existing_hash != payload_hash:
+                raise HTTPException(status_code=409,
+                                    detail="Idempotency-Key reused with different payload")
+            return existing
+    else:
+        deterministic_group = None
+    # ────────────────────────────────────────────────────────────────────
+
     # Resolve guest
     guest_id = payload.guest_id
     if not guest_id and payload.guest:
@@ -583,7 +618,7 @@ async def create_multi_room_booking(
     if missing:
         raise HTTPException(status_code=404, detail=f"Oda(lar) bulunamadi: {missing[:5]}")
 
-    group_id = str(uuid.uuid4())
+    group_id = deterministic_group or str(uuid.uuid4())
     created_bookings: list[Booking] = []
 
     async def _rollback_group(reason: str):
@@ -658,6 +693,8 @@ async def create_multi_room_booking(
               "created_at": datetime.utcnow().isoformat(),
               "paid_amount": 0.0,
           }
+          if payload_hash:
+              booking_dict["idempotency_payload_hash"] = payload_hash
           from core.atomic_booking import BookingConflictError, create_booking_atomic
           try:
               await create_booking_atomic(booking_dict)
@@ -666,7 +703,8 @@ async def create_multi_room_booking(
               raise HTTPException(status_code=409, detail=str(e))
           except Exception as e:
               await _rollback_group(reason="group_unknown_rollback")
-              raise HTTPException(status_code=500, detail=f"Booking creation failed: {e}")
+              logger.exception("Multi-room booking atomic insert failed group=%s booking=%s: %s", group_id, booking_id, e)
+              raise HTTPException(status_code=500, detail="Booking creation failed; group rolled back")
 
           # Folio insert — Saga: fail olursa az önceki booking + tüm grup geri al
           try:
@@ -690,7 +728,8 @@ async def create_multi_room_booking(
               except Exception:
                   pass
               await _rollback_group(reason="folio_insert_failed")
-              raise HTTPException(status_code=500, detail=f"Folio creation failed, group rolled back: {e}")
+              logger.exception("Multi-room folio insert failed group=%s booking=%s: %s", group_id, booking_id, e)
+              raise HTTPException(status_code=500, detail="Folio creation failed; group rolled back")
 
           created_bookings.append(booking_dict)
 

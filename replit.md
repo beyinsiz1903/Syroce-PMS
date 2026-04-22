@@ -665,6 +665,17 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug Z — Multi-room Idempotency (April 2026 — architect v13 turunda buldu)
+- **Sorun**: `POST /api/pms/bookings/multi-room` Idempotency-Key header'ını **hiç umursamıyordu**. Aynı key ile retry → her seferinde yeni `group_booking_id` + duplicate booking grupları. Ağ kopması/CDN retry senaryosunda kritik finansal risk.
+- **Fix** (`pms_bookings.py:create_multi_room_booking`):
+  - `request: Request` parametresi eklendi.
+  - Header verildiyse `group_booking_id = uuid5(NAMESPACE_OID, "{tenant}:multiroom:{key}")` (deterministik).
+  - İlk önce DB'de aynı group_booking_id var mı kontrol — varsa cached response döner, yeni yaratmaz.
+  - İlk booking dict'inde `idempotency_payload_hash` (SHA-256 of sorted JSON) saklanır.
+  - Aynı key + farklı payload retry → 409 "Idempotency-Key reused with different payload".
+  - Header yoksa eski davranış (random group) korunur — geri uyumlu.
+- **Doğrulama** (v13 §18): retry aynı id döndü, DB'de booking_count=1, hash mismatch → 409, header yok → her çağrı yeni group.
+
 ### Bug Y Düzeltmesi (April 2026 — architect v12 turunda buldu)
 - **Bug Y — Multi-room loop body içindeki parse/QR exception'ları Saga'yı atlıyordu.**
   - İlk Saga implementasyonu sadece `create_booking_atomic` ve `folios.insert_one` çağrılarını try/except ile sarıyordu. Loop içinde önceki adımlar (`int(...)`, `float(...)`, `generate_qr_code(...)`) hata fırlatırsa rollback çalışmıyordu → grup partial kalıyordu.
