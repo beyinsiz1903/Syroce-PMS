@@ -665,6 +665,10 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v16 turu — Yeni bug bulunmadı (April 2026)
+- **Suite** (83 test, 10 bölüm): revenue-engine (apply-rate, booking-pace), revenue-autopilot v2 (queue/policy/process), inventory reconcile (reverse range, 300-yıl pencere), housekeeping (tasks, room-status, room-blocks CRUD + 5 paralel race), JWT manipulation (alg=none, 100K karakter, bozuk imza, Basic scheme), multi-tenant data isolation (cross-tenant UUID + X-Tenant header spoof), path traversal (`../../etc/passwd`), SSRF (169.254.169.254, file://), negatif/overflow tarihler (`0000-00-00`, `9999-99-99`, `2026-13-45`), departments smoke.
+- **Sonuç**: 83/83 GREEN, **yeni bug yok**. Bug J-AB hâlâ kapalı; v9-v15 regression GREEN.
+
 ### Bug AB — Channel-Manager v2 reliability/property/{id} 500 (April 2026 — v15 turunda buldu)
 - **Test**: `GET /api/channel-manager/v2/reliability/property/ghost` → **500 Internal Server Error**
 - **Kök neden**: Handler `svc.get_property_reliability(...)` çağırıyordu ama `ReliabilityService` üzerinde böyle bir method **yok**; gerçek isim `get_reliability_by_property`. Yanlış method çağrısı her property_id için `AttributeError` → 500.
