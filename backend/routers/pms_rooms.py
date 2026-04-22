@@ -23,7 +23,7 @@ from core.security import get_current_user
 from models.enums import CompanyStatus
 from models.schemas import Room, RoomCreate, User
 
-UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads"))
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads")))
 
 router = APIRouter(prefix="/api", tags=["pms"])
 
@@ -562,13 +562,15 @@ async def upload_room_images(
     room_folder.mkdir(parents=True, exist_ok=True)
 
     saved_urls: list[str] = []
+    _ALLOWED_CT = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
     for f in files:
-        if f.content_type and not f.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail=f"Only image uploads allowed. Got: {f.content_type}")
+        if f.content_type and f.content_type not in _ALLOWED_CT:
+            raise HTTPException(status_code=400, detail=f"Yalnizca jpg/png/webp/gif yuklenebilir. Goturulen: {f.content_type}")
 
         ext = Path(f.filename or '').suffix.lower()[:10]
-        if ext not in ['.jpg', '.jpeg', '.png', '.webp', '.gif']:
-            ext = ext if ext else '.jpg'
+        if ext not in _ALLOWED_EXT:
+            raise HTTPException(status_code=400, detail=f"Gecersiz uzanti: {ext or '(yok)'}. Izinli: {sorted(_ALLOWED_EXT)}")
 
         filename = f"{uuid.uuid4()}{ext}"
         dest = room_folder / filename

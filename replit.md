@@ -665,6 +665,14 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v22 turu — Bug AE bulundu ve düzeltildi (April 2026)
+- **Suite** (27 test, 10 bölüm): B2B webhook URL SSRF (localhost/169.254.169.254/internal IP/file://), e-fatura XML injection, image upload (.exe + .svg + büyük), CSV formula injection, GraphQL introspection + 100-deep query, mailing webhook replay/bad-JSON, HotelRunner callback traversal, agency portal 10 paralel login, integrations webhook subpaths.
+- **Bug AE — Image upload 500 (Read-only filesystem) + uzantı bypass riski**:
+  - **Sorun 1 (5xx)**: `/api/pms/rooms/{room_id}/images` POST `OSError: [Errno 30] Read-only file system: '/app'` — `UPLOAD_DIR` default `/app/backend/uploads` (Replit'te readonly).
+  - **Sorun 2 (güvenlik)**: Önceki kod `image/*` content-type'ı ve "boşsa .jpg" fallback'i ile `.exe`/`.svg`/`.php` uzantılarının diske yazılmasına izin veriyordu (XSS/RCE riski).
+  - **Fix**: `backend/routers/pms_rooms.py:29` — `UPLOAD_DIR` default artık repo içi `backend/uploads/` (writable). `upload_room_images` fonksiyonunda CT ve uzantı için **sıkı whitelist**: `image/jpeg|png|webp|gif` + `.jpg|.jpeg|.png|.webp|.gif`; geçersizlerde 400.
+  - **Sonuç**: .exe/.svg upload artık 400, geçerli image 200; v22 27/27 GREEN, v19+v20+v21 regression GREEN (145 test).
+
 ### v21 turu — Bug AD bulundu ve düzeltildi (April 2026)
 - **Suite** (38 test, 10 bölüm): currency-rate CRUD (negatif/sıfır/NaN/7-char kod), convert-currency (NaN/overflow/ghost currency), multi-currency invoice, report-builder PDF/Excel (geniş tarih+ghost source+100 sütun), analytics export, bookings deep filter (NoSQL inj+5K guest_name), CM-v2 error-queue (500 ID bulk-retry+ghost), retry-acks, idempotency replay (aynı key farklı body), 5 paralel currency rate.
 - **Bug AD — Currency rate ve convert-currency validasyon eksik (KRİTİK veri bütünlüğü)**:
