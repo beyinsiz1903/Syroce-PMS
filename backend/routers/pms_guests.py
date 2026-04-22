@@ -102,14 +102,16 @@ async def search_guests(
         return []
 
     tenant_id = current_user.tenant_id
-    regex = {"$regex": q, "$options": "i"}
+    import re as _re
+    safe_q = _re.escape(q)
+    regex = {"$regex": safe_q, "$options": "i"}
 
     # Build search conditions supporting both encrypted and plaintext fields
     if _fenc:
         encrypted_conditions = _fenc.build_search_query(
             collection=_GUEST_COLLECTION,
             search_fields=["email", "phone", "id_number", "passport_number"],
-            search_value=q,
+            search_value=safe_q,
         )
         name_conditions = [
             {"name": regex},

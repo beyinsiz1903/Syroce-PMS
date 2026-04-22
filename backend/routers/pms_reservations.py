@@ -513,13 +513,16 @@ async def search_reservations(
         # Search conditions
         search_conditions = []
 
+        import re as _re
+
         if query:
-            # Search in guest name or booking ID
+            # Search in guest name or booking ID — escape user regex meta chars
+            _q = _re.escape(query)
             search_conditions.append({
                 '$or': [
-                    {'guest_name': {'$regex': query, '$options': 'i'}},
-                    {'id': {'$regex': query, '$options': 'i'}},
-                    {'booking_number': {'$regex': query, '$options': 'i'}}
+                    {'guest_name': {'$regex': _q, '$options': 'i'}},
+                    {'id': {'$regex': _q, '$options': 'i'}},
+                    {'booking_number': {'$regex': _q, '$options': 'i'}}
                 ]
             })
 
@@ -528,13 +531,13 @@ async def search_reservations(
 
         if phone:
             # Find guest by phone first
-            guest = await db.guests.find_one({'phone': {'$regex': phone, '$options': 'i'}})
+            guest = await db.guests.find_one({'phone': {'$regex': _re.escape(phone), '$options': 'i'}})
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
 
         if email:
             # Find guest by email first
-            guest = await db.guests.find_one({'email': {'$regex': email, '$options': 'i'}})
+            guest = await db.guests.find_one({'email': {'$regex': _re.escape(email), '$options': 'i'}})
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
 
