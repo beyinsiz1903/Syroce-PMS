@@ -13,6 +13,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
+from pydantic import BaseModel
+
 from common.context import OperationContext
 from core.database import db
 from core.security import (
@@ -20,7 +22,8 @@ from core.security import (
     security,
 )
 from domains.pms.frontdesk_service import frontdesk_service
-from models.enums import BookingStatus, ChannelType
+from core.utils import generate_folio_number
+from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
 from models.schemas import Booking, FolioCharge, Guest, User
 
 logger = logging.getLogger(__name__)
@@ -127,14 +130,157 @@ async def check_out_guest(
 
 
 
+class FolioChargeRequest(BaseModel):
+    charge_category: ChargeCategory | None = None
+    charge_type: str | None = None  # legacy alias
+    description: str
+    amount: float
+    quantity: float = 1.0
+
+
+class FolioPaymentRequest(BaseModel):
+    amount: float
+    method: PaymentMethod = PaymentMethod.CASH
+    payment_type: PaymentType = PaymentType.INTERIM
+    reference: str | None = None
+    notes: str | None = None
+
+
+_LEGACY_CHARGE_MAP = {
+    "f_and_b": ChargeCategory.FOOD,
+    "fnb": ChargeCategory.FOOD,
+    "food_beverage": ChargeCategory.FOOD,
+    "drink": ChargeCategory.BEVERAGE,
+}
+
+
+async def _ensure_booking(tenant_id: str, booking_id: str) -> dict:
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
+
+
+async def _ensure_open_folio(tenant_id: str, booking_id: str, guest_id: str | None = None) -> dict:
+    folio = await db.folios.find_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"}, {"_id": 0}
+    )
+    if folio:
+        return folio
+    folio = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "folio_number": await generate_folio_number(tenant_id),
+        "folio_type": "guest",
+        "status": "open",
+        "guest_id": guest_id,
+        "company_id": None,
+        "balance": 0.0,
+        "notes": None,
+        "created_at": datetime.now(UTC).isoformat(),
+        "closed_at": None,
+    }
+    await db.folios.insert_one(dict(folio))
+    folio.pop("_id", None)
+    return folio
+
+
 @router.post("/frontdesk/folio/{booking_id}/charge")
-async def add_folio_charge(booking_id: str, charge_type: str, description: str, amount: float, quantity: float = 1.0, current_user: User = Depends(get_current_user)):
-    folio_charge = FolioCharge(tenant_id=current_user.tenant_id, booking_id=booking_id, charge_type=charge_type, description=description,
-                               amount=amount, quantity=quantity, total=amount * quantity, posted_by=current_user.name)
-    charge_dict = folio_charge.model_dump()
-    charge_dict['date'] = charge_dict['date'].isoformat()
-    await db.folio_charges.insert_one(charge_dict)
-    return folio_charge
+async def add_folio_charge(
+    booking_id: str,
+    payload: FolioChargeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if payload.amount <= 0 or payload.quantity <= 0:
+        raise HTTPException(status_code=400, detail="amount ve quantity 0'dan büyük olmalı")
+
+    category = payload.charge_category
+    if category is None and payload.charge_type:
+        key = payload.charge_type.lower()
+        if key in _LEGACY_CHARGE_MAP:
+            category = _LEGACY_CHARGE_MAP[key]
+        else:
+            try:
+                category = ChargeCategory(key)
+            except ValueError:
+                category = ChargeCategory.OTHER
+    if category is None:
+        raise HTTPException(status_code=400, detail="charge_category gerekli")
+
+    booking = await _ensure_booking(current_user.tenant_id, booking_id)
+    folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    unit_price = float(payload.amount)
+    quantity = float(payload.quantity)
+    net_amount = unit_price * quantity
+    now_iso = datetime.now(UTC).isoformat()
+    charge_doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "folio_id": folio["id"],
+        "booking_id": booking_id,
+        "charge_category": category.value,
+        "description": payload.description,
+        "unit_price": unit_price,
+        "quantity": quantity,
+        "amount": net_amount,
+        "tax_amount": 0.0,
+        "total": net_amount,
+        "posted_by": current_user.name,
+        "posted_at": now_iso,
+        "date": now_iso,
+    }
+    await db.folio_charges.insert_one(dict(charge_doc))
+    await db.folios.update_one(
+        {"id": folio["id"], "tenant_id": current_user.tenant_id},
+        {"$inc": {"balance": net_amount}},
+    )
+    return charge_doc
+
+
+@router.post("/frontdesk/folio/{booking_id}/payment")
+async def add_folio_payment(
+    booking_id: str,
+    payload: FolioPaymentRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount 0'dan büyük olmalı")
+
+    booking = await _ensure_booking(current_user.tenant_id, booking_id)
+    folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    amount = float(payload.amount)
+    now = datetime.now(UTC)
+    now_iso = now.isoformat()
+    method_value = payload.method.value if hasattr(payload.method, "value") else str(payload.method)
+    type_value = payload.payment_type.value if hasattr(payload.payment_type, "value") else str(payload.payment_type)
+    payment_doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "folio_id": folio["id"],
+        "booking_id": booking_id,
+        "amount": amount,
+        "method": method_value,
+        "payment_type": type_value,
+        "status": "paid",
+        "voided": False,
+        "reference": payload.reference,
+        "notes": payload.notes,
+        "processed_by": current_user.name,
+        "processed_at": now_iso,
+    }
+    await db.payments.insert_one(dict(payment_doc))
+    await db.folios.update_one(
+        {"id": folio["id"], "tenant_id": current_user.tenant_id},
+        {"$inc": {"balance": -amount}},
+    )
+    await db.bookings.update_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"$inc": {"paid_amount": amount}},
+    )
+    return payment_doc
 
 
 
