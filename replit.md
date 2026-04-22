@@ -665,6 +665,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v20 turu — Yeni bug bulunmadı (April 2026)
+- **Suite** (38 test, 10 bölüm): webhook admin (status/deliveries/dlq + retry/dismiss ghost + NoSQL injection + huge/neg limit + date traversal), folio refund/void/split (negatif/overflow amount, boş body, finance + ledger void), deposit refund (ghost + negatif + boş), 8 paralel cache race (departments/front-office), booking cancel race, scheduled-tasks/cron health, 5K karakter + RTL+null reason, 4 paralel void same charge, X-Property-Id swap entitlement.
+- **Sonuç**: 38/38 GREEN, **yeni bug yok**. Notlar: webhook DLQ retry/dismiss ghost 400/404, deliveries query injection güvenli (Pydantic limit -1/99M → 422), folio/void/refund hep 404/422 (servis seviyesinde validation), X-Property-Id swap yoksayılıyor (JWT claim'inden okunuyor), 4 paralel void aynı charge'ta race-condition yok, scheduled-tasks endpoint'leri henüz public route değil (404 normal).
+- Regression: v17, v18, v19 tamamı GREEN (68+68+69 = 205 test).
+
 ### v19 turu — Yeni bug bulunmadı (April 2026)
 - **Suite** (69 test, 10 bölüm): module-store (purchase/trial/callback edge cases), marketplace B2B v1 (agencies CRUD, listings/me, hotels search X-API-Key), MICE (spaces/menus/accounts/contacts/resources tüm CRUD), B2B loyalty (negatif/overflow puan), cross-property (search/profile/merge ghost+self), Quick-ID OCR (cost-estimate path traversal, no-auth fallback), CSRF / double-Authorization / form-urlencoded mismatch, 5 paralel trial abuse, NaN/null/-1e100 folio amount, 3 paralel agency create.
 - **Sonuç**: 69/69 GREEN, **yeni bug yok**. Notlar: cross-property merge self ve ghost→ghost 422 ile reddediliyor; folio amount NaN/null/overflow Pydantic'te 422; OCR fallback uçları auth gerektiriyor (401); `/api/cross-property/guests/profile/ghost` 404; CSRF korumalı (cookie tek başına yetkilendirme yapmıyor — JWT zorunlu).
