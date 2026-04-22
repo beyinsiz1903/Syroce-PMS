@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -133,8 +133,8 @@ async def create_room(
 
 @router.get("/pms/rooms", response_model=list[Room])
 async def get_rooms(
-    limit: int = 100,  # Optimized for 550+ room properties - load in batches
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     status: str | None = None,
     room_type: str | None = None,
     view: str | None = None,

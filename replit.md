@@ -643,16 +643,18 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `models/schemas/guests.py` Guest schema'sında `email`, `phone`, `id_number` artık `str | None = ""` (response'a `null` veya `""` ile akabilir)
 - Etki: misafir listesi sayfası tamamen kırıktı, çalışır oldu
 
-### Pagination Validation Fix (Bug F — April 2026)
-- **Bug**: `GET /api/pms/bookings?limit=-5` HTTP 500 — `motor.cursor.to_list(length=-5)` `ValueError` atıyordu
-- **Fix**: `routers/pms_bookings.py:get_bookings` artık `Query(ge=1, le=500)` ile sınırlı; geçersiz limit → 422
-- **Follow-up önerisi**: Aynı `limit: int = N` (Query'siz) pattern'i şu dosyalarda da var ve potansiyel olarak kırılabilir: `integrations/booking.py`, `modules/supplies_market/router_hotel.py`, `domains/channel_manager/ari/repositories.py`. İleride ortak `PaginationParams` dependency oluşturulması önerilir.
+### Pagination Validation Fix (Bugs F + G — April 2026)
+- **Bug F**: `GET /api/pms/bookings?limit=-5` HTTP 500 — `motor.cursor.to_list(length=-5)` `ValueError` atıyordu
+- **Bug G** (v3 suite ortaya çıkardı): Aynı zafiyet `/api/pms/guests`, `/api/pms/guests/search`, `/api/pms/rooms` endpoint'lerinde de mevcuttu — negatif `limit`/`offset` ile 500
+- **Fix**: 4 endpoint artık `Query(ge=1, le=N)` ile sınırlı (bookings le=500, guests le=5000, rooms le=2000, search le=100); geçersiz limit/offset → 422
+- **Follow-up önerisi**: Aynı `limit: int = N` (Query'siz) pattern'i şu dosyalarda da var ve potansiyel olarak kırılabilir: `integrations/booking.py`, `modules/supplies_market/router_hotel.py`, çoğu `routers/finance/*.py`. İleride ortak `PaginationParams` dependency oluşturulması önerilir.
 
-### Scenario Test Suite v1 + v2 (April 2026)
-- **Konum**: `.local/scripts/scenario_tests.sh` (35 senaryo) ve `.local/scripts/scenario_tests_v2.sh` (53 senaryo)
+### Scenario Test Suite v1 + v2 + v3 (April 2026)
+- **Konum**: `.local/scripts/scenario_tests.sh` (35), `..._v2.sh` (53), `..._v3.sh` (153 assertion)
 - **v1 Kapsam**: Auth/Security, Booking lifecycle, Edge-case validation, Idempotency, Concurrency (5 paralel), Check-in/out + Folio + Charge + Payment, Cancel/No-show + Bug A, Reports/Revenue + Bug B, Housekeeping, Availability + Bug D, Multi-tenancy, Rate limit
 - **v2 Kapsam**: Health, Guests CRUD, Room move, Refund/void, Group booking, Rates/admin, Channel/OTA, Accounting, Alerts, Audit, Analytics, Pagination + Bug F, Performance, Content-type guards, NoSQL/XSS injection, Large payload, **40 endpoint 5xx avı (Bug E ortaya çıkardı)**
-- **Çalıştır**: `bash .local/scripts/scenario_tests.sh && bash .local/scripts/scenario_tests_v2.sh`
+- **v3 Kapsam (edge & adversarial)**: 25 list endpoint × 5 negatif/aşırı pagination kombinasyonu (**Bug G ortaya çıkardı**), JWT manipülasyonu (yok/bozuk/tampered/yanlış scheme), idempotency replay (aynı key+farklı body → 409 doğrulandı), concurrency overbook (5 paralel → 1 başarı + 4 conflict atomic lock kanıtı), tarih ekstremleri (1900/2099/bozuk format), finansal hassasiyet (0/negatif/3-basamak ondalık/aşırı büyük/negatif quantity), cross-tenant ID sızıntısı, header/MIME edge (5KB Idempotency-Key), Unicode/NULL byte, 20 paralel bulk + 50 paralel hammer
+- **Çalıştır**: `bash .local/scripts/scenario_tests.sh && bash .local/scripts/scenario_tests_v2.sh && bash .local/scripts/scenario_tests_v3.sh`
 - Her major değişiklik öncesi/sonrası çalıştırılması önerilir — gizli regresyonları yakalar
 
 ## Quick-ID Microservice Integration (April 2026)
