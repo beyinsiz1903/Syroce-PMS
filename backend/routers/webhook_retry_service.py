@@ -170,6 +170,27 @@ async def deliver_webhook_with_retry(
                 }},
             )
 
+            # SSRF guard at delivery time (DNS rebinding protection): re-resolve and reject internal hosts
+            try:
+                from urllib.parse import urlparse as _urlparse
+                import ipaddress as _ipa
+                import socket as _sock
+                _p = _urlparse(webhook_url)
+                _h = (_p.hostname or "").lower()
+                if (not _h
+                    or _h in {"localhost", "metadata.google.internal", "metadata.goog"}
+                    or _h.endswith(".internal") or _h.endswith(".local")):
+                    raise ValueError(f"hedef hostname izinsiz: {_h}")
+                for _r in _sock.getaddrinfo(_h, None):
+                    _ip = _ipa.ip_address(_r[4][0])
+                    if (_ip.is_private or _ip.is_loopback or _ip.is_link_local
+                        or _ip.is_reserved or _ip.is_multicast or _ip.is_unspecified):
+                        raise ValueError(f"hedef IP izinsiz: {_ip}")
+            except ValueError as _ssrf_ve:
+                attempt_error = f"SSRF blocked: {_ssrf_ve}"
+                attempt_status_code = 0
+                raise httpx.RequestError(attempt_error)
+
             async with httpx.AsyncClient(timeout=DELIVERY_TIMEOUT_SECONDS) as client:
                 resp = await client.post(webhook_url, content=body, headers=headers)
                 attempt_status_code = resp.status_code

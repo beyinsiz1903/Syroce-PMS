@@ -665,6 +665,16 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### v23 turu — Bug AF bulundu + 3 sertleştirme (April 2026)
+- **Suite** (5 test): GraphQL shallow + 12-derinlikte introspection, e-fatura XML escape, B2B webhook URL SSRF guard logic.
+- **Bug AF — `/api/accounting/invoices` POST 5xx (item alanları eksikse)**:
+  - **Sorun**: `AccountingInvoiceItem` Pydantic modeli `vat_amount` ve `total` alanlarını **zorunlu** kabul ediyordu ama yaratma endpoint'i client'a "vat_rate gönder, biz hesaplayalım" deyip hesaplamıyordu. Sonuç: tipik client çağrısı (sadece quantity/unit_price/vat_rate) `ValidationError` → 500.
+  - **Fix**: `backend/routers/finance/accounting.py:471-487` — `vat_amount` ve `total` alanları gönderilmediyse server tarafında `quantity * unit_price * (vat_rate/100)` formülüyle hesaplanır; numerik olmayan girdi 422; Pydantic hatası catch edilerek 422'ye çevrilir.
+- **Sertleştirme 1 — GraphQL depth limit**: `backend/graphql_api/schema.py` — `QueryDepthLimiter(max_depth=10)` extension. 12+ derinlikte introspection query → "Maximum introspection depth exceeded" (200 + GraphQL error). DoS riski kapatıldı.
+- **Sertleştirme 2 — B2B webhook URL SSRF guard (kayıt + delivery)**: `backend/routers/b2b_api.py:772-797` (kayıt) **ve** `backend/routers/webhook_retry_service.py:176-195` (delivery) — URL hostname'i `localhost`, `*.internal`, `*.local`, `metadata.google.internal` ise reddedilir; DNS resolve sonrası tüm IP'ler `is_private/is_loopback/is_link_local/is_reserved/is_multicast/is_unspecified` filtresinden geçirilir. AWS metadata `169.254.169.254`, RFC1918 (`10/8`, `192.168/16`), `127/8`, **DNS rebinding** (kayıttan sonra DNS değişimi) delivery anında her denemede yeniden kontrol edildiği için kapatıldı. SSRF blocked → retry/DLQ pipeline'ına `RequestError` olarak düşer.
+- **Sertleştirme 3 — E-fatura XML escape**: `backend/routers/finance/accounting.py:1344-1364` — `xml.sax.saxutils.escape` ile invoice_number/invoice_date escape; numerik alanlar `float` cast + `:.2f` format. Defense-in-depth (şu an user-controlled alan XML'e ulaşmıyor ama gelecekteki regression'a karşı koruma).
+- **Sonuç**: v23 5/5 GREEN, regression v20+v21+v22 (103 test) GREEN.
+
 ### v22 turu — Bug AE bulundu ve düzeltildi (April 2026)
 - **Suite** (27 test, 10 bölüm): B2B webhook URL SSRF (localhost/169.254.169.254/internal IP/file://), e-fatura XML injection, image upload (.exe + .svg + büyük), CSV formula injection, GraphQL introspection + 100-deep query, mailing webhook replay/bad-JSON, HotelRunner callback traversal, agency portal 10 paralel login, integrations webhook subpaths.
 - **Bug AE — Image upload 500 (Read-only filesystem) + uzantı bypass riski**:

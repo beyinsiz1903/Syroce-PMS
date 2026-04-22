@@ -465,7 +465,32 @@ async def create_accounting_invoice(
         item_dict = {k: v for k, v in item_data.items() if k != 'additional_taxes'}
         item_dict['additional_taxes'] = additional_taxes
 
-        item = AccountingInvoiceItem(**item_dict)
+        # Auto-compute vat_amount/total if client did not send (avoid 5xx)
+        try:
+            _qty = float(item_dict.get('quantity', 0) or 0)
+            _up = float(item_dict.get('unit_price', 0) or 0)
+            _vrate = float(item_dict.get('vat_rate', 0) or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="quantity/unit_price/vat_rate sayisal olmali")
+        _line_net = _qty * _up
+        if 'vat_amount' not in item_dict or item_dict.get('vat_amount') in (None, ""):
+            item_dict['vat_amount'] = round(_line_net * (_vrate / 100.0), 2)
+        try:
+            _vat_amount_num = float(item_dict.get('vat_amount', 0) or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="vat_amount sayisal olmali")
+        if 'total' not in item_dict or item_dict.get('total') in (None, ""):
+            item_dict['total'] = round(_line_net + _vat_amount_num, 2)
+        else:
+            try:
+                item_dict['total'] = float(item_dict['total'])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail="total sayisal olmali")
+
+        try:
+            item = AccountingInvoiceItem(**item_dict)
+        except Exception as ve:
+            raise HTTPException(status_code=422, detail=f"Gecersiz fatura kalemi: {ve}")
 
         invoice_items.append(item)
         subtotal += item.quantity * item.unit_price
@@ -1338,16 +1363,25 @@ async def generate_efatura(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Generate E-Fatura XML (simplified)
+    # Generate E-Fatura XML (simplified) — XML injection guard with escape
+    from xml.sax.saxutils import escape as _xml_escape
+    _inv_no = _xml_escape(str(invoice.get('invoice_number', '')))
+    _inv_date = _xml_escape(str(invoice.get('invoice_date', '')))
+    _line_count = int(len(invoice.get('items', [])))
+    try:
+        _subtotal = float(invoice.get('subtotal', 0) or 0)
+        _grand = float(invoice.get('grand_total', 0) or 0)
+    except (TypeError, ValueError):
+        _subtotal, _grand = 0.0, 0.0
     efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{invoice['invoice_number']}</ID>
-    <IssueDate>{invoice['invoice_date']}</IssueDate>
+    <ID>{_inv_no}</ID>
+    <IssueDate>{_inv_date}</IssueDate>
     <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <LineCountNumeric>{len(invoice.get('items', []))}</LineCountNumeric>
+    <LineCountNumeric>{_line_count}</LineCountNumeric>
     <LegalMonetaryTotal>
-        <TaxExclusiveAmount>{invoice.get('subtotal', 0)}</TaxExclusiveAmount>
-        <TaxInclusiveAmount>{invoice.get('grand_total', 0)}</TaxInclusiveAmount>
+        <TaxExclusiveAmount>{_subtotal:.2f}</TaxExclusiveAmount>
+        <TaxInclusiveAmount>{_grand:.2f}</TaxInclusiveAmount>
     </LegalMonetaryTotal>
 </Invoice>"""
 

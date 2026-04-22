@@ -346,4 +346,9 @@ class Query:
         return result
 
 # Schema
-schema = strawberry.Schema(query=Query)
+from strawberry.extensions import QueryDepthLimiter
+
+schema = strawberry.Schema(
+    query=Query,
+    extensions=[QueryDepthLimiter(max_depth=10)],
+)

@@ -766,6 +766,33 @@ async def b2b_register_webhook(
     if not data.url.startswith("https://"):
         raise HTTPException(status_code=400, detail="Webhook URL must use HTTPS")
 
+    # SSRF guard: localhost, link-local, private network, metadata endpoints reddedilir
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+        import socket
+        parsed = urlparse(data.url)
+        host = (parsed.hostname or "").lower()
+        if not host:
+            raise ValueError("hostname yok")
+        forbidden_hostnames = {"localhost", "metadata.google.internal", "metadata.goog"}
+        if host in forbidden_hostnames or host.endswith(".internal") or host.endswith(".local"):
+            raise ValueError("internal hostname")
+        # Resolve to all addresses; ANY private/loopback/link-local → reddet
+        addrs = set()
+        try:
+            for r in socket.getaddrinfo(host, None):
+                addrs.add(r[4][0])
+        except Exception:
+            # Hostname resolve edilemiyorsa kabul etme (DNS rebinding riski)
+            raise ValueError("DNS cozumlenemedi")
+        for a in addrs:
+            ip = ipaddress.ip_address(a)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+                raise ValueError(f"izinsiz IP: {a}")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=f"Webhook URL gecersiz veya icsel hedef: {ve}")
+
     invalid_events = set(data.events) - VALID_WEBHOOK_EVENTS
     if invalid_events:
         raise HTTPException(
