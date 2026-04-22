@@ -78,12 +78,15 @@ class RejectRequest(BaseModel):
 
 
 class QuickBookingCreate(BaseModel):
-    guest_name: str
+    guest_name: str = Field(..., min_length=1, max_length=200)
     room_id: str
     check_in: str
     check_out: str
-    total_amount: float
+    total_amount: float = Field(..., ge=0, le=1e12)
     guest_id: str | None = None
+    adults: int = Field(1, ge=0, le=50)
+    children: int = Field(0, ge=0, le=50)
+    daily_rate: float | None = Field(None, ge=0, le=1e12)
 
 
 class MultiRoomBookingCreate(BaseModel):

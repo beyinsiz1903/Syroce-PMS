@@ -665,6 +665,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix**: `core/folio_ledger_service.py:ReconciliationEngine.run_reconciliation` artık 2 query: bulk `folios.find` + tek bir `$group by folio_id` aggregate ile tüm ledger toplamları, ardından in-memory diff
 - **Sonuç**: ~8s → **0.68s (~12x hızlanma)**, v5 testi artık 200 dönüyor (önceden timeout)
 
+### Bug Q Düzeltmesi (April 2026 — v8 suite ortaya çıkardı)
+- **Bug Q — Integer overflow on `guests_count` → MongoDB BSON crash (HTTP 500)**
+  - Sebep: `BookingCreate.guests_count: int` üst sınırsız → `2^63` ve üzeri (`9223372036854775808`, `99999999999999999999999999`) Pydantic'ten geçiyordu, MongoDB BSON int64 sınırını aştığında `OverflowError` ile 500 dönüyordu
+  - Fix: `models/schemas/bookings.py:BookingCreate` — `guests_count: int = Field(..., ge=1, le=100)`, `adults/children: Field(ge=0, le=50)`, `total_amount: Field(ge=0, le=1e12)`. `routers/pms_bookings.py:QuickBookingCreate` aynı kısıtlamalar + `guest_name: max_length=200`
+
 ### Bug O + P Düzeltmeleri (April 2026 — v7 suite ortaya çıkardı)
 - **Bug O — Geçersiz tarih formatları HTTP 500**
   - Sebep: `datetime.fromisoformat()` `2026-02-29`, `2026-13-01`, `2026-04-31`, `0000-01-01`, `2026-04-22T25:00:00`, `2026-04-22T23:60:00` gibi geçersiz girdilerde `ValueError` atıyor; rezervasyon servislerinde catch yoktu → 500

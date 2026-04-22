@@ -21,8 +21,8 @@ class BookingCreate(BaseModel):
     room_id: str
     check_in: str
     check_out: str
-    adults: int = 1
-    children: int = 0
+    adults: int = Field(1, ge=0, le=50)
+    children: int = Field(0, ge=0, le=50)
 
     # CM / integration semantics (optional; defaults applied in Booking model)
     source_channel: str | None = None
@@ -30,8 +30,8 @@ class BookingCreate(BaseModel):
     hold_status: str | None = None
     allocation_source: str | None = None
     children_ages: list[int] = []
-    guests_count: int  # Total: adults + children
-    total_amount: float
+    guests_count: int = Field(..., ge=1, le=100)  # Total: adults + children
+    total_amount: float = Field(..., ge=0, le=1e12)
     base_rate: float | None = None  # For override tracking
     channel: ChannelType = ChannelType.DIRECT
     special_requests: str | None = None
