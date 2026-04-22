@@ -2,8 +2,11 @@
 Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+
+logger = logging.getLogger("routers.hotel_services")
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -1329,6 +1332,23 @@ async def cancel_reservation(
         update_data["noshow_charge"] = body.noshow_charge_amount
 
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": update_data})
+
+    # Inventory release: iptal/no-show sonrası odanın gece kilitleri serbest bırakılır.
+    # No-show'da first night charge tutulsa da inventory release edilir (misafir gelmediği için).
+    # release_booking_nights audit timeline'ına 'lock_released' event'i de yazar (INV-6).
+    try:
+        from core.atomic_booking import release_booking_nights
+        released_count = await release_booking_nights(
+            tenant_id=tid,
+            booking_id=booking_id,
+            reason=update_data["status"],
+        )
+        logger.info(
+            "Released %s room-night locks after %s of booking %s",
+            released_count, update_data["status"], booking_id,
+        )
+    except Exception as exc:
+        logger.error("Lock release failed for booking %s: %s", booking_id, exc)
 
     # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
     try:

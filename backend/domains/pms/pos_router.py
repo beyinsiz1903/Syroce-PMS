@@ -1694,7 +1694,10 @@ async def get_cancellations_noshows_mobile(
             'check_in': booking.get('check_in'),
             'nights': booking.get('nights', 0),
             'revenue_lost': revenue_lost,
-            'cancelled_at': booking.get('cancelled_at').isoformat() if booking.get('cancelled_at') else None,
+            'cancelled_at': (
+                booking['cancelled_at'].isoformat() if hasattr(booking.get('cancelled_at'), 'isoformat')
+                else booking.get('cancelled_at')
+            ),
             'channel': booking.get('channel', 'unknown')
         })
 

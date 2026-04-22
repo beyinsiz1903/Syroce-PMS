@@ -99,7 +99,17 @@ class ReservationService:
         update = {"status": "cancelled", "updated_at": datetime.now(UTC).isoformat()}
         if reason:
             update["cancellation_reason"] = reason
-        return await ReservationRepository.update(tenant_id, booking_id, update)
+        result = await ReservationRepository.update(tenant_id, booking_id, update)
+
+        # Inventory release: room_night_locks temizle ve audit timeline'a yaz (INV-6).
+        try:
+            from core.atomic_booking import release_booking_nights
+            await release_booking_nights(tenant_id=tenant_id, booking_id=booking_id, reason="cancelled")
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Lock release failed for booking %s", booking_id)
+
+        return result
 
     @staticmethod
     async def get_arrivals(tenant_id: str, target_date: str) -> list[dict[str, Any]]:

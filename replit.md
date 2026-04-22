@@ -616,6 +616,17 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Fix 2**: Endpoint translates `result.ok=False` + `code=NOT_FOUND` → HTTP 404; removed `@cached(ttl=180)` decorator since folio is real-time financial data and the cache hid error states + risked stale balances after charges/payments
 - Other endpoints in same router already use `result.ok` (per `backend/common/result.py`); this fix aligns the folio endpoint with the same pattern
 
+### Cancellation Inventory Leak Fix (Bug A — April 2026)
+- **Bug**: İptal edilen rezervasyonlar `room_night_locks` koleksiyonundaki gece kilitlerini bırakmıyordu → aynı oda+tarihler için yeni rezervasyon HTTP 409 dönüyordu (sahte "dolu")
+- **Fix**: `routers/hotel_services.py` cancel endpoint ve `domains/pms/reservations/services/reservation_service.py.cancel_reservation` artık `core.atomic_booking.release_booking_nights()` çağırıyor (audit timeline'a `lock_released` event'i de yazar — INV-6 uyumlu)
+- No-show'da da inventory release edilir (misafir gelmedi); first-night charge folioya yazılır
+- Test: cancel→aynı oda/tarihte rebook → 200 ✅
+
+### Cancellations Report 500 Fix (Bug B — April 2026)
+- **Bug**: `GET /api/revenue/mobile/cancellations-noshows` HTTP 500 — `cancelled_at` alanına `.isoformat()` çağrılıyordu ama cancel endpoint zaten string olarak kaydediyordu (AttributeError)
+- **Fix**: `pos_router.py:1697` artık hem `datetime` hem `str` tipini güvenle handle ediyor (`hasattr(...,'isoformat')` kontrolü)
+- Bulunan sorun: `cancelled_at` storage tipi tutarsız (bazı yerler datetime, bazı yerler ISO string) — gelecek refactor için not
+
 ## Quick-ID Microservice Integration (April 2026)
 
 ### Architecture
