@@ -3,6 +3,8 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 logger = logging.getLogger(__name__)
 import hashlib
@@ -13,6 +15,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from modules.pms_core.role_permission_service import require_op  # v82 DR
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -222,7 +225,8 @@ async def get_bookings(
 
     # If search is provided, do a text search across bookings
     if search and search.strip():
-        term = search.strip()
+        from security.query_safety import safe_search_term
+        term = safe_search_term(search) or "a^"  # 'a^' = regex-impossible (anchor after literal)
         query = {
             "tenant_id": current_user.tenant_id,
             "$or": [
@@ -315,7 +319,11 @@ async def get_bookings(
 
 @router.get("/bookings/{booking_id}/override-logs", response_model=list[RateOverrideLog])
 @cached(ttl=600, key_prefix="booking_override_logs")  # Cache for 10 min
-async def get_booking_override_logs(booking_id: str, current_user: User = Depends(get_current_user)):
+async def get_booking_override_logs(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v82 DR: rate override audit = finance/manager
+):
     """Get all rate override logs for a specific booking."""
     logs = await db.rate_override_logs.find({
         'booking_id': booking_id,
@@ -331,6 +339,7 @@ async def approve_booking(
     booking_id: str,
     request: Request,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     """Approve a pending booking (hotel-side).
 
@@ -411,6 +420,7 @@ async def reject_booking(
     payload: RejectRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     """Reject a pending booking with reason.
 
@@ -501,6 +511,7 @@ async def update_booking(
 async def create_room_move_history(
     move_data: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Log room move history for audit trail.
 
@@ -531,7 +542,8 @@ async def create_room_move_history(
 async def create_multi_room_booking(
     payload: MultiRoomBookingCreate,
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a multi-room booking under one group_booking_id.
 

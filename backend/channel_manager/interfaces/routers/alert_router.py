@@ -1,5 +1,6 @@
 """Alerting system and reliability monitoring endpoints."""
 import logging
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -57,6 +58,7 @@ async def get_alert_summary(
 @router.post("/alerts/evaluate")
 async def evaluate_alerts(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     return await svc.evaluate_alerts(current_user.tenant_id)
@@ -75,6 +77,7 @@ async def list_alert_rules(
 async def create_alert_rule(
     req: AlertRuleRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     rule = await svc.create_rule(current_user.tenant_id, req.model_dump(), current_user.id)
@@ -86,6 +89,7 @@ async def update_alert_rule(
     rule_id: str,
     req: AlertRuleRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     rule = await svc.update_rule(current_user.tenant_id, rule_id, req.model_dump(), current_user.id)
@@ -96,6 +100,7 @@ async def update_alert_rule(
 async def delete_alert_rule(
     rule_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     deleted = await svc.delete_rule(current_user.tenant_id, rule_id)
@@ -108,6 +113,7 @@ async def delete_alert_rule(
 async def acknowledge_alert(
     alert_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     return await svc.acknowledge_alert(current_user.tenant_id, alert_id, current_user.id)
@@ -118,6 +124,7 @@ async def resolve_alert(
     alert_id: str,
     req: AlertActionRequest = Body(AlertActionRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     return await svc.resolve_alert(current_user.tenant_id, alert_id, current_user.id, req.reason)
@@ -128,6 +135,7 @@ async def mute_alert(
     alert_id: str,
     req: AlertActionRequest = Body(AlertActionRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     return await svc.mute_alert(current_user.tenant_id, alert_id, req.hours, current_user.id)
@@ -138,6 +146,7 @@ async def dismiss_alert(
     alert_id: str,
     req: AlertActionRequest = Body(AlertActionRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = AlertingService()
     return await svc.dismiss_alert(current_user.tenant_id, alert_id, current_user.id, req.reason)

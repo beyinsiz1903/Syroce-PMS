@@ -20,6 +20,7 @@ Dependencies:
   - Shadow compare (legacy parity validation)
 """
 import asyncio
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 import uuid
 from datetime import UTC, datetime
 
@@ -103,7 +104,8 @@ async def get_room_blocks(
 async def create_room_block(
     block_data: dict,
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     payload = RoomBlockCreate(**block_data)
     return await create_room_block_service.create(payload, current_user, request)
@@ -113,7 +115,8 @@ async def create_room_block(
 async def update_room_block(
     block_id: str,
     updates: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update a room block"""
     existing = await db.room_blocks.find_one({
@@ -162,7 +165,8 @@ async def cancel_room_block(
     block_id: str,
     request: Request,
     reason: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Release a room block through the semantic inventory service."""
     return await release_room_block_service.release(block_id, current_user, request, reason=reason)
@@ -172,6 +176,7 @@ async def cancel_room_block(
 # Availability (read path — queries blocks + bookings)
 # ═══════════════════════════════════════════════════════════════════
 
+# noqa: cache-rbac — operasyonel oda müsaitliği tüm rolelere açık (sat-bil + servis koordinasyon)
 @router.get("/pms/rooms/availability")
 @cached(ttl=120, key_prefix="rooms_availability")  # Cache for 2 min
 async def check_room_availability(

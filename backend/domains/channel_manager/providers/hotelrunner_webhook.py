@@ -12,6 +12,7 @@ UNIFIED CALLBACK: Single /callback endpoint for HotelRunner "Dönüş adresi" co
 HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected via state field.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
@@ -30,6 +31,47 @@ router = APIRouter(
     prefix="/api/channel-manager/hotelrunner",
     tags=["HotelRunner Webhooks"],
 )
+
+
+# ── v106 Bug DAC (architect adversarial #6): inbound webhook signature
+# verification. Mirrors the Resend hardening pattern. Without this an
+# attacker who knew (or guessed) any tenant_id could forge create / modify /
+# cancel reservation events at will (revenue corruption, fake bookings,
+# channel-manager state poisoning). Fail-closed if secret is unset; explicit
+# dev escape hatch via ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK=1.
+async def _verify_hotelrunner_signature(request: Request) -> None:
+    import os as _os, hmac as _hmac, hashlib as _hashlib, time as _time
+    secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
+    if not secret:
+        if _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") != "1":
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
+            )
+        return
+    sig_header = (
+        request.headers.get("X-HotelRunner-Signature")
+        or request.headers.get("X-Signature")
+        or ""
+    ).strip()
+    ts_header = (
+        request.headers.get("X-HotelRunner-Timestamp")
+        or request.headers.get("X-Timestamp")
+        or ""
+    ).strip()
+    if not (sig_header and ts_header):
+        raise HTTPException(status_code=401, detail="Missing signature headers")
+    try:
+        if abs(int(_time.time()) - int(ts_header)) > 300:
+            raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid timestamp")
+    raw = await request.body()
+    signed_payload = f"{ts_header}.".encode() + raw
+    expected = _hmac.new(secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
+    provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
+    if not _hmac.compare_digest(expected, provided.lower()):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
 
 # ── Webhook Batch Processor ──────────────────────────────────────────
@@ -136,7 +178,11 @@ async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
 # ── UNIFIED CALLBACK — Single endpoint for HotelRunner "Dönüş adresi" ──
 
 @router.post("/callback")
-async def unified_callback(request: Request, background_tasks: BackgroundTasks):
+async def unified_callback(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _sig: None = Depends(_verify_hotelrunner_signature),
+):
     """
     Unified callback endpoint for HotelRunner webhook notifications.
 
@@ -146,6 +192,11 @@ async def unified_callback(request: Request, background_tasks: BackgroundTasks):
 
     Accepts: JSON payload from HotelRunner
     Returns: {"status": "accepted", "event_type": "...", "count": N}
+
+    v106 Bug DAC follow-up (architect): /callback was the PRIMARY URL
+    configured in the HR panel — previously left unsigned while
+    /webhooks/{...} were patched. Same `_verify_hotelrunner_signature`
+    helper applied here for parity (fail-closed without the env secret).
     """
     try:
         body = await request.json()
@@ -191,7 +242,11 @@ async def unified_callback(request: Request, background_tasks: BackgroundTasks):
 # ── Webhook Endpoints ────────────────────────────────────────────────
 
 @router.post("/webhooks/reservations")
-async def webhook_reservations(request: Request, background_tasks: BackgroundTasks):
+async def webhook_reservations(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _sig: None = Depends(_verify_hotelrunner_signature),
+):
     """
     Webhook endpoint for new reservations from HotelRunner.
     Persists as raw_channel_event and processes via unified ingest pipeline.
@@ -223,7 +278,11 @@ async def webhook_reservations(request: Request, background_tasks: BackgroundTas
 
 
 @router.post("/webhooks/modifications")
-async def webhook_modifications(request: Request, background_tasks: BackgroundTasks):
+async def webhook_modifications(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _sig: None = Depends(_verify_hotelrunner_signature),
+):
     """Webhook for reservation modifications -> unified ingest pipeline."""
     try:
         body = await request.json()
@@ -247,7 +306,11 @@ async def webhook_modifications(request: Request, background_tasks: BackgroundTa
 
 
 @router.post("/webhooks/cancellations")
-async def webhook_cancellations(request: Request, background_tasks: BackgroundTasks):
+async def webhook_cancellations(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _sig: None = Depends(_verify_hotelrunner_signature),
+):
     """Webhook for reservation cancellations -> unified ingest pipeline."""
     try:
         body = await request.json()
@@ -312,6 +375,7 @@ async def replay_event(
     event_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Replay a raw event through the ingest pipeline."""
     event = await db.hotelrunner_raw_events.find_one(

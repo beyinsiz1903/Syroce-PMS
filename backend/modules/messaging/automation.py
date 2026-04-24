@@ -133,7 +133,9 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
                         {"id": rule["template_id"], "tenant_id": tenant_id}, {"_id": 0}
                     )
 
-                body = _render_template(template, variables) if template else f"Otomatik bildirim: {event_type}"
+                # v41 Bug BG: HTML-escape variables when channel renders HTML.
+                _esc_html = rule["channel"] in ("email",)
+                body = _render_template(template, variables, escape_html=_esc_html) if template else f"Otomatik bildirim: {event_type}"
                 subject = _render_subject(template, variables) if template else None
 
                 from modules.messaging.service import MessagingService
@@ -224,10 +226,16 @@ def _format_date(date_str: str) -> str:
         return date_str[:10] if len(date_str) >= 10 else date_str
 
 
-def _render_template(template: dict, variables: dict) -> str:
+def _render_template(template: dict, variables: dict, escape_html: bool = False) -> str:
+    # v41 Bug BG: HTML-escape variables for email/HTML channels — guest-controlled
+    # fields must not inject markup into rendered email bodies.
+    import html as _html_mod
     body = template.get("body_template", "")
     for key, val in variables.items():
-        body = body.replace(f"{{{{{key}}}}}", str(val))
+        sv = str(val) if val is not None else ""
+        if escape_html:
+            sv = _html_mod.escape(sv, quote=True)
+        body = body.replace(f"{{{{{key}}}}}", sv)
     return body
 
 

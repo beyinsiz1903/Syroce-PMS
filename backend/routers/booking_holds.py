@@ -10,6 +10,7 @@ Endpoints for managing booking holds with automatic TTL-based expiry.
   POST /api/booking-holds/sweep     — Manually trigger expired hold cleanup
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -39,7 +40,9 @@ class HoldReleaseRequest(BaseModel):
 
 
 @router.post("")
-async def create_hold(req: HoldCreateRequest, current_user=Depends(get_current_user)):
+async def create_hold(req: HoldCreateRequest, current_user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """Create a temporary hold on room nights with automatic TTL expiry."""
     from core.booking_hold_service import create_booking_hold
     result = await create_booking_hold(
@@ -56,7 +59,9 @@ async def create_hold(req: HoldCreateRequest, current_user=Depends(get_current_u
 
 
 @router.post("/confirm")
-async def confirm_hold(req: HoldConfirmRequest, current_user=Depends(get_current_user)):
+async def confirm_hold(req: HoldConfirmRequest, current_user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """Convert a hold to a confirmed booking lock (remove TTL)."""
     from core.booking_hold_service import confirm_hold as do_confirm
     result = await do_confirm(
@@ -71,6 +76,7 @@ async def release_hold_endpoint(
     booking_id: str,
     reason: str = "manual",
     current_user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Manually release a booking hold before TTL expiry."""
     from core.booking_hold_service import release_hold
@@ -109,7 +115,9 @@ async def get_hold_status(booking_id: str, current_user=Depends(get_current_user
 
 
 @router.post("/sweep")
-async def trigger_sweep(current_user=Depends(get_current_user)):
+async def trigger_sweep(current_user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """Manually trigger a sweep of expired booking holds (admin action)."""
     from core.booking_hold_service import sweep_expired_holds
     result = await sweep_expired_holds()

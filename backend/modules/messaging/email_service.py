@@ -43,6 +43,10 @@ class EmailService:
 
     def _create_verification_email_html(self, code: str, name: str = None) -> str:
         """HTML formatted verification email"""
+        # Bug CN (architect Round-2): name & code attacker-controlled (registration form)
+        from core.mailing_safe import safe_html_value
+        name = safe_html_value(name) if name else None
+        code = safe_html_value(code)
         return f"""
         <!DOCTYPE html>
         <html>
@@ -86,6 +90,10 @@ class EmailService:
 
     def _create_password_reset_email_html(self, code: str, name: str = None) -> str:
         """HTML formatted password reset email"""
+        # Bug CN (architect Round-2): name from user profile, code backend-generated but escape defansif
+        from core.mailing_safe import safe_html_value
+        name = safe_html_value(name) if name else None
+        code = safe_html_value(code)
         return f"""
         <!DOCTYPE html>
         <html>
@@ -131,6 +139,9 @@ class EmailService:
 
     def _create_welcome_email_html(self, name: str) -> str:
         """HTML formatted welcome email"""
+        # Bug CN (architect Round-2): name from registration form
+        from core.mailing_safe import safe_html_value
+        name = safe_html_value(name)
         return f"""
         <!DOCTYPE html>
         <html>

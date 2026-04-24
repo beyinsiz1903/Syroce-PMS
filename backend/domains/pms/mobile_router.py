@@ -4,6 +4,7 @@ Domain Router: Mobile
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -15,6 +16,8 @@ from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import require_op, require_module  # v89 DW
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
@@ -167,6 +170,7 @@ async def get_recent_complaints_mobile(
 @cached(ttl=60, key_prefix="notif_mobile_gm")
 async def get_gm_notifications_mobile(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: GM mobile notif
 ):
     """Get notifications for GM mobile dashboard"""
     today = datetime.now(UTC)
@@ -343,7 +347,8 @@ async def get_late_checkout_requests_mobile(
 @router.post("/frontdesk/mobile/process-no-show")
 async def process_no_show_mobile(
     request: ProcessNoShowRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Process no-show for a booking"""
     current_user = await get_current_user(credentials)
@@ -402,7 +407,8 @@ async def process_no_show_mobile(
 @router.post("/frontdesk/mobile/change-room")
 async def change_room_mobile(
     request: ChangeRoomRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Change room for a booking"""
     current_user = await get_current_user(credentials)
@@ -712,7 +718,8 @@ async def get_team_assignments_mobile(
 @router.post("/housekeeping/mobile/quick-task")
 async def create_quick_task_mobile(
     request: QuickTaskRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Create a quick housekeeping task from mobile"""
     current_user = await get_current_user(credentials)
@@ -828,7 +835,8 @@ async def create_room_inspection(
     photos: list[str] | None = None,
     notes: str | None = None,
     maintenance_required: bool = False,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Create room inspection record"""
     current_user = await get_current_user(credentials)
@@ -902,7 +910,8 @@ async def create_lost_found_item(
     storage_location: str = "Lost & Found Office",
     storage_number: str | None = None,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Register lost & found item"""
     current_user = await get_current_user(credentials)
@@ -992,7 +1001,8 @@ async def claim_lost_found_item(
     claimed_by: str,
     guest_id: str | None = None,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Mark item as claimed"""
     current_user = await get_current_user(credentials)
@@ -1031,7 +1041,8 @@ async def assign_hk_tasks(
     staff_name: str,
     room_ids: list[str],
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Assign rooms to housekeeping staff"""
     current_user = await get_current_user(credentials)
@@ -1133,7 +1144,8 @@ async def start_cleaning_timer(
     room_id: str,
     room_number: str,
     task_type: str = "checkout",
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Start cleaning timer"""
     current_user = await get_current_user(credentials)
@@ -1185,7 +1197,8 @@ async def start_cleaning_timer(
 async def stop_cleaning_timer(
     room_id: str,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Stop cleaning timer"""
     current_user = await get_current_user(credentials)
@@ -1235,7 +1248,8 @@ async def report_maintenance_from_hk(
     description: str,
     priority: str = "normal",
     photos: list[str] | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Report maintenance issue from housekeeping"""
     current_user = await get_current_user(credentials)
@@ -1485,7 +1499,8 @@ async def get_pm_schedule_mobile(
 @router.post("/maintenance/mobile/quick-issue")
 async def create_quick_issue_mobile(
     request: QuickIssueRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),  # v89 DW
 ):
     """Create a quick maintenance issue from mobile"""
     current_user = await get_current_user(credentials)
@@ -1585,7 +1600,8 @@ async def update_sla_configuration(
     priority: str,
     response_time_minutes: int,
     resolution_time_minutes: int,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),  # v89 DW
 ):
     """Update or create SLA configuration"""
     current_user = await get_current_user(credentials)
@@ -1635,7 +1651,8 @@ async def update_task_status_mobile(
     task_id: str,
     new_status: str,
     reason: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),  # v89 DW
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
     current_user = await get_current_user(credentials)
@@ -1696,7 +1713,8 @@ async def upload_task_photo_mobile(
     photo_data: str,  # Base64 encoded
     photo_type: str,  # before, during, after
     description: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),  # v89 DW
 ):
     """Upload photo for maintenance task"""
     current_user = await get_current_user(credentials)
@@ -1831,7 +1849,8 @@ async def use_spare_part_mobile(
     spare_part_id: str,
     quantity: int,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),  # v89 DW
 ):
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
@@ -2164,7 +2183,8 @@ async def get_maintenance_notifications_mobile(
 @router.post("/pos/mobile/quick-order")
 async def create_quick_order_mobile(
     request: QuickOrderRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """Create a quick POS order from mobile"""
     current_user = await get_current_user(credentials)
@@ -2246,7 +2266,8 @@ async def create_quick_order_mobile(
 async def update_menu_item_price_mobile(
     item_id: str,
     request: MenuPriceUpdateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """Update menu item price from mobile"""
     current_user = await get_current_user(credentials)

@@ -7,11 +7,13 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from pydantic import BaseModel
 
 from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
 from modules.platform_scaling.competitive_analysis import (
     ADRAdjustmentEngine,
     CompetitiveSetDashboard,
@@ -115,7 +117,9 @@ class ApplyADRReq(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/events/publish")
-async def api_publish_event(req: PublishEventReq, current_user: User = Depends(get_current_user)):
+async def api_publish_event(req: PublishEventReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Publish a platform-level event."""
     result = await event_bus.publish_event(
         current_user.tenant_id, req.event_type, req.payload,
@@ -153,7 +157,9 @@ async def api_mark_read(req: MarkNotificationsReadReq, current_user: User = Depe
     return await event_bus.mark_notifications_read(current_user.tenant_id, req.notification_ids)
 
 @router.post("/events/acknowledge")
-async def api_ack_event(req: AcknowledgeEventReq, current_user: User = Depends(get_current_user)):
+async def api_ack_event(req: AcknowledgeEventReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Acknowledge a platform event."""
     result = await event_bus.acknowledge_event(
         current_user.tenant_id, req.event_id, current_user.id, req.note
@@ -188,14 +194,18 @@ async def api_portfolio_overview(current_user: User = Depends(get_current_user))
     return await crs.get_portfolio_overview(current_user.tenant_id)
 
 @router.post("/multi-property/search-availability")
-async def api_cross_property_search(req: CrossPropertySearchReq, current_user: User = Depends(get_current_user)):
+async def api_cross_property_search(req: CrossPropertySearchReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     """Search availability across all properties."""
     return await crs.search_availability_cross_property(
         current_user.tenant_id, req.check_in, req.check_out, req.room_type, req.guests
     )
 
 @router.post("/multi-property/transfer-reservation")
-async def api_transfer_reservation(req: TransferReservationReq, current_user: User = Depends(get_current_user)):
+async def api_transfer_reservation(req: TransferReservationReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     """Transfer reservation to another property."""
     result = await crs.transfer_reservation(
         current_user.tenant_id, req.booking_id, req.target_property_id,
@@ -211,7 +221,9 @@ async def api_portfolio_revenue(days: int = 30, current_user: User = Depends(get
     return await crm.get_portfolio_revenue(current_user.tenant_id, days)
 
 @router.post("/multi-property/global-rate-adjust")
-async def api_global_rate_adjust(req: GlobalRateAdjustReq, current_user: User = Depends(get_current_user)):
+async def api_global_rate_adjust(req: GlobalRateAdjustReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Apply global rate adjustment across all properties."""
     return await crm.apply_global_rate_adjustment(
         current_user.tenant_id, req.adjustment_pct, req.room_type, current_user.id
@@ -250,7 +262,9 @@ async def api_optimal_prices(current_user: User = Depends(get_current_user)):
     return await elasticity_model.get_optimal_price_points(current_user.tenant_id)
 
 @router.post("/ml/booking-probability")
-async def api_booking_probability(req: BookingProbReq, current_user: User = Depends(get_current_user)):
+async def api_booking_probability(req: BookingProbReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v97 DW
+):
     """Predict booking conversion probability."""
     return await booking_prob.predict_conversion(
         current_user.tenant_id, req.check_in, req.check_out,
@@ -277,7 +291,10 @@ async def api_at_risk_bookings(min_risk: float = 0.3, current_user: User = Depen
 
 @router.get("/ml/dashboard")
 @cached(ttl=180, key_prefix="ml_dashboard")
-async def api_ml_dashboard(current_user: User = Depends(get_current_user)):
+async def api_ml_dashboard(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: ML aggregate
+):
     """Get comprehensive Revenue ML dashboard."""
     return await ml_dashboard.get_ml_dashboard(current_user.tenant_id)
 
@@ -287,7 +304,9 @@ async def api_ml_dashboard(current_user: User = Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/competitive/add-competitor")
-async def api_add_competitor(req: AddCompetitorReq, current_user: User = Depends(get_current_user)):
+async def api_add_competitor(req: AddCompetitorReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Add a competitor to the comp set."""
     return await comp_tracker.add_competitor(
         current_user.tenant_id, req.name, req.star_rating, req.room_types, req.location
@@ -299,14 +318,18 @@ async def api_get_competitors(current_user: User = Depends(get_current_user)):
     return await comp_tracker.get_competitors(current_user.tenant_id)
 
 @router.post("/competitive/record-rate")
-async def api_record_rate(req: RecordCompRateReq, current_user: User = Depends(get_current_user)):
+async def api_record_rate(req: RecordCompRateReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Record a competitor rate."""
     return await comp_tracker.record_competitor_rate(
         current_user.tenant_id, req.competitor_id, req.room_type, req.rate, req.date, req.source
     )
 
 @router.post("/competitive/bulk-rates")
-async def api_bulk_rates(req: BulkCompRatesReq, current_user: User = Depends(get_current_user)):
+async def api_bulk_rates(req: BulkCompRatesReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+):
     """Bulk import competitor rates."""
     return await comp_tracker.bulk_record_rates(current_user.tenant_id, req.rates)
 
@@ -334,7 +357,9 @@ async def api_adr_suggestions(current_user: User = Depends(get_current_user)):
     return await adr_engine.get_adr_suggestions(current_user.tenant_id)
 
 @router.post("/competitive/apply-adr")
-async def api_apply_adr(req: ApplyADRReq, current_user: User = Depends(get_current_user)):
+async def api_apply_adr(req: ApplyADRReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Apply ADR adjustment."""
     return await adr_engine.apply_suggestion(
         current_user.tenant_id, req.room_type, req.new_rate, current_user.id

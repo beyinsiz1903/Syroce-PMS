@@ -17,6 +17,7 @@ from core.security import (
     security,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,11 @@ class BudgetConfig(BaseModel):
 
 
 @router.get("/dashboard/role-based")
-@cached(ttl=300, key_prefix="dashboard_role_based")  # Cache for 5 minutes
-async def get_role_based_dashboard(current_user: User = Depends(get_current_user)):
+@cached(ttl=300, key_prefix="dashboard_role_based", role_aware=True)  # v63 Bug CX: role-aware key
+async def get_role_based_dashboard(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
+):
     """Role-based dashboard data - GM, Owner, Front Desk, Housekeeping"""
     today = datetime.now(UTC)
     today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
@@ -217,7 +221,10 @@ async def get_role_based_dashboard(current_user: User = Depends(get_current_user
 
 @router.get("/dashboard/gm-forecast")
 @cached(ttl=600, key_prefix="gm_forecast")  # Cache for 10 minutes
-async def get_gm_forecast_summary(current_user: User = Depends(get_current_user)):
+async def get_gm_forecast_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v71 Bug DH
+):
     """Get 30-day forecast summary for GM Dashboard"""
     today = datetime.now(UTC).date()
     thirty_days = today + timedelta(days=30)
@@ -282,7 +289,8 @@ async def get_employee_performance(
     start_date: str | None = None,
     end_date: str | None = None,
     department: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v71 Bug DH (HR)
 ):
     """
     Get employee performance metrics
@@ -431,7 +439,8 @@ async def get_employee_performance(
 @cached(ttl=600, key_prefix="dashboard_guest_satisfaction")  # Cache for 10 minutes
 async def get_guest_satisfaction_trends(
     days: int = 30,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     """
     Get guest satisfaction trends (NPS - Net Promoter Score)
@@ -603,7 +612,8 @@ async def get_guest_satisfaction_trends(
 @cached(ttl=600, key_prefix="dashboard_ota_cancellation")  # Cache for 10 minutes
 async def get_ota_cancellation_rate(
     days: int = 30,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     """
     Get OTA cancellation rate - critical revenue KPI
@@ -712,15 +722,14 @@ async def get_ota_cancellation_rate(
 
 
 
-@router.get("/dashboard/revenue-expense-chart")
-@cached(ttl=600, key_prefix="revenue_expense_chart")  # Cache for 10 minutes
+@router.get("/dashboard/revenue-expense-chart", dependencies=[Depends(require_op("view_finance_reports"))])
+@cached(ttl=600, key_prefix="revenue_expense_chart")  # v63 Bug CY: finance authz hardening
 async def get_revenue_expense_chart(
     period: str = "30days",  # 30days, 90days, 12months
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: revenue/expense chart finans
 ):
     """Get revenue vs expense chart data for dashboard"""
-    current_user = await get_current_user(credentials)
-
     # Calculate date range based on period
     end = datetime.now(UTC)
     if period == "30days":
@@ -817,20 +826,20 @@ async def get_revenue_expense_chart(
 
 
 
-@router.get("/dashboard/budget-vs-actual")
-@cached(ttl=600, key_prefix="budget_vs_actual")  # Cache for 10 minutes
+@router.get("/dashboard/budget-vs-actual", dependencies=[Depends(require_op("view_finance_reports"))])
+@cached(ttl=600, key_prefix="budget_vs_actual")  # v63 Bug CY: finance authz hardening
 async def get_budget_vs_actual(
     month: str | None = None,  # YYYY-MM format
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: budget vs actual finans
 ):
     """Get budget vs actual comparison for dashboard"""
-    current_user = await get_current_user(credentials)
-
     # Default to current month
     if not month:
         month = datetime.now(UTC).strftime('%Y-%m')
 
-    start = datetime.fromisoformat(f"{month}-01")
+    # v63 Bug CZ: UTC-aware datetimes (mongo strings may be aware → naive comparison TypeError)
+    start = datetime.fromisoformat(f"{month}-01").replace(tzinfo=UTC)
     # Last day of month
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
@@ -891,8 +900,13 @@ async def get_budget_vs_actual(
 
     occupied_room_nights = 0
     for booking in bookings:
-        check_in = max(datetime.fromisoformat(booking['check_in']), start)
-        check_out = min(datetime.fromisoformat(booking['check_out']), end)
+        # v63 Bug CZ: normalize naive→UTC-aware before comparison
+        ci = datetime.fromisoformat(booking['check_in'])
+        co = datetime.fromisoformat(booking['check_out'])
+        if ci.tzinfo is None: ci = ci.replace(tzinfo=UTC)
+        if co.tzinfo is None: co = co.replace(tzinfo=UTC)
+        check_in = max(ci, start)
+        check_out = min(co, end)
         nights = (check_out - check_in).days
         occupied_room_nights += max(nights, 1)
 
@@ -945,15 +959,14 @@ async def get_budget_vs_actual(
 
 
 
-@router.get("/dashboard/monthly-profitability")
-@cached(ttl=600, key_prefix="monthly_profitability")  # Cache for 10 minutes
+@router.get("/dashboard/monthly-profitability", dependencies=[Depends(require_op("view_finance_reports"))])
+@cached(ttl=600, key_prefix="monthly_profitability")  # v63 Bug CY: finance authz hardening
 async def get_monthly_profitability(
     months: int = 6,  # Last N months
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: monthly profitability finans
 ):
     """Get monthly profitability for dashboard"""
-    current_user = await get_current_user(credentials)
-
     profitability_data = []
 
     for i in range(months, 0, -1):
@@ -961,7 +974,8 @@ async def get_monthly_profitability(
         target_date = datetime.now(UTC) - timedelta(days=30*i)
         month_str = target_date.strftime('%Y-%m')
 
-        start = datetime.fromisoformat(f"{month_str}-01")
+        # v63 Bug CZ: UTC-aware
+        start = datetime.fromisoformat(f"{month_str}-01").replace(tzinfo=UTC)
         if start.month == 12:
             end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
         else:
@@ -1298,6 +1312,7 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
 @cached(ttl=180, key_prefix="executive_kpi")
 async def get_executive_kpi_snapshot(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v71 Bug DH
 ):
     """
     Get critical KPI snapshot - INSTANT RESPONSE VIA PRE-WARMED CACHE
@@ -1712,7 +1727,8 @@ async def get_executive_budget_config(
 @router.put("/executive/budget-config")
 async def upsert_executive_budget_config(
     config: BudgetConfig,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_budget_config")),  # v88 DW
 ):
     """Create or update annual budget configuration for the current tenant."""
     current_user = await get_current_user(credentials)
@@ -1938,7 +1954,8 @@ async def get_executive_daily_summary(
 @router.get("/gm/team-performance")
 @router.get("/gm/complaint-management")
 async def get_complaint_management(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_system_diagnostics"))  # v103 DX alias drift fix
 ):
     """
     Get complaint management overview

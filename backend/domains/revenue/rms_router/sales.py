@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
+from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import require_module  # v89 DW
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
@@ -26,10 +28,10 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 @cached(ttl=300, key_prefix="sales_group_bookings")  # Cache for 5 min
 async def get_group_bookings(
     status: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH (sales/admin meşru, HK NO)
 ):
     """Get group bookings (weddings, meetings, conferences)"""
-    current_user = await get_current_user(credentials)
 
     query = {
         'tenant_id': current_user.tenant_id,
@@ -77,7 +79,8 @@ class GroupBookingCreate(BaseModel):
 @router.post("/sales/group-booking")
 async def create_group_booking(
     booking: GroupBookingCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v92 DW
 ):
     """Create a new group booking"""
     current_user = await get_current_user(credentials)
@@ -175,7 +178,8 @@ class CorporateContractCreate(BaseModel):
 @router.post("/sales/corporate-contract")
 async def create_corporate_contract(
     contract: CorporateContractCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v92 DW
 ):
     """Create a new corporate contract"""
     current_user = await get_current_user(credentials)
@@ -220,7 +224,8 @@ async def create_corporate_contract(
 async def update_corporate_contract(
     contract_id: str,
     contract: CorporateContractCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v89 DW
 ):
     """Update a corporate contract"""
     current_user = await get_current_user(credentials)
@@ -323,7 +328,8 @@ class OTAPromotionCreate(BaseModel):
 @router.post("/sales/ota-promotion")
 async def create_ota_promotion(
     promotion: OTAPromotionCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v89 DW
 ):
     """Create a new OTA promotion"""
     current_user = await get_current_user(credentials)

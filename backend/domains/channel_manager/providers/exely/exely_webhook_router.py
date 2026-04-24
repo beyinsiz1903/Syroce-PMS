@@ -13,7 +13,17 @@ stages to the event timeline for full end-to-end traceability.
 """
 import logging
 import uuid
-import xml.etree.ElementTree as ET
+# v109 Bug DAL round-7 (T11 CRITICAL XXE): inbound Exely SOAP webhook was
+# previously parsed with stdlib xml.etree.ElementTree which resolves DOCTYPE
+# external entities by default. An attacker reaching the webhook (post-IP-
+# whitelist) could submit:
+#   <!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+#   <OTA_HotelResNotifRQ><GivenName>&xxe;</GivenName>...</OTA_HotelResNotifRQ>
+# and exfil server files via the parsed name fields, or pivot to internal
+# SSRF (file://, http://localhost:..., gopher://, etc.). defusedxml disables
+# entity resolution, DTD processing, and external references.
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
@@ -265,7 +275,7 @@ async def webhook_info():
             "OTA_CancelRQ",
             "OTA_HotelResModifyNotifRQ",
         ],
-        "auth": "none (IP whitelist recommended)",
+        "auth": "EXELY_IP_WHITELIST mandatory (set ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 for dev/staging only)",
         "version": "1.0",
     }
 
@@ -278,14 +288,141 @@ async def receive_reservation(request: Request):
       1. webhook_received — raw SOAP payload stored
       2. normalized — XML parsed to structured data
       3. deduplicated — upsert result (new vs existing)
+
+    Authentication (v106 Bug DAJ round-2 / architect adv. round #6):
+      MANDATORY source-IP allowlist. The receiver previously fell open when
+      EXELY_IP_WHITELIST was empty/unset → any anonymous attacker who knew a
+      victim hotel's HotelCode (often public) could POST a forged OTA SOAP
+      payload and inject reservations into that tenant's PMS (revenue fraud,
+      channel-manager state poisoning). Now fail-closed unless either:
+        * EXELY_IP_WHITELIST is set with the source IP, OR
+        * ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 (explicit dev escape hatch).
     """
     raw_body = await request.body()
     correlation_id = str(uuid.uuid4())
-    source_ip = request.client.host if request.client else "unknown"
     t_start = datetime.now(UTC)
+
+    # v109 Bug DAJ round-4/5 (architect P1 follow-up): proxy/IP trust.
+    # request.client.host = *immediate* TCP peer. In any reverse-proxy/LB
+    # deployment (Replit, nginx, ELB, Cloudflare) this is the proxy address,
+    # NOT the real Exely SOAP client. Two attacker classes to defend against:
+    #   (a) Whitelist contains proxy IP → any tenant of that proxy bypasses.
+    #   (b) Whitelist contains real Exely IP but XFF is honored blindly →
+    #       attacker can forge X-Forwarded-For: <exely-ip> from anywhere.
+    # Round-5 hardening:
+    #   1. EXELY_TRUST_FORWARDED=1 opt-in (default OFF — peer used).
+    #   2. When opt-in, ONLY honor XFF if the immediate peer is in
+    #      EXELY_TRUSTED_PROXY_IPS (comma list of IPs/CIDRs). Otherwise
+    #      fall back to peer IP and forensic-log the rejection cause.
+    #   3. Parse XFF rightward: rightmost-trusted is dropped, the IP just
+    #      before the first untrusted hop is the real client (RFC 7239 §5.2
+    #      semantics). Each token validated with ipaddress.ip_address.
+    #   4. If EXELY_TRUST_FORWARDED=1 but EXELY_TRUSTED_PROXY_IPS unset, we
+    #      DO NOT trust the header at all — guarded by startup guardrail
+    #      that logs CRITICAL on this misconfiguration (see server.py).
+    import os
+    import ipaddress as _ipa
+
+    def _parse_cidrs(spec: str):
+        out = []
+        for tok in spec.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                out.append(_ipa.ip_network(tok, strict=False))
+            except ValueError:
+                logger.warning("Exely trusted-proxy entry invalid, skipped: %s", tok)
+        return out
+
+    def _ip_in(ip_str: str, nets) -> bool:
+        try:
+            ip = _ipa.ip_address(ip_str)
+        except ValueError:
+            return False
+        return any(ip in n for n in nets)
+
+    _peer = request.client.host if request.client else "unknown"
+    source_ip = _peer
+    _trust_forwarded = os.getenv("EXELY_TRUST_FORWARDED") == "1"
+    _trusted_proxies_env = (os.getenv("EXELY_TRUSTED_PROXY_IPS") or "").strip()
+    if _trust_forwarded and _trusted_proxies_env:
+        _trusted_nets = _parse_cidrs(_trusted_proxies_env)
+        if _trusted_nets and _ip_in(_peer, _trusted_nets):
+            xff = (request.headers.get("X-Forwarded-For") or "").strip()
+            if xff:
+                # Walk rightward; drop trusted-proxy hops; first untrusted = client.
+                tokens = [t.strip().lstrip("[").rstrip("]") for t in xff.split(",") if t.strip()]
+                candidate = None
+                for tok in reversed(tokens):
+                    try:
+                        _ipa.ip_address(tok)
+                    except ValueError:
+                        candidate = None
+                        break
+                    if _ip_in(tok, _trusted_nets):
+                        continue
+                    candidate = tok
+                    break
+                if candidate:
+                    source_ip = candidate
+                # else: malformed/all-trusted → keep peer (fail-closed wrt allowlist)
+        else:
+            logger.warning(
+                "Exely XFF ignored: peer=%s not in EXELY_TRUSTED_PROXY_IPS — using peer for allowlist",
+                _peer,
+            )
+    elif _trust_forwarded and not _trusted_proxies_env:
+        logger.warning(
+            "Exely EXELY_TRUST_FORWARDED=1 but EXELY_TRUSTED_PROXY_IPS unset — XFF NOT honored, using peer=%s",
+            _peer,
+        )
+
+    _allow = (os.getenv("EXELY_IP_WHITELIST") or "").strip()
+    _bypass = os.getenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK") == "1"
+    if not _bypass:
+        if not _allow:
+            logger.warning(
+                "Exely webhook rejected: EXELY_IP_WHITELIST not configured "
+                "(set whitelist or ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 to bypass) source_ip=%s peer=%s",
+                source_ip, _peer,
+            )
+            return _xml_response(
+                _soap_error_rs("Webhook not configured (set EXELY_IP_WHITELIST)", "503"),
+                status_code=503,
+            )
+        allowed = {ip.strip() for ip in _allow.split(",") if ip.strip()}
+        if source_ip not in allowed:
+            logger.warning(
+                "Exely webhook rejected: source_ip=%s peer=%s not in allowlist (trust_forwarded=%s)",
+                source_ip, _peer, os.getenv("EXELY_TRUST_FORWARDED", "0"),
+            )
+            return _xml_response(_soap_error_rs("Unauthorized source IP", "403"), status_code=403)
 
     if not raw_body or not raw_body.strip():
         return _xml_response(_soap_error_rs("Empty request body", "400"))
+
+    # v109 Bug DAL round-7 follow-up (architect P2): bound XML payload size
+    # before parsing. Without this, an attacker past the IP allowlist can
+    # POST a multi-MB document and hold a worker thread on parse + timeline
+    # I/O, regardless of XXE protections (defusedxml still walks deep
+    # element trees). 256 KiB easily covers real OTA reservation envelopes
+    # (typical ≤ 30 KiB) with a generous safety margin. Override via
+    # EXELY_MAX_PAYLOAD_BYTES if a partner needs larger.
+    _max_bytes_raw = (os.getenv("EXELY_MAX_PAYLOAD_BYTES") or "").strip()
+    try:
+        _max_bytes = int(_max_bytes_raw) if _max_bytes_raw else 262144
+    except ValueError:
+        _max_bytes = 262144
+    if len(raw_body) > _max_bytes:
+        logger.warning(
+            "Exely webhook rejected oversize payload [%s] from %s: %d bytes > %d limit",
+            correlation_id, source_ip, len(raw_body), _max_bytes,
+        )
+        return _xml_response(
+            _soap_error_rs(f"Payload too large (limit {_max_bytes} bytes)", "413"),
+            status_code=413,
+        )
 
     # ── Stage 1: RECEIVED — store raw payload ────────────────────
     # Store raw payload immediately (even before parsing)
@@ -302,7 +439,20 @@ async def receive_reservation(request: Request):
 
     try:
         root = ET.fromstring(raw_body)
-    except ET.ParseError as exc:
+    except (ET.ParseError, DefusedXmlException) as exc:
+        # v109 Bug DAL round-7 (architect P2 follow-up): defusedxml raises
+        # DefusedXmlException (EntitiesForbidden / DTDForbidden /
+        # ExternalReferenceForbidden) for hostile XML. Without this catch the
+        # handler returned 500, giving a low-effort DoS surface (any caller
+        # past IP allowlist could crash the request with one malformed payload
+        # and pollute error logs/alerts). Catch both ParseError and the
+        # defusedxml hierarchy → return controlled SOAP 400.
+        _is_security = isinstance(exc, DefusedXmlException)
+        if _is_security:
+            logger.warning(
+                "Exely webhook rejected XXE/DTD payload [%s] from %s: %s",
+                correlation_id, source_ip, type(exc).__name__,
+            )
         await _timeline_append(
             tenant_id="unknown",
             correlation_id=correlation_id,
@@ -312,13 +462,22 @@ async def receive_reservation(request: Request):
             source="exely_webhook",
             provider="exely",
             metadata={
-                "error": f"XML parse error: {exc}",
+                "error": (
+                    f"XML security violation: {type(exc).__name__}"
+                    if _is_security else f"XML parse error: {exc}"
+                ),
                 "raw_payload_id": raw_payload_id,
                 "source_ip": source_ip,
                 "payload_size_bytes": len(raw_body),
             },
         )
-        return _xml_response(_soap_error_rs(f"XML parse error: {exc}", "400"))
+        # Do NOT echo defusedxml exception details back to the wire (could
+        # leak server-side info about parser configuration). Generic message
+        # for security violations; ParseError detail is safe to surface.
+        return _xml_response(_soap_error_rs(
+            "XML security violation" if _is_security else f"XML parse error: {exc}",
+            "400",
+        ))
 
     try:
         data = _parse_reservation(root)

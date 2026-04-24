@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 from cache_manager import cached
 from core.security import get_current_user
 from core.tenant_db import get_system_db
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ def _health_status(stats: dict) -> str:
 
 @router.get("")
 @cached(ttl=60, key_prefix="wire_status")
-async def get_wire_status(user=Depends(get_current_user)):
+async def get_wire_status(
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v80 Bug DP: bank wire transfer status
+):
     """Get unified wire status across all pipeline subsystems."""
     tenant_id = user.tenant_id if hasattr(user, "tenant_id") else ""
     db = get_system_db()

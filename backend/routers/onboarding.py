@@ -45,6 +45,13 @@ def _require_tenant(user: User) -> str:
     return user.tenant_id
 
 
+def _require_tenant_dep(current_user: User = Depends(get_current_user)) -> None:
+    """v81 DQ defense-in-depth: FastAPI dep wrapper for `_require_tenant`.
+    Runs BEFORE @cached lookup so tenant-less users can't hit cached data."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+
+
 def _require_tenant_admin(user: User) -> str:
     """Require both a tenant context AND an admin-grade role for any
     mutation of tenant onboarding state. Receptionists and other
@@ -64,9 +71,15 @@ def _now_iso() -> str:
 
 
 # ── Read progress ───────────────────────────────────────────────
+# v81 DQ defense-in-depth: `_tenant_dep=Depends(_require_tenant_dep)` cache lookup'tan ÖNCE
+# tenant kontrolü yapar; body'deki `_require_tenant` cache HIT'te atlanırdı (DP-2 sınıfı).
+# noqa: cache-rbac — tenant kendi onboarding ilerlemesini görür (self-service, cross-role within tenant)
 @router.get("/progress")
 @cached(ttl=60, key_prefix="onboarding_progress")
-async def progress(current_user: User = Depends(get_current_user)) -> dict:
+async def progress(
+    current_user: User = Depends(get_current_user),
+    _tenant_dep: None = Depends(_require_tenant_dep),
+) -> dict:
     tenant_id = _require_tenant(current_user)
     data = await get_onboarding_progress(tenant_id)
     # Surface dismissed flag from the same progress doc so the UI can

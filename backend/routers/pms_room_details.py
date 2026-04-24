@@ -11,6 +11,7 @@ Models:
   RoomNote, MiniBarUpdate
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -63,6 +64,7 @@ class MiniBarUpdate(BaseModel):
 
 # ── Routes ───────────────────────────────────────────────────────────
 
+# noqa: cache-rbac — oda detayları (notes/mini-bar/maintenance) tüm operasyonel rolelere açık (FO/HK/manager/admin)
 @router.get("/rooms/{room_id}/details-enhanced")
 @cached(ttl=180, key_prefix="room_details_enhanced")  # Cache for 3 min
 async def get_room_details_enhanced(
@@ -167,7 +169,8 @@ async def add_room_note(
     note_type: str,
     description: str,
     priority: str = "normal",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Add a note to a room"""
     note = RoomNote(
@@ -193,7 +196,8 @@ async def update_minibar(
     items_restocked: dict[str, int] = {},
     items_consumed: dict[str, int] = {},
     total_value: float = 0.0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update mini-bar status"""
     update = MiniBarUpdate(

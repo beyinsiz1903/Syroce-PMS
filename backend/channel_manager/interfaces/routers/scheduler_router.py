@@ -1,5 +1,6 @@
 """Scheduled import job management, safety-net sync, and environment config endpoints."""
 import logging
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ class UpdatePollingRequest(BaseModel):
 async def run_scheduled_import(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     result = await svc.run_scheduled_import(
@@ -36,6 +38,7 @@ async def run_scheduled_import(
 @router.post("/import-jobs/run-all")
 async def run_all_scheduled_imports(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     return await svc.run_all_connectors(current_user.tenant_id)
@@ -71,6 +74,7 @@ async def get_import_job_detail(
 async def retry_failed_import_job(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     return await svc.retry_failed_job(
@@ -81,6 +85,7 @@ async def retry_failed_import_job(
 @router.post("/safety-net/inventory-sync")
 async def run_safety_net_sync(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v98 DW
 ):
     svc = ScheduledImportService()
     return await svc.run_safety_net_inventory_sync(current_user.tenant_id)
@@ -119,6 +124,7 @@ async def update_polling_config(
     connector_id: str,
     req: UpdatePollingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -155,6 +161,7 @@ async def set_connector_environment(
     connector_id: str,
     environment: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()

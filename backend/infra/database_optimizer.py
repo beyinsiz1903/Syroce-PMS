@@ -419,12 +419,13 @@ class DatabaseOptimizer:
 
 
 # API endpoint for database optimization
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from modules.pms_core.role_permission_service import require_op  # v88 DW
 
 db_optimizer_router = APIRouter(prefix="/api/db-optimizer", tags=["database-optimization"])
 
 @db_optimizer_router.post("/indexes/create")
-async def create_all_indexes(db):
+async def create_all_indexes(db, _perm=Depends(require_op("view_system_diagnostics"))):  # v88 DW
     """Create all necessary database indexes"""
     optimizer = DatabaseOptimizer(db)
     result = await optimizer.create_all_indexes()

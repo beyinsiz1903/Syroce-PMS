@@ -3,6 +3,7 @@ PMS / Notifications Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -96,7 +97,9 @@ class SystemAlertRequest(BaseModel):
 
 
 @router.post("/notifications/send-push")
-async def send_push_notification(notif_data: dict, current_user: User = Depends(get_current_user)):
+async def send_push_notification(notif_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     channels = notif_data.get('channels', ['in_app', 'push'])
     target_user_ids = notif_data.get('user_ids')
     if notif_data.get('user_id') and not target_user_ids:
@@ -366,7 +369,8 @@ async def create_alert(
     source_id: str | None = None,
     assigned_to: str | None = None,
     action_url: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Create a new alert"""
     alert = Alert(
@@ -497,7 +501,8 @@ async def get_notification_preferences(
 @router.put("/notifications/preferences")
 async def update_notification_preferences(
     request: NotificationPreferenceRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v92 DW: auth-only
 ):
     """
     Update notification preferences for a specific notification type
@@ -581,7 +586,8 @@ async def get_notifications_list(
 @router.put("/notifications/{notification_id}/mark-read")
 async def mark_notification_read(
     notification_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v92 DW: auth-only
 ):
     """
     Mark a notification as read
@@ -614,7 +620,8 @@ async def mark_notification_read(
 @router.post("/notifications/send-system-alert")
 async def send_system_alert(
     request: SystemAlertRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """
     Send system-wide alert to specific roles

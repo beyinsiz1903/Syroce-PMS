@@ -6,6 +6,7 @@ Thin router: delegates all business logic to WorkerRuntimeService.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from cache_manager import cached
 from common.context import OperationContext
@@ -20,6 +21,7 @@ def _ctx(user: User) -> OperationContext:
     return OperationContext.from_user(user)
 
 
+# noqa: cache-rbac — ops/devops queue health (admin/manager)
 @router.get("/queues/health", summary="Queue health summary")
 @cached(ttl=30, key_prefix="workers_queues_health")
 async def get_queue_health(current_user: User = Depends(get_current_user)):
@@ -37,6 +39,7 @@ async def get_stuck_tasks(current_user: User = Depends(get_current_user)):
 async def unstick_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await worker_runtime_service.unstick_task(_ctx(current_user), task_id)
     if not result.ok:
@@ -60,6 +63,7 @@ async def get_task_failures(
 async def replay_task(
     archive_id: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await worker_runtime_service.replay_task(_ctx(current_user), archive_id)
     return result.data

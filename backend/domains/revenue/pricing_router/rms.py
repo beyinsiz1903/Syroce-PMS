@@ -23,6 +23,7 @@ from core.security import (
 from domains.revenue.pricing.pricing_service import pricing_service
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from models.schemas import PriceAnalysis, User
+from modules.pms_core.role_permission_service import require_op
 
 
 def get_pricing_reason(strategy: str | None, demand: float | None = None) -> str:
@@ -137,7 +138,9 @@ class RateOverrideRequest(BaseModel):
 
 
 @router.post("/rms/update-rate")
-async def update_room_rate(rate_data: dict, current_user: User = Depends(get_current_user)):
+async def update_room_rate(rate_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     """Oda fiyatini guncelle ve tum kanallara gonder"""
     ctx = OperationContext.from_user(current_user)
     result = await pricing_service.update_room_rate(ctx, rate_data)
@@ -150,7 +153,9 @@ async def update_room_rate(rate_data: dict, current_user: User = Depends(get_cur
 
 
 @router.post("/rms/analysis", response_model=PriceAnalysis)
-async def create_price_analysis(analysis: PriceAnalysis, current_user: User = Depends(get_current_user)):
+async def create_price_analysis(analysis: PriceAnalysis, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     analysis.tenant_id = current_user.tenant_id
     analysis_dict = analysis.model_dump()
     analysis_dict['date'] = analysis_dict['date'].isoformat()
@@ -164,7 +169,10 @@ async def create_price_analysis(analysis: PriceAnalysis, current_user: User = De
 
 @router.get("/rms/analysis", response_model=list[PriceAnalysis])
 @cached(ttl=600, key_prefix="rms_analysis")  # Cache for 10 min
-async def get_price_analysis(current_user: User = Depends(get_current_user)):
+async def get_price_analysis(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: RMS price analysis
+):
     analyses = await db.price_analysis.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     return analyses
 
@@ -177,7 +185,8 @@ async def get_price_analysis(current_user: User = Depends(get_current_user)):
 @router.post("/rms/restrictions")
 async def set_dynamic_restrictions(
     request: DynamicRestrictionsRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """
     Set dynamic restrictions for revenue management

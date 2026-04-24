@@ -5,6 +5,7 @@ Unified router for: runtime validation, incident drills,
 observability validation, go-live scoring.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -37,7 +38,9 @@ async def get_scenarios(user=Depends(get_current_user)):
 
 
 @router.post("/run")
-async def run_scenario(req: RunScenarioRequest, user=Depends(get_current_user)):
+async def run_scenario(req: RunScenarioRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await runtime_validation.run_scenario(ctx, req.scenario_type, req.scenario_id)
     if not result.ok:
@@ -64,7 +67,9 @@ async def list_drills(user=Depends(get_current_user)):
 
 
 @router.post("/drills/execute")
-async def execute_drill(req: ExecuteDrillRequest, user=Depends(get_current_user)):
+async def execute_drill(req: ExecuteDrillRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_drill_service.execute_drill(ctx, req.drill_id)
     if not result.ok:
@@ -83,7 +88,9 @@ async def drill_history(
 
 
 @router.post("/drills/cleanup")
-async def cleanup_drill_data(user=Depends(get_current_user)):
+async def cleanup_drill_data(user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_drill_service.cleanup_drill_data(ctx)
     return from_service_result(result)

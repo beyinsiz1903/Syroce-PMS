@@ -33,6 +33,10 @@ USER appuser
 
 EXPOSE 8001
 
+# v42 round-2: defense-in-depth tenant isolation. Production startup_check
+# refuses to boot when this is not 'true' (see infra/production_config.py).
+ENV STRICT_TENANT_MODE=true
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8001/api/health/liveness || exit 1
 

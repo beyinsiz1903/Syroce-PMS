@@ -3,6 +3,9 @@ PMS / Maintenance Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -29,13 +32,18 @@ router = APIRouter(prefix="/api", tags=["PMS / Maintenance"])
 @router.get("/iot/room-devices/{room_id}")
 async def get_room_devices(room_id: str, current_user: User = Depends(get_current_user)):
     """Odadaki akıllı cihazlar"""
-    devices = await db.smart_room_devices.find({'room_id': room_id}, {'_id': 0}).to_list(100)
+    # Bug DZ — tenant scoping (cross-tenant IDOR fix)
+    devices = await db.smart_room_devices.find(
+        {'room_id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).to_list(100)
     return {'room_id': room_id, 'devices': devices, 'total': len(devices)}
 
 
 
 @router.post("/iot/control-device")
-async def control_smart_device(control_data: dict, current_user: User = Depends(get_current_user)):
+async def control_smart_device(control_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Akıllı cihaz kontrol"""
     command = {
         'device_id': control_data['device_id'],
@@ -77,7 +85,8 @@ async def get_energy_consumption(days: int = 30, current_user: User = Depends(ge
 @router.post("/maintenance/work-orders")
 async def create_maintenance_work_order(
     data: MaintenanceWorkOrder,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Create a new maintenance work order (from HK, Front Desk, GM, etc.)"""
     payload = data.model_dump()
@@ -122,7 +131,8 @@ async def update_maintenance_work_order(
     work_order_id: str,
     status: str | None = None,
     priority: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Update status/priority of a maintenance work order"""
     updates: dict = {}
@@ -147,7 +157,8 @@ async def update_maintenance_work_order(
 @router.post("/engineering/sensor-alerts")
 async def ingest_sensor_alert(
     alert: SensorAlert,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Receive IoT sensor alert and optionally create maintenance work order
 
@@ -226,7 +237,8 @@ async def technician_submit_task(
     time_spent_minutes: int | None = None,
     parts_used: list[dict] | None = None,
     photo_urls: list[str] | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("housekeeping")),  # v101 DW
 ):
     """Mobile technician app - submit task update"""
     task = await db.maintenance_tasks.find_one({
@@ -457,6 +469,7 @@ async def get_maintenance_parts_inventory(
 async def create_or_update_part(
     payload: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create or upsert a maintenance spare part."""
     if not payload.get('name'):
@@ -481,6 +494,7 @@ async def create_or_update_part(
     return part
 
 
+# noqa: cache-rbac — maintenance tasks operasyonel cross-role
 @router.get("/maintenance/tasks")
 @cached(ttl=180, key_prefix="maintenance_tasks")  # Cache for 3 min
 async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):
@@ -497,7 +511,8 @@ async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):
 @router.post("/maintenance/assets")
 async def create_maintenance_asset(
     data: MaintenanceAsset,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     asset = data.model_copy(update={
         'tenant_id': current_user.tenant_id,
@@ -530,7 +545,8 @@ async def list_maintenance_assets(
 @router.post("/maintenance/plans")
 async def create_preventive_plan(
     data: PreventiveMaintenancePlan,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     plan = data.model_copy(update={
         'tenant_id': current_user.tenant_id,
@@ -559,7 +575,8 @@ async def list_preventive_plans(
 
 @router.post("/maintenance/plans/run-scheduler")
 async def run_preventive_maintenance_scheduler(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Trigger preventive maintenance scheduler
 

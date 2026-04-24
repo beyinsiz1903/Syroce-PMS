@@ -217,13 +217,19 @@ class AlertDeliveryService:
             "subject": subject,
             "content": [{"type": "text/html", "value": body}],
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
+        # v109 Bug DAL round-7 follow-up #3: api_url is tenant-configurable
+        # (defaults to SendGrid). Rebinding-safe POST.
+        from integrations.xchange.safety import EgressDenied, safe_post_async
+        try:
+            resp = await safe_post_async(
                 api_url,
                 json=payload,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             )
-            return resp.status_code in (200, 201, 202)
+        except EgressDenied as _e:
+            logger.warning("Email API delivery blocked (SSRF guard): %s", _e)
+            return False
+        return resp.status_code in (200, 201, 202)
 
     async def _send_email_smtp(self, config: dict, to: str, subject: str, body: str) -> bool:
         """Send email via SMTP (asyncio-compatible)."""
@@ -237,6 +243,15 @@ class AlertDeliveryService:
         smtp_pass = config.get("smtp_pass", "")
         from_email = config.get("from_email", smtp_user)
 
+        # v109 round-7 follow-up: validate tenant-supplied SMTP host against
+        # SSRF/DNS-rebinding policy. Connect to pinned IP, not the hostname.
+        from integrations.xchange.safety import EgressDenied, assert_safe_host
+        try:
+            pinned_ip = assert_safe_host(smtp_host, smtp_port)
+        except EgressDenied as eg:
+            logger.warning("SMTP egress denied for %s: %s", smtp_host, eg)
+            return False
+
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = from_email
@@ -246,7 +261,7 @@ class AlertDeliveryService:
         loop = asyncio.get_event_loop()
         try:
             def _send():
-                with smtplib.SMTP(smtp_host, smtp_port) as server:
+                with smtplib.SMTP(pinned_ip, smtp_port) as server:
                     server.starttls()
                     if smtp_user and smtp_pass:
                         server.login(smtp_user, smtp_pass)
@@ -284,9 +299,18 @@ class AlertDeliveryService:
             sig = hmac.new(secret.encode(), str(payload).encode(), hashlib.sha256).hexdigest()
             headers["X-Signature"] = sig
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            return 200 <= resp.status_code < 300
+        # v109 Bug DAL round-7 (T12 SSRF + rebinding follow-up): tenant admins
+        # can configure arbitrary webhook URLs. ``safe_post_async`` validates
+        # scheme + every resolved IP, then pins the connection to the
+        # validated IP so a hostname can't rebind to 169.254.169.254 between
+        # validation and the actual TCP connect.
+        from integrations.xchange.safety import EgressDenied, safe_post_async
+        try:
+            resp = await safe_post_async(url, json=payload, headers=headers)
+        except EgressDenied as _e:
+            logger.warning("Webhook delivery blocked (SSRF guard): %s", _e)
+            return False
+        return 200 <= resp.status_code < 300
 
     async def _deliver_slack(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via Slack incoming webhook."""
@@ -319,9 +343,17 @@ class AlertDeliveryService:
                 ],
             }],
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(webhook_url, json=payload)
-            return resp.status_code == 200
+        # v109 Bug DAL round-7 (T12 SSRF + rebinding follow-up). See
+        # _deliver_webhook for full rationale; Slack webhooks should be on
+        # hooks.slack.com but ``safe_post_async`` defends against operator
+        # misconfig and rebinding attacks alike.
+        from integrations.xchange.safety import EgressDenied, safe_post_async
+        try:
+            resp = await safe_post_async(webhook_url, json=payload)
+        except EgressDenied as _e:
+            logger.warning("Slack delivery blocked (SSRF guard): %s", _e)
+            return False
+        return resp.status_code == 200
 
     async def _deliver_teams(self, channel: dict, alert: dict) -> bool:
         """Deliver alert via Microsoft Teams incoming webhook."""
@@ -349,9 +381,15 @@ class AlertDeliveryService:
                 "markdown": True,
             }],
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(webhook_url, json=payload)
-            return resp.status_code == 200
+        # v109 Bug DAL round-7 (T12 SSRF + rebinding follow-up). See
+        # _deliver_webhook for full rationale.
+        from integrations.xchange.safety import EgressDenied, safe_post_async
+        try:
+            resp = await safe_post_async(webhook_url, json=payload)
+        except EgressDenied as _e:
+            logger.warning("Teams delivery blocked (SSRF guard): %s", _e)
+            return False
+        return resp.status_code == 200
 
     # ─── Deduplication & Throttle ──────────────────────────────────────
 
@@ -412,8 +450,17 @@ class AlertDeliveryService:
 
     @staticmethod
     def _format_email_body(alert: dict) -> str:
+        # Bug CN (architect Round-2): connector_id/description/created_at,
+        # external connector payload tarafından (HotelRunner vs.) etkilenebilir
+        # — `description` özellikle vendor error message'ından geliyor, yani
+        # 3rd-party kontrolünde. Outbound HTML'e raw zerk operatör inbox'ında
+        # phishing/XSS riski. Tüm dinamik alanları HTML-escape ediyoruz.
+        from core.mailing_safe import safe_html_value
         severity = alert.get("severity", "info").upper()
-        trigger = alert.get("trigger", "Alert").replace("_", " ").title()
+        trigger = safe_html_value(alert.get("trigger", "Alert").replace("_", " ").title())
+        connector_id = safe_html_value(alert.get("connector_id", "N/A"))
+        description = safe_html_value(alert.get("description", ""))
+        created_at = safe_html_value(alert.get("created_at", ""))
         return f"""
         <div style="font-family: sans-serif; max-width: 600px;">
             <div style="background: {'#dc2626' if severity == 'CRITICAL' else '#f59e0b' if severity == 'WARNING' else '#3b82f6'};
@@ -422,9 +469,9 @@ class AlertDeliveryService:
             </div>
             <div style="border: 1px solid #e5e7eb; padding: 16px; border-radius: 0 0 8px 8px;">
                 <table style="width: 100%; border-collapse: collapse;">
-                    <tr><td style="padding: 8px; font-weight: bold;">Connector:</td><td style="padding: 8px;">{alert.get('connector_id', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; font-weight: bold;">Description:</td><td style="padding: 8px;">{alert.get('description', '')}</td></tr>
-                    <tr><td style="padding: 8px; font-weight: bold;">Time:</td><td style="padding: 8px;">{alert.get('created_at', '')}</td></tr>
+                    <tr><td style="padding: 8px; font-weight: bold;">Connector:</td><td style="padding: 8px;">{connector_id}</td></tr>
+                    <tr><td style="padding: 8px; font-weight: bold;">Description:</td><td style="padding: 8px;">{description}</td></tr>
+                    <tr><td style="padding: 8px; font-weight: bold;">Time:</td><td style="padding: 8px;">{created_at}</td></tr>
                 </table>
                 <p style="color: #6b7280; font-size: 12px; margin-top: 16px;">Syroce PMS Alert System</p>
             </div>

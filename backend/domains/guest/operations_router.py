@@ -3,6 +3,8 @@ Guest / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -15,6 +17,7 @@ from core.security import (
     security,
 )
 from models.enums import UserRole
+from modules.pms_core.role_permission_service import require_role
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
 
 logger = logging.getLogger(__name__)
@@ -40,7 +43,9 @@ from domains.guest.schemas import (  # noqa: E402
 
 
 @router.post("/loyalty/points")
-async def add_points(data: dict, current_user: User = Depends(get_current_user)):
+async def add_points(data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+):
     await db.loyalty_transactions.insert_one({
         'id': str(uuid.uuid4()), 'guest_id': data['guest_id'],
         'points': data['points'], 'created_at': datetime.now(UTC).isoformat()
@@ -129,7 +134,9 @@ async def submit_nps_survey(survey_data: dict, current_user: User = Depends(get_
 
 
 @router.delete("/nps/survey/{survey_id}")
-async def delete_nps_survey(survey_id: str, current_user: User = Depends(get_current_user)):
+async def delete_nps_survey(survey_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     """Yanlış girilmiş bir yorumu sil (yalnızca aynı tenant)."""
     res = await db.nps_surveys.delete_one(
         {'id': survey_id, 'tenant_id': current_user.tenant_id}
@@ -249,7 +256,9 @@ async def get_nps_by_room(
 
 
 @router.post("/loyalty/earn-points")
-async def earn_points(points_data: dict, current_user: User = Depends(get_current_user)):
+async def earn_points(points_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+):
     await db.loyalty_points_transactions.insert_one({
         'id': str(uuid.uuid4()), 'guest_id': points_data['guest_id'],
         'points': points_data['points'], 'type': 'earn',
@@ -261,7 +270,10 @@ async def earn_points(points_data: dict, current_user: User = Depends(get_curren
 
 @router.get("/loyalty/member/{guest_id}")
 async def get_loyalty_member(guest_id: str, current_user: User = Depends(get_current_user)):
-    member = await db.loyalty_members.find_one({'guest_id': guest_id}, {'_id': 0})
+    # Bug DZ — tenant scoping (cross-tenant IDOR fix)
+    member = await db.loyalty_members.find_one(
+        {'guest_id': guest_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
     if not member:
         member = {'guest_id': guest_id, 'total_points': 0, 'tier': 'bronze'}
     return {'member': member}
@@ -344,7 +356,8 @@ async def get_upcoming_celebrations(
 @router.post("/pre-arrival/send-welcome")
 async def send_pre_arrival_welcome(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Pre-arrival hoşgeldin e-postası gönder"""
     # Get booking
@@ -396,7 +409,7 @@ async def send_pre_arrival_welcome(
                 <p>Rezervasyon Onayı</p>
             </div>
             <div class="content">
-                <p>Sayın {guest['name']},</p>
+                <p>Sayın {__import__('html').escape(str(guest['name'] or ''), quote=True)},</p>
                 <p>Rezervasyonunuz için teşekkür ederiz. Sizi ağırlamak için sabırsızlanıyoruz!</p>
 
                 <div class="info-box">
@@ -500,7 +513,10 @@ async def get_upsell_offers(
 
 @router.get("/guest/bookings-old")
 @cached(ttl=600, key_prefix="guest_bookings_old")  # Cache for 10 min
-async def get_guest_bookings_old(current_user: User = Depends(get_current_user)):
+async def get_guest_bookings_old(
+    current_user: User = Depends(get_current_user),
+    _role: None = Depends(require_role(UserRole.GUEST)),
+):
     if current_user.role != UserRole.GUEST:
         raise HTTPException(status_code=403, detail="Only guests can access this endpoint")
 
@@ -535,7 +551,10 @@ async def get_guest_bookings_old(current_user: User = Depends(get_current_user))
 
 @router.get("/guest/loyalty-old")
 @cached(ttl=600, key_prefix="guest_loyalty_old")  # Cache for 10 min
-async def get_guest_loyalty_old(current_user: User = Depends(get_current_user)):
+async def get_guest_loyalty_old(
+    current_user: User = Depends(get_current_user),
+    _role: None = Depends(require_role(UserRole.GUEST)),
+):
     if current_user.role != UserRole.GUEST:
         raise HTTPException(status_code=403, detail="Only guests can access this endpoint")
 
@@ -589,6 +608,7 @@ async def create_room_service_request(request: RoomServiceCreate, current_user: 
 
 
 
+# noqa: cache-rbac — GUEST portal — oda servis isteği
 @router.get("/guest/room-service/{booking_id}")
 @cached(ttl=300, key_prefix="guest_room_service")  # Cache for 5 min
 async def get_room_service_requests(booking_id: str, current_user: User = Depends(get_current_user)):
@@ -597,6 +617,7 @@ async def get_room_service_requests(booking_id: str, current_user: User = Depend
 
 
 
+# noqa: cache-rbac — GUEST portal — otel listesi
 @router.get("/guest/hotels")
 @cached(ttl=600, key_prefix="guest_hotels")  # Cache for 10 min
 async def browse_hotels(current_user: User = Depends(get_current_user)):
@@ -613,7 +634,9 @@ async def browse_hotels(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/loyalty/programs", response_model=LoyaltyProgram)
-async def create_loyalty_program(program_data: LoyaltyProgramCreate, current_user: User = Depends(get_current_user)):
+async def create_loyalty_program(program_data: LoyaltyProgramCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+):
     program = LoyaltyProgram(tenant_id=current_user.tenant_id, **program_data.model_dump())
     program_dict = program.model_dump()
     program_dict['last_activity'] = program_dict['last_activity'].isoformat()
@@ -622,6 +645,7 @@ async def create_loyalty_program(program_data: LoyaltyProgramCreate, current_use
 
 
 
+# noqa: cache-rbac — GUEST portal — loyalty programları
 @router.get("/loyalty/programs")
 @cached(ttl=600, key_prefix="loyalty_programs")  # Cache for 10 min
 async def get_loyalty_programs(current_user: User = Depends(get_current_user)):
@@ -632,7 +656,9 @@ async def get_loyalty_programs(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/loyalty/transactions", response_model=LoyaltyTransaction)
-async def create_loyalty_transaction(transaction_data: LoyaltyTransactionCreate, current_user: User = Depends(get_current_user)):
+async def create_loyalty_transaction(transaction_data: LoyaltyTransactionCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+):
     transaction = LoyaltyTransaction(tenant_id=current_user.tenant_id, **transaction_data.model_dump())
     transaction_dict = transaction.model_dump()
     transaction_dict['created_at'] = transaction_dict['created_at'].isoformat()
@@ -648,6 +674,7 @@ async def create_loyalty_transaction(transaction_data: LoyaltyTransactionCreate,
 
 
 
+# noqa: cache-rbac — GUEST portal — guest loyalty
 @router.get("/loyalty/guest/{guest_id}")
 @cached(ttl=600, key_prefix="loyalty_guest")  # Cache for 10 min
 async def get_guest_loyalty_by_id(guest_id: str, current_user: User = Depends(get_current_user)):
@@ -824,9 +851,10 @@ async def get_upsell_offers_v2(
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).sort('confidence', -1).limit(10).to_list(10)
 
-    # Get already purchased items
+    # Get already purchased items — Bug DZ: tenant scoping
     purchased = await db.purchased_upsells.find({
-        'booking_id': booking_id
+        'booking_id': booking_id,
+        'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(100)
 
     return {
@@ -906,6 +934,7 @@ async def get_purchased_upsells(
     return {'items': items}
 
 
+# noqa: cache-rbac — GUEST portal — guest profili
 @router.get("/guests/{guest_id}/profile-enhanced")
 @cached(ttl=300, key_prefix="guest_profile_enhanced")  # Cache for 5 min
 async def get_guest_profile_enhanced(
@@ -1052,7 +1081,8 @@ async def update_guest_preferences(
     extra_requests: list[str] = [],
     dietary_restrictions: list[str] = [],
     allergies: list[str] = [],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
 ):
     """Update or create guest preferences"""
     pref_data = {
@@ -1100,7 +1130,8 @@ async def add_guest_tag(
     tag: str,
     color: str = "blue",
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Add a tag to guest (VIP, Honeymoon, Complainer, etc)"""
     guest_tag = GuestTag(
@@ -1202,7 +1233,8 @@ async def get_loyalty_benefits(
 async def redeem_loyalty_points(
     guest_id: str,
     request: RedeemPointsRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
 ):
     """Redeem loyalty points"""
     guest = await db.guests.find_one({
@@ -1311,7 +1343,8 @@ async def get_auto_purchase_suggestions(
 @router.post("/procurement/minimum-stock-alert")
 async def set_minimum_stock_alert(
     request: MinimumStockAlertRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Set minimum stock alert for an item"""
     item = await db.inventory.find_one({

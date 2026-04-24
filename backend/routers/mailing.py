@@ -7,6 +7,7 @@ replies go straight to them; the visible "From" remains the verified
 Syroce domain for deliverability.
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 import logging
 import os
@@ -415,14 +416,56 @@ async def resend_webhook(request: Request) -> dict:
     Optional: set RESEND_WEBHOOK_SECRET env (svix-style) for signature verification."""
     raw = await request.body()
     secret = os.environ.get("RESEND_WEBHOOK_SECRET")
-    if secret:
-        # Best-effort svix signature check (optional — don't break if header missing)
+    # Bug AJ: previously this endpoint silently accepted ANY POST when
+    # RESEND_WEBHOOK_SECRET was unset — letting an attacker forge email
+    # delivered/bounced/complained events (mailing-credit corruption,
+    # suppression-list poisoning, fake audit entries). Webhook signing
+    # is now MANDATORY. To allow unsigned ingestion in local development
+    # only, set ALLOW_UNSIGNED_RESEND_WEBHOOK=1 explicitly.
+    if not secret:
+        if os.environ.get("ALLOW_UNSIGNED_RESEND_WEBHOOK") != "1":
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook signing not configured (set RESEND_WEBHOOK_SECRET)",
+            )
+    else:
+        # Standard svix-style HMAC-SHA256 verification (Resend uses svix).
+        # Format: signed string = "{svix-id}.{svix-timestamp}.{body}"
+        #         signature header = "v1,<base64(hmac)> v1,<base64(hmac2)> ..."
+        #         secret = "whsec_<base64-encoded-key>"
+        import hmac as _hmac, hashlib as _hashlib, base64 as _b64
+        msg_id = request.headers.get("svix-id") or ""
+        msg_ts = request.headers.get("svix-timestamp") or ""
+        msg_sig = request.headers.get("svix-signature") or ""
+        if not (msg_id and msg_ts and msg_sig):
+            raise HTTPException(status_code=401, detail="Missing signature headers")
+        # Reject stale messages (>5 min skew) to block replay attacks
         try:
-            from svix.webhooks import Webhook  # type: ignore
-            headers = dict(request.headers.items())
-            Webhook(secret).verify(raw, headers)
-        except Exception as e:
-            logger.warning("[mailing-webhook] signature verify failed: %s", e)
+            import time as _time
+            if abs(int(_time.time()) - int(msg_ts)) > 300:
+                raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid timestamp")
+        # Strict secret parsing — reject empty / malformed keys to prevent
+        # forgery against an attacker-known empty HMAC key.
+        try:
+            if secret.startswith("whsec_"):
+                suffix = secret.split("_", 1)[1].strip()
+                if not suffix:
+                    raise ValueError("empty suffix")
+                key = _b64.b64decode(suffix, validate=True)
+            else:
+                key = secret.strip().encode()
+            if len(key) < 16:
+                raise ValueError("key too short")
+        except Exception:
+            logger.error("[mailing-webhook] RESEND_WEBHOOK_SECRET malformed; refusing")
+            raise HTTPException(status_code=503, detail="Malformed webhook secret")
+        signed = f"{msg_id}.{msg_ts}.".encode() + raw
+        expected = _b64.b64encode(_hmac.new(key, signed, _hashlib.sha256).digest()).decode()
+        provided = [p.split(",", 1)[1] for p in msg_sig.split() if p.startswith("v1,") and "," in p]
+        if not any(_hmac.compare_digest(expected, p) for p in provided):
+            logger.warning("[mailing-webhook] signature mismatch (id=%s)", msg_id)
             raise HTTPException(status_code=401, detail="Invalid signature")
     try:
         import json as _json
@@ -530,7 +573,9 @@ async def list_templates(current_user: User = Depends(get_current_user)) -> list
 
 
 @router.post("/templates")
-async def create_template(payload: TemplateIn, current_user: User = Depends(get_current_user)) -> dict:
+async def create_template(payload: TemplateIn, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     doc = {
@@ -550,6 +595,7 @@ async def update_template(
     template_id: str,
     payload: TemplateIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
@@ -565,7 +611,9 @@ async def update_template(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, current_user: User = Depends(get_current_user)) -> dict:
+async def delete_template(template_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     res = await _db().mailing_templates.delete_one(
@@ -726,6 +774,7 @@ async def update_automation(
     trigger_type: str,
     payload: AutomationConfig,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
@@ -776,14 +825,21 @@ def _resolve_campaign_content(payload: CampaignCreate, template: dict | None) ->
 
 
 def _personalize(html: str, subject: str, recipient_name: str, hotel_name: str) -> tuple[str, str]:
-    repl = {
-        "{{name}}": recipient_name,
-        "{{hotel}}": hotel_name,
-        "{{misafir}}": recipient_name,
-        "{{otel}}": hotel_name,
-    }
-    for k, v in repl.items():
+    # Bug CN: HTML body and subject use *different* escaping disciplines.
+    # Body cells are HTML-escaped (link/script/img injection blocked).
+    # Subject cells have CR/LF/NUL stripped (header-injection blocked).
+    from core.mailing_safe import safe_html_value, safe_subject_value
+    name_html = safe_html_value(recipient_name)
+    hotel_html = safe_html_value(hotel_name)
+    name_subj = safe_subject_value(recipient_name)
+    hotel_subj = safe_subject_value(hotel_name)
+    body_repl = {"{{name}}": name_html, "{{hotel}}": hotel_html,
+                 "{{misafir}}": name_html, "{{otel}}": hotel_html}
+    subj_repl = {"{{name}}": name_subj, "{{hotel}}": hotel_subj,
+                 "{{misafir}}": name_subj, "{{otel}}": hotel_subj}
+    for k, v in body_repl.items():
         html = html.replace(k, v)
+    for k, v in subj_repl.items():
         subject = subject.replace(k, v)
     return subject, html
 
@@ -792,6 +848,7 @@ def _personalize(html: str, subject: str, recipient_name: str, hotel_name: str) 
 async def create_and_send_campaign(
     payload: CampaignCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")

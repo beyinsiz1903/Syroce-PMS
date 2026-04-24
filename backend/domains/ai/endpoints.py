@@ -12,6 +12,7 @@ from core.database import db
 from core.security import get_current_user
 from domains.ai.service import get_ai_service
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,8 @@ api_router = APIRouter()
 @cached(ttl=300, key_prefix="ai_dashboard_briefing")
 async def get_daily_briefing(
     lang: str = Query("tr", description="Language code for briefing"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: AI daily briefing exec dashboard
 ):
     """
     Get AI-generated daily briefing for dashboard
@@ -181,7 +183,8 @@ async def get_daily_briefing(
 
 @api_router.get("/ai/pms/occupancy-prediction")
 async def predict_occupancy(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports"))  # v103 DX alias drift fix
 ):
     """
     Get AI-powered occupancy predictions
@@ -221,7 +224,8 @@ async def predict_occupancy(
 
 @api_router.get("/ai/pms/guest-patterns")
 async def analyze_guest_patterns(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports"))  # v103 DX alias drift fix
 ):
     """
     Analyze check-in/check-out patterns
@@ -281,7 +285,8 @@ async def categorize_expense(
     description: str,
     amount: float,
     vendor: str = "",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v98 DW
 ):
     """
     AI-powered expense categorization

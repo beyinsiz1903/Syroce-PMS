@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
+from core.csv_safe import safe_writerow
 from core.pci_dss import evaluate_controls, summary
 from core.security import get_current_user
 from models.schemas import User
@@ -52,9 +53,11 @@ async def export_csv(current_user: User = Depends(get_current_user)):
     controls = evaluate_controls()
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Req #", "Title", "Status", "Evidence", "Recommendations"])
+    # Bug AN: defend against spreadsheet formula injection in any
+    # evidence/recommendations text that might begin with =/+/-/@
+    safe_writerow(writer, ["Req #", "Title", "Status", "Evidence", "Recommendations"])
     for c in controls:
-        writer.writerow([
+        safe_writerow(writer, [
             c["req_id"],
             c["title"],
             c["status"],

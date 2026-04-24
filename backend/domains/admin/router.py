@@ -3,6 +3,7 @@ Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -84,7 +85,8 @@ router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 @router.post("/permissions/check")
 async def check_permission(
     request: PermissionCheckRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_users")),  # v90 DW
 ):
     """Check if current user has a specific permission"""
     if not request.permission or request.permission.strip() == "":
@@ -347,17 +349,24 @@ async def list_all_users(
 ):
     """List all users in the system (SUPER ADMIN only)"""
 
+    from security.query_safety import safe_search_term
     query = {}
     if email_filter:
-        svc = _svc_enc()
-        if svc:
-            email_hash = svc.compute_search_hash(email_filter)
-            query['$or'] = [
-                {'_hash_email': email_hash},
-                {'email': {'$regex': email_filter, '$options': 'i'}},
-            ]
+        s = safe_search_term(email_filter)
+        if s:
+            svc = _svc_enc()
+            if svc:
+                email_hash = svc.compute_search_hash(email_filter)
+                query['$or'] = [
+                    {'_hash_email': email_hash},
+                    {'email': {'$regex': s, '$options': 'i'}},
+                ]
+            else:
+                query['email'] = {'$regex': s, '$options': 'i'}
         else:
-            query['email'] = {'$regex': email_filter, '$options': 'i'}
+            # email_filter explicitly provided but blank/whitespace → return empty (no drift).
+            # Use regex-impossible sentinel `a^` (literal 'a' followed by start-anchor never matches)
+            query['email'] = {'$regex': 'a^'}
     if role_filter:
         query['role'] = role_filter
     if tenant_id_filter:
@@ -871,7 +880,8 @@ async def get_current_subscription(
 async def upgrade_subscription(
     new_tier: SubscriptionTier,
     billing_cycle: str = 'monthly',  # monthly or yearly
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Upgrade subscription tier"""
     tenant = await db.tenants.find_one({'id': current_user.tenant_id})
@@ -928,7 +938,8 @@ async def upgrade_subscription(
 @router.post("/subscription/change-plan")
 async def change_subscription_plan(
     payload: ChangePlanRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Change subscription plan (upgrade or downgrade).
     Creates a billing history record for the change."""
@@ -1048,7 +1059,8 @@ async def get_billing_history(
 @router.patch("/hotel/info")
 async def update_hotel_info(
     payload: UpdateHotelInfoRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update hotel/tenant information (admin only)"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -1169,7 +1181,8 @@ async def list_hotel_team(current_user: User = Depends(get_current_user)):
 @router.post("/hotel/team")
 async def add_team_member(
     payload: CreateTeamMemberRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Add a new team member to the current hotel"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -1235,7 +1248,8 @@ async def add_team_member(
 async def update_team_member_role(
     user_id: str,
     payload: UpdateTeamMemberRoleRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update a team member's role"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -1276,7 +1290,8 @@ async def update_team_member_role(
 @router.delete("/hotel/team/{user_id}")
 async def remove_team_member(
     user_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Remove a team member"""
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -1303,7 +1318,8 @@ from demo_data_generator import DemoDataGenerator
 @router.post("/demo/populate")
 async def populate_demo_data(
     hotel_type: str = 'boutique',  # boutique, resort, city
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Populate account with realistic demo data"""
 
@@ -1401,14 +1417,17 @@ async def admin_list_pms_lite_leads(
         query["status"] = status.value
 
     if q:
-        regex = {"$regex": q, "$options": "i"}
-        query["$or"] = [
-            {"contact.full_name": regex},
-            {"contact.phone": regex},
-            {"contact.email": regex},
-            {"hotel.property_name": regex},
-            {"hotel.location": regex},
-        ]
+        from security.query_safety import safe_search_term
+        s = safe_search_term(q)
+        if s:
+            regex = {"$regex": s, "$options": "i"}
+            query["$or"] = [
+                {"contact.full_name": regex},
+                {"contact.phone": regex},
+                {"contact.email": regex},
+                {"hotel.property_name": regex},
+                {"hotel.location": regex},
+            ]
 
     await db.leads.count_documents(query)
 
@@ -1458,14 +1477,17 @@ async def admin_export_pms_lite_leads_csv(
         query["status"] = status.value
 
     if q:
-        regex = {"$regex": q, "$options": "i"}
-        query["$or"] = [
-            {"contact.full_name": regex},
-            {"contact.phone": regex},
-            {"contact.email": regex},
-            {"hotel.property_name": regex},
-            {"hotel.location": regex},
-        ]
+        from security.query_safety import safe_search_term
+        s = safe_search_term(q)
+        if s:
+            regex = {"$regex": s, "$options": "i"}
+            query["$or"] = [
+                {"contact.full_name": regex},
+                {"contact.phone": regex},
+                {"contact.email": regex},
+                {"hotel.property_name": regex},
+                {"hotel.location": regex},
+            ]
 
     docs: list[dict[str, Any]] = []
     async for lead in db.leads.find(query):
@@ -1509,6 +1531,7 @@ async def admin_export_pms_lite_leads_csv(
                     filtered.append(lead)
         docs = filtered
 
+    from core.csv_safe import safe_writerow  # Bug AN: defend against CSV formula injection
     output = StringIO()
     # BOM for Excel UTF-8
     output.write("\ufeff")
@@ -1528,7 +1551,7 @@ async def admin_export_pms_lite_leads_csv(
         "last_contact_at",
         "status_changed_at",
     ]
-    writer.writerow(headers)
+    safe_writerow(writer, headers)
 
     for lead in docs:
         contact = lead.get("contact", {})
@@ -1547,7 +1570,7 @@ async def admin_export_pms_lite_leads_csv(
             lead.get("last_contact_at") or "",
             lead.get("status_changed_at") or "",
         ]
-        writer.writerow(row)
+        safe_writerow(writer, row)
 
     csv_content = output.getvalue()
     from fastapi.responses import Response
@@ -1567,6 +1590,7 @@ async def admin_update_pms_lite_lead(
     lead_id: str,
     payload: PmsLiteLeadAdminUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Update status/note of a PMS Lite marketing lead (super_admin only)."""
     if current_user.role != UserRole.SUPER_ADMIN:
@@ -1596,7 +1620,8 @@ async def admin_update_pms_lite_lead(
 @router.post("/settings/sla")
 async def create_sla_config(
     config: SLAConfig,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
     """
     Create or update SLA configuration for property
@@ -1971,12 +1996,13 @@ async def get_system_logs(
         logs = []
 
         # Get audit logs from database
+        from security.query_safety import safe_search_term
         filter_dict = {'tenant_id': current_user.tenant_id}
-        if search:
+        if (s := safe_search_term(search)):
             filter_dict['$or'] = [
-                {'action': {'$regex': search, '$options': 'i'}},
-                {'entity_type': {'$regex': search, '$options': 'i'}},
-                {'user_name': {'$regex': search, '$options': 'i'}}
+                {'action': {'$regex': s, '$options': 'i'}},
+                {'entity_type': {'$regex': s, '$options': 'i'}},
+                {'user_name': {'$regex': s, '$options': 'i'}}
             ]
 
         audit_logs = await db.audit_logs.find(filter_dict).sort('timestamp', -1).limit(limit).to_list(limit)

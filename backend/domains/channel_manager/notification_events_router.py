@@ -8,6 +8,7 @@ API endpoints for the high-signal notification system:
   - Manual evaluation trigger
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from fastapi import APIRouter, Depends, Query
 
@@ -62,6 +63,7 @@ async def event_config(
 @router.post("/evaluate")
 async def evaluate_readiness(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Trigger tenant readiness evaluation and emit events."""
     property_id = getattr(current_user, "property_id", "default")

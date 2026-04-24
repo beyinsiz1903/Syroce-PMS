@@ -2,6 +2,7 @@
 Analytics Export Router.
 """
 import io
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -38,7 +39,9 @@ class ExportReq(BaseModel):
 
 
 @router.post("/generate")
-async def generate_export(req: ExportReq, current_user: User = Depends(get_current_user)):
+async def generate_export(req: ExportReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     svc = _get_service()
     result = await svc.create_export(
         current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,
@@ -58,7 +61,9 @@ async def generate_export(req: ExportReq, current_user: User = Depends(get_curre
 
 
 @router.post("/download")
-async def download_export(req: ExportReq, current_user: User = Depends(get_current_user)):
+async def download_export(req: ExportReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     svc = _get_service()
     result = await svc.create_export(
         current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,

@@ -44,7 +44,9 @@ async def get_audit_timeline(
     if actor_id:
         query["actor_id"] = actor_id
     if action:
-        query["operation_name"] = {"$regex": action, "$options": "i"}
+        from security.query_safety import safe_search_term
+        if (_a := safe_search_term(action)):
+            query["operation_name"] = {"$regex": _a, "$options": "i"}
     if severity:
         query["severity"] = severity
     if entity_type:

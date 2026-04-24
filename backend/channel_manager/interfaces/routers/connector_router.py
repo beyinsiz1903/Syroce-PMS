@@ -11,6 +11,7 @@ from ...application.connector_service import ConnectorService
 from ...domain.models.audit import AuditAction, IntegrationAuditLog
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger("channel_manager.routers.connector")
 
@@ -72,6 +73,7 @@ async def list_connectors(
 async def create_connector(
     req: CreateConnectorRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ConnectorService()
     property_id = req.property_id or getattr(current_user, "property_id", "")
@@ -108,6 +110,7 @@ async def get_connector(
 async def test_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.test_connection(current_user.tenant_id, connector_id)
@@ -118,6 +121,7 @@ async def test_connector(
 async def activate_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.activate_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -128,6 +132,7 @@ async def activate_connector(
 async def pause_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.pause_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -139,6 +144,7 @@ async def update_credentials(
     connector_id: str,
     req: UpdateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     await svc.update_credentials(
@@ -151,6 +157,7 @@ async def update_credentials(
 async def delete_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     deleted = await svc.delete_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -166,6 +173,7 @@ async def update_credentials_secure(
     connector_id: str,
     req: UpdateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -188,6 +196,7 @@ async def rotate_credentials(
     connector_id: str,
     req: RotateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -245,6 +254,7 @@ async def get_masked_credentials(
 async def migrate_credentials(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()

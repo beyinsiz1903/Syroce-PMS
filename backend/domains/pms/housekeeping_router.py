@@ -3,6 +3,8 @@ PMS / Housekeeping Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import base64
+from modules.pms_core.role_permission_service import require_op  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -91,7 +93,8 @@ async def predict_cleaning_time(
 @router.post("/housekeeping/ai-assignment")
 async def get_ai_room_assignment(
     staff_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
 ):
     """AI-powered room assignment optimization"""
     from domains.pms.housekeeping_ai import get_housekeeping_ai
@@ -136,20 +139,57 @@ async def upload_room_photo(
     room_number: str | None = Form(None),
     quality_score: int | None = Form(None),
     notes: str | None = Form(None),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """
     Upload a housekeeping photo (before/after/issue) with optional quality metadata.
     Stores a base64 inline preview so mobile/desktop apps can show the image instantly.
-    """
-    file_bytes = await photo.read()
-    file_size = len(file_bytes)
 
-    # Encode preview for quick rendering if file is reasonably small (<2MB)
-    inline_preview = None
-    if file_size <= 2_000_000:
-        encoded = base64.b64encode(file_bytes).decode('utf-8')
-        inline_preview = f"data:{photo.content_type};base64,{encoded}"
+    Hardening (v39 / Bug AY+BA+BB):
+      - Real image format verified via Pillow (rejects SVG, PDF, EXE, polyglots).
+      - 5 MB hard cap (prevents trivial DoS via 50MB+ uploads).
+      - room_id must belong to caller's tenant (prevents cross-tenant pollution).
+      - Stored content_type/file_name are sanitized (never attacker-controlled).
+    """
+    from security.upload_validator import (
+        MAX_IMAGE_BYTES,
+        validate_image_bytes,
+    )
+
+    # 1) Tenant ownership: room must exist within caller's tenant *and* be active.
+    #    Soft-deleted/archived rooms are treated as not-found (architect feedback C).
+    room_doc = await db.rooms.find_one(
+        {"id": room_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1, "room_number": 1, "status": 1, "deleted_at": 1, "archived": 1},
+    )
+    if not room_doc:
+        raise HTTPException(status_code=404, detail="Oda bulunamadi.")
+    _status = (room_doc.get("status") or "").lower()
+    if (
+        _status in {"archived", "deleted", "removed", "inactive"}
+        or room_doc.get("deleted_at")
+        or room_doc.get("archived")
+    ):
+        raise HTTPException(status_code=404, detail="Oda artik aktif degil.")
+    # Always trust the canonical room_number from the DB, never the form input.
+    canonical_room_number = room_doc.get("room_number") or room_number
+
+    # 2) Read with cap, then magic-bytes verify. read() returns at most what was
+    #    sent; we still cap defensively in case uvicorn body limits change.
+    file_bytes = await photo.read(MAX_IMAGE_BYTES + 1)
+    file_size = len(file_bytes)
+    safe_ct, safe_ext = validate_image_bytes(
+        file_bytes, max_bytes=MAX_IMAGE_BYTES, field_label="Fotograf"
+    )
+
+    # 3) Inline preview only with sanitized content-type (never user-controlled).
+    inline_preview = (
+        f"data:{safe_ct};base64,{base64.b64encode(file_bytes).decode('utf-8')}"
+    )
+
+    # 4) Sanitize stored filename — strip user-controlled parts, keep canonical ext.
+    safe_file_name = f"{uuid.uuid4().hex}{safe_ext}"
 
     # Determine final inspection type
     normalized_type = (photo_type or legacy_type or 'inspection').lower()
@@ -166,20 +206,20 @@ async def upload_room_photo(
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'room_id': room_id,
-        'room_number': room_number,
+        'room_number': canonical_room_number,
         'photo_type': normalized_type,  # before, after, inspection, issue
         'quality_score': parsed_quality,
         'notes': notes,
         'uploaded_by': current_user.id,
         'uploaded_by_name': current_user.name,
         'uploaded_at': datetime.now(UTC).isoformat(),
-        'file_name': photo.filename,
-        'content_type': photo.content_type,
+        'file_name': safe_file_name,
+        'content_type': safe_ct,
         'size_kb': round(file_size / 1024, 2),
         'storage': 'inline',
         'inline_preview': inline_preview,
         # Placeholder URL until external storage (S3/R2) is configured
-        'url': f'/photos/{room_id}_{normalized_type}_{str(uuid.uuid4())[:8]}.jpg'
+        'url': f'/photos/{uuid.uuid4().hex}{safe_ext}'
     }
 
     await db.room_photos.insert_one(photo_record)
@@ -214,6 +254,7 @@ async def get_housekeeping_photo_feed(
 # Helper functions for push notification delivery
 
 
+# noqa: cache-rbac — kullanıcı kendi tasks (require_module + staff-scoped)
 @router.get("/housekeeping/mobile/my-tasks")
 @cached(ttl=60, key_prefix="mobile_hk_my_tasks")  # Cache for 1 min
 async def get_my_housekeeping_tasks(
@@ -252,7 +293,8 @@ async def get_my_housekeeping_tasks(
 @router.post("/housekeeping/mobile/start-task/{task_id}")
 async def start_housekeeping_task(
     task_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Start working on a task"""
     task = await db.housekeeping_tasks.find_one({
@@ -289,7 +331,8 @@ async def complete_housekeeping_task(
     task_id: str,
     notes: str = None,
     photos: list = [],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Complete a housekeeping task"""
     task = await db.housekeeping_tasks.find_one({
@@ -327,7 +370,8 @@ async def complete_housekeeping_task(
 @router.delete("/housekeeping/tasks/{task_id}")
 async def delete_housekeeping_task(
     task_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     task = await db.housekeeping_tasks.find_one({'id': task_id, 'tenant_id': current_user.tenant_id})
     if not task:
@@ -341,7 +385,8 @@ async def delete_housekeeping_task(
 @router.post("/housekeeping/mobile/report-issue")
 async def report_housekeeping_issue(
     request: ReportIssueRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Report maintenance or cleaning issue"""
     issue = {
@@ -382,7 +427,8 @@ async def report_housekeeping_issue(
 @router.post("/housekeeping/mobile/upload-photo")
 async def upload_housekeeping_photo(
     request: UploadPhotoRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Upload photo for housekeeping task"""
     photo_record = {
@@ -826,7 +872,8 @@ async def adjust_linen_inventory(
     adjustment_type: str,  # restock, use, return_from_use, send_to_laundry, return_from_laundry, mark_damaged
     quantity: int,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """
     Adjust linen inventory
@@ -1108,7 +1155,8 @@ async def get_cleaning_requests(
 async def update_cleaning_request_status(
     request_id: str,
     update_data: CleaningRequestStatusUpdate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """
     Update cleaning request status

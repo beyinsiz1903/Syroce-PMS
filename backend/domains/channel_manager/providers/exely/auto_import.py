@@ -127,7 +127,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
         "created_at": now,
     }
 
-    from core.atomic_booking import BookingConflictError, create_booking_atomic
+    from core.atomic_booking import BookingConflictError, assert_pending_assignment, create_booking_atomic
     try:
         await create_booking_atomic({**booking})
     except BookingConflictError:
@@ -135,6 +135,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
         booking["room_id"] = None
         booking["status"] = "confirmed"
         booking["allocation_source"] = "pending_assignment"
+        assert_pending_assignment(booking)
         await db.bookings.insert_one({**booking})
         booking.pop("_id", None)
 

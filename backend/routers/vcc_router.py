@@ -6,6 +6,7 @@ Hoteliers can view card details a maximum of 3 times, enforced at the API level.
 Every view is logged in the activity log for audit trail.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v97 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,7 +15,15 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
+from modules.pms_core.role_permission_service import RolePermissionService
 from security.field_encryption import get_field_encryption_service
+
+_role_perm = RolePermissionService()
+
+
+def _enforce_perm(role: str, op: str):
+    """Bug CS (v58) — PCI VCC endpoint'leri için RBAC zorunlu."""
+    _role_perm.enforce_permission(role, op)
 
 router = APIRouter(prefix="/api/pms", tags=["vcc"])
 
@@ -59,9 +68,11 @@ async def store_vcc(
     booking_id: str,
     data: VCCStore,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v97 DW
 ):
     """Store a virtual/credit card for a booking (encrypted at rest)."""
     _ensure_hotel_context(current_user)
+    _enforce_perm(current_user.role, "store_card")  # Bug CS
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
@@ -127,6 +138,7 @@ async def get_vcc_status(
 ):
     """Get VCC status without consuming a view."""
     _ensure_hotel_context(current_user)
+    _enforce_perm(current_user.role, "view_card_status")  # Bug CS
     tid = current_user.tenant_id
 
     card = await db.vcc_cards.find_one(
@@ -155,9 +167,11 @@ async def get_vcc_status(
 async def reveal_vcc(
     booking_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v97 DW
 ):
     """Reveal full card details. Consumes 1 of 3 views. Enforced at API level."""
     _ensure_hotel_context(current_user)
+    _enforce_perm(current_user.role, "reveal_card")  # Bug CS — PCI critical
     tid = current_user.tenant_id
 
     card = await db.vcc_cards.find_one(
@@ -248,9 +262,11 @@ async def reveal_vcc(
 async def delete_vcc(
     booking_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v97 DW
 ):
     """Delete VCC data (admin only or after checkout)."""
     _ensure_hotel_context(current_user)
+    _enforce_perm(current_user.role, "delete_card")  # Bug CS — prevents view-counter reset abuse
     tid = current_user.tenant_id
 
     card = await db.vcc_cards.find_one(

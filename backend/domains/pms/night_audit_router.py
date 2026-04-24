@@ -12,6 +12,7 @@ from core.security import (
 )
 from domains.pms.night_audit_service import night_audit_service
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ async def get_audit_logs(
     start_date: str | None = None,
     end_date: str | None = None,
     limit: int = 100,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: audit log admin/exec
 ):
     """Get audit logs with filters"""
     ctx = OperationContext.from_user(current_user)
@@ -67,7 +69,8 @@ async def get_error_logs(
 async def resolve_error_log(
     error_id: str,
     resolution_notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Mark error log as resolved"""
     ctx = OperationContext.from_user(current_user)

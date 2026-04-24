@@ -1,5 +1,6 @@
 """Alert Delivery Router — Channel configuration, delivery, and logs."""
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -40,6 +41,7 @@ async def list_delivery_channels(
 async def upsert_delivery_channel(
     req: DeliveryChannelRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create or update a delivery channel configuration."""
     svc = AlertDeliveryService()
@@ -51,6 +53,7 @@ async def upsert_delivery_channel(
 async def delete_delivery_channel(
     channel_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete a delivery channel."""
     svc = AlertDeliveryService()
@@ -64,6 +67,7 @@ async def delete_delivery_channel(
 async def test_delivery_channel(
     channel_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Send a test alert through a specific delivery channel."""
     svc = AlertDeliveryService()

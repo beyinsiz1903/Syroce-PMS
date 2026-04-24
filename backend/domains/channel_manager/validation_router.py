@@ -3,6 +3,7 @@ Channel Manager — Provider Validation API Router
 =================================================
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -18,7 +19,9 @@ class ValidateProviderRequest(BaseModel):
 
 
 @router.post("/run")
-async def run_validation(req: ValidateProviderRequest, user=Depends(get_current_user)):
+async def run_validation(req: ValidateProviderRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await provider_validation_service.run_provider_validation(ctx, req.provider_id)
     if not result.ok:

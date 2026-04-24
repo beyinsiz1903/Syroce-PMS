@@ -4,6 +4,7 @@ PMS oda tipleri ile provider (Exely/HotelRunner) oda tiplerini
 isim benzerligine gore otomatik eslestirme.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
@@ -131,6 +132,7 @@ async def _get_existing_mappings(tenant_id: str, provider: str) -> list[dict]:
 async def suggest_auto_mappings(
     payload: AutoMapSuggestRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v98 DW
 ):
     """Suggest auto-mappings based on name similarity."""
     provider = payload.provider.lower()
@@ -230,6 +232,7 @@ async def suggest_auto_mappings(
 async def apply_auto_mappings(
     payload: AutoMapApplyRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v98 DW
 ):
     """Apply selected auto-mapping suggestions."""
     provider = payload.provider.lower()

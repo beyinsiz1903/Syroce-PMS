@@ -80,8 +80,53 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
     Inspects payload to determine event type, then dispatches to the
     internal ingest pipeline (reservations / modifications / cancellations).
     """
+    raw_body = await request.body()
+
+    # v106 Bug DAC (architect adversarial #6): inbound webhook had NO signature
+    # verification → an attacker who knew (or guessed) any tenant_id could
+    # forge create/modify/cancel reservation events at will (revenue
+    # corruption, fake bookings, channel-manager state poisoning). Mirror
+    # the Resend webhook hardening: HMAC-SHA256 with replay protection,
+    # fail-closed if secret is unset (dev escape via env flag).
+    import os as _os
+    secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
+    if not secret:
+        if _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") != "1":
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
+            )
+    else:
+        import hmac as _hmac, hashlib as _hashlib, time as _time
+        sig_header = (
+            request.headers.get("X-HotelRunner-Signature")
+            or request.headers.get("X-Signature")
+            or ""
+        ).strip()
+        ts_header = (
+            request.headers.get("X-HotelRunner-Timestamp")
+            or request.headers.get("X-Timestamp")
+            or ""
+        ).strip()
+        if not (sig_header and ts_header):
+            raise HTTPException(status_code=401, detail="Missing signature headers")
+        try:
+            if abs(int(_time.time()) - int(ts_header)) > 300:
+                raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid timestamp")
+        signed_payload = f"{ts_header}.".encode() + raw_body
+        expected = _hmac.new(
+            secret.encode(), signed_payload, _hashlib.sha256
+        ).hexdigest()
+        # Accept "sha256=<hex>" or bare hex
+        provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
+        if not _hmac.compare_digest(expected, provided.lower()):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
     try:
-        body = await request.json()
+        import json as _json
+        body = _json.loads(raw_body)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 

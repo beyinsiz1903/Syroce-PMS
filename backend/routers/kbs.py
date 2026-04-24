@@ -14,6 +14,7 @@ Endpoint'ler:
 """
 
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 import uuid
 from datetime import UTC, datetime
@@ -130,6 +131,7 @@ class KBSReportCreate(BaseModel):
 async def kbs_create_report(
     data: KBSReportCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """KBS resmi servisine gönderim sonrası PMS'e işaret bırak."""
     tenant_id = current_user.tenant_id

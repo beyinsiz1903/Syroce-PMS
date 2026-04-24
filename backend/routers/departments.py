@@ -5,6 +5,9 @@ Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 logger = logging.getLogger(__name__)
 import random
@@ -20,6 +23,14 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.role_permission_service import RolePermissionService, require_op
+
+_role_perm = RolePermissionService()
+
+
+def _enforce(role: str, op: str):
+    """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
+    _role_perm.enforce_permission(role, op)
 
 try:
     from openpyxl import Workbook
@@ -41,6 +52,7 @@ security = HTTPBearer()
 
 # ==================== DEPARTMENT-SPECIFIC ENDPOINTS ====================
 
+# noqa: cache-rbac — FO dashboard operasyonel, hotel staff geneli görür (FO/HK/manager/admin)
 @router.get("/department/front-office/dashboard")
 @cached(ttl=180, key_prefix="front_office_dashboard")  # Cache for 3 minutes
 async def get_front_office_dashboard(current_user: User = Depends(get_current_user)):
@@ -116,6 +128,7 @@ async def get_front_office_dashboard(current_user: User = Depends(get_current_us
         }
     }
 
+# noqa: cache-rbac — HK dashboard operasyonel, FO/HK/manager/admin görür
 @router.get("/department/housekeeping/dashboard")
 @cached(ttl=120, key_prefix="housekeeping_dashboard")  # Cache for 2 minutes
 async def get_housekeeping_dashboard(current_user: User = Depends(get_current_user)):
@@ -176,7 +189,10 @@ async def get_housekeeping_dashboard(current_user: User = Depends(get_current_us
 
 @router.get("/department/revenue/comprehensive-suggestions")
 @cached(ttl=600, key_prefix="revenue_suggestions")  # Cache for 10 min
-async def get_revenue_comprehensive_suggestions(current_user: User = Depends(get_current_user)):
+async def get_revenue_comprehensive_suggestions(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v83 DS: revenue manager pricing önerileri
+):
     """Revenue Manager comprehensive suggestions: pricing, min stay, CTA"""
     today = datetime.now(UTC).date()
 
@@ -246,9 +262,12 @@ async def get_revenue_comprehensive_suggestions(current_user: User = Depends(get
 
 @router.get("/department/finance/dashboard")
 @cached(ttl=300, key_prefix="finance_dashboard")  # Cache for 5 minutes
-async def get_finance_dashboard(current_user: User = Depends(get_current_user)):
+async def get_finance_dashboard(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """Finance Manager Dashboard with real-time AR and integrations"""
 
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     # AR Summary
     pending_ar = await db.invoices.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -295,10 +314,12 @@ async def get_finance_dashboard(current_user: User = Depends(get_current_user)):
 @cached(ttl=600, key_prefix="sales_corporate")  # Cache for 10 min
 async def get_corporate_accounts(
     sort_by: str = 'revenue',
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_corporate_accounts")),
 ):
     """Sales & Marketing - Corporate accounts with profiles"""
 
+    _enforce(current_user.role, "view_corporate_accounts")  # Bug CU
     # Aggregate corporate bookings
     corporate_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
@@ -363,8 +384,11 @@ async def get_corporate_accounts(
 
 @router.get("/department/it/system-info")
 @cached(ttl=600, key_prefix="it_system_info")  # Cache for 10 min
-async def get_it_system_info(current_user: User = Depends(get_current_user)):
+async def get_it_system_info(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_it_system")),
+):
     """IT Manager - System architecture and performance info"""
+    _enforce(current_user.role, "view_it_system")  # Bug CU
     return {
         'api_architecture': {
             'type': 'REST',
@@ -399,9 +423,12 @@ async def get_it_system_info(current_user: User = Depends(get_current_user)):
 
 @router.get("/department/guest-relations/vip-notes")
 @cached(ttl=300, key_prefix="guest_relations_vip")  # Cache for 5 min
-async def get_vip_notes(current_user: User = Depends(get_current_user)):
+async def get_vip_notes(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_vip_notes")),
+):
     """Guest Relations - VIP notes and review integrations"""
 
+    _enforce(current_user.role, "view_vip_notes")  # Bug CU
     # Get VIP guests with notes
     vip_guests = []
     async for guest in db.guests.find({
@@ -443,7 +470,8 @@ async def get_vip_notes(current_user: User = Depends(get_current_user)):
 @cached(ttl=300, key_prefix="ai_activity_feed")  # Cache for 5 min
 async def get_ai_activity_feed(
     limit: int = 10,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v83 DS: AI executive insights
 ):
     """AI Activity Feed - Real-time AI suggestions and insights"""
     today = datetime.now(UTC)
@@ -663,7 +691,8 @@ async def get_ai_activity_feed(
 async def get_revenue_by_department(
     start_date: str = None,
     end_date: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v83 DS: gelir breakdown finansal
 ):
     """Revenue breakdown by department (Rooms, F&B, Other)"""
     today = datetime.now(UTC)
@@ -753,7 +782,8 @@ async def get_revenue_by_department(
 async def assign_room_to_booking(
     booking_id: str,
     room_assignment: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Assign a specific room to a booking"""
     room_id = room_assignment.get('room_id')
@@ -806,9 +836,9 @@ async def assign_room_to_booking(
             detail=f"Room {room_number} is not available for this period"
         )
 
-    # Update booking
+    # Update booking — v109 round-9 IDOR: scope by tenant.
     await db.bookings.update_one(
-        {'id': booking_id},
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'room_id': room_id,
@@ -842,6 +872,7 @@ async def assign_room_to_booking(
         'assigned_at': datetime.now(UTC).isoformat()
     }
 
+# noqa: cache-rbac — booking için müsait odalar operasyonel (FO/HK/manager)
 @router.get("/bookings/{booking_id}/available-rooms")
 @cached(ttl=120, key_prefix="booking_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_booking(
@@ -914,7 +945,8 @@ async def get_available_rooms_for_booking(
 async def start_cleaning_timer(
     room_id: str,
     staff_info: dict = {},
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Start cleaning timer for a room"""
     room = await db.rooms.find_one({
@@ -943,9 +975,9 @@ async def start_cleaning_timer(
 
     await db.housekeeping_tasks.insert_one(task)
 
-    # Update room status
+    # Update room status — v109 round-9 IDOR: scope by tenant.
     await db.rooms.update_one(
-        {'id': room_id},
+        {'id': room_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'status': 'cleaning',
@@ -968,7 +1000,8 @@ async def start_cleaning_timer(
 async def complete_cleaning_timer(
     task_id: str,
     completion_data: dict = {},
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Complete cleaning timer and update room status"""
     task = await db.housekeeping_tasks.find_one({
@@ -998,9 +1031,9 @@ async def complete_cleaning_timer(
         }
     )
 
-    # Update room status
+    # Update room status — v109 round-9 IDOR: scope by tenant.
     await db.rooms.update_one(
-        {'id': task['room_id']},
+        {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'status': 'inspected',
@@ -1019,6 +1052,7 @@ async def complete_cleaning_timer(
         'completed_at': completed_at.isoformat()
     }
 
+# noqa: cache-rbac — HK aktif temizlik timer'ları operasyonel (HK/FO/manager)
 @router.get("/housekeeping/active-timers")
 @cached(ttl=60, key_prefix="hk_active_timers")  # Cache for 1 min
 async def get_active_cleaning_timers(current_user: User = Depends(get_current_user)):
@@ -1053,7 +1087,8 @@ async def get_active_cleaning_timers(current_user: User = Depends(get_current_us
 @cached(ttl=600, key_prefix="housekeeping_performance")  # Cache for 10 minutes
 async def get_housekeeping_performance_stats(
     days: int = 7,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v84 DT: HK perf (yönetim)
 ):
     """Get housekeeping performance statistics"""
     since = datetime.now(UTC) - timedelta(days=days)
@@ -1106,7 +1141,8 @@ async def get_housekeeping_performance_stats(
 @cached(ttl=600, key_prefix="rms_recommendations")  # Cache for 10 min
 async def get_rate_recommendations(
     days_ahead: int = 14,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: AI rate önerileri (revenue)
 ):
     """AI-powered rate recommendations based on demand forecast"""
     today = datetime.now(UTC).date()
@@ -1264,6 +1300,7 @@ async def apply_rate_recommendation(
     current_user: User = Depends(get_current_user)
 ):
     """Apply recommended rates to room inventory"""
+    _enforce(current_user.role, "manage_rates")  # Bug CU
     target_date = recommendation_data.get('date')
     rate_adjustments = recommendation_data.get('rate_adjustments', {})
 
@@ -1307,7 +1344,8 @@ async def apply_rate_recommendation(
 async def get_staff_detailed_statistics(
     staff_id: str,
     days: int = 30,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v84 DT: staff perf (yönetim)
 ):
     """Detailed staff performance by room type, shift, and speed"""
     since = datetime.now(UTC) - timedelta(days=days)
@@ -1438,7 +1476,8 @@ async def get_staff_detailed_statistics(
 async def get_market_segment_report(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: market segment performance
 ):
     """Market Segment & Rate Type Performance Report"""
     start = datetime.fromisoformat(start_date)
@@ -1504,7 +1543,8 @@ async def get_market_segment_report(
 async def export_market_segment_excel(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: market segment export
 ):
     """Export Market Segment Report to Excel"""
     report_data = await get_market_segment_report(start_date, end_date, current_user)
@@ -1582,8 +1622,11 @@ async def export_market_segment_excel(
 
 @router.get("/reports/company-aging")
 @cached(ttl=900, key_prefix="report_company_aging")  # Cache for 15 min
-async def get_company_aging_report(current_user: User = Depends(get_current_user)):
+async def get_company_aging_report(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """Company Accounts Receivable Aging Report"""
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
 
     # Get all company folios with outstanding balance
@@ -1660,8 +1703,12 @@ async def get_company_aging_report(current_user: User = Depends(get_current_user
 
 @router.get("/reports/company-aging/excel")
 @cached(ttl=900, key_prefix="report_company_aging_excel")  # Cache for 15 min
-async def export_company_aging_excel(current_user: User = Depends(get_current_user)):
+async def export_company_aging_excel(
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """Export Company Aging Report to Excel"""
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     report_data = await get_company_aging_report(current_user)
 
     headers = ["Company", "Corporate Code", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
@@ -1705,11 +1752,14 @@ async def export_company_aging_excel(current_user: User = Depends(get_current_us
 
 @router.get("/reports/finance-snapshot")
 @cached(ttl=600, key_prefix="report_finance_snapshot")  # Cache for 10 min
-async def get_finance_snapshot(current_user: User = Depends(get_current_user)):
+async def get_finance_snapshot(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """
     Finance Snapshot for GM Dashboard
     Returns: Total Pending AR, Overdue Invoices (categorized), Today's Collections
     """
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
     today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
@@ -1831,6 +1881,7 @@ async def export_revenue_detail_excel(
 
     NOTE: Uses bookings collection and groups by date, room_type and rate_code-like fields.
     """
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
 
@@ -1890,6 +1941,7 @@ async def export_forecast_detail_excel(
 
     NOTE: This uses get_forecast endpoint internally if available.
     """
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     # Reuse get_forecast if defined (lazy-loaded to avoid circular imports)
     try:
         from routers.reports import get_forecast as _get_forecast
@@ -1983,6 +2035,7 @@ async def export_channel_distribution_excel(
     _: None = Depends(require_module("reports")),
 ):
     """Sales channel distribution report (OTA, Direct, Corporate, etc.)."""
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
 
@@ -2051,7 +2104,10 @@ async def export_channel_distribution_excel(
 
 @router.get("/pos/auto-post-settings")
 @cached(ttl=600, key_prefix="pos_auto_post")  # Cache for 10 min
-async def get_pos_auto_post_settings(current_user: User = Depends(get_current_user)):
+async def get_pos_auto_post_settings(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: POS finansal config
+):
     """
     Get POS auto-post settings for the tenant
     """
@@ -2082,6 +2138,7 @@ async def update_pos_auto_post_settings(
     """
     Update POS auto-post settings
     """
+    _enforce(current_user.role, "manage_pos_settings")  # Bug CU
     await db.pos_settings.update_one(
         {
             'tenant_id': current_user.tenant_id,
@@ -2101,7 +2158,9 @@ async def update_pos_auto_post_settings(
     return {'message': 'Settings updated successfully'}
 
 @router.post("/pos/manual-sync")
-async def manual_pos_sync(current_user: User = Depends(get_current_user)):
+async def manual_pos_sync(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
+):
     """
     Manually trigger POS charges sync to folios
     """
@@ -2172,6 +2231,7 @@ async def manual_pos_post(
     """
     Manual post of POS charge via QR/barcode (fallback when integration fails)
     """
+    _enforce(current_user.role, "post_charge")  # Bug CU
     charge_id = post_data.get('charge_id')
     folio_id = post_data.get('folio_id')
     method = post_data.get('method', 'manual')
@@ -2235,7 +2295,8 @@ async def manual_pos_post(
 async def get_rate_periods(
     operator_id: str,
     room_type_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: rate config (revenue)
 ):
     """
     Get multi-period rates for operator and room type
@@ -2256,6 +2317,7 @@ async def bulk_update_rate_periods(
     """
     Bulk update/insert rate periods for operator
     """
+    _enforce(current_user.role, "manage_rates")  # Bug CU
     operator_id = data.get('operator_id')
     room_type_id = data.get('room_type_id')
     periods = data.get('periods', [])
@@ -2288,7 +2350,10 @@ async def bulk_update_rate_periods(
 
 @router.get("/rates/stop-sale/status")
 @cached(ttl=300, key_prefix="rates_stop_sale")  # Cache for 5 min
-async def get_stop_sale_status(current_user: User = Depends(get_current_user)):
+async def get_stop_sale_status(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v84 DT: stop sale durumu (revenue)
+):
     """
     Get stop-sale status for all operators
     """
@@ -2312,6 +2377,7 @@ async def toggle_stop_sale(
     """
     Toggle stop-sale for specific operator
     """
+    _enforce(current_user.role, "manage_rates")  # Bug CU
     operator_id = data.get('operator_id')
     stop_sale = data.get('stop_sale', False)
 
@@ -2342,7 +2408,8 @@ async def toggle_stop_sale(
 async def get_allotment_consumption(
     start_date: str = None,
     end_date: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v85 DU: operatör allotment (revenue)
 ):
     """
     Get allotment consumption chart data: Allocated vs Sold vs Remaining
@@ -2395,11 +2462,14 @@ async def get_allotment_consumption(
 
 @router.get("/reports/cost-summary")
 @cached(ttl=600, key_prefix="report_cost_summary")  # Cache for 10 min
-async def get_cost_summary(current_user: User = Depends(get_current_user)):
+async def get_cost_summary(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """
     Cost Summary Report for GM Dashboard
     Returns: MTD costs by category, top cost categories, per-room cost, cost vs RevPAR
     """
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
@@ -2419,7 +2489,8 @@ async def get_cost_summary(current_user: User = Depends(get_current_user)):
 @router.post("/reviews/ai-sentiment-analysis")
 async def ai_sentiment_analysis(
     data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """
     AI Sentiment Analysis for guest reviews
@@ -2488,6 +2559,7 @@ async def ai_sentiment_analysis(
 @router.post("/bookings/walk-in-quick")
 async def create_walk_in_booking(data: dict, current_user: User = Depends(get_current_user)):
     """Quick walk-in booking creation"""
+    _enforce(current_user.role, "walk_in")  # Bug CU
     booking_id = str(uuid.uuid4())
     guest_id = str(uuid.uuid4())
 
@@ -2532,6 +2604,7 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
     return {'booking_id': booking_id, 'room_number': available_room['room_number']}
 
 
+# noqa: cache-rbac — task kanban operasyonel cross-role (FO/HK/maintenance/manager)
 @router.get("/tasks/kanban")
 @cached(ttl=180, key_prefix="tasks_kanban")  # Cache for 3 min
 async def get_tasks_kanban(current_user: User = Depends(get_current_user)):
@@ -2558,7 +2631,8 @@ async def get_tasks_kanban(current_user: User = Depends(get_current_user)):
 @router.post("/tasks/move")
 async def move_task(
     data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """
     Move task between kanban columns
@@ -2589,6 +2663,7 @@ async def update_loyalty_tier_benefits(
     """
     Update loyalty tier benefits configuration
     """
+    _enforce(current_user.role, "manage_loyalty_tiers")  # Bug CU
     tiers = data.get('tiers', [])
 
     for tier in tiers:
@@ -2612,8 +2687,11 @@ async def update_loyalty_tier_benefits(
 
 @router.get("/finance/mtd-cost-summary")
 @cached(ttl=600, key_prefix="finance_mtd_cost_summary")
-async def get_mtd_cost_summary(current_user: User = Depends(get_current_user)):
+async def get_mtd_cost_summary(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
     """Month-to-date cost summary by category with per-room metrics."""
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
@@ -2771,7 +2849,8 @@ async def get_mtd_cost_summary(current_user: User = Depends(get_current_user)):
 async def get_housekeeping_efficiency_report(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v85 DU: HK efficiency rapor
 ):
     """Housekeeping Efficiency Report"""
     start = datetime.fromisoformat(start_date)
@@ -2826,7 +2905,8 @@ async def get_housekeeping_efficiency_report(
 async def export_housekeeping_efficiency_excel(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v85 DU: HK efficiency excel
 ):
     """Export Housekeeping Efficiency Report to Excel"""
     report_data = await get_housekeeping_efficiency_report(start_date, end_date, current_user)

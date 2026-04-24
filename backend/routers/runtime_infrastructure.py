@@ -3,6 +3,7 @@ Runtime Infrastructure Router — Production runtime status for all platform com
 Redis/Event Bus, Messaging Providers, Persistence Health, Alerts, Observability.
 """
 from fastapi import APIRouter, Depends, Query
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from core.security import get_current_user
 from models.schemas import User
@@ -118,7 +119,9 @@ async def get_alert_history(
 
 
 @router.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str, current_user: User = Depends(get_current_user)):
+async def acknowledge_alert(alert_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+):
     from modules.observability.alerting_engine import alert_engine
     return await alert_engine.acknowledge_alert(alert_id, current_user.id)
 

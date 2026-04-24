@@ -20,6 +20,7 @@ from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from core.utils import calculate_folio_balance, excel_response
 from models.enums import ChargeCategory, FolioOperationType
 from models.schemas import (
@@ -57,6 +58,8 @@ async def create_folio(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new folio for a booking"""
+    from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
+    RolePermissionService().enforce_permission(current_user.role, "post_charge")
     return await open_folio_service.create(folio_data, current_user, request)
 
 
@@ -112,10 +115,10 @@ async def list_folios(
 @router.get("/folio/dashboard-stats")
 @cached(ttl=300, key_prefix="folio_dashboard_stats")  # Cache for 5 minutes
 async def get_folio_dashboard_stats(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG: HK/FO finance leak
 ):
     """Get folio statistics for dashboard"""
-    current_user = await get_current_user(credentials)
 
     try:
         # Get all open folios
@@ -166,10 +169,10 @@ async def get_folio_dashboard_stats(
 @router.get("/folio/pending-ar")
 @cached(ttl=600, key_prefix="folio_pending_ar")  # Cache for 10 min
 async def get_pending_ar(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG: AR leak HK/FO
 ):
     """Get pending accounts receivable (company folios with outstanding balances)"""
-    current_user = await get_current_user(credentials)
 
     try:
         # Get all companies
@@ -240,7 +243,11 @@ async def get_pending_ar(
 
 @router.get("/folio/booking/{booking_id}", response_model=list[Folio])
 @cached(ttl=180, key_prefix="folio_by_booking")  # Cache for 3 min
-async def get_booking_folios(booking_id: str, current_user: User = Depends(get_current_user)):
+async def get_booking_folios(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+):
     """Get all folios for a booking"""
     folios = await db.folios.find({
         'booking_id': booking_id,
@@ -260,6 +267,7 @@ async def get_folio_details(
     folio_id: str,
     request: Request,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     """Get folio with charges and payments"""
     semantic_response = await folio_balance_read_service.get_folio_details(
@@ -317,7 +325,11 @@ async def _legacy_get_folio_details(tenant_id: str, folio_id: str):
 
 @router.get("/folio/{folio_id}/excel")
 @cached(ttl=600, key_prefix="folio_excel")  # Cache for 10 min
-async def export_folio_excel(folio_id: str, current_user: User = Depends(get_current_user)):
+async def export_folio_excel(
+    folio_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+):
     """Export Folio to Excel"""
     folio_data = await get_folio_details(folio_id, current_user)
 
@@ -356,12 +368,15 @@ async def export_folio_excel(folio_id: str, current_user: User = Depends(get_cur
         cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         cell.font = Font(bold=True, color="FFFFFF")
 
+    # Bug AN: charge.description is user-controlled; openpyxl would parse a
+    # leading '=' as a formula. xlsx_safe() prepends apostrophe to neutralize.
+    from core.csv_safe import xlsx_safe
     row = 11
     total_charges = 0
     for charge in charges:
         if not charge.get('voided', False):
             ws.cell(row=row, column=1, value=charge.get('posted_at', '')[:10])
-            ws.cell(row=row, column=2, value=charge.get('description', ''))
+            ws.cell(row=row, column=2, value=xlsx_safe(charge.get('description', '')))
             ws.cell(row=row, column=3, value=charge.get('quantity', 1))
             ws.cell(row=row, column=4, value=f"${charge.get('amount', 0):,.2f}")
             ws.cell(row=row, column=5, value=f"${charge.get('tax_amount', 0):,.2f}")
@@ -423,6 +438,10 @@ async def post_charge_to_folio(
     current_user: User = Depends(get_current_user)
 ):
     """Post a charge to folio"""
+    # Role / permission enforcement (Bug CP fix)
+    from modules.pms_core.role_permission_service import RolePermissionService
+    RolePermissionService().enforce_permission(current_user.role, "post_charge")
+
     folio = await db.folios.find_one({
         'id': folio_id,
         'tenant_id': current_user.tenant_id,
@@ -496,6 +515,10 @@ async def post_payment_to_folio(
     current_user: User = Depends(get_current_user)
 ):
     """Post a payment to folio"""
+    # Role / permission enforcement (Bug CP fix)
+    from modules.pms_core.role_permission_service import RolePermissionService
+    RolePermissionService().enforce_permission(current_user.role, "post_payment")
+
     folio = await db.folios.find_one({
         'id': folio_id,
         'tenant_id': current_user.tenant_id
@@ -533,6 +556,8 @@ async def transfer_charges(
     current_user: User = Depends(get_current_user)
 ):
     """Transfer charges from one folio to another"""
+    from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
+    RolePermissionService().enforce_permission(current_user.role, "transfer_folio")
     if operation_data.operation_type != FolioOperationType.TRANSFER:
         raise HTTPException(status_code=400, detail="Invalid operation type")
 
@@ -596,6 +621,8 @@ async def void_charge(
     current_user: User = Depends(get_current_user)
 ):
     """Void a charge"""
+    from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
+    RolePermissionService().enforce_permission(current_user.role, "void_charge")
     charge = await db.folio_charges.find_one({
         'id': charge_id,
         'folio_id': folio_id,
@@ -647,6 +674,8 @@ async def close_folio(
     current_user: User = Depends(get_current_user)
 ):
     """Close a folio"""
+    from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
+    RolePermissionService().enforce_permission(current_user.role, "close_folio")
     folio = await db.folios.find_one({
         'id': folio_id,
         'tenant_id': current_user.tenant_id,

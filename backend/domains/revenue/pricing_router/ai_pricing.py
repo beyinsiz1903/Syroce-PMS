@@ -3,6 +3,7 @@ Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 import logging
 import uuid
@@ -119,7 +120,8 @@ class RateOverrideRequest(BaseModel):
 @router.post("/rms/ai-pricing/train-model")
 async def train_demand_forecast_model(
     historical_days: int = 365,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """
     Train ML demand forecast model
@@ -170,7 +172,8 @@ async def scrape_competitor_rates(
     date: str,
     competitors: list[str],
     room_types: list[str],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """
     Scrape competitor rates
@@ -228,7 +231,8 @@ async def scrape_competitor_rates(
 async def calculate_price_elasticity(
     room_type: str,
     analysis_days: int = 90,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """
     Price elasticity analysis
@@ -285,7 +289,8 @@ async def auto_publish_rates_based_on_forecast(
     start_date: str,
     end_date: str,
     strategy: str = "revenue_optimization",  # occupancy_maximization, revenue_optimization, balanced
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """
     Auto-publish rates based on AI forecast

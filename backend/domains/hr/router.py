@@ -4,6 +4,8 @@ Domain Router: HR Operations
 HR complete suite, F&B complete suite for department managers.
 """
 import base64
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -48,15 +50,22 @@ async def clock_in(staff_data: dict, current_user: User = Depends(get_current_us
 
 @router.post("/hr/clock-out")
 async def clock_out(staff_data: dict, current_user: User = Depends(get_current_user)):
+    # v109 Bug DAK round-6 (T08 P1): cross-tenant clock-out.
+    # Previously find_one filtered only by staff_id without tenant_id, so
+    # tenant B could clock-out tenant A's staff by guessing/knowing staff_id.
+    # Both find AND update now scope to current_user.tenant_id.
     record = await db.attendance_records.find_one({
-        'staff_id': staff_data['staff_id'], 'date': date.today().isoformat(), 'clock_out': None
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_data['staff_id'],
+        'date': date.today().isoformat(),
+        'clock_out': None,
     })
     if record:
         clock_out_time = datetime.now(UTC)
         clock_in_time = datetime.fromisoformat(record['clock_in'].replace('Z', '+00:00'))
         hours = (clock_out_time - clock_in_time).total_seconds() / 3600
         await db.attendance_records.update_one(
-            {'id': record['id']},
+            {'id': record['id'], 'tenant_id': current_user.tenant_id},
             {'$set': {'clock_out': clock_out_time.isoformat(), 'total_hours': round(hours, 2)}}
         )
         return {'success': True, 'hours_worked': round(hours, 2)}
@@ -245,15 +254,19 @@ async def export_payroll(
             'staff_id', 'staff_name', 'department', 'total_hours', 'overtime_hours',
             'hourly_rate', 'overtime_rate', 'gross_pay'
         ])
+        # Bug AN: payroll rows include user-supplied staff_name etc.
+        from core.csv_safe import safe_dict_writerow
         writer.writeheader()
         for row in payroll:
-            writer.writerow(row)
+            safe_dict_writerow(writer, row)
         response['csv'] = base64.b64encode(buffer.getvalue().encode()).decode()
 
     return response
 
 @router.post("/hr/job-posting")
-async def create_job_posting(job_data: dict, current_user: User = Depends(get_current_user)):
+async def create_job_posting(job_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     job = {
         'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
         **job_data, 'status': 'active', 'applicants_count': 0,
@@ -301,7 +314,9 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: dict[str, dict]):
 
 
 @router.post("/fnb/recipes")
-async def create_recipe(recipe_data: dict, current_user: User = Depends(get_current_user)):
+async def create_recipe(recipe_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
 
     recipe = {
@@ -359,7 +374,9 @@ async def get_recipe(recipe_id: str, current_user: User = Depends(get_current_us
 
 
 @router.put("/fnb/recipes/{recipe_id}")
-async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = Depends(get_current_user)):
+async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+):
     recipe = await db.recipes.find_one({'tenant_id': current_user.tenant_id, 'id': recipe_id})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -376,7 +393,9 @@ async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = 
     return {'success': True, 'recipe': updated}
 
 @router.post("/fnb/beo")
-async def create_beo(beo_data: dict, current_user: User = Depends(get_current_user)):
+async def create_beo(beo_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     beo = {
         'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
         **beo_data, 'status': 'confirmed',
@@ -420,7 +439,9 @@ async def get_kitchen_orders(
 
 
 @router.post("/fnb/kitchen-order")
-async def create_kitchen_order(order_data: dict, current_user: User = Depends(get_current_user)):
+async def create_kitchen_order(order_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     if not order_data.get('items'):
         raise HTTPException(status_code=400, detail="Order items required")
 
@@ -448,7 +469,8 @@ async def create_kitchen_order(order_data: dict, current_user: User = Depends(ge
 async def update_kitchen_order_status(
     order_id: str,
     status: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     update_data = {'status': status}
     if status == 'preparing':
@@ -492,7 +514,9 @@ async def list_ingredients(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/fnb/ingredients")
-async def add_ingredient(ing_data: dict, current_user: User = Depends(get_current_user)):
+async def add_ingredient(ing_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     ingredient = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -513,7 +537,9 @@ async def add_ingredient(ing_data: dict, current_user: User = Depends(get_curren
 
 
 @router.put("/fnb/ingredients/{ingredient_id}")
-async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: User = Depends(get_current_user)):
+async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     ingredient = await db.ingredients.find_one({'tenant_id': current_user.tenant_id, 'id': ingredient_id})
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")

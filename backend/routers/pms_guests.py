@@ -9,6 +9,7 @@ from core.database import db
 from core.helpers import require_module
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from models.schemas import Guest, GuestCreate, User
 
 try:
@@ -64,6 +65,7 @@ async def get_guests(
     p: PaginationParams = Depends(paginate(default_limit=1000, max_limit=5000)),
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
+    _perm=Depends(require_op("view_guest_list")),  # v71 Bug DH (PII)
 ):
     limit, offset = p.limit, p.offset
     guests_raw = await db.guests.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).skip(offset).limit(limit).to_list(limit)

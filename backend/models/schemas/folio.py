@@ -41,9 +41,9 @@ class Folio(BaseModel):
 
 class ChargeCreate(BaseModel):
     charge_category: ChargeCategory
-    description: str
-    amount: float
-    quantity: float = 1.0
+    description: str = Field(..., min_length=1, max_length=500)
+    amount: float = Field(..., ge=0, le=1e9)
+    quantity: float = Field(1.0, gt=0, le=1e6)
     auto_calculate_tax: bool = False
 
 class FolioCharge(BaseModel):
@@ -67,11 +67,11 @@ class FolioCharge(BaseModel):
     voided_at: datetime | None = None
 
 class PaymentCreate(BaseModel):
-    amount: float
+    amount: float = Field(..., gt=0, le=1e9)
     method: PaymentMethod
     payment_type: PaymentType
-    reference: str | None = None
-    notes: str | None = None
+    reference: str | None = Field(None, max_length=200)
+    notes: str | None = Field(None, max_length=2000)
 
 class Payment(BaseModel):
     model_config = ConfigDict(extra="ignore")

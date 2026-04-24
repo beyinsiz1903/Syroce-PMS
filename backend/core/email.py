@@ -129,8 +129,18 @@ def render_password_reset_email(
     expires_in_minutes: int = 30,
 ) -> tuple[str, str]:
     """Return (subject, html) for the password reset email."""
+    # Bug CN (architect Round-1 ek bulgu): user.name profil alanından gelir
+    # ve raw f-string'e konuyordu — saldırgan profilini `<a href=phish>` yapıp
+    # şifre sıfırlama mailine HTML zerk edebilirdi (yardım masası operatörünün
+    # in-app preview'ında XSS, veya self-forward sosyal mühendislik). reset_link
+    # ve `code` backend-üretimi sabit-format — escape gerekmiyor ama defansif
+    # olarak escape ediyoruz.
+    from core.mailing_safe import safe_html_value
+    escaped_name = safe_html_value(name) if name else None
+    escaped_reset_link = safe_html_value(reset_link)
+    escaped_code = safe_html_value(code)
     subject = "Syroce şifre sıfırlama"
-    greeting = f"Merhaba {name}," if name else "Merhaba,"
+    greeting = f"Merhaba {escaped_name}," if escaped_name else "Merhaba,"
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111827;">
       <div style="text-align:center; margin-bottom:24px;">
@@ -144,7 +154,7 @@ def render_password_reset_email(
         <strong>{expires_in_minutes} dakika</strong> içinde geçersiz olur.
       </p>
       <p style="text-align:center; margin:28px 0;">
-        <a href="{reset_link}" style="background:#4f46e5; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:600; font-size:14px;">
+        <a href="{escaped_reset_link}" style="background:#4f46e5; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:600; font-size:14px;">
           Şifremi Sıfırla
         </a>
       </p>
@@ -152,11 +162,11 @@ def render_password_reset_email(
         Buton çalışmazsa şu adresi tarayıcınıza yapıştırın:
       </p>
       <p style="font-size:12px; word-break:break-all; color:#4f46e5; margin:0 0 24px;">
-        <a href="{reset_link}" style="color:#4f46e5;">{reset_link}</a>
+        <a href="{escaped_reset_link}" style="color:#4f46e5;">{escaped_reset_link}</a>
       </p>
       <div style="border-top:1px solid #e5e7eb; padding-top:16px; font-size:12px; color:#6b7280;">
         Alternatif olarak şu doğrulama kodunu kullanabilirsiniz:
-        <div style="margin-top:8px; font-family: monospace; font-size:18px; letter-spacing:4px; color:#111827; font-weight:600;">{code}</div>
+        <div style="margin-top:8px; font-family: monospace; font-size:18px; letter-spacing:4px; color:#111827; font-weight:600;">{escaped_code}</div>
       </div>
       <p style="font-size:12px; color:#9ca3af; margin-top:24px;">
         Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.

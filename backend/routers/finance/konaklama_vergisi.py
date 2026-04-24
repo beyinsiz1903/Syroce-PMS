@@ -12,6 +12,7 @@ Bu modül `db.city_tax_rules` (mevcut config koleksiyonu) ve
 Posting izi `db.accommodation_tax_postings` koleksiyonunda tutulur.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -79,6 +80,7 @@ async def get_config(current_user: User = Depends(get_current_user)) -> dict[str
 async def update_config(
     cfg: KonaklamaVergisiConfig,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ) -> dict[str, Any]:
     payload = {
         "tenant_id": current_user.tenant_id,
@@ -112,6 +114,7 @@ async def update_config(
 async def calculate(
     req: CalculateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v101 DW
 ) -> dict[str, Any]:
     cfg = await _load_config(current_user.tenant_id)
     rate = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
@@ -292,6 +295,7 @@ class PaymentRequest(BaseModel):
 async def finalize_declaration(
     body: FinalizeRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v101 DW
 ) -> dict[str, Any]:
     """Snapshot the period and persist a locked declaration record.
 
@@ -399,6 +403,7 @@ async def get_declaration(
 async def submit_declaration(
     decl_id: str, body: SubmitRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v101 DW
 ) -> dict[str, Any]:
     decl = await _load_decl(current_user.tenant_id, decl_id)
     if decl.get("status") not in ("finalized",):
@@ -431,6 +436,7 @@ async def submit_declaration(
 async def pay_declaration(
     decl_id: str, body: PaymentRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v101 DW
 ) -> dict[str, Any]:
     decl = await _load_decl(current_user.tenant_id, decl_id)
     if decl.get("status") not in ("submitted", "finalized"):
@@ -487,6 +493,7 @@ async def export_declaration(
 async def post_to_folio(
     folio_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v101 DW
 ) -> dict[str, Any]:
     """Bir folio için konaklama vergisi satırını idempotent olarak ekle."""
     folio = await db.folios.find_one(

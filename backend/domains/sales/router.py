@@ -5,6 +5,8 @@ Extracted from legacy_routes.py — leads, funnel, activities,
 campaigns, segments, complaints, spa, events.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v98 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -20,7 +22,8 @@ router = APIRouter(prefix="/api", tags=["sales-crm-domain"])
 
 @router.post("/sales/leads")
 async def create_lead(
-    lead_data: dict, current_user: User = Depends(get_current_user)
+    lead_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Yeni satis lead'i olustur"""
     lead = {
@@ -79,7 +82,8 @@ async def get_sales_funnel(current_user: User = Depends(get_current_user)):
 
 @router.post("/sales/activity")
 async def log_sales_activity(
-    activity_data: dict, current_user: User = Depends(get_current_user)
+    activity_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Satis aktivitesi kaydet"""
     activity = {
@@ -104,7 +108,8 @@ async def log_sales_activity(
 
 @router.post("/marketing/campaigns")
 async def create_campaign(
-    campaign_data: dict, current_user: User = Depends(get_current_user)
+    campaign_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Pazarlama kampanyasi olustur"""
     campaign = {
@@ -135,7 +140,8 @@ async def get_customer_segments(current_user: User = Depends(get_current_user)):
 
 @router.post("/service/complaints")
 async def create_complaint(
-    complaint_data: dict, current_user: User = Depends(get_current_user)
+    complaint_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Sikayet kaydi olustur"""
     allowed_fields = {
@@ -162,7 +168,8 @@ async def create_complaint(
 
 @router.post("/spa/appointments")
 async def create_spa_appointment(
-    appointment_data: dict, current_user: User = Depends(get_current_user)
+    appointment_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     appointment = {
         "id": str(uuid.uuid4()),
@@ -187,7 +194,8 @@ async def get_spa_appointments(current_user: User = Depends(get_current_user)):
 
 @router.post("/events/bookings")
 async def create_event_booking(
-    event_data: dict, current_user: User = Depends(get_current_user)
+    event_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     event = {
         "id": str(uuid.uuid4()),

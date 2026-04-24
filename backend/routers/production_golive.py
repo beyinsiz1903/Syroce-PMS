@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 router = APIRouter(prefix="/api/production-golive", tags=["production-golive"])
 
@@ -24,7 +25,10 @@ async def get_readiness(current_user: User = Depends(get_current_user)):
 
 @router.get("/summary")
 @cached(ttl=60, key_prefix="golive_summary")
-async def get_golive_summary(current_user: User = Depends(get_current_user)):
+async def get_golive_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v87 DR-FOLLOWUP-1: ops/devops diagnostics
+):
     """Complete production go-live dashboard data — aggregates all subsystems."""
     from infra.mongo_production import mongo_validator
     from infra.production_config import production_config
@@ -148,14 +152,18 @@ async def config_activation_category(category: str, current_user: User = Depends
 # ── Provider Test Connection ──────────────────────────────────────
 
 @router.post("/providers/{provider}/test")
-async def test_provider_connection(provider: str, current_user: User = Depends(get_current_user)):
+async def test_provider_connection(provider: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Live test connection for a specific provider."""
     from infra.provider_test_connection import provider_test_service
     return await provider_test_service.test_provider(provider, user_id=current_user.id)
 
 
 @router.post("/providers/test-all")
-async def test_all_providers(current_user: User = Depends(get_current_user)):
+async def test_all_providers(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Test all provider connections."""
     from infra.provider_test_connection import provider_test_service
     return await provider_test_service.test_all_providers(user_id=current_user.id)
@@ -308,7 +316,9 @@ async def worker_scaling_readiness(current_user: User = Depends(get_current_user
 # ── Pre-Launch Validation Suite ───────────────────────────────────
 
 @router.post("/validate/run")
-async def run_prelaunch_validation(current_user: User = Depends(get_current_user)):
+async def run_prelaunch_validation(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Run full pre-launch validation suite."""
     from core.database import db
     from infra.prelaunch_validator import prelaunch_validator
@@ -351,6 +361,7 @@ async def fire_alert(
     alert_type: str = Body(...),
     context: dict = Body(default={}),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Manually fire a production alert."""
     from infra.live_ops_alerts import live_ops_alerts
@@ -533,21 +544,27 @@ async def secrets_metrics(current_user: User = Depends(get_current_user)):
 # ── Backup Trigger & Restore Test ─────────────────────────────────
 
 @router.post("/backup/trigger")
-async def trigger_backup(current_user: User = Depends(get_current_user)):
+async def trigger_backup(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
+):
     """Manually trigger a MongoDB backup."""
     from infra.backup_manager import backup_manager
     return await backup_manager.create_backup("manual")
 
 
 @router.post("/backup/restore-test/{backup_id}")
-async def test_restore(backup_id: str, current_user: User = Depends(get_current_user)):
+async def test_restore(backup_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
+):
     """Test restore integrity for a specific backup."""
     from infra.backup_manager import backup_manager
     return await backup_manager.test_restore(backup_id)
 
 
 @router.post("/backup/cleanup")
-async def cleanup_backups(current_user: User = Depends(get_current_user)):
+async def cleanup_backups(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
+):
     """Remove backups older than retention period."""
     from infra.backup_manager import backup_manager
     return await backup_manager.cleanup_old_backups()

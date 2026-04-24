@@ -63,8 +63,9 @@ class RequestTracingMiddleware:
                         token = auth_val[7:]
                         secret = os.environ.get("JWT_SECRET", "")
                         if secret:
-                            payload = pyjwt.decode(token, secret, algorithms=["HS256"],
-                                                   options={"verify_exp": False})
+                            # v42 Bug BH: enforce expiry — expired tokens
+                            # should not annotate traces with their tenant_id.
+                            payload = pyjwt.decode(token, secret, algorithms=["HS256"])
                             tenant_id = payload.get("tenant_id")
                 except Exception:
                     pass

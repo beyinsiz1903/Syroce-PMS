@@ -4,15 +4,23 @@ Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
+from modules.pms_core.role_permission_service import RolePermissionService
+
+# Bug CP fix — shared role-permission enforcement for financial endpoints
+_rps = RolePermissionService()
+def _enforce_perm(role: str, op: str) -> None:
+    _rps.enforce_permission(role, op)
 from models.schemas.bookings import BookingCreate
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
@@ -38,32 +46,33 @@ router = APIRouter(prefix="/api/pms", tags=["reservation-detail"])
 # ── Request/Response Models ──
 
 class PaymentRecord(BaseModel):
-    amount: float
-    method: str  # cash, card, bank_transfer, online
-    payment_type: str = "interim"  # prepayment, deposit, interim, final
-    reference: str | None = None
-    notes: str | None = None
+    # Bug CP fix — financial input validation (positive amounts, sane bounds)
+    amount: float = Field(..., gt=0, le=1e9)
+    method: str = Field(..., min_length=1, max_length=50)  # cash, card, bank_transfer, online
+    payment_type: str = Field("interim", max_length=50)  # prepayment, deposit, interim, final
+    reference: str | None = Field(None, max_length=200)
+    notes: str | None = Field(None, max_length=2000)
 
 
 class CariTransfer(BaseModel):
-    amount: float
+    amount: float = Field(..., gt=0, le=1e9)
     cari_account_id: str
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
 
 
 class AgencyPaymentRecord(BaseModel):
-    amount: float
-    agency_name: str | None = None
-    reference: str | None = None
-    notes: str | None = None
+    amount: float = Field(..., gt=0, le=1e9)
+    agency_name: str | None = Field(None, max_length=200)
+    reference: str | None = Field(None, max_length=200)
+    notes: str | None = Field(None, max_length=2000)
 
 
 class ChargeSplit(BaseModel):
     charge_id: str
     target_folio_id: str | None = None
     target_booking_id: str | None = None
-    split_amount: float
-    reason: str | None = None
+    split_amount: float = Field(..., gt=0, le=1e9)
+    reason: str | None = Field(None, max_length=2000)
 
 
 class NoteCreate(BaseModel):
@@ -79,22 +88,28 @@ class RoomChangeRequest(BaseModel):
 
 class EarlyCheckinRequest(BaseModel):
     checkin_time: str | None = None
-    extra_charge: float = 0.0
+    extra_charge: float = Field(0.0, ge=0, le=1e9)
 
 
 class LateCheckoutRequest(BaseModel):
     checkout_time: str | None = None
-    extra_charge: float = 0.0
+    extra_charge: float = Field(0.0, ge=0, le=1e9)
 
 
 class DepositRecord(BaseModel):
-    amount: float
-    method: str = "cash"
-    reference: str | None = None
+    amount: float = Field(..., gt=0, le=1e9)
+    method: str = Field("cash", max_length=50)
+    reference: str | None = Field(None, max_length=200)
+
+
+class DailyRateEntry(BaseModel):
+    # Bug CP Round-3 — typed entries prevent untyped/negative rates bypassing override gate
+    date: str = Field(..., min_length=8, max_length=32)
+    rate: float = Field(..., ge=0, le=1e9)
 
 
 class DailyRateUpdate(BaseModel):
-    rates: list[dict[str, Any]]  # [{date: "2026-03-18", rate: 450.0}, ...]
+    rates: list[DailyRateEntry] = Field(..., min_length=1, max_length=400)
 
 
 class CariAccountCreate(BaseModel):
@@ -109,10 +124,10 @@ class CariAccountCreate(BaseModel):
 
 
 class ExtraChargeAdd(BaseModel):
-    description: str
-    category: str = "other"  # room, food, beverage, minibar, spa, laundry, other
-    amount: float
-    quantity: float = 1.0
+    description: str = Field(..., min_length=1, max_length=500)
+    category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
+    amount: float = Field(..., ge=0, le=1e9)
+    quantity: float = Field(1.0, gt=0, le=1e6)
 
 
 class GuestUpdate(BaseModel):
@@ -156,9 +171,9 @@ class CommunicationLogCreate(BaseModel):
 
 class DepositRefund(BaseModel):
     deposit_id: str
-    refund_amount: float
-    refund_method: str = "cash"
-    reason: str | None = None
+    refund_amount: float = Field(..., gt=0, le=1e9)
+    refund_method: str = Field("cash", max_length=50)
+    reason: str | None = Field(None, max_length=2000)
 
 
 # ── Helper ──
@@ -337,8 +352,10 @@ async def record_payment(
     booking_id: str,
     data: PaymentRecord,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment on the reservation's folio."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -401,8 +418,10 @@ async def transfer_to_cari(
     booking_id: str,
     data: CariTransfer,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer an amount from reservation folio to a cari (account receivable) account."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -454,8 +473,10 @@ async def record_agency_payment(
     booking_id: str,
     data: AgencyPaymentRecord,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment made by an agency."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -517,8 +538,10 @@ async def split_charge(
     booking_id: str,
     data: ChargeSplit,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Split a charge from one folio to another (e.g., transfer part of a meal to another room)."""
+    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -621,6 +644,7 @@ async def add_reservation_note(
     booking_id: str,
     data: NoteCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Add a note to a reservation."""
     _ensure_hotel_context(current_user)
@@ -650,8 +674,10 @@ async def room_change(
     booking_id: str,
     data: RoomChangeRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Change the room for a reservation with full audit trail."""
+    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -718,8 +744,10 @@ async def early_checkin(
     booking_id: str,
     data: EarlyCheckinRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process early check-in with optional extra charge — atomic transaction."""
+    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -766,8 +794,10 @@ async def late_checkout(
     booking_id: str,
     data: LateCheckoutRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process late check-out with optional extra charge."""
+    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -805,8 +835,10 @@ async def late_checkout(
 async def mark_noshow(
     booking_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Mark a reservation as no-show."""
+    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -836,8 +868,10 @@ async def update_vip_status(
     booking_id: str,
     vip: bool = True,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Toggle VIP status for the guest of a reservation."""
+    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -861,8 +895,10 @@ async def record_deposit(
     booking_id: str,
     data: DepositRecord,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a deposit payment."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -920,8 +956,10 @@ async def add_extra_charge_detail(
     booking_id: str,
     data: ExtraChargeAdd,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Add an extra charge to a reservation."""
+    _enforce_perm(current_user.role, "post_charge")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -961,8 +999,10 @@ async def update_daily_rates(
     booking_id: str,
     data: DailyRateUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),  # v97 DW
 ):
-    """Update daily rates for a reservation."""
+    """Update daily rates for a reservation. Requires override_rate permission."""
+    _enforce_perm(current_user.role, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -972,9 +1012,9 @@ async def update_daily_rates(
 
     for rate_entry in data.rates:
         await db.daily_rates.update_one(
-            {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry["date"]},
+            {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
             {"$set": {
-                "rate": rate_entry["rate"],
+                "rate": rate_entry.rate,
                 "updated_by": current_user.name,
                 "updated_at": datetime.now(UTC).isoformat(),
             }},
@@ -982,7 +1022,7 @@ async def update_daily_rates(
         )
 
     # Recalculate total
-    new_total = sum(r.get("rate", 0) for r in data.rates)
+    new_total = sum(r.rate for r in data.rates)
     if new_total > 0:
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
@@ -1001,8 +1041,10 @@ async def update_reservation_guest(
     booking_id: str,
     data: GuestUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Update guest information for a reservation."""
+    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1047,8 +1089,10 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
 async def create_cari_account(
     data: CariAccountCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Create a new cari account."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4 — financial setup
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1093,8 +1137,9 @@ async def get_cari_transactions(
 
 
 class CariReconciliation(BaseModel):
-    amount: float
-    description: str | None = None
+    # Bug CP Round-4 — financial input validation
+    amount: float = Field(..., gt=0, le=1e9)
+    description: str | None = Field(None, max_length=2000)
 
 
 @router.post("/cari-accounts/{account_id}/reconcile")
@@ -1102,8 +1147,10 @@ async def reconcile_cari_account(
     account_id: str,
     data: CariReconciliation,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Reconcile (mahsuplaştır) a cari account - record a payment/offset."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1139,8 +1186,10 @@ async def transfer_cari_to_agency(
     account_id: str,
     data: CariTransfer,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer cari balance to an agency cari account."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1245,6 +1294,7 @@ async def create_group_booking(
     data: GroupBookingCreate,
     request: Request,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a new group booking.
 
@@ -1255,6 +1305,7 @@ async def create_group_booking(
          placeholder e-posta ile açılır, sonra standart rezervasyon
          servisi (`CreateReservationService`) çağrılır.
     """
+    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1453,8 +1504,10 @@ async def add_room_to_group(
     group_id: str,
     data: GroupBookingAddRoom,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Add a booking/room to a group."""
+    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1485,8 +1538,10 @@ async def add_room_to_group(
 async def group_check_in_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-in all reservations in a group — each via atomic transaction."""
+    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1517,8 +1572,10 @@ async def group_check_in_all(
 async def group_check_out_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-out all reservations in a group — each via atomic transaction."""
+    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1553,6 +1610,7 @@ async def add_communication_log(
     booking_id: str,
     data: CommunicationLogCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Add a communication log entry for a reservation."""
     _ensure_hotel_context(current_user)
@@ -1623,8 +1681,10 @@ async def refund_deposit(
     booking_id: str,
     data: DepositRefund,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Refund a deposit."""
+    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 

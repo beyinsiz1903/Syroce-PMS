@@ -3,6 +3,7 @@ Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 import logging
 import uuid
@@ -514,7 +515,8 @@ async def set_free_sale_control(
     min_lead_time_days: int | None = None,
     release_period_days: int | None = None,
     max_free_sale_rooms: int | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     """
     Free-sale control mechanism

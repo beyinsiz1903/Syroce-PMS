@@ -80,13 +80,19 @@ class TenantContextMiddleware:
                     return ""
                 token = auth_header[7:]
                 try:
+                    # v42 Bug BH (defense-in-depth): enforce JWT expiry here
+                    # too. Previously verify_exp=False meant expired tokens
+                    # still set tenant_context — if any route ever forgets
+                    # `Depends(get_current_user)`, stolen-token TTL becomes
+                    # infinite for tenant-scoped queries. Now expired tokens
+                    # silently produce no tenant context (matches behavior
+                    # for unsigned/tampered tokens).
                     payload = jwt.decode(
                         token,
                         self._jwt_secret,
                         algorithms=[self._jwt_algorithm],
-                        options={"verify_exp": False},
                     )
                     return payload.get("tenant_id", "")
-                except (jwt.InvalidTokenError, jwt.DecodeError):
+                except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, jwt.DecodeError):
                     return ""
         return ""

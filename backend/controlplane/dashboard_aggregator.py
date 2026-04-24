@@ -70,9 +70,13 @@ class DashboardAggregator:
         self._db = None
 
     def _get_db(self):
+        # v42 round-2: aggregator runs system-wide (tenant_id=None) from a
+        # background snapshot worker without tenant_context. Every query in
+        # this module already injects `tenant_id` manually when scoping is
+        # required, so use the raw system DB to bypass STRICT_TENANT_MODE.
         if self._db is None:
-            from core.database import db
-            self._db = db
+            from core.tenant_db import get_system_db
+            self._db = get_system_db()
         return self._db
 
     async def compute_dashboard(

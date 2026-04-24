@@ -32,7 +32,8 @@ async def on_startup(app):
             logger.critical("CRYPTO_BYPASS_ALLOWED=true — ENCRYPTION IS DISABLED")
     except Exception as e:
         logger.error(f"Crypto service startup failed: {e}")
-        if os.environ.get("APP_ENV") in ("production", "staging"):
+        from infra.production_config import is_strict_env
+        if is_strict_env():
             raise
 
     # ── Secrets Manager Validation ───────────────────────────────────
@@ -44,8 +45,9 @@ async def on_startup(app):
         logger.info("Secrets manager initialized: provider=%s env=%s", config.provider, config.app_env)
     except Exception as e:
         logger.error(f"Secrets manager startup validation failed: {e}")
-        if os.environ.get("APP_ENV") in ("production", "staging"):
-            raise  # Hard fail in production
+        from infra.production_config import is_strict_env
+        if is_strict_env():
+            raise  # Hard fail in production/staging
 
     # ── PII Audit indexes ───────────────────────────────────────────
     try:
@@ -68,7 +70,8 @@ async def on_startup(app):
     # ── Control Plane Startup Validation ────────────────────────────
     try:
         from controlplane.startup_validator import validate_startup
-        strict = os.environ.get("APP_ENV") in ("production", "staging")
+        from infra.production_config import is_strict_env
+        strict = is_strict_env()
         cp_report = await validate_startup(strict=strict)
         logger.info(
             "Control plane validation: %s (%d issues)",
@@ -77,7 +80,8 @@ async def on_startup(app):
         )
     except Exception as e:
         logger.error(f"Control plane startup validation failed: {e}")
-        if os.environ.get("APP_ENV") in ("production", "staging"):
+        from infra.production_config import is_strict_env
+        if is_strict_env():
             raise
 
     # ── Event Timeline indexes ───────────────────────────────────────
@@ -134,11 +138,23 @@ async def on_startup(app):
         logger.warning(f"Deploy event index creation error: {e}")
 
     # ── Auto-seed demo data ─────────────────────────────────────────
-    try:
-        from auto_seed import auto_seed_if_empty
-        await auto_seed_if_empty(_raw_db)
-    except Exception as e:
-        logger.warning(f"Auto-seed error: {e}")
+    # v109 round-8 architect blocker: NEVER seed demo data in production.
+    # The seed contains a real-looking HotelRunner token in auto_seed.py
+    # (lines 835/874/989). Production must not boot with these credentials
+    # written into a real tenant. Operators can override with
+    # ALLOW_AUTO_SEED_IN_PROD=1 if they have rotated the seed token.
+    # 5th-pass: use the unified helper so APP_ENV/ENVIRONMENT/NODE_ENV are
+    # all honored consistently (matches production_config gates above).
+    from infra.production_config import is_production_env
+    _seed_override = os.environ.get("ALLOW_AUTO_SEED_IN_PROD", "").lower() in {"1", "true", "yes"}
+    if is_production_env() and not _seed_override:
+        logger.info("Auto-seed skipped — production mode (set ALLOW_AUTO_SEED_IN_PROD=1 to override)")
+    else:
+        try:
+            from auto_seed import auto_seed_if_empty
+            await auto_seed_if_empty(_raw_db)
+        except Exception as e:
+            logger.warning(f"Auto-seed error: {e}")
 
     # ── Ensure Exely webhook test connection exists ──────────────────
     try:
@@ -500,6 +516,14 @@ async def on_startup(app):
         from infra.production_config import production_config
         startup_result = production_config.startup_check()
         logger.info(f"✅ Production Go-Live validators initialized (config: {startup_result['status']})")
+    except RuntimeError:
+        # v109 round-8 architect 4th-pass: production_config.startup_check()
+        # raises RuntimeError on intentional fail-closed conditions (forbidden
+        # leaked secrets, STRICT_TENANT_MODE missing in prod). These are
+        # explicit go-live gates — re-raise so the process exits and ops sees
+        # the abort instead of silently booting with insecure config.
+        logger.error("❌ Production Go-Live validator REFUSED boot — see RuntimeError above")
+        raise
     except Exception as e:
         logger.warning(f"Production Go-Live validators init warning: {e}")
 

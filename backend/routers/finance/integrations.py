@@ -1,5 +1,6 @@
 """Auto-split from finance.py — section: integrations."""
 import asyncio
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 import uuid
 from datetime import UTC, datetime
 
@@ -86,7 +87,9 @@ async def _log_accounting_sync(tenant_id: str, payload: dict):
 
 
 @router.post("/finance/logo-integration/sync")
-async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(get_current_user)):
+async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v94 DW
+):
     """Sync finance data with Logo ERP"""
     connector = LogoConnector()
     since = sync_data.get('since') if sync_data else None
@@ -121,7 +124,9 @@ async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(ge
 
 
 @router.post("/finance/netsis-integration/sync")
-async def sync_with_netsis(sync_data: dict = None, current_user: User = Depends(get_current_user)):
+async def sync_with_netsis(sync_data: dict = None, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v94 DW
+):
     connector = NetsisConnector()
     since = sync_data.get('since') if sync_data else None
     invoices = await _gather_invoices(current_user.tenant_id, since)

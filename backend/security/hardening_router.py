@@ -5,6 +5,7 @@ credential checks, tenant guard, and log sanitization status.
 Thin router: delegates all business logic to SecurityRuntimeService.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from common.context import OperationContext
 from core.security import get_current_user
@@ -34,7 +35,9 @@ async def get_rate_limit_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/credentials/check", summary="Scan for weak credentials")
-async def check_credentials(current_user: User = Depends(get_current_user)):
+async def check_credentials(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     result = await security_runtime_service.check_credentials(_ctx(current_user))
     if not result.ok:
         raise HTTPException(status_code=403, detail=result.error)
@@ -57,6 +60,7 @@ async def get_log_sanitization_status(current_user: User = Depends(get_current_u
 async def check_secret_leakage(
     text: str = Query(..., description="Text to check for leaked secrets"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await security_runtime_service.check_secret_leakage(_ctx(current_user), text)
     if not result.ok:

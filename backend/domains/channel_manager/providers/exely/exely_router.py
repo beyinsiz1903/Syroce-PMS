@@ -3,6 +3,7 @@ Exely Integration Router
 API endpoints for Exely connection management, room discovery, mapping, ARI push, and sync.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -108,6 +109,7 @@ async def _get_client(tenant_id: str) -> tuple:
 async def setup_connection(
     payload: ExelyConnectionSetup,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Setup Exely SOAP connection with credentials and test it."""
     kwargs = {
@@ -190,7 +192,9 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/test")
-async def test_connection(current_user: User = Depends(get_current_user)):
+async def test_connection(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
     )
@@ -215,7 +219,9 @@ async def test_connection(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/disconnect")
-async def disconnect(current_user: User = Depends(get_current_user)):
+async def disconnect(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     result = await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id},
         {"$set": {"is_active": False, "disconnected_at": datetime.now(UTC).isoformat()}},
@@ -234,6 +240,7 @@ class CurrencyUpdateRequest(BaseModel):
 async def update_currency(
     payload: CurrencyUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Update the currency for the Exely connection."""
     allowed = {"TRY", "USD", "EUR", "GBP", "RUB"}
@@ -287,6 +294,7 @@ async def discover_rooms(
 async def create_room_mapping(
     payload: ExelyRoomMapping,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     mapping = {
         "id": str(uuid.uuid4()),
@@ -318,6 +326,7 @@ async def get_room_mappings(current_user: User = Depends(get_current_user)):
 async def delete_room_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     result = await db.exely_room_mappings.delete_one({
         "id": mapping_id, "tenant_id": current_user.tenant_id,
@@ -333,6 +342,7 @@ async def delete_room_mapping(
 async def push_ari(
     payload: ExelyARIUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Push a delta ARI update to Exely."""
     client, conn = await _get_client(current_user.tenant_id)
@@ -363,6 +373,7 @@ async def push_ari(
 async def bulk_push_ari(
     updates: list[ExelyARIUpdate],
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Push multiple ARI updates."""
     client, conn = await _get_client(current_user.tenant_id)
@@ -392,7 +403,9 @@ async def bulk_push_ari(
 # ── Reservation Sync ─────────────────────────────────────────────────
 
 @router.post("/sync/reservations/pull")
-async def manual_pull(current_user: User = Depends(get_current_user)):
+async def manual_pull(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+):
     """Manually trigger a reservation pull from Exely."""
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
@@ -626,6 +639,7 @@ async def get_local_reservations(
 async def confirm_reservation(
     reservation_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     """Confirm reservation delivery to Exely via OTA_NotifReportRQ."""
     client, conn = await _get_client(current_user.tenant_id)
@@ -654,6 +668,7 @@ async def confirm_reservation(
 @router.post("/reservations/confirm-all-imported")
 async def confirm_all_imported_deliveries(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     """Confirm delivery for all imported but unconfirmed reservations."""
     tenant_id = current_user.tenant_id
@@ -705,6 +720,7 @@ async def confirm_all_imported_deliveries(
 async def import_reservation_to_pms(
     reservation_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Manually import a channel reservation into PMS as a booking."""
     tenant_id = current_user.tenant_id
@@ -759,6 +775,7 @@ class TestBookingVerifyRequest(BaseModel):
 async def verify_test_booking(
     payload: TestBookingVerifyRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Verify a test booking via OTA_ReadRQ.
@@ -917,7 +934,9 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/sync/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user)):
+async def start_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
     )
@@ -929,7 +948,9 @@ async def start_scheduler(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/sync/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user)):
+async def stop_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     await exely_pull_scheduler.stop()
     return {"message": "Scheduler durduruldu"}
 

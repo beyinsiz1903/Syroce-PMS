@@ -1,5 +1,6 @@
 """Auto-split from finance.py — section: mobile."""
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,7 +43,8 @@ class RecordPaymentRequest(BaseModel):
 @router.get("/finance/mobile/daily-collections")
 async def get_daily_collections_mobile(
     date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get daily collections for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -88,7 +90,8 @@ async def get_daily_collections_mobile(
 async def get_monthly_collections_mobile(
     year: int | None = None,
     month: int | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get monthly collections for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -134,7 +137,8 @@ async def get_monthly_collections_mobile(
 async def get_profit_loss_report_v2(
     start_date: str | None = None,
     end_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get Profit & Loss (P&L) report"""
     await get_current_user(credentials)
@@ -163,7 +167,8 @@ async def get_profit_loss_report_v2(
 async def get_cashier_shift_report(
     shift_date: str | None = None,
     cashier_name: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get cashier shift report"""
     current_user = await get_current_user(credentials)
@@ -236,7 +241,8 @@ async def get_cashier_shift_report(
 
 @router.get("/finance/mobile/pending-receivables")
 async def get_pending_receivables_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get pending receivables for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -318,7 +324,8 @@ async def get_pending_receivables_mobile(
 async def get_monthly_costs_mobile(
     year: int | None = None,
     month: int | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get monthly costs for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -365,7 +372,8 @@ async def get_monthly_costs_mobile(
 @router.post("/finance/mobile/record-payment")
 async def record_payment_mobile(
     request: RecordPaymentRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("post_payment")),  # v92 DW
 ):
     """Record a payment from finance mobile"""
     current_user = await get_current_user(credentials)
@@ -433,7 +441,8 @@ async def record_payment_mobile(
 
 @router.get("/finance/mobile/cash-flow-summary")
 async def get_cash_flow_summary_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get cash flow summary for finance mobile dashboard
     - Today's cash inflow (tahsilat)
@@ -546,7 +555,8 @@ async def get_cash_flow_summary_mobile(
 @router.get("/finance/mobile/overdue-accounts")
 async def get_overdue_accounts_mobile(
     min_days: int = 7,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get accounts overdue by more than specified days (default 7)
     Returns with risk level classification:
@@ -642,7 +652,8 @@ async def get_overdue_accounts_mobile(
 
 @router.get("/finance/mobile/credit-limit-violations")
 async def get_credit_limit_violations_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get companies exceeding their credit limits"""
     current_user = await get_current_user(credentials)
@@ -722,7 +733,8 @@ async def get_credit_limit_violations_mobile(
 
 @router.get("/finance/mobile/suspicious-receivables")
 async def get_suspicious_receivables_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get suspicious receivables list (30+ days overdue + high amounts)"""
     current_user = await get_current_user(credentials)
@@ -801,7 +813,8 @@ async def get_suspicious_receivables_mobile(
 
 @router.get("/finance/mobile/risk-alerts")
 async def get_risk_alerts_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get comprehensive risk alerts for finance dashboard"""
     current_user = await get_current_user(credentials)
@@ -899,7 +912,8 @@ async def get_risk_alerts_mobile(
 @router.get("/finance/mobile/daily-expenses")
 async def get_daily_expenses_mobile(
     date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get daily expense/cost summary"""
     current_user = await get_current_user(credentials)
@@ -945,7 +959,8 @@ async def get_daily_expenses_mobile(
 @router.get("/finance/mobile/folio-full-extract/{folio_id}")
 async def get_folio_full_extract_mobile(
     folio_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get full folio extract with all charges and payments"""
     current_user = await get_current_user(credentials)
@@ -1056,7 +1071,8 @@ async def get_invoices_mobile(
     end_date: str | None = None,
     unpaid_only: bool = False,
     department: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get invoices with advanced filtering (date, unpaid, department)"""
     current_user = await get_current_user(credentials)
@@ -1136,7 +1152,8 @@ async def get_invoices_mobile(
 @router.get("/finance/mobile/invoice-pdf/{invoice_id}")
 async def get_invoice_pdf_mobile(
     invoice_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Generate and return invoice PDF (dynamic generation)"""
     current_user = await get_current_user(credentials)
@@ -1207,7 +1224,8 @@ async def get_invoice_pdf_mobile(
 async def update_bank_balance_mobile(
     bank_account_id: str,
     current_balance: float,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports")),  # v92 DW
 ):
     """Manual bank balance update (for now, until API integration)"""
     current_user = await get_current_user(credentials)
@@ -1242,7 +1260,8 @@ async def update_bank_balance_mobile(
 
 @router.get("/finance/mobile/bank-balances")
 async def get_bank_balances_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get all bank account balances"""
     current_user = await get_current_user(credentials)

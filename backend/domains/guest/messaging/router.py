@@ -3,6 +3,7 @@ Guest / Messaging Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -129,7 +130,8 @@ class InternalMessage(BaseModel):
 @router.post("/whatsapp/send-confirmation")
 async def send_whatsapp_confirmation(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """WhatsApp ile rezervasyon onayı gönder"""
     from domains.guest.whatsapp_service import whatsapp_service
@@ -173,7 +175,8 @@ async def send_whatsapp_confirmation(
 @router.post("/messaging/send-whatsapp")
 async def send_whatsapp_message(
     request: SendWhatsAppRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send WhatsApp message to guest"""
     msg_record = {
@@ -197,7 +200,8 @@ async def send_whatsapp_message(
 @router.post("/messaging/send-email")
 async def send_email_message(
     request: SendEmailRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send email to guest"""
     msg_record = {
@@ -222,7 +226,8 @@ async def send_email_message(
 @router.post("/messaging/send-sms")
 async def send_sms_message(
     request: SendSMSRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send SMS to guest"""
     msg_record = {
@@ -290,7 +295,8 @@ async def send_internal_message(
     to_user_id: str | None = None,
     priority: str = "normal",
     message_type: str = "text",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """
     Send internal message
@@ -484,7 +490,8 @@ async def get_conversation_thread(
 @router.post("/messaging/send-message")
 async def send_message(
     data: SendMessageRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v92 DW: auth-only
 ):
     """Send a message (WhatsApp/SMS/Email) to a guest"""
     current_user = await get_current_user(credentials)

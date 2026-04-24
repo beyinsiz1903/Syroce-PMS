@@ -17,6 +17,7 @@ from core.helpers import (
     require_module,
 )
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from models.enums import (
     ChargeCategory,
 )
@@ -72,7 +73,8 @@ async def get_migration_observability(
 @router.post("/reports/send-flash-now")
 async def send_flash_report_now(
     recipients: list[str],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """Flash report'u şimdi gönder"""
     from modules.analytics_export.report_automation import get_report_automation
@@ -93,6 +95,7 @@ async def get_flash_report(
     date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     """
     Daily Flash Report - Günlük özet rapor
@@ -349,7 +352,9 @@ async def get_official_guest_list(
 
 
 @router.post("/night-audit/post-room-charges")
-async def post_room_charges(current_user: User = Depends(get_current_user)):
+async def post_room_charges(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_night_audit")),  # v90 DW
+):
     """Night audit: Post room charges to all active bookings"""
     import time
     start_time = time.time()
@@ -398,10 +403,10 @@ async def post_room_charges(current_user: User = Depends(get_current_user)):
                     charge_dict['date'] = charge_dict['date'].isoformat()
                     await db.folio_charges.insert_one(charge_dict)
 
-                    # Update folio balance
+                    # Update folio balance — v109 round-9 IDOR (defense-in-depth).
                     balance = await calculate_folio_balance(folio['id'], current_user.tenant_id)
                     await db.folios.update_one(
-                        {'id': folio['id']},
+                        {'id': folio['id'], 'tenant_id': current_user.tenant_id},
                         {'$set': {'balance': balance}}
                     )
 
@@ -653,6 +658,7 @@ async def get_occupancy_report(
     end_date: str,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
@@ -696,6 +702,7 @@ async def get_revenue_report(
     end_date: str,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
@@ -731,6 +738,7 @@ async def get_daily_summary(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
@@ -752,6 +760,7 @@ async def get_forecast(
     days: int = 30,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
     today = datetime.now(UTC).date()
     window_start = datetime.combine(today, datetime.min.time())
@@ -785,7 +794,10 @@ async def get_forecast(
 
 @router.get("/reports/daily-flash-pdf")
 @cached(ttl=600, key_prefix="report_daily_flash_pdf")  # Cache for 10 min
-async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
+async def get_daily_flash_pdf(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash GM/CFO
+):
     """
     Export daily flash report as PDF
     """
@@ -857,7 +869,8 @@ async def get_daily_flash_pdf(current_user: User = Depends(get_current_user)):
 @router.post("/reports/email-daily-flash")
 async def email_daily_flash(
     data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v85 DU follow-up: POST architect MEDIUM
 ):
     """
     Email daily flash report to recipients
@@ -935,7 +948,11 @@ async def email_daily_flash(
 
 @router.get("/reports/daily-flash")
 @cached(ttl=300, key_prefix="report_daily_flash")  # Cache for 5 minutes
-async def get_daily_flash_report(date_str: str | None = None, current_user: User = Depends(get_current_user)):
+async def get_daily_flash_report(
+    date_str: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash GM/CFO
+):
     """Daily Flash Report - GM/CFO Dashboard"""
     target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
@@ -1011,7 +1028,11 @@ async def get_daily_flash_report(date_str: str | None = None, current_user: User
 
 @router.get("/reports/daily-flash/excel")
 @cached(ttl=600, key_prefix="report_daily_flash_excel")  # Cache for 10 min
-async def export_daily_flash_excel(date_str: str | None = None, current_user: User = Depends(get_current_user)):
+async def export_daily_flash_excel(
+    date_str: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash excel
+):
     """Export Daily Flash Report to Excel"""
     # Get the report data
     report_data = await get_daily_flash_report(date_str, current_user)
@@ -1057,7 +1078,8 @@ async def export_daily_flash_excel(date_str: str | None = None, current_user: Us
 @router.post("/night-audit/run-night-audit")
 async def run_night_audit(
     audit_date: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_night_audit")),  # v90 DW
 ):
     """
     Run complete night audit
@@ -1150,7 +1172,8 @@ async def run_night_audit(
 @router.post("/reports/send-weekly-email")
 async def send_weekly_management_email(
     email_config: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
 ):
     """Send weekly management summary via email"""
     current_user = await get_current_user(credentials)
@@ -1275,7 +1298,8 @@ async def get_weekly_management_summary(
 @router.post("/night-audit/start-audit")
 async def start_night_audit(
     audit_date: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Start night audit process for specified date"""
     current_user = await get_current_user(credentials)
@@ -1353,7 +1377,8 @@ async def start_night_audit(
 @router.post("/night-audit/end-of-day")
 async def end_of_day_audit(
     audit_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Complete end-of-day audit process"""
     current_user = await get_current_user(credentials)
@@ -1404,7 +1429,8 @@ async def end_of_day_audit(
 @router.post("/night-audit/automatic-posting")
 async def automatic_posting(
     audit_date: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Automatically post room charges and taxes for all in-house guests"""
     current_user = await get_current_user(credentials)
@@ -1538,7 +1564,8 @@ async def get_audit_report(
 async def handle_no_shows(
     audit_date: str,
     charge_no_show_fee: bool = True,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Process no-shows for the audit date
     - Marks eligible bookings as no_show
@@ -1566,9 +1593,9 @@ async def handle_no_shows(
         room_id = booking.get('room_id')
         room_number = booking.get('room_number')
 
-        # Update booking status
+        # Update booking status — v109 round-9 IDOR (defense-in-depth).
         await db.bookings.update_one(
-            {'id': booking_id},
+            {'id': booking_id, 'tenant_id': current_user.tenant_id},
             {
                 '$set': {
                     'status': 'no_show',
@@ -1674,7 +1701,8 @@ async def get_night_audit_status_legacy(
 @router.post("/night-audit/room-rate-posting")
 async def post_room_rates(
     audit_date: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Post room rates for all in-house guests"""
     current_user = await get_current_user(credentials)
@@ -1719,7 +1747,8 @@ async def post_room_rates(
 async def post_taxes(
     audit_date: str,
     tax_rate: float = 0.10,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Post tax charges for all in-house guests"""
     current_user = await get_current_user(credentials)
@@ -1792,7 +1821,8 @@ async def get_audit_trail(
 @router.post("/night-audit/rollback")
 async def rollback_audit(
     audit_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
     """Rollback a completed audit (emergency use)"""
     current_user = await get_current_user(credentials)

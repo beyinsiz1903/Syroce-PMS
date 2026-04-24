@@ -91,6 +91,24 @@ async def _timeline_event(tenant_id: str, stage: str, status: str,
         logger.error("Timeline write failed for %s/%s (booking=%s): %s", stage, status, booking_id, exc)
 
 
+def assert_pending_assignment(booking: dict[str, Any]) -> None:
+    """Defensive guard for OTA fallback paths.
+
+    When `create_booking_atomic()` raises `BookingConflictError`, callers fall
+    back to inserting the booking with `room_id=None` + `allocation_source="pending_assignment"`.
+    This guard asserts that contract right before `db.bookings.insert_one(...)`.
+
+    Uses an explicit `raise RuntimeError` (not `assert`) so the check survives
+    Python `-O` (optimized) runs. Catches future regressions where a developer
+    accidentally removes the `room_id=None` reset and re-introduces the
+    atomic-guard bypass that caused Bug DAE.
+    """
+    if booking.get("room_id") is not None:
+        raise RuntimeError(
+            "pending_assignment fallback must have room_id=None to avoid atomic guard bypass"
+        )
+
+
 async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     """
     Atomically create a booking with room-night locking.

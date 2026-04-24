@@ -4,6 +4,8 @@ Domain Router: POS & F&B
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -14,7 +16,9 @@ from pydantic import BaseModel
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
+from modules.pms_core.role_permission_service import require_op  # v88 DW
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_module  # v89 DW
 
 router = APIRouter(prefix="/api", tags=["pos-fnb"])
 
@@ -112,7 +116,9 @@ async def get_void_transactions(start_date: str = None, end_date: str = None, cu
         return {'void_transactions': []}
 
 @router.post("/pos/mobile/quick-order")
-async def create_quick_order(order_data: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def create_quick_order(order_data: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     """Create quick order from mobile"""
     try:
         order = {
@@ -435,16 +441,16 @@ async def get_monthly_forecast(
 # Front Office - Enhanced Features
 # --------------------------------------------------------------------------
 
+# noqa: cache-rbac — FO rooms filter operasyonel
 @router.get("/frontdesk/rooms-with-filters")
 @cached(ttl=180, key_prefix="frontdesk_rooms_filtered")  # Cache for 3 min
 async def get_rooms_with_filters(
     bed_type: str | None = None,
     floor: int | None = None,
     status: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
 ):
     """Get rooms with advanced filters for room moves"""
-    current_user = await get_current_user(credentials)
 
     query = {'tenant_id': current_user.tenant_id}
 
@@ -483,16 +489,16 @@ async def get_rooms_with_filters(
 # Front Office Mobile - Check-in, ID Scan, Guest Requests, Folio Operations
 # --------------------------------------------------------------------------
 
+# noqa: cache-rbac — FO available rooms operasyonel
 @router.get("/frontoffice/mobile/available-rooms")
 @cached(ttl=120, key_prefix="mobile_available_rooms")  # Cache for 2 min
 async def get_available_rooms_mobile(
     check_in: str,
     check_out: str,
     room_type: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
 ):
     """Get available rooms for check-in"""
-    current_user = await get_current_user(credentials)
 
     query = {
         'tenant_id': current_user.tenant_id,
@@ -549,7 +555,8 @@ async def scan_id_mobile(
     issue_date: str | None = None,
     expiry_date: str | None = None,
     scan_image: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Scan and save ID/Passport information"""
     current_user = await get_current_user(credentials)
@@ -593,7 +600,8 @@ async def mobile_checkin(
     id_scan_id: str | None = None,
     signature: str | None = None,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Perform mobile check-in"""
     current_user = await get_current_user(credentials)
@@ -686,7 +694,8 @@ async def assign_room_mobile(
     booking_id: str,
     room_id: str,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
     """Assign room to booking (pre-checkin)"""
     current_user = await get_current_user(credentials)
@@ -910,7 +919,8 @@ async def create_guest_request_mobile(
     request_type: str = "other",
     description: str = "",
     priority: str = "normal",
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
     """Create guest request"""
     current_user = await get_current_user(credentials)
@@ -992,7 +1002,8 @@ async def update_guest_request_status_mobile(
     new_status: str,
     assigned_to: str | None = None,
     notes: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
     """Update guest request status"""
     current_user = await get_current_user(credentials)
@@ -1042,7 +1053,8 @@ async def add_folio_charge_mobile(
     unit_price: float,
     tax_rate: float = 0.18,
     department: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("post_payment")),  # v88 DW
 ):
     """Add charge to folio"""
     current_user = await get_current_user(credentials)
@@ -1106,7 +1118,8 @@ async def add_folio_charge_mobile(
 async def void_folio_charge_mobile(
     charge_id: str,
     void_reason: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
     """Void a folio charge"""
     current_user = await get_current_user(credentials)
@@ -1246,7 +1259,8 @@ async def calculate_early_late_fees(
     booking_id: str,
     early_checkin_time: str | None = None,
     late_checkout_time: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
     """Calculate early check-in and late checkout fees"""
     current_user = await get_current_user(credentials)
@@ -1759,7 +1773,8 @@ async def create_rate_override_mobile(
     date: str,
     override_rate: float,
     reason: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_rates")),  # v89 DW
 ):
     """Create rate override for specific date"""
     current_user = await get_current_user(credentials)
@@ -2041,7 +2056,8 @@ class LostFoundItemCreate(BaseModel):
 @router.post("/housekeeping/lost-found/item")
 async def create_lost_found_item(
     item: LostFoundItemCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
 ):
     """Create a new lost and found item"""
     current_user = await get_current_user(credentials)
@@ -2425,7 +2441,8 @@ class MenuItemCreate(BaseModel):
 @router.post("/pos/menu-item")
 async def create_menu_item(
     item: MenuItemCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """Create a new menu item"""
     current_user = await get_current_user(credentials)
@@ -2458,7 +2475,8 @@ async def create_menu_item(
 async def update_menu_item(
     item_id: str,
     item: MenuItemCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """Update a menu item"""
     current_user = await get_current_user(credentials)
@@ -2497,7 +2515,8 @@ async def update_menu_item(
 @router.delete("/pos/menu-item/{item_id}")
 async def delete_menu_item(
     item_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """Delete a menu item"""
     current_user = await get_current_user(credentials)

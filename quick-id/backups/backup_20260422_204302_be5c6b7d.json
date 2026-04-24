@@ -1,0 +1,129 @@
+{
+  "backup_id": "be5c6b7d-f0b1-4dbe-9f76-dd89f9230dfb",
+  "created_at": "2026-04-22T20:43:02.821221+00:00",
+  "created_by": "system_auto",
+  "description": "Otomatik günlük yedek",
+  "collections": {
+    "guests": [],
+    "scans": [
+      {
+        "_id": "69e12a9b5c997b5a35f281ff",
+        "status": "failed",
+        "error": "Tesseract OCR sistemi kurulu değil",
+        "created_at": "2026-04-16T18:29:47.004000",
+        "scanned_by": "test@hotel.com",
+        "fallback_guidance": [
+          "Kimlik belgesi okunamadı. Lütfen şunları deneyin:",
+          "1. Belgeyi düz bir yüzeye yerleştirin",
+          "2. Flaş kullanarak fotoğraf çekin",
+          "3. Belgenin tamamının görünür olduğundan emin olun",
+          "4. Parlama ve gölge olmadığından emin olun",
+          "5. Daha iyi aydınlatma altında tekrar deneyin",
+          "6. Offline OCR modunu deneyin",
+          "7. Farklı bir AI sağlayıcı seçin"
+        ]
+      },
+      {
+        "_id": "69e12b635c997b5a35f28200",
+        "status": "failed",
+        "error": "Tesseract OCR sistemi kurulu değil",
+        "created_at": "2026-04-16T18:33:07.578000",
+        "scanned_by": "demo@hotel.com",
+        "fallback_guidance": [
+          "Kimlik belgesi okunamadı. Lütfen şunları deneyin:",
+          "1. Belgeyi düz bir yüzeye yerleştirin",
+          "2. Flaş kullanarak fotoğraf çekin",
+          "3. Belgenin tamamının görünür olduğundan emin olun",
+          "4. Parlama ve gölge olmadığından emin olun",
+          "5. Daha iyi aydınlatma altında tekrar deneyin",
+          "6. Offline OCR modunu deneyin",
+          "7. Farklı bir AI sağlayıcı seçin"
+        ]
+      },
+      {
+        "_id": "69e12cbe82eef7b4e96a3edf",
+        "status": "failed",
+        "error": "Tesseract OCR sistemi kurulu değil",
+        "created_at": "2026-04-16T18:38:54.916000",
+        "scanned_by": "demo@hotel.com",
+        "fallback_guidance": [
+          "Kimlik belgesi okunamadı. Lütfen şunları deneyin:",
+          "1. Belgeyi düz bir yüzeye yerleştirin",
+          "2. Flaş kullanarak fotoğraf çekin",
+          "3. Belgenin tamamının görünür olduğundan emin olun",
+          "4. Parlama ve gölge olmadığından emin olun",
+          "5. Daha iyi aydınlatma altında tekrar deneyin",
+          "6. Offline OCR modunu deneyin",
+          "7. Farklı bir AI sağlayıcı seçin"
+        ]
+      },
+      {
+        "_id": "69e1339882eef7b4e96a3ee0",
+        "status": "failed",
+        "error": "Error code: 401 - {'error': {'message': \"You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.\", 'type': 'invalid_request_error', 'param': None, 'code': None}}",
+        "created_at": "2026-04-16T19:08:08.431000",
+        "scanned_by": "demo@hotel.com",
+        "fallback_guidance": [
+          "Kimlik belgesi okunamadı. Lütfen şunları deneyin:",
+          "1. Belgeyi düz bir yüzeye yerleştirin",
+          "2. Flaş kullanarak fotoğraf çekin",
+          "3. Belgenin tamamının görünür olduğundan emin olun",
+          "4. Parlama ve gölge olmadığından emin olun",
+          "5. Daha iyi aydınlatma altında tekrar deneyin",
+          "6. Offline OCR modunu deneyin",
+          "7. Farklı bir AI sağlayıcı seçin"
+        ]
+      }
+    ],
+    "audit_logs": [],
+    "users": [
+      {
+        "_id": "69e1273ca5ff77d9c7f4314d",
+        "email": "admin@quickid.com",
+        "password_hash": "$2b$12$VgZwy3Gvrfd45kBNUY84Qe03n9gX3ZkkKIGkZFFS2ln4iO69KqJGC",
+        "name": "Admin",
+        "role": "admin",
+        "is_active": true,
+        "created_at": "2026-04-16T18:15:24.201000"
+      },
+      {
+        "_id": "69e1273ca5ff77d9c7f4314e",
+        "email": "resepsiyon@quickid.com",
+        "password_hash": "$2b$12$Fdfj7SlBhAsD0OUR7HGRFOjLMxl8rOp28C31sLW0EYi7L//1/MqTG",
+        "name": "Resepsiyon",
+        "role": "reception",
+        "is_active": true,
+        "created_at": "2026-04-16T18:15:24.936000"
+      }
+    ],
+    "properties": [],
+    "rooms": [],
+    "room_assignments": [],
+    "kiosk_sessions": [],
+    "offline_sync": [],
+    "precheckin_tokens": [],
+    "emniyet_bildirimleri": [],
+    "kvkk_rights_requests": [],
+    "biometric_matches": [],
+    "liveness_checks": [],
+    "ai_cost_tracking": []
+  },
+  "stats": {
+    "guests": 0,
+    "scans": 4,
+    "audit_logs": 0,
+    "users": 2,
+    "properties": 0,
+    "rooms": 0,
+    "room_assignments": 0,
+    "kiosk_sessions": 0,
+    "offline_sync": 0,
+    "precheckin_tokens": 0,
+    "emniyet_bildirimleri": 0,
+    "kvkk_rights_requests": 0,
+    "biometric_matches": 0,
+    "liveness_checks": 0,
+    "ai_cost_tracking": 0
+  },
+  "total_records": 6
+}

@@ -60,12 +60,19 @@ async def _send_warnings() -> None:
             if not email:
                 continue
             try:
+                # Bug CN (architect Round-1 ek bulgu): tenant.property_name ve
+                # sub.product_key tenant-controlled — raw f-string HTML
+                # injection olur. safe_html_value ile escape ediyoruz.
+                from core.mailing_safe import safe_html_value, safe_subject_value
+                hotel_html = safe_html_value((tenant or {}).get('property_name') or 'Otelimiz')
+                product_html = safe_html_value(sub['product_key'])
+                product_subj = safe_subject_value(sub['product_key'])
                 await send_email(
                     to=email,
-                    subject=f"{sub['product_key']} aboneliğinizin sona ermesine {days} gün kaldı",
+                    subject=f"{product_subj} aboneliğinizin sona ermesine {days} gün kaldı",
                     html=f"""
-                    <p>Merhaba {(tenant or {}).get('property_name') or 'Otelimiz'},</p>
-                    <p><b>{sub['product_key']}</b> aboneliğinizin sona ermesine
+                    <p>Merhaba {hotel_html},</p>
+                    <p><b>{product_html}</b> aboneliğinizin sona ermesine
                     <b>{days} gün</b> kaldı.</p>
                     <p>Modülün kesintisiz çalışması için Modül Pazarı sayfasından
                     yenileyebilirsiniz.</p>

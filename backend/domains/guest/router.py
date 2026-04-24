@@ -5,6 +5,7 @@ Extracted from legacy_routes.py — VIP protocols, blacklist, celebrations,
 enhanced preferences, complete profile, VIP list.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,13 +17,33 @@ from models.schemas import User
 router = APIRouter(prefix="/api", tags=["guest-profile-domain"])
 
 
+# Bug AR (April 2026): server-controlled fields that must NEVER be set from
+# client request body via dict spread (`**protocol_data` / `**preferences`).
+# Without this filter, a caller can smuggle `guest_id` to attribute their
+# action to a different guest (audit trail spoofing), choose a deterministic
+# `id` to pre-collide / pre-leak doc identity, or reset `active`/`created_at`.
+_RESERVED_DOC_FIELDS = frozenset({
+    "id", "_id", "guest_id", "tenant_id",
+    "approved_by", "approved_at", "reported_by",
+    "active", "created_at", "updated_at",
+})
+
+
+def _strip_reserved(payload: dict | None) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    return {k: v for k, v in payload.items() if k not in _RESERVED_DOC_FIELDS}
+
+
 @router.post("/guests/{guest_id}/vip-protocol")
 async def create_vip_protocol(
     guest_id: str,
     protocol_data: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """VIP protokol olustur veya guncelle"""
+    protocol_data = _strip_reserved(protocol_data)
     guest = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
@@ -82,8 +103,10 @@ async def add_to_blacklist(
     guest_id: str,
     entry_data: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v100 DW
 ):
     """Misafiri blacklist'e ekle"""
+    entry_data = _strip_reserved(entry_data)  # Bug AR — defense in depth (manual extract today, but harden against future ** spread refactors)
     guest = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
@@ -144,8 +167,10 @@ async def update_celebration_tracking(
     guest_id: str,
     celebration_data: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Kutlama bilgilerini guncelle"""
+    celebration_data = _strip_reserved(celebration_data)  # Bug AR (architect follow-up)
     guest = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
@@ -215,8 +240,10 @@ async def update_enhanced_preferences(
     guest_id: str,
     preferences: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Gelismis tercihleri guncelle"""
+    preferences = _strip_reserved(preferences)  # Bug AR
     guest = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
@@ -321,8 +348,9 @@ async def get_vip_guests(
 
     enriched = []
     for protocol in protocols:
+        # Bug DZ — defense in depth: tenant scope on enrichment lookup
         guest = await db.guests.find_one(
-            {"id": protocol["guest_id"]},
+            {"id": protocol["guest_id"], "tenant_id": current_user.tenant_id},
             {"_id": 0, "name": 1, "email": 1, "phone": 1},
         )
         enriched.append({**protocol, "guest": guest})

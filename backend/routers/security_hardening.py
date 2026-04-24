@@ -11,6 +11,7 @@ from modules.security_hardening.credential_vault import credential_vault
 from modules.security_hardening.data_masking import data_masking
 from modules.security_hardening.property_permissions import property_permissions
 from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
@@ -20,7 +21,10 @@ router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"]
 
 @router.get("/tenant-scope/check")
 @cached(ttl=60, key_prefix="tenant_scope_check")
-async def check_tenant_isolation(tenant: TenantContext = Depends(get_current_tenant)):
+async def check_tenant_isolation(
+    tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_executive_reports")),  # v80 Bug DP: multi-tenant security audit
+):
     return await tenant_query_guard.check_isolation(tenant.tenant_id)
 
 
@@ -75,6 +79,7 @@ async def store_credential(
     description: str = Query(""),
     rotation_days: int = Query(90),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("manage_secrets")),  # v88 DW
 ):
     return await credential_vault.store_credential(
         tenant.tenant_id, credential_type, credential_key,
@@ -87,6 +92,7 @@ async def rotate_credential(
     credential_id: str,
     new_value: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("manage_secrets")),  # v88 DW
 ):
     return await credential_vault.rotate_credential(tenant.tenant_id, credential_id, new_value)
 
@@ -102,6 +108,7 @@ async def check_leakage(tenant: TenantContext = Depends(get_current_tenant)):
 async def preview_masking(
     data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v92 DW
 ):
     return data_masking.preview_masking(data)
 
@@ -110,6 +117,7 @@ async def preview_masking(
 async def check_masking_coverage(
     data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v92 DW
 ):
     return data_masking.get_masking_coverage(data)
 

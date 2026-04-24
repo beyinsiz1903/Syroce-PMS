@@ -38,6 +38,30 @@ except ImportError:
         def decorator(func): return func
         return decorator
 
+# v66 Bug DC: Channel Manager RBAC — OTA credentials + price push çok hassas.
+# Önceki durum: tüm endpoint'ler sadece get_current_user, hk dahil herkes okuyup yazabiliyordu.
+from modules.pms_core.role_permission_service import require_role as _require_role
+from modules.pms_core.role_permission_service import require_op
+
+# v66 architect (post-fix): least-privilege — front_desk OTA credentials/parity görmemeli.
+# Operational (front_desk OK): durum panoları, ota rezervasyon listesi, exception kuyruğu.
+# Sensitive (sadece supervisor+ admin): credentials, mappings, parity rate, performance, sync-history.
+_CM_READ_OPERATIONAL = Depends(_require_role("super_admin", "admin", "supervisor", "front_desk"))
+_CM_READ_SENSITIVE = Depends(_require_role("super_admin", "admin", "supervisor"))
+_CM_WRITE = Depends(_require_role("super_admin", "admin"))
+
+
+def _redact_connection_secrets(conn: dict) -> dict:
+    """v66 architect post-fix: defense-in-depth — credentials hiçbir role'e plaintext dönmesin.
+    Yalnızca son 4 karakter görünür; gerçek değer tamamen redacted."""
+    if not isinstance(conn, dict):
+        return conn
+    for field in ("api_key", "api_secret", "api_password", "client_secret", "webhook_secret"):
+        v = conn.get(field)
+        if v and isinstance(v, str) and len(v) > 0:
+            conn[field] = ("***" + v[-4:]) if len(v) >= 4 else "***"
+    return conn
+
 
 
 class ChannelConnectionCreate(BaseModel):
@@ -58,22 +82,27 @@ class PermissionCheckRequest(BaseModel):
     permission: str
 
 
-@router.get("/channel-manager/connections")
+@router.get("/channel-manager/connections", dependencies=[_CM_READ_SENSITIVE])
 @cached(ttl=300, key_prefix="cm_connections")  # Cache for 5 min
-async def get_channel_connections(current_user: User = Depends(get_current_user)):
-    """Get all channel connections"""
+async def get_channel_connections(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: channel config (hassas API anahtarları)
+):
+    """Get all channel connections (secrets redacted — defense-in-depth)."""
     connections = await db.channel_connections.find(
         {'tenant_id': current_user.tenant_id},
         {'_id': 0}
     ).to_list(100)
+    connections = [_redact_connection_secrets(c) for c in connections]
     return {'connections': connections, 'count': len(connections)}
 
 
 
-@router.post("/channel-manager/connections")
+@router.post("/channel-manager/connections", dependencies=[_CM_WRITE])
 async def create_channel_connection(
     payload: ChannelConnectionCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create a new channel connection"""
     connection = ChannelConnection(
@@ -115,7 +144,7 @@ async def create_channel_connection(
 
 
 
-@router.get("/channel-manager/room-mappings")
+@router.get("/channel-manager/room-mappings", dependencies=[_CM_READ_SENSITIVE])
 async def get_room_mappings(
     current_user: User = Depends(get_current_user)
 ):
@@ -127,10 +156,11 @@ async def get_room_mappings(
 
 
 
-@router.post("/channel-manager/room-mappings")
+@router.post("/channel-manager/room-mappings", dependencies=[_CM_WRITE])
 async def create_room_mapping(
     mapping: RoomMappingCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     room_mapping = RoomMapping(
         tenant_id=current_user.tenant_id,
@@ -166,10 +196,11 @@ async def create_room_mapping(
 
 
 
-@router.delete("/channel-manager/room-mappings/{mapping_id}")
+@router.delete("/channel-manager/room-mappings/{mapping_id}", dependencies=[_CM_WRITE])
 async def delete_room_mapping(
     mapping_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     # Fetch mapping for logging context
     mapping = await db.room_mappings.find_one({'id': mapping_id, 'tenant_id': current_user.tenant_id})
@@ -203,7 +234,8 @@ async def delete_room_mapping(
 
 
 
-@router.get("/channel-manager/ota-reservations")
+# noqa: cache-rbac — OTA rezervasyonları operasyonel (FO/manager)
+@router.get("/channel-manager/ota-reservations", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="cm_ota_reservations")  # Cache for 3 min
 async def get_ota_reservations(
     status: str | None = None,
@@ -222,11 +254,12 @@ async def get_ota_reservations(
 
 
 
-@router.post("/channel-manager/import-reservation/{ota_reservation_id}")
+@router.post("/channel-manager/import-reservation/{ota_reservation_id}", dependencies=[_CM_WRITE])
 async def import_ota_reservation(
     ota_reservation_id: str,
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Import OTA reservation into PMS"""
     ota_res = await db.ota_reservations.find_one({
@@ -325,7 +358,10 @@ async def import_ota_reservation(
     )
 
     # Log reservation import in channel_sync_logs
-    ip_address = request.headers.get('x-forwarded-for') or request.client.host
+    # v109 Bug DAK round-6 (T09 P2): naive XFF allowed audit-log IP spoofing.
+    # Use trusted-proxy aware client_ip() helper (rightmost edge-appended hop).
+    from security.auth_throttle import client_ip as _client_ip
+    ip_address = _client_ip(request)
     sync_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -352,7 +388,8 @@ async def import_ota_reservation(
 
 
 
-@router.get("/channel-manager/exceptions")
+# noqa: cache-rbac — exception queue operasyonel (FO/manager)
+@router.get("/channel-manager/exceptions", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="cm_exceptions")  # Cache for 3 min
 async def get_exception_queue(
     status: str | None = None,
@@ -373,12 +410,13 @@ async def get_exception_queue(
 
 
 
-@router.get("/channel/parity/check")
+@router.get("/channel/parity/check", dependencies=[_CM_READ_SENSITIVE])
 @cached(ttl=300, key_prefix="channel_parity")  # Cache for 5 min
 async def check_rate_parity(
     date: str | None = None,
     room_type: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: rate parity revenue
 ):
     """Check rate parity between OTA and direct rates"""
     target_date = datetime.fromisoformat(date).date() if date else datetime.now(UTC).date()
@@ -456,7 +494,8 @@ async def check_rate_parity(
 
 
 
-@router.get("/channel/status")
+# noqa: cache-rbac — channel health operasyonel cross-role
+@router.get("/channel/status", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="channel_status")  # Cache for 3 min
 async def get_channel_status(current_user: User = Depends(get_current_user)):
     """Get health status of all channel connections"""
@@ -518,11 +557,12 @@ async def get_channel_status(current_user: User = Depends(get_current_user)):
 
 
 
-@router.post("/channel/insights/analyze")
+@router.post("/channel/insights/analyze", dependencies=[_CM_WRITE])
 async def analyze_ota_insights(
     start_date: str | None = None,
     end_date: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """AI-powered OTA channel analysis (Phase E preparation)"""
     # Default to last 30 days
@@ -632,7 +672,7 @@ async def analyze_ota_insights(
 
 
 
-@router.get("/channel-manager/rate-parity-check")
+@router.get("/channel-manager/rate-parity-check", dependencies=[_CM_READ_SENSITIVE])
 async def check_rate_parity_detailed(
     date: str | None = None,
     room_type: str | None = None,
@@ -715,7 +755,7 @@ async def check_rate_parity_detailed(
 
 
 
-@router.get("/channel-manager/sync-history")
+@router.get("/channel-manager/sync-history", dependencies=[_CM_READ_SENSITIVE])
 async def get_channel_sync_history(
     days: int = 7,
     channel: str | None = None,
@@ -795,7 +835,7 @@ async def get_channel_sync_history(
 
 
 
-@router.get("/channels/status")
+@router.get("/channels/status", dependencies=[_CM_READ_OPERATIONAL])
 async def get_channel_status_v2(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -855,7 +895,7 @@ async def get_channel_status_v2(
 # 2. GET /api/channels/rate-parity - Rate parity check
 
 
-@router.get("/channels/rate-parity")
+@router.get("/channels/rate-parity", dependencies=[_CM_READ_SENSITIVE])
 async def get_rate_parity(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -899,7 +939,7 @@ async def get_rate_parity(
 # 3. GET /api/channels/inventory - Inventory distribution
 
 
-@router.get("/channels/inventory")
+@router.get("/channels/inventory", dependencies=[_CM_READ_SENSITIVE])
 async def get_channel_inventory(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -945,7 +985,7 @@ async def get_channel_inventory(
 # 4. GET /api/channels/performance - Channel performance
 
 
-@router.get("/channels/performance")
+@router.get("/channels/performance", dependencies=[_CM_READ_SENSITIVE])
 async def get_channel_performance(
     days: int = 30,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1002,13 +1042,14 @@ async def get_channel_performance(
 # 5. POST /api/channels/push-rates - Push rates to channels
 
 
-@router.post("/channels/push-rates")
+@router.post("/channels/push-rates", dependencies=[_CM_WRITE])
 async def push_rates_to_channels(
     room_type: str,
     date: str,
     rate: float,
     channels: list[str],
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
 ):
     """
     Push rates to selected OTA channels

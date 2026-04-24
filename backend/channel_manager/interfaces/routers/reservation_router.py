@@ -1,5 +1,6 @@
 """Reservation import, review queue, batch, ACK, audit-trail endpoints."""
 import logging
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -35,6 +36,7 @@ class ReprocessReviewRequest(BaseModel):
 async def trigger_reservation_pull(
     req: TriggerImportRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     svc = ReservationImportService()
     result = await svc.pull_and_import(
@@ -88,6 +90,7 @@ async def reprocess_review_reservation(
     reservation_id: str,
     req: ReprocessReviewRequest = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     svc = ReservationImportService()
     try:
@@ -105,6 +108,7 @@ async def reprocess_review_reservation(
 async def dismiss_review_reservation(
     reservation_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     svc = ReservationImportService()
     try:
@@ -120,6 +124,7 @@ async def dismiss_review_reservation(
 async def approve_review(
     req: ApproveReviewRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     svc = ReservationImportService()
     result = await svc.approve_review(
@@ -165,6 +170,7 @@ async def get_reservation_stats(
 async def retry_failed_acks(
     connector_id: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     svc = ReservationImportService()
     try:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
 from modules.revenue_management.displacement_engine import DisplacementEngine
 
 try:
@@ -46,7 +47,9 @@ class CompareRequest(BaseModel):
 
 
 @router.post("/analyze")
-async def analyze_displacement(req: DisplacementRequest, current_user: User = Depends(get_current_user)):
+async def analyze_displacement(req: DisplacementRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     try:
         result = await engine.analyze_displacement(
             tenant_id=current_user.tenant_id,
@@ -72,12 +75,15 @@ async def analyze_displacement(req: DisplacementRequest, current_user: User = De
 async def market_overview(
     days: int = Query(14, ge=1, le=60),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: displacement = stratejik
 ):
     return await engine.get_market_overview(current_user.tenant_id, days)
 
 
 @router.post("/compare")
-async def compare_scenarios(req: CompareRequest, current_user: User = Depends(get_current_user)):
+async def compare_scenarios(req: CompareRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     scenarios = [s.model_dump() for s in req.scenarios]
     return await engine.compare_scenarios(
         tenant_id=current_user.tenant_id,
@@ -89,7 +95,9 @@ async def compare_scenarios(req: CompareRequest, current_user: User = Depends(ge
 
 
 @router.post("/save")
-async def save_analysis(req: DisplacementRequest, current_user: User = Depends(get_current_user)):
+async def save_analysis(req: DisplacementRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     analysis = await engine.analyze_displacement(
         tenant_id=current_user.tenant_id,
         check_in=req.check_in,

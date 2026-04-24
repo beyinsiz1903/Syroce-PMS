@@ -19,7 +19,17 @@ from core.database import db
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    # v107 (Bug DAG): empty-string fallback meant jwt.decode(token, "", ...) would
+    # accept any token signed with "" — and HTTP backend used a different random
+    # secret, causing all real WS auth to silently fail. Now opt-in fail-closed
+    # for prod, random for dev (matches backend/core/security.py pattern).
+    if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
+        raise RuntimeError("JWT_SECRET environment variable is required in production (websocket_hub).")
+    import secrets as _secrets
+    JWT_SECRET = _secrets.token_urlsafe(64)
+    logger.warning("⚠️ JWT_SECRET unset; websocket_hub using random per-process secret (DEV ONLY — WS tokens won't match HTTP backend).")
 JWT_ALGORITHM = "HS256"
 
 # Role-based event filter mapping
@@ -98,22 +108,59 @@ class WebSocketHub:
         self._heartbeat_task: asyncio.Task | None = None
 
     async def authenticate_token(self, token: str) -> dict[str, Any] | None:
-        """Validate JWT and return user context."""
+        """Validate JWT and return user context.
+
+        v105 Bug DAA (architect WS parity fix): brought to parity with
+        core.security.get_current_user — enforces jti revocation,
+        tokens_invalid_before watermark, explicit tenant consistency,
+        and removes the `or jwt_tenant` fallback that previously made
+        JWT.tenant_id authoritative for orphan/malformed user docs.
+        """
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             user_id = payload.get("user_id")
-            tenant_id = payload.get("tenant_id")
+            jwt_tenant = payload.get("tenant_id")
             if not user_id:
                 return None
+
+            # Parity #1: jti revocation (logout / refresh-rotation enforcement)
+            jti = payload.get("jti")
+            if jti:
+                from core.security import is_jti_revoked
+                if await is_jti_revoked(jti):
+                    logger.warning(f"WS auth: revoked jti rejected user={user_id}")
+                    return None
+
             user_doc = await db.users.find_one(
                 {"$or": [{"id": user_id}, {"user_id": user_id}]},
-                {"_id": 0, "id": 1, "user_id": 1, "tenant_id": 1, "role": 1, "name": 1},
+                {"_id": 0, "id": 1, "user_id": 1, "tenant_id": 1, "role": 1, "name": 1, "tokens_invalid_before": 1},
             )
             if not user_doc:
                 return None
+
+            # Parity #2: mass-revoke on password change watermark
+            invalid_before = user_doc.get("tokens_invalid_before")
+            if invalid_before:
+                iat = payload.get("iat")
+                if not iat or int(iat) < int(invalid_before):
+                    logger.warning(f"WS auth: token before password-change watermark user={user_id}")
+                    return None
+
+            # Parity #3: tenant consistency — DB is authoritative; reject
+            # forged tenant claims; refuse orphan user docs (no fallback to JWT).
+            doc_tenant = user_doc.get("tenant_id")
+            if not doc_tenant:
+                logger.warning(f"WS auth: user has no tenant_id user={user_id}")
+                return None
+            if jwt_tenant and jwt_tenant != doc_tenant:
+                logger.warning(
+                    f"WS auth: tenant mismatch user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}"
+                )
+                return None
+
             return {
                 "user_id": user_doc.get("id") or user_doc.get("user_id"),
-                "tenant_id": user_doc.get("tenant_id") or tenant_id,
+                "tenant_id": doc_tenant,
                 "role": user_doc.get("role", "staff"),
                 "name": user_doc.get("name", ""),
             }

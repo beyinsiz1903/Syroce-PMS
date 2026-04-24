@@ -7,6 +7,7 @@ Endpoints:
   POST /mapping-wizard/{connector_id}/bulk-create      — Bulk-create confirmed mappings
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -37,6 +38,7 @@ class BulkCreateRequest(BaseModel):
 async def fetch_external_data(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Fetch real room types and rate plans from the channel provider API."""
     svc = AutoMappingService()
@@ -77,6 +79,7 @@ async def bulk_create_mappings(
     connector_id: str,
     req: BulkCreateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Bulk-create mappings from confirmed wizard suggestions."""
     if not req.pairs:

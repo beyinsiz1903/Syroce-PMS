@@ -6,6 +6,7 @@ never-again rules, and learning dashboard.
 """
 
 from datetime import UTC
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -56,7 +57,9 @@ class NeverAgainRuleRequest(BaseModel):
 
 
 @router.post("/incidents")
-async def create_incident(body: CreateIncidentRequest, current_user: User = Depends(get_current_user)):
+async def create_incident(body: CreateIncidentRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Create incident with auto-classification."""
     import uuid
     from datetime import datetime
@@ -120,7 +123,9 @@ async def create_incident(body: CreateIncidentRequest, current_user: User = Depe
 
 
 @router.put("/incidents/{incident_id}/rca")
-async def add_rca(incident_id: str, body: RCARequest, current_user: User = Depends(get_current_user)):
+async def add_rca(incident_id: str, body: RCARequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     try:
         result = await rca_engine.create_rca(
             current_user.tenant_id, incident_id,
@@ -134,7 +139,9 @@ async def add_rca(incident_id: str, body: RCARequest, current_user: User = Depen
 
 
 @router.put("/incidents/{incident_id}/fix")
-async def track_fix(incident_id: str, body: TrackFixRequest, current_user: User = Depends(get_current_user)):
+async def track_fix(incident_id: str, body: TrackFixRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     try:
         result = await rca_engine.track_fix(
             current_user.tenant_id, incident_id,
@@ -146,7 +153,9 @@ async def track_fix(incident_id: str, body: TrackFixRequest, current_user: User 
 
 
 @router.post("/incidents/{incident_id}/never-again")
-async def add_never_again_rule(incident_id: str, body: NeverAgainRuleRequest, current_user: User = Depends(get_current_user)):
+async def add_never_again_rule(incident_id: str, body: NeverAgainRuleRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     try:
         result = await rca_engine.create_never_again_rule(
             current_user.tenant_id, incident_id,
@@ -180,7 +189,9 @@ async def check_recurrence(incident_id: str, current_user: User = Depends(get_cu
 
 
 @router.post("/incidents/{incident_id}/verify-prevention")
-async def verify_prevention(incident_id: str, current_user: User = Depends(get_current_user)):
+async def verify_prevention(incident_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     try:
         return await rca_engine.verify_prevention(current_user.tenant_id, incident_id)
     except ValueError as e:

@@ -19,6 +19,22 @@ function renderMarkdown(src) {
   if (!src) return null;
   const escape = (s) => s
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // v41 Bug BF: full attribute-context escape — must encode quotes too,
+  // otherwise safeUrl-allowed prefix with embedded `"` enables attribute
+  // injection (e.g. `https://ok.com" onmouseover="alert(1)`).
+  const escapeAttr = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  // v41 Bug BF: allowlist only http(s)/mailto/tel/relative URLs; reject
+  // protocol-relative `//...` to prevent scheme inheritance via base href.
+  const safeUrl = (u) => {
+    const t = String(u || "").trim();
+    if (!t) return "#";
+    if (/^\/\//.test(t)) return "#"; // reject protocol-relative
+    if (/^(\/|#|\?)/.test(t)) return t;
+    if (/^(https?:|mailto:|tel:)/i.test(t)) return t;
+    return "#";
+  };
   const inline = (s) => escape(s)
     .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-gray-100 rounded text-xs font-mono">$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -26,7 +42,7 @@ function renderMarkdown(src) {
     .replace(/\[([^\]]+)\]\(#\/help\/([a-z0-9-]+)\)/g,
              '<a class="text-blue-600 hover:underline" data-slug="$2" href="#">$1</a>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-             '<a class="text-blue-600 hover:underline" target="_blank" rel="noopener" href="$2">$1</a>');
+             (_m, txt, url) => `<a class="text-blue-600 hover:underline" target="_blank" rel="noopener" href="${escapeAttr(safeUrl(url))}">${txt}</a>`);
 
   const lines = src.replace(/\r\n/g, "\n").split("\n");
   const out = [];

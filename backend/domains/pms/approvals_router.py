@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api", tags=["PMS / Approvals"])
 # ── Inline Models ──
 
 from enum import Enum
+from modules.pms_core.role_permission_service import require_op  # v89 DW
 
 
 class ApprovalType(str, Enum):
@@ -74,7 +75,8 @@ class BudgetConfig(BaseModel):
 @router.post("/approvals/create")
 async def create_approval_request(
     request: CreateApprovalRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v92 DW
 ):
     """
     Create a new approval request
@@ -123,7 +125,8 @@ async def create_approval_request(
 async def approve_request(
     approval_id: str,
     request: ApprovalActionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v92 DW
 ):
     """
     Approve an approval request
@@ -196,7 +199,8 @@ async def approve_request(
 async def approve_request_v2(
     approval_id: str,
     request: ApprovalActionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """
     Approve an approval request
@@ -268,7 +272,8 @@ async def approve_request_v2(
 async def approve_request_v3(
     approval_id: str,
     request: ApprovalActionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """
     Approve an approval request
@@ -340,7 +345,8 @@ async def approve_request_v3(
 async def reject_request(
     approval_id: str,
     request: ApprovalActionRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """
     Reject an approval request

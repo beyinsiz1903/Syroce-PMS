@@ -4,6 +4,7 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -228,7 +229,8 @@ async def get_yield_rules(current_user: User = Depends(get_current_user)):
 @router.post("/rms/yield-rules")
 async def create_yield_rule(
     rule: YieldRuleCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     doc = {
         "id": str(uuid.uuid4()),
@@ -248,7 +250,8 @@ async def create_yield_rule(
 async def update_yield_rule(
     rule_id: str,
     rule: YieldRuleCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     result = await db.yield_rules.update_one(
         {"id": rule_id, "tenant_id": current_user.tenant_id},
@@ -264,7 +267,8 @@ async def update_yield_rule(
 @router.delete("/rms/yield-rules/{rule_id}")
 async def delete_yield_rule(
     rule_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     result = await db.yield_rules.delete_one(
         {"id": rule_id, "tenant_id": current_user.tenant_id}
@@ -302,7 +306,8 @@ async def get_seasonal_calendar(current_user: User = Depends(get_current_user)):
 @router.post("/rms/seasonal-calendar")
 async def create_season(
     season: SeasonCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     doc = {
         "id": str(uuid.uuid4()),
@@ -321,7 +326,8 @@ async def create_season(
 async def update_season(
     season_id: str,
     season: SeasonCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     result = await db.seasonal_calendar.update_one(
         {"id": season_id, "tenant_id": current_user.tenant_id},
@@ -337,7 +343,8 @@ async def update_season(
 @router.delete("/rms/seasonal-calendar/{season_id}")
 async def delete_season(
     season_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     result = await db.seasonal_calendar.delete_one(
         {"id": season_id, "tenant_id": current_user.tenant_id}
@@ -354,7 +361,8 @@ async def delete_season(
 @router.post("/rms/generate-pricing")
 async def generate_internal_pricing(
     request: AutoPricingRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
     """Generate pricing recommendations using 7 internal data factors (no competitor dependency)."""
     start = datetime.fromisoformat(request.start_date)

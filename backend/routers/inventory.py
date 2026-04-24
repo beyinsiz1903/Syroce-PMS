@@ -11,9 +11,11 @@ Endpoints:
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
+from core.security import get_current_user  # v92.2 DW
+from modules.pms_core.role_permission_service import require_op  # v92.2 DW
 
 logger = logging.getLogger("routers.inventory")
 
@@ -107,6 +109,7 @@ async def trigger_reconciliation(
     start_date: str | None = Query(None, description="Start date (default: today)"),
     end_date: str | None = Query(None, description="End date (default: today + 30 days)"),
     tenant_id: str | None = Query(None, description="Tenant ID"),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v92.2 DW
 ):
     """
     Manually trigger inventory reconciliation.

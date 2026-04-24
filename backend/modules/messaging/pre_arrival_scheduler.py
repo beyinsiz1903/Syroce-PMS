@@ -68,7 +68,9 @@ class PreArrivalScheduler:
 
     async def run_scan(self) -> dict:
         """Scan all tenants for tomorrow's check-ins and fire pre_arrival events."""
-        from server import db
+        # v42 round-3: cross-tenant scan; manual `tenant_id` filters preserved.
+        from core.tenant_db import get_system_db
+        db = get_system_db()
 
         now = datetime.now(UTC)
         self._last_run_at = now.isoformat()
@@ -160,8 +162,14 @@ class PreArrivalScheduler:
                     self._total_skipped += 1
                     continue
 
-                # Fire the pre_arrival event
-                await process_booking_event(tenant_id, "pre_arrival", booking)
+                # v42 round-4: process_booking_event() touches tenant-scoped
+                # collections via the proxy. Establish tenant_context so the
+                # downstream proxy auto-injects tenant_id (and STRICT mode
+                # is satisfied). The async ContextVar persists across the
+                # awaited call within the same task.
+                from core.tenant_db import tenant_context
+                with tenant_context(tenant_id):
+                    await process_booking_event(tenant_id, "pre_arrival", booking)
                 result["events_fired"] += 1
                 self._total_sent += 1
 

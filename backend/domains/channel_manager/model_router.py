@@ -9,6 +9,7 @@ Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -106,6 +107,7 @@ async def list_connections(
 async def create_connection(
     req: CreateConnectionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     # Validate provider
     try:
@@ -157,6 +159,7 @@ async def update_connection(
     connection_id: str,
     req: UpdateConnectionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -176,6 +179,7 @@ async def update_connection(
 async def delete_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     deleted = await repo.delete_connection(current_user.tenant_id, connection_id)
     if not deleted:
@@ -187,6 +191,7 @@ async def delete_connection(
 async def activate_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -201,6 +206,7 @@ async def activate_connection(
 async def pause_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -229,6 +235,7 @@ async def list_room_mappings(
 async def create_room_mapping(
     req: CreateRoomMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -252,6 +259,7 @@ async def create_room_mapping(
 async def delete_room_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     deleted = await repo.delete_room_mapping(current_user.tenant_id, mapping_id)
     if not deleted:
@@ -277,6 +285,7 @@ async def list_rate_plan_mappings(
 async def create_rate_plan_mapping(
     req: CreateRatePlanMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -300,6 +309,7 @@ async def create_rate_plan_mapping(
 async def delete_rate_plan_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     deleted = await repo.delete_rate_plan_mapping(current_user.tenant_id, mapping_id)
     if not deleted:
@@ -382,6 +392,7 @@ async def list_reconciliation_cases(
 async def create_case(
     req: CreateReconciliationCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -420,6 +431,7 @@ async def resolve_case(
     case_id: str,
     req: ResolveCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
@@ -438,6 +450,7 @@ async def dismiss_case(
     case_id: str,
     req: DismissCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:

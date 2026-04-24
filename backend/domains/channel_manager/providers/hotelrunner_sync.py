@@ -9,6 +9,7 @@ Actual implementation split into:
 API endpoints remain in this file for router registration compatibility.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -44,6 +45,7 @@ sync_router = APIRouter(
 @sync_router.post("/sync/reservations/pull")
 async def manual_pull(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
@@ -120,7 +122,9 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 
 
 @sync_router.post("/sync/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user)):
+async def start_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"_id": 0},
@@ -134,7 +138,9 @@ async def start_scheduler(current_user: User = Depends(get_current_user)):
 
 
 @sync_router.post("/sync/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user)):
+async def stop_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     await pull_scheduler.stop()
     return {"message": "Scheduler durduruldu"}
 
@@ -143,6 +149,7 @@ async def stop_scheduler(current_user: User = Depends(get_current_user)):
 async def full_resync(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},

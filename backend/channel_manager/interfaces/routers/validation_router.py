@@ -3,6 +3,7 @@ Enhanced Sandbox Validation Router + Mapping Completeness + Rate Push Tracking +
 Health Trend Analytics + WebSocket endpoints.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
@@ -26,6 +27,7 @@ router = APIRouter(tags=["CM Validation & Analytics"])
 async def run_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Run full HotelRunner sandbox validation and produce integration readiness report."""
     svc = SandboxValidationService()

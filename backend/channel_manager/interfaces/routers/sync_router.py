@@ -14,6 +14,7 @@ from ...application.inventory_sync_service import InventorySyncService
 from ...application.mapping_service import MappingService
 from ...application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
 from ...application.scheduler_service import SchedulerService
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger("channel_manager.routers.sync")
 
@@ -71,6 +72,7 @@ async def list_mappings(
 async def create_mapping(
     req: CreateMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = MappingService()
     connector_svc = ConnectorService()
@@ -99,6 +101,7 @@ async def create_mapping(
 async def delete_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = MappingService()
     deleted = await svc.delete_mapping(current_user.tenant_id, mapping_id, current_user.id)
@@ -111,6 +114,7 @@ async def delete_mapping(
 async def validate_mappings(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = MappingService()
     result = await svc.validate_mappings(current_user.tenant_id, connector_id)
@@ -122,6 +126,7 @@ async def validate_single_mapping(
     connector_id: str,
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = MappingService()
     try:
@@ -155,6 +160,7 @@ async def get_readiness_report(
 async def trigger_inventory_sync(
     req: TriggerSyncRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = InventorySyncService()
     if not req.date_start:
@@ -181,6 +187,7 @@ async def trigger_inventory_sync(
 async def trigger_rate_sync(
     req: TriggerSyncRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = InventorySyncService()
     if not req.date_start:
@@ -256,6 +263,7 @@ async def get_manual_review_queue(
 async def retry_manual_review_job(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = InventorySyncService()
     try:
@@ -269,6 +277,7 @@ async def retry_manual_review_job(
 async def dismiss_manual_review_job(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = InventorySyncService()
     try:
@@ -284,6 +293,7 @@ async def dismiss_manual_review_job(
 async def run_scheduled_check(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     try:
@@ -298,6 +308,7 @@ async def run_scheduled_check(
 @router.post("/scheduler/run-all")
 async def run_all_scheduled_checks(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     return await svc.run_all_connectors(current_user.tenant_id)
@@ -309,6 +320,7 @@ async def run_all_scheduled_checks(
 async def trigger_event_sync(
     req: DomainEventRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = EventSyncService()
     result = await svc.handle_event(
@@ -321,6 +333,7 @@ async def trigger_event_sync(
 async def trigger_batch_event_sync(
     req: BatchEventsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     svc = EventSyncService()
     events = [{"event_type": e.event_type, "payload": e.payload} for e in req.events]
@@ -333,6 +346,7 @@ async def trigger_batch_event_sync(
 async def push_inventory_via_adapter(
     req: ProviderPushRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     connector_svc = ConnectorService()
     connector = await connector_svc.get_connector(current_user.tenant_id, req.connector_id)
@@ -353,6 +367,7 @@ async def push_inventory_via_adapter(
 async def push_rates_via_adapter(
     req: ProviderPushRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v95 DW
 ):
     connector_svc = ConnectorService()
     connector = await connector_svc.get_connector(current_user.tenant_id, req.connector_id)

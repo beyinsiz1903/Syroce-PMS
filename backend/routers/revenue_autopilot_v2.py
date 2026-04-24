@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from cache_manager import cached
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/revenue-autopilot", tags=["revenue-autopilot"])
 
@@ -25,7 +26,10 @@ def _get_service():
 
 @router.get("/dashboard")
 @cached(ttl=180, key_prefix="revenue_autopilot_dashboard")
-async def get_autopilot_dashboard(current_user: User = Depends(get_current_user)):
+async def get_autopilot_dashboard(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: autopilot policy = stratejik
+):
     svc = _get_service()
     return await svc.get_dashboard(current_user.tenant_id)
 
@@ -37,7 +41,9 @@ async def get_policy(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/policy")
-async def update_policy(req: dict, current_user: User = Depends(get_current_user)):
+async def update_policy(req: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     svc = _get_service()
     return await svc.update_policy(current_user.tenant_id, req)
 
@@ -64,13 +70,17 @@ class ProcessRecommendationReq(BaseModel):
 
 @router.post("/process")
 async def process_recommendation(req: ProcessRecommendationReq,
-                                  current_user: User = Depends(get_current_user)):
+                                  current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     svc = _get_service()
     return await svc.process_recommendation(current_user.tenant_id, req.model_dump())
 
 
 @router.post("/queue/{item_id}/approve")
-async def approve_item(item_id: str, current_user: User = Depends(get_current_user)):
+async def approve_item(item_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
+):
     svc = _get_service()
     return await svc.approve_item(current_user.tenant_id, item_id, current_user.id)
 
@@ -81,13 +91,17 @@ class RejectReq(BaseModel):
 
 @router.post("/queue/{item_id}/reject")
 async def reject_item(item_id: str, req: RejectReq,
-                       current_user: User = Depends(get_current_user)):
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
+):
     svc = _get_service()
     return await svc.reject_item(current_user.tenant_id, item_id, current_user.id, req.reason)
 
 
 @router.post("/queue/{item_id}/rollback")
-async def rollback_item(item_id: str, current_user: User = Depends(get_current_user)):
+async def rollback_item(item_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     svc = _get_service()
     return await svc.rollback_item(current_user.tenant_id, item_id, current_user.id)
 

@@ -18,7 +18,15 @@ from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.environ.get("JWT_SECRET") or "syroce-dev-secret"  # core/security uses same env
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    # v107 (Bug DAG): hardcoded "syroce-dev-secret" was a known-string fallback
+    # — anyone could forge vendor-scoped JWT in production. Now opt-in fail-closed.
+    if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
+        raise RuntimeError("JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set).")
+    import secrets as _secrets
+    JWT_SECRET = _secrets.token_urlsafe(64)
+    logger.warning("⚠️ JWT_SECRET unset; vendor_auth using random per-process secret (DEV ONLY).")
 JWT_ALGORITHM = "HS256"
 TOKEN_TTL_HOURS = 24
 

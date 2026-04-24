@@ -8,6 +8,7 @@ Endpoints for managing operational incidents:
 - Audit trail per incident
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -166,6 +167,7 @@ async def incident_action(
     incident_id: str,
     request: IncidentActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Apply an action to an incident: retry, review, resolve, suppress."""
     tenant_id = current_user.tenant_id

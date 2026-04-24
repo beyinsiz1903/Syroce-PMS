@@ -20,6 +20,7 @@ from ...application.scheduler_service import SchedulerService
 from ...application.webhook_service import WebhookService
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger("channel_manager.routers.audit")
 
@@ -75,6 +76,7 @@ class BulkIssueActionRequest(BaseModel):
 async def run_reconciliation(
     connector_id: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     result = await svc.run_reconciliation(current_user.tenant_id, connector_id, current_user.id)
@@ -119,6 +121,7 @@ async def update_issue_status(
     issue_id: str,
     req: UpdateIssueStatusRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     try:
@@ -132,6 +135,7 @@ async def resolve_issue(
     issue_id: str,
     req: ResolveIssueRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     return await svc.resolve_issue(current_user.tenant_id, issue_id, req.resolution, current_user.id)
@@ -142,6 +146,7 @@ async def dismiss_issue(
     issue_id: str,
     req: DismissIssueRequest = Body(DismissIssueRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     return await svc.dismiss_issue(current_user.tenant_id, issue_id, req.reason, current_user.id)
@@ -151,6 +156,7 @@ async def dismiss_issue(
 async def create_reconciliation_issue(
     req: CreateIssueRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     connector_svc = ConnectorService()
@@ -288,6 +294,7 @@ async def admin_list_issues(
 async def admin_retry_sync_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -314,6 +321,7 @@ async def admin_retry_sync_for_issue(
 async def admin_retry_ack_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -333,6 +341,7 @@ async def admin_retry_ack_for_issue(
 async def admin_revalidate_mapping_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -348,6 +357,7 @@ async def admin_revalidate_mapping_for_issue(
 async def admin_send_issue_to_review(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     try:
@@ -361,6 +371,7 @@ async def admin_send_issue_to_review(
 async def admin_bulk_dismiss_issues(
     req: BulkIssueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -401,6 +412,7 @@ async def admin_scheduler_status(
 async def admin_trigger_scheduler(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     try:
@@ -415,6 +427,7 @@ async def admin_trigger_scheduler(
 @router.post("/admin/scheduler/trigger-all")
 async def admin_trigger_all_schedulers(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     return await svc.run_all_connectors(current_user.tenant_id)
@@ -456,6 +469,7 @@ async def admin_list_credentials(
 async def admin_test_credential(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -471,6 +485,7 @@ async def admin_test_credential(
 async def admin_disable_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
@@ -583,6 +598,7 @@ async def admin_error_queue_summary(
 async def admin_retry_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.retry_item(current_user.tenant_id, req.item_id, req.error_type, current_user.id)
@@ -592,6 +608,7 @@ async def admin_retry_error(
 async def admin_dismiss_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.dismiss_item(current_user.tenant_id, req.item_id, req.error_type, req.reason, current_user.id)
@@ -601,6 +618,7 @@ async def admin_dismiss_error(
 async def admin_escalate_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.escalate_item(current_user.tenant_id, req.item_id, req.error_type, current_user.id)
@@ -610,6 +628,7 @@ async def admin_escalate_error(
 async def admin_bulk_retry_errors(
     req: BulkRetryRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.bulk_retry(current_user.tenant_id, req.item_ids, req.error_type, current_user.id)
@@ -619,6 +638,7 @@ async def admin_bulk_retry_errors(
 async def admin_bulk_dismiss_errors(
     req: BulkDismissRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.bulk_dismiss(current_user.tenant_id, req.item_ids, req.error_type, req.reason, current_user.id)
@@ -706,6 +726,7 @@ async def admin_audit_trail(
 async def admin_production_readiness(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ProductionReadinessService()
     return await svc.run_readiness_check(
@@ -740,6 +761,7 @@ async def admin_production_readiness_overview(
 async def run_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = SandboxValidationService()
     try:
@@ -754,6 +776,7 @@ async def run_sandbox_validation(
 async def run_full_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = SandboxValidationService()
     try:

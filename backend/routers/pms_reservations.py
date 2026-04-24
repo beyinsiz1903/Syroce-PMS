@@ -17,10 +17,11 @@ Models:
   ExtraChargeCreate, MultiRoomReservationCreate
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 from enum import Enum
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -70,9 +71,9 @@ class MultiRoomBooking(BaseModel):
 
 
 class ExtraChargeCreate(BaseModel):
-    charge_name: str
-    charge_amount: float
-    notes: str | None = None
+    charge_name: str = Field(..., min_length=1, max_length=200)
+    charge_amount: float = Field(..., ge=0, le=1e9)
+    notes: str | None = Field(None, max_length=2000)
 
 
 class MultiRoomReservationCreate(BaseModel):
@@ -272,17 +273,20 @@ async def get_adr_and_rate_visibility(
 @router.post("/reservations/rate-override-panel")
 async def create_rate_override_with_panel(
     booking_id: str,
-    new_rate: float,
-    override_reason: str,
-    authorized_by: str | None = None,
+    new_rate: float = Query(..., ge=0, le=1e9),
+    override_reason: str = Query(..., min_length=3, max_length=500),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Rate override panel with authorization tracking
-    - Manager approval required
-    - Reason tracking
-    - Audit trail
+    Rate override panel with authorization tracking.
+    Requires `override_rate` permission (admin / super_admin / supervisor).
+    Note: `authorized_by` is always set server-side from the calling user;
+    it cannot be supplied by the client (audit-trail integrity).
     """
+    # Role / permission enforcement (Bug CP fix)
+    from modules.pms_core.role_permission_service import RolePermissionService
+    RolePermissionService().enforce_permission(current_user.role, "override_rate")
+
     booking = await db.bookings.find_one({
         'id': booking_id,
         'tenant_id': current_user.tenant_id
@@ -293,7 +297,7 @@ async def create_rate_override_with_panel(
 
     original_rate = booking.get('total_amount', 0)
 
-    # Create override log
+    # Create override log — authorized_by is always the authenticated user
     override_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -303,7 +307,7 @@ async def create_rate_override_with_panel(
         'original_rate': original_rate,
         'new_rate': new_rate,
         'override_reason': override_reason,
-        'authorized_by': authorized_by or current_user.name,
+        'authorized_by': current_user.name,
         'timestamp': datetime.now(UTC).isoformat()
     }
 
@@ -433,7 +437,8 @@ async def get_ota_reservation_details(
 async def add_extra_charge(
     booking_id: str,
     data: ExtraChargeCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Add an extra charge to a reservation"""
     current_user = await get_current_user(credentials)
@@ -468,7 +473,8 @@ async def add_extra_charge(
 @router.post("/reservations/multi-room")
 async def create_multi_room_reservation(
     data: MultiRoomReservationCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Link multiple bookings as a multi-room reservation"""
     current_user = await get_current_user(credentials)
@@ -530,14 +536,20 @@ async def search_reservations(
             search_conditions.append({'id': booking_id})
 
         if phone:
-            # Find guest by phone first
-            guest = await db.guests.find_one({'phone': {'$regex': _re.escape(phone), '$options': 'i'}})
+            # Find guest by phone first — MUST be tenant-scoped to prevent IDOR
+            guest = await db.guests.find_one({
+                'tenant_id': current_user.tenant_id,
+                'phone': {'$regex': _re.escape(phone), '$options': 'i'},
+            })
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
 
         if email:
-            # Find guest by email first
-            guest = await db.guests.find_one({'email': {'$regex': _re.escape(email), '$options': 'i'}})
+            # Find guest by email first — MUST be tenant-scoped to prevent IDOR
+            guest = await db.guests.find_one({
+                'tenant_id': current_user.tenant_id,
+                'email': {'$regex': _re.escape(email), '$options': 'i'},
+            })
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
 
@@ -557,16 +569,24 @@ async def search_reservations(
         # Find bookings
         bookings = await db.bookings.find(filter_dict, {'_id': 0}).sort('check_in', -1).limit(50).to_list(50)
 
-        # Enrich with guest and room data
+        # Enrich with guest and room data — MUST be tenant-scoped to prevent IDOR
+        # (booking.guest_id/room_id come from the tenant-filtered bookings query, but
+        #  we still defense-in-depth filter the lookup itself in case of bad data)
         for booking in bookings:
             if booking.get('guest_id'):
-                guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
+                guest = await db.guests.find_one(
+                    {'id': booking['guest_id'], 'tenant_id': current_user.tenant_id},
+                    {'_id': 0},
+                )
                 if guest:
                     booking['guest_phone'] = guest.get('phone')
                     booking['guest_email'] = guest.get('email')
 
             if booking.get('room_id'):
-                room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
+                room = await db.rooms.find_one(
+                    {'id': booking['room_id'], 'tenant_id': current_user.tenant_id},
+                    {'_id': 0},
+                )
                 if room:
                     booking['room_number'] = room.get('room_number')
                     booking['room_type'] = room.get('room_type')

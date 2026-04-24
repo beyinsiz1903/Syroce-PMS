@@ -21,6 +21,7 @@ from core.security import (
 )
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,7 @@ class RateOverrideRequest(BaseModel):
 @cached(ttl=120, key_prefix="anomaly_detect")
 async def detect_anomalies(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: revenue anomaly detection
 ):
     """
     Detect real-time anomalies in key metrics

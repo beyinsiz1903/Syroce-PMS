@@ -22,6 +22,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -404,14 +406,15 @@ async def agency_list_hotels(
 
     sysdb = get_system_db()
     query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
-    if city:
-        query["city"] = {"$regex": f"^{city}$", "$options": "i"}
+    from security.query_safety import safe_search_term
+    if city and (_c := safe_search_term(city)):
+        query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
     if country:
         query["country"] = country.upper()
-    if q:
+    if q and (_s := safe_search_term(q)):
         query["$or"] = [
-            {"hotel_name": {"$regex": q, "$options": "i"}},
-            {"description": {"$regex": q, "$options": "i"}},
+            {"hotel_name": {"$regex": _s, "$options": "i"}},
+            {"description": {"$regex": _s, "$options": "i"}},
         ]
 
     docs = await sysdb.marketplace_listings.find(
@@ -479,14 +482,15 @@ async def agency_search(
 
     sysdb = get_system_db()
     list_query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
-    if req.city:
-        list_query["city"] = {"$regex": f"^{req.city}$", "$options": "i"}
+    from security.query_safety import safe_search_term
+    if req.city and (_c := safe_search_term(req.city)):
+        list_query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
     if req.country:
         list_query["country"] = req.country.upper()
-    if req.q:
+    if req.q and (_s := safe_search_term(req.q)):
         list_query["$or"] = [
-            {"hotel_name": {"$regex": req.q, "$options": "i"}},
-            {"description": {"$regex": req.q, "$options": "i"}},
+            {"hotel_name": {"$regex": _s, "$options": "i"}},
+            {"description": {"$regex": _s, "$options": "i"}},
         ]
 
     listings = await sysdb.marketplace_listings.find(list_query, {"_id": 0}).limit(req.limit).to_list(req.limit)
@@ -791,8 +795,14 @@ async def agency_create_reservation(
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
         }
-        await db.bookings.insert_one(booking_doc)
-        booking_doc.pop("_id", None)
+        # v106 architect follow-up (race-safety): direct insert_one bypassed
+        # the room_night_locks atomic guard → marketplace agencies could
+        # double-book the same room across concurrent requests. Now routed
+        # through create_booking_atomic.
+        try:
+            booking_doc = await create_booking_atomic(booking_doc)
+        except BookingConflictError as conflict_err:
+            raise HTTPException(status_code=409, detail=str(conflict_err))
 
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
     sysdb = get_system_db()

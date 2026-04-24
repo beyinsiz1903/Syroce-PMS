@@ -57,6 +57,7 @@ class OutboxStatusResponse(BaseModel):
 
 # NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter
 # in the queries below). Cache key intentionally resolves to 'global' namespace.
+# noqa: cache-rbac — global ops admin endpoint (router-level admin guard)
 @outbox_admin_router.get("/status", response_model=OutboxStatusResponse)
 @cached(ttl=30, key_prefix="outbox_status_global")
 async def outbox_status():

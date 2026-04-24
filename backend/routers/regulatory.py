@@ -13,6 +13,7 @@ Provides:
       → kullanıcının "var/yok/kısmen" işaretlerini kaydeder.
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from datetime import UTC, datetime
 from typing import Any
@@ -408,6 +409,7 @@ async def get_star_checklist(
 async def save_star_checklist(
     payload: ChecklistSubmission,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ) -> dict[str, Any]:
     valid_keys = {c["key"] for c in _STAR_CRITERIA}
     cleaned = [e.model_dump() for e in payload.entries

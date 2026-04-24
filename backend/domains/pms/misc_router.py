@@ -3,6 +3,7 @@ PMS / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -20,6 +21,7 @@ from core.security import (
     security,
 )
 from models.enums import ROLE_PERMISSIONS, CompanyStatus, Permission, UserRole
+from modules.pms_core.role_permission_service import require_op
 from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
 
 DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
@@ -141,7 +143,8 @@ async def get_complaint_detail(
 async def update_complaint(
     complaint_id: str,
     update_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     update_data.pop("id", None)
     update_data.pop("tenant_id", None)
@@ -161,7 +164,8 @@ async def update_complaint(
 async def resolve_complaint(
     complaint_id: str,
     resolve_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     now = datetime.now(UTC).isoformat()
     update = {
@@ -186,7 +190,8 @@ async def resolve_complaint(
 async def escalate_complaint(
     complaint_id: str,
     escalate_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     now = datetime.now(UTC).isoformat()
     update = {
@@ -209,7 +214,8 @@ async def escalate_complaint(
 @router.delete("/service/complaints/{complaint_id}")
 async def delete_complaint(
     complaint_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     result = await db.service_complaints.delete_one(
         {"id": complaint_id, "tenant_id": current_user.tenant_id}
@@ -235,9 +241,10 @@ async def get_guests_for_complaints(
     q: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
+    from security.query_safety import safe_search_term
     query = {"tenant_id": current_user.tenant_id}
-    if q:
-        query["name"] = {"$regex": q, "$options": "i"}
+    if (s := safe_search_term(q)):
+        query["name"] = {"$regex": s, "$options": "i"}
     guests = await db.guests.find(
         query,
         {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}
@@ -262,7 +269,9 @@ async def get_active_bookings_for_complaints(
 
 
 @router.post("/payments/intent")
-async def payment_intent(payment_data: dict, current_user: User = Depends(get_current_user)):
+async def payment_intent(payment_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
     intent = {'id': str(uuid.uuid4()), 'amount': payment_data['amount'], 'status': 'pending'}
     await db.payment_intents.insert_one(intent)
     return {'success': True, 'intent_id': intent['id']}
@@ -276,7 +285,9 @@ async def installment_calc(amount: float, months: int, current_user: User = Depe
 
 
 @router.post("/payments/create-intent")
-async def create_payment_intent(payment_data: dict, current_user: User = Depends(get_current_user)):
+async def create_payment_intent(payment_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
     intent = {
         'id': str(uuid.uuid4()), 'amount': payment_data['amount'],
         'status': 'pending', 'stripe_id': f'pi_mock_{str(uuid.uuid4())[:8]}'
@@ -289,7 +300,9 @@ async def create_payment_intent(payment_data: dict, current_user: User = Depends
 
 
 @router.post("/gds/push-rate")
-async def push_rate_to_gds(rate_data: dict, current_user: User = Depends(get_current_user)):
+async def push_rate_to_gds(rate_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
+):
     """GDS'e rate ve availability gönder"""
     # Simulated GDS push (real: Amadeus/Sabre API)
     gds_update = {
@@ -362,7 +375,9 @@ async def register_mobile_device(device_data: dict, current_user: User = Depends
 
 
 @router.post("/mobile/push-notification")
-async def send_push_notification(notification_data: dict, current_user: User = Depends(get_current_user)):
+async def send_push_notification(notification_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     """Push notification gönder"""
     notification = {
         'id': str(uuid.uuid4()),
@@ -376,7 +391,9 @@ async def send_push_notification(notification_data: dict, current_user: User = D
 
 
 @router.post("/hr/staff")
-async def add_staff_member(staff_data: dict, current_user: User = Depends(get_current_user)):
+async def add_staff_member(staff_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Yeni personel ekle"""
     staff = {
         'id': str(uuid.uuid4()),
@@ -409,7 +426,9 @@ async def get_staff_list(department: str | None = None, current_user: User = Dep
 
 
 @router.post("/hr/shift")
-async def create_shift(shift_data: dict, current_user: User = Depends(get_current_user)):
+async def create_shift(shift_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Vardiya oluştur"""
     shift = {
         'id': str(uuid.uuid4()),
@@ -454,7 +473,9 @@ async def installment_calculator(amount: float, installments: int, current_user:
 
 
 @router.post("/companies", response_model=Company)
-async def create_company(company_data: CompanyCreate, current_user: User = Depends(get_current_user)):
+async def create_company(company_data: CompanyCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Create a new company. Status is 'pending' by default for quick-created companies from booking form."""
     company = Company(
         tenant_id=current_user.tenant_id,
@@ -475,7 +496,8 @@ async def get_companies(
     status: CompanyStatus | None = None,
     limit: int = 1000,
     offset: int = 0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_corporate_accounts")),  # v86 DV: corporate companies
 ):
     """Get all companies with optional search, status filter, and pagination."""
     query = {'tenant_id': current_user.tenant_id}
@@ -483,10 +505,11 @@ async def get_companies(
     if status:
         query['status'] = status
 
-    if search:
+    from security.query_safety import safe_search_term
+    if (s := safe_search_term(search)):
         query['$or'] = [
-            {'name': {'$regex': search, '$options': 'i'}},
-            {'corporate_code': {'$regex': search, '$options': 'i'}}
+            {'name': {'$regex': s, '$options': 'i'}},
+            {'corporate_code': {'$regex': s, '$options': 'i'}}
         ]
 
     companies = await db.companies.find(query, {'_id': 0}).skip(offset).limit(limit).to_list(limit)
@@ -515,7 +538,8 @@ async def get_company(company_id: str, current_user: User = Depends(get_current_
 async def update_company(
     company_id: str,
     company_data: CompanyCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Update company information. Used by sales team to complete pending company profiles."""
     company = await db.companies.find_one({
@@ -549,7 +573,8 @@ async def update_company(
 async def void_payment(
     payment_id: str,
     void_reason: str = "Voided by staff",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     """Void a payment"""
     payment = await db.payments.find_one({
@@ -670,7 +695,9 @@ async def get_consumption_report(
 
 
 @router.post("/inventory/seed-hotel-amenities")
-async def seed_hotel_amenities(current_user: User = Depends(get_current_user)):
+async def seed_hotel_amenities(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+):
     """Seed database with common hotel amenities"""
     amenities = [
         {"name": "Şampuan", "category": "Banyo Ürünleri", "unit": "adet", "quantity": 200, "unit_cost": 2.5, "reorder_level": 50},
@@ -725,7 +752,11 @@ async def seed_hotel_amenities(current_user: User = Depends(get_current_user)):
 
 @router.get("/export/folio/{folio_id}")
 @cached(ttl=600, key_prefix="export_folio")  # Cache for 10 min
-async def export_folio_csv(folio_id: str, current_user: User = Depends(get_current_user)):
+async def export_folio_csv(
+    folio_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("export_data")),
+):
     """Export folio transactions as CSV"""
     if not has_permission(current_user.role, Permission.EXPORT_DATA):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -739,20 +770,21 @@ async def export_folio_csv(folio_id: str, current_user: User = Depends(get_curre
     charges = folio_details['charges']
     payments = folio_details['payments']
 
-    # Create CSV
+    # Create CSV — Bug AN: charge descriptions / payment refs are user-controlled.
+    from core.csv_safe import safe_writerow
     output = StringIO()
     writer = csv.writer(output)
 
     # Header
-    writer.writerow([f"Folio Export - {folio['folio_number']}"])
-    writer.writerow([f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
+    safe_writerow(writer, [f"Folio Export - {folio['folio_number']}"])
+    safe_writerow(writer, [f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
     writer.writerow([])
 
     # Charges
-    writer.writerow(['CHARGES'])
-    writer.writerow(['Date', 'Category', 'Description', 'Quantity', 'Unit Price', 'Tax', 'Total', 'Voided'])
+    safe_writerow(writer, ['CHARGES'])
+    safe_writerow(writer, ['Date', 'Category', 'Description', 'Quantity', 'Unit Price', 'Tax', 'Total', 'Voided'])
     for charge in charges:
-        writer.writerow([
+        safe_writerow(writer, [
             charge['date'],
             charge['charge_category'],
             charge['description'],
@@ -766,10 +798,10 @@ async def export_folio_csv(folio_id: str, current_user: User = Depends(get_curre
     writer.writerow([])
 
     # Payments
-    writer.writerow(['PAYMENTS'])
-    writer.writerow(['Date', 'Method', 'Type', 'Amount', 'Reference'])
+    safe_writerow(writer, ['PAYMENTS'])
+    safe_writerow(writer, ['Date', 'Method', 'Type', 'Amount', 'Reference'])
     for payment in payments:
-        writer.writerow([
+        safe_writerow(writer, [
             payment['processed_at'],
             payment['method'],
             payment['payment_type'],
@@ -778,7 +810,7 @@ async def export_folio_csv(folio_id: str, current_user: User = Depends(get_curre
         ])
 
     writer.writerow([])
-    writer.writerow(['', '', '', 'Balance:', folio['balance']])
+    safe_writerow(writer, ['', '', '', 'Balance:', folio['balance']])
 
     csv_content = output.getvalue()
     output.close()
@@ -794,7 +826,8 @@ async def export_folio_csv(folio_id: str, current_user: User = Depends(get_curre
 @router.post("/multi-property/properties")
 async def create_property(
     request: CreatePropertyRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Add new property to portfolio"""
     property_obj = {
@@ -984,7 +1017,8 @@ async def get_staff_mobile_dashboard(
 @router.post("/mobile/staff/quick-checkin")
 async def mobile_quick_checkin(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Quick check-in from mobile — atomic transaction."""
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
@@ -1080,7 +1114,8 @@ async def get_quick_property_list(
 @router.put("/user/switch-property/{property_id}")
 async def switch_property(
     property_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v92 DW: auth-only
 ):
     """
     Switch user's active property
@@ -1135,7 +1170,8 @@ async def switch_property(
 @router.get("/analytics/7day-trend")
 @cached(ttl=600, key_prefix="analytics_7day_trend")
 async def get_7day_trend(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: 7-day trend exec
 ):
     """
     Get 7-day trend for arrivals, departures, revenue, occupancy.
@@ -1217,7 +1253,8 @@ async def get_7day_trend(
 @router.post("/network/ping")
 async def network_ping_test(
     request: PingTestRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """
     Perform ping test to measure latency

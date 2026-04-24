@@ -10,6 +10,7 @@ Closes the gap with OPERA Sales & Catering:
 Authorisation reuses existing MICE roles via require_mice_ops.
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 import uuid
 from datetime import UTC, datetime
@@ -140,6 +141,7 @@ async def list_opportunities(
 async def create_opportunity(
     payload: OpportunityIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
     await _ensure_indexes()
@@ -179,6 +181,7 @@ async def update_opportunity(
     opp_id: str,
     payload: OpportunityIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
     res = await db.mice_opportunities.update_one(
@@ -192,7 +195,9 @@ async def update_opportunity(
 
 
 @router.delete("/opportunities/{opp_id}")
-async def delete_opportunity(opp_id: str, current_user: User = Depends(get_current_user)):
+async def delete_opportunity(opp_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
+):
     require_mice_ops(current_user)
     res = await db.mice_opportunities.delete_one(
         {"id": opp_id, "tenant_id": current_user.tenant_id}
@@ -207,6 +212,7 @@ async def transition_stage(
     opp_id: str,
     payload: StageTransitionIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
     if payload.to_stage not in STAGES:
@@ -272,6 +278,7 @@ async def add_activity(
     opp_id: str,
     payload: ActivityIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
     if payload.type not in ACTIVITY_TYPES:
@@ -369,6 +376,7 @@ async def list_packages(
 async def create_package(
     payload: PackageIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     require_catalog(current_user)
     if payload.type not in PACKAGE_TYPES:
@@ -391,6 +399,7 @@ async def update_package(
     pkg_id: str,
     payload: PackageIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     require_catalog(current_user)
     if payload.type not in PACKAGE_TYPES:
@@ -406,7 +415,9 @@ async def update_package(
 
 
 @router.delete("/packages/{pkg_id}")
-async def delete_package(pkg_id: str, current_user: User = Depends(get_current_user)):
+async def delete_package(pkg_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+):
     require_catalog(current_user)
     res = await db.mice_packages.delete_one(
         {"id": pkg_id, "tenant_id": current_user.tenant_id}
@@ -421,6 +432,7 @@ async def quote_package(
     pkg_id: str,
     pax: int = Query(..., ge=1),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     """Compute a price quote for a package given pax count."""
     pkg = await db.mice_packages.find_one(

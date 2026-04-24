@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+from modules.pms_core.role_permission_service import require_op  # v89 DW
+from core.security import get_current_user  # v89 DW
 
 router = APIRouter(prefix="/api/guest/messages", tags=["guest-messaging"])
 
@@ -83,7 +85,8 @@ async def get_guest_messages(
 @router.post("")
 async def send_guest_message(
     req: SendMessageRequest,
-    credentials=Depends(HTTPBearer())
+    credentials=Depends(HTTPBearer()),
+    _auth=Depends(get_current_user),  # v92.2 DW: auth-only (manual auth via _get_current_user)
 ):
     """Misafir mesajı gönder."""
     current_user = await _get_current_user(credentials)
@@ -130,7 +133,8 @@ async def send_guest_message(
 async def reply_to_message(
     message_id: str,
     req: ReplyMessageRequest,
-    credentials=Depends(HTTPBearer())
+    credentials=Depends(HTTPBearer()),
+    _auth=Depends(get_current_user),  # v92.2 DW: auth-only (manual auth via _get_current_user)
 ):
     """Mesaja yanıt ver."""
     current_user = await _get_current_user(credentials)
@@ -170,7 +174,8 @@ async def reply_to_message(
 @router.put("/{message_id}/read")
 async def mark_message_read(
     message_id: str,
-    credentials=Depends(HTTPBearer())
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """Mesajı okundu olarak işaretle."""
     current_user = await _get_current_user(credentials)
@@ -185,7 +190,8 @@ async def mark_message_read(
 @router.put("/mark-all-read")
 async def mark_all_read(
     booking_id: str | None = None,
-    credentials=Depends(HTTPBearer())
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """Tüm mesajları okundu işaretle."""
     current_user = await _get_current_user(credentials)

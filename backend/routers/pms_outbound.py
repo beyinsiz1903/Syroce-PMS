@@ -10,6 +10,8 @@ This is the read-only PMS surface Af-sadakat needs:
 - folio.charge — push a charge from Af-sadakat into PMS folio
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v92 DW
+from fastapi import Depends  # v92 DW
 
 import logging
 from typing import Any
@@ -133,11 +135,13 @@ async def list_guests(
     db = _db()
     flt: dict[str, Any] = {"tenant_id": tenant_id}
     if q:
-        flt["$or"] = [
-            {"first_name": {"$regex": q, "$options": "i"}},
-            {"last_name": {"$regex": q, "$options": "i"}},
-            {"email": {"$regex": q, "$options": "i"}},
-        ]
+        from security.query_safety import safe_search_term
+        if (_s := safe_search_term(q)):
+            flt["$or"] = [
+                {"first_name": {"$regex": _s, "$options": "i"}},
+                {"last_name": {"$regex": _s, "$options": "i"}},
+                {"email": {"$regex": _s, "$options": "i"}},
+            ]
     cur = db.guests.find(
         flt,
         {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
@@ -178,6 +182,7 @@ class FolioChargeIn(BaseModel):
 async def post_folio_charge(
     payload: FolioChargeIn,
     authorization: str | None = Header(default=None),
+    _perm=Depends(require_op("post_charge")),  # v92 DW
 ) -> dict:
     """Append a charge to a reservation folio. Idempotent on external_ref."""
     creds = await _auth(authorization)

@@ -3,6 +3,7 @@ PMS / Groups Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -21,7 +22,8 @@ router = APIRouter(prefix="/api", tags=["PMS / Groups"])
 @router.post("/groups/create-block")
 async def create_group_block(
     block_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Grup bloğu oluştur"""
 
@@ -201,7 +203,8 @@ async def get_group_block_details(
 async def upload_rooming_list(
     block_id: str,
     rooming_list: list[dict],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Rooming list upload (Excel'den gelen data)"""
     from domains.pms.group_sales_models import RoomingListEntry
@@ -379,7 +382,8 @@ async def get_group_master_folio(
 async def release_group_block(
     block_id: str,
     release_count: int,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Grup bloğundan oda serbest bırak"""
     block = await db.group_blocks.find_one({
@@ -436,7 +440,8 @@ async def get_group_reservations(current_user: User = Depends(get_current_user))
 @router.post("/group-reservations")
 async def create_group_reservation(
     request: CreateGroupReservationRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create new group reservation"""
     group = {
@@ -495,7 +500,8 @@ async def get_group_reservation(
 async def assign_group_rooms(
     group_id: str,
     request: AssignGroupRoomsRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Assign rooms to group reservation"""
     room_assignments = request.room_assignments
@@ -567,7 +573,8 @@ async def get_block_reservations(current_user: User = Depends(get_current_user))
 @router.post("/block-reservations")
 async def create_block_reservation(
     request: CreateBlockReservationRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create room block reservation"""
     block = {
@@ -597,7 +604,8 @@ async def create_block_reservation(
 async def use_block_room(
     block_id: str,
     request: UseBlockRoomRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Use a room from block reservation"""
     guest_name = request.guest_name
@@ -648,7 +656,8 @@ async def use_block_room(
 @router.post("/block-reservations/{block_id}/release")
 async def release_block_reservation(
     block_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Release unused rooms from block"""
     block = await db.block_reservations.find_one(

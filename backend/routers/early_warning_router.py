@@ -14,6 +14,7 @@ Provides:
   - GET /api/ops-events/early-warnings/engine/status — Engine status
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -373,6 +374,7 @@ async def get_engine_status(
 @router.post("/engine/start")
 async def start_warning_engine(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Early Warning Engine'i başlat."""
     engine = get_early_warning_engine()
@@ -384,6 +386,7 @@ async def start_warning_engine(
 @router.post("/engine/stop")
 async def stop_warning_engine(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Early Warning Engine'i durdur."""
     engine = get_early_warning_engine()
@@ -399,6 +402,7 @@ async def stop_warning_engine(
 @router.post("/force-check")
 async def force_warning_check(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Manuel olarak uyarı kontrolü tetikle ve event'leri emit et."""
     tenant_id = _get_tenant(current_user)

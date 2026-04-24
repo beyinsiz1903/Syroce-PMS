@@ -3,6 +3,7 @@ Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 PMS üzerinden ayarla → Exely'ye push et → OTA'lara yansısın.
 """
 import asyncio
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -208,6 +209,7 @@ async def get_rate_grid(
 async def update_rates(
     request: BulkRateUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Update rates/availability/restrictions and push to Exely."""
     tenant_id = current_user.tenant_id
@@ -355,6 +357,7 @@ async def get_room_types(current_user: User = Depends(get_current_user)):
 async def bulk_grid_update(
     request: BulkGridUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """
     HotelRunner-style toplu güncelleme:
@@ -605,6 +608,7 @@ async def get_pricing_settings(current_user: User = Depends(get_current_user)):
 async def update_pricing_settings(
     request: PricingSettingsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Oda tipi bazında fiyatlandırma tipini günceller."""
     tenant_id = current_user.tenant_id
@@ -680,6 +684,7 @@ async def list_stop_sale_schedules(
 async def create_stop_sale_schedule(
     request: StopSaleScheduleCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Yeni stop sale zamanlayici olusturur."""
     tenant_id = current_user.tenant_id
@@ -745,6 +750,7 @@ async def delete_stop_sale_schedule(
     schedule_id: str,
     remove_stop_sale: bool = False,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Stop sale zamanlayiciyi siler. remove_stop_sale=true ise stop sale'i de kaldirir."""
     tenant_id = current_user.tenant_id
@@ -790,6 +796,7 @@ async def update_stop_sale_schedule(
     schedule_id: str,
     request: StopSaleScheduleUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Stop sale zamanlayici gunceller."""
     tenant_id = current_user.tenant_id

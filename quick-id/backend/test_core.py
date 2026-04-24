@@ -16,7 +16,7 @@ if not OPENAI_API_KEY:
     print("ERROR: OPENAI_API_KEY not found in environment")
     exit(1)
 
-print(f"OPENAI_API_KEY loaded: {OPENAI_API_KEY[:8]}...")
+print(f"OPENAI_API_KEY loaded: {'yes' if OPENAI_API_KEY else 'no'}")
 
 ID_EXTRACTION_PROMPT = """You are an expert ID document reader. You analyze images of identity documents (ID cards, passports, driver's licenses) and extract structured information.
 

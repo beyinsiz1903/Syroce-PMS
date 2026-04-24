@@ -5,6 +5,9 @@ create_order, close_order, void_order, stock_adjust, table_reserve.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -64,7 +67,9 @@ class TableReserveRequest(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post("/orders")
-async def create_order(req: CreateOrderRequest, user=Depends(get_current_user)):
+async def create_order(req: CreateOrderRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     ctx = OperationContext.from_user(user)
     items_dicts = [item.model_dump() for item in req.items]
     result = await pos_fnb_service_v2.create_order(
@@ -76,7 +81,9 @@ async def create_order(req: CreateOrderRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/orders/close")
-async def close_order(req: CloseOrderRequest, user=Depends(get_current_user)):
+async def close_order(req: CloseOrderRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.close_order(
         ctx, req.order_id, req.payment_method, req.post_to_folio,
@@ -87,7 +94,9 @@ async def close_order(req: CloseOrderRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/orders/void")
-async def void_order(req: VoidOrderRequest, user=Depends(get_current_user)):
+async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v99 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.void_order(ctx, req.order_id, reason=req.reason)
     if not result.ok:
@@ -96,7 +105,9 @@ async def void_order(req: VoidOrderRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/stock/adjust")
-async def adjust_stock(req: StockAdjustRequest, user=Depends(get_current_user)):
+async def adjust_stock(req: StockAdjustRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.adjust_stock(
         ctx, req.product_id, req.adjustment_type, req.quantity,
@@ -107,7 +118,9 @@ async def adjust_stock(req: StockAdjustRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/tables/reserve")
-async def reserve_table(req: TableReserveRequest, user=Depends(get_current_user)):
+async def reserve_table(req: TableReserveRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v101("pos")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.reserve_table(
         ctx, req.outlet_id, req.table_number, req.guest_name,

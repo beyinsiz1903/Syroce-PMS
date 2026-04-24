@@ -4,6 +4,7 @@ Domain Router: Guest Experience
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -137,7 +138,8 @@ async def get_guest_360(
 async def add_guest_tag(
     guest_id: str,
     tag: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Add tag to guest"""
     result = await db.guests.update_one(
@@ -154,7 +156,8 @@ async def add_guest_tag(
 async def add_guest_note(
     guest_id: str,
     note: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Add note to guest"""
     note_obj = {
@@ -178,7 +181,8 @@ async def add_guest_note(
 async def delete_guest_note(
     guest_id: str,
     note_index: int,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     guest = await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id})
     if not guest:
@@ -197,7 +201,8 @@ async def delete_guest_note(
 @router.post("/ai/upsell/generate")
 async def generate_upsell_offers(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     booking = await db.bookings.find_one({
         'id': booking_id,
@@ -375,7 +380,8 @@ async def list_upsell_offers(
 async def update_upsell_offer(
     offer_id: str,
     action: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     if action not in ('accepted', 'rejected'):
         raise HTTPException(status_code=400, detail="Gecersiz aksiyon. 'accepted' veya 'rejected' olmali.")
@@ -561,7 +567,8 @@ async def send_email(
     body: str,
     guest_id: str | None = None,
     template_id: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send email message with rate limiting"""
     # Check rate limit (100 emails per hour)
@@ -615,7 +622,8 @@ async def send_sms(
     recipient: str,
     body: str,
     guest_id: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send SMS message with stricter rate limiting (50 per hour)"""
     # SMS has stricter rate limit due to cost
@@ -682,7 +690,8 @@ async def send_whatsapp(
     recipient: str,
     body: str,
     guest_id: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send WhatsApp message with rate limiting (80 per hour)"""
     # WhatsApp rate limit
@@ -749,7 +758,8 @@ async def generate_rms_suggestions(
     start_date: str,
     end_date: str,
     room_type: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v100 DW
 ):
     """Generate RMS rate suggestions based on occupancy and demand"""
     start = datetime.fromisoformat(start_date).date()
@@ -865,7 +875,8 @@ async def get_rms_suggestions(
 @router.post("/rms/apply-suggestion/{suggestion_id}")
 async def apply_rms_suggestion(
     suggestion_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v100 DW
 ):
     """Apply RMS suggestion to room rates"""
     suggestion = await db.rms_suggestions.find_one({
@@ -928,7 +939,8 @@ async def get_reviews(
 async def respond_to_review(
     review_id: str,
     response_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Respond to a guest review"""
     await db.guest_reviews.update_one(
@@ -1063,7 +1075,8 @@ async def get_external_reviews_summary(
 async def respond_to_external_review(
     review_id: str,
     response_text: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Respond to external review"""
     review = await db.external_reviews.find_one({
@@ -1111,7 +1124,8 @@ async def get_surveys(current_user: User = Depends(get_current_user)):
 @router.post("/feedback/surveys")
 async def create_survey(
     request: CreateSurveyRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Create new survey"""
     survey = {
@@ -1376,6 +1390,7 @@ async def get_department_satisfaction_summary(
 
 # ============= GUEST MOBILE APP ENDPOINTS =============
 
+# noqa: cache-rbac — GUEST portal — kendi rezervasyonları
 @router.get("/guest/bookings")
 @cached(ttl=300, key_prefix="guest_bookings_history")  # Cache for 5 min
 async def get_guest_bookings(
@@ -2117,7 +2132,8 @@ async def get_alert_history(
 @router.post("/logs/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Acknowledge an alert"""
     result = await db.alerts.update_one(
@@ -2159,7 +2175,8 @@ async def acknowledge_alert(
 async def resolve_alert(
     alert_id: str,
     resolution_notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Resolve an alert"""
     result = await db.alerts.update_one(

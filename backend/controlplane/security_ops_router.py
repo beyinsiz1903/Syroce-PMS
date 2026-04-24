@@ -144,10 +144,11 @@ async def secrets_rotation_plan(
     """
     plan_items = []
     try:
+        from security.query_safety import safe_search_term
         query = {}
-        if tenant_id:
+        if tenant_id and (s := safe_search_term(tenant_id)):
             # Filter by tenant in path
-            query["path"] = {"$regex": f"/{tenant_id}/"}
+            query["path"] = {"$regex": f"/{s}/"}
 
         secrets = await db["_dev_secrets"].find(
             query, {"_id": 0, "path": 1, "created_at": 1, "updated_at": 1,
@@ -317,9 +318,10 @@ async def secrets_scoping(
     """
     scoping = []
     try:
+        from security.query_safety import safe_search_term
         query = {}
-        if tenant_id:
-            query["path"] = {"$regex": f"/{tenant_id}/"}
+        if tenant_id and (s := safe_search_term(tenant_id)):
+            query["path"] = {"$regex": f"/{s}/"}
 
         secrets = await db["_dev_secrets"].find(
             query, {"_id": 0, "path": 1, "created_at": 1}

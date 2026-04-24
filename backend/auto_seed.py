@@ -1384,7 +1384,13 @@ async def auto_seed_if_empty(db):
     # ── Summary ─────────────────────────────────────────
     total_bookings = len(bookings) + len(extended_bookings)
     logger.info("Demo data seeded successfully!")
-    logger.info(f"   Users: {1 + len(staff_users)} (admin: {DEMO_EMAIL} / {DEMO_PASSWORD})")
+    # v109 round-8: do not log the seed password — even at info level, log
+    # aggregators/log-mirrors would capture it (hounddog CRITICAL). The
+    # admin email + password env var name is enough for operators to debug.
+    logger.info(
+        "   Users: %s (admin: %s / password from $DEMO_PASSWORD)",
+        1 + len(staff_users), DEMO_EMAIL,
+    )
     logger.info(f"   Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")
     logger.info(f"   Rooms: {len(rooms)}")
     logger.info(f"   Room Types: {len(room_types_docs)}")

@@ -5,6 +5,7 @@ Extracted from legacy_routes.py — online check-in submission,
 upsell acceptance, pre-arrival communications.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api", tags=["checkin-domain"])
 async def submit_online_checkin(
     checkin_data: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Online check-in submission"""
     from domains.guest.online_checkin_models import OnlineCheckinRequest
@@ -142,7 +144,8 @@ async def get_online_checkin_status(
 
 @router.post("/upsell/accept")
 async def accept_upsell_offer(
-    data: dict, current_user: User = Depends(get_current_user)
+    data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Upsell teklifini kabul et"""
     offer_id = data.get("offer_id")

@@ -7,7 +7,11 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.database import db
+# v42 round-5: cross-tenant scheduler runs without per-request tenant_context.
+# All per-tenant queries below carry manual `tenant_id` filters; use the raw
+# system DB to bypass STRICT_TENANT_MODE without weakening isolation.
+from core.tenant_db import get_system_db as _get_system_db
+db = _get_system_db()
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +110,9 @@ class SyncScheduler:
             "timestamp": datetime.now(UTC).isoformat(),
         })
 
-        # Update last_sync
+        # Update last_sync (tenant_id filter included for defense-in-depth)
         await db.channel_connections.update_one(
-            {"id": connection_id},
+            {"id": connection_id, "tenant_id": tenant_id},
             {"$set": {"last_sync": datetime.now(UTC).isoformat()}},
         )
 

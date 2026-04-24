@@ -8,28 +8,142 @@ from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 
 # Operation-to-permission mapping
 OPERATION_PERMISSIONS = {
+    # Booking lifecycle
+    "checkin": [Permission.CHECKIN],
     "check_in": [Permission.CHECKIN],
     "checkout": [Permission.CHECKOUT],
     "create_booking": [Permission.CREATE_BOOKING],
     "edit_booking": [Permission.EDIT_BOOKING],
+    "delete_booking": [Permission.DELETE_BOOKING],
     "cancel_booking": [Permission.EDIT_BOOKING],
+    # Folio / financial
+    "view_folio": [Permission.VIEW_FOLIO],
     "post_charge": [Permission.POST_CHARGE],
     "post_payment": [Permission.POST_PAYMENT],
     "void_charge": [Permission.VOID_CHARGE],
     "void_payment": [Permission.VOID_CHARGE],
     "split_folio": [Permission.TRANSFER_FOLIO],
+    "transfer_folio": [Permission.TRANSFER_FOLIO],  # Bug CQ fix — missing op key
     "close_folio": [Permission.CLOSE_FOLIO],
     "override_rate": [Permission.OVERRIDE_RATE],
+    # Room operations
     "room_move": [Permission.EDIT_BOOKING],
     "room_upgrade": [Permission.EDIT_BOOKING],
     "walk_in": [Permission.CREATE_BOOKING, Permission.CHECKIN],
     "update_room_status": [Permission.UPDATE_ROOM_STATUS],
     "run_night_audit": [Permission.SYSTEM_SETTINGS],
+    # Admin
     "manage_users": [Permission.MANAGE_USERS],
+    # PCI / VCC card operations (Bug CS — v58)
+    "store_card": [Permission.POST_PAYMENT],
+    "reveal_card": [Permission.POST_PAYMENT],
+    "delete_card": [Permission.VOID_CHARGE],
+    "view_card_status": [Permission.VIEW_FOLIO],
+    # Cashiering / City Ledger / AR (Bug CT — v59) — financial-sensitive
+    "view_city_ledger": [Permission.VIEW_FINANCIAL_REPORTS],
+    "view_city_ledger_transactions": [Permission.VIEW_FINANCIAL_REPORTS],
+    "view_ar_aging": [Permission.VIEW_FINANCIAL_REPORTS],
+    "view_outstanding_balance": [Permission.VIEW_FINANCIAL_REPORTS],
+    "view_credit_limit": [Permission.VIEW_FINANCIAL_REPORTS],
+    "manage_city_ledger": [Permission.VIEW_FINANCIAL_REPORTS, Permission.POST_PAYMENT],
+    "manage_credit_limit": [Permission.VIEW_FINANCIAL_REPORTS, Permission.POST_PAYMENT],
+    "post_direct_bill": [Permission.VIEW_FINANCIAL_REPORTS, Permission.POST_PAYMENT],
+    "post_city_ledger_payment": [Permission.VIEW_FINANCIAL_REPORTS, Permission.POST_PAYMENT],
+    # split-payment uses existing "post_payment" key (FRONT_DESK has POST_PAYMENT)
+    # Departments / Reports / Rates / POS / Loyalty (Bug CU — v60)
+    "view_finance_reports": [Permission.VIEW_FINANCIAL_REPORTS],
+    "export_data": [Permission.EXPORT_DATA],
+    "view_corporate_accounts": [Permission.VIEW_COMPANIES],
+    "view_vip_notes": [Permission.VIEW_REPORTS],
+    # v71 Bug DH: reports/exec/HR/PII permission keys
+    "view_reports": [Permission.VIEW_REPORTS],
+    "view_executive_reports": [Permission.VIEW_FINANCIAL_REPORTS],
+    "view_guest_list": [Permission.VIEW_REPORTS],
+    "view_it_system": [Permission.SYSTEM_SETTINGS],
+    # v87 DR-FOLLOWUP-1: ops/devops diagnostics (production_golive, ops_events) — semantik ayrı key, ADMIN/SUPER_ADMIN only
+    "view_system_diagnostics": [Permission.SYSTEM_SETTINGS],
+    # v88 DR-FOLLOWUP-2 (Bug DW): NO_AUTH write endpoints — semantik ayrı keys, hepsi ADMIN/SUPER_ADMIN only
+    "manage_night_audit": [Permission.SYSTEM_SETTINGS],
+    "manage_secrets": [Permission.SYSTEM_SETTINGS],
+    "manage_budget_config": [Permission.SYSTEM_SETTINGS],
+    "manage_channel_connectors": [Permission.SYSTEM_SETTINGS],
+    "manage_rates": [Permission.OVERRIDE_RATE],
+    "manage_pos_settings": [Permission.SYSTEM_SETTINGS],
+    "manage_loyalty_tiers": [Permission.SYSTEM_SETTINGS],
+    # v89 DR-FOLLOWUP-2 Phase 1.5: bulk NO_AUTH closure
+    "manage_approvals": [Permission.SYSTEM_SETTINGS],
+    "manage_sales": [Permission.VIEW_COMPANIES],  # SALES + FINANCE both have it
+    "manage_guests": [Permission.VIEW_REPORTS],
+}
+
+# v89: module → roles mapping for require_module() helper
+MODULE_ROLES = {
+    "housekeeping": {UserRole.HOUSEKEEPING, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
+    "maintenance": {UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
+    "frontdesk": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
+    "pos": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
 }
 
 # Roles that can override any operation
 SUPERVISOR_ROLES = {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SUPERVISOR}
+
+
+def require_op(operation: str):
+    """FastAPI dependency factory — Bug CU v60 cache-bypass remediation.
+
+    `@cached`-dekoratorlu endpoint'lerde gövde içindeki `_enforce` cache hit'te
+    atlanır. Bu helper bir Depends üretir: dependency injection cache wrapper'ından
+    önce çalışır, dolayısıyla cache poisoning üzerinden RBAC bypass mümkün olmaz.
+    """
+    from core.security import get_current_user
+    from fastapi import Depends as _Depends
+    from models.schemas import User as _User
+
+    async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        RolePermissionService().enforce_permission(current_user.role, operation)
+    return _dep
+
+
+def require_module(module: str):
+    """v89: FastAPI dependency factory — module-based access (role allowlist).
+
+    Used for cross-domain endpoints where multiple roles legitimately operate
+    (e.g. housekeeping mobile usable by HK + MANAGER + ADMIN).
+    """
+    from core.security import get_current_user
+    from fastapi import Depends as _Depends, HTTPException as _HTTPException
+    from models.schemas import User as _User
+
+    allowed = MODULE_ROLES.get(module, set())
+    def _norm(r):
+        return getattr(r, "value", str(r))
+    allowed_norm = {_norm(r) for r in allowed}
+
+    async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        if _norm(current_user.role) not in allowed_norm:
+            raise _HTTPException(status_code=403, detail=f"Module '{module}' access denied")
+    return _dep
+
+
+def require_role(*allowed_roles):
+    """FastAPI dependency factory — role allow-list (cache-wrapper-safe).
+
+    Bug CV v61: `@cached`-dekoratorlu endpoint'lerde body içinde role check'i
+    cache hit'te atlanır. Bu dependency cache wrapper'ından önce çalışır.
+    """
+    from core.security import get_current_user
+    from fastapi import Depends as _Depends, HTTPException as _HTTPException
+    from models.schemas import User as _User
+
+    # v66 Bug DC2: Python 3.11+ `str(StrEnum)` returns 'UserRole.X' (not 'x') —
+    # so we normalize via .value where available, then fall back to str().
+    def _norm(r):
+        return getattr(r, "value", str(r))
+    allowed = {_norm(r) for r in allowed_roles}
+    async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        if _norm(current_user.role) not in allowed:
+            raise _HTTPException(status_code=403, detail="Insufficient role")
+    return _dep
 
 
 class RolePermissionService:
@@ -46,9 +160,12 @@ class RolePermissionService:
         if role_enum in {UserRole.ADMIN, UserRole.SUPER_ADMIN}:
             return True
 
-        required_perms = OPERATION_PERMISSIONS.get(operation, [])
+        required_perms = OPERATION_PERMISSIONS.get(operation)
+        if required_perms is None:
+            # Bug CQ fix — fail-closed: unknown operation rejected (was previously fail-open allow-all)
+            return False
         if not required_perms:
-            return True  # No specific permission required
+            return True
 
         user_perms = ROLE_PERMISSIONS.get(role_enum, [])
         # User needs ALL required permissions

@@ -5,6 +5,8 @@ room_move, late_checkout, no_show, walk_in, post_charge, void_charge.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from modules.pms_core.role_permission_service import require_op  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -71,7 +73,9 @@ class VoidChargeRequest(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post("/checkin")
-async def checkin(req: CheckinRequest, user=Depends(get_current_user)):
+async def checkin(req: CheckinRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.checkin(
         ctx, req.booking_id, req.create_folio, idempotency_key=req.idempotency_key
@@ -81,7 +85,9 @@ async def checkin(req: CheckinRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/checkout")
-async def checkout(req: CheckoutRequest, user=Depends(get_current_user)):
+async def checkout(req: CheckoutRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.checkout(
         ctx, req.booking_id, req.force, req.auto_close_folios, reason=req.reason
@@ -92,7 +98,9 @@ async def checkout(req: CheckoutRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/room-move")
-async def room_move(req: RoomMoveRequest, user=Depends(get_current_user)):
+async def room_move(req: RoomMoveRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.room_move(
         ctx, req.booking_id, req.new_room_id, reason=req.reason, transfer_keycards=req.transfer_keycards
@@ -102,7 +110,9 @@ async def room_move(req: RoomMoveRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/late-checkout")
-async def late_checkout(req: LateCheckoutRequest, user=Depends(get_current_user)):
+async def late_checkout(req: LateCheckoutRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.late_checkout(
         ctx, req.booking_id, req.new_checkout_time, req.charge_amount, reason=req.reason
@@ -112,7 +122,9 @@ async def late_checkout(req: LateCheckoutRequest, user=Depends(get_current_user)
     return from_service_result(result)
 
 @router.post("/no-show")
-async def process_no_show(req: NoShowRequest, user=Depends(get_current_user)):
+async def process_no_show(req: NoShowRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.process_no_show(
         ctx, req.booking_id, req.charge_first_night, req.release_room
@@ -122,7 +134,9 @@ async def process_no_show(req: NoShowRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/walk-in")
-async def walk_in(req: WalkInRequest, user=Depends(get_current_user)):
+async def walk_in(req: WalkInRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.walk_in(
         ctx, req.guest_name, req.room_id, req.nights, req.rate_amount,
@@ -133,7 +147,9 @@ async def walk_in(req: WalkInRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/post-charge")
-async def post_charge(req: PostChargeRequest, user=Depends(get_current_user)):
+async def post_charge(req: PostChargeRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.post_charge(
         ctx, req.booking_id, req.charge_type, req.description,
@@ -144,7 +160,9 @@ async def post_charge(req: PostChargeRequest, user=Depends(get_current_user)):
     return from_service_result(result)
 
 @router.post("/void-charge")
-async def void_charge(req: VoidChargeRequest, user=Depends(get_current_user)):
+async def void_charge(req: VoidChargeRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
     ctx = OperationContext.from_user(user)
     result = await frontdesk_service_v2.void_charge(ctx, req.charge_id, reason=req.reason)
     if not result.ok:

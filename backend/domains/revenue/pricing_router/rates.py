@@ -3,6 +3,7 @@ Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 import logging
 import uuid
@@ -178,7 +179,8 @@ async def list_rate_plans(
 @router.post("/rates/rate-plans", response_model=RatePlan)
 async def create_rate_plan(
     payload: RatePlanCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v95 DW
 ):
     data = payload.model_dump()
     data["tenant_id"] = current_user.tenant_id
@@ -215,7 +217,8 @@ async def list_packages(credentials: HTTPAuthorizationCredentials = Depends(secu
 @router.post("/rates/packages", response_model=Package)
 async def create_package(
     payload: PackageCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v95 DW
 ):
     data = payload.model_dump()
     data["tenant_id"] = current_user.tenant_id
@@ -351,7 +354,8 @@ async def get_discount_codes(
 @router.post("/rates/override")
 async def create_rate_override(
     request: RateOverrideRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("override_rate")),  # v92 DW
 ):
     """
     Create rate override (with optional approval flow)

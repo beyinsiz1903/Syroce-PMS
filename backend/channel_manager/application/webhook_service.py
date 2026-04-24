@@ -78,9 +78,52 @@ class WebhookService:
         property_id = connector.get("property_id", "")
         webhook_secret = connector.get("credentials", {}).get("webhook_secret", "")
 
-        # Signature verification (if secret configured)
-        if webhook_secret and signature:
-            if not self._verify_signature(raw_body, signature, webhook_secret):
+        # ── v106 Bug DAD (architect adversarial #6): previously this method was
+        # FAIL-OPEN — if webhook_secret was unset on the connector OR the caller
+        # omitted the signature/timestamp headers, BOTH checks were silently
+        # skipped and the webhook was accepted. An attacker who knew any active
+        # tenant_id (which leaks via many endpoints) could forge reservation_*
+        # webhooks at will: fake bookings, cancel real ones, corrupt inventory.
+        # Now FAIL-CLOSED — signing is mandatory unless explicitly disabled in
+        # dev via ALLOW_UNSIGNED_CM_WEBHOOK=1.
+        import os as _os
+        unsigned_ok = _os.environ.get("ALLOW_UNSIGNED_CM_WEBHOOK") == "1"
+
+        if not webhook_secret:
+            if not unsigned_ok:
+                await self._store_webhook_event(
+                    tenant_id, event_id, provider, "secret_missing", received_at,
+                    connector_id=connector_id,
+                )
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.WEBHOOK_SIGNATURE_INVALID,
+                    metadata={"event_id": event_id, "reason": "no_webhook_secret_configured"},
+                )
+                return {"accepted": False, "event_id": event_id, "reason": "webhook_signing_not_configured"}
+        else:
+            if not signature or not timestamp:
+                await self._store_webhook_event(
+                    tenant_id, event_id, provider, "signature_missing", received_at,
+                    connector_id=connector_id,
+                )
+                await self._audit(
+                    tenant_id, property_id, connector_id,
+                    AuditAction.WEBHOOK_SIGNATURE_INVALID,
+                    metadata={"event_id": event_id, "reason": "missing_signature_or_timestamp"},
+                )
+                return {"accepted": False, "event_id": event_id, "reason": "missing_signature_headers"}
+            # Validate timestamp BEFORE signature so an attacker cannot replay
+            # an old (body, signature) pair with a fresh ts (signature is now
+            # bound to ts via signed_payload = ts + "." + body — see
+            # _verify_signature below).
+            if not self._validate_timestamp(timestamp):
+                await self._store_webhook_event(
+                    tenant_id, event_id, provider, "timestamp_expired", received_at,
+                    connector_id=connector_id,
+                )
+                return {"accepted": False, "event_id": event_id, "reason": "timestamp_expired"}
+            if not self._verify_signature(raw_body, signature, webhook_secret, timestamp):
                 await self._store_webhook_event(
                     tenant_id, event_id, provider, "signature_invalid", received_at,
                     connector_id=connector_id,
@@ -90,15 +133,6 @@ class WebhookService:
                     AuditAction.WEBHOOK_SIGNATURE_INVALID, metadata={"event_id": event_id},
                 )
                 return {"accepted": False, "event_id": event_id, "reason": "invalid_signature"}
-
-        # Timestamp validation
-        if timestamp:
-            if not self._validate_timestamp(timestamp):
-                await self._store_webhook_event(
-                    tenant_id, event_id, provider, "timestamp_expired", received_at,
-                    connector_id=connector_id,
-                )
-                return {"accepted": False, "event_id": event_id, "reason": "timestamp_expired"}
 
         # Parse payload
         import json
@@ -172,12 +206,27 @@ class WebhookService:
         }
 
     @staticmethod
-    def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
-        """Verify HMAC-SHA256 signature."""
+    def _verify_signature(
+        body: bytes, signature: str, secret: str, timestamp: str | None = None,
+    ) -> bool:
+        """Verify HMAC-SHA256 signature.
+
+        v106 architect follow-up (Bug DAD): signature is now bound to the
+        timestamp (signed_payload = "<ts>." + body) so a captured (body,
+        signature) pair cannot be replayed by tampering only the ts header.
+        Old behavior (body-only) is kept ONLY when caller passes no ts (i.e.
+        legacy paths that explicitly opted out of replay protection).
+        """
+        if timestamp:
+            signed_payload = f"{timestamp}.".encode("utf-8") + body
+        else:
+            signed_payload = body
         expected = hmac.new(
-            secret.encode("utf-8"), body, hashlib.sha256,
+            secret.encode("utf-8"), signed_payload, hashlib.sha256,
         ).hexdigest()
-        return hmac.compare_digest(expected, signature.replace("sha256=", ""))
+        return hmac.compare_digest(
+            expected, signature.replace("sha256=", "").lower(),
+        )
 
     @staticmethod
     def _validate_timestamp(timestamp_str: str) -> bool:

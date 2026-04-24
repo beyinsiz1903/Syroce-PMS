@@ -3,6 +3,7 @@ ML Scheduler Router - Schedule policies, execution triggers, status monitoring.
 """
 
 from fastapi import APIRouter, Depends, Query
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from pydantic import BaseModel
 
 from core.security import get_current_user
@@ -42,7 +43,9 @@ class UpdateScheduleReq(BaseModel):
 
 @router.put("/policies/{model_type}")
 async def update_schedule(model_type: str, req: UpdateScheduleReq,
-                           current_user: User = Depends(get_current_user)):
+                           current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     svc = _get_service()
     return await svc.update_schedule(current_user.tenant_id, model_type, req.interval_hours, req.enabled)
 
@@ -53,7 +56,9 @@ class TriggerReq(BaseModel):
 
 
 @router.post("/trigger")
-async def trigger_execution(req: TriggerReq, current_user: User = Depends(get_current_user)):
+async def trigger_execution(req: TriggerReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     svc = _get_service()
     return await svc.trigger_execution(
         current_user.tenant_id, req.model_type, req.property_id, triggered_by=current_user.id

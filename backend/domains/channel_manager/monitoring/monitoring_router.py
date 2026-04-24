@@ -13,6 +13,7 @@ Endpoints:
   POST /api/channel-manager/monitoring/alerts/{id}/resolve — Resolve alert
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -166,6 +167,7 @@ async def acknowledge_alert(
     alert_id: str,
     req: AckAlertRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Acknowledge a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
@@ -193,6 +195,7 @@ async def resolve_alert(
     alert_id: str,
     req: ResolveAlertRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Resolve a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
@@ -242,6 +245,7 @@ async def get_dispatch_config_endpoint(
 async def update_slack_config(
     req: SlackConfigRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Update Slack webhook configuration."""
     from .alert_dispatch import get_dispatch_config, update_dispatch_config
@@ -260,6 +264,7 @@ async def update_slack_config(
 @router.post("/dispatch-config/slack/test")
 async def test_slack(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Send a test message to the configured Slack webhook."""
     from .alert_dispatch import get_dispatch_config, test_slack_webhook

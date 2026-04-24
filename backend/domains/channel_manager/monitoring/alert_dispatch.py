@@ -100,12 +100,15 @@ async def test_slack_webhook(webhook_url: str) -> dict[str, Any]:
         ],
     }
 
+    # v109 Bug DAL round-7 follow-up #3: webhook_url is tenant-configurable.
+    from integrations.xchange.safety import EgressDenied, safe_post_async
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(webhook_url, json=payload)
-            if resp.status_code == 200:
-                return {"success": True, "message": "Test message sent to Slack"}
-            return {"success": False, "message": f"Slack returned HTTP {resp.status_code}"}
+        resp = await safe_post_async(webhook_url, timeout=10.0, json=payload)
+        if resp.status_code == 200:
+            return {"success": True, "message": "Test message sent to Slack"}
+        return {"success": False, "message": f"Slack returned HTTP {resp.status_code}"}
+    except EgressDenied as e:
+        return {"success": False, "message": f"SSRF engellendi: {e}"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -175,14 +178,18 @@ async def _send_slack_alert(webhook_url: str, alert: dict[str, Any]) -> bool:
         ],
     }
 
+    # v109 Bug DAL round-7 follow-up #3: webhook_url is tenant-configurable.
+    from integrations.xchange.safety import EgressDenied, safe_post_async
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(webhook_url, json=payload)
-            if resp.status_code == 200:
-                logger.info(f"Slack alert sent: {alert.get('title')}")
-                return True
-            logger.warning(f"Slack webhook returned {resp.status_code}")
-            return False
+        resp = await safe_post_async(webhook_url, timeout=10.0, json=payload)
+        if resp.status_code == 200:
+            logger.info(f"Slack alert sent: {alert.get('title')}")
+            return True
+        logger.warning(f"Slack webhook returned {resp.status_code}")
+        return False
+    except EgressDenied as e:
+        logger.warning(f"Slack dispatch blocked (SSRF guard): {e}")
+        return False
     except Exception as e:
         logger.error(f"Slack dispatch error: {e}")
         return False

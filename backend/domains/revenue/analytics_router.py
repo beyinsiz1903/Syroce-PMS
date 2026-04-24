@@ -13,8 +13,15 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.cache import cached
 from core.database import db
 from core.helpers import require_module
+from modules.pms_core.role_permission_service import require_module as require_module_rbac, require_op  # v89 DW
 from core.security import get_current_user, security
 from models.enums import ChannelType
+from modules.pms_core.role_permission_service import require_role as _require_role
+
+# v67 Bug DD: frontdesk/* endpoint'lerinde RBAC eksikti — HK kullanıcı guest PII (search-bookings),
+# müsaitlik (available-rooms), oda atama (assign-room) erişebiliyordu. Front office personeline kısıtla.
+_FD_READ = Depends(_require_role("super_admin", "admin", "supervisor", "front_desk"))
+_FD_WRITE = Depends(_require_role("super_admin", "admin", "front_desk"))
 
 try:
     from routers.pms_availability import check_room_availability
@@ -328,10 +335,11 @@ async def get_revenue_by_channel(
         }
     }
 
-@router.post("/frontdesk/assign-room")
+@router.post("/frontdesk/assign-room", dependencies=[_FD_WRITE])
 async def assign_room_to_booking(
     assignment_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("frontdesk")),  # v92 DW
 ):
     """Assign a specific room to a booking"""
     current_user = await get_current_user(credentials)
@@ -358,9 +366,9 @@ async def assign_room_to_booking(
         }}
     )
 
-    # Update room status
+    # Update room status (v67 architect: tenant_id filter eklendi — cross-tenant write hardening)
     await db.rooms.update_one(
-        {'id': room_id},
+        {'id': room_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'current_booking_id': booking_id,
             'status': 'reserved'
@@ -373,26 +381,31 @@ async def assign_room_to_booking(
         'room_number': room['room_number']
     }
 
-@router.get("/frontdesk/search-bookings")
+# noqa: cache-rbac — FO booking search operasyonel
+@router.get("/frontdesk/search-bookings", dependencies=[_FD_READ])
 @cached(ttl=180, key_prefix="frontdesk_search_bookings")  # Cache for 3 min
 async def search_bookings(
     query: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     status: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v67 Bug DD2 (architect): cache_manager
+                                              # tenant_id'yi yalnızca current_user/user/tenant arg'larından
+                                              # çıkarır. Eski imza credentials-only olduğundan tenant_id
+                                              # 'global' düşüyor → cross-tenant cache leak. Burada
+                                              # current_user explicit alınarak tenant-scoped key garanti.
 ):
     """Search bookings by various criteria"""
-    current_user = await get_current_user(credentials)
-
     search_query = {'tenant_id': current_user.tenant_id}
 
     # Text search on booking number or guest name
     if query:
-        search_query['$or'] = [
-            {'booking_number': {'$regex': query, '$options': 'i'}},
-            {'guest_name': {'$regex': query, '$options': 'i'}}
-        ]
+        from security.query_safety import safe_search_term
+        if (s := safe_search_term(query)):
+            search_query['$or'] = [
+                {'booking_number': {'$regex': s, '$options': 'i'}},
+                {'guest_name': {'$regex': s, '$options': 'i'}}
+            ]
 
     # Date range filter
     if date_from or date_to:
@@ -418,17 +431,16 @@ async def search_bookings(
         'count': len(bookings)
     }
 
-@router.get("/frontdesk/available-rooms")
+# noqa: cache-rbac — FO available rooms operasyonel
+@router.get("/frontdesk/available-rooms", dependencies=[_FD_READ])
 @cached(ttl=120, key_prefix="frontdesk_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_assignment(
     check_in: str,
     check_out: str,
     room_type: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v67 Bug DD2 (architect): tenant-scoped cache key garanti.
 ):
     """Get available rooms for a specific date range"""
-    current_user = await get_current_user(credentials)
-
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['available', 'inspected']},
@@ -456,7 +468,8 @@ async def push_channel_availability(
     check_in: str,
     check_out: str,
     room_type: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
 ):
     """Simulate pushing availability to Booking.com and other OTAs.
 
@@ -515,7 +528,8 @@ from integrations.booking_adapter import BookingAdapter
 async def update_channel_rates(
     rate_update: dict,
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v89 DW
 ):
     """Update rates across channels"""
     current_user = await get_current_user(credentials)
@@ -525,7 +539,12 @@ async def update_channel_rates(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Determine initiator info
-    ip_address = request.headers.get('x-forwarded-for') or request.client.host
+    # v109 Bug DAK round-6 (T09 P2): naive XFF allowed audit-log IP spoofing
+    # (attacker could send X-Forwarded-For: <fake-ip> to mask their identity in
+    # the audit trail). Use the trusted-proxy aware client_ip() helper which
+    # extracts the rightmost (edge-appended) hop only.
+    from security.auth_throttle import client_ip as _client_ip
+    ip_address = _client_ip(request)
     initiator_type = 'hotel_user'
     if getattr(current_user, 'is_staff', False):
         initiator_type = 'pms_staff'
@@ -688,7 +707,8 @@ async def get_inventory_movements(
 @router.post("/pos/inventory-movement")
 async def create_inventory_movement(
     movement_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("pos")),  # v89 DW
 ):
     """Create a new inventory movement"""
     current_user = await get_current_user(credentials)
@@ -1049,7 +1069,8 @@ async def get_maintenance_calendar(
 @router.post("/maintenance/schedule-routine")
 async def schedule_routine_maintenance(
     schedule_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("maintenance")),  # v89 DW
 ):
     """Schedule a routine maintenance task"""
     current_user = await get_current_user(credentials)
@@ -1123,7 +1144,8 @@ async def get_shift_metrics(
 async def upload_room_photo(
     room_id: str,
     photo_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
 ):
     """Upload a photo for room inspection"""
     current_user = await get_current_user(credentials)
@@ -1168,7 +1190,8 @@ async def get_room_photos(
 async def complete_room_checklist(
     room_id: str,
     checklist_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
 ):
     """Complete room cleaning checklist"""
     current_user = await get_current_user(credentials)
@@ -1197,7 +1220,8 @@ async def complete_room_checklist(
 async def update_lost_found_status(
     item_id: str,
     status_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
 ):
     """Update lost & found item status"""
     current_user = await get_current_user(credentials)
@@ -1230,7 +1254,8 @@ async def update_lost_found_status(
 async def transfer_lost_found_item(
     item_id: str,
     transfer_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
 ):
     """Transfer lost & found item to another department/location"""
     current_user = await get_current_user(credentials)
@@ -1299,7 +1324,8 @@ async def get_lost_found_history(
 @router.post("/housekeeping/qr-room-access")
 async def qr_room_access(
     access_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
 ):
     """Record room access via QR code (start/end cleaning)"""
     current_user = await get_current_user(credentials)
@@ -1499,7 +1525,8 @@ async def get_guest_notes(
 async def add_guest_note(
     guest_id: str,
     note_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_guests")),  # v89 DW
 ):
     """Add a CRM note for a guest"""
     current_user = await get_current_user(credentials)
@@ -1520,7 +1547,8 @@ async def add_guest_note(
 @router.post("/approvals/request")
 async def create_approval_request(
     request_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """Create a new approval request"""
     current_user = await get_current_user(credentials)
@@ -1627,7 +1655,8 @@ async def get_my_approval_requests(
 async def approve_request(
     approval_id: str,
     approval_note: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """Approve an approval request"""
     current_user = await get_current_user(credentials)
@@ -1670,7 +1699,8 @@ async def approve_request(
 async def reject_request(
     approval_id: str,
     rejection_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_approvals")),  # v89 DW
 ):
     """Reject an approval request"""
     current_user = await get_current_user(credentials)
@@ -1715,6 +1745,7 @@ async def get_team_performance(
     period: str = 'month',
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: None = Depends(require_module("gm_dashboards")),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v103 DX alias drift fix
 ):
     """Get team performance metrics"""
     await get_current_user(credentials)
@@ -1853,7 +1884,8 @@ async def get_complaints(
 @router.post("/gm/complaint")
 async def create_complaint(
     complaint_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_executive_reports")),  # v89 DW
 ):
     """Create a new complaint"""
     current_user = await get_current_user(credentials)
@@ -1885,7 +1917,8 @@ async def create_complaint(
 async def resolve_complaint(
     complaint_id: str,
     resolution_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_executive_reports")),  # v89 DW
 ):
     """Resolve a complaint"""
     current_user = await get_current_user(credentials)
@@ -1910,7 +1943,8 @@ async def resolve_complaint(
 @router.post("/notifications/send")
 async def send_notification(
     notification_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """Send a notification to user(s)"""
     current_user = await get_current_user(credentials)
@@ -1981,7 +2015,8 @@ async def get_my_notifications(
 @router.post("/notifications/{notification_id}/mark-read")
 async def mark_notification_read(
     notification_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """Mark a notification as read"""
     current_user = await get_current_user(credentials)
@@ -2000,7 +2035,8 @@ async def mark_notification_read(
 
 @router.post("/notifications/mark-all-read")
 async def mark_all_notifications_read(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # v89 DW: auth-only
 ):
     """Mark all notifications as read for current user"""
     current_user = await get_current_user(credentials)
@@ -2026,7 +2062,8 @@ async def mark_all_notifications_read(
 
 @router.post("/alerts/check-and-notify")
 async def check_alerts_and_notify(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v89 DW
 ):
     """Check system for alert conditions and send notifications"""
     current_user = await get_current_user(credentials)
@@ -2291,7 +2328,8 @@ async def get_alert_thresholds(
 @router.post("/monitoring/set-threshold")
 async def set_alert_threshold(
     threshold_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v89 DW
 ):
     """Set or update an alert threshold"""
     current_user = await get_current_user(credentials)

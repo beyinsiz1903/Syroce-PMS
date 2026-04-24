@@ -1,5 +1,6 @@
 # Accounting Endpoints to be integrated into server.py
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,7 +25,8 @@ async def create_supplier(
     phone: str | None = None,
     address: str | None = None,
     category: str = "general",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     from accounting_models import Supplier
     supplier = Supplier(
@@ -48,7 +50,9 @@ async def get_suppliers(current_user: User = Depends(get_current_user)):
     return suppliers
 
 @api_router.put("/accounting/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     supplier = await db.suppliers.find_one({'id': supplier_id}, {'_id': 0})
     return supplier
@@ -63,7 +67,8 @@ async def create_bank_account(
     iban: str | None = None,
     currency: str = "USD",
     balance: float = 0.0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     from accounting_models import BankAccount
     bank_account = BankAccount(
@@ -86,7 +91,9 @@ async def get_bank_accounts(current_user: User = Depends(get_current_user)):
     return accounts
 
 @api_router.put("/accounting/bank-accounts/{account_id}")
-async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     account = await db.bank_accounts.find_one({'id': account_id}, {'_id': 0})
     return account
@@ -104,7 +111,8 @@ async def create_expense(
     payment_method: str | None = None,
     receipt_url: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     from accounting_models import Expense
 
@@ -180,7 +188,9 @@ async def get_expenses(
     return expenses
 
 @api_router.put("/accounting/expenses/{expense_id}")
-async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     expense = await db.expenses.find_one({'id': expense_id}, {'_id': 0})
     return expense
@@ -200,7 +210,8 @@ async def create_inventory_item(
     location: str | None = None,
     notes: str | None = None,
     is_consumable: bool = True,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     from accounting_models import InventoryItem
     item = InventoryItem(
@@ -227,6 +238,7 @@ async def update_inventory_item(
     item_id: str,
     payload: dict[str, Any] = Body(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     """Belirli alanları güncelle (örn. is_consumable, reorder_level, unit_cost, notes)."""
     allowed = {'is_consumable', 'reorder_level', 'unit_cost', 'notes', 'location', 'supplier_id', 'category', 'name', 'sku', 'unit'}
@@ -264,7 +276,8 @@ async def create_stock_movement(
     unit_cost: float,
     reference: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     from accounting_models import StockMovement
 
@@ -315,7 +328,8 @@ async def list_setup_kits(current_user: User = Depends(get_current_user)):
 @api_router.post("/accounting/setup-kits")
 async def create_setup_kit(
     payload: dict[str, Any] = Body(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     name = (payload.get('name') or '').strip()
     if len(name) < 2:
@@ -354,7 +368,9 @@ async def create_setup_kit(
     return kit
 
 @api_router.delete("/accounting/setup-kits/{kit_id}")
-async def delete_setup_kit(kit_id: str, current_user: User = Depends(get_current_user)):
+async def delete_setup_kit(kit_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     r = await db.setup_kits.delete_one(
         {'id': kit_id, 'tenant_id': current_user.tenant_id}
     )
@@ -366,7 +382,8 @@ async def delete_setup_kit(kit_id: str, current_user: User = Depends(get_current
 async def apply_setup_kit(
     kit_id: str,
     payload: dict[str, Any] = Body(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     import math
     try:
@@ -505,7 +522,8 @@ async def create_accounting_invoice(
     due_date: str = None,
     booking_id: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     from accounting_models import AccountingInvoice, AccountingInvoiceItem
 
@@ -615,7 +633,9 @@ async def get_accounting_invoices(
     return invoices
 
 @api_router.put("/accounting/invoices/{invoice_id}")
-async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
+):
     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
         updates['payment_date'] = datetime.now(UTC).isoformat()
 

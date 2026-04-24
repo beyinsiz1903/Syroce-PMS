@@ -10,6 +10,7 @@ Routes:
   DELETE /rooms/queue/{queue_id}
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
 logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.database import db
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v89 DW
 
 try:
     from domains.pms.night_audit_module import QueueRoom
@@ -32,7 +34,8 @@ security = HTTPBearer()
 @router.post("/rooms/queue/add")
 async def add_to_room_queue(
     queue_data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Add guest to room queue (early arrival waiting list)"""
     current_user = await get_current_user(credentials)
@@ -46,8 +49,8 @@ async def add_to_room_queue(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # Get guest info
-    guest = await db.guests.find_one({'id': booking['guest_id']})
+    # Get guest info (defense-in-depth: explicit tenant_id filter even though booking is already tenant-scoped)
+    guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id})
 
     # Determine priority
     priority = 5
@@ -118,7 +121,8 @@ async def get_room_queue(
 async def assign_queue_priority(
     queue_id: str,
     priority: int,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
 ):
     """Manually assign priority to queue entry"""
     current_user = await get_current_user(credentials)
@@ -148,7 +152,8 @@ async def assign_queue_priority(
 async def notify_guest_room_ready(
     queue_id: str,
     room_number: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_reports")),  # v89 DW
 ):
     """Notify guest that their room is ready"""
     current_user = await get_current_user(credentials)
@@ -162,8 +167,7 @@ async def notify_guest_room_ready(
     if not queue_entry:
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
-    # Get booking
-    await db.bookings.find_one({'id': queue_entry['booking_id']})
+    # (no booking re-fetch needed — queue_entry already tenant-scoped above)
 
     # Update queue status
     await db.room_queue.update_one(
@@ -195,7 +199,8 @@ async def notify_guest_room_ready(
 @router.delete("/rooms/queue/{queue_id}")
 async def remove_from_queue(
     queue_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_reports")),  # v89 DW
 ):
     """Remove entry from room queue"""
     current_user = await get_current_user(credentials)

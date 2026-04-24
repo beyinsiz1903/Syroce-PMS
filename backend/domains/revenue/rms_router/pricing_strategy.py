@@ -4,6 +4,7 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -96,7 +97,8 @@ class PricingStrategyUpdateRequest(BaseModel):
 @router.put("/rms/pricing-strategy")
 async def update_pricing_strategy(
     request: PricingStrategyUpdateRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Update pricing strategy settings"""
     await db.rms_pricing_strategy.update_one(
@@ -150,7 +152,9 @@ async def get_price_adjustments(
 
 
 @router.post("/rms/apply-recommendations")
-async def apply_all_recommendations(current_user: User = Depends(get_current_user)):
+async def apply_all_recommendations(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     """Apply all pending pricing recommendations"""
     pending = await db.rms_pricing_recommendations.find(
         {'tenant_id': current_user.tenant_id, 'status': 'pending'},
@@ -208,7 +212,8 @@ async def apply_all_recommendations(current_user: User = Depends(get_current_use
 @router.post("/rms/auto-pricing")
 async def generate_auto_pricing(
     request: AutoPricingRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Generate automatic pricing recommendations with advanced confidence scoring"""
     # Parse dates
@@ -464,7 +469,8 @@ async def get_pricing_recommendations(
 @router.post("/rms/apply-pricing/{recommendation_id}")
 async def apply_pricing_recommendation(
     recommendation_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Apply pricing recommendation"""
     recommendation = await db.rms_pricing_recommendations.find_one({

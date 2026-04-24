@@ -99,7 +99,9 @@ class NightAuditService:
         if severity:
             query["severity"] = severity
         if endpoint:
-            query["endpoint"] = {"$regex": endpoint, "$options": "i"}
+            from security.query_safety import safe_search_term
+            if (_s := safe_search_term(endpoint)):
+                query["endpoint"] = {"$regex": _s, "$options": "i"}
         if resolved is not None:
             query["resolved"] = resolved
 

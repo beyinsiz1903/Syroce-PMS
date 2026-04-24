@@ -1,5 +1,6 @@
 """Hotel-facing endpoints — uses the existing staff JWT (get_current_user)."""
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 import logging
 
@@ -39,7 +40,9 @@ async def list_products(
     if category:
         query["category"] = category
     if q:
-        query["name"] = {"$regex": q, "$options": "i"}
+        from security.query_safety import safe_search_term
+        if (_s := safe_search_term(q)):
+            query["name"] = {"$regex": _s, "$options": "i"}
     docs = await products_col.find(query).sort("created_at", -1).to_list(length=limit)
     return [public_product(d) for d in docs]
 
@@ -53,7 +56,9 @@ async def get_product(product_id: str, _user=Depends(get_current_user)):
 
 
 @router.post("/orders", response_model=OrderOut)
-async def create_order(payload: OrderCreate, current_user=Depends(get_current_user)):
+async def create_order(payload: OrderCreate, current_user=Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     hotel_tenant_id = getattr(current_user, "tenant_id", None)
     hotel_name = getattr(current_user, "tenant_name", None) or getattr(current_user, "username", "Hotel")
     if not hotel_tenant_id:
@@ -78,7 +83,9 @@ async def my_orders(current_user=Depends(get_current_user), limit: int = Query(d
 
 
 @router.post("/orders/{order_id}/confirm-delivery", response_model=OrderOut)
-async def confirm_delivery(order_id: str, current_user=Depends(get_current_user)):
+async def confirm_delivery(order_id: str, current_user=Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+):
     hotel_tenant_id = getattr(current_user, "tenant_id", None)
     doc = await orders_col.find_one({"id": order_id, "hotel_tenant_id": hotel_tenant_id})
     if not doc:

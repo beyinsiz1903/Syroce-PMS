@@ -81,6 +81,19 @@ class SMTPEmailProvider(BaseProvider):
                 "error_class": "authentication_error",
             }
 
+        # v109 round-7 follow-up: validate tenant-supplied SMTP host against
+        # SSRF/DNS-rebinding policy. Connect to pinned IP, not the hostname.
+        from integrations.xchange.safety import EgressDenied, assert_safe_host
+        try:
+            pinned_ip = assert_safe_host(smtp_host, smtp_port)
+        except EgressDenied as eg:
+            return {
+                "success": False,
+                "error": f"SMTP host izinli ag listesinde degil: {eg}",
+                "provider_message_id": None,
+                "error_class": "configuration_error",
+            }
+
         start = time.time()
         try:
             msg = MIMEMultipart("alternative")
@@ -94,7 +107,7 @@ class SMTPEmailProvider(BaseProvider):
             else:
                 msg.attach(MIMEText(body, "plain", "utf-8"))
 
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server = smtplib.SMTP(pinned_ip, smtp_port, timeout=15)
             if use_tls:
                 server.starttls()
             server.login(smtp_username, smtp_password)
@@ -128,8 +141,14 @@ class SMTPEmailProvider(BaseProvider):
         smtp_password = credentials.get("smtp_password", "")
         if not smtp_host or not smtp_username:
             return {"status": "unhealthy", "error": "SMTP bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
+        # v109 round-7 follow-up: validate tenant SMTP host (rebinding-safe).
+        from integrations.xchange.safety import EgressDenied, assert_safe_host
         try:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+            pinned_ip = assert_safe_host(smtp_host, smtp_port)
+        except EgressDenied as eg:
+            return {"status": "unhealthy", "error": f"egress_denied: {eg}", "checked_at": datetime.now(UTC).isoformat()}
+        try:
+            server = smtplib.SMTP(pinned_ip, smtp_port, timeout=10)
             server.starttls()
             server.login(smtp_username, smtp_password)
             server.quit()

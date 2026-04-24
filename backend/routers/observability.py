@@ -2,6 +2,7 @@
 Observability Router — metrics, tracing, errors, and health endpoints.
 """
 from fastapi import APIRouter, Depends, Query
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from core.security import get_current_user
 from models.schemas import User
@@ -24,7 +25,9 @@ async def get_all_metrics(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/metrics/flush")
-async def flush_metrics(current_user: User = Depends(get_current_user)):
+async def flush_metrics(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     from modules.observability.metrics_collector import metrics
     count = await metrics.flush_to_db()
     return {"flushed": count}
@@ -62,7 +65,9 @@ async def get_hot_paths(top_n: int = Query(10, le=50),
 
 
 @router.post("/traces/flush")
-async def flush_traces(current_user: User = Depends(get_current_user)):
+async def flush_traces(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     from modules.observability.distributed_tracing import tracing
     count = await tracing.flush_to_db()
     return {"flushed": count}
@@ -86,7 +91,9 @@ async def get_recent_errors(limit: int = Query(50, le=200),
 
 
 @router.post("/errors/{error_id}/resolve")
-async def resolve_error(error_id: str, current_user: User = Depends(get_current_user)):
+async def resolve_error(error_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     from modules.observability.error_tracker import error_tracker
     return await error_tracker.resolve_error(error_id)
 

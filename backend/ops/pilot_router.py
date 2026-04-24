@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 from ops.pilot_readiness import pilot_readiness_service
 
 try:
@@ -42,14 +43,19 @@ class FeatureToggleRequest(BaseModel):
 
 @router.get("/readiness")
 @cached(ttl=180, key_prefix="pilot_readiness")  # Sprint 33: heavy diagnostic
-async def run_readiness_check(user=Depends(get_current_user)):
+async def run_readiness_check(
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v80 Bug DP: pilot diagnostics
+):
     ctx = OperationContext.from_user(user)
     result = await pilot_readiness_service.run_readiness_check(ctx)
     return from_service_result(result)
 
 
 @router.post("/sign-off")
-async def sign_off_check(req: SignOffRequest, user=Depends(get_current_user)):
+async def sign_off_check(req: SignOffRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pilot_readiness_service.sign_off_check(ctx, req.check_id, req.notes)
     if not result.ok:
@@ -66,7 +72,9 @@ async def get_feature_toggles(user=Depends(get_current_user)):
 
 
 @router.post("/feature-toggles")
-async def set_feature_toggle(req: FeatureToggleRequest, user=Depends(get_current_user)):
+async def set_feature_toggle(req: FeatureToggleRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await pilot_readiness_service.set_feature_toggle(ctx, req.feature, req.enabled)
     if not result.ok:

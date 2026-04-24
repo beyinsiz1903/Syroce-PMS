@@ -170,32 +170,27 @@ async def deliver_webhook_with_retry(
                 }},
             )
 
-            # SSRF guard at delivery time (DNS rebinding protection): re-resolve and reject internal hosts
+            # v109 Bug DAL round-7 follow-up #3: replaced bespoke SSRF check
+            # with centralized rebinding-safe helper. safe_post_async resolves
+            # all IPs, validates each, and pins the TCP destination so
+            # rebinding cannot race the connect() call.
+            # Follow-up #4 nit: keep exact "SSRF blocked: ..." string by
+            # setting attempt_error directly (don't re-raise into broad
+            # Exception handler which would prepend "Unexpected error:").
+            from integrations.xchange.safety import EgressDenied, safe_post_async
             try:
-                import ipaddress as _ipa
-                import socket as _sock
-                from urllib.parse import urlparse as _urlparse
-                _p = _urlparse(webhook_url)
-                _h = (_p.hostname or "").lower()
-                if (not _h
-                    or _h in {"localhost", "metadata.google.internal", "metadata.goog"}
-                    or _h.endswith(".internal") or _h.endswith(".local")):
-                    raise ValueError(f"hedef hostname izinsiz: {_h}")
-                for _r in _sock.getaddrinfo(_h, None):
-                    _ip = _ipa.ip_address(_r[4][0])
-                    if (_ip.is_private or _ip.is_loopback or _ip.is_link_local
-                        or _ip.is_reserved or _ip.is_multicast or _ip.is_unspecified):
-                        raise ValueError(f"hedef IP izinsiz: {_ip}")
-            except ValueError as _ssrf_ve:
-                attempt_error = f"SSRF blocked: {_ssrf_ve}"
-                attempt_status_code = 0
-                raise httpx.RequestError(attempt_error)
-
-            async with httpx.AsyncClient(timeout=DELIVERY_TIMEOUT_SECONDS) as client:
-                resp = await client.post(webhook_url, content=body, headers=headers)
+                resp = await safe_post_async(
+                    webhook_url,
+                    timeout=DELIVERY_TIMEOUT_SECONDS,
+                    content=body,
+                    headers=headers,
+                )
                 attempt_status_code = resp.status_code
+            except EgressDenied as _ed:
+                attempt_error = f"SSRF blocked: {_ed}"
+                attempt_status_code = 0
 
-            if 200 <= attempt_status_code < 300:
+            if attempt_error is None and 200 <= attempt_status_code < 300:
                 # SUCCESS
                 attempt_record = {
                     "attempt_number": attempt + 1,
@@ -239,7 +234,9 @@ async def deliver_webhook_with_retry(
                 return {"delivery_id": delivery_id, "status": STATUS_SUCCEEDED, "attempts": attempt + 1}
 
             # Non-2xx response — treat as failure for this attempt
-            attempt_error = f"HTTP {attempt_status_code}"
+            # (Skip if attempt_error is already set, e.g. SSRF blocked.)
+            if attempt_error is None:
+                attempt_error = f"HTTP {attempt_status_code}"
 
         except httpx.TimeoutException:
             attempt_error = "Connection timeout"

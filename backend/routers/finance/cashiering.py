@@ -15,6 +15,16 @@ except ImportError:
 from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit_module import CityLedgerAccount
+from modules.pms_core.role_permission_service import RolePermissionService
+
+_role_perm = RolePermissionService()
+
+
+def _enforce(role: str, op: str):
+    """Bug CT (v59) — Cashiering/AR endpoint'leri için RBAC zorunlu."""
+    _role_perm.enforce_permission(role, op)
+
+
 from models.schemas import (
     CityLedgerTransaction,
 )
@@ -41,6 +51,7 @@ async def create_city_ledger_account(
 ):
     """Create a new city ledger account for direct billing"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "manage_city_ledger")  # Bug CT
 
     account = CityLedgerAccount(
         tenant_id=current_user.tenant_id,
@@ -71,6 +82,7 @@ async def get_city_ledger_accounts(
 ):
     """Get all city ledger accounts"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "view_city_ledger")  # Bug CT
 
     query = {'tenant_id': current_user.tenant_id}
     if is_active is not None:
@@ -92,6 +104,7 @@ async def process_split_payment(
 ):
     """Process split payment (multiple payment methods for one bill)"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "post_payment")  # Bug CT
 
     # Get booking
     booking = await db.bookings.find_one({
@@ -148,6 +161,7 @@ async def get_ar_aging_report(
 ):
     """Get Accounts Receivable aging report (30/60/90 days)"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "view_ar_aging")  # Bug CT
 
     today = datetime.now(UTC)
 
@@ -230,6 +244,7 @@ async def set_credit_limit(
 ):
     """Set credit limit for city ledger account"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "manage_credit_limit")  # Bug CT
 
     result = await db.city_ledger_accounts.update_one(
         {
@@ -256,6 +271,7 @@ async def get_credit_limit(
 ):
     """Get credit limit and current balance for account"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "view_credit_limit")  # Bug CT
 
     account = await db.city_ledger_accounts.find_one({
         'id': account_id,
@@ -287,6 +303,7 @@ async def post_to_city_ledger(
 ):
     """Post charge to city ledger (direct billing)"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "post_direct_bill")  # Bug CT
 
     # Verify account
     account = await db.city_ledger_accounts.find_one({
@@ -338,6 +355,7 @@ async def get_outstanding_balances(
 ):
     """Get all city ledger accounts with outstanding balances"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "view_outstanding_balance")  # Bug CT
 
     accounts = await db.city_ledger_accounts.find({
         'tenant_id': current_user.tenant_id,
@@ -363,6 +381,7 @@ async def post_city_ledger_payment(
 ):
     """Post payment to city ledger account"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "post_city_ledger_payment")  # Bug CT
 
     account = await db.city_ledger_accounts.find_one({
         'id': account_id,
@@ -407,6 +426,7 @@ async def get_city_ledger_transactions(
 ):
     """Get transaction history for city ledger account"""
     current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "view_city_ledger_transactions")  # Bug CT
 
     transactions = await db.city_ledger_transactions.find(
         {'account_id': account_id, 'tenant_id': current_user.tenant_id},

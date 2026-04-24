@@ -11,6 +11,7 @@ Mirrors the Opera/Protel banquet management spine:
 * Charge-to-master integration emitting Xchange POSTING_CHARGE
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -98,6 +99,7 @@ def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
     _cache.safe_invalidate(tenant_id, "mice_spaces")
 
 
+# noqa: cache-rbac — toplantı salonları operasyonel listesi tüm rolelere açık
 @router.get("/spaces")
 @_cached(ttl=30, key_prefix="mice_spaces")
 async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
@@ -147,7 +149,9 @@ async def _seed_spaces(tenant_id: str) -> list[dict]:
 
 @router.post("/spaces")
 async def create_space(body: FunctionSpaceIn,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
@@ -162,7 +166,9 @@ async def create_space(body: FunctionSpaceIn,
 
 @router.put("/spaces/{space_id}")
 async def update_space(space_id: str, body: FunctionSpaceIn,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.mice_spaces.update_one(
@@ -177,7 +183,9 @@ async def update_space(space_id: str, body: FunctionSpaceIn,
 
 @router.delete("/spaces/{space_id}")
 async def delete_space(space_id: str,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     await db.mice_spaces.delete_one(
@@ -252,7 +260,9 @@ async def _seed_menus(tenant_id: str) -> list[dict]:
 
 @router.post("/menus")
 async def create_menu(body: MenuPackageIn,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
@@ -266,7 +276,9 @@ async def create_menu(body: MenuPackageIn,
 
 @router.put("/menus/{menu_id}")
 async def update_menu(menu_id: str, body: MenuPackageIn,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.mice_menus.update_one(
@@ -280,7 +292,9 @@ async def update_menu(menu_id: str, body: MenuPackageIn,
 
 @router.delete("/menus/{menu_id}")
 async def delete_menu(menu_id: str,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     await db.mice_menus.delete_one(
@@ -312,15 +326,19 @@ async def list_accounts(
     db = get_system_db()
     flt: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if q:
-        rx = {"$regex": q, "$options": "i"}
-        flt["$or"] = [{"name": rx}, {"legal_name": rx}, {"tax_no": rx}]
+        from security.query_safety import safe_search_term
+        if (_s := safe_search_term(q)):
+            rx = {"$regex": _s, "$options": "i"}
+            flt["$or"] = [{"name": rx}, {"legal_name": rx}, {"tax_no": rx}]
     cur = db.mice_accounts.find(flt, {"_id": 0}).sort("name", 1).limit(500)
     return {"accounts": [d async for d in cur]}
 
 
 @router.post("/accounts")
 async def create_account(body: AccountIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
@@ -335,7 +353,9 @@ async def create_account(body: AccountIn,
 
 @router.put("/accounts/{account_id}")
 async def update_account(account_id: str, body: AccountIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     res = await db.mice_accounts.update_one(
@@ -349,7 +369,9 @@ async def update_account(account_id: str, body: AccountIn,
 
 @router.delete("/accounts/{account_id}")
 async def delete_account(account_id: str,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     # Refuse if any active event uses this account
@@ -391,7 +413,9 @@ async def list_contacts(account_id: str,
 
 @router.post("/accounts/{account_id}/contacts")
 async def create_contact(account_id: str, body: ContactIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     if body.account_id != account_id:
         raise HTTPException(400, "account_id eşleşmiyor")
@@ -407,7 +431,9 @@ async def create_contact(account_id: str, body: ContactIn,
 
 @router.put("/contacts/{contact_id}")
 async def update_contact(contact_id: str, body: ContactIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     res = await db.mice_contacts.update_one(
@@ -420,7 +446,9 @@ async def update_contact(contact_id: str, body: ContactIn,
 
 @router.delete("/contacts/{contact_id}")
 async def delete_contact(contact_id: str,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     await db.mice_contacts.delete_one(
@@ -452,7 +480,9 @@ async def list_resources(current_user: User = Depends(get_current_user)) -> dict
 
 @router.post("/resources")
 async def create_resource(body: ResourceInventoryIn,
-                          current_user: User = Depends(get_current_user)) -> dict:
+                          current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
@@ -466,7 +496,9 @@ async def create_resource(body: ResourceInventoryIn,
 
 @router.put("/resources/{resource_id}")
 async def update_resource(resource_id: str, body: ResourceInventoryIn,
-                          current_user: User = Depends(get_current_user)) -> dict:
+                          current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.mice_resources.update_one(
@@ -479,7 +511,9 @@ async def update_resource(resource_id: str, body: ResourceInventoryIn,
 
 @router.delete("/resources/{resource_id}")
 async def delete_resource(resource_id: str,
-                          current_user: User = Depends(get_current_user)) -> dict:
+                          current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     await db.mice_resources.delete_one(
@@ -774,7 +808,9 @@ async def _expand_resource_prices(tenant_id: str, resources: list[dict],
 
 @router.post("/events")
 async def create_event(body: EventIn,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     await _ensure_indexes()
     if body.status not in EVENT_STATUSES:
@@ -879,7 +915,9 @@ async def get_event(event_id: str,
 
 @router.put("/events/{event_id}")
 async def update_event(event_id: str, body: EventIn,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
@@ -935,7 +973,9 @@ class StatusUpdate(BaseModel):
 
 @router.post("/events/{event_id}/status")
 async def change_status(event_id: str, body: StatusUpdate,
-                        current_user: User = Depends(get_current_user)) -> dict:
+                        current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     if body.status == "completed":
         require_finance(current_user)  # folio-impacting transition
@@ -1046,7 +1086,9 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
 
 @router.delete("/events/{event_id}")
 async def delete_event(event_id: str,
-                       current_user: User = Depends(get_current_user)) -> dict:
+                       current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     before = await db.mice_events.find_one(
@@ -1124,6 +1166,7 @@ class PaymentScheduleReplace(BaseModel):
 async def replace_payment_schedule(
     event_id: str, body: PaymentScheduleReplace,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
@@ -1148,6 +1191,7 @@ async def mark_payment_paid(
     event_id: str, idx: int,
     reference: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ) -> dict:
     require_finance(current_user)  # marking payment touches AR
     db = get_system_db()

@@ -17,6 +17,7 @@ Endpoints:
   GET  /api/channel-manager/reconciliation/worker/status — Worker status
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -121,6 +122,7 @@ async def resolve_case(
     case_id: str,
     req: ResolveCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Resolve a reconciliation case."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
@@ -145,6 +147,7 @@ async def ignore_case(
     case_id: str,
     req: IgnoreCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Ignore a reconciliation case."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
@@ -169,6 +172,7 @@ async def acknowledge_case(
     case_id: str,
     req: AcknowledgeCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Acknowledge a case (mark as under review)."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
@@ -192,6 +196,7 @@ async def acknowledge_case(
 @router.post("/run")
 async def trigger_reconciliation(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Trigger a manual reconciliation run across all providers."""
     result = await reconciliation_run_once()
@@ -204,6 +209,7 @@ async def trigger_reconciliation(
 async def run_with_snapshots(
     req: RunWithSnapshotsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Run reconciliation with explicitly provided provider snapshots.

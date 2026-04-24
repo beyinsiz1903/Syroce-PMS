@@ -3,6 +3,7 @@ PMS Rooms Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Room CRUD, bulk operations, CSV import, image upload.
 """
 import csv
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 import io
 import logging
 import os
@@ -561,21 +562,21 @@ async def upload_room_images(
     room_folder = UPLOAD_DIR / current_user.tenant_id / 'rooms' / room_id
     room_folder.mkdir(parents=True, exist_ok=True)
 
+    from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
+
     saved_urls: list[str] = []
-    _ALLOWED_CT = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-    _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
     for f in files:
-        if f.content_type and f.content_type not in _ALLOWED_CT:
-            raise HTTPException(status_code=400, detail=f"Yalnizca jpg/png/webp/gif yuklenebilir. Goturulen: {f.content_type}")
+        # Read with defensive cap, then magic-bytes verify.
+        # validate_image_bytes rejects SVG/PDF/spoofed-MIME polyglots, returns
+        # canonical (content_type, ext) derived from the real decoded format.
+        file_content = await f.read(MAX_IMAGE_BYTES + 1)
+        safe_ct, safe_ext = validate_image_bytes(
+            file_content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel"
+        )
 
-        ext = Path(f.filename or '').suffix.lower()[:10]
-        if ext not in _ALLOWED_EXT:
-            raise HTTPException(status_code=400, detail=f"Gecersiz uzanti: {ext or '(yok)'}. Izinli: {sorted(_ALLOWED_EXT)}")
-
-        filename = f"{uuid.uuid4()}{ext}"
+        filename = f"{uuid.uuid4().hex}{safe_ext}"
         dest = room_folder / filename
 
-        file_content = await f.read()
         if not file_content:
             continue
         if len(file_content) > 10 * 1024 * 1024:
@@ -606,7 +607,9 @@ _ROOM_UPDATE_ALLOWED = {
 _ROOM_VALID_STATUS = {"available", "occupied", "dirty", "cleaning", "inspected", "maintenance", "out_of_order"}
 
 @router.put("/pms/rooms/{room_id}")
-async def update_room(room_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_room(room_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     if not isinstance(updates, dict):
         raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
     # Sadece izinli alanlari ele al — mass-assignment ve gecersiz status'u DB'ye yazmasin
@@ -639,6 +642,7 @@ async def get_pms_companies(
     search: str | None = None,
     status: CompanyStatus | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales"))  # v103 DX alias drift fix
 ):
     """Get all companies - PMS module alias."""
     query = {'tenant_id': current_user.tenant_id}
@@ -784,11 +788,11 @@ async def no_show_to_virtual_room(
         }
         await db.rooms.insert_one({**virtual_room})
 
-    # Release previously assigned room if any
+    # Release previously assigned room if any — v109 round-9 IDOR.
     old_room_id = booking.get("room_id")
     if old_room_id:
         await db.rooms.update_one(
-            {"id": old_room_id},
+            {"id": old_room_id, "tenant_id": current_user.tenant_id},
             {"$set": {"status": "available", "current_booking_id": None}},
         )
 
@@ -804,7 +808,7 @@ async def no_show_to_virtual_room(
         "no_show_reason": reason,
     }
     await db.bookings.update_one(
-        {"id": req.booking_id},
+        {"id": req.booking_id, "tenant_id": current_user.tenant_id},  # v109 round-9 IDOR
         {"$set": update_fields},
     )
 

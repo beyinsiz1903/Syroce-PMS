@@ -17,12 +17,13 @@ class GuestRepository:
         cls, tenant_id: str, *, search: str | None = None,
         limit: int = 50, offset: int = 0,
     ) -> list[dict[str, Any]]:
+        from security.query_safety import safe_search_term
         query: dict[str, Any] = {"tenant_id": tenant_id}
-        if search:
+        if (s := safe_search_term(search)):
             query["$or"] = [
-                {"name": {"$regex": search, "$options": "i"}},
-                {"email": {"$regex": search, "$options": "i"}},
-                {"phone": {"$regex": search, "$options": "i"}},
+                {"name": {"$regex": s, "$options": "i"}},
+                {"email": {"$regex": s, "$options": "i"}},
+                {"phone": {"$regex": s, "$options": "i"}},
             ]
         cursor = cls.collection.find(query, {"_id": 0}).sort("created_at", -1).skip(offset).limit(limit)
         return await cursor.to_list(limit)

@@ -5,6 +5,7 @@ iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 `tenant_subscriptions` koleksiyonuna abonelik kaydı düşer.
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 import logging
 import uuid
@@ -628,6 +629,7 @@ async def admin_list_products(
 async def admin_upsert_product(
     payload: ProductIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ) -> dict:
     _require_platform_admin(current_user)
     db = _db()
@@ -645,6 +647,7 @@ async def admin_upsert_product(
 async def admin_delete_product(
     key: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ) -> dict:
     _require_platform_admin(current_user)
     db = _db()

@@ -3,6 +3,7 @@ Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 import logging
 import uuid
@@ -947,7 +948,8 @@ async def get_cancellation_report_mobile(
 @router.post("/revenue-mobile/rate-override")
 async def create_rate_override_mobile(
     data: dict,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("override_rate")),  # v92 DW
 ):
     """Create rate override for mobile app - requires approval for significant changes"""
     current_user = await get_current_user(credentials)

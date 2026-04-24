@@ -8,7 +8,7 @@ import logging
 
 import httpx
 
-from ..safety import EgressDenied, assert_safe_url
+from ..safety import EgressDenied, safe_post_async
 from ..schemas import XchangeEnvelope
 from .base import BaseAdapter, DeliveryResult
 
@@ -41,34 +41,34 @@ class GenericWebhookAdapter(BaseAdapter):
                 response_excerpt="DRY-RUN: no webhook URL configured",
             )
 
-        try:
-            assert_safe_url(self.config["url"])
-        except EgressDenied as e:
-            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
-                                  request_payload_excerpt=excerpt)
         secret = (self.config.get("secret") or "").encode("utf-8")
         sig = hmac.new(secret, body, hashlib.sha256).hexdigest() if secret else ""
 
+        # v109 Bug DAL round-7 follow-up #2: safe_post_async pins DNS to a
+        # validated IP, closing the rebinding window between assert_safe_url
+        # and the actual TCP connect.
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    self.config["url"],
-                    content=body,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Syroce-Signature": f"sha256={sig}",
-                        "X-Syroce-Message-Id": envelope.message_id,
-                        "X-Syroce-Message-Type": envelope.message_type.value,
-                    },
-                )
-            ok = 200 <= resp.status_code < 300
-            return DeliveryResult(
-                ok=ok,
-                status_code=resp.status_code,
-                request_payload_excerpt=excerpt,
-                response_excerpt=resp.text[:1024],
-                error=None if ok else f"HTTP {resp.status_code}",
+            resp = await safe_post_async(
+                self.config["url"],
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Syroce-Signature": f"sha256={sig}",
+                    "X-Syroce-Message-Id": envelope.message_id,
+                    "X-Syroce-Message-Type": envelope.message_type.value,
+                },
             )
+        except EgressDenied as e:
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
+                                  request_payload_excerpt=excerpt)
         except httpx.RequestError as e:
             return DeliveryResult(ok=False, error=f"transport_error: {e!r}",
                                   request_payload_excerpt=excerpt)
+        ok = 200 <= resp.status_code < 300
+        return DeliveryResult(
+            ok=ok,
+            status_code=resp.status_code,
+            request_payload_excerpt=excerpt,
+            response_excerpt=resp.text[:1024],
+            error=None if ok else f"HTTP {resp.status_code}",
+        )

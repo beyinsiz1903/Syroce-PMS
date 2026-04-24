@@ -4,6 +4,7 @@ All endpoints under /api/event-system/
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from core.security import get_current_user
@@ -32,7 +33,9 @@ class AcknowledgeRequest(BaseModel):
 # ── EVENT PUBLISHING ──
 
 @router.post("/publish")
-async def api_publish_event(req: PublishEventRequest, current_user: User = Depends(get_current_user)):
+async def api_publish_event(req: PublishEventRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Publish an operational event."""
     result = await event_bus.publish(
         current_user.tenant_id, req.event_type, req.payload, current_user.id, req.property_id
@@ -63,13 +66,17 @@ async def api_unread_count(role: str | None = None, current_user: User = Depends
 
 
 @router.post("/mark-read")
-async def api_mark_read(req: MarkReadRequest, current_user: User = Depends(get_current_user)):
+async def api_mark_read(req: MarkReadRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Mark events as read."""
     return await event_bus.mark_read(current_user.tenant_id, req.event_ids)
 
 
 @router.post("/acknowledge")
-async def api_acknowledge(req: AcknowledgeRequest, current_user: User = Depends(get_current_user)):
+async def api_acknowledge(req: AcknowledgeRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Acknowledge a critical event."""
     result = await event_bus.acknowledge_event(
         current_user.tenant_id, req.event_id, current_user.id, req.note

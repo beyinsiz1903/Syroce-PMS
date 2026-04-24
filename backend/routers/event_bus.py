@@ -3,6 +3,7 @@ Event Bus Router — publish, subscribe, replay, status, metrics.
 """
 
 from datetime import UTC
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, Query
 
@@ -29,6 +30,7 @@ async def publish_event(
     event_type: str = Query("test_event"),
     priority: str = Query("normal"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     from modules.event_bus.abstraction import event_bus
     result = await event_bus.publish(
@@ -96,6 +98,7 @@ async def get_sessions(current_user: User = Depends(get_current_user)):
 async def register_session(
     session_id: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     from modules.event_bus.abstraction import event_bus
     return event_bus.register_session(
@@ -107,7 +110,9 @@ async def register_session(
 
 
 @router.post("/sessions/{session_id}/unregister")
-async def unregister_session(session_id: str, current_user: User = Depends(get_current_user)):
+async def unregister_session(session_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     from modules.event_bus.abstraction import event_bus
     event_bus.unregister_session(current_user.tenant_id, session_id)
     return {"session_id": session_id, "status": "unregistered"}

@@ -1,4 +1,7 @@
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -42,7 +45,9 @@ async def get_current_shift(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/cashier/open-shift")
-async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
+async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
     existing = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
@@ -70,7 +75,9 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
 
 
 @router.post("/cashier/close-shift")
-async def close_shift(body: dict = Body({}), current_user: User = Depends(get_current_user)):
+async def close_shift(body: dict = Body({}), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
@@ -105,7 +112,9 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
 
 
 @router.post("/cashier/handover-shift")
-async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
     from passlib.context import CryptContext
     pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -204,7 +213,9 @@ async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None
 
 
 @router.post("/laundry/orders")
-async def create_laundry_order(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_laundry_order(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     if not body.get("room_number"):
         raise HTTPException(status_code=400, detail="Oda numarasi gerekli")
     if not body.get("items") or len(body["items"]) == 0:
@@ -231,7 +242,9 @@ async def create_laundry_order(body: dict = Body(...), current_user: User = Depe
 
 
 @router.patch("/laundry/orders/{order_id}")
-async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     result = await db.laundry_orders.update_one(
@@ -244,7 +257,9 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
 
 
 @router.delete("/laundry/orders/{order_id}")
-async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user)):
+async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     result = await db.laundry_orders.delete_one(
         {"_id": order_id, "tenant_id": current_user.tenant_id}
     )
@@ -288,7 +303,9 @@ async def get_meeting_reservations(skip: int = 0, limit: int = 50, current_user:
 
 
 @router.post("/meeting-rooms/reservations")
-async def create_meeting_reservation(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_meeting_reservation(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     if not body.get("room_name") and not body.get("room_id"):
         raise HTTPException(status_code=400, detail="Salon secimi gerekli")
     now = datetime.utcnow()
@@ -332,7 +349,9 @@ async def create_meeting_reservation(body: dict = Body(...), current_user: User 
 
 
 @router.put("/meeting-rooms/reservations/{reservation_id}")
-async def update_meeting_reservation(reservation_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_meeting_reservation(reservation_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     existing = await db.meeting_reservations.find_one(
         {"_id": reservation_id, "tenant_id": current_user.tenant_id}
     )
@@ -377,7 +396,9 @@ async def update_meeting_reservation(reservation_id: str, body: dict = Body(...)
 
 
 @router.delete("/meeting-rooms/reservations/{reservation_id}")
-async def delete_meeting_reservation(reservation_id: str, current_user: User = Depends(get_current_user)):
+async def delete_meeting_reservation(reservation_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     result = await db.meeting_reservations.delete_one(
         {"_id": reservation_id, "tenant_id": current_user.tenant_id}
     )

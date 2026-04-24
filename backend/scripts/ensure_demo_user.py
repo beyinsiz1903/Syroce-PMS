@@ -22,20 +22,24 @@ DEMO_PASSWORD = "demo123"
 
 async def ensure_demo_user(db: AsyncIOMotorDatabase) -> None:
     try:
-        tenant = await db.tenants.find_one({"hotel_id": DEMO_HOTEL_ID})
+        # v42 Bug BH: bootstrap script runs without tenant context. Use the
+        # raw system DB so STRICT_TENANT_MODE=true does not block the lookup.
+        from core.tenant_db import get_system_db
+        sys_db = get_system_db()
+        tenant = await sys_db.tenants.find_one({"hotel_id": DEMO_HOTEL_ID})
         if not tenant:
             logger.info("ensure_demo_user: no tenant with hotel_id=%s, skipping", DEMO_HOTEL_ID)
             return
 
         tenant_id = tenant.get("id") or tenant.get("tenant_id") or str(tenant.get("_id"))
-        existing = await db.users.find_one({"tenant_id": tenant_id, "username": DEMO_USERNAME})
+        existing = await sys_db.users.find_one({"tenant_id": tenant_id, "username": DEMO_USERNAME})
         if existing:
             return
 
         from core.security import hash_password
 
         now = datetime.now(UTC).isoformat()
-        await db.users.insert_one({
+        await sys_db.users.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
             "agency_id": None,

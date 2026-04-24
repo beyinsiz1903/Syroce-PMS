@@ -16,6 +16,9 @@ class ReportAutomation:
 
     async def generate_flash_report_email(self, tenant_id: str, report_data: dict) -> str:
         """Flash report HTML email oluştur"""
+        # Bug AQ: report_data.report_date may bubble up from user-tunable filters.
+        import html as _html_mod
+        _safe_date = _html_mod.escape(str(report_data.get('report_date', '') or ''), quote=True)
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -35,7 +38,7 @@ class ReportAutomation:
             <div class="container">
                 <div class="header">
                     <h1>⚡ Daily Flash Report</h1>
-                    <p>{report_data.get('report_date', '')}</p>
+                    <p>{_safe_date}</p>
                 </div>
                 <div style="padding: 20px;">
                     <h2>📊 Key Metrics</h2>

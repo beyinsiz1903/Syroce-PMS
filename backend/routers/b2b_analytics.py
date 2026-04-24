@@ -18,10 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from cache_manager import cached
+from core.csv_safe import safe_writerow
 from core.database import db
 from core.security import get_current_user
 from models.enums import UserRole
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v80-EXT Bug DP-2: cache-bypass guard
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,10 @@ B2B_EVENT_TYPES = [
 ]
 
 
+# v80-EXT Bug DP-2: marker silindi — @cached function body'den önce çalışır,
+# manuel `_require_hotel_role(current_user)` cache hit'te ATLANIR (cross-role leak).
+# Resmi `_perm=Depends(require_op(...))` FastAPI dependency-injection seviyesinde,
+# cache lookup'tan önce execute olur → cache-bypass guard.
 @router.get("/summary")
 @cached(ttl=180, key_prefix="b2b_analytics_summary")
 async def get_b2b_summary(
@@ -61,6 +67,7 @@ async def get_b2b_summary(
     end_date: str | None = Query(None),
     period: str = Query("30d"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v80-EXT Bug DP-2
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
@@ -295,7 +302,9 @@ async def export_b2b_data(
 
     if export_type == "bookings":
         writer = csv.writer(output)
-        writer.writerow(["Tarih", "Acente", "Durum", "Tutar", "Komisyon", "Net"])
+        # Bug AN: safe_writerow() prepends `'` to any cell starting with =/+/-/@
+        # to neutralize spreadsheet formula injection (agency_name is attacker-controlled).
+        safe_writerow(writer, ["Tarih", "Acente", "Durum", "Tutar", "Komisyon", "Net"])
 
         cursor = db.agency_booking_requests.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": sd, "$lte": ed}},
@@ -304,7 +313,7 @@ async def export_b2b_data(
         async for doc in cursor:
             total = doc.get("total_amount", 0) or 0
             commission = doc.get("commission_amount", 0) or 0
-            writer.writerow([
+            safe_writerow(writer, [
                 doc.get("created_at", ""),
                 doc.get("agency_name", ""),
                 doc.get("status", ""),
@@ -315,7 +324,7 @@ async def export_b2b_data(
 
     elif export_type == "agencies":
         writer = csv.writer(output)
-        writer.writerow(["Acente", "Durum", "Komisyon %", "Toplam Rez.", "Onaylanan", "Gelir"])
+        safe_writerow(writer, ["Acente", "Durum", "Komisyon %", "Toplam Rez.", "Onaylanan", "Gelir"])
 
         agencies = await db.agencies.find(
             {"tenant_id": tenant_id},
@@ -332,18 +341,18 @@ async def export_b2b_data(
             ]
             rev = await db.agency_booking_requests.aggregate(rev_pipeline).to_list(1)
             revenue = rev[0]["revenue"] if rev else 0
-            writer.writerow([ag.get("name", ""), ag.get("status", ""), ag.get("commission_rate", 0), total, approved, revenue])
+            safe_writerow(writer, [ag.get("name", ""), ag.get("status", ""), ag.get("commission_rate", 0), total, approved, revenue])
 
     elif export_type == "usage":
         writer = csv.writer(output)
-        writer.writerow(["Tarih", "Olay Tipi", "Adet"])
+        safe_writerow(writer, ["Tarih", "Olay Tipi", "Adet"])
 
         cursor = db.usage_daily.find(
             {"tenant_id": tenant_id, "date": {"$gte": sd, "$lte": ed}},
             {"_id": 0, "date": 1, "event_type": 1, "count": 1},
         ).sort("date", -1)
         async for doc in cursor:
-            writer.writerow([doc.get("date", ""), doc.get("event_type", ""), doc.get("count", 0)])
+            safe_writerow(writer, [doc.get("date", ""), doc.get("event_type", ""), doc.get("count", 0)])
 
     output.seek(0)
     filename = f"b2b_{export_type}_{sd}_{ed}.csv"

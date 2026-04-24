@@ -6,6 +6,7 @@
 - /api/integrations/afsadakat/admin/* (platform admin)
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 import logging
 
@@ -118,6 +119,7 @@ class AdminProvisionIn(BaseModel):
 async def admin_provision(
     payload: AdminProvisionIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ) -> dict:
     """Force-provision a tenant (e.g. retry after external Af-sadakat
     was misconfigured at first activation)."""

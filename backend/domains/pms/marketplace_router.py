@@ -4,6 +4,9 @@ Domain Router: POS Marketplace
 POS enhancements, warehouse procurement, marketplace extensions.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v95 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -58,7 +61,8 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
 @router.post("/pos/outlets")
 async def create_outlet(
     request: CreateOutletRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """Create new F&B outlet"""
     outlet = {
@@ -140,7 +144,8 @@ async def get_menu_items(
 @router.post("/pos/menu-items")
 async def create_menu_item(
     request: CreateMenuItemRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """Create menu item for outlet"""
     # Verify outlet exists
@@ -172,7 +177,8 @@ async def create_menu_item(
 @router.post("/pos/transactions/with-menu")
 async def create_pos_transaction_with_menu(
     request: CreatePOSTransactionWithMenuRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """Create POS transaction with menu item breakdown"""
     # Verify outlet
@@ -344,7 +350,8 @@ async def get_menu_sales_breakdown(
 @router.post("/pos/z-report")
 async def generate_z_report(
     request: GenerateZReportRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v99 DW
 ):
     """Generate Z Report (End of Day report)"""
     date = request.date or datetime.now(UTC).date().isoformat()
@@ -648,7 +655,8 @@ async def get_order_detail_mobile(
 async def update_order_status_mobile(
     order_id: str,
     new_status: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("pos")),  # v92 DW
 ):
     """Update order status"""
     current_user = await get_current_user(credentials)
@@ -953,7 +961,8 @@ async def get_marketplace_products(
 @router.post("/marketplace/products")
 async def create_marketplace_product(
     request: CreateMarketplaceProductRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Add product to marketplace catalog"""
     product = {
@@ -992,7 +1001,8 @@ async def get_inventory(
 @router.post("/marketplace/inventory/adjust")
 async def adjust_inventory(
     request: AdjustInventoryRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Adjust inventory quantity"""
     # Get current inventory
@@ -1062,7 +1072,8 @@ async def get_purchase_orders(
 @router.post("/marketplace/purchase-orders", dependencies=[Depends(require_feature("hidden_marketplace"))])
 async def create_purchase_order(
     request: CreatePurchaseOrderRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create purchase order"""
     # Calculate total
@@ -1089,7 +1100,8 @@ async def create_purchase_order(
 @router.post("/marketplace/purchase-orders/{po_id}/approve")
 async def approve_purchase_order(
     po_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     """Approve purchase order"""
     po = await db.purchase_orders.find_one({
@@ -1117,7 +1129,8 @@ async def approve_purchase_order(
 async def receive_purchase_order(
     po_id: str,
     request: ReceivePurchaseOrderRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Receive purchase order and update inventory"""
     received_items = request.received_items
@@ -1179,7 +1192,8 @@ async def get_deliveries(
 @router.post("/marketplace/deliveries")
 async def create_delivery(
     request: CreateDeliveryRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create delivery tracking"""
     delivery = {
@@ -1253,7 +1267,8 @@ async def get_suppliers(
 @router.post("/marketplace/suppliers")
 async def create_supplier(
     request: CreateSupplierRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create new supplier with credit limit"""
     supplier = {
@@ -1279,7 +1294,8 @@ async def create_supplier(
 async def update_supplier_credit(
     supplier_id: str,
     request: UpdateSupplierCreditRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Update supplier credit limit and payment terms"""
     supplier = await db.suppliers.find_one({
@@ -1350,7 +1366,8 @@ async def get_supplier_credit_status(
 @router.post("/marketplace/purchase-orders/{po_id}/submit-for-approval")
 async def submit_po_for_approval(
     po_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Submit purchase order for GM approval"""
     po = await db.purchase_orders.find_one({
@@ -1411,7 +1428,8 @@ async def get_pending_approvals(current_user: User = Depends(get_current_user)):
 async def approve_purchase_order_by_gm(
     po_id: str,
     request: ApprovePurchaseOrderRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     """GM approves purchase order"""
     po = await db.purchase_orders.find_one({
@@ -1475,7 +1493,8 @@ async def approve_purchase_order_by_gm(
 async def reject_purchase_order(
     po_id: str,
     request: RejectPurchaseOrderRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     """GM rejects purchase order"""
     po = await db.purchase_orders.find_one({
@@ -1527,7 +1546,8 @@ async def get_warehouses(current_user: User = Depends(get_current_user)):
 @router.post("/marketplace/warehouses")
 async def create_warehouse(
     request: CreateWarehouseRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create new warehouse/depot"""
     warehouse = {
@@ -1622,7 +1642,8 @@ async def get_stock_summary_by_warehouse(current_user: User = Depends(get_curren
 async def update_delivery_status(
     delivery_id: str,
     request: UpdateDeliveryStatusRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Update delivery status with location tracking"""
     delivery = await db.deliveries.find_one({

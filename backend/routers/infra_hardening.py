@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 router = APIRouter(prefix="/api/infra", tags=["infrastructure-hardening"])
 
@@ -142,6 +143,7 @@ async def backup_history(
 async def trigger_backup(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from infra.backup_manager import backup_manager
     background_tasks.add_task(backup_manager.create_backup, "manual")
@@ -152,13 +154,16 @@ async def trigger_backup(
 async def test_restore(
     backup_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from infra.backup_manager import backup_manager
     return await backup_manager.test_restore(backup_id)
 
 
 @router.post("/backup/cleanup")
-async def cleanup_backups(current_user: User = Depends(get_current_user)):
+async def cleanup_backups(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
+):
     from infra.backup_manager import backup_manager
     return await backup_manager.cleanup_old_backups()
 

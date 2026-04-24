@@ -15,6 +15,7 @@ kullanarak arama/rezervasyon akışlarını gate eder.
 """
 
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 import logging
 import uuid
@@ -380,6 +381,7 @@ async def hotel_approve_request(
     contract_id: str,
     data: ApproveRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     tenant_id = _require_hotel_user(current_user)
     sysdb = get_system_db()
@@ -436,6 +438,7 @@ async def hotel_reject_request(
     contract_id: str,
     data: RejectRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     tenant_id = _require_hotel_user(current_user)
     sysdb = get_system_db()

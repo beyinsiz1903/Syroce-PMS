@@ -479,10 +479,32 @@ def _build_cache_key(func: Callable, key_prefix: str, tenant_id: str, args, kwar
     return f"cache:{tenant_id}:{key_prefix or func.__name__}:{params_hash}"
 
 
+def _extract_role(args, kwargs, func: Callable | None = None) -> str:
+    """Extract user role from kwargs/args (Bug CX v63 — role-aware cache key).
+
+    v72 Bug DC3: Python 3.11+ StrEnum `str(member)` returns 'UserRole.X' (not 'x').
+    Same role passed as Enum vs str produced different cache keys → cache fragmentation.
+    Normalize via `.value` when present, fallback to `str()`.
+    """
+    def _norm(role) -> str:
+        return str(getattr(role, 'value', None) or role)
+
+    _, bound = _bind_args_to_kwargs(func, args, kwargs)
+    for key in ('current_user', 'user'):
+        obj = bound.get(key)
+        if obj and getattr(obj, 'role', None):
+            return _norm(obj.role)
+    for arg in args:
+        if hasattr(arg, 'role') and getattr(arg, 'role', None):
+            return _norm(arg.role)
+    return 'anon'
+
+
 def cached(
     ttl: int = 300,
     key_prefix: str = "",
-    invalidate_on: list = None
+    invalidate_on: list = None,
+    role_aware: bool = False,
 ):
     """
     Decorator for caching function results.
@@ -492,6 +514,8 @@ def cached(
         ttl: Time to live in seconds (default 5 minutes)
         key_prefix: Prefix for cache key
         invalidate_on: List of entity types that should invalidate this cache
+        role_aware: If True, include user role in cache key segment (Bug CX v63 —
+            prevents role-segmented payloads from leaking across roles within tenant).
     """
     def decorator(func: Callable):
         @wraps(func)
@@ -500,6 +524,9 @@ def cached(
                 return await func(*args, **kwargs)
 
             tenant_id = _extract_tenant_id(args, kwargs, func)
+            if role_aware:
+                role = _extract_role(args, kwargs, func)
+                tenant_id = f"{tenant_id}:r={role}"
             cache_key = _build_cache_key(func, key_prefix, tenant_id, args, kwargs)
 
             # Try to get from cache

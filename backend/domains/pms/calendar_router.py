@@ -16,6 +16,7 @@ from core.security import (
     security,
 )
 from models.schemas import CreateRateCodeRequest, GetCalendarTooltipRequest, User
+from modules.pms_core.role_permission_service import require_op  # v74 Bug DJ
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,10 @@ class ChannelMixRequest(BaseModel):
 async def detect_rate_leakage(
     start_date: str | None = None,
     end_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ: revenue strategy
 ):
     """Detect rate leakage where OTA rates are lower than direct rates"""
-    current_user = await get_current_user(credentials)
 
     # Default to next 30 days
     start = datetime.fromisoformat(start_date).date() if start_date else datetime.now(UTC).date()
@@ -126,7 +127,8 @@ async def detect_rate_leakage(
 async def get_pickup_pace(
     target_date: str,
     lookback_days: int = 30,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Analyze booking pickup pace for a target date"""
     target = datetime.fromisoformat(target_date).date()
@@ -206,7 +208,8 @@ async def get_pickup_pace(
 async def get_availability_heatmap(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Generate availability heatmap showing occupancy intensity"""
     start = datetime.fromisoformat(start_date).date()
@@ -312,7 +315,8 @@ async def get_group_bookings(
     start_date: str,
     end_date: str,
     min_rooms: int = 5,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Detect and analyze group bookings (5+ rooms)"""
     start = datetime.fromisoformat(start_date).date()
@@ -393,7 +397,8 @@ async def get_pickup_pace_analytics(
     lookback_days: int = 90,
     group_only: bool = False,
     company_id: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Advanced pickup pace analytics with trend analysis"""
     target = datetime.fromisoformat(target_date).date()
@@ -488,7 +493,8 @@ async def get_pickup_pace_analytics(
 async def get_lead_time_analysis(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Analyze booking lead time patterns"""
     start = datetime.fromisoformat(start_date).date()
@@ -564,7 +570,8 @@ async def get_lead_time_analysis(
 async def get_oversell_protection_map(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """AI oversell protection heatmap"""
     start = datetime.fromisoformat(start_date).date()
@@ -643,7 +650,8 @@ async def get_oversell_protection_map(
 async def get_grouped_conflicts(
     start_date: str | None = None,
     end_date: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Get booking conflicts grouped by room for cleaner display"""
 
@@ -747,7 +755,8 @@ async def get_grouped_conflicts(
 @router.post("/deluxe/optimize-channel-mix")
 async def optimize_channel_mix(
     request: ChannelMixRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Simulate optimal OTA vs Direct channel mix"""
     try:
@@ -932,7 +941,8 @@ async def get_rate_codes(current_user: User = Depends(get_current_user)):
 @router.post("/calendar/rate-codes")
 async def create_rate_code(
     request: CreateRateCodeRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Create custom rate code"""
     rate_code = {

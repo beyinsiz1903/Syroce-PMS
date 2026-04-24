@@ -180,8 +180,23 @@ async def _try_deliver(event_id: str) -> bool:
             DELIVERY_HEADER: evt["id"],
         }
 
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as cli:
-            r = await cli.post(url, content=raw, headers=headers)
+        # v109 Bug DAL round-7 follow-up #5: base_url comes from tenant
+        # creds (`creds.base_url`) and is therefore tenant-configurable.
+        # Use rebinding-safe transport. EgressDenied → mark failed (caller
+        # already maps non-2xx into retry/fail outbox state).
+        from integrations.xchange.safety import EgressDenied, safe_post_async
+        try:
+            r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, content=raw, headers=headers)
+        except EgressDenied as _ed:
+            await db.integration_afsadakat_outbox.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "status": "failed",
+                    "last_error": f"egress_denied: {_ed}",
+                    "updated_at": _now_iso(),
+                }},
+            )
+            return False
 
         # 2xx → sent, 4xx (klient hatası) → failed (kalıcı), diğer → retry
         if 200 <= r.status_code < 300:

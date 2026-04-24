@@ -3,6 +3,7 @@ HotelRunner Integration Router
 API endpoints for HotelRunner connection management, testing, and operations.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import uuid
 from datetime import UTC, datetime
 
@@ -143,6 +144,7 @@ async def _log_sync(tenant_id: str, sync_type: str, status: str, duration_ms: in
 async def setup_connection(
     payload: HRConnectionSetup,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Setup HotelRunner connection with credentials and test it."""
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
@@ -235,7 +237,9 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/test")
-async def test_connection(current_user: User = Depends(get_current_user)):
+async def test_connection(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     """Test existing HotelRunner connection."""
     tid = current_user.tenant_id
     hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tid, "is_active": True})
@@ -256,7 +260,9 @@ async def test_connection(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/disconnect")
-async def disconnect(current_user: User = Depends(get_current_user)):
+async def disconnect(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     """Disconnect HotelRunner integration."""
     result = await db.hotelrunner_connections.update_one(
         {"tenant_id": current_user.tenant_id},
@@ -293,6 +299,7 @@ async def get_rooms(current_user: User = Depends(get_current_user)):
 async def update_room_ari(
     payload: HRARIUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Push ARI update to HotelRunner."""
     provider, conn = await _get_provider(current_user.tenant_id)
@@ -319,6 +326,7 @@ async def update_room_ari(
 async def bulk_update_ari(
     updates: list[HRARIUpdate],
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Push multiple ARI updates to HotelRunner."""
     provider, conn = await _get_provider(current_user.tenant_id)
@@ -373,7 +381,9 @@ async def get_reservations(
 
 
 @router.post("/reservations/sync")
-async def sync_reservations(current_user: User = Depends(get_current_user)):
+async def sync_reservations(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+):
     """Pull all undelivered reservations and store them for PMS import."""
     provider, conn = await _get_provider(current_user.tenant_id)
 
@@ -448,6 +458,7 @@ async def sync_reservations(current_user: User = Depends(get_current_user)):
 async def confirm_reservation_delivery(
     hr_number: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     """Confirm reservation delivery to HotelRunner."""
     provider, conn = await _get_provider(current_user.tenant_id)
@@ -571,6 +582,7 @@ async def get_cached_hr_rooms(current_user: User = Depends(get_current_user)):
 async def create_room_mapping(
     payload: HRRoomMapping,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create a PMS <> HotelRunner room mapping."""
     existing = await db.hotelrunner_room_mappings.find_one({
@@ -616,6 +628,7 @@ async def create_room_mapping(
 async def bulk_create_room_mappings(
     mappings_data: list[HRRoomMapping],
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create or update multiple room mappings at once."""
     created = 0
@@ -674,6 +687,7 @@ async def get_room_mappings(current_user: User = Depends(get_current_user)):
 async def delete_room_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete a room mapping."""
     result = await db.hotelrunner_room_mappings.delete_one({

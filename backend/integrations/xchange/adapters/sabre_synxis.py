@@ -6,7 +6,7 @@ import logging
 import httpx
 
 from ..htng import serialize
-from ..safety import EgressDenied, assert_safe_url
+from ..safety import EgressDenied, safe_post_async
 from ..schemas import XchangeEnvelope
 from .base import BaseAdapter, DeliveryResult
 
@@ -44,30 +44,31 @@ class SabreSynXisAdapter(BaseAdapter):
             "X-Hotel-Code": str(self.config.get("hotel_code", "")),
             "X-EchoToken": envelope.message_id,
         }
+        # v109 Bug DAL round-7 follow-up #2: safe_post_async pins DNS to a
+        # validated IP, closing the rebinding window between validation and
+        # the actual TCP connect. Tenant-configurable endpoint URL.
         try:
-            assert_safe_url(self.config["endpoint"])
+            resp = await safe_post_async(
+                self.config["endpoint"],
+                timeout=20.0,
+                content=xml.encode("utf-8"),
+                headers=headers,
+                auth=(self.config["username"], self.config.get("password", "")),
+            )
         except EgressDenied as e:
             return DeliveryResult(ok=False, error=f"egress_denied: {e}",
                                   request_payload_excerpt=excerpt)
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(
-                    self.config["endpoint"],
-                    content=xml.encode("utf-8"),
-                    headers=headers,
-                    auth=(self.config["username"], self.config.get("password", "")),
-                )
-            ok = 200 <= resp.status_code < 300
-            return DeliveryResult(
-                ok=ok,
-                status_code=resp.status_code,
-                request_payload_excerpt=excerpt,
-                response_excerpt=resp.text[:1024],
-                error=None if ok else f"HTTP {resp.status_code}",
-            )
         except httpx.RequestError as e:
             return DeliveryResult(
                 ok=False,
                 error=f"transport_error: {e!r}",
                 request_payload_excerpt=excerpt,
             )
+        ok = 200 <= resp.status_code < 300
+        return DeliveryResult(
+            ok=ok,
+            status_code=resp.status_code,
+            request_payload_excerpt=excerpt,
+            response_excerpt=resp.text[:1024],
+            error=None if ok else f"HTTP {resp.status_code}",
+        )

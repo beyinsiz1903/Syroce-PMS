@@ -29,6 +29,7 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_finance
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v76 Bug DL
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -117,6 +118,7 @@ class SupplierIn(BaseModel):
 async def create_supplier(
     body: SupplierIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     await _ensure_indexes()
@@ -153,6 +155,7 @@ async def list_suppliers(
     active_only: bool = True,
     q: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v76 Bug DL: vendor cost data
 ):
     await _ensure_indexes()
     db = get_system_db()
@@ -171,6 +174,7 @@ async def list_suppliers(
 async def update_supplier(
     supplier_id: str, body: SupplierIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     db = get_system_db()
@@ -200,6 +204,7 @@ async def update_supplier(
 async def delete_supplier(
     supplier_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     db = get_system_db()
@@ -252,6 +257,7 @@ def _pr_total(lines: list[dict]) -> float:
 async def create_purchase_request(
     body: PRIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     await _ensure_indexes()
     db = get_system_db()
@@ -327,6 +333,7 @@ class PRStatusIn(BaseModel):
 async def change_pr_status(
     pr_id: str, body: PRStatusIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     db = get_system_db()
@@ -405,6 +412,7 @@ def _po_compute(lines: list[dict], tax_rate: float) -> dict:
 async def create_purchase_order(
     body: POIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     await _ensure_indexes()
@@ -516,6 +524,7 @@ class POStatusIn(BaseModel):
 async def change_po_status(
     po_id: str, body: POStatusIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     db = get_system_db()
@@ -661,6 +670,7 @@ async def _grn_apply(db, tenant_id: str, po_id: str, body: GRNIn,
 async def create_grn(
     po_id: str, body: GRNIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_finance(current_user)
     await _ensure_indexes()

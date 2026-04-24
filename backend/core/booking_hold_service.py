@@ -25,7 +25,11 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.database import db
+# v42 round-3: cross-tenant sweeper runs without per-request tenant_context.
+# All queries below carry manual `tenant_id` filters, so use the raw system
+# DB to bypass STRICT_TENANT_MODE without weakening isolation.
+from core.tenant_db import get_system_db as _get_system_db
+db = _get_system_db()
 
 logger = logging.getLogger("core.booking_hold")
 

@@ -5,6 +5,7 @@ Immutable folio ledger endpoints: charge, payment, void, transfer, reconciliatio
 """
 
 from datetime import UTC
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -12,6 +13,12 @@ from pydantic import BaseModel, Field
 from core.folio_ledger_service import FolioLedgerService, ReconciliationEngine
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import RolePermissionService
+
+# Bug CQ fix — RBAC enforcement (paralel endpoint set'inde RBAC eksikti, hk yapabiliyordu)
+_rps = RolePermissionService()
+def _enforce_perm(role: str, op: str) -> None:
+    _rps.enforce_permission(role, op)
 
 router = APIRouter(prefix="/api/folio-ledger", tags=["Folio Ledger"])
 
@@ -57,7 +64,10 @@ class TransferRequest(BaseModel):
 
 
 @router.post("/{folio_id}/charge")
-async def post_charge(folio_id: str, body: ChargeRequest, current_user: User = Depends(get_current_user)):
+async def post_charge(folio_id: str, body: ChargeRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
+    _enforce_perm(current_user.role, "post_charge")  # Bug CQ fix
     try:
         result = await ledger_service.post_charge(
             tenant_id=current_user.tenant_id,
@@ -81,7 +91,10 @@ async def post_charge(folio_id: str, body: ChargeRequest, current_user: User = D
 
 
 @router.post("/{folio_id}/payment")
-async def post_payment(folio_id: str, body: PaymentRequest, current_user: User = Depends(get_current_user)):
+async def post_payment(folio_id: str, body: PaymentRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
+    _enforce_perm(current_user.role, "post_payment")  # Bug CQ fix
     try:
         result = await ledger_service.post_payment(
             tenant_id=current_user.tenant_id,
@@ -102,7 +115,10 @@ async def post_payment(folio_id: str, body: PaymentRequest, current_user: User =
 
 
 @router.post("/{folio_id}/void/{entry_id}")
-async def void_entry(folio_id: str, entry_id: str, body: VoidRequest, current_user: User = Depends(get_current_user)):
+async def void_entry(folio_id: str, entry_id: str, body: VoidRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
+    _enforce_perm(current_user.role, "void_charge")  # Bug CQ fix
     try:
         result = await ledger_service.void_entry(
             tenant_id=current_user.tenant_id,
@@ -119,7 +135,10 @@ async def void_entry(folio_id: str, entry_id: str, body: VoidRequest, current_us
 
 
 @router.post("/{folio_id}/transfer")
-async def transfer(folio_id: str, body: TransferRequest, current_user: User = Depends(get_current_user)):
+async def transfer(folio_id: str, body: TransferRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v97 DW
+):
+    _enforce_perm(current_user.role, "transfer_folio")  # Bug CQ fix
     try:
         result = await ledger_service.transfer(
             tenant_id=current_user.tenant_id,
@@ -138,17 +157,25 @@ async def transfer(folio_id: str, body: TransferRequest, current_user: User = De
 
 @router.get("/{folio_id}/ledger")
 async def get_ledger(folio_id: str, current_user: User = Depends(get_current_user)):
+    _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
     return await ledger_service.get_ledger(current_user.tenant_id, folio_id)
 
 
 @router.get("/{folio_id}/reconcile")
 async def reconcile_folio(folio_id: str, current_user: User = Depends(get_current_user)):
+    _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
     return await ledger_service.reconcile_folio(current_user.tenant_id, folio_id)
 
 
 @router.post("/reconciliation/run")
-async def run_reconciliation(current_user: User = Depends(get_current_user), business_date: str | None = None):
+async def run_reconciliation(current_user: User = Depends(get_current_user), business_date: str | None = None,
+    _perm=Depends(require_op("post_payment")),  # v97 DW
+):
+    # Bug CQ fix — reconciliation report contains tenant-wide financial drift data; finance/admin only
+    _enforce_perm(current_user.role, "close_folio")
     from datetime import datetime
     bdate = business_date or datetime.now(UTC).strftime("%Y-%m-%d")
     result = await recon_engine.run_reconciliation(current_user.tenant_id, bdate)
     return result
+
+

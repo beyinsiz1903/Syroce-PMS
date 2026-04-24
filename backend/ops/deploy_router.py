@@ -6,6 +6,7 @@ smoke tests, and canary analysis — all wired through a single router.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -47,7 +48,9 @@ async def get_gate_definitions(user=Depends(get_current_user)):
 
 
 @router.post("/pipeline/start")
-async def start_pipeline(req: StartPipelineRequest, user=Depends(get_current_user)):
+async def start_pipeline(req: StartPipelineRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Start a new deploy pipeline run."""
     from ops.deploy_pipeline import deploy_pipeline
     ctx = OperationContext.from_user(user)
@@ -56,7 +59,9 @@ async def start_pipeline(req: StartPipelineRequest, user=Depends(get_current_use
 
 
 @router.post("/pipeline/gate")
-async def execute_gate(req: ExecuteGateRequest, user=Depends(get_current_user)):
+async def execute_gate(req: ExecuteGateRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Execute a single pipeline gate."""
     from ops.deploy_pipeline import deploy_pipeline
     result = await deploy_pipeline.execute_gate(req.pipeline_id, req.gate_id)
@@ -66,7 +71,9 @@ async def execute_gate(req: ExecuteGateRequest, user=Depends(get_current_user)):
 
 
 @router.post("/pipeline/run-all")
-async def run_full_pipeline(req: StartPipelineRequest, user=Depends(get_current_user)):
+async def run_full_pipeline(req: StartPipelineRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
+):
     """Run the complete pipeline (all gates sequentially)."""
     from ops.deploy_pipeline import deploy_pipeline
     ctx = OperationContext.from_user(user)
@@ -134,7 +141,9 @@ async def get_canary_status(user=Depends(get_current_user)):
 
 
 @router.post("/canary/advance")
-async def advance_canary(req: AdvanceStageRequest, user=Depends(get_current_user)):
+async def advance_canary(req: AdvanceStageRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Advance to the next canary stage."""
     from ops.canary_deployment_service import canary_deployment_service
     ctx = OperationContext.from_user(user)
@@ -145,7 +154,9 @@ async def advance_canary(req: AdvanceStageRequest, user=Depends(get_current_user
 
 
 @router.post("/canary/rollback")
-async def rollback_canary(req: RollbackRequest, user=Depends(get_current_user)):
+async def rollback_canary(req: RollbackRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Rollback current canary deployment."""
     from ops.canary_deployment_service import canary_deployment_service
     ctx = OperationContext.from_user(user)
@@ -176,7 +187,9 @@ async def evaluate_rollback_triggers(user=Depends(get_current_user)):
 
 
 @router.post("/rollback/execute")
-async def execute_rollback(req: ExecuteRollbackRequest, user=Depends(get_current_user)):
+async def execute_rollback(req: ExecuteRollbackRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Execute a manual or automated rollback."""
     from ops.auto_rollback_engine import auto_rollback_engine
     ctx = OperationContext.from_user(user)
@@ -199,7 +212,9 @@ async def rollback_history(limit: int = Query(20, le=50), user=Depends(get_curre
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post("/smoke-tests/run")
-async def run_smoke_tests(user=Depends(get_current_user)):
+async def run_smoke_tests(user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Run the full smoke test suite."""
     from ops.smoke_test_runner import smoke_test_runner
     result = await smoke_test_runner.run_all()

@@ -5,6 +5,7 @@ Alert management: evaluate rules, list active, acknowledge, resolve, get summary
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -27,7 +28,9 @@ class ResolveRequest(BaseModel):
 
 
 @router.post("/evaluate")
-async def evaluate_alerts(req: EvaluateRequest, user=Depends(get_current_user)):
+async def evaluate_alerts(req: EvaluateRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+):
     ctx = OperationContext.from_user(user)
     result = await alert_enrichment_engine.evaluate_all_rules(ctx, req.metrics)
     return from_service_result(result)
@@ -45,7 +48,9 @@ async def get_active_alerts(
 
 
 @router.post("/acknowledge")
-async def acknowledge_alert(req: AcknowledgeRequest, user=Depends(get_current_user)):
+async def acknowledge_alert(req: AcknowledgeRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+):
     ctx = OperationContext.from_user(user)
     result = await alert_enrichment_engine.acknowledge_alert(ctx, req.alert_id)
     if not result.ok:
@@ -54,7 +59,9 @@ async def acknowledge_alert(req: AcknowledgeRequest, user=Depends(get_current_us
 
 
 @router.post("/resolve")
-async def resolve_alert(req: ResolveRequest, user=Depends(get_current_user)):
+async def resolve_alert(req: ResolveRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+):
     ctx = OperationContext.from_user(user)
     result = await alert_enrichment_engine.resolve_alert(ctx, req.alert_id, req.resolution_note)
     if not result.ok:

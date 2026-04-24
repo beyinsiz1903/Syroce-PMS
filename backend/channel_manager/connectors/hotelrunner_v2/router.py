@@ -38,11 +38,43 @@ Ops endpoints:
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+
+from core.security import get_current_user
+from models.schemas import User, UserRole
+from modules.pms_core.role_permission_service import require_op  # v88 DW
 
 logger = logging.getLogger("hrv2.router")
 
-router = APIRouter(prefix="/api/channel/hotelrunner-v2", tags=["HotelRunner v2 Connector"])
+
+# v106 Bug DAB (architect adversarial #7): all hotelrunner_v2 endpoints accept
+# `tenant_id` from Query(...) and most had NO auth dependency at all
+# → anonymous cross-tenant data leak (status/trace/metrics/dlq/ops/transition)
+# AND anonymous cross-tenant write triggers (pull-reservations/ingest/push-ari/
+# reconcile/dlq retry/observation snapshot/dry-run/automation trigger/flags).
+# Router-level enforcement: every request must (a) be authenticated and
+# (b) the tenant_id query param must match current_user.tenant_id (super-admin
+# bypass for system-wide ops). One dependency = 38 endpoints hardened.
+async def _enforce_auth_and_tenant_match(
+    tenant_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    is_super = current_user.role == UserRole.SUPER_ADMIN or "super_admin" in (
+        getattr(current_user, "roles", None) or []
+    )
+    if not is_super and current_user.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cross-tenant access denied",
+        )
+    return current_user
+
+
+router = APIRouter(
+    prefix="/api/channel/hotelrunner-v2",
+    tags=["HotelRunner v2 Connector"],
+    dependencies=[Depends(_enforce_auth_and_tenant_match)],
+)
 
 
 # ── Status & Health ───────────────────────────────────────────────────
@@ -96,14 +128,16 @@ async def get_reservation_trace(
     )
 
     # Outbox entries
+    from security.query_safety import safe_search_term
+    _rid = safe_search_term(reservation_id) or "a^"  # regex-impossible sentinel
     outbox = await db["connector_outbox"].find(
-        {"tenant_id": tenant_id, "correlation_id": {"$regex": reservation_id}},
+        {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
         _NO_ID,
     ).sort("created_at", 1).to_list(50)
 
     # DLQ entries
     dlq = await db["connector_dlq"].find(
-        {"tenant_id": tenant_id, "correlation_id": {"$regex": reservation_id}},
+        {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
         _NO_ID,
     ).to_list(10)
 
@@ -122,6 +156,7 @@ async def get_reservation_trace(
 async def test_connection(
     tenant_id: str = Query(...),
     property_id: str = Query("default"),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v88 DW
 ):
     """Test HotelRunner connection."""
     from core.tenant_db import set_tenant_context

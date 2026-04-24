@@ -75,10 +75,17 @@ class MessagingService:
         self._rate_counters[key] = count + 1
         return True
 
-    def _render_template(self, body_template: str, variables: dict) -> str:
+    def _render_template(self, body_template: str, variables: dict, escape_html: bool = False) -> str:
+        # v41 Bug BG: escape variables for HTML/email channels so guest-controlled
+        # fields (name, special_requests, etc.) cannot inject markup into rendered
+        # email bodies. SMS/WhatsApp render plain-text — keep raw.
+        import html as _html_mod
         result = body_template
         for k, v in variables.items():
-            result = result.replace(f"{{{{{k}}}}}", str(v))
+            sv = str(v) if v is not None else ""
+            if escape_html:
+                sv = _html_mod.escape(sv, quote=True)
+            result = result.replace(f"{{{{{k}}}}}", sv)
         return result
 
     def _track_latency(self, provider_type: str, latency_ms: float):
@@ -114,7 +121,9 @@ class MessagingService:
                 {"_id": 0},
             )
             if tmpl:
-                body = self._render_template(tmpl.get("body_template", ""), variables)
+                # v41 Bug BG: HTML-escape variables when channel renders HTML (email).
+                _esc = channel in ("email",)
+                body = self._render_template(tmpl.get("body_template", ""), variables, escape_html=_esc)
                 subject = subject or tmpl.get("subject")
 
         if not body:

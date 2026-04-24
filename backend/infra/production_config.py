@@ -14,6 +14,50 @@ from typing import Any
 logger = logging.getLogger("infra.production_config")
 
 
+def is_production_env() -> bool:
+    """Unified production-mode detection across env-var conventions.
+
+    Returns True when ANY of these is set to ``"production"`` (case-insensitive):
+        - ``APP_ENV``       (used by crypto/secrets/controlplane fail-hard checks)
+        - ``ENVIRONMENT``   (Replit deployment convention)
+        - ``NODE_ENV``      (frontend / cross-stack convention)
+
+    A single helper prevents the bug where one production gate activates while
+    another silently no-ops because the operator set a different env-var key.
+    """
+    for key in ("APP_ENV", "ENVIRONMENT", "NODE_ENV"):
+        if os.environ.get(key, "").strip().lower() == "production":
+            return True
+    return False
+
+
+def is_strict_env() -> bool:
+    """True when running in production OR staging (any of the 3 keys).
+
+    Used by the crypto/secrets/controlplane startup blocks that historically
+    re-raise on init failures in both production and staging environments.
+    Mirrors the prior ``APP_ENV in ("production", "staging")`` semantics but
+    additionally honors ENVIRONMENT/NODE_ENV so deployments using the Replit
+    naming convention are protected by the same fail-hard gates.
+    """
+    for key in ("APP_ENV", "ENVIRONMENT", "NODE_ENV"):
+        if os.environ.get(key, "").strip().lower() in {"production", "staging"}:
+            return True
+    return False
+
+
+# v109 round-8 6th-pass: hoisted to module scope so tests can monkey-patch
+# the table and exercise the real ``startup_check`` code path with a sentinel
+# hash, instead of replacing the method entirely.
+FORBIDDEN_DEV_HASHES: dict[str, str] = {
+    "JWT_SECRET": "22a37967b374a741a098889a2e138a1899499d0ae54e05fcd503e7bb6f86196d",
+    "QUICKID_SERVICE_KEY": "868a835b20ce9fa05d2a549e0d3812178d717279e438cde6bd56e6bbd10b2929",
+    "AFSADAKAT_ADMIN_TOKEN": "0b2b61eaa2e151477eb687402d1c9ef6252c76644419d78964ed3145afcc681c",
+    "CM_MASTER_KEY_CURRENT": "6c746409f783b492d492026d654d7680a0ea9ca4078fc7aecdcfa1837c3ea4bf",
+    "HR_TOKEN": "d8653c8676059b84c4299f805848f826b998746cc44a25c838c9daa976aa4815",
+}
+
+
 # ── Required Production Variables ──────────────────────────────────
 PRODUCTION_VARIABLES = {
     # Core Infrastructure
@@ -151,22 +195,69 @@ class ProductionConfigValidator:
 
     def startup_check(self) -> dict[str, Any]:
         """Lightweight startup validation — fails fast on missing critical vars."""
+        import hashlib
         missing = []
         for var_name, meta in PRODUCTION_VARIABLES.items():
             if meta["critical"] and not os.environ.get(var_name, ""):
                 missing.append(var_name)
 
-        status = "pass" if not missing else "fail"
+        # v42 round-2 + v109 round-8 5th-pass: fail-closed tenant isolation guard.
+        # Production MUST run with STRICT_TENANT_MODE=true (defense-in-depth
+        # around any handler that forgets `Depends(get_current_user)`). In
+        # production we abort startup; in dev we only warn so local debugging
+        # is unaffected. Detection unified across APP_ENV/ENVIRONMENT/NODE_ENV
+        # so an operator setting any one of them activates all production
+        # gates (existing crypto/secrets/controlplane checks above use APP_ENV).
+        is_prod = is_production_env()
+        strict_ok = os.environ.get("STRICT_TENANT_MODE", "").lower() == "true"
+        tenant_guard_violation = is_prod and not strict_ok
+
+        # v109 round-8 architect 3rd-pass: production must NOT boot with the
+        # known leaked dev values present in `.replit` plaintext. We use only
+        # SHA-256 fingerprints (the actual secret bytes are never embedded in
+        # code). The table lives at module scope so tests can monkey-patch it
+        # to validate this real code path with a synthetic sentinel hash.
+        forbidden_present = []
+        if is_prod:
+            # Read the table fresh each call so monkeypatch.setattr works.
+            forbidden_table = globals()["FORBIDDEN_DEV_HASHES"]
+            for var_name, expected_hash in forbidden_table.items():
+                value = os.environ.get(var_name, "")
+                if value and hashlib.sha256(value.encode()).hexdigest() == expected_hash:
+                    forbidden_present.append(var_name)
+
+        status = "pass" if not missing and not tenant_guard_violation and not forbidden_present else "fail"
         if missing:
-            import os as _os
-            level = logging.WARNING if _os.environ.get("NODE_ENV") != "production" else logging.ERROR
+            level = logging.WARNING if not is_prod else logging.ERROR
             logger.log(level, "Startup check — missing critical vars: %s", missing)
-        else:
+        if tenant_guard_violation:
+            logger.error(
+                "Startup check FAILED — STRICT_TENANT_MODE must be 'true' in production "
+                "(defense-in-depth tenant isolation). Refusing to boot."
+            )
+            raise RuntimeError(
+                "STRICT_TENANT_MODE=true is required in production. "
+                "Remove the override or set ENVIRONMENT/NODE_ENV != 'production'."
+            )
+        if forbidden_present:
+            logger.error(
+                "Startup check FAILED — production environment is using KNOWN DEV/LEAKED "
+                "values for: %s. Rotate these secrets via the Replit Secrets vault BEFORE "
+                "publishing and remove the plaintext from .replit. Refusing to boot.",
+                forbidden_present,
+            )
+            raise RuntimeError(
+                f"Production refused to boot: forbidden dev secret values detected for "
+                f"{forbidden_present}. See replit.md → Round-8 production checklist."
+            )
+        if not missing and not tenant_guard_violation and not forbidden_present:
             logger.info("Startup check passed — all critical variables present")
 
         return {
             "status": status,
             "missing_critical": missing,
+            "strict_tenant_mode": strict_ok,
+            "forbidden_dev_secrets_present": forbidden_present,
             "checked_at": datetime.now(UTC).isoformat(),
             "startup_time": self._startup_time,
         }

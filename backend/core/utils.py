@@ -55,6 +55,10 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
+    # Bug AN: openpyxl interprets a leading '=' as a formula → spreadsheet
+    # formula injection. xlsx_safe() prepends an apostrophe to neutralize.
+    from core.csv_safe import xlsx_safe
+
     wb = Workbook()
     ws = wb.active
     ws.title = sheet_name
@@ -76,7 +80,7 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
 
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=2, column=col_num)
-        cell.value = header
+        cell.value = xlsx_safe(header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -86,7 +90,9 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
     for row_num, row_data in enumerate(data, 3):
         for col_num, value in enumerate(row_data, 1):
             cell = ws.cell(row=row_num, column=col_num)
-            cell.value = value
+            # Preserve numeric types (Excel needs them for sums/formatting);
+            # only sanitize string-typed cells, which is where injection lives.
+            cell.value = xlsx_safe(value) if isinstance(value, str) else value
             cell.border = border
             cell.alignment = Alignment(horizontal="left", vertical="center")
 
@@ -159,7 +165,15 @@ def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str
 
     import jwt as pyjwt
 
-    JWT_SECRET = os.environ.get('JWT_SECRET', 'fallback-secret')
+    JWT_SECRET = os.environ.get('JWT_SECRET')
+    if not JWT_SECRET:
+        # v107 (Bug DAG): hardcoded 'fallback-secret' was known-string — QR tokens
+        # signed in fallback mode would NOT verify against core/security JWT_SECRET
+        # (mismatch breaks decode); also enabled QR token forging if attacker knew
+        # the fallback. Now fail-closed in production, random in dev.
+        if os.environ.get('STRICT_JWT_SECRET') == '1' or os.environ.get('ENV', '').lower() == 'production':
+            raise RuntimeError("JWT_SECRET environment variable is required to sign QR tokens in production.")
+        JWT_SECRET = secrets.token_urlsafe(64)
     JWT_ALGORITHM = 'HS256'
     expiry = datetime.now(UTC) + timedelta(hours=expiry_hours)
     token = secrets.token_urlsafe(32)

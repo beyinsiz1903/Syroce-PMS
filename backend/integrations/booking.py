@@ -1,4 +1,5 @@
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v97 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -99,27 +100,40 @@ class BookingAPIClient:
         self.password = credentials.get("password")
 
     async def push_ari(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # v109 Bug DAL round-7 follow-up #3: base_url is tenant-configurable.
         endpoint = f"{self.base_url}/json/bookings"
-        async with httpx.AsyncClient(timeout=self.timeout, auth=(self.username, self.password)) as client:
-            response = await client.post(endpoint, json={"roomRates": payload.get("rooms", [])})
-            response.raise_for_status()
-            result = response.json()
-            return {
-                "success": True,
-                "endpoint": endpoint,
-                "raw": result
-            }
+        from integrations.xchange.safety import safe_post_async
+        response = await safe_post_async(
+            endpoint,
+            timeout=self.timeout,
+            auth=(self.username, self.password),
+            json={"roomRates": payload.get("rooms", [])},
+        )
+        response.raise_for_status()
+        result = response.json()
+        return {
+            "success": True,
+            "endpoint": endpoint,
+            "raw": result
+        }
 
     async def fetch_reservations(self, modified_since: str | None = None) -> dict[str, Any]:
+        # v109 Bug DAL round-7 follow-up #3: base_url is tenant-configurable.
         endpoint = f"{self.base_url}/json/reservations"
         params = {}
         if modified_since:
             params["modified_since"] = modified_since
 
-        async with httpx.AsyncClient(timeout=self.timeout, auth=(self.username, self.password)) as client:
-            response = await client.get(endpoint, params=params)
-            response.raise_for_status()
-            data = response.json()
+        from integrations.xchange.safety import safe_request_async
+        response = await safe_request_async(
+            "GET",
+            endpoint,
+            timeout=self.timeout,
+            auth=(self.username, self.password),
+            params=params,
+        )
+        response.raise_for_status()
+        data = response.json()
 
         reservations = []
         for item in data.get("reservations", []):
@@ -237,7 +251,8 @@ class BookingPushRequest(BaseModel):
 @booking_router.post("/credentials")
 async def upsert_booking_credentials(
     payload: dict[str, Any],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     required = ['property_id', 'username', 'password']
     if not all(field in payload for field in required):
@@ -261,7 +276,8 @@ async def get_booking_credentials(current_user: User = Depends(get_current_user)
 @booking_router.post("/ari/push")
 async def trigger_booking_ari_push(
     payload: BookingPushRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     credentials = await BookingCredentialManager.get_credentials(current_user.tenant_id)
     if not credentials:
@@ -282,7 +298,8 @@ async def trigger_booking_ari_push(
 
 @booking_router.post("/reservations/pull")
 async def trigger_booking_reservation_pull(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     credentials = await BookingCredentialManager.get_credentials(current_user.tenant_id)
     if not credentials:

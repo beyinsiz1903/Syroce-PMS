@@ -7,6 +7,7 @@ Service health matrix.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -46,7 +47,9 @@ class ForceReconRequest(BaseModel):
 
 
 @router.post("/create")
-async def create_incident(req: CreateIncidentRequest, user=Depends(get_current_user)):
+async def create_incident(req: CreateIncidentRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.create_incident(
         ctx, req.title, req.description, req.severity,
@@ -55,7 +58,9 @@ async def create_incident(req: CreateIncidentRequest, user=Depends(get_current_u
     return from_service_result(result)
 
 @router.post("/acknowledge")
-async def acknowledge_incident(req: AckIncidentRequest, user=Depends(get_current_user)):
+async def acknowledge_incident(req: AckIncidentRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.acknowledge_incident(ctx, req.incident_id)
     if not result.ok:
@@ -63,7 +68,9 @@ async def acknowledge_incident(req: AckIncidentRequest, user=Depends(get_current
     return from_service_result(result)
 
 @router.post("/resolve")
-async def resolve_incident(req: ResolveIncidentRequest, user=Depends(get_current_user)):
+async def resolve_incident(req: ResolveIncidentRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.resolve_incident(
         ctx, req.incident_id, req.resolution_note
@@ -84,7 +91,9 @@ async def list_incidents(
     return from_service_result(result)
 
 @router.post("/recovery/replay-dlq")
-async def replay_dead_letters(req: ReplayDLQRequest, user=Depends(get_current_user)):
+async def replay_dead_letters(req: ReplayDLQRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.replay_dead_letters(
         ctx, req.queue_name, req.max_count, reason=req.reason
@@ -95,7 +104,9 @@ async def replay_dead_letters(req: ReplayDLQRequest, user=Depends(get_current_us
     return from_service_result(result)
 
 @router.post("/recovery/stuck-workers")
-async def recover_stuck_workers(req: RecoverWorkersRequest, user=Depends(get_current_user)):
+async def recover_stuck_workers(req: RecoverWorkersRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.recover_stuck_workers(ctx, req.stale_minutes)
     if not result.ok:
@@ -104,7 +115,9 @@ async def recover_stuck_workers(req: RecoverWorkersRequest, user=Depends(get_cur
     return from_service_result(result)
 
 @router.post("/recovery/force-reconciliation")
-async def force_reconciliation(req: ForceReconRequest, user=Depends(get_current_user)):
+async def force_reconciliation(req: ForceReconRequest, user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     ctx = OperationContext.from_user(user)
     result = await incident_response_service.force_reconciliation(
         ctx, req.provider_id, reason=req.reason

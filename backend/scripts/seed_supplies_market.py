@@ -127,7 +127,9 @@ async def main():
     print(f"📦 Catalogue: {inserted} inserted, {updated} updated")
     print("\nDemo vendor login:")
     print(f"  email:    {DEMO_EMAIL}")
-    print(f"  password: {DEMO_PASSWORD}")
+    # v109 round-8: do not echo the seed password to stdout (hounddog CRITICAL).
+    # The credential is documented in replit.md under "Demo seeds" for operators.
+    print("  password: <see replit.md → Demo seeds → DEMO_PASSWORD env var>")
 
 
 if __name__ == "__main__":

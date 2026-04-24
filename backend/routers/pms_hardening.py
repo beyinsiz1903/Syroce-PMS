@@ -3,6 +3,7 @@ PMS Hardening Router - Production-grade API endpoints for all PMS core operation
 Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Audit, Dashboard.
 """
 from datetime import UTC, datetime
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from modules.pms_core.night_audit_engine import NightAuditEngine
 from modules.pms_core.pms_dashboard_service import PMSDashboardService
 from modules.pms_core.reservation_state_machine import ReservationStateMachine
 from modules.pms_core.role_permission_service import RolePermissionService
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 router = APIRouter(prefix="/api/pms-core", tags=["pms-core"])
 
@@ -269,7 +271,9 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
     return result
 
 @router.post("/late-checkout", tags=["front-desk"])
-async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depends(get_current_user)):
+async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     """Request late checkout with optional charge."""
     result = await front_desk.request_late_checkout(current_user.tenant_id, req.booking_id, req.requested_time, req.charge, current_user.id)
     if not result["success"]:
@@ -277,7 +281,9 @@ async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depen
     return result
 
 @router.post("/early-checkin", tags=["front-desk"])
-async def api_early_checkin(req: EarlyCheckinRequest, current_user: User = Depends(get_current_user)):
+async def api_early_checkin(req: EarlyCheckinRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     """Request early check-in."""
     result = await front_desk.request_early_checkin(current_user.tenant_id, req.booking_id, req.requested_time, current_user.id)
     if not result["success"]:
@@ -404,7 +410,9 @@ async def api_update_room_status(req: RoomStatusUpdateRequest, current_user: Use
     return result
 
 @router.post("/housekeeping/inspection-approval", tags=["housekeeping"])
-async def api_inspection_approval(req: InspectionApprovalRequest, current_user: User = Depends(get_current_user)):
+async def api_inspection_approval(req: InspectionApprovalRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v99 DW
+):
     """Approve or reject room inspection."""
     result = await hk_svc.approve_room_inspection(current_user.tenant_id, req.room_id, current_user.id, req.approved)
     if not result["success"]:
@@ -440,7 +448,9 @@ async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depen
     return result
 
 @router.get("/night-audit/business-date", tags=["night-audit"])
-async def api_get_business_date(current_user: User = Depends(get_current_user)):
+async def api_get_business_date(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports"))  # v103 DX
+):
     """Get current business date."""
     bd = await night_audit.get_business_date(current_user.tenant_id)
     return {"business_date": bd}
@@ -451,7 +461,9 @@ async def api_get_exceptions(status: str = "open", current_user: User = Depends(
     return await night_audit.get_audit_exceptions(current_user.tenant_id, status)
 
 @router.post("/night-audit/resolve-exception", tags=["night-audit"])
-async def api_resolve_exception(req: ExceptionResolveRequest, current_user: User = Depends(get_current_user)):
+async def api_resolve_exception(req: ExceptionResolveRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_night_audit")),  # v90 DW
+):
     """Resolve an audit exception."""
     result = await night_audit.resolve_exception(current_user.tenant_id, req.exception_id, current_user.id, req.resolution)
     if not result["success"]:
@@ -564,7 +576,9 @@ class EscalateRequest(BaseModel):
     note: str
 
 @router.post("/multi-property/escalate", tags=["multi-property"])
-async def api_escalate_exception(req: EscalateRequest, current_user: User = Depends(get_current_user)):
+async def api_escalate_exception(req: EscalateRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     """Escalate an audit exception."""
     result = await mp_audit_svc.escalate_exception(current_user.tenant_id, req.exception_id, current_user.id, req.note)
     if not result["success"]:
@@ -580,7 +594,9 @@ class AutoAssignRequest(BaseModel):
     booking_id: str
 
 @router.post("/housekeeping/auto-assign", tags=["housekeeping"])
-async def api_auto_assign_after_checkout(req: AutoAssignRequest, current_user: User = Depends(get_current_user)):
+async def api_auto_assign_after_checkout(req: AutoAssignRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
+):
     """Auto-assign housekeeping task after checkout."""
     result = await auto_hk_svc.auto_assign_after_checkout(current_user.tenant_id, req.booking_id, current_user.id)
     if not result["success"]:
@@ -604,7 +620,9 @@ class ManualOverrideRequest(BaseModel):
     reason: str
 
 @router.post("/housekeeping/manual-override", tags=["housekeeping"])
-async def api_manual_override(req: ManualOverrideRequest, current_user: User = Depends(get_current_user)):
+async def api_manual_override(req: ManualOverrideRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
+):
     """Manually override a housekeeping task assignment."""
     result = await auto_hk_svc.manual_override_assignment(
         current_user.tenant_id, req.task_id, req.new_assignee_id, req.reason, current_user.id

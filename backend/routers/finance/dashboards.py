@@ -19,6 +19,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.role_permission_service import require_op
 
 try:
     from cache_manager import cached
@@ -233,7 +234,8 @@ async def get_cash_flow_dashboard(
 
 @router.get("/finance/risk-alerts")
 async def get_risk_alerts(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports"))  # v103 DX alias drift fix
 ):
     """
     Financial risk monitoring: overdue accounts, credit limits, suspicious receivables
@@ -347,7 +349,8 @@ async def get_folios_filtered(
     status: str | None = None,  # open, closed, cancelled
     date_from: str | None = None,
     date_to: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: finance folios filtered
 ):
     """
     Get filtered folios with customer type and room filters
@@ -451,7 +454,8 @@ async def process_mobile_payment(
     amount: float,
     payment_method: str,  # cash, card, bank_transfer
     notes: str = "",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     """
     Process payment from mobile device

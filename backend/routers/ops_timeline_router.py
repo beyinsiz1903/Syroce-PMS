@@ -11,6 +11,7 @@ Provides endpoints for:
   - Prioritized incident feed
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -740,6 +741,7 @@ async def get_remediation_status(
 @router.post("/remediation/start")
 async def start_remediation_engine(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Auto-remediation engine'i baslat."""
     from routers.auto_remediation_engine import get_remediation_engine
@@ -753,6 +755,7 @@ async def start_remediation_engine(
 @router.post("/remediation/stop")
 async def stop_remediation_engine(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Auto-remediation engine'i durdur."""
     from routers.auto_remediation_engine import get_remediation_engine
@@ -767,6 +770,7 @@ async def stop_remediation_engine(
 async def recover_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     """Degraded connector'i manuel olarak recover et."""
     from routers.auto_remediation_engine import manually_recover_connector
@@ -785,6 +789,7 @@ async def degrade_connector(
     connector_id: str,
     reason: str = Query("Manuel degrade", description="Degrade nedeni"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     """Connector'i manuel olarak degrade et."""
     from routers.auto_remediation_engine import manually_degrade_connector

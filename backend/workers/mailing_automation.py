@@ -45,12 +45,20 @@ def _safe_date(s) -> date | None:
 
 
 def _personalize(html: str, subject: str, name: str, hotel: str) -> tuple[str, str]:
-    repl = {
-        "{{name}}": name, "{{hotel}}": hotel,
-        "{{misafir}}": name, "{{otel}}": hotel,
-    }
-    for k, v in repl.items():
+    # Bug CN: see backend/core/mailing_safe.py — HTML-escape body cells,
+    # CRLF/control-strip subject cells. Pre-CN raw str.replace let
+    # guest_name and tenant.property_name inject <a>/<script>/Bcc payloads
+    # into the hotel-branded transactional email.
+    from core.mailing_safe import safe_html_value, safe_subject_value
+    name_html, hotel_html = safe_html_value(name), safe_html_value(hotel)
+    name_subj, hotel_subj = safe_subject_value(name), safe_subject_value(hotel)
+    body_repl = {"{{name}}": name_html, "{{hotel}}": hotel_html,
+                 "{{misafir}}": name_html, "{{otel}}": hotel_html}
+    subj_repl = {"{{name}}": name_subj, "{{hotel}}": hotel_subj,
+                 "{{misafir}}": name_subj, "{{otel}}": hotel_subj}
+    for k, v in body_repl.items():
         html = html.replace(k, v)
+    for k, v in subj_repl.items():
         subject = subject.replace(k, v)
     return subject, html
 
@@ -238,7 +246,11 @@ async def _run_trigger_for_tenant(db, tenant: dict, automation: dict) -> int:
 
 
 async def _run_once() -> dict:
-    from server import db
+    # v42 round-2: worker iterates ALL tenants (no per-request tenant_context).
+    # Every query in this file already injects `tenant_id` manually, so use
+    # the raw system DB to bypass STRICT_TENANT_MODE without losing isolation.
+    from core.tenant_db import get_system_db
+    db = get_system_db()
     summary = {"tenants_processed": 0, "total_sent": 0}
     cursor = db.mailing_automations.find({"enabled": True}, {"_id": 0}).limit(PER_RUN_TENANT_LIMIT)
     automations = await cursor.to_list(PER_RUN_TENANT_LIMIT)
@@ -275,8 +287,8 @@ async def _run_once() -> dict:
 async def _loop() -> None:
     logger.info("[mailing-auto] worker started (interval=%ds)", INTERVAL_SECONDS)
     try:
-        from server import db
-        await _ensure_indexes(db)
+        from core.tenant_db import get_system_db
+        await _ensure_indexes(get_system_db())
     except Exception as e:
         logger.warning("[mailing-auto] could not ensure indexes: %s", e)
     while True:

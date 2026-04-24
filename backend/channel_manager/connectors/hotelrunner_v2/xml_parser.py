@@ -7,12 +7,27 @@ Contract hardening:
   - Missing optional fields: tolerated with defaults
   - Unexpected enum values: fallback to 'unknown'
   - Raw payload audit with masking, truncation, correlation_id
+
+Security (v109 Bug DAL round-7 follow-up): parses *outbound* responses
+from HotelRunner so XXE risk requires a malicious or compromised
+provider, not a tenant. Still migrated to ``defusedxml`` because the
+attacker model includes a hostile upstream — without entity blocking
+they could read backend filesystem (file:// in entities) or pivot
+internally (http:// in entities) just by returning crafted XML to a
+legitimate API call. ``defusedxml.ElementTree.ParseError`` is a
+subclass of stdlib's, so existing ``except ET.ParseError`` handlers
+keep working unchanged.
 """
 import hashlib
 import logging
 import uuid
 from typing import Any
-from xml.etree import ElementTree as ET
+# Use defusedxml for *parsing* (entity-blocking), but pull Element /
+# ParseError from stdlib for type hints and exception classes —
+# defusedxml.ElementTree intentionally does not re-export the Element
+# class (only safe parse functions). ParseError IS the same class.
+from defusedxml import ElementTree as ET
+from xml.etree.ElementTree import Element as _Element  # noqa: E402 (type-hint only)
 
 from .connector_errors import XmlParseError
 from .contract_errors import (
@@ -34,7 +49,7 @@ MASK_PATTERNS = {"CardNumber", "CardHolderName", "ExpireDate", "CVV", "SeriesCod
 AUDIT_TRUNCATE_LEN = 4000
 
 
-def _find_text(elem: ET.Element, path: str, default: str = "") -> str:
+def _find_text(elem: _Element, path: str, default: str = "") -> str:
     """Safe text extraction from XML element."""
     child = elem.find(path, NS)
     if child is not None and child.text:
@@ -42,7 +57,7 @@ def _find_text(elem: ET.Element, path: str, default: str = "") -> str:
     return default
 
 
-def _find_attr(elem: ET.Element, path: str, attr: str, default: str = "") -> str:
+def _find_attr(elem: _Element, path: str, attr: str, default: str = "") -> str:
     """Safe attribute extraction from XML element at given path."""
     child = elem.find(path, NS)
     if child is not None:
@@ -173,7 +188,7 @@ def parse_reservations_response(xml_str: str) -> list[dict[str, Any]]:
     return reservations
 
 
-def _parse_single_reservation(elem: ET.Element) -> dict[str, Any] | None:
+def _parse_single_reservation(elem: _Element) -> dict[str, Any] | None:
     """Parse a single HotelReservation element with contract hardening.
 
     Contract hardening:

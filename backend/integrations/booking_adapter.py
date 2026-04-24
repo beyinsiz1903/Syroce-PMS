@@ -102,9 +102,12 @@ class BookingAdapter:
             return {"status": "dry_run", "reason": "missing_credentials", "payload": json_body}
         base, user, pwd = creds
         url = f"{base}{path}"
+        # v109 Bug DAL round-7 follow-up #3: api_endpoint is tenant-configurable.
+        from integrations.xchange.safety import EgressDenied, safe_post_async
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                resp = await client.post(url, json=json_body, auth=(user, pwd))
+            resp = await safe_post_async(
+                url, timeout=_HTTP_TIMEOUT, json=json_body, auth=(user, pwd)
+            )
             ok = 200 <= resp.status_code < 300
             body: Any
             try:
@@ -119,6 +122,9 @@ class BookingAdapter:
                 "response": body,
                 "payload": json_body,
             }
+        except EgressDenied as exc:
+            logger.warning("booking.com POST %s blocked (SSRF guard): %s", path, exc)
+            return {"status": "error", "error": f"egress_denied: {exc}", "payload": json_body}
         except httpx.HTTPError as exc:
             logger.exception("booking.com POST %s failed", path)
             return {"status": "error", "error": str(exc), "payload": json_body}
@@ -130,9 +136,12 @@ class BookingAdapter:
             return {"status": "dry_run", "reason": "missing_credentials", "params": params or {}}
         base, user, pwd = creds
         url = f"{base}{path}"
+        # v109 Bug DAL round-7 follow-up #3: api_endpoint is tenant-configurable.
+        from integrations.xchange.safety import EgressDenied, safe_request_async
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                resp = await client.get(url, params=params or {}, auth=(user, pwd))
+            resp = await safe_request_async(
+                "GET", url, timeout=_HTTP_TIMEOUT, params=params or {}, auth=(user, pwd)
+            )
             ok = 200 <= resp.status_code < 300
             try:
                 body = resp.json()
@@ -143,6 +152,9 @@ class BookingAdapter:
                 "http_status": resp.status_code,
                 "response": body,
             }
+        except EgressDenied as exc:
+            logger.warning("booking.com GET %s blocked (SSRF guard): %s", path, exc)
+            return {"status": "error", "error": f"egress_denied: {exc}"}
         except httpx.HTTPError as exc:
             logger.exception("booking.com GET %s failed", path)
             return {"status": "error", "error": str(exc)}

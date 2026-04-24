@@ -3,6 +3,8 @@ PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import base64
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 import io
 import json
 import logging
@@ -56,7 +58,9 @@ async def get_todays_arrivals(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/frontdesk/express-checkin")
-async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_current_user)):
+async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """QR code ile express check-in"""
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.express_checkin(ctx, qr_data["qr_code"])
@@ -67,7 +71,9 @@ async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_cur
 
 
 @router.post("/frontdesk/kiosk-checkin")
-async def kiosk_checkin(checkin_data: dict, current_user: User = Depends(get_current_user)):
+async def kiosk_checkin(checkin_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     booking_id = checkin_data.get('booking_id')
     if not booking_id:
         raise HTTPException(status_code=400, detail="booking_id is required")
@@ -101,7 +107,9 @@ async def get_frontdesk_audit_checklist(
 
 
 @router.post("/frontdesk/checkin/{booking_id}")
-async def check_in_guest(booking_id: str, create_folio: bool = True, force_clean: bool = False, current_user: User = Depends(get_current_user)):
+async def check_in_guest(booking_id: str, create_folio: bool = True, force_clean: bool = False, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """Check-in guest with validations and auto-folio creation. force_clean=true cleans a dirty room before check-in."""
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.checkin(ctx, booking_id, create_folio, force_clean)
@@ -117,7 +125,8 @@ async def check_out_guest(
     booking_id: str,
     force: bool = False,
     auto_close_folios: bool = True,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-out guest with balance validation and folio closure"""
     ctx = OperationContext.from_user(current_user)
@@ -192,6 +201,7 @@ async def add_folio_charge(
     booking_id: str,
     payload: FolioChargeRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     if payload.amount <= 0 or payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="amount ve quantity 0'dan büyük olmalı")
@@ -244,6 +254,7 @@ async def add_folio_payment(
     booking_id: str,
     payload: FolioPaymentRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="amount 0'dan büyük olmalı")
@@ -293,6 +304,7 @@ async def get_folio(booking_id: str, current_user: User = Depends(get_current_us
     return result.data
 
 
+# noqa: cache-rbac — FO arrivals operasyonel (FO/HK/manager)
 @router.get("/frontdesk/arrivals")
 @cached(ttl=120, key_prefix="frontdesk_arrivals")
 async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
@@ -301,6 +313,7 @@ async def get_arrivals(date: str | None = None, current_user: User = Depends(get
     return result.data
 
 
+# noqa: cache-rbac — FO departures operasyonel
 @router.get("/frontdesk/departures")
 @cached(ttl=120, key_prefix="frontdesk_departures")
 async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
@@ -309,6 +322,7 @@ async def get_departures(date: str | None = None, current_user: User = Depends(g
     return result.data
 
 
+# noqa: cache-rbac — FO inhouse operasyonel
 @router.get("/frontdesk/inhouse")
 @cached(ttl=180, key_prefix="frontdesk_inhouse")
 async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
@@ -326,7 +340,8 @@ async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
 @router.post("/frontdesk/passport-scan")
 async def scan_passport(
     request: PassportScanRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Scan passport and extract data automatically
@@ -373,7 +388,8 @@ async def scan_passport(
 @router.post("/frontdesk/walk-in-booking")
 async def create_walk_in_booking(
     request: WalkInBookingRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Quick walk-in booking - create guest, booking, and check-in with one click
@@ -511,7 +527,8 @@ async def create_guest_alert(
     description: str,
     priority: str = "normal",
     expires_days: int | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a custom alert for a guest"""
     expires_at = None
@@ -545,7 +562,8 @@ async def create_guest_alert(
 @router.delete("/frontdesk/guest-alerts/{alert_id}")
 async def delete_guest_alert(
     alert_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     result = await db.guest_alerts.delete_one({'id': alert_id, 'tenant_id': current_user.tenant_id})
     if result.deleted_count == 0:
@@ -560,7 +578,8 @@ async def delete_guest_alert(
 @router.post("/self-checkin/generate-door-qr")
 async def generate_door_qr_code(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Generate QR code for door lock
@@ -609,7 +628,8 @@ async def capture_digital_signature(
     booking_id: str,
     signature_base64: str,
     registration_card_data: dict[str, Any],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Capture digital signature
@@ -652,7 +672,8 @@ async def capture_digital_signature(
 @router.post("/self-checkin/police-notification")
 async def auto_police_notification(
     booking_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Automatic police notification
@@ -703,7 +724,8 @@ async def auto_police_notification(
 @router.post("/keycard/issue")
 async def issue_keycard(
     request: KeycardIssueRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Issue a new keycard for a booking"""
     ctx = OperationContext.from_user(current_user)
@@ -718,7 +740,8 @@ async def issue_keycard(
 async def deactivate_keycard(
     keycard_id: str,
     reason: str = "checkout",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Deactivate/cancel a keycard"""
     ctx = OperationContext.from_user(current_user)

@@ -240,10 +240,14 @@ class AnalyticsExportService:
         return {"headers": headers, "rows": rows}
 
     def _to_csv(self, headers: list, rows: list) -> str:
+        # Bug AN: every cell may contain user-controlled data (agency names,
+        # campaign labels, etc.). Defend against spreadsheet formula injection.
+        from core.csv_safe import safe_writerow
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(headers)
-        writer.writerows(rows)
+        safe_writerow(writer, headers)
+        for r in rows:
+            safe_writerow(writer, r)
         return output.getvalue()
 
     async def get_export_history(self, tenant_id: str, limit: int = 20) -> list:

@@ -14,11 +14,12 @@ Endpoints:
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from cache_manager import cached
 from core.database import db
+from core.helpers import require_super_admin_guard
 from core.import_bridge_service import (
     COLL_IMPORTED,
     auto_import_reservation_to_pms,
@@ -26,7 +27,16 @@ from core.import_bridge_service import (
 
 logger = logging.getLogger("routers.import_admin")
 
-import_admin_router = APIRouter(prefix="/imports", tags=["import-admin"])
+# v69 Bug DF: import_admin auth gate'siz + cross-tenant. outbox_admin patern'i —
+# router-level super_admin guard. HK kullanıcı/diğer roller tüm tenant'ların
+# import status/review-queue/event'lerini görüyordu + retry/approve/dismiss yapabiliyordu.
+_require_super_admin = require_super_admin_guard()
+
+import_admin_router = APIRouter(
+    prefix="/imports",
+    tags=["import-admin"],
+    dependencies=[Depends(_require_super_admin)],
+)
 
 
 class ImportStatusResponse(BaseModel):
@@ -51,6 +61,7 @@ class ImportActionResponse(BaseModel):
 
 # NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter
 # in the queries below). Cache key intentionally resolves to 'global' namespace.
+# noqa: cache-rbac — global ops admin endpoint (router-level admin guard)
 @import_admin_router.get("/status", response_model=ImportStatusResponse)
 @cached(ttl=60, key_prefix="imports_status_global")
 async def import_status():

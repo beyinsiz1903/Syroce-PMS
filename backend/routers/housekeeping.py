@@ -3,6 +3,7 @@ Housekeeping Router - Room status, tasks, assignments, reports
 Extracted from server.py for modularity.
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
 logger = logging.getLogger(__name__)
 import uuid
@@ -15,6 +16,7 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
+from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
 from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 
 try:
@@ -38,6 +40,7 @@ release_room_block_service = ReleaseRoomBlockService()
 
 # ============= HOUSEKEEPING =============
 
+# noqa: cache-rbac — operasyonel oda görevleri tüm rolelere açık (FO koordinasyon, sales availability)
 @router.get("/housekeeping/tasks")
 @cached(ttl=120, key_prefix="housekeeping_tasks")  # Cache for 2 minutes
 async def get_housekeeping_tasks(status: str | None = None, current_user: User = Depends(get_current_user)):
@@ -57,7 +60,9 @@ async def get_housekeeping_tasks(status: str | None = None, current_user: User =
     return [{**task, 'room': rooms_by_id.get(task.get('room_id'))} for task in tasks]
 
 @router.post("/housekeeping/tasks")
-async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: str | None = None, current_user: User = Depends(get_current_user)):
+async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: str | None = None, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+):
     task = HousekeepingTask(tenant_id=current_user.tenant_id, room_id=room_id, task_type=task_type, priority=priority, notes=notes)
     task_dict = task.model_dump()
     task_dict['created_at'] = task_dict['created_at'].isoformat()
@@ -65,7 +70,9 @@ async def create_housekeeping_task(room_id: str, task_type: str, priority: str =
     return task
 
 @router.put("/housekeeping/tasks/{task_id}")
-async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, current_user: User = Depends(get_current_user)):
+async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+):
     updates = {}
     if status:
         updates['status'] = status
@@ -73,15 +80,24 @@ async def update_housekeeping_task(task_id: str, status: str | None = None, assi
             updates['started_at'] = datetime.now(UTC).isoformat()
         elif status == 'completed':
             updates['completed_at'] = datetime.now(UTC).isoformat()
-            task = await db.housekeeping_tasks.find_one({'id': task_id}, {'_id': 0})
+            # v109 round-9 IDOR: scope find + chained room update by tenant.
+            task = await db.housekeeping_tasks.find_one(
+                {'id': task_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+            )
             if task and task['task_type'] == 'cleaning':
-                await db.rooms.update_one({'id': task['room_id']}, {'$set': {'status': 'inspected', 'last_cleaned': datetime.now(UTC).isoformat()}})
+                await db.rooms.update_one(
+                    {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
+                    {'$set': {'status': 'inspected', 'last_cleaned': datetime.now(UTC).isoformat()}},
+                )
     if assigned_to:
         updates['assigned_to'] = assigned_to
     await db.housekeeping_tasks.update_one({'id': task_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    task = await db.housekeeping_tasks.find_one({'id': task_id}, {'_id': 0})
+    task = await db.housekeeping_tasks.find_one(
+        {'id': task_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
     return task
 
+# noqa: cache-rbac — oda durumu tablosu tüm rolelere açık (cross-departman koordinasyon)
 @router.get("/housekeeping/room-status")
 @cached(ttl=60, key_prefix="housekeeping_room_status")  # Cache for 1 minute (real-time data)
 async def get_room_status_board(current_user: User = Depends(get_current_user)):
@@ -92,6 +108,7 @@ async def get_room_status_board(current_user: User = Depends(get_current_user)):
         status_counts[room['status']] += 1
     return {'rooms': rooms, 'status_counts': status_counts, 'total_rooms': len(rooms)}
 
+# noqa: cache-rbac — due-out listesi tüm rolelere açık (FO check-out koordinasyon)
 @router.get("/housekeeping/due-out")
 @cached(ttl=120, key_prefix="hk_due_out")  # Cache for 2 min
 async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
@@ -151,6 +168,7 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
         'count': len(due_out_rooms)
     }
 
+# noqa: cache-rbac — stayovers listesi tüm rolelere açık (operasyonel oda durumu)
 @router.get("/housekeeping/stayovers")
 @cached(ttl=120, key_prefix="hk_stayovers")  # Cache for 2 min
 async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
@@ -208,6 +226,7 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
     }
 
 
+# noqa: cache-rbac — oda durumu raporu tüm rolelere açık (operasyonel)
 @router.get("/housekeeping/room-status-report")
 @cached(ttl=120, key_prefix="hk_room_status_report")
 async def get_room_status_report(current_user: User = Depends(get_current_user)):
@@ -298,7 +317,10 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
 
 @router.get("/housekeeping/staff-performance-detailed")
 @cached(ttl=300, key_prefix="hk_staff_perf_detailed")
-async def get_staff_performance_detailed(current_user: User = Depends(get_current_user)):
+async def get_staff_performance_detailed(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v77 Bug DM: HR/staff metrics
+):
     """Detailed staff performance metrics"""
 
     # Get completed tasks from last 30 days
@@ -369,6 +391,7 @@ async def get_staff_performance_detailed(current_user: User = Depends(get_curren
     }
 
 
+# noqa: cache-rbac — arrival rooms listesi tüm rolelere açık (FO check-in koordinasyon)
 @router.get("/housekeeping/arrivals")
 @cached(ttl=120, key_prefix="hk_arrivals")  # Cache for 2 min
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
@@ -433,7 +456,8 @@ async def update_room_status_hk(
     room_id: str,
     new_status: str,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Quick room status update from housekeeping"""
     valid_statuses = ['available', 'occupied', 'dirty', 'cleaning', 'inspected', 'maintenance', 'out_of_order']
@@ -458,7 +482,7 @@ async def update_room_status_hk(
         update_data['hk_notes'] = notes
 
     await db.rooms.update_one(
-        {'id': room_id},
+        {'id': room_id, 'tenant_id': current_user.tenant_id},  # v109 round-9 IDOR
         {'$set': update_data}
     )
 
@@ -475,7 +499,8 @@ async def assign_housekeeping_task(
     task_type: str = 'cleaning',
     priority: str = 'normal',
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Assign housekeeping task to staff"""
     room = await db.rooms.find_one({
@@ -506,6 +531,7 @@ async def assign_housekeeping_task(
 
 # ============= ROOM BLOCKS (OUT OF ORDER / OUT OF SERVICE) =============
 
+# noqa: cache-rbac — room blocks operasyonel listesi tüm rolelere açık (maintenance/group koordinasyon)
 @router.get("/pms/room-blocks")
 @cached(ttl=300, key_prefix="pms_room_blocks")  # Cache for 5 min
 async def get_room_blocks(
@@ -564,7 +590,8 @@ async def get_room_blocks(
 async def create_room_block(
     block_data: RoomBlockCreate,
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     return await create_room_block_service.create(block_data, current_user, request)
 
@@ -572,7 +599,8 @@ async def create_room_block(
 async def update_room_block(
     block_id: str,
     block_data: RoomBlockUpdate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Update an existing room block"""
     block = await db.room_blocks.find_one({
@@ -650,7 +678,8 @@ async def cancel_room_block(
     block_id: str,
     request: Request,
     reason: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Release a room block through the semantic inventory service."""
     return await release_room_block_service.release(block_id, current_user, request, reason=reason)

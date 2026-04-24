@@ -1,4 +1,8 @@
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
+from modules.pms_core.role_permission_service import require_op  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -35,7 +39,9 @@ async def get_concierge_requests(skip: int = 0, limit: int = 100, current_user: 
 
 
 @router.post("/concierge/requests")
-async def create_concierge_request(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_concierge_request(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -59,7 +65,9 @@ async def create_concierge_request(body: dict = Body(...), current_user: User = 
 
 
 @router.patch("/concierge/requests/{request_id}")
-async def update_concierge_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_concierge_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     new_status = body.get("status", "updated")
     result = await db.concierge_requests.update_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id},
@@ -81,7 +89,9 @@ async def get_banquet_events(skip: int = 0, limit: int = 100, current_user: User
 
 
 @router.post("/banquet/events")
-async def create_banquet_event(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_banquet_event(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+):
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -118,7 +128,9 @@ async def create_banquet_event(body: dict = Body(...), current_user: User = Depe
 
 
 @router.patch("/banquet/events/{event_id}")
-async def update_banquet_event(event_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_banquet_event(event_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     result = await db.banquet_events.update_one(
@@ -131,7 +143,9 @@ async def update_banquet_event(event_id: str, body: dict = Body(...), current_us
 
 
 @router.post("/kbs/send")
-async def send_kbs_notification(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def send_kbs_notification(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     now = datetime.utcnow()
     booking_id = body.get("booking_id")
     kbs_ref = str(uuid.uuid4())[:8].upper()
@@ -155,7 +169,9 @@ async def send_kbs_notification(body: dict = Body(...), current_user: User = Dep
 
 
 @router.post("/kbs/send-batch")
-async def send_kbs_batch(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def send_kbs_batch(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     now = datetime.utcnow()
     booking_ids = body.get("booking_ids", [])
     results = []
@@ -206,7 +222,9 @@ async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User 
 
 
 @router.post("/kvkk/requests")
-async def create_kvkk_request(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_kvkk_request(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -226,7 +244,9 @@ async def create_kvkk_request(body: dict = Body(...), current_user: User = Depen
 
 
 @router.patch("/kvkk/requests/{request_id}")
-async def update_kvkk_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_kvkk_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
     if body.get("status") == "completed":
@@ -261,7 +281,9 @@ async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User
 
 
 @router.patch("/pms/guests/{guest_id}/preferences")
-async def update_guest_preferences(guest_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_guest_preferences(guest_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+):
     update_fields = {}
     if "preferences" in body:
         update_fields["preferences"] = body["preferences"]
@@ -299,7 +321,9 @@ async def update_guest_preferences(guest_id: str, body: dict = Body(...), curren
 
 
 @router.post("/frontdesk/booking/{booking_id}/routing-rules")
-async def save_routing_rules(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def save_routing_rules(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     rules = body.get("rules", [])
     for rule in rules:
         if rule.get("split_type") == "percentage":
@@ -316,7 +340,9 @@ async def save_routing_rules(booking_id: str, body: dict = Body(...), current_us
 
 
 @router.patch("/pms/rooms/{room_id}/features")
-async def update_room_features(room_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def update_room_features(room_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
     update_fields["features_updated_at"] = datetime.utcnow().isoformat()
     result = await db.rooms.update_one(
@@ -338,7 +364,9 @@ async def get_revenue_settings(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/revenue/settings")
-async def save_revenue_settings(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def save_revenue_settings(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     now = datetime.utcnow()
     await db.revenue_settings.update_one(
         {"tenant_id": current_user.tenant_id},
@@ -356,7 +384,9 @@ async def save_revenue_settings(body: dict = Body(...), current_user: User = Dep
 
 
 @router.post("/revenue/walk-out")
-async def process_walk_out(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def process_walk_out(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -376,7 +406,9 @@ async def process_walk_out(body: dict = Body(...), current_user: User = Depends(
 
 
 @router.delete("/concierge/requests/{request_id}")
-async def delete_concierge_request(request_id: str, current_user: User = Depends(get_current_user)):
+async def delete_concierge_request(request_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     result = await db.concierge_requests.delete_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id}
     )
@@ -386,7 +418,9 @@ async def delete_concierge_request(request_id: str, current_user: User = Depends
 
 
 @router.delete("/banquet/events/{event_id}")
-async def delete_banquet_event(event_id: str, current_user: User = Depends(get_current_user)):
+async def delete_banquet_event(event_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
+):
     result = await db.banquet_events.delete_one(
         {"_id": event_id, "tenant_id": current_user.tenant_id}
     )
@@ -396,7 +430,9 @@ async def delete_banquet_event(event_id: str, current_user: User = Depends(get_c
 
 
 @router.delete("/kvkk/requests/{request_id}")
-async def delete_kvkk_request(request_id: str, current_user: User = Depends(get_current_user)):
+async def delete_kvkk_request(request_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     result = await db.kvkk_requests.delete_one(
         {"_id": request_id, "tenant_id": current_user.tenant_id}
     )
@@ -406,7 +442,9 @@ async def delete_kvkk_request(request_id: str, current_user: User = Depends(get_
 
 
 @router.post("/pms/bookings/{booking_id}/complimentary-approval")
-async def request_complimentary_approval(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def request_complimentary_approval(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v97 DW
+):
     booking = await db.bookings.find_one({"_id": booking_id, "tenant_id": current_user.tenant_id})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -432,7 +470,9 @@ async def request_complimentary_approval(booking_id: str, body: dict = Body(...)
 
 
 @router.patch("/pms/bookings/{booking_id}/complimentary-approval/{approval_id}")
-async def handle_complimentary_approval(booking_id: str, approval_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def handle_complimentary_approval(booking_id: str, approval_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v97 DW
+):
     action = body.get("action", "approve")
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
@@ -472,7 +512,9 @@ async def get_dayuse_bookings(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/pms/dayuse-auto-checkout")
-async def dayuse_auto_checkout(current_user: User = Depends(get_current_user)):
+async def dayuse_auto_checkout(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     now = datetime.utcnow()
     today = now.strftime("%Y-%m-%d")
     result = await db.bookings.update_many(
@@ -561,7 +603,9 @@ async def get_group_blocks(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/pms/group-blocks")
-async def create_group_block(body: dict = Body(...), current_user: User = Depends(get_current_user)):
+async def create_group_block(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     now = datetime.utcnow()
     doc = {
         "_id": str(uuid.uuid4()),
@@ -586,7 +630,9 @@ async def create_group_block(body: dict = Body(...), current_user: User = Depend
 
 
 @router.post("/pms/group-blocks/{block_id}/cutoff")
-async def process_group_cutoff(block_id: str, current_user: User = Depends(get_current_user)):
+async def process_group_cutoff(block_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     block = await db.group_blocks.find_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if not block:
         raise HTTPException(status_code=404, detail="Group block not found")
@@ -613,7 +659,9 @@ async def process_group_cutoff(block_id: str, current_user: User = Depends(get_c
 
 
 @router.delete("/pms/group-blocks/{block_id}")
-async def delete_group_block(block_id: str, current_user: User = Depends(get_current_user)):
+async def delete_group_block(block_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     result = await db.group_blocks.delete_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Group block not found")

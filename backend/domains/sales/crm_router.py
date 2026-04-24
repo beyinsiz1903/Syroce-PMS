@@ -3,6 +3,7 @@ Sales / CRM Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -208,7 +209,8 @@ async def get_ota_pricing(
 @router.post("/sales/lead")
 async def create_lead(
     request: CreateLeadRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v92 DW
 ):
     """
     Create new sales lead
@@ -248,7 +250,8 @@ async def create_lead(
 async def update_lead_stage(
     lead_id: str,
     request: UpdateLeadStageRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),  # v92 DW
 ):
     """
     Update lead pipeline stage

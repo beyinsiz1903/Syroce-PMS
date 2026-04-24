@@ -3,6 +3,7 @@ HotelRunner Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 """
 import asyncio
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -328,6 +329,7 @@ async def get_hr_room_types(current_user: User = Depends(get_current_user)):
 async def hr_bulk_grid_update(
     request: BulkGridUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """HotelRunner toplu fiyat/müsaitlik güncelleme."""
     tenant_id = current_user.tenant_id
@@ -703,6 +705,7 @@ async def get_hr_pricing_settings(current_user: User = Depends(get_current_user)
 async def update_hr_pricing_settings(
     request: PricingSettingsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
@@ -764,6 +767,7 @@ async def list_hr_stop_sale_schedules(current_user: User = Depends(get_current_u
 async def create_hr_stop_sale_schedule(
     request: StopSaleScheduleCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
@@ -827,6 +831,7 @@ async def delete_hr_stop_sale_schedule(
     schedule_id: str,
     remove_stop_sale: bool = False,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     schedule = await db.hr_stop_sale_schedules.find_one(
@@ -872,6 +877,7 @@ async def update_hr_stop_sale_schedule(
     schedule_id: str,
     request: StopSaleScheduleUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
@@ -951,6 +957,7 @@ async def get_hr_push_providers(current_user: User = Depends(get_current_user)):
 async def remove_hr_room_type(
     inv_code: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Remove a room type from cached_rooms (hides from rate manager)."""
     tenant_id = current_user.tenant_id
@@ -1002,7 +1009,9 @@ async def get_hr_queue_status(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/queue-cancel-all")
-async def cancel_all_queue_items(current_user: User = Depends(get_current_user)):
+async def cancel_all_queue_items(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Kuyruktaki TÜM bekleyen ve retrying push'ları iptal et ve arka plan görevlerini durdur."""
     tenant_id = current_user.tenant_id
 
@@ -1042,7 +1051,9 @@ async def cancel_all_queue_items(current_user: User = Depends(get_current_user))
 
 
 @router.delete("/queue-clear")
-async def clear_queue(current_user: User = Depends(get_current_user)):
+async def clear_queue(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Tamamlanan kuyruk öğelerini temizle."""
     tenant_id = current_user.tenant_id
     deleted = await clear_completed(tenant_id)
@@ -1050,7 +1061,9 @@ async def clear_queue(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/queue-cancel/{item_id}")
-async def cancel_queue_item(item_id: str, current_user: User = Depends(get_current_user)):
+async def cancel_queue_item(item_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
+):
     """Kuyruktaki belirli bir push görevini iptal et."""
     tenant_id = current_user.tenant_id
     result = await db.hr_push_queue.delete_one({"id": item_id, "tenant_id": tenant_id, "status": {"$in": ["pending", "retrying"]}})

@@ -21,6 +21,7 @@ from core.security import (
     security,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -185,22 +186,24 @@ async def ai_chat(
 
             folios_found = []
             if guest_name_hint:
+                from security.query_safety import safe_search_term
+                _gnh = safe_search_term(guest_name_hint)
                 # Search guests by name - try multiple fields
                 guests = await db.guests.find({
                     "tenant_id": current_user.tenant_id,
                     "$or": [
-                        {"first_name": {"$regex": guest_name_hint, "$options": "i"}},
-                        {"last_name": {"$regex": guest_name_hint, "$options": "i"}}
+                        {"first_name": {"$regex": _gnh or "", "$options": "i"}},
+                        {"last_name": {"$regex": _gnh or "", "$options": "i"}}
                     ]
-                }).to_list(10)
+                }).to_list(10) if _gnh else []
 
                 guest_ids = [g['id'] for g in guests]
 
                 # Also search folios directly by guest_name field
                 folios_by_name = await db.folios.find({
                     "tenant_id": current_user.tenant_id,
-                    "guest_name": {"$regex": guest_name_hint, "$options": "i"}
-                }).to_list(20)
+                    "guest_name": {"$regex": _gnh or "", "$options": "i"}
+                }).to_list(20) if _gnh else []
 
                 # Search folios by guest_id
                 folios_by_id = []
@@ -524,6 +527,7 @@ async def get_ai_pricing_recommendation(
     target_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_pricing")),
+    _perm=Depends(require_op("view_finance_reports")),  # v86 DV: AI pricing recommendation
 ):
     """AI-powered dynamic pricing recommendation"""
     try:
@@ -622,7 +626,8 @@ async def get_reputation_trends(
 @router.post("/reputation/suggest-response")
 async def suggest_review_response(
     review_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """AI review yanıt önerisi"""
     from domains.ai.reputation_manager import get_reputation_manager
@@ -820,7 +825,9 @@ async def get_autopilot_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/autopilot/run-cycle")
-async def run_autopilot_cycle(current_user: User = Depends(get_current_user)):
+async def run_autopilot_cycle(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Autopilot cycle manuel çalıştır"""
     from domains.ai.revenue_autopilot import get_revenue_autopilot
     autopilot = get_revenue_autopilot(db)
@@ -830,7 +837,9 @@ async def run_autopilot_cycle(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/autopilot/set-mode")
-async def set_autopilot_mode(mode_data: dict, current_user: User = Depends(get_current_user)):
+async def set_autopilot_mode(mode_data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Autopilot modunu ayarla"""
     from domains.ai.revenue_autopilot import get_revenue_autopilot
     autopilot = get_revenue_autopilot(db)
@@ -898,7 +907,8 @@ async def generate_auto_schedule(target_date: str = None, current_user: User = D
 @router.post("/ai/solve-overbooking")
 async def solve_overbooking(
     date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """AI-powered overbooking resolution suggestions"""
     target_date = datetime.fromisoformat(date).date()
@@ -1002,7 +1012,8 @@ async def solve_overbooking(
 @router.post("/ai/recommend-room-moves")
 async def recommend_room_moves(
     date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """AI recommendations for optimal room moves (upgrades, VIP service)"""
     target_date = datetime.fromisoformat(date).date()
@@ -1124,7 +1135,8 @@ async def recommend_room_moves(
 async def recommend_rates(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """AI-powered dynamic rate recommendations"""
     start = datetime.fromisoformat(start_date).date()
@@ -1228,7 +1240,8 @@ async def recommend_rates(
 @router.post("/ai/predict-no-shows")
 async def predict_no_shows_detailed(
     date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """AI prediction of high-risk no-show bookings"""
     target_date = datetime.fromisoformat(date).date()
@@ -1391,7 +1404,8 @@ async def get_ai_activity_log(
 async def analyze_review_sentiment_ai(
     review_text: str,
     source: str = "manual",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """
     AI-powered sentiment analysis for reviews
@@ -1455,7 +1469,8 @@ async def analyze_review_sentiment_ai(
 async def generate_auto_reply(
     review_id: str,
     template_type: str = "standard",  # standard, apology, thank_you
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """
     Generate auto-reply for reviews using templates
@@ -1569,7 +1584,8 @@ async def get_reviews_by_source(
 @router.post("/ai/guest-persona/analyze/{guest_id}")
 async def analyze_guest_persona(
     guest_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """
     AI Guest Persona Analysis
@@ -1866,7 +1882,8 @@ async def get_all_guest_insights(
 
 @router.post("/ai/predictive-maintenance/analyze")
 async def analyze_predictive_maintenance(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """
     Predictive Maintenance Analysis
@@ -2007,7 +2024,8 @@ async def get_predictive_maintenance_dashboard(
 @router.post("/ai/housekeeping/smart-schedule")
 async def ai_housekeeping_smart_scheduler(
     date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
 ):
     """
     AI Housekeeping Scheduler
@@ -2145,7 +2163,8 @@ async def ai_housekeeping_smart_scheduler(
 
 @router.post("/ai/loyalty/auto-tier-upgrade")
 async def auto_loyalty_tier_upgrade(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
 ):
     """
     Automatic Loyalty Tier Upgrade
@@ -2293,7 +2312,8 @@ async def auto_loyalty_tier_upgrade(
 @router.post("/ml/rms/train")
 async def train_rms_model(
     historical_days: int = 730,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
     Train RMS (Revenue Management System) ML Model
@@ -2344,7 +2364,8 @@ async def train_rms_model(
 @router.post("/ml/persona/train")
 async def train_persona_model(
     num_guests: int = 400,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
     Train Guest Persona ML Model
@@ -2384,7 +2405,8 @@ async def train_persona_model(
 @router.post("/ml/predictive-maintenance/train")
 async def train_predictive_maintenance_model(
     num_samples: int = 1000,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
     Train Predictive Maintenance ML Model
@@ -2425,7 +2447,8 @@ async def train_predictive_maintenance_model(
 @router.post("/ml/hk-scheduler/train")
 async def train_hk_scheduler_model(
     num_days: int = 365,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
     Train Housekeeping Scheduler ML Model
@@ -2465,7 +2488,8 @@ async def train_hk_scheduler_model(
 
 @router.post("/ml/train-all")
 async def train_all_models(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
     Train ALL ML Models in sequence
@@ -2626,10 +2650,10 @@ async def get_ml_models_status(
 @cached(ttl=900, key_prefix="ai_occupancy_pred")
 async def get_occupancy_prediction(
     days: int = 30,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: AI occupancy forecast
 ):
     """Get AI-powered occupancy prediction for next N days"""
-    current_user = await get_current_user(credentials)
 
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
@@ -2697,10 +2721,10 @@ async def get_occupancy_prediction(
 @router.get("/ai/pms/guest-patterns")
 @cached(ttl=900, key_prefix="ai_guest_patterns")
 async def get_guest_patterns(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v86 DV: AI guest patterns analytics
 ):
     """AI-powered guest behavior pattern analysis"""
-    current_user = await get_current_user(credentials)
 
     from datetime import datetime, timedelta
 

@@ -4,6 +4,7 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -77,7 +78,8 @@ class InventoryItemCreate(BaseModel):
 @router.post("/housekeeping/inventory/item")
 async def create_inventory_item(
     item: InventoryItemCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("housekeeping")),  # v92 DW
 ):
     """Create a new inventory item"""
     current_user = await get_current_user(credentials)
@@ -119,7 +121,8 @@ class InventoryUsage(BaseModel):
 async def record_inventory_usage(
     item_id: str,
     usage: InventoryUsage,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("housekeeping")),  # v92 DW
 ):
     """Record inventory usage"""
     current_user = await get_current_user(credentials)

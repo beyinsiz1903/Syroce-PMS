@@ -101,11 +101,16 @@ _replit_dev = os.environ.get("REPLIT_DEV_DOMAIN")
 if _replit_dev and f"https://{_replit_dev}" not in _cors_origins:
     _cors_origins.append(f"https://{_replit_dev}")
 
-# Allow any *.replit.dev / *.replit.app preview when not in production
+# Bug AL: previous regex allowed ANY *.replit.app subdomain — an attacker
+# could publish their own evil.replit.app and ride credentials=true to
+# perform CSRF/XHR against a logged-in user. Production hosts MUST be
+# enumerated explicitly via CORS_ORIGINS or _always_allowed; we only
+# auto-allow ephemeral *.replit.dev preview hosts here (those are
+# tied to a single Repl owner and not registrable by attackers).
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "development").lower()
 _cors_origin_regex = None
 if _env_mode != "production":
-    _cors_origin_regex = r"^https://[a-z0-9-]+\.(replit\.dev|replit\.app|riker\.replit\.dev)$"
+    _cors_origin_regex = r"^https://[a-z0-9-]+\.(replit\.dev|riker\.replit\.dev)$"
 
 # Avoid the wildcard + credentials CORS protocol violation
 _allow_credentials = True
@@ -167,6 +172,15 @@ try:
     app.add_middleware(RequestTracingMiddleware)
 except Exception as _trace_err:
     logger.warning("Request tracing middleware skipped: %s", _trace_err)
+
+# Upload body-size guard (v39 — architect feedback D): fail-fast on oversized
+# multipart/JSON bodies via Content-Length, before downstream parsers spool to disk.
+try:
+    from middleware.upload_size_limit import UploadSizeLimitMiddleware
+    app.add_middleware(UploadSizeLimitMiddleware)
+    logger.info("Upload size-limit middleware activated")
+except Exception as _usl_err:
+    logger.warning("Upload size-limit middleware skipped: %s", _usl_err)
 
 # PII masking disabled at middleware level to avoid GZip conflicts.
 # Masking is applied at the application layer via security/sensitive_output.py
@@ -243,6 +257,22 @@ def _redact_pii(value):
     if isinstance(value, str) and len(value) > 200:
         return value[:50] + "...[truncated]"
     return value
+
+from core.tenant_db import TenantViolationError as _TenantViolationError  # Bug AR follow-up
+
+@app.exception_handler(_TenantViolationError)
+async def _tenant_violation_handler(request: Request, exc: _TenantViolationError):
+    # Bug AR (architect follow-up, April 2026): map TenantViolationError → 403
+    # so cross-tenant smuggle attempts return a controlled authorization
+    # response rather than a noisy 500 + stack trace, while still logging
+    # the violation server-side for forensics.
+    import logging as _log
+    _log.getLogger("core.tenant_db").warning(
+        "tenant violation rejected: path=%s method=%s detail=%s",
+        request.url.path, request.method, str(exc),
+    )
+    return JSONResponse(status_code=403, content={"detail": "Yetkisiz islem"})
+
 
 @app.exception_handler(RequestValidationError)
 async def _validation_handler(request: Request, exc: RequestValidationError):
@@ -523,6 +553,72 @@ async def _startup():
         await ensure_demo_user(_db)
     except Exception as _e:
         logging.getLogger(__name__).warning("demo user seed skipped: %s", _e)
+    # v109 Bug DAJ round-4 (architect P1 follow-up): startup security guardrails.
+    # Several env vars exist as breakglass / dev escape hatches that silently
+    # disable webhook signature checks, retention floors, or restore safety. If
+    # any are enabled in a production-flagged environment, log a CRITICAL line
+    # at every boot so it appears in deployment log monitoring and can be caught
+    # by operators before damage. We do not abort boot (some breakglass paths
+    # are legitimate during incidents) but we make the override impossible to
+    # miss in log review.
+    import os as _os
+    _env = (_os.environ.get("ENVIRONMENT") or _os.environ.get("APP_ENV") or "").lower()
+    _is_prod = _env in ("production", "prod", "live")
+    _bypass_flags = [
+        "ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK",
+        "ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK",
+        "ALLOW_UNSIGNED_CM_WEBHOOK",
+        "ALLOW_AUDIT_RETENTION_OVERRIDE",
+        "ENABLE_BACKUP_RESTORE",
+    ]
+    _enabled = [f for f in _bypass_flags if _os.environ.get(f) == "1"]
+    if _enabled:
+        _log = logging.getLogger("security.startup_guardrail")
+        for _flag in _enabled:
+            _log.critical(
+                "SECURITY_BYPASS_ENV_ENABLED flag=%s env=%s prod=%s — webhook/audit/restore "
+                "safety check is DISABLED. Verify this is intentional and time-bounded.",
+                _flag, _env or "unset", _is_prod,
+            )
+        if _is_prod:
+            _log.critical(
+                "SECURITY_BYPASS_ENV_PRODUCTION count=%d flags=%s — bypass(es) active in "
+                "PRODUCTION environment. Disable at first opportunity.",
+                len(_enabled), ",".join(_enabled),
+            )
+    # v109 Bug DAJ round-5 (architect P1 follow-up): trusted-proxy misconfig.
+    # If EXELY_TRUST_FORWARDED=1 is set without EXELY_TRUSTED_PROXY_IPS, the
+    # webhook code falls back to peer IP (safe by design), but the operator
+    # almost certainly intended XFF to be honored — silently degrading to
+    # peer-only allowlist matching can cause production outages OR mask an
+    # attacker's spoofed XFF (the webhook now ignores it). Surface the
+    # misconfig at boot.
+    if _os.environ.get("EXELY_TRUST_FORWARDED") == "1":
+        _spec = (_os.environ.get("EXELY_TRUSTED_PROXY_IPS") or "").strip()
+        _g = logging.getLogger("security.startup_guardrail")
+        if not _spec:
+            _g.critical(
+                "EXELY_TRUST_FORWARDED=1 without EXELY_TRUSTED_PROXY_IPS — "
+                "X-Forwarded-For will NOT be honored. Set EXELY_TRUSTED_PROXY_IPS "
+                "to your edge proxy IP/CIDR list to enable real-client extraction."
+            )
+        else:
+            import ipaddress as _ipa2
+            _valid = 0
+            for _tok in _spec.split(","):
+                _tok = _tok.strip()
+                if not _tok:
+                    continue
+                try:
+                    _ipa2.ip_network(_tok, strict=False)
+                    _valid += 1
+                except ValueError:
+                    pass
+            if _valid == 0:
+                _g.critical(
+                    "EXELY_TRUSTED_PROXY_IPS contains no valid IP/CIDR entries — "
+                    "X-Forwarded-For will NOT be honored. Verify configuration."
+                )
 
 
 @app.on_event("shutdown")

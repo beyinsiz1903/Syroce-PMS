@@ -8,6 +8,7 @@ and injecting test events.
 Prefix: /api/channel-manager/ingest/
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -78,6 +79,7 @@ async def get_ingest_status(
 async def inject_event(
     req: InjectEventRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Inject a raw event into the pipeline for testing or manual ingestion.
@@ -133,6 +135,7 @@ async def inject_event(
 async def inject_and_process(
     req: InjectEventRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Inject an event and process it immediately through the pipeline."""
     try:
@@ -185,6 +188,7 @@ async def inject_and_process(
 @router.post("/workers/process")
 async def trigger_process(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger the ingest processor to process pending events."""
     result = await trigger_ingest_now()
@@ -194,6 +198,7 @@ async def trigger_process(
 @router.post("/workers/replay")
 async def trigger_replay(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger the replay worker to retry failed events."""
     result = await trigger_replay_now()
@@ -204,6 +209,7 @@ async def trigger_replay(
 async def trigger_pull_worker(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger a pull worker for a specific provider."""
     try:

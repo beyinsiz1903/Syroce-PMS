@@ -28,6 +28,7 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_roles
 from core.tenant_db import get_system_db
 from models.schemas import User, UserRole
+from modules.pms_core.role_permission_service import require_op  # v76 Bug DL
 
 # Cross-property by definition spans tenants — bypass the per-tenant guard
 # by using the raw system motor handle. We re-apply chain scoping ourselves
@@ -263,7 +264,10 @@ async def get_unified_profile(
 # ── Chain loyalty summary ────────────────────────────────────────
 @router.get("/guests/loyalty-summary")
 @_cached(ttl=180, key_prefix="cross_loyalty_summary")
-async def loyalty_summary(current_user: User = Depends(get_current_user)):
+async def loyalty_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),  # v76 Bug DL: PII chain loyalty
+):
     """Identify guests appearing at multiple chain properties (loyal travelers)."""
     tenant_ids = await _chain_tenant_ids(current_user)
     name_map = await _tenant_name_map(tenant_ids)
@@ -327,6 +331,7 @@ async def merge_guest_profiles(
     primary_id: str,
     payload: MergeRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Merge a duplicate guest profile into the primary record.
 
@@ -396,9 +401,10 @@ async def merge_guest_profiles(
             detail="Repoint produced no updates while linked records exist; aborted",
         )
 
-    # Archive duplicate (soft delete) — pin to the immutable _id we resolved
+    # Archive duplicate (soft delete) — pin to the immutable _id we resolved.
+    # v109 round-9 IDOR DiD: also assert tenant on the update filter.
     await db.guests.update_one(
-        {"_id": duplicate["_id"]},
+        {"_id": duplicate["_id"], "tenant_id": dup_tenant},
         {"$set": {
             "archived": True,
             "archived_at": datetime.now(UTC).isoformat(),
@@ -413,7 +419,7 @@ async def merge_guest_profiles(
                          "loyalty_tier", "preferences", "vip", "company"}}
         if safe:
             await db.guests.update_one(
-                {"_id": primary["_id"]},
+                {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
                 {"$set": safe},
             )
 

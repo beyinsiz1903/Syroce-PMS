@@ -3,21 +3,19 @@ Bootstrap: Middleware Registry
 All middleware configuration in one place.
 """
 from fastapi import FastAPI
-from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 
 def register_middleware(app: FastAPI) -> None:
     """Attach all middleware to the FastAPI app in the correct order."""
 
-    # CORS – must be first
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Bug AL: previously this registered a permissive CORSMiddleware with
+    # `allow_origins=["*"]` + `allow_credentials=True` (a CORS protocol
+    # violation that browsers normally ignore, but it ALSO caused a
+    # second CORS layer that could shadow the strict regex configured in
+    # server.py). The single authoritative CORS layer now lives in
+    # `backend/server.py` (origin allow-list + tightened *.replit.dev
+    # regex). Do not re-introduce a wildcard CORSMiddleware here.
 
     # GZip compression for responses > 500 bytes
     app.add_middleware(GZipMiddleware, minimum_size=500)

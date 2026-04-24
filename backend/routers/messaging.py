@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])
@@ -117,7 +118,9 @@ def _mask(value: str, show: int = 4) -> str:
 
 
 @router.post("/settings/email")
-async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends(get_current_user)):
+async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
+):
     """Save or update SMTP email configuration."""
     db = _get_db()
     creds = {
@@ -153,7 +156,9 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
 
 
 @router.post("/settings/whatsapp")
-async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = Depends(get_current_user)):
+async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
+):
     """Save or update WhatsApp Business API configuration."""
     db = _get_db()
     creds = {
@@ -185,7 +190,9 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
 
 
 @router.post("/settings/test-connection")
-async def test_connection(current_user: User = Depends(get_current_user)):
+async def test_connection(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
+):
     """Test all configured providers."""
     svc = _get_service()
     results = await svc.check_all_providers(current_user.tenant_id)
@@ -206,7 +213,9 @@ async def list_providers(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/providers/health-check")
-async def check_provider_health(current_user: User = Depends(get_current_user)):
+async def check_provider_health(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+):
     svc = _get_service()
     results = await svc.check_all_providers(current_user.tenant_id)
     return {"results": results}
@@ -242,7 +251,9 @@ class TemplateReq(BaseModel):
 
 
 @router.post("/templates")
-async def create_template(req: TemplateReq, current_user: User = Depends(get_current_user)):
+async def create_template(req: TemplateReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     from modules.messaging.models import new_message_template
     doc = new_message_template(
         current_user.tenant_id, req.name, req.category, req.channel,
@@ -255,7 +266,9 @@ async def create_template(req: TemplateReq, current_user: User = Depends(get_cur
 
 
 @router.put("/templates/{template_id}")
-async def update_template(template_id: str, req: dict, current_user: User = Depends(get_current_user)):
+async def update_template(template_id: str, req: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+):
     db = _get_db()
     allowed = ["name", "subject", "body_template", "variables", "is_active", "category"]
     updates = {k: v for k, v in req.items() if k in allowed}
@@ -269,7 +282,9 @@ async def update_template(template_id: str, req: dict, current_user: User = Depe
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, current_user: User = Depends(get_current_user)):
+async def delete_template(template_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v96 DW
+):
     db = _get_db()
     result = await db.messaging_templates.delete_one(
         {"id": template_id, "tenant_id": current_user.tenant_id}
@@ -297,7 +312,9 @@ class SendReq(BaseModel):
 
 
 @router.post("/send")
-async def send_message(req: SendReq, current_user: User = Depends(get_current_user)):
+async def send_message(req: SendReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     svc = _get_service()
     result = await svc.send_message(
         tenant_id=current_user.tenant_id, channel=req.channel, recipient=req.recipient,
@@ -309,7 +326,9 @@ async def send_message(req: SendReq, current_user: User = Depends(get_current_us
 
 
 @router.post("/retry/{delivery_id}")
-async def retry_delivery(delivery_id: str, current_user: User = Depends(get_current_user)):
+async def retry_delivery(delivery_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     svc = _get_service()
     return await svc.retry_failed(current_user.tenant_id, delivery_id)
 
@@ -376,7 +395,9 @@ async def list_automation_rules(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/automation/rules")
-async def create_automation_rule(req: AutomationRuleReq, current_user: User = Depends(get_current_user)):
+async def create_automation_rule(req: AutomationRuleReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     from modules.messaging.automation import TRIGGER_EVENTS, new_automation_rule
     if req.trigger_event not in TRIGGER_EVENTS:
         raise HTTPException(status_code=400, detail=f"Gecersiz tetikleme olayi: {req.trigger_event}")
@@ -391,7 +412,9 @@ async def create_automation_rule(req: AutomationRuleReq, current_user: User = De
 
 
 @router.put("/automation/rules/{rule_id}")
-async def update_automation_rule(rule_id: str, req: dict, current_user: User = Depends(get_current_user)):
+async def update_automation_rule(rule_id: str, req: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     db = _get_db()
     allowed = ["name", "template_id", "channel", "enabled", "delay_minutes", "trigger_event"]
     updates = {k: v for k, v in req.items() if k in allowed}
@@ -405,7 +428,9 @@ async def update_automation_rule(rule_id: str, req: dict, current_user: User = D
 
 
 @router.delete("/automation/rules/{rule_id}")
-async def delete_automation_rule(rule_id: str, current_user: User = Depends(get_current_user)):
+async def delete_automation_rule(rule_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     db = _get_db()
     result = await db.messaging_automation_rules.delete_one(
         {"id": rule_id, "tenant_id": current_user.tenant_id}
@@ -416,7 +441,9 @@ async def delete_automation_rule(rule_id: str, current_user: User = Depends(get_
 
 
 @router.post("/automation/test/{rule_id}")
-async def test_automation_rule(rule_id: str, current_user: User = Depends(get_current_user)):
+async def test_automation_rule(rule_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     """Simulate a rule trigger with a fake booking for testing."""
     db = _get_db()
     rule = await db.messaging_automation_rules.find_one(
@@ -445,7 +472,9 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
 # ════════════════════════════════════════════════════════
 
 @router.post("/seed-demo")
-async def seed_demo_data(current_user: User = Depends(get_current_user)):
+async def seed_demo_data(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+):
     """Seed demo templates, delivery logs, and automation rules."""
     db = _get_db()
     tenant_id = current_user.tenant_id
@@ -706,7 +735,9 @@ async def get_scheduler_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user)):
+async def start_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     """Start the pre-arrival scheduler background task."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
     scheduler = get_pre_arrival_scheduler()
@@ -717,7 +748,9 @@ async def start_scheduler(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user)):
+async def stop_scheduler(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+):
     """Stop the pre-arrival scheduler."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
     scheduler = get_pre_arrival_scheduler()
@@ -726,7 +759,9 @@ async def stop_scheduler(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/scheduler/run-now")
-async def run_scheduler_now(current_user: User = Depends(get_current_user)):
+async def run_scheduler_now(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
+):
     """Manually trigger a pre-arrival scan right now."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
     scheduler = get_pre_arrival_scheduler()

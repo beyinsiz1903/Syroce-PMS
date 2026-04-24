@@ -22,6 +22,7 @@ from core.database import db
 from core.security import generate_qr_code, get_current_user, verify_password
 from core.twofa import (
     consume_backup_code,
+    consume_totp_counters,
     decrypt_secret,
     encrypt_secret,
     generate_backup_codes,
@@ -29,6 +30,7 @@ from core.twofa import (
     hash_backup_codes,
     provisioning_uri,
     verify_totp,
+    verify_totp_matching_counters,
 )
 from models.schemas import User
 
@@ -166,18 +168,41 @@ async def disable_2fa(
     if not doc.get("two_factor_enabled"):
         raise HTTPException(status_code=400, detail="2FA etkin değil")
 
+    # v48 (Bug CE): per-user throttle on the password verify. A stolen
+    # access_token would otherwise let an attacker brute-force the password
+    # here at bcrypt-throttled speed, completely bypassing login throttles.
+    from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    await _throttle(SENSITIVE_AUTH_USER, f"2fadis:{current_user.id}", "2FA kapatma denemesi")
+
     hashed = doc.get("hashed_password") or doc.get("password_hash") or doc.get("password", "")
     if not verify_password(payload.password, hashed):
         raise HTTPException(status_code=401, detail="Parola hatalı")
+    # success → reset throttle so legitimate UX isn't penalised
+    try:
+        await SENSITIVE_AUTH_USER.reset(f"2fadis:{current_user.id}")
+    except Exception:
+        pass
 
     secret = decrypt_secret(doc.get("two_factor_secret_enc", ""))
     backup_hashes = doc.get("two_factor_backup_codes") or []
-    matched_totp = verify_totp(secret, payload.code)
+    totp_counters = verify_totp_matching_counters(secret, payload.code)
+    matched_totp = bool(totp_counters)
     matched_backup = False
     if not matched_totp:
         matched_backup, _ = consume_backup_code(backup_hashes, payload.code)
     if not (matched_totp or matched_backup):
         raise HTTPException(status_code=401, detail="2FA kodu hatalı")
+
+    # Bug CB v45: claim ALL matching TOTP counters atomically so the same
+    # code cannot be reused for /disable, /regenerate-backup-codes, or
+    # /auth/2fa/verify within the same window (incl. adjacent-counter
+    # collisions).
+    if matched_totp:
+        won = await consume_totp_counters(db, current_user.id, totp_counters)
+        if not won:
+            raise HTTPException(
+                status_code=401, detail="Bu doğrulama kodu zaten kullanıldı"
+            )
 
     await db.users.update_one(
         {"id": current_user.id},
@@ -212,9 +237,25 @@ async def regenerate_backup_codes(
     doc = await _user_doc(current_user.id)
     if not doc.get("two_factor_enabled"):
         raise HTTPException(status_code=400, detail="2FA etkin değil")
+
+    # v48 (Bug CE): per-user throttle on TOTP brute-force surface.
+    from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    await _throttle(SENSITIVE_AUTH_USER, f"2farb:{current_user.id}", "yedek kod yenileme denemesi")
+
     secret = decrypt_secret(doc.get("two_factor_secret_enc", ""))
-    if not verify_totp(secret, payload.code):
+    totp_counters = verify_totp_matching_counters(secret, payload.code)
+    if not totp_counters:
         raise HTTPException(status_code=401, detail="2FA kodu hatalı")
+    try:
+        await SENSITIVE_AUTH_USER.reset(f"2farb:{current_user.id}")
+    except Exception:
+        pass
+    # Bug CB v45: claim ALL matching TOTP slots atomically (closes
+    # adjacent-counter collisions and cross-endpoint replay).
+    if not await consume_totp_counters(db, current_user.id, totp_counters):
+        raise HTTPException(
+            status_code=401, detail="Bu doğrulama kodu zaten kullanıldı"
+        )
 
     new_codes = generate_backup_codes()
     await db.users.update_one(

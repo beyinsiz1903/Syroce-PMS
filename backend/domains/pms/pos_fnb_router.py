@@ -3,6 +3,8 @@ PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +23,7 @@ from core.security import (
 )
 from models.enums import ChargeCategory
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, Order, OrderCreate, User
+from modules.pms_core.role_permission_service import require_op, require_module  # v89 DW
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:
@@ -210,7 +213,9 @@ class Alert(BaseModel):
 
 
 @router.post("/fnb/kitchen-order/{order_id}/complete")
-async def complete_kitchen_order(order_id: str, current_user: User = Depends(get_current_user)):
+async def complete_kitchen_order(order_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     await db.kitchen_orders.update_one(
         {'id': order_id},
         {'$set': {'status': 'ready', 'ready_at': datetime.now(UTC).isoformat()}}
@@ -223,7 +228,9 @@ async def complete_kitchen_order(order_id: str, current_user: User = Depends(get
 
 
 @router.post("/marketplace/orders", response_model=Order, dependencies=[Depends(require_feature("hidden_marketplace"))])
-async def create_order(order_data: OrderCreate, current_user: User = Depends(get_current_user)):
+async def create_order(order_data: OrderCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
     order = Order(tenant_id=current_user.tenant_id, **order_data.model_dump())
     order_dict = order.model_dump()
     order_dict['created_at'] = order_dict['created_at'].isoformat()
@@ -232,6 +239,7 @@ async def create_order(order_data: OrderCreate, current_user: User = Depends(get
 
 
 
+# noqa: cache-rbac — POS F&B orders operasyonel
 @router.get("/marketplace/orders", response_model=list[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
 @cached(ttl=300, key_prefix="marketplace_orders")  # Cache for 5 min
 async def get_orders(current_user: User = Depends(get_current_user)):
@@ -245,7 +253,8 @@ async def get_orders(current_user: User = Depends(get_current_user)):
 @router.post("/pos/transaction")
 async def create_pos_transaction(
     request: CreatePOSTransactionRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """Create POS transaction"""
     transaction = {
@@ -273,7 +282,8 @@ async def split_check(
     split_type: str,  # equal, by_item, custom
     split_count: int | None = 2,
     split_details: dict | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """
     Split restaurant check
@@ -359,7 +369,8 @@ async def transfer_table(
     outlet_id: str,
     transfer_all: bool = True,
     items_to_transfer: list[int] | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """Transfer items from one table to another"""
     # Get active transaction from source table
@@ -401,7 +412,8 @@ async def apply_happy_hour_discount(
     start_time: str,  # HH:MM
     end_time: str,
     applicable_categories: list[str] = [],
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """
     Apply happy hour discount
@@ -518,7 +530,8 @@ async def update_table_layout(
     position_y: float | None = None,
     seats: int | None = None,
     server_assigned: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """Update table layout - drag & drop positioning"""
     updates = {}
@@ -661,7 +674,8 @@ async def get_kitchen_display_orders(
 async def update_kitchen_order_status(
     order_id: str,
     new_status: str,  # preparing, ready, served
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """Update kitchen order status from KDS"""
     updates = {'status': new_status}
@@ -687,7 +701,8 @@ async def set_room_charge_restrictions(
     require_supervisor_approval: bool = False,
     allowed_categories: list[str] | None = None,
     restricted_hours: dict[str, str] | None = None,  # {"start": "02:00", "end": "06:00"}
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """
     Room charge restrictions
@@ -734,7 +749,8 @@ async def validate_room_charge(
     booking_id: str,
     amount: float,
     category: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """
     Validate if room charge is allowed
@@ -1097,7 +1113,8 @@ async def get_fnb_revenue_chart(
 @router.post("/pos/create-order")
 async def create_pos_order(
     data: POSOrderCreateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("pos")),  # v92 DW
 ):
     """Create a POS order with detailed items"""
     current_user = await get_current_user(credentials)
@@ -1374,7 +1391,8 @@ async def get_order_details(
 async def update_order_status(
     order_id: str,
     request: UpdateOrderStatusRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("pos")),  # v92 DW
 ):
     """
     Update order status (pending → preparing → ready → served)
@@ -1845,7 +1863,8 @@ async def get_low_stock_alerts(
 @router.post("/pos/mobile/stock-adjust")
 async def adjust_stock(
     request: StockAdjustRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),  # v89 DW
 ):
     """
     Adjust stock levels (in/out/adjustment)

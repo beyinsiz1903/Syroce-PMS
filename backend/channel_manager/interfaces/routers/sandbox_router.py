@@ -2,6 +2,7 @@
 Sandbox Simulation Router — API endpoints for running and viewing simulation results.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, Query
 
@@ -19,6 +20,7 @@ router = APIRouter(tags=["CM Sandbox Simulation"])
 async def run_simulation(
     providers: list[str] | None = Query(default=None, description="Providers to simulate: hotelrunner, exely"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Run full sandbox simulation for specified providers (default: all)."""
     engine = SandboxSimulationEngine()
@@ -69,6 +71,7 @@ async def get_timeline(
 async def cleanup_run(
     run_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Clean up sandbox data for a simulation run."""
     engine = SandboxSimulationEngine()

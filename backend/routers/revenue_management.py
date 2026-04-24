@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from cache_manager import cached
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 from modules.revenue_management.revenue_engine import RevenueManagementEngine
 
 router = APIRouter(prefix="/api/revenue-engine", tags=["revenue-engine"])
@@ -25,7 +26,12 @@ class ApplyRateRequest(BaseModel):
 
 @router.get("/booking-pace")
 @cached(ttl=300, key_prefix="revenue_booking_pace")
-async def api_booking_pace(target_date: str, lookback_days: int = 30, current_user: User = Depends(get_current_user)):
+async def api_booking_pace(
+    target_date: str,
+    lookback_days: int = 30,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: booking pace = revenue intel
+):
     """Get booking pace analysis for a target date."""
     return await engine.get_booking_pace(current_user.tenant_id, target_date, lookback_days)
 
@@ -100,6 +106,8 @@ async def api_revenue_dashboard(current_user: User = Depends(get_current_user)):
 # ── AUTOMATION ──
 
 @router.post("/apply-rate")
-async def api_apply_rate(req: ApplyRateRequest, current_user: User = Depends(get_current_user)):
+async def api_apply_rate(req: ApplyRateRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
+):
     """Apply a rate suggestion for a specific date."""
     return await engine.apply_rate_suggestion(current_user.tenant_id, req.target_date, req.new_rate, current_user.id)

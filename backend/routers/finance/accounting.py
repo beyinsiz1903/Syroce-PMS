@@ -18,6 +18,7 @@ except ImportError:
 
 from core.database import db
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from models.enums import PaymentStatus
 from models.schemas import (
@@ -156,7 +157,8 @@ async def create_supplier(
     phone: str | None = None,
     address: str | None = None,
     category: str = "general",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     # Supplier model imported at top
     supplier = Supplier(
@@ -184,7 +186,9 @@ async def get_suppliers(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/accounting/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     supplier = await db.suppliers.find_one({'id': supplier_id}, {'_id': 0})
     return supplier
@@ -198,7 +202,8 @@ async def create_bank_account(
     iban: str | None = None,
     currency: str = "USD",
     balance: float = 0.0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     # BankAccount model imported at top
     bank_account = BankAccount(
@@ -225,7 +230,9 @@ async def get_bank_accounts(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/accounting/bank-accounts/{account_id}")
-async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     account = await db.bank_accounts.find_one({'id': account_id}, {'_id': 0})
     return account
@@ -242,7 +249,8 @@ async def create_expense(
     payment_method: str | None = None,
     receipt_url: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     # Expense model imported at top
 
@@ -322,7 +330,9 @@ async def get_expenses(
 
 
 @router.put("/accounting/expenses/{expense_id}")
-async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+):
     await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     expense = await db.expenses.find_one({'id': expense_id}, {'_id': 0})
     return expense
@@ -340,7 +350,8 @@ async def create_inventory_item(
     supplier_id: str | None = None,
     location: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     # InventoryItem model imported at top
     item = InventoryItem(
@@ -386,7 +397,8 @@ async def create_stock_movement(
     unit_cost: float,
     reference: str | None = None,
     notes: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     # StockMovement model imported at top
 
@@ -441,7 +453,8 @@ class AccountingInvoiceCreateRequest(BaseModel):
 @router.post("/accounting/invoices")
 async def create_accounting_invoice(
     request: AccountingInvoiceCreateRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     # Models are now imported at the top of the file
 
@@ -592,7 +605,9 @@ async def get_accounting_invoices(
 
 
 @router.put("/accounting/invoices/{invoice_id}")
-async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
+):
     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
         updates['payment_date'] = datetime.now(UTC).isoformat()
 
@@ -633,7 +648,8 @@ async def get_cash_flow(
 async def get_profit_loss_report(
     start_date: str,
     end_date: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     # Get all income
     invoices = await db.accounting_invoices.find({
@@ -713,7 +729,10 @@ async def get_vat_report(
 
 @router.get("/accounting/reports/balance-sheet")
 @cached(ttl=300, key_prefix="report_balance_sheet")  # Cache for 5 minutes
-async def get_balance_sheet(current_user: User = Depends(get_current_user)):
+async def get_balance_sheet(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+):
     tenant_id = current_user.tenant_id
 
     async def _sum_cash():
@@ -793,9 +812,9 @@ async def get_balance_sheet(current_user: User = Depends(get_current_user)):
 @router.get("/accounting/dashboard")
 @cached(ttl=600, key_prefix="accounting_dashboard")  # Cache for 10 minutes
 async def get_accounting_dashboard(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
-    current_user = await get_current_user(credentials)
 
     # Get current month data
     today = datetime.now(UTC)
@@ -847,7 +866,8 @@ async def get_currencies(current_user: User = Depends(get_current_user)):
 @router.post("/accounting/currency-rates")
 async def create_currency_rate(
     request: CreateCurrencyRateRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     """Create or update currency exchange rate"""
     rate = {
@@ -894,7 +914,8 @@ async def get_currency_rates(
 @router.post("/accounting/convert-currency")
 async def convert_currency(
     request: ConvertCurrencyRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     """Convert amount between currencies"""
     # If same currency, no conversion needed
@@ -970,7 +991,8 @@ async def convert_currency(
 @router.post("/accounting/invoices/multi-currency")
 async def create_multi_currency_invoice(
     request: CreateMultiCurrencyInvoiceRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Create invoice in any currency with auto-conversion to TRY"""
     # Calculate totals in invoice currency
@@ -1048,7 +1070,8 @@ async def create_multi_currency_invoice(
 @router.post("/accounting/invoices/from-folio")
 async def generate_invoice_from_folio(
     request: GenerateInvoiceFromFolioRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Generate accounting invoice from PMS folio"""
     # Get folio
@@ -1148,16 +1171,21 @@ async def generate_invoice_from_folio(
 
     # Generate E-Fatura if requested
     if request.include_efatura:
+        # Bug AP (April 2026): every interpolation goes through xml.sax.saxutils
+        # so user-controlled fields can't break out of their elements/attributes
+        # and inject arbitrary UBL nodes (which would corrupt the GİB submission
+        # or, worse, smuggle alternate billing data past tax controls).
+        from xml.sax.saxutils import escape as _xe, quoteattr as _qa
         efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{invoice_number}</ID>
-    <IssueDate>{invoice['issue_date']}</IssueDate>
+    <ID>{_xe(str(invoice_number))}</ID>
+    <IssueDate>{_xe(str(invoice['issue_date']))}</IssueDate>
     <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <DocumentCurrencyCode>{request.invoice_currency}</DocumentCurrencyCode>
+    <DocumentCurrencyCode>{_xe(str(request.invoice_currency))}</DocumentCurrencyCode>
     <LineCountNumeric>{len(invoice_items)}</LineCountNumeric>
     <LegalMonetaryTotal>
-        <TaxExclusiveAmount currencyID="{request.invoice_currency}">{invoice['subtotal']}</TaxExclusiveAmount>
-        <TaxInclusiveAmount currencyID="{request.invoice_currency}">{invoice['total']}</TaxInclusiveAmount>
+        <TaxExclusiveAmount currencyID={_qa(str(request.invoice_currency))}>{_xe(str(invoice['subtotal']))}</TaxExclusiveAmount>
+        <TaxInclusiveAmount currencyID={_qa(str(request.invoice_currency))}>{_xe(str(invoice['total']))}</TaxInclusiveAmount>
     </LegalMonetaryTotal>
 </Invoice>"""
 
@@ -1228,7 +1256,8 @@ async def get_invoice_efatura_status(
 @router.post("/accounting/invoices/{invoice_id}/generate-efatura")
 async def generate_efatura_for_invoice(
     invoice_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Generate E-Fatura for existing accounting invoice"""
     invoice = await db.accounting_invoices.find_one({
@@ -1252,14 +1281,19 @@ async def generate_efatura_for_invoice(
             'status': existing_efatura.get('status')
         }
 
-    # Generate E-Fatura XML
+    # Generate E-Fatura XML — Bug AP: customer_name (and every other field)
+    # comes from user input. xml.sax.saxutils.escape neutralizes `<`, `>`, `&`;
+    # quoteattr handles attribute values including embedded quotes. Without
+    # this, customer_name=`</Name>...<EVIL>...</EVIL><Name>x` smuggles arbitrary
+    # nodes into the UBL tree.
+    from xml.sax.saxutils import escape as _xe, quoteattr as _qa
     currency = invoice.get('currency', 'TRY')
     efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{invoice.get('invoice_number')}</ID>
-    <IssueDate>{invoice.get('issue_date')}</IssueDate>
+    <ID>{_xe(str(invoice.get('invoice_number') or ''))}</ID>
+    <IssueDate>{_xe(str(invoice.get('issue_date') or ''))}</IssueDate>
     <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <DocumentCurrencyCode>{currency}</DocumentCurrencyCode>
+    <DocumentCurrencyCode>{_xe(str(currency))}</DocumentCurrencyCode>
     <LineCountNumeric>{len(invoice.get('items', []))}</LineCountNumeric>
     <AccountingSupplierParty>
         <Party>
@@ -1271,13 +1305,13 @@ async def generate_efatura_for_invoice(
     <AccountingCustomerParty>
         <Party>
             <PartyName>
-                <Name>{invoice.get('customer_name', 'N/A')}</Name>
+                <Name>{_xe(str(invoice.get('customer_name') or 'N/A'))}</Name>
             </PartyName>
         </Party>
     </AccountingCustomerParty>
     <LegalMonetaryTotal>
-        <TaxExclusiveAmount currencyID="{currency}">{invoice.get('subtotal', 0)}</TaxExclusiveAmount>
-        <TaxInclusiveAmount currencyID="{currency}">{invoice.get('total', 0)}</TaxInclusiveAmount>
+        <TaxExclusiveAmount currencyID={_qa(str(currency))}>{_xe(str(invoice.get('subtotal', 0)))}</TaxExclusiveAmount>
+        <TaxInclusiveAmount currencyID={_qa(str(currency))}>{_xe(str(invoice.get('total', 0)))}</TaxInclusiveAmount>
     </LegalMonetaryTotal>
 </Invoice>"""
 
@@ -1336,7 +1370,8 @@ async def get_efatura_settings(current_user: User = Depends(get_current_user)):
 @router.post("/efatura/send/{invoice_id}")
 async def send_efatura(
     invoice_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     # Update invoice status
     await db.invoices.update_one(
@@ -1352,7 +1387,8 @@ async def send_efatura(
 @router.post("/efatura/generate/{invoice_id}")
 async def generate_efatura(
     invoice_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Generate E-Fatura XML for GIB"""
     invoice = await db.accounting_invoices.find_one(
@@ -1416,7 +1452,8 @@ async def generate_efatura(
 @router.post("/efatura/send-to-gib/{invoice_id}")
 async def send_efatura_to_gib(
     invoice_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Send E-Fatura to GIB (Turkish Revenue Administration)"""
     efatura = await db.efatura_records.find_one(
@@ -1459,7 +1496,8 @@ async def send_statement_email(
     company_id: str,
     email: str | None = None,
     include_details: bool = True,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """
     Send account statement to company with one click

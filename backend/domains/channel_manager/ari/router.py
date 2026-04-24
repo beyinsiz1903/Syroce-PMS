@@ -15,6 +15,8 @@ GET  /api/channel-manager/ari/stats
 GET  /api/channel-manager/ari/engine-stats
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v92 DW
+from fastapi import Depends  # v92 DW
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -37,7 +39,9 @@ router = APIRouter(prefix="/api/channel-manager/ari", tags=["ARI Push Engine"])
 
 
 @router.post("/events/publish")
-async def publish_event(req: PublishARIEventRequest):
+async def publish_event(req: PublishARIEventRequest,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Publish an ARI change event into the push pipeline."""
     event = ARIChangeEvent(
         tenant_id=req.tenant_id,
@@ -83,14 +87,18 @@ async def list_change_sets(
 
 
 @router.post("/change-sets/{cs_id}/push")
-async def force_push_change_set(cs_id: str):
+async def force_push_change_set(cs_id: str,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Force push a specific change set."""
     result = await outbound_service.force_push_change_set(cs_id)
     return result
 
 
 @router.post("/push")
-async def push_pending(req: PushChangeSetsRequest):
+async def push_pending(req: PushChangeSetsRequest,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Process and push pending change sets."""
     result = await outbound_service.push_pending_changes(
         req.tenant_id, req.provider, req.limit
@@ -99,7 +107,9 @@ async def push_pending(req: PushChangeSetsRequest):
 
 
 @router.post("/resync")
-async def resync(req: ResyncRequest):
+async def resync(req: ResyncRequest,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Trigger a full resync for a property+provider."""
     result = await outbound_service.resync_property(
         req.tenant_id, req.property_id, req.provider, req.scope
@@ -134,7 +144,9 @@ async def list_drift_states(
 
 
 @router.post("/drift/check")
-async def check_drift(req: DriftCheckRequest):
+async def check_drift(req: DriftCheckRequest,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Run drift check (requires PMS+provider snapshots, uses mock data for now)."""
     # In production, this would pull real snapshots
     report = await drift_worker.check_drift(
@@ -145,7 +157,9 @@ async def check_drift(req: DriftCheckRequest):
 
 
 @router.post("/drift/reconcile")
-async def reconcile(req: DriftCheckRequest):
+async def reconcile(req: DriftCheckRequest,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Generate corrective change sets for detected drifts."""
     result = await drift_worker.reconcile_drift(
         req.tenant_id, req.property_id, req.provider
@@ -162,7 +176,9 @@ async def get_drift_worker_mode():
 
 
 @router.post("/drift/mode/{mode}")
-async def set_drift_worker_mode(mode: str):
+async def set_drift_worker_mode(mode: str,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """Set drift worker mode: 'normal' (2min, changed) or 'recovery' (30s, full)."""
     result = set_drift_mode(mode)
     if "error" in result:
@@ -195,7 +211,9 @@ async def get_provider_checklist(provider: str):
 
 
 @router.post("/test-harness/run/{provider}")
-async def run_provider_test(provider: str, step: str | None = None):
+async def run_provider_test(provider: str, step: str | None = None,
+    _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
+):
     """
     Run provider validation test(s).
     If step is provided, runs only that step; otherwise runs all steps.

@@ -11,6 +11,7 @@ API endpoints for the runtime enforcement layers:
   6. Rollout Framework — controlled live deployment
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -61,6 +62,7 @@ async def hard_fail_stats(
 async def release_hard_fail(
     request: ReleaseQuarantineRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Release quarantined change sets after mapping fix."""
     released = await release_quarantine(
@@ -92,6 +94,7 @@ async def auto_heal_stats(
 async def run_auto_heal(
     request: AutoHealRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Trigger an auto-heal cycle."""
     result = await run_auto_heal_cycle(
@@ -131,6 +134,7 @@ async def push_loop_status(
 @router.post("/push-loop/start")
 async def push_loop_start(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Start the push loop worker."""
     worker = get_push_worker()
@@ -141,6 +145,7 @@ async def push_loop_start(
 @router.post("/push-loop/stop")
 async def push_loop_stop(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Stop the push loop worker."""
     worker = get_push_worker()
@@ -151,6 +156,7 @@ async def push_loop_stop(
 @router.post("/push-loop/pause")
 async def push_loop_pause(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Pause the push loop worker."""
     worker = get_push_worker()
@@ -161,6 +167,7 @@ async def push_loop_pause(
 @router.post("/push-loop/resume")
 async def push_loop_resume(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Resume the push loop worker."""
     worker = get_push_worker()
@@ -310,6 +317,7 @@ class SafeReleaseRequest(BaseModel):
 async def quarantine_check_release(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Safe release guard: validates mapping is fixed before allowing release."""
     from domains.channel_manager.quarantine_service import check_safe_release
@@ -325,6 +333,7 @@ async def quarantine_check_release(
 async def quarantine_safe_release(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Safe release: check mapping validity first, then release.
@@ -407,6 +416,7 @@ class SuppressNoiseRequest(BaseModel):
 @router.post("/actions/retry-safe")
 async def action_retry_safe(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Retry all retryable failed change sets."""
     from domains.channel_manager.safe_actions_service import retry_safe
@@ -417,6 +427,7 @@ async def action_retry_safe(
 async def action_release_quarantine(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Safe release from quarantine with full guard chain."""
     from domains.channel_manager.safe_actions_service import safe_release_quarantine
@@ -433,6 +444,7 @@ async def action_release_quarantine(
 async def action_revalidate_mapping(
     request: RevalidateMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Full mapping revalidation with diff output."""
     from domains.channel_manager.safe_actions_service import revalidate_mapping
@@ -447,6 +459,7 @@ async def action_revalidate_mapping(
 async def action_suppress_noise(
     request: SuppressNoiseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Suppress noisy notifications temporarily."""
     from domains.channel_manager.safe_actions_service import suppress_noise
@@ -474,6 +487,7 @@ async def rollout_state(
 @router.post("/rollout/initialize")
 async def rollout_initialize(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Initialize rollout at INTERNAL phase."""
     from domains.channel_manager.rollout_framework import initialize_rollout
@@ -492,6 +506,7 @@ async def rollout_gate_check(
 @router.post("/rollout/advance")
 async def rollout_advance(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Attempt phase transition. ONLY succeeds if all gate checks pass.

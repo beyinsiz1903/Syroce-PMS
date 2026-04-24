@@ -18,6 +18,7 @@ from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v82 DR
 from routers.webhook_retry_service import retry_dlq_item
 
 logger = logging.getLogger("ops_events_router")
@@ -42,6 +43,7 @@ async def list_ops_events(
     event_type: str = Query("", description="Filter by event_type prefix, e.g. 'webhook.delivery'"),
     channel: str = Query("", description="Filter by channel"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v87 DR-FOLLOWUP-1: ops/devops diagnostics
 ):
     """Operasyonel event'leri listele (son N kayit)."""
     tenant_id = _get_tenant(current_user)
@@ -50,7 +52,9 @@ async def list_ops_events(
     if severity:
         query["severity"] = severity
     if event_type:
-        query["event_type"] = {"$regex": f"^{event_type}"}
+        from security.query_safety import safe_search_term
+        if (_et := safe_search_term(event_type)):
+            query["event_type"] = {"$regex": f"^{_et}"}
     if channel:
         query["channel"] = channel
 
@@ -157,6 +161,7 @@ async def list_webhook_dlq(
 async def retry_webhook_dlq_item(
     dlq_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """DLQ'daki bir webhook teslimini manuel olarak retry et."""
     result = await retry_dlq_item(dlq_id)

@@ -16,6 +16,8 @@ Routes:
   GET  /pms/setup-status
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -40,6 +42,7 @@ router = APIRouter(prefix="/api", tags=["pms-services"])
 # Room Services
 # ═══════════════════════════════════════════════════════════════════
 
+# noqa: cache-rbac — oda servis kayıtları operasyonel (FO/HK/restoran/manager/admin)
 @router.get("/pms/room-services")
 @cached(ttl=300, key_prefix="pms_room_services")  # Cache for 5 min
 async def get_hotel_room_services(current_user: User = Depends(get_current_user)):
@@ -54,7 +57,9 @@ _ROOM_SERVICE_UPDATE_ALLOWED = {
 }
 
 @router.put("/pms/room-services/{service_id}")
-async def update_room_service(service_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user)):
+async def update_room_service(service_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     if not isinstance(updates, dict):
         raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
     safe = {k: v for k, v in updates.items() if k in _ROOM_SERVICE_UPDATE_ALLOWED}
@@ -97,7 +102,8 @@ async def get_staff_tasks(
 @router.post("/pms/staff-tasks")
 async def create_staff_task(
     task_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create a new staff task"""
     task = {
@@ -145,7 +151,8 @@ async def create_staff_task(
 async def update_staff_task(
     task_id: str,
     update_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update staff task status"""
     await db.staff_tasks.update_one(
@@ -166,7 +173,9 @@ async def update_staff_task(
 
 
 @router.delete("/pms/staff-tasks/{task_id}")
-async def delete_staff_task(task_id: str, current_user: User = Depends(get_current_user)):
+async def delete_staff_task(task_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     result = await db.staff_tasks.delete_one({'id': task_id, 'tenant_id': current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -220,7 +229,8 @@ async def get_allotment_contracts(
 @router.post("/pms/allotment-contracts")
 async def create_allotment_contract(
     contract_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create new allotment contract"""
     contract = {
@@ -246,7 +256,8 @@ async def create_allotment_contract(
 @router.post("/pms/allotment-contracts/{contract_id}/release")
 async def release_allotment_rooms(
     contract_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Release unused allotment rooms back to inventory"""
     contract = await db.allotment_contracts.find_one({
@@ -274,7 +285,9 @@ async def release_allotment_rooms(
 
 
 @router.delete("/pms/allotment-contracts/{contract_id}")
-async def delete_allotment_contract(contract_id: str, current_user: User = Depends(get_current_user)):
+async def delete_allotment_contract(contract_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     result = await db.allotment_contracts.delete_one({'id': contract_id, 'tenant_id': current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Contract not found")
@@ -301,8 +314,13 @@ async def get_group_reservations(
 @router.post("/pms/group-reservations")
 async def create_group_reservation(
     group_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
+    # Bug AR (mass-assignment): strip server-controlled keys before spread so
+    # caller cannot smuggle id/tenant_id/created_at into the persisted doc.
+    from core.helpers import strip_reserved
+    group_data = strip_reserved(group_data)
     group = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -315,7 +333,9 @@ async def create_group_reservation(
 
 
 @router.delete("/pms/group-reservations/{group_id}")
-async def delete_group_reservation(group_id: str, current_user: User = Depends(get_current_user)):
+async def delete_group_reservation(group_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+):
     result = await db.group_reservations.delete_one({'id': group_id, 'tenant_id': current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Group reservation not found")

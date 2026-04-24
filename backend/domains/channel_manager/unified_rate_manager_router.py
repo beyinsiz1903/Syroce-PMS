@@ -23,6 +23,7 @@ Endpoints:
   GET  /stop-sale-summary        — Stop sale ozet
 """
 import asyncio
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -519,6 +520,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
 async def unified_bulk_grid_update(
     request: UnifiedBulkUpdateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
@@ -1129,6 +1131,7 @@ async def get_agency_rate_overrides(
 async def set_agency_rate_overrides(
     request: AgencyRateOverrideRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Acente bazli ozel fiyat tanimla."""
     tenant_id = current_user.tenant_id
@@ -1172,6 +1175,7 @@ async def set_agency_rate_overrides(
 async def delete_agency_rate_overrides(
     agency_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Acentenin tum ozel fiyat tanimlarini sil."""
     tenant_id = current_user.tenant_id
@@ -1261,6 +1265,7 @@ async def get_pricing_settings(current_user: User = Depends(get_current_user)):
 async def update_pricing_settings(
     request: PricingSettingsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     tenant_id = current_user.tenant_id
     detection = await _detect_active_provider(tenant_id)
@@ -1362,6 +1367,7 @@ async def list_unified_stop_sale_schedules(
 async def create_unified_stop_sale_schedule(
     request: StopSaleScheduleCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
@@ -1389,6 +1395,7 @@ async def delete_unified_stop_sale_schedule(
     schedule_id: str,
     remove_stop_sale: bool = False,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     result = await db.stop_sale_schedules.delete_one(
@@ -1404,6 +1411,7 @@ async def update_unified_stop_sale_schedule(
     schedule_id: str,
     request: StopSaleScheduleUpdate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()

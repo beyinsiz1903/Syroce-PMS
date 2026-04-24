@@ -4,6 +4,7 @@ Exposes hardened night audit execution, status, items, resume, abort,
 plus legacy schedule management and financial reporting.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,7 +29,9 @@ def _admin_guard(user: User):
 # ═══════════════════════════════════════════════════════════════
 
 @router.post("/run")
-async def run_night_audit(request: RunNightAuditRequest, current_user: User = Depends(get_current_user)):
+async def run_night_audit(request: RunNightAuditRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("run_night_audit")),  # v101 DW
+):
     """Start a hardened night audit run."""
     _admin_guard(current_user)
     from core.night_audit_hardened import start_night_audit
@@ -52,7 +55,9 @@ async def run_night_audit(request: RunNightAuditRequest, current_user: User = De
 
 
 @router.get("/status")
-async def get_audit_status(current_user: User = Depends(get_current_user)):
+async def get_audit_status(current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     """Get current night audit status for this tenant."""
     from core.night_audit_hardened import get_run_status
     return await get_run_status(current_user.tenant_id)
@@ -64,6 +69,7 @@ async def list_runs(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """List night audit runs."""
     from core.night_audit_hardened import get_runs
@@ -71,7 +77,9 @@ async def list_runs(
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str, current_user: User = Depends(get_current_user)):
+async def get_run(run_id: str, current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     """Get a specific run by ID."""
     from core.night_audit_hardened import get_run_detail
     run = await get_run_detail(current_user.tenant_id, run_id)
@@ -87,6 +95,7 @@ async def get_items(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """List items for a specific run."""
     from core.night_audit_hardened import get_run_items
@@ -94,7 +103,9 @@ async def get_items(
 
 
 @router.post("/runs/{run_id}/resume")
-async def resume_run(run_id: str, current_user: User = Depends(get_current_user)):
+async def resume_run(run_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("run_night_audit")),  # v101 DW
+):
     """Resume a failed/blocked/partial run."""
     _admin_guard(current_user)
     from core.night_audit_hardened import resume_night_audit
@@ -110,7 +121,9 @@ async def resume_run(run_id: str, current_user: User = Depends(get_current_user)
 
 
 @router.post("/runs/{run_id}/abort")
-async def abort_run(run_id: str, current_user: User = Depends(get_current_user)):
+async def abort_run(run_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("run_night_audit")),  # v101 DW
+):
     """Abort a running/blocked/partial run."""
     _admin_guard(current_user)
     from core.night_audit_hardened import abort_night_audit
@@ -130,7 +143,9 @@ async def abort_run(run_id: str, current_user: User = Depends(get_current_user))
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/history")
-async def get_audit_history(limit: int = 20, skip: int = 0, current_user: User = Depends(get_current_user)):
+async def get_audit_history(limit: int = 20, skip: int = 0, current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     """Get night audit run history."""
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -139,7 +154,9 @@ async def get_audit_history(limit: int = 20, skip: int = 0, current_user: User =
 
 
 @router.get("/exceptions/{audit_id}")
-async def get_audit_exceptions(audit_id: str, current_user: User = Depends(get_current_user)):
+async def get_audit_exceptions(audit_id: str, current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_audit_exceptions(ctx, audit_id)
@@ -147,7 +164,9 @@ async def get_audit_exceptions(audit_id: str, current_user: User = Depends(get_c
 
 
 @router.get("/business-date")
-async def get_business_date(current_user: User = Depends(get_current_user)):
+async def get_business_date(current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_business_date(ctx)
@@ -155,7 +174,9 @@ async def get_business_date(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/schedule")
-async def get_schedule(current_user: User = Depends(get_current_user)):
+async def get_schedule(current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_schedule(ctx)
@@ -163,7 +184,9 @@ async def get_schedule(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/schedule")
-async def update_schedule(request: NightAuditScheduleRequest, current_user: User = Depends(get_current_user)):
+async def update_schedule(request: NightAuditScheduleRequest, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     _admin_guard(current_user)
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -172,7 +195,9 @@ async def update_schedule(request: NightAuditScheduleRequest, current_user: User
 
 
 @router.get("/schedule/status")
-async def get_schedule_status(current_user: User = Depends(get_current_user)):
+async def get_schedule_status(current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.get_schedule_status(ctx)
@@ -180,7 +205,9 @@ async def get_schedule_status(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/financial-summary")
-async def get_financial_summary(date: str = Query(None), current_user: User = Depends(get_current_user)):
+async def get_financial_summary(date: str = Query(None), current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -192,7 +219,9 @@ async def get_financial_summary(date: str = Query(None), current_user: User = De
 
 
 @router.get("/payment-reconciliation")
-async def get_payment_reconciliation(date: str = Query(None), current_user: User = Depends(get_current_user)):
+async def get_payment_reconciliation(date: str = Query(None), current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -207,6 +236,7 @@ async def get_payment_reconciliation(date: str = Query(None), current_user: User
 async def get_financial_report(
     start_date: str = Query(...), end_date: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     from domains.pms.night_audit.financial_service import financial_service
     ctx = OperationContext.from_user(current_user)
@@ -217,7 +247,9 @@ async def get_financial_report(
 
 
 @router.get("/integrity-check")
-async def get_integrity_check(date: str = Query(None), current_user: User = Depends(get_current_user)):
+async def get_integrity_check(date: str = Query(None), current_user: User = Depends(get_current_user),
+_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)

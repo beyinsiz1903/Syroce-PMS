@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 
 try:
     from cache_manager import cache, cached
@@ -139,7 +140,10 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
 
 @router.get("/summary")
 @cached(ttl=120, key_prefix="agent_arap_summary")  # Sprint 33: heavy ledger aggregate
-async def get_summary(current_user: User = Depends(get_current_user)):
+async def get_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v80 Bug DP: agency A/R aging
+):
     ledger = await _get_agency_ledger(current_user.tenant_id)
 
     total_receivable = sum(a["balance"] for a in ledger if a["balance"] > 0)
@@ -266,6 +270,7 @@ async def get_agency_transactions(
 async def record_payment(
     req: RecordPaymentRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
     if not agency:
@@ -309,6 +314,7 @@ async def list_payment_plans(
 async def create_payment_plan(
     req: CreatePaymentPlanRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
     if not agency:
@@ -356,6 +362,7 @@ async def create_payment_plan(
 async def update_installment(
     req: UpdatePaymentPlanInstallment,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     plan = await db.agency_payment_plans.find_one(
         {"tenant_id": current_user.tenant_id, "id": req.plan_id},

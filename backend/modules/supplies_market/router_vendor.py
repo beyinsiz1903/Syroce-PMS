@@ -159,20 +159,18 @@ async def vendor_upload_product_image(
     file: UploadFile = File(...),
     vendor_id: str = Depends(get_current_vendor_id),
 ):
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(400, "Sadece görsel dosyalar yüklenebilir")
-    ext = Path(file.filename or "").suffix.lower()[:10]
-    if ext not in _ALLOWED_EXT:
-        ext = ".jpg"
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Dosya boş")
-    if len(content) > _MAX_BYTES:
-        raise HTTPException(400, "Dosya çok büyük (max 5 MB)")
+    from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
+
+    # Magic-bytes verify (rejects SVG, PDF, spoofed-MIME polyglots and
+    # canonicalizes ext/content-type from the real decoded format).
+    content = await file.read(MAX_IMAGE_BYTES + 1)
+    _, ext = validate_image_bytes(
+        content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel"
+    )
 
     folder = _UPLOAD_DIR / "vendors" / vendor_id / "products"
     folder.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4()}{ext}"
+    filename = f"{uuid.uuid4().hex}{ext}"
     (folder / filename).write_bytes(content)
     url = f"/api/uploads/vendors/{vendor_id}/products/{filename}"
     return {"url": url}

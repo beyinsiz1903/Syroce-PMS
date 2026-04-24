@@ -18,7 +18,10 @@ async def _scheduler_loop():
     _scheduler_running = True
     logger.info("Night Audit Scheduler started (hardened)")
 
-    from core.database import db
+    # v42 round-6: cross-tenant scheduler reads schedules system-wide; the
+    # per-tenant audit work is wrapped in tenant_context() in _safe_run_audit.
+    from core.tenant_db import get_system_db
+    db = get_system_db()
 
     while _scheduler_running:
         try:
@@ -60,6 +63,7 @@ async def _safe_run_audit(tenant_id: str, db):
     """Execute scheduled audit using the hardened engine."""
     try:
         from core.night_audit_hardened import start_night_audit
+        from core.tenant_db import tenant_context
 
         # Get current business date
         settings = await db.tenant_settings.find_one(
@@ -67,12 +71,16 @@ async def _safe_run_audit(tenant_id: str, db):
         )
         bd = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
 
-        result = await start_night_audit(
-            tenant_id=tenant_id,
-            business_date=bd,
-            trigger_source="scheduler",
-            actor={"id": "system_scheduler", "email": "system"},
-        )
+        # v42 round-6: hardened engine touches tenant-scoped collections
+        # (bookings, folios, night_audit_runs, ...) via the proxy. Set
+        # tenant_context so STRICT_TENANT_MODE is satisfied downstream.
+        with tenant_context(tenant_id):
+            result = await start_night_audit(
+                tenant_id=tenant_id,
+                business_date=bd,
+                trigger_source="scheduler",
+                actor={"id": "system_scheduler", "email": "system"},
+            )
 
         status = "completed" if result.get("success") else "failed"
         error_msg = None if result.get("success") else result.get("error")

@@ -71,14 +71,18 @@ const EnhancedReservationCalendar = () => {
   const handleRateOverride = async (bookingId, newRate, reason) => {
     try {
       const token = localStorage.getItem('token');
+      // Bug CP fix — backend now expects query params (Query) not JSON body
       await axios.post(
         `/reservations/rate-override-panel`,
+        null,
         {
-          booking_id: bookingId,
-          new_rate: parseFloat(newRate),
-          override_reason: reason
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            booking_id: bookingId,
+            new_rate: parseFloat(newRate),
+            override_reason: reason,
+          },
+        }
       );
       toast.success('Fiyat geçersiz kılma başarılı');
       setShowRateOverride(false);

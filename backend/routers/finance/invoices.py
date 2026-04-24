@@ -15,6 +15,7 @@ except ImportError:
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from models.schemas import (
     Invoice,
     InvoiceCreate,
@@ -59,6 +60,7 @@ async def create_invoice(
 async def get_invoices(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("invoices")),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     invoices = await db.invoices.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     return invoices
@@ -78,7 +80,10 @@ async def update_invoice(
 
 @router.get("/invoices/stats")
 @cached(ttl=120, key_prefix="invoices_stats")  # Cache for 2 min - faster refresh
-async def get_invoice_stats(current_user: User = Depends(get_current_user)):
+async def get_invoice_stats(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+):
     invoices = await db.invoices.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     total_revenue = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'paid')
     pending_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') in ['draft', 'sent'])

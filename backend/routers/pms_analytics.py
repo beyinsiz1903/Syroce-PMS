@@ -3,6 +3,7 @@ PMS Advanced Analytics Router
 Channel Loss Analysis, Overbooking Heatmap, Rule Engine (Light), No-Show Prediction (Basic)
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -318,6 +319,7 @@ async def list_alert_rules(current_user: User = Depends(get_current_user)):
 async def create_alert_rule(
     req: AlertRuleCreate,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Create a new alert rule."""
     rule = {
@@ -344,6 +346,7 @@ async def create_alert_rule(
 async def delete_alert_rule(
     rule_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Delete an alert rule."""
     result = await db.alert_rules.delete_one(
@@ -359,6 +362,7 @@ async def delete_alert_rule(
 async def toggle_alert_rule(
     rule_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Toggle active/inactive state of a rule."""
     rule = await db.alert_rules.find_one(
@@ -381,6 +385,7 @@ async def toggle_alert_rule(
 async def evaluate_alert_rules(
     days: int = Query(default=7, ge=1, le=90),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Evaluate all active rules against recent data and generate alerts."""
     tenant_id = current_user.tenant_id

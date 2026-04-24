@@ -22,10 +22,13 @@ Endpoints:
     GET    /api/agency-portal/reservations - List own reservations
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel
 
 from core.database import db
@@ -133,7 +136,9 @@ async def _get_agency_user_from_token(token: str) -> dict:
 # ═══════════════════════════════════════════════════════════════════
 
 @router.post("/agencies")
-async def create_agency(data: AgencyCreate, current_user: User = Depends(get_current_user)):
+async def create_agency(data: AgencyCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Yeni acente olustur."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
@@ -182,7 +187,9 @@ async def get_agency(agency_id: str, current_user: User = Depends(get_current_us
 
 
 @router.put("/agencies/{agency_id}")
-async def update_agency(agency_id: str, data: AgencyUpdate, current_user: User = Depends(get_current_user)):
+async def update_agency(agency_id: str, data: AgencyUpdate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Acente guncelle."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
@@ -205,7 +212,9 @@ async def update_agency(agency_id: str, data: AgencyUpdate, current_user: User =
 
 
 @router.delete("/agencies/{agency_id}")
-async def delete_agency(agency_id: str, current_user: User = Depends(get_current_user)):
+async def delete_agency(agency_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Acenteyi devre disi birak."""
     _require_hotel_staff(current_user)
     await db.agencies.update_one(
@@ -218,7 +227,9 @@ async def delete_agency(agency_id: str, current_user: User = Depends(get_current
 # ─── Agency User Management ──────────────────────────────────────
 
 @router.post("/agencies/{agency_id}/users")
-async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_user: User = Depends(get_current_user)):
+async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Acente kullanicisi olustur."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
@@ -268,7 +279,9 @@ async def list_agency_users(agency_id: str, current_user: User = Depends(get_cur
 
 
 @router.delete("/agencies/users/{user_id}")
-async def delete_agency_user(user_id: str, current_user: User = Depends(get_current_user)):
+async def delete_agency_user(user_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+):
     """Acente kullanicisini sil."""
     _require_hotel_staff(current_user)
     result = await db.users.delete_one({
@@ -542,8 +555,15 @@ async def agency_portal_create_reservation(
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }
-    await db.bookings.insert_one(booking_doc)
-    booking_doc.pop("_id", None)
+    # v106 architect follow-up (race-safety): direct insert_one bypassed
+    # the room_night_locks atomic guard → double-booking risk on agency
+    # portal bookings. Now routed through create_booking_atomic so the
+    # unique compound index on (tenant_id, room_id, night_date) prevents
+    # concurrent agency requests from claiming the same room.
+    try:
+        booking_doc = await create_booking_atomic(booking_doc)
+    except BookingConflictError as conflict_err:
+        raise HTTPException(status_code=409, detail=str(conflict_err))
 
     return {
         "ok": True,

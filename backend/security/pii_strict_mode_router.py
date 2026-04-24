@@ -94,6 +94,7 @@ async def get_violations(
     return {"status": "ok", **result}
 
 
+# noqa: cache-rbac — _require_admin Depends zaten signature'da
 @router.get("/encryption-status")
 @cached(ttl=120, key_prefix="pii_encryption_status")
 async def get_encryption_status(user: User = Depends(_require_admin)):

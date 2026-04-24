@@ -10,6 +10,7 @@ Endpoints for:
 Prefix: /api/channel-manager/config/
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -148,6 +149,7 @@ async def save_credentials(
     provider: str,
     req: SaveCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Save encrypted provider credentials and create/update connection."""
     if provider not in PROVIDER_FIELDS:
@@ -224,6 +226,7 @@ async def get_credentials(
 async def delete_credentials(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete stored credentials."""
     if provider not in PROVIDER_FIELDS:
@@ -241,6 +244,7 @@ async def delete_credentials(
 async def run_full_validation(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Run the complete automated validation checklist for a provider."""
     if provider not in PROVIDER_FIELDS:
@@ -311,6 +315,7 @@ async def run_full_validation(
 async def test_connection(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Quick connection test for a provider."""
     tenant_id = current_user.tenant_id

@@ -82,6 +82,7 @@ Webhooks — API Key Auth:
   POST   /api/b2b/webhooks/{webhook_id}/test     - Webhook test
 """
 import hashlib
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 import hmac
 import json
 import logging
@@ -91,6 +92,8 @@ from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -120,6 +123,33 @@ def _hash_api_key(key: str) -> str:
 def _require_hotel_staff(user: User):
     if user.role in ("agency_admin", "agency_agent"):
         raise HTTPException(status_code=403, detail="Acente kullanicilari bu islemi yapamaz")
+
+
+# ── Bug DA v64 — cross-agency IDOR guards ──────────────────────
+async def _agency_owns_booking(tenant_id: str, agency_id: str, booking_id: str) -> dict | None:
+    """Acentenin bu rezervasyona sahip olup olmadigini dogrular (cross-agency IDOR koruma)."""
+    return await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "$or": [{"id": booking_id}, {"confirmation_code": booking_id}],
+        },
+    )
+
+
+async def _agency_owns_guest(tenant_id: str, agency_id: str, guest_id: str) -> bool:
+    """Acentenin bu misafire ait en az bir rezervasyonu olup olmadigini dogrular."""
+    n = await db.bookings.count_documents(
+        {"tenant_id": tenant_id, "agency_id": agency_id, "guest_id": guest_id},
+    )
+    return n > 0
+
+
+async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> dict | None:
+    """Acentenin bu grup blok'una sahip olup olmadigini dogrular (v65)."""
+    return await db.room_blocks.find_one(
+        {"tenant_id": tenant_id, "agency_id": agency_id, "id": block_id},
+    )
 
 
 # ── API Key Auth Dependency ──────────────────────────────────────
@@ -208,6 +238,7 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 async def create_api_key(
     agency_id: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Acente icin API key olustur."""
     _require_hotel_staff(current_user)
@@ -285,6 +316,7 @@ async def get_api_key_info(
 async def revoke_api_key(
     agency_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Acente API key'ini iptal et."""
     _require_hotel_staff(current_user)
@@ -304,6 +336,7 @@ async def revoke_api_key(
 async def regenerate_api_key(
     agency_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Mevcut key'i iptal edip yeni key olustur."""
     _require_hotel_staff(current_user)
@@ -595,8 +628,13 @@ async def b2b_create_reservation(
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }
-    await db.bookings.insert_one(booking_doc)
-    booking_doc.pop("_id", None)
+    # v106 architect follow-up (race-safety): direct insert_one bypassed
+    # the room_night_locks atomic guard → double-booking risk on B2B API
+    # bookings. Now routed through create_booking_atomic.
+    try:
+        booking_doc = await create_booking_atomic(booking_doc)
+    except BookingConflictError as conflict_err:
+        raise HTTPException(status_code=409, detail=str(conflict_err))
 
     # Fire webhook: reservation.created
     res_data = {
@@ -927,10 +965,14 @@ async def b2b_test_webhook(
 
     status_code = 0
     error_msg = None
+    # v109 Bug DAL round-7 follow-up #3: webhook URL is tenant-configurable.
+    # Use rebinding-safe helper instead of raw httpx client.
+    from integrations.xchange.safety import EgressDenied, safe_post_async
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(wh["url"], content=body, headers=headers)
-            status_code = resp.status_code
+        resp = await safe_post_async(wh["url"], timeout=10, content=body, headers=headers)
+        status_code = resp.status_code
+    except EgressDenied as exc:
+        error_msg = f"SSRF engellendi: {exc}"
     except Exception as exc:
         error_msg = str(exc)
 
@@ -955,7 +997,11 @@ async def b2b_search_guests(
 ):
     """Misafir arama — isim, e-posta veya telefon ile."""
     tenant_id = agency["tenant_id"]
-    regex = {"$regex": q, "$options": "i"}
+    from security.query_safety import safe_search_term
+    _s = safe_search_term(q)
+    if not _s:
+        return {"guests": [], "count": 0}
+    regex = {"$regex": _s, "$options": "i"}
     docs = await db.guests.find(
         {"tenant_id": tenant_id, "$or": [{"name": regex}, {"email": regex}, {"phone": regex}]},
         {"_id": 0, "tenant_id": 0},
@@ -967,6 +1013,9 @@ async def b2b_search_guests(
 async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     """Misafir profil detayi."""
     tenant_id = agency["tenant_id"]
+    # v64 Bug DA: cross-agency IDOR guard — sadece kendi rezervasyonu olan misafir
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     doc = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id}, {"_id": 0, "tenant_id": 0}
     )
@@ -979,6 +1028,9 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
 async def b2b_get_guest_loyalty(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     """Misafir sadakat bilgisi — puan, tier, toplam konaklama."""
     tenant_id = agency["tenant_id"]
+    # v64 Bug DA: cross-agency IDOR guard
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     guest = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
         {"_id": 0, "id": 1, "name": 1, "loyalty_points": 1, "loyalty_tier": 1,
@@ -1025,6 +1077,10 @@ async def b2b_update_loyalty_points(
     """Sadakat puani ekle veya cikar."""
     tenant_id = agency["tenant_id"]
 
+    # v64 Bug DA: cross-agency IDOR guard — kritik (yazma + mali sahtekarlik)
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+
     guest = await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
@@ -1047,7 +1103,8 @@ async def b2b_update_loyalty_points(
         new_tier = "silver"
 
     await db.guests.update_one(
-        {"_id": guest["_id"]},
+        # v109 round-9 IDOR DiD: pin tenant on update.
+        {"_id": guest["_id"], "tenant_id": tenant_id},
         {"$set": {"loyalty_points": new_points, "loyalty_tier": new_tier}},
     )
 
@@ -1081,8 +1138,11 @@ async def b2b_get_guest_stays(
 ):
     """Misafir konaklama gecmisi."""
     tenant_id = agency["tenant_id"]
+    # v64 Bug DA: cross-agency IDOR guard
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     bookings = await db.bookings.find(
-        {"tenant_id": tenant_id, "guest_id": guest_id},
+        {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "guest_id": guest_id},
         {"_id": 0, "tenant_id": 0, "guest_id": 0},
     ).sort("check_in", -1).to_list(limit)
     return {"stays": bookings, "count": len(bookings)}
@@ -1147,7 +1207,10 @@ async def b2b_update_housekeeping_status(
         update_fields["last_cleaned_at"] = _now_iso()
         update_fields["last_cleaned_by"] = f"b2b_api:{agency['agency_id']}"
 
-    await db.rooms.update_one({"_id": room["_id"]}, {"$set": update_fields})
+    # v109 round-9 IDOR DiD: pin tenant on update.
+    await db.rooms.update_one(
+        {"_id": room["_id"], "tenant_id": tenant_id}, {"$set": update_fields}
+    )
 
     return {
         "ok": True,
@@ -1172,20 +1235,26 @@ async def b2b_kbs_guest_list(
     tenant_id = agency["tenant_id"]
     target_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
 
+    # v65 Bug DB: cross-agency IDOR — pasaport/TC PII leak (sadece kendi acentenin misafirleri)
     bookings = await db.bookings.find(
         {
             "tenant_id": tenant_id,
+            "agency_id": agency["agency_id"],
             "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
             "check_in": {"$gte": target_date + "T00:00:00", "$lte": target_date + "T23:59:59"},
         },
-        {"_id": 0, "id": 1, "guest_name": 1, "guest_email": 1, "guest_phone": 1,
+        {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "guest_email": 1, "guest_phone": 1,
          "room_number": 1, "check_in": 1, "check_out": 1, "adults": 1, "children": 1,
          "status": 1, "confirmation_code": 1},
     ).sort("check_in", 1).to_list(limit)
 
     for b in bookings:
+        # v65 PII fix (architect): guest_id ile join (name-based değil — homonym leak engeli)
+        gid = b.get("guest_id")
+        if not gid:
+            continue
         guest = await db.guests.find_one(
-            {"tenant_id": tenant_id, "name": b.get("guest_name", "")},
+            {"tenant_id": tenant_id, "id": gid},
             {"_id": 0, "nationality": 1, "id_number": 1, "passport_number": 1,
              "birth_date": 1, "gender": 1},
         )
@@ -1197,7 +1266,7 @@ async def b2b_kbs_guest_list(
             b["gender"] = guest.get("gender", "")
 
     kbs_reports = await db.kbs_reports.find(
-        {"tenant_id": tenant_id, "date": target_date},
+        {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "date": target_date},
         {"_id": 0},
     ).to_list(100)
 
@@ -1228,6 +1297,7 @@ async def b2b_kbs_create_report(
     report = {
         "id": report_id,
         "tenant_id": tenant_id,
+        "agency_id": agency["agency_id"],  # v65: scope KBS reports per agency
         "date": data.date,
         "status": "submitted",
         "guest_count": len(data.guest_ids),
@@ -1246,8 +1316,11 @@ async def b2b_kbs_create_report(
 async def b2b_kbs_get_report(report_id: str, agency: dict = Depends(get_b2b_agency)):
     """KBS bildirim raporu detayi."""
     tenant_id = agency["tenant_id"]
+    # v65 Bug DB: cross-agency IDOR — eski kayitlar agency_id'siz olabilir,
+    # sadece bu acentenin (veya scope-suz tarihi) raporu görsün
     doc = await db.kbs_reports.find_one(
-        {"tenant_id": tenant_id, "id": report_id}, {"_id": 0}
+        {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "id": report_id},
+        {"_id": 0},
     )
     if not doc:
         raise HTTPException(status_code=404, detail="KBS raporu bulunamadi")
@@ -1282,6 +1355,10 @@ async def b2b_identity_scan(
 ):
     """Kimlik/pasaport tarama verisini kaydet — OCR sonuclari buraya gonderilir."""
     tenant_id = agency["tenant_id"]
+
+    # v65 Bug DB: cross-agency IDOR guard — PII yazma (pasaport/TC contamination)
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], data.guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
     guest = await db.guests.find_one({"tenant_id": tenant_id, "id": data.guest_id})
     if not guest:
@@ -1335,6 +1412,9 @@ async def b2b_identity_scan(
 async def b2b_identity_get(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     """Misafir kimlik/pasaport bilgilerini getir."""
     tenant_id = agency["tenant_id"]
+    # v64 Bug DA: cross-agency IDOR guard — pasaport/TC PII
+    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
     guest = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
@@ -1580,9 +1660,8 @@ async def b2b_online_checkin(
     """Online check-in bilgilerini gonder."""
     tenant_id = agency["tenant_id"]
 
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": data.booking_id},
-    )
+    # v65 Bug DB: cross-agency IDOR guard — yabanci booking'e check-in yazma
+    booking = await _agency_owns_booking(tenant_id, agency["agency_id"], data.booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
@@ -1615,6 +1694,9 @@ async def b2b_online_checkin(
 async def b2b_pre_arrival_status(booking_id: str, agency: dict = Depends(get_b2b_agency)):
     """Rezervasyon pre-arrival durumunu sorgula."""
     tenant_id = agency["tenant_id"]
+    # v65 Bug DB: cross-agency IDOR guard
+    if not await _agency_owns_booking(tenant_id, agency["agency_id"], booking_id):
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {"_id": 0, "id": 1, "status": 1, "check_in": 1, "check_out": 1,
@@ -1642,18 +1724,18 @@ async def b2b_create_guest_request(
     """Misafir talebi olustur — her turlu servis talebi icin."""
     tenant_id = agency["tenant_id"]
 
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": data.booking_id},
-        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1},
-    )
+    # v65 Bug DB: cross-agency IDOR guard
+    booking = await _agency_owns_booking(tenant_id, agency["agency_id"], data.booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    canonical_booking_id = booking["id"]
 
     request_id = _uuid()
     req_doc = {
         "id": request_id,
         "tenant_id": tenant_id,
-        "booking_id": data.booking_id,
+        "booking_id": canonical_booking_id,
+        "agency_id": agency["agency_id"],
         "guest_name": booking.get("guest_name", ""),
         "room_number": booking.get("room_number", ""),
         "request_type": data.request_type,
@@ -1678,9 +1760,14 @@ async def b2b_list_guest_requests(
 ):
     """Misafir taleplerini listele."""
     tenant_id = agency["tenant_id"]
-    query = {"tenant_id": tenant_id}
+    # v65 Bug DB: cross-agency IDOR — sadece kendi acentenin yarattigi talepler
+    query = {"tenant_id": tenant_id, "agency_id": agency["agency_id"]}
     if booking_id:
-        query["booking_id"] = booking_id
+        # Booking sahipligi de teyit et + canonical id ile filtrele (confirmation_code → id)
+        owned = await _agency_owns_booking(tenant_id, agency["agency_id"], booking_id)
+        if not owned:
+            return {"requests": [], "count": 0}
+        query["booking_id"] = owned["id"]
     if status:
         query["status"] = status
     if request_type:
@@ -1734,10 +1821,8 @@ async def b2b_concierge_request(
 ):
     """Concierge hizmet talebi olustur."""
     tenant_id = agency["tenant_id"]
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": data.booking_id},
-        {"_id": 0, "guest_name": 1, "room_number": 1},
-    )
+    # v65 Bug DB: cross-agency IDOR guard
+    booking = await _agency_owns_booking(tenant_id, agency["agency_id"], data.booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
@@ -1745,7 +1830,8 @@ async def b2b_concierge_request(
     req_doc = {
         "id": req_id,
         "tenant_id": tenant_id,
-        "booking_id": data.booking_id,
+        "booking_id": booking["id"],
+        "agency_id": agency["agency_id"],
         "guest_name": booking.get("guest_name", ""),
         "room_number": booking.get("room_number", ""),
         "request_type": "concierge",
@@ -1801,10 +1887,8 @@ async def b2b_spa_booking(
 ):
     """Spa randevusu olustur."""
     tenant_id = agency["tenant_id"]
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": data.booking_id},
-        {"_id": 0, "guest_name": 1, "room_number": 1},
-    )
+    # v65 Bug DB: cross-agency IDOR guard
+    booking = await _agency_owns_booking(tenant_id, agency["agency_id"], data.booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
@@ -1812,7 +1896,8 @@ async def b2b_spa_booking(
     spa_doc = {
         "id": spa_id,
         "tenant_id": tenant_id,
-        "booking_id": data.booking_id,
+        "agency_id": agency["agency_id"],
+        "booking_id": booking["id"],
         "guest_name": booking.get("guest_name", ""),
         "room_number": booking.get("room_number", ""),
         "service_id": data.service_id,
@@ -1841,7 +1926,8 @@ async def b2b_list_groups(
 ):
     """Grup/blok listesi."""
     tenant_id = agency["tenant_id"]
-    query = {"tenant_id": tenant_id}
+    # v65 Bug DB: cross-agency IDOR — sadece kendi acentenin bloklari
+    query = {"tenant_id": tenant_id, "agency_id": agency["agency_id"]}
     if status:
         query["status"] = status
 
@@ -1913,6 +1999,9 @@ async def b2b_create_group_block(
 async def b2b_get_group_block(block_id: str, agency: dict = Depends(get_b2b_agency)):
     """Grup blok detayi."""
     tenant_id = agency["tenant_id"]
+    # v65 Bug DB: cross-agency IDOR guard
+    if not await _agency_owns_block(tenant_id, agency["agency_id"], block_id):
+        raise HTTPException(status_code=404, detail="Blok bulunamadi")
     block = await db.room_blocks.find_one(
         {"tenant_id": tenant_id, "id": block_id}, {"_id": 0, "tenant_id": 0}
     )
@@ -1948,7 +2037,8 @@ async def b2b_upload_rooming_list(
 ):
     """Grup icin rooming list yukle — toplu misafir girisi."""
     tenant_id = agency["tenant_id"]
-    block = await db.room_blocks.find_one({"tenant_id": tenant_id, "id": block_id})
+    # v65 Bug DB: cross-agency IDOR — yabanci bloga rooming-list yazma
+    block = await _agency_owns_block(tenant_id, agency["agency_id"], block_id)
     if not block:
         raise HTTPException(status_code=404, detail="Blok bulunamadi")
 
@@ -1994,8 +2084,13 @@ async def b2b_upload_rooming_list(
             "origin": "syroce_b2b_group",
             "created_at": _now_iso(),
         }
-        await db.bookings.insert_one(booking_doc)
-        booking_doc.pop("_id", None)
+        # v106 architect follow-up (race-safety): group booking pickup
+        # bypassed atomic lock — concurrent group operators could over-pick
+        # the same allocated room. Now routed through create_booking_atomic.
+        try:
+            booking_doc = await create_booking_atomic(booking_doc)
+        except BookingConflictError as conflict_err:
+            raise HTTPException(status_code=409, detail=str(conflict_err))
         created.append({"guest_name": entry.guest_name, "booking_id": booking_id, "confirmation_code": conf_code})
 
     await db.room_blocks.update_one(
@@ -2015,6 +2110,9 @@ async def b2b_get_folio(booking_id: str, agency: dict = Depends(get_b2b_agency))
     """Rezervasyon folio detayi — tum masraflar ve odemeler."""
     tenant_id = agency["tenant_id"]
 
+    # v64 Bug DA: cross-agency IDOR guard — mali veri leak
+    if not await _agency_owns_booking(tenant_id, agency["agency_id"], booking_id):
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_type": 1,
@@ -2067,16 +2165,19 @@ async def b2b_add_folio_charge(
     if data.charge_type not in valid_charge_types:
         raise HTTPException(status_code=400, detail=f"Gecersiz charge_type. Gecerli: {', '.join(sorted(valid_charge_types))}")
 
-    booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id})
+    # v64 Bug DA: cross-agency IDOR guard — mali yazma (sahtekarlik riski)
+    booking = await _agency_owns_booking(tenant_id, agency["agency_id"], booking_id)
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    # Canonical booking id (path param confirmation_code olabilir → ledger split engeli)
+    canonical_id = booking["id"]
 
     charge_id = _uuid()
     total = round(data.amount * data.quantity, 2)
     charge = {
         "id": charge_id,
         "tenant_id": tenant_id,
-        "booking_id": booking_id,
+        "booking_id": canonical_id,
         "charge_type": data.charge_type,
         "description": data.description,
         "amount": total,
@@ -2101,6 +2202,9 @@ async def b2b_get_invoice(booking_id: str, agency: dict = Depends(get_b2b_agency
     """Fatura bilgisi getir (JSON formatinda)."""
     tenant_id = agency["tenant_id"]
 
+    # v64 Bug DA: cross-agency IDOR guard
+    if not await _agency_owns_booking(tenant_id, agency["agency_id"], booking_id):
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {"_id": 0, "tenant_id": 0},

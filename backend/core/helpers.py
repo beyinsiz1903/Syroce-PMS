@@ -270,3 +270,21 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
             detail="Bu islemi sadece yonetici kullanicilar yapabilir",
         )
     return current_user
+
+
+# ================== MASS-ASSIGNMENT GUARD (Bug AR) ==================
+# Reserved keys that must never be settable from request bodies — server controls
+# these (UUID generation, tenant scoping, audit trail, lifecycle timestamps).
+# Used by routers that accept raw `dict` bodies and spread them into persisted docs.
+# Prefer Pydantic input models with explicit allowlists for new endpoints.
+_RESERVED_DOC_FIELDS = frozenset({
+    "id", "_id", "guest_id", "tenant_id", "approved_by", "approved_at",
+    "reported_by", "active", "created_at", "updated_at",
+})
+
+
+def strip_reserved(payload: Any) -> dict:
+    """Drop server-controlled keys from a request body before dict-spread."""
+    if not isinstance(payload, dict):
+        return {}
+    return {k: v for k, v in payload.items() if k not in _RESERVED_DOC_FIELDS}

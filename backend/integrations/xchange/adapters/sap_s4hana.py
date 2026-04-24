@@ -11,7 +11,7 @@ import time
 
 import httpx
 
-from ..safety import EgressDenied, assert_safe_url
+from ..safety import EgressDenied, safe_post_async
 from ..schemas import MessageType, XchangeEnvelope
 from .base import BaseAdapter, DeliveryResult
 
@@ -35,18 +35,20 @@ class SapS4HanaAdapter(BaseAdapter):
         cached = _TOKEN_CACHE.get(cache_key)
         if cached and cached[1] > time.time() + 30:
             return cached[0]
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                c["token_url"],
-                data={"grant_type": "client_credentials"},
-                auth=(c["client_id"], c.get("client_secret", "")),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            tok = data["access_token"]
-            ttl = int(data.get("expires_in", 3600))
-            _TOKEN_CACHE[cache_key] = (tok, time.time() + ttl)
-            return tok
+        # v109 Bug DAL round-7 follow-up #2: token_url is tenant-configurable
+        # — use rebinding-safe transport. Caller (deliver) catches EgressDenied
+        # via the egress_denied error path.
+        resp = await safe_post_async(
+            c["token_url"],
+            data={"grant_type": "client_credentials"},
+            auth=(c["client_id"], c.get("client_secret", "")),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        tok = data["access_token"]
+        ttl = int(data.get("expires_in", 3600))
+        _TOKEN_CACHE[cache_key] = (tok, time.time() + ttl)
+        return tok
 
     def _build_journal(self, envelope: XchangeEnvelope) -> dict:
         c = self.config
@@ -111,38 +113,43 @@ class SapS4HanaAdapter(BaseAdapter):
                 response_excerpt="DRY-RUN: no SAP credentials configured",
             )
 
+        # v109 Bug DAL round-7 follow-up #2: both token_url and base_url are
+        # tenant-configurable; safe_post_async (called inside _get_token and
+        # below) validates all resolved IPs and pins the TCP destination,
+        # closing the rebinding window. EgressDenied surfaces here as the
+        # egress_denied error path for both endpoints.
         try:
-            assert_safe_url(self.config["token_url"])
-            assert_safe_url(self.config["base_url"])
+            token = await self._get_token()
         except EgressDenied as e:
             return DeliveryResult(ok=False, error=f"egress_denied: {e}",
                                   request_payload_excerpt=excerpt)
-        try:
-            token = await self._get_token()
         except Exception as e:
             return DeliveryResult(ok=False, error=f"oauth_failed: {e!r}",
                                   request_payload_excerpt=excerpt)
 
         url = self.config["base_url"].rstrip("/") + "/API_JOURNALENTRYITEMBULKCREATE"
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(
-                    url,
-                    json=body,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                        "X-Idempotency-Key": envelope.message_id,
-                    },
-                )
-            ok = 200 <= resp.status_code < 300
-            return DeliveryResult(
-                ok=ok,
-                status_code=resp.status_code,
-                request_payload_excerpt=excerpt,
-                response_excerpt=resp.text[:1024],
-                error=None if ok else f"HTTP {resp.status_code}",
+            resp = await safe_post_async(
+                url,
+                timeout=20.0,
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "X-Idempotency-Key": envelope.message_id,
+                },
             )
+        except EgressDenied as e:
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
+                                  request_payload_excerpt=excerpt)
         except httpx.RequestError as e:
             return DeliveryResult(ok=False, error=f"transport_error: {e!r}",
                                   request_payload_excerpt=excerpt)
+        ok = 200 <= resp.status_code < 300
+        return DeliveryResult(
+            ok=ok,
+            status_code=resp.status_code,
+            request_payload_excerpt=excerpt,
+            response_excerpt=resp.text[:1024],
+            error=None if ok else f"HTTP {resp.status_code}",
+        )

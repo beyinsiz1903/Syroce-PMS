@@ -4,6 +4,8 @@ Domain Router: Enterprise Features
 Critical features, task management, RBAC, enterprise audit logging.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
@@ -36,6 +38,7 @@ from models.schemas import (
     UpdateTaskStatusRequest,
     User,
 )
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 router = APIRouter(prefix="/api", tags=["enterprise-features"])
 
@@ -69,7 +72,8 @@ async def get_ota_messages(
 async def send_ota_message(
     conversation_id: str,
     message_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     message = {
         'id': str(uuid.uuid4()),
@@ -102,7 +106,9 @@ async def get_booking_credentials(current_user: User = Depends(get_current_user)
     return creds
 
 @router.post("/ota/booking/credentials")
-async def save_booking_credentials(data: dict, current_user: User = Depends(get_current_user)):
+async def save_booking_credentials(data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
+):
     """Save Booking.com credentials"""
     creds = {
         'tenant_id': current_user.tenant_id,
@@ -129,7 +135,9 @@ async def get_booking_logs(limit: int = 10, current_user: User = Depends(get_cur
     return {'items': logs}
 
 @router.post("/ota/booking/ari/push")
-async def push_ari_to_booking(data: dict, current_user: User = Depends(get_current_user)):
+async def push_ari_to_booking(data: dict, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
+):
     """Push ARI (Availability, Rates, Inventory) to Booking.com"""
     rooms = data.get('rooms', [])
     log_entry = {
@@ -144,7 +152,9 @@ async def push_ari_to_booking(data: dict, current_user: User = Depends(get_curre
     return {'message': 'ARI push queued', 'log_id': log_entry['id']}
 
 @router.post("/ota/booking/reservations/pull")
-async def pull_reservations_from_booking(current_user: User = Depends(get_current_user)):
+async def pull_reservations_from_booking(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
+):
     """Pull reservations from Booking.com"""
     log_entry = {
         'id': str(uuid.uuid4()),
@@ -162,6 +172,7 @@ async def pull_reservations_from_booking(current_user: User = Depends(get_curren
 # /rms/apply-recommendations are handled by domains.revenue.rms_router (enhanced versions with real DB queries)
 
 # 3. Housekeeping Mobile
+# noqa: cache-rbac — HK rooms operasyonel (HK/FO/manager)
 @router.get("/housekeeping/rooms")
 @cached(ttl=120, key_prefix="housekeeping_rooms_list")
 async def get_housekeeping_rooms(
@@ -193,7 +204,8 @@ async def get_housekeeping_checklist(current_user: User = Depends(get_current_us
 @router.post("/housekeeping/rooms/{room_id}/start")
 async def start_room_cleaning(
     room_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     result = await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
@@ -207,7 +219,8 @@ async def start_room_cleaning(
 async def complete_room_cleaning(
     room_id: str,
     completion_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     result = await db.rooms.update_one(
         {'id': room_id, 'tenant_id': current_user.tenant_id},
@@ -253,7 +266,8 @@ async def get_marketplace_inventory(current_user: User = Depends(get_current_use
 @router.post("/marketplace/inventory", dependencies=[Depends(require_feature("hidden_marketplace"))])
 async def add_inventory_product(
     product_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     product = {
         'id': str(uuid.uuid4()),
@@ -272,7 +286,8 @@ async def get_purchase_orders(current_user: User = Depends(get_current_user)):
 @router.post("/marketplace/purchase-orders", dependencies=[Depends(require_feature("hidden_marketplace"))])
 async def create_purchase_order(
     order_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     order = {
         'id': str(uuid.uuid4()),
@@ -299,7 +314,9 @@ async def get_pos_closures(current_user: User = Depends(get_current_user)):
     return {'closures': closures}
 
 @router.post("/pos/daily-closure")
-async def create_pos_closure(current_user: User = Depends(get_current_user)):
+async def create_pos_closure(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v99 DW
+):
     # Calculate today's sales
     today = datetime.now(UTC).date().isoformat()
 
@@ -351,7 +368,8 @@ async def get_tasks(
 @router.post("/tasks")
 async def create_task(
     request: CreateTaskRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create new task"""
     # Priority order for sorting
@@ -421,6 +439,7 @@ async def get_my_tasks(
 
     return {'tasks': tasks, 'count': len(tasks)}
 
+# noqa: cache-rbac — tasks dashboard operasyonel cross-role
 @router.get("/tasks/dashboard")
 @cached(ttl=300, key_prefix="tasks_dashboard")  # Cache for 5 min
 async def get_tasks_dashboard(current_user: User = Depends(get_current_user)):
@@ -576,7 +595,8 @@ async def get_task_details(
 async def assign_task(
     task_id: str,
     request: AssignTaskRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Assign task to user"""
     task = await db.tasks.find_one({
@@ -635,7 +655,8 @@ async def assign_task(
 async def update_task_status(
     task_id: str,
     request: UpdateTaskStatusRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update task status"""
     task = await db.tasks.find_one({
@@ -735,7 +756,8 @@ async def create_engineering_maintenance_request(
     location: str,
     priority: str = "normal",
     room_id: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("housekeeping")),  # v101 DW
 ):
     """Create engineering/maintenance request"""
     task_request = CreateTaskRequest(
@@ -757,7 +779,8 @@ async def create_housekeeping_cleaning_request(
     task_type: str,  # deep_clean, turndown, inspection
     priority: str = "normal",
     special_instructions: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     """Create housekeeping cleaning request"""
     room = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
@@ -786,7 +809,8 @@ async def create_fnb_service_request(
     location: str,
     priority: str = "normal",
     due_date: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     """Create F&B service request"""
     task_request = CreateTaskRequest(
@@ -898,7 +922,8 @@ async def get_roles(current_user: User = Depends(get_current_user)):
 @router.post("/admin/roles")
 async def create_role(
     request: CreateRoleRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Create custom role"""
     role = {
@@ -932,7 +957,8 @@ async def create_role(
 async def assign_role_to_user(
     user_id: str,
     request: AssignRoleRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Assign role to user"""
     # Verify role exists
@@ -1110,7 +1136,8 @@ async def change_rate_with_audit(
     new_rate: float,
     effective_date: str,
     reason: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Change rate with full audit trail"""
     # Get current rate
@@ -1155,7 +1182,8 @@ async def change_rate_with_audit(
 @router.post("/admin/backup/create")
 async def create_backup(
     request: CreateBackupRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Create database backup"""
     backup_id = str(uuid.uuid4())
@@ -1221,7 +1249,8 @@ async def list_backups(
 async def restore_backup(
     backup_id: str,
     confirm: bool = False,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Restore from backup"""
     if not confirm:

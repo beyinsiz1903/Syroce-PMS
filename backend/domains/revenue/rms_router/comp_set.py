@@ -4,6 +4,7 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -57,7 +58,8 @@ async def get_comp_set(current_user: User = Depends(get_current_user)):
 @router.post("/rms/comp-set")
 async def add_competitor(
     request: AddCompetitorRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Add competitor to comp set"""
     competitor = {
@@ -99,7 +101,8 @@ async def get_competitor_pricing(
 @router.post("/rms/scrape-comp-prices")
 async def scrape_competitor_prices(
     request: ScrapePricesRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Scrape competitor prices for specific date"""
     date = request.date

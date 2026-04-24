@@ -10,6 +10,7 @@ Goes well beyond the original 6-treatment template:
   Xchange POSTING_CHARGE event so SAP/finance partners stay in sync)
 """
 from __future__ import annotations
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -82,6 +83,7 @@ def _invalidate_spa_services_cache(tenant_id: str) -> None:
     _cache.safe_invalidate(tenant_id, "spa_services")
 
 
+# noqa: cache-rbac — operasyonel servis listesi tüm rolelere açık (HK temizlik, FO upsell)
 @router.get("/services")
 @_cached(ttl=30, key_prefix="spa_services")
 async def list_services(current_user: User = Depends(get_current_user)) -> dict:
@@ -134,7 +136,9 @@ async def _seed_default_catalog(tenant_id: str) -> list[dict]:
 
 @router.post("/services")
 async def create_service(body: ServiceIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {
@@ -151,7 +155,9 @@ async def create_service(body: ServiceIn,
 
 @router.put("/services/{service_id}")
 async def update_service(service_id: str, body: ServiceIn,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_services.update_one(
@@ -167,7 +173,9 @@ async def update_service(service_id: str, body: ServiceIn,
 
 @router.delete("/services/{service_id}")
 async def delete_service(service_id: str,
-                         current_user: User = Depends(get_current_user)) -> dict:
+                         current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_services.delete_one(
@@ -202,7 +210,9 @@ async def list_therapists(current_user: User = Depends(get_current_user)) -> dic
 
 @router.post("/therapists")
 async def create_therapist(body: TherapistIn,
-                           current_user: User = Depends(get_current_user)) -> dict:
+                           current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {
@@ -218,7 +228,9 @@ async def create_therapist(body: TherapistIn,
 
 @router.put("/therapists/{therapist_id}")
 async def update_therapist(therapist_id: str, body: TherapistIn,
-                           current_user: User = Depends(get_current_user)) -> dict:
+                           current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_therapists.update_one(
@@ -232,7 +244,9 @@ async def update_therapist(therapist_id: str, body: TherapistIn,
 
 @router.delete("/therapists/{therapist_id}")
 async def delete_therapist(therapist_id: str,
-                           current_user: User = Depends(get_current_user)) -> dict:
+                           current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     await db.spa_therapists.delete_one(
@@ -260,7 +274,9 @@ async def list_rooms(current_user: User = Depends(get_current_user)) -> dict:
 
 @router.post("/rooms")
 async def create_room(body: TreatmentRoomIn,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     doc = {
@@ -276,7 +292,9 @@ async def create_room(body: TreatmentRoomIn,
 
 @router.put("/rooms/{room_id}")
 async def update_room(room_id: str, body: TreatmentRoomIn,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.spa_rooms.update_one(
@@ -290,7 +308,9 @@ async def update_room(room_id: str, body: TreatmentRoomIn,
 
 @router.delete("/rooms/{room_id}")
 async def delete_room(room_id: str,
-                      current_user: User = Depends(get_current_user)) -> dict:
+                      current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     await db.spa_rooms.delete_one(
@@ -366,7 +386,9 @@ async def list_appointments(
 
 @router.post("/appointments")
 async def create_appointment(body: AppointmentIn,
-                             current_user: User = Depends(get_current_user)) -> dict:
+                             current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_spa_ops(current_user)
     await _ensure_indexes()
     db = get_system_db()
@@ -476,7 +498,9 @@ class StatusUpdate(BaseModel):
 
 @router.post("/appointments/{appt_id}/status")
 async def change_status(appt_id: str, body: StatusUpdate,
-                        current_user: User = Depends(get_current_user)) -> dict:
+                        current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_spa_ops(current_user)
     if body.status == "completed":
         require_finance(current_user)  # folio-impacting transition
@@ -561,7 +585,9 @@ async def _post_to_folio(tenant_id: str, appt: dict) -> None:
 
 @router.delete("/appointments/{appt_id}")
 async def delete_appointment(appt_id: str,
-                             current_user: User = Depends(get_current_user)) -> dict:
+                             current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v101 DW
+) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
     res = await db.spa_appointments.delete_one(

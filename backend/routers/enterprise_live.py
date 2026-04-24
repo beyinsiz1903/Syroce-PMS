@@ -3,6 +3,7 @@ Enterprise Live Router - WebSocket push, messaging, auto-pricing, cross-module i
 Production-grade endpoints for enterprise hotel operations.
 """
 import logging
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -123,7 +124,9 @@ async def get_live_data(current_user: User = Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/messaging/send")
-async def send_message(req: SendMessageReq, current_user: User = Depends(get_current_user)):
+async def send_message(req: SendMessageReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     """Send a message through SMS/Email/WhatsApp."""
     result = await messaging_gateway.send_message(
         tenant_id=current_user.tenant_id, channel=req.channel,
@@ -136,7 +139,9 @@ async def send_message(req: SendMessageReq, current_user: User = Depends(get_cur
     return result
 
 @router.post("/messaging/templates")
-async def create_template(req: CreateTemplateReq, current_user: User = Depends(get_current_user)):
+async def create_template(req: CreateTemplateReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # v100 DW
+):
     """Create a message template."""
     return await messaging_gateway.create_template(
         current_user.tenant_id, req.name, req.channel, req.subject, req.body, current_user.id
@@ -186,7 +191,9 @@ async def get_messaging_analytics(days: int = 7, current_user: User = Depends(ge
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/autopricing/recommendation")
-async def create_recommendation(req: CreateRecommendationReq, current_user: User = Depends(get_current_user)):
+async def create_recommendation(req: CreateRecommendationReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Create a pricing recommendation."""
     return await autopricing.create_recommendation(
         current_user.tenant_id, req.room_type, req.current_rate,
@@ -194,7 +201,9 @@ async def create_recommendation(req: CreateRecommendationReq, current_user: User
     )
 
 @router.post("/autopricing/approve")
-async def approve_recommendation(req: ApproveRejectReq, current_user: User = Depends(get_current_user)):
+async def approve_recommendation(req: ApproveRejectReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
+):
     """Approve and apply a pricing recommendation."""
     result = await autopricing.approve_recommendation(
         current_user.tenant_id, req.recommendation_id, current_user.id, req.note
@@ -204,7 +213,9 @@ async def approve_recommendation(req: ApproveRejectReq, current_user: User = Dep
     return result
 
 @router.post("/autopricing/reject")
-async def reject_recommendation(req: RejectReq, current_user: User = Depends(get_current_user)):
+async def reject_recommendation(req: RejectReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # v95 DW
+):
     """Reject a pricing recommendation."""
     result = await autopricing.reject_recommendation(
         current_user.tenant_id, req.recommendation_id, current_user.id, req.reason
@@ -214,7 +225,9 @@ async def reject_recommendation(req: RejectReq, current_user: User = Depends(get
     return result
 
 @router.post("/autopricing/rollback")
-async def rollback_recommendation(req: RollbackReq, current_user: User = Depends(get_current_user)):
+async def rollback_recommendation(req: RollbackReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Rollback an applied pricing recommendation."""
     result = await autopricing.rollback_recommendation(
         current_user.tenant_id, req.recommendation_id, current_user.id, req.reason
@@ -245,7 +258,9 @@ async def get_channel_push_status(rec_id: str | None = None,
     return await autopricing.get_channel_push_status(current_user.tenant_id, rec_id)
 
 @router.post("/autopricing/protected-dates")
-async def add_protected_dates(req: ProtectedDatesReq, current_user: User = Depends(get_current_user)):
+async def add_protected_dates(req: ProtectedDatesReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Add protected/blackout dates."""
     return await autopricing.add_protected_dates(
         current_user.tenant_id, req.start_date, req.end_date, req.reason, current_user.id
@@ -257,7 +272,9 @@ async def get_protected_dates(current_user: User = Depends(get_current_user)):
     return await autopricing.get_protected_dates(current_user.tenant_id)
 
 @router.post("/autopricing/policy")
-async def set_automation_policy(req: AutomationPolicyReq, current_user: User = Depends(get_current_user)):
+async def set_automation_policy(req: AutomationPolicyReq, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v98 DW
+):
     """Set auto-pricing automation policy."""
     return await autopricing.set_automation_policy(
         current_user.tenant_id, req.mode, req.max_auto_change_pct,
@@ -275,7 +292,9 @@ async def get_autopricing_dashboard(current_user: User = Depends(get_current_use
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/integration/run-all")
-async def run_all_integrations(current_user: User = Depends(get_current_user)):
+async def run_all_integrations(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
+):
     """Execute all cross-module integration flows."""
     return await cross_module_bus.run_all_integrations(current_user.tenant_id)
 

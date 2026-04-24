@@ -3,6 +3,7 @@ Report Builder Router - Özel Rapor Oluşturucu
 Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktarmasını sağlar.
 """
 import io
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -214,7 +215,10 @@ def build_mongo_filter(config: ReportConfig, tenant_id: str) -> dict:
         elif op == "in":
             query[field] = {"$in": val if isinstance(val, list) else [val]}
         elif op == "contains":
-            query[field] = {"$regex": str(val), "$options": "i"}
+            from security.query_safety import safe_search_term
+            _v = safe_search_term(str(val))
+            if _v:
+                query[field] = {"$regex": _v, "$options": "i"}
 
     return query
 
@@ -276,7 +280,9 @@ async def get_builder_config(credentials=Depends(HTTPBearer())):
 
 
 @router.post("/generate")
-async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer())):
+async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
+):
     """Özel rapor verisini üretir."""
     current_user = await _get_current_user(credentials)
 
@@ -318,7 +324,9 @@ async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer()
 
 
 @router.post("/export/excel")
-async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBearer())):
+async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
+):
     """Özel raporu Excel formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
 
@@ -397,9 +405,12 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
                 cell.value = val
                 cell.number_format = '#,##0'
             elif isinstance(val, list):
-                cell.value = ", ".join(str(v) for v in val)
+                # Bug AN: any list item may start with =/+/-/@ → formula injection.
+                from core.csv_safe import xlsx_safe
+                cell.value = xlsx_safe(", ".join(str(v) for v in val))
             else:
-                cell.value = str(val) if val is not None else ""
+                from core.csv_safe import xlsx_safe
+                cell.value = xlsx_safe(str(val)) if val is not None else ""
 
             cell.border = border
             cell.alignment = Alignment(vertical="center")
@@ -449,7 +460,9 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
 
 
 @router.post("/export/pdf")
-async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer())):
+async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
+):
     """Özel raporu PDF formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
 
@@ -465,9 +478,18 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
         col_def = source_def.get("columns", {}).get(col, {})
         headers.append(col_def.get("label", col))
 
-    # Build HTML table for PDF
-    col_count = len(headers)
-    max(100 // col_count, 8)
+    # Bug AO (April 2026): every interpolation below is escaped with html.escape()
+    # to prevent HTML injection into the rendered PDF. Stored guest names like
+    # `<img src="file:///etc/passwd">` would otherwise be honored by WeasyPrint
+    # (file:// SSRF / local file inclusion). date_from/date_to come straight from
+    # the request body, so they're an instant injection vector even without
+    # storing anything. We also pin a strict url_fetcher on WeasyPrint that
+    # blocks every scheme except https; this neutralizes residual `<img>`/`<link>`
+    # tags that may slip into source data via other escape gaps.
+    import html as _html_mod
+
+    def _e(v) -> str:
+        return _html_mod.escape("" if v is None else str(v), quote=True)
 
     rows_html = ""
     for i, row in enumerate(data):
@@ -482,11 +504,11 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
                 display = ", ".join(str(v) for v in val)
             else:
                 display = str(val) if val is not None else ""
-            cells += f'<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:10px;">{display}</td>'
+            cells += f'<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:10px;">{_e(display)}</td>'
         rows_html += f'<tr style="background:{bg}">{cells}</tr>'
 
     header_cells = "".join(
-        f'<th style="padding:8px;background:#1e3a5f;color:white;font-size:10px;text-align:left;border-bottom:2px solid #0d2137;">{h}</th>'
+        f'<th style="padding:8px;background:#1e3a5f;color:white;font-size:10px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>'
         for h in headers
     )
 
@@ -494,11 +516,12 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
     if config.date_from or config.date_to:
         parts = []
         if config.date_from:
-            parts.append(f"Başlangıç: {config.date_from}")
+            parts.append(f"Başlangıç: {_e(config.date_from)}")
         if config.date_to:
-            parts.append(f"Bitiş: {config.date_to}")
+            parts.append(f"Bitiş: {_e(config.date_to)}")
         date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 
+    title_label = _e(source_def.get('label', 'Rapor'))
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
@@ -511,7 +534,7 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
   .footer {{ text-align: center; font-size: 9px; color: #94a3b8; margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; }}
 </style></head><body>
 <div class="header">
-  <h1>{source_def.get('label', 'Rapor')} - Özel Rapor</h1>
+  <h1>{title_label} - Özel Rapor</h1>
   <p>Toplam {len(data)} kayıt | Oluşturma: {datetime.now(UTC).strftime('%d.%m.%Y %H:%M')}</p>
 </div>
 {date_info}
@@ -521,10 +544,18 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
 
     try:
         from weasyprint import HTML
-        pdf_bytes = HTML(string=html).write_pdf()
+        # Bug AO defense in depth: refuse every URL scheme except https, so
+        # any residual <img src="file://..."> can't read local files even if
+        # escape gets bypassed somewhere.
+        def _safe_fetcher(url: str, timeout=10, ssl_context=None):
+            if not url.lower().startswith("https://"):
+                raise ValueError(f"blocked URL scheme: {url[:40]}")
+            from weasyprint import default_url_fetcher  # type: ignore
+            return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+        pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
         output = io.BytesIO(pdf_bytes)
     except Exception:
-        # Fallback: return HTML as PDF-like content
+        # Fallback when WeasyPrint isn't installed: return the (escaped) HTML.
         output = io.BytesIO(html.encode('utf-8'))
 
     output.seek(0)
@@ -553,7 +584,9 @@ async def list_templates(credentials=Depends(HTTPBearer())):
 
 
 @router.post("/templates")
-async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer())):
+async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
+):
     """Rapor şablonunu kaydeder."""
     current_user = await _get_current_user(credentials)
 
@@ -577,7 +610,9 @@ async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, credentials=Depends(HTTPBearer())):
+async def delete_template(template_id: str, credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),  # v92 DW
+):
     """Rapor şablonunu siler."""
     current_user = await _get_current_user(credentials)
 

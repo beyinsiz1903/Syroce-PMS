@@ -163,7 +163,9 @@ class MessagingGateway:
             )
             if template:
                 subject = template.get("subject", subject)
-                body = self._render_template(template.get("body", body), template_vars or {})
+                # v41 Bug BG: HTML-escape variables for HTML-rendering channels.
+                _esc_html = channel in ("email",)
+                body = self._render_template(template.get("body", body), template_vars or {}, escape_html=_esc_html)
 
         # Create delivery record
         delivery = {
@@ -250,10 +252,15 @@ class MessagingGateway:
         })
         return {"success": False, "delivery_id": delivery["id"], "error": last_error}
 
-    def _render_template(self, template: str, vars: dict) -> str:
+    def _render_template(self, template: str, vars: dict, escape_html: bool = False) -> str:
+        # v41 Bug BG: HTML-escape variables for email/HTML channels.
+        import html as _html_mod
         result = template
         for key, val in vars.items():
-            result = result.replace(f"{{{{{key}}}}}", str(val))
+            sv = str(val) if val is not None else ""
+            if escape_html:
+                sv = _html_mod.escape(sv, quote=True)
+            result = result.replace(f"{{{{{key}}}}}", sv)
         return result
 
     async def _check_consent(self, tenant_id: str, guest_id: str, channel: str) -> bool:
