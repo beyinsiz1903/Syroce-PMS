@@ -790,7 +790,18 @@ async def admin_update_tenant_team_role(
             detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}",
         )
 
-    await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
+    # v106 audit T03 spot-fix: defense-in-depth — include tenant_id in the
+    # update filter. find_one above already restricts to tenant; adding it
+    # here closes a TOCTOU window where a concurrent re-tenant of the user
+    # could otherwise let a stale role write land cross-tenant.
+    res = await db.users.update_one(
+        {"id": user_id, "tenant_id": tenant_id},
+        {"$set": {"role": payload.role}},
+    )
+    if res.matched_count == 0:
+        # Lost the TOCTOU race — user moved tenant or was deleted between
+        # find_one and update_one. Surface as 409 instead of false-success.
+        raise HTTPException(status_code=409, detail="User changed concurrently, retry")
     return {"success": True, "message": f"Role updated: {payload.role}"}
 
 
@@ -1281,7 +1292,15 @@ async def update_team_member_role(
             detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}"
         )
 
-    await db.users.update_one({"id": user_id}, {"$set": {"role": payload.role}})
+    # v106 audit T03 spot-fix: defense-in-depth — tenant-scope the update
+    # filter. find_one above already enforces tenant; this closes a TOCTOU
+    # window where a concurrent re-tenant could leak a role write.
+    res = await db.users.update_one(
+        {"id": user_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"role": payload.role}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail="User changed concurrently, retry")
     return {"success": True, "message": f"Role updated: {payload.role}"}
 
 

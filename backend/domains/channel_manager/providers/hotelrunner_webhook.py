@@ -387,11 +387,16 @@ async def replay_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event bulunamadi")
 
-    # Reset event status
-    await db.hotelrunner_raw_events.update_one(
-        {"id": event_id},
+    # v106 audit T03 spot-fix: defense-in-depth — tenant-scope the update.
+    # find_one above already validates tenancy, but a TOCTOU re-tenant race
+    # could otherwise let a stale write land cross-tenant. Also assert
+    # matched_count to avoid silent no-op on race loss.
+    res = await db.hotelrunner_raw_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id},
         {"$set": {"status": "pending", "processed_at": None, "error_message": None, "retry_count": (event.get("retry_count", 0) + 1)}},
     )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Event durumu degisti, tekrar deneyin")
 
     background_tasks.add_task(
         _process_webhook_batch,

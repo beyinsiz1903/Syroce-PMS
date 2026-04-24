@@ -114,6 +114,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // Conflicts
   const [conflicts, setConflicts] = useState([]);
+  const [showConflictsModal, setShowConflictsModal] = useState(false);
 
   const dateRange = getDateRange(currentDate, daysToShow);
 
@@ -663,6 +664,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             setShowNewBookingDialog(true);
           }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
+          onShowConflicts={() => setShowConflictsModal(true)}
         />
         </div>
 
@@ -789,6 +791,78 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         onSubmit={handleCreateBooking}
         minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate > t ? hotelBusinessDate : t; })()}
       />
+
+      <Dialog open={showConflictsModal} onOpenChange={setShowConflictsModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" data-testid="conflicts-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Ban className="w-5 h-5" />
+              Çakışan Rezervasyonlar ({conflicts.length})
+            </DialogTitle>
+          </DialogHeader>
+          {conflicts.length === 0 ? (
+            <div className="py-6 text-center text-sm text-gray-500">Çakışma kalmadı 🎉</div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-600">
+                Aynı odaya aynı tarihlerde birden fazla rezervasyon atanmış. Sorunu çözmek için aşağıdaki rezervasyonlardan birini açıp odasını değiştirin veya iptal edin.
+              </p>
+              {conflicts.map((c, idx) => {
+                const b1 = bookings.find(b => b.id === c.booking1_id);
+                const b2 = bookings.find(b => b.id === c.booking2_id);
+                const fmt = (d) => d instanceof Date ? d.toLocaleDateString('tr-TR') : new Date(d).toLocaleDateString('tr-TR');
+                const openBooking = (booking) => {
+                  if (!booking) return;
+                  setSelectedBooking(booking);
+                  setShowConflictsModal(false);
+                  setShowDetailsDialog(true);
+                };
+                return (
+                  <div key={idx} className="border border-red-200 rounded-lg p-3 bg-red-50/50" data-testid={`conflict-row-${idx}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-semibold text-sm text-red-700">
+                        Oda {c.room_number || c.room_id}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        Çakışma: {fmt(c.overlap_start)} – {fmt(c.overlap_end)}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openBooking(b1)}
+                        disabled={!b1}
+                        className="text-left p-2 bg-white border rounded hover:bg-orange-50 hover:border-orange-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-testid={`conflict-open-b1-${idx}`}
+                      >
+                        <div className="text-xs text-gray-500">Rezervasyon 1</div>
+                        <div className="text-sm font-medium truncate">{c.guest1 || '(misafir bilinmiyor)'}</div>
+                        {b1 && <div className="text-xs text-gray-600">{fmt(b1.check_in)} → {fmt(b1.check_out)}</div>}
+                        <div className="text-xs text-orange-600 mt-1">Aç ve düzenle →</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openBooking(b2)}
+                        disabled={!b2}
+                        className="text-left p-2 bg-white border rounded hover:bg-orange-50 hover:border-orange-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-testid={`conflict-open-b2-${idx}`}
+                      >
+                        <div className="text-xs text-gray-500">Rezervasyon 2</div>
+                        <div className="text-sm font-medium truncate">{c.guest2 || '(misafir bilinmiyor)'}</div>
+                        {b2 && <div className="text-xs text-gray-600">{fmt(b2.check_in)} → {fmt(b2.check_out)}</div>}
+                        <div className="text-xs text-orange-600 mt-1">Aç ve düzenle →</div>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConflictsModal(false)}>Kapat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <BookingDetailsDialog
         open={showDetailsDialog}

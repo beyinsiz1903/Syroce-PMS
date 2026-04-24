@@ -26,6 +26,7 @@ const CalendarHeader = ({
   onShowFindRoomDialog,
   onShowNewBookingDialog,
   onShowUnassigned,
+  onShowConflicts,
 }) => {
   const navigate = useNavigate();
   const unassignedList = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
@@ -77,9 +78,16 @@ const CalendarHeader = ({
             </Button>
           )}
           {conflicts.length > 0 && (
-            <Badge className="bg-red-500 animate-pulse text-white text-xs px-2 py-1">
-              {conflicts.length} Cakisma
-            </Badge>
+            <Button
+              size="sm"
+              className="h-7 px-2 py-1 bg-red-500 hover:bg-red-600 animate-pulse text-white text-xs gap-1"
+              onClick={() => onShowConflicts?.()}
+              data-testid="conflicts-btn"
+              title="Çakışan rezervasyonları görüntüle"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              {conflicts.length} Çakışma
+            </Button>
           )}
         </div>
         <div className="flex items-center gap-2">
