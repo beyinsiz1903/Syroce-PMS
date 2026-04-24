@@ -336,7 +336,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
   const loadAvailable = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`/pms/bookings/${booking.id}/available-rooms`);
+      const res = await axios.get(`/bookings/${booking.id}/available-rooms`);
       const data = Array.isArray(res.data)
         ? res.data
         : (res.data?.available_rooms || res.data?.rooms || []);
