@@ -19,8 +19,6 @@ import pytest
 from controlplane.failure_model import classify_failure, FailureType
 from core.outbox_service import is_retryable_error
 
-pytestmark = [pytest.mark.asyncio]
-
 CHAOS_PREFIX = "chaos-test-"
 
 

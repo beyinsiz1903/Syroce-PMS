@@ -1,0 +1,76 @@
+tests/resilience/test_provider_failures.py::TestProviderTimeoutClassification::test_timeout_classified_as_retryable
+  tests/resilience/test_provider_failures.py:115: PytestWarning: The test <Function test_timeout_classified_as_retryable> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderTimeoutClassification::test_timeout_with_provider_context_classified_as_provider_error
+  tests/resilience/test_provider_failures.py:130: PytestWarning: The test <Function test_timeout_with_provider_context_classified_as_provider_error> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderTimeoutClassification::test_timeout_is_retryable_in_outbox
+  tests/resilience/test_provider_failures.py:137: PytestWarning: The test <Function test_timeout_is_retryable_in_outbox> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestMalformedPayloadClassification::test_validation_errors_classified_as_data_error
+  tests/resilience/test_provider_failures.py:183: PytestWarning: The test <Function test_validation_errors_classified_as_data_error> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestMalformedPayloadClassification::test_permanent_errors_not_retryable_in_outbox
+  tests/resilience/test_provider_failures.py:198: PytestWarning: The test <Function test_permanent_errors_not_retryable_in_outbox> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderErrorClassification::test_provider_errors_classified_correctly
+  tests/resilience/test_provider_failures.py:249: PytestWarning: The test <Function test_provider_errors_classified_correctly> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderErrorClassification::test_security_errors_highest_priority
+  tests/resilience/test_provider_failures.py:265: PytestWarning: The test <Function test_security_errors_highest_priority> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderErrorClassification::test_rate_limit_429_classified_correctly
+  tests/resilience/test_provider_failures.py:281: PytestWarning: The test <Function test_rate_limit_429_classified_correctly> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderErrorClassification::test_unknown_errors_default_to_retryable
+  tests/resilience/test_provider_failures.py:292: PytestWarning: The test <Function test_unknown_errors_default_to_retryable> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_provider_failures.py::TestProviderErrorClassification::test_severity_defaults_correct
+  tests/resilience/test_provider_failures.py:298: PytestWarning: The test <Function test_severity_defaults_correct> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+tests/resilience/test_worker_failures.py::TestProvider429DuringARIPush::test_429_classified_as_retryable
+  tests/resilience/test_worker_failures.py:42: PytestWarning: The test <Function test_429_classified_as_retryable> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    @pytest.mark.chaos_l1
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/runner/work/emergent-yeni-uygulama/emergent-yeni-uygulama/backend/test-results.xml -
+=========================== short test summary info ============================
+ERROR tests/test_hardening_comprehensive.py::test_cm_runtime_status_real_fields - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_cm_sync_stats_structure - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_cm_drift_data - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_cm_providers_data - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_queue_health_real_fields - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_worker_per_queue_breakdown - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_dead_letter_structure - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_stuck_tasks_grouping - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_worker_severity_on_no_activity - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_audit_status_real_fields - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_rate_limit_real_fields - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_tenant_guard_status - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_log_sanitization_coverage - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_security_severity_no_violations - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_cm_enriched_contract - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_workers_contract - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_security_contract - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_overview_all_subsystems - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_alerts - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_normalized_observability - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_role_dashboard_admin_panels - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_role_dashboard_drift_data - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_role_dashboard_queue_health - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_audit_metrics_endpoint - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_audit_metrics_recon - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_live_status - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+ERROR tests/test_hardening_comprehensive.py::test_live_events - requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/auth/login (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 111] Connection refused"))
+=========== 271 passed, 60 skipped, 16 warnings, 27 errors in 6.83s ============
+Error: Process completed with exit code 1.

@@ -9,15 +9,19 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/") or "http://localhost:8001"
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/") or "http://localhost:8000"
 
 
 @pytest.fixture(scope="module")
 def auth_headers():
-    resp = requests.post(
-        f"{BASE_URL}/api/auth/login",
-        json={"email": "demo@hotel.com", "password": "demo123"},
-    )
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": "demo@hotel.com", "password": "demo123"},
+            timeout=5,
+        )
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        pytest.skip(f"Backend not reachable at {BASE_URL}: {e}")
     if resp.status_code != 200:
         pytest.skip("Authentication failed for demo@hotel.com")
     token = resp.json().get("access_token", "")

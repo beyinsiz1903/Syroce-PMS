@@ -18,8 +18,6 @@ import pytest
 
 from core.outbox_service import is_retryable_error
 
-pytestmark = [pytest.mark.asyncio]
-
 
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
