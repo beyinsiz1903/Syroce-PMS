@@ -337,7 +337,9 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
     setLoading(true);
     try {
       const res = await axios.get(`/pms/bookings/${booking.id}/available-rooms`);
-      const data = Array.isArray(res.data) ? res.data : (res.data?.rooms || []);
+      const data = Array.isArray(res.data)
+        ? res.data
+        : (res.data?.available_rooms || res.data?.rooms || []);
       data.sort((a, b) => (b.is_same_type ? 1 : 0) - (a.is_same_type ? 1 : 0));
       setAvailable(data);
     } catch (err) {

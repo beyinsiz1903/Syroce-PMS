@@ -916,7 +916,10 @@ async def get_available_rooms_for_booking(
             ]
         })
 
-        if conflicts == 0 and room.get('status') in ['available', 'inspected']:
+        # Block only rooms that physically cannot be used at the target dates.
+        # Current room.status reflects today's occupancy, not future availability.
+        blocked_statuses = {'out_of_service', 'maintenance', 'blocked'}
+        if conflicts == 0 and room.get('status') not in blocked_statuses:
             available_rooms.append({
                 'id': room['id'],
                 'room_number': room['room_number'],
