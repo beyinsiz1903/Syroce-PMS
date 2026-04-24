@@ -16,7 +16,7 @@ from fastapi.responses import Response
 
 from core.csv_safe import safe_writerow
 from core.pci_dss import evaluate_controls, summary
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.schemas import User
 
 router = APIRouter(prefix="/api/compliance/pci", tags=["compliance"])
@@ -25,9 +25,15 @@ _ADMIN_ROLES = {"super_admin", "platform_admin", "admin", "owner"}
 
 
 def _require_admin(user: User) -> None:
+    if _is_super_admin(user):
+        return
     role = (user.role or "").lower()
-    if role not in _ADMIN_ROLES:
-        raise HTTPException(status_code=403, detail="Bu rapor için yönetici yetkisi gerekli")
+    if role in _ADMIN_ROLES:
+        return
+    roles = getattr(user, "roles", None) or []
+    if isinstance(roles, list) and any(((r or "").lower() in _ADMIN_ROLES) for r in roles):
+        return
+    raise HTTPException(status_code=403, detail="Bu rapor için yönetici yetkisi gerekli")
 
 
 @router.get("/status")

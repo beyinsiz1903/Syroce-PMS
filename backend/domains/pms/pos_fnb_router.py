@@ -16,6 +16,7 @@ from core.helpers import (
     require_feature,
 )
 from core.security import (
+    _is_super_admin,
     get_current_user,
     security,
 )
@@ -1874,7 +1875,7 @@ async def adjust_stock(
 
     # Check permissions - only Warehouse and F&B Manager
     allowed_roles = ['admin', 'warehouse', 'fnb_manager', 'supervisor']
-    if current_user.role not in allowed_roles:
+    if not _is_super_admin(current_user) and current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=403,
             detail="Insufficient permissions. Only Warehouse staff and F&B Manager can adjust stock."

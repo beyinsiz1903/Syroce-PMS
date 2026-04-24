@@ -165,7 +165,7 @@ class IncidentResponseService:
         reason: str = "",
     ) -> ServiceResult:
         """Replay dead-letter queue entries back to their original queue."""
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only operation", "FORBIDDEN")
 
         dead_letters = await self._db.dead_letter_queue.find(
@@ -207,7 +207,7 @@ class IncidentResponseService:
         self, ctx: OperationContext, stale_minutes: int = 30
     ) -> ServiceResult:
         """Find and reset stuck worker tasks."""
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only operation", "FORBIDDEN")
 
         cutoff = (datetime.now(UTC) - timedelta(minutes=stale_minutes)).isoformat()

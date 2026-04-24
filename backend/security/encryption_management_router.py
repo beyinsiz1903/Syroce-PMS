@@ -33,6 +33,9 @@ router = APIRouter(
 
 def _require_encryption_admin(user: User = Depends(get_current_user)) -> User:
     """Only super_admin or admin can manage encryption keys."""
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return user
     if user.role not in ("super_admin", "admin"):
         raise HTTPException(
             status_code=403,

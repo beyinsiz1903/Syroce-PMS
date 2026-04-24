@@ -90,7 +90,7 @@ const CATEGORY_LABELS = {
 
 const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState(null);
   const [dashboard, setDashboard] = useState(null);

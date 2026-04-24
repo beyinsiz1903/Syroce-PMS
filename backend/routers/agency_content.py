@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.enums import UserRole
 from models.schemas import User
 
@@ -31,6 +31,8 @@ def _uuid():
 
 
 def _require_hotel_staff(user: User):
+    if _is_super_admin(user):
+        return
     if user.role in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
         raise HTTPException(status_code=403, detail="Acente kullanicilari bu islemi yapamaz")
 

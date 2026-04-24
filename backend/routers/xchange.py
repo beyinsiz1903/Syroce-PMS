@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db
 from integrations.xchange.bus import bus
 from integrations.xchange.registry import PARTNERS, list_partners
@@ -19,8 +19,14 @@ _ADMIN_ROLES = {"super_admin", "platform_admin", "admin", "owner"}
 
 
 def _require_admin(user: User) -> None:
-    if (user.role or "").lower() not in _ADMIN_ROLES:
-        raise HTTPException(status_code=403, detail="Yönetici yetkisi gerekli")
+    if _is_super_admin(user):
+        return
+    if (user.role or "").lower() in _ADMIN_ROLES:
+        return
+    roles = getattr(user, "roles", None) or []
+    if isinstance(roles, list) and any(((r or "").lower() in _ADMIN_ROLES) for r in roles):
+        return
+    raise HTTPException(status_code=403, detail="Yönetici yetkisi gerekli")
 
 
 def _require_tenant(user: User) -> str:

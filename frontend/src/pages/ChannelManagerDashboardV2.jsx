@@ -65,7 +65,7 @@ const TimeAgo = ({ ts }) => {
 
 const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [drilldown, setDrilldown] = useState(null);

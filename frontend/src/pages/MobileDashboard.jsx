@@ -97,10 +97,18 @@ const MobileDashboard = ({ user, onLogout }) => {
     }
   ];
 
-  // Filter departments based on user role
-  const availableDepartments = departments.filter(dept => 
-    dept.roles.includes(user?.role?.toUpperCase() || '')
-  );
+  // Filter departments based on user role.
+  // Super admins see every department. Multi-role users (user.roles[]) are
+  // honored in addition to the primary `user.role`.
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const userRoleSet = new Set();
+  if (user?.role) userRoleSet.add(String(user.role).toUpperCase());
+  if (Array.isArray(user?.roles)) {
+    user.roles.forEach((r) => { if (r) userRoleSet.add(String(r).toUpperCase()); });
+  }
+  const availableDepartments = isSuperAdmin
+    ? departments
+    : departments.filter(dept => dept.roles.some(r => userRoleSet.has(r)));
 
   const handleDepartmentClick = (path) => {
     navigate(path);

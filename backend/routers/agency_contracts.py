@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db, tenant_context  # noqa: F401
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v95 DW
@@ -315,6 +315,10 @@ hotel_router = APIRouter(prefix="/api/marketplace/incoming-requests", tags=["Mar
 
 
 def _require_hotel_user(user: User) -> str:
+    if _is_super_admin(user):
+        if not user.tenant_id:
+            raise HTTPException(403, "Geçerli bir otel kiracısı yok")
+        return user.tenant_id
     if user.role in ("agency_admin", "agency_agent"):
         raise HTTPException(403, "Acente kullanıcısı bu sayfayı görüntüleyemez")
     if not user.tenant_id:

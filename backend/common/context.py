@@ -14,6 +14,7 @@ class OperationContext:
     actor_id: str
     actor_email: str = ""
     actor_role: str = ""
+    actor_is_super_admin: bool = False
     property_id: str | None = None
     idempotency_key: str | None = None
     correlation_id: str | None = None
@@ -22,11 +23,18 @@ class OperationContext:
     @classmethod
     def from_user(cls, user, **overrides) -> "OperationContext":
         """Build context from the authenticated user (FastAPI dependency)."""
+        # Honor both `role` and `roles[]` representations of super_admin.
+        try:
+            from core.security import _is_super_admin
+            is_sa = _is_super_admin(user)
+        except Exception:
+            is_sa = False
         return cls(
             tenant_id=getattr(user, "tenant_id", ""),
             actor_id=getattr(user, "id", ""),
             actor_email=getattr(user, "email", ""),
             actor_role=getattr(user, "role", ""),
+            actor_is_super_admin=is_sa,
             property_id=getattr(user, "property_id", None),
             **overrides,
         )

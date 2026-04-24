@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
@@ -45,13 +45,25 @@ MANAGER_ROLES = {
 
 
 def _require_hotel_role(user: User):
-    if user.role not in HOTEL_ROLES:
-        raise HTTPException(status_code=403, detail="Bu sayfaya erisim yetkiniz yok.")
+    if _is_super_admin(user):
+        return
+    if user.role in HOTEL_ROLES:
+        return
+    extra_roles = getattr(user, "roles", None) or []
+    if isinstance(extra_roles, list) and any((r in HOTEL_ROLES) for r in extra_roles):
+        return
+    raise HTTPException(status_code=403, detail="Bu sayfaya erisim yetkiniz yok.")
 
 
 def _require_manager_role(user: User):
-    if user.role not in MANAGER_ROLES:
-        raise HTTPException(status_code=403, detail="Bu islemi yapmak icin yonetici yetkisi gereklidir.")
+    if _is_super_admin(user):
+        return
+    if user.role in MANAGER_ROLES:
+        return
+    extra_roles = getattr(user, "roles", None) or []
+    if isinstance(extra_roles, list) and any((r in MANAGER_ROLES) for r in extra_roles):
+        return
+    raise HTTPException(status_code=403, detail="Bu islemi yapmak icin yonetici yetkisi gereklidir.")
 
 
 REPORT_TYPES = [

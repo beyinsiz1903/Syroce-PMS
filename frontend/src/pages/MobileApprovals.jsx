@@ -169,7 +169,11 @@ const MobileApprovals = ({ user }) => {
 
   const canApprove = () => {
     const allowedRoles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager'];
-    return allowedRoles.includes(user?.role);
+    if (user?.role === 'super_admin') return true;
+    if (Array.isArray(user?.roles) && user.roles.includes('super_admin')) return true;
+    if (allowedRoles.includes(user?.role)) return true;
+    if (Array.isArray(user?.roles) && user.roles.some((r) => allowedRoles.includes(r))) return true;
+    return false;
   };
 
   const stats = {

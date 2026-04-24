@@ -28,6 +28,9 @@ router = APIRouter(
 
 def _require_ops_role(user: User = Depends(get_current_user)) -> User:
     """Only super_admin can manage field encryption."""
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return user
     if user.role not in ("super_admin", "admin"):
         raise HTTPException(status_code=403, detail="Yetkisiz: field encryption ops icin super_admin veya admin rolu gerekli")
     return user

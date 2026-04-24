@@ -102,7 +102,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     );
   }
 
-  if (user.role !== 'super_admin' && user.role !== 'admin') {
+  const _userRoles = Array.isArray(user?.roles) ? user.roles : [];
+  const _isAllowed = ['super_admin', 'admin'].includes(user?.role) || _userRoles.includes('super_admin') || _userRoles.includes('admin');
+  if (!_isAllowed) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
         <div className="p-6 text-sm text-slate-600">You do not have access to this module.</div>

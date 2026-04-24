@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from cache_manager import cached as _cached
 from core.audit import log_audit_event
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from core.spa_mice_authz import require_roles
 from core.tenant_db import get_system_db
 from models.schemas import User, UserRole
@@ -46,8 +46,8 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     chain (matching `chain_id` on the tenants doc). If no chain_id is set,
     they see only their own tenant.
     """
-    role = getattr(current_user, "role", None) or ""
-    if role == "super_admin":
+    # Honor both `role` and `roles[]` representations of super_admin.
+    if _is_super_admin(current_user):
         cursor = db.tenants.find({}, {"_id": 0, "tenant_id": 1})
         ids = [t["tenant_id"] async for t in cursor if t.get("tenant_id")]
         return ids or [current_user.tenant_id]

@@ -101,6 +101,10 @@ def require_op(operation: str):
     from models.schemas import User as _User
 
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        # Super admin: full bypass on per-operation RBAC.
+        from core.security import _is_super_admin as _is_sa
+        if _is_sa(current_user):
+            return
         RolePermissionService().enforce_permission(current_user.role, operation)
     return _dep
 
@@ -150,6 +154,10 @@ def require_role(*allowed_roles):
         return getattr(r, "value", str(r))
     allowed = {_norm(r) for r in allowed_roles}
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        # Super admin: full bypass on role allowlist.
+        from core.security import _is_super_admin as _is_sa
+        if _is_sa(current_user):
+            return
         if _norm(current_user.role) not in allowed:
             raise _HTTPException(status_code=403, detail="Insufficient role")
     return _dep

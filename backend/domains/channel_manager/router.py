@@ -24,6 +24,7 @@ from core.database import db
 from core.security import (
     JWT_ALGORITHM,
     JWT_SECRET,
+    _is_super_admin,
     security,
 )
 from models.enums import BookingStatus
@@ -211,7 +212,7 @@ async def _temp_require_super_admin(
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         user = User(**user_doc)
-        if user.role != "admin":
+        if not _is_super_admin(user) and user.role != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin required")
         return user
     except HTTPException:

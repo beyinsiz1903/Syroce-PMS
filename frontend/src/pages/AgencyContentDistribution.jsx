@@ -27,7 +27,8 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
   const [saving, setSaving] = useState(false);
   const [distributing, setDistributing] = useState(false);
 
-  const canDelete = ['super_admin', 'admin'].includes(user?.role);
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const canDelete = isSuperAdmin || ['super_admin', 'admin'].includes(user?.role) || (Array.isArray(user?.roles) && user.roles.some((r) => ['super_admin', 'admin'].includes(r)));
 
   useEffect(() => {
     const load = async () => {

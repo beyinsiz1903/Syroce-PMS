@@ -20,6 +20,9 @@ router = APIRouter(prefix="/api/night-audit", tags=["Night Audit Core"])
 
 
 def _admin_guard(user: User):
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return
     if user.role not in ("super_admin", "admin"):
         raise HTTPException(status_code=403, detail="Only admins can manage night audit")
 

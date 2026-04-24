@@ -19,7 +19,7 @@ from core.onboarding import (
     get_onboarding_progress,
     mark_step_complete,
 )
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.schemas import User
 
 # Steps the wizard is allowed to mark complete by hand. Auto-detected
@@ -57,13 +57,18 @@ def _require_tenant_admin(user: User) -> str:
     mutation of tenant onboarding state. Receptionists and other
     line-staff users may READ progress but never write."""
     tenant_id = _require_tenant(user)
+    if _is_super_admin(user):
+        return tenant_id
     role = (user.role or "").lower()
-    if role not in ADMIN_ROLES:
-        raise HTTPException(
-            status_code=403,
-            detail="Bu işlem için yönetici yetkisi gerekli",
-        )
-    return tenant_id
+    if role in ADMIN_ROLES:
+        return tenant_id
+    extra_roles = getattr(user, "roles", None) or []
+    if isinstance(extra_roles, list) and any(((r or "").lower() in ADMIN_ROLES) for r in extra_roles):
+        return tenant_id
+    raise HTTPException(
+        status_code=403,
+        detail="Bu işlem için yönetici yetkisi gerekli",
+    )
 
 
 def _now_iso() -> str:

@@ -14,7 +14,7 @@ const MAX_ROOMS_PER_BATCH = 200;
 
 const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
   const { t } = useTranslation();
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
 
   const [bulkRoomTab, setBulkRoomTab] = useState('range');
   const [bulkRange, setBulkRange] = useState({ prefix: '', start_number: 101, end_number: 110, room_type: 'standard', floor: 1, capacity: 2, base_price: 150, view: '', bed_type: 'king', amenities: [] });

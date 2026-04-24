@@ -288,7 +288,7 @@ class PosFnbServiceV2:
         order_id: str,
         reason: str = "",
     ) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
             return ServiceResult.fail("Void requires supervisor permission", "FORBIDDEN")
 
         order = await self._db.pos_orders.find_one(
@@ -357,7 +357,7 @@ class PosFnbServiceV2:
         reason: str,
         idempotency_key: str | None = None,
     ) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "warehouse", "fnb_manager", "supervisor", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "warehouse", "fnb_manager", "supervisor", "super_admin"):
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
 
         if idempotency_key:

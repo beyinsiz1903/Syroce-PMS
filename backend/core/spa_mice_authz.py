@@ -43,6 +43,10 @@ def _user_role(user: User) -> UserRole | None:
 
 def require_roles(user: User, allowed: set[UserRole]) -> None:
     """Raise 403 unless *user* has one of *allowed* roles."""
+    # Super admin: full bypass (covers role + roles[] representations).
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return
     role = _user_role(user)
     if role is None or role not in allowed:
         raise HTTPException(

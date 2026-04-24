@@ -33,6 +33,7 @@ from core.database import db
 from core.security import (
     JWT_ALGORITHM,
     JWT_SECRET,
+    _is_super_admin,
     create_token,
     get_current_user,
     hash_password,
@@ -98,15 +99,25 @@ def _uuid():
 
 
 def _require_hotel_staff(user: User):
-    """Ensure user is hotel staff (not agency)."""
+    """Ensure user is hotel staff (not agency). Super_admin always allowed."""
+    if _is_super_admin(user):
+        return
     if user.role in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
         raise HTTPException(status_code=403, detail="Acente kullanicilari bu islemi yapamaz")
 
 
 def _require_agency_user(user: User):
-    """Ensure user is an agency user."""
-    if user.role not in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
-        raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
+    """Ensure user is an agency user (super_admin always allowed)."""
+    if _is_super_admin(user):
+        return
+    if user.role in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
+        return
+    extra_roles = getattr(user, "roles", None) or []
+    if isinstance(extra_roles, list) and any(
+        r in ("agency_admin", "agency_agent", "super_admin") for r in extra_roles
+    ):
+        return
+    raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
 
 
 async def _get_agency_user_from_token(token: str) -> dict:
@@ -121,7 +132,17 @@ async def _get_agency_user_from_token(token: str) -> dict:
         )
         if not user_doc:
             raise HTTPException(status_code=401, detail="Kullanici bulunamadi")
-        if user_doc.get("role") not in ("agency_admin", "agency_agent"):
+        primary_role = user_doc.get("role")
+        roles_arr = user_doc.get("roles") or []
+        is_sa = (
+            primary_role == "super_admin"
+            or (isinstance(roles_arr, list) and "super_admin" in roles_arr)
+        )
+        is_agency = (
+            primary_role in ("agency_admin", "agency_agent")
+            or (isinstance(roles_arr, list) and any(r in ("agency_admin", "agency_agent") for r in roles_arr))
+        )
+        if not is_sa and not is_agency:
             raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
         return user_doc
     except pyjwt.ExpiredSignatureError:
@@ -325,17 +346,26 @@ async def agency_login(data: AgencyLoginRequest):
     if not user_doc:
         raise HTTPException(status_code=401, detail="E-posta veya sifre hatali")
 
-    if user_doc.get("role") not in ("agency_admin", "agency_agent"):
+    _login_role = user_doc.get("role")
+    _login_roles = user_doc.get("roles") or []
+    _login_is_sa = _login_role == "super_admin" or "super_admin" in _login_roles
+    _login_is_agency = _login_role in ("agency_admin", "agency_agent") or any(
+        r in ("agency_admin", "agency_agent") for r in _login_roles
+    )
+    if not (_login_is_sa or _login_is_agency):
         raise HTTPException(status_code=403, detail="Bu giris sadece acente kullanicilari icindir")
 
     if not verify_password(data.password, user_doc.get("password", "")):
         raise HTTPException(status_code=401, detail="E-posta veya sifre hatali")
 
-    agency = await sysdb.agencies.find_one(
-        {"id": user_doc.get("agency_id")}, {"_id": 0}
-    )
-    if not agency or agency.get("status") != "active":
-        raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
+    agency = None
+    if user_doc.get("agency_id"):
+        agency = await sysdb.agencies.find_one(
+            {"id": user_doc.get("agency_id")}, {"_id": 0}
+        )
+    if not _login_is_sa:
+        if not agency or agency.get("status") != "active":
+            raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
 
     token = create_token(user_doc["id"], user_doc.get("tenant_id"))
 
@@ -346,12 +376,13 @@ async def agency_login(data: AgencyLoginRequest):
             "name": user_doc.get("name", ""),
             "email": user_doc.get("email", ""),
             "role": user_doc.get("role", ""),
+            "roles": list(user_doc.get("roles") or []),
             "agency_id": user_doc.get("agency_id", ""),
             "tenant_id": user_doc.get("tenant_id", ""),
         },
         "agency": {
-            "id": agency["id"],
-            "name": agency["name"],
+            "id": agency["id"] if agency else "",
+            "name": agency["name"] if agency else "",
         },
     }
 
@@ -361,10 +392,12 @@ async def agency_portal_profile(current_user: User = Depends(get_current_user)):
     """Acente profil ve otel bilgisi."""
     _require_agency_user(current_user)
     agency_id = getattr(current_user, "agency_id", None)
-    if not agency_id:
+    agency = None
+    if agency_id:
+        agency = await db.agencies.find_one({"id": agency_id}, {"_id": 0})
+    elif not _is_super_admin(current_user):
         raise HTTPException(status_code=400, detail="Acente bilgisi bulunamadi")
 
-    agency = await db.agencies.find_one({"id": agency_id}, {"_id": 0})
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
 
     return {

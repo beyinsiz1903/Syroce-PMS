@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import (
+    _is_super_admin,
     get_current_user,
     security,
 )
@@ -137,7 +138,7 @@ async def approve_request(
 
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
-    if current_user.role not in allowed_roles:
+    if not _is_super_admin(current_user) and current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
@@ -211,7 +212,7 @@ async def approve_request_v2(
 
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
-    if current_user.role not in allowed_roles:
+    if not _is_super_admin(current_user) and current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
@@ -284,7 +285,7 @@ async def approve_request_v3(
 
     # Check permissions - only certain roles can approve
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
-    if current_user.role not in allowed_roles:
+    if not _is_super_admin(current_user) and current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=403,
             detail="Insufficient permissions. Only managers can approve requests."
@@ -357,7 +358,7 @@ async def reject_request(
 
     # Check permissions
     allowed_roles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager']
-    if current_user.role not in allowed_roles:
+    if not _is_super_admin(current_user) and current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=403,
             detail="Insufficient permissions. Only managers can reject requests."

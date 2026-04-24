@@ -243,19 +243,21 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
           </Card>
         )}
 
-        {currentDef.id === "rooms" && (
+        {currentDef.id === "rooms" && (() => {
+          const _isSA = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+          return (
           <ActionStep
             icon={BedDouble}
             title="Odalarınızı tanımlayın"
-            description={user?.role === 'super_admin'
+            description={_isSA
               ? "Oda oluşturma yalnızca süper-admin kullanıcılar tarafından yapılabilir. Toplu eklemeden önce oda numaraları önizlenir ve onayınız istenir."
               : "Oda oluşturma yetkisi yalnızca süper-admin kullanıcılara aittir. Lütfen süper-admin ile iletişime geçin."}
             done={!!stepStatus.rooms_configured}
             primary={{
-              label: user?.role === 'super_admin' ? "Toplu Oda Ekle (önizlemeli)" : "Yetki Gerekli",
-              disabled: user?.role !== 'super_admin',
+              label: _isSA ? "Toplu Oda Ekle (önizlemeli)" : "Yetki Gerekli",
+              disabled: !_isSA,
               action: () => {
-                if (user?.role !== 'super_admin') return;
+                if (!_isSA) return;
                 window.localStorage.setItem(
                   `pms_open_dialog_once:${tenant?.id || "x"}`, "bulk-rooms"
                 );
@@ -263,7 +265,8 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
               },
             }}
           />
-        )}
+          );
+        })()}
 
         {currentDef.id === "rates" && (
           <ActionStep

@@ -212,7 +212,7 @@ class PilotReadinessService:
     async def set_feature_toggle(
         self, ctx: OperationContext, feature: str, enabled: bool
     ) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only", "FORBIDDEN")
 
         await self._db.feature_toggles.update_one(

@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
 
@@ -54,7 +54,11 @@ def _hash_key(key: str) -> str:
 
 
 def _require_hotel_admin(user: User) -> str:
-    """Otel admin/sahibi rollerini doğrular ve tenant_id döner."""
+    """Otel admin/sahibi rollerini doğrular ve tenant_id döner. Super_admin always allowed."""
+    if _is_super_admin(user):
+        if not user.tenant_id:
+            raise HTTPException(403, "Geçerli bir otel kiracısı yok")
+        return user.tenant_id
     if user.role in ("agency_admin", "agency_agent"):
         raise HTTPException(403, "Acente kullanıcıları otel listing yönetemez")
     if not user.tenant_id:
@@ -62,12 +66,29 @@ def _require_hotel_admin(user: User) -> str:
     return user.tenant_id
 
 
-def _require_system_admin(token: str | None = Header(None, alias="X-Marketplace-Admin-Token")) -> bool:
-    """Sistem yöneticisi yetkisi: env var ile koruma.
+async def _try_get_super_admin(authorization: str | None = Header(None)) -> bool:
+    """Authorization header'dan opsiyonel super_admin tespiti (401 atmaz)."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return False
+    try:
+        from fastapi.security import HTTPAuthorizationCredentials
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
+        user = await get_current_user(creds)
+        return _is_super_admin(user)
+    except Exception:
+        return False
 
-    Production'da gerçek bir super-admin paneline bağlanır; MVP için
-    MARKETPLACE_ADMIN_TOKEN env variable'ı yeterli.
+
+def _require_system_admin(
+    token: str | None = Header(None, alias="X-Marketplace-Admin-Token"),
+    is_sa: bool = Depends(_try_get_super_admin),
+) -> bool:
+    """Sistem yöneticisi yetkisi: env var token VEYA super_admin JWT ile koruma.
+
+    Super_admin (role veya roles[]) her zaman geçerli sayılır.
     """
+    if is_sa:
+        return True
     expected = os.getenv("MARKETPLACE_ADMIN_TOKEN")
     if not expected:
         raise HTTPException(503, "Marketplace admin yapılandırılmamış")

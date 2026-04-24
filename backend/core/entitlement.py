@@ -98,6 +98,65 @@ def _decode_tenant_from_token(token: str) -> str | None:
         return None
 
 
+def _decode_token_payload(token: str) -> dict | None:
+    """Decode the full JWT payload (used to read user_id alongside tenant_id)."""
+    try:
+        import jwt
+
+        from core.security import JWT_SECRET
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception:
+        return None
+
+
+# Lightweight in-process TTL cache for super-admin lookups in the
+# entitlement middleware. Entries expire after 60 seconds so role
+# revocations are reflected reasonably quickly without hitting the DB
+# on every API call.
+_SUPER_ADMIN_CACHE: dict[str, tuple[bool, float]] = {}
+_SUPER_ADMIN_TTL_SECONDS = 60.0
+_SUPER_ADMIN_CACHE_MAX = 512
+
+
+async def _is_super_admin_user(user_id: str) -> bool:
+    """Return True if *user_id* corresponds to a super_admin user.
+
+    Uses a small TTL cache so the middleware does not pay a DB roundtrip
+    on every authenticated request.
+    """
+    if not user_id:
+        return False
+    now = time.time()
+    cached = _SUPER_ADMIN_CACHE.get(user_id)
+    if cached and (now - cached[1]) < _SUPER_ADMIN_TTL_SECONDS:
+        return cached[0]
+    try:
+        # Legacy user docs may key by "user_id" instead of "id".
+        doc = await db.users.find_one(
+            {"$or": [{"id": user_id}, {"user_id": user_id}]},
+            {"_id": 0, "role": 1, "roles": 1},
+        )
+    except Exception:
+        return False
+    is_sa = False
+    if doc:
+        if (doc.get("role") or "") == "super_admin":
+            is_sa = True
+        else:
+            roles = doc.get("roles") or []
+            if isinstance(roles, list) and "super_admin" in roles:
+                is_sa = True
+    # Bound cache size with a simple eviction of oldest entries.
+    if len(_SUPER_ADMIN_CACHE) >= _SUPER_ADMIN_CACHE_MAX:
+        try:
+            oldest = min(_SUPER_ADMIN_CACHE.items(), key=lambda kv: kv[1][1])[0]
+            _SUPER_ADMIN_CACHE.pop(oldest, None)
+        except ValueError:
+            pass
+    _SUPER_ADMIN_CACHE[user_id] = (is_sa, now)
+    return is_sa
+
+
 def _match_route_module(path: str) -> str | None:
     """Find the required module for a given route path."""
     for prefix, module in ROUTE_MODULE_MAP.items():
@@ -178,12 +237,16 @@ class EntitlementMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract tenant from token
+        # Extract tenant + user from token
         raw_headers = scope.get("headers", [])
         token = _get_token_from_headers(raw_headers)
         tenant_id = None
+        user_id = None
         if token:
-            tenant_id = _decode_tenant_from_token(token)
+            payload = _decode_token_payload(token)
+            if payload:
+                tenant_id = payload.get("tenant_id")
+                user_id = payload.get("user_id")
 
         # Record API usage (fire-and-forget)
         if tenant_id:
@@ -192,11 +255,14 @@ class EntitlementMiddleware:
             except Exception:
                 pass
 
-        # Module enforcement
+        # Module enforcement (super_admin bypasses paid-module gating)
         if tenant_id:
             required_module = _match_route_module(path)
             if required_module:
-                allowed = await _check_module_access(tenant_id, required_module)
+                if user_id and await _is_super_admin_user(user_id):
+                    allowed = True
+                else:
+                    allowed = await _check_module_access(tenant_id, required_module)
                 if not allowed:
                     resp = JSONResponse(
                         status_code=403,

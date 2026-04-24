@@ -13,7 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.cache import cached
 from core.database import db
 from core.helpers import require_module
-from core.security import get_current_user, security
+from core.security import get_current_user, security, _is_super_admin
 from models.enums import ChannelType
 from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
 from modules.pms_core.role_permission_service import require_op
@@ -535,8 +535,8 @@ async def update_channel_rates(
     """Update rates across channels"""
     current_user = await get_current_user(credentials)
 
-    # Only admins and revenue managers can update rates
-    if current_user.role not in ['admin', 'revenue_manager', 'gm']:
+    # Only admins and revenue managers can update rates (super_admin always allowed)
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'revenue_manager', 'gm']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Determine initiator info
@@ -1595,7 +1595,7 @@ async def get_pending_approvals(
     current_user = await get_current_user(credentials)
 
     # Only managers and admins can see approvals (Sprint 33: super_admin included)
-    if current_user.role not in ['admin', 'manager', 'gm', 'super_admin']:
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'manager', 'gm', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     approvals = []
@@ -1662,8 +1662,8 @@ async def approve_request(
     """Approve an approval request"""
     current_user = await get_current_user(credentials)
 
-    # Only managers and admins can approve
-    if current_user.role not in ['admin', 'manager', 'gm']:
+    # Only managers and admins can approve (super_admin always allowed)
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'manager', 'gm']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     approval = await db.approval_requests.find_one({
@@ -1706,8 +1706,8 @@ async def reject_request(
     """Reject an approval request"""
     current_user = await get_current_user(credentials)
 
-    # Only managers and admins can reject
-    if current_user.role not in ['admin', 'manager', 'gm']:
+    # Only managers and admins can reject (super_admin always allowed)
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'manager', 'gm']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     approval = await db.approval_requests.find_one({
@@ -2175,7 +2175,7 @@ async def get_api_metrics(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Mock API metrics (in production, collect from actual monitoring)
@@ -2210,7 +2210,7 @@ async def get_system_health_detailed(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     import platform
@@ -2336,7 +2336,7 @@ async def set_alert_threshold(
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
-    if current_user.role not in ['admin', 'it_manager', 'super_admin']:
+    if not _is_super_admin(current_user) and current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
     threshold = {

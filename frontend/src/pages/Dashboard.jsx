@@ -515,8 +515,11 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
   ], [t, stats]);
 
   // Backend modül yetkilerine göre kartları filtrele
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const filteredModules = useMemo(() => {
     if (!modules) return visibleModules;
+    // Super admin: tüm modülleri (add-on'lar dahil) göster.
+    if (isSuperAdmin) return visibleModules;
 
     return visibleModules.filter((m) => {
       // PMS & mobil
@@ -550,7 +553,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       // Diğer modüller şimdilik her zaman görünür
       return true;
     });
-  }, [visibleModules, modules]);
+  }, [visibleModules, modules, isSuperAdmin]);
 
   // Kategorilere göre modülleri grupla
   const categorizedModules = useMemo(() => {

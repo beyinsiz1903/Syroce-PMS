@@ -292,7 +292,7 @@ class FrontdeskServiceV2:
                     "Force checkout with balance requires a reason",
                     "REASON_REQUIRED",
                 )
-            if ctx.actor_role not in ("admin", "supervisor", "super_admin", "gm"):
+            if not ctx.actor_is_super_admin and ctx.actor_role not in ("admin", "supervisor", "super_admin", "gm"):
                 return ServiceResult.fail(
                     "Force checkout requires supervisor or admin role",
                     "INSUFFICIENT_PERMISSION",
@@ -894,7 +894,7 @@ class FrontdeskServiceV2:
         charge_id: str,
         reason: str = "",
     ) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "supervisor", "super_admin", "gm"):
+        if not ctx.actor_is_super_admin and ctx.actor_role not in ("admin", "supervisor", "super_admin", "gm"):
             return ServiceResult.fail("Insufficient permission to void charge", "FORBIDDEN")
 
         charge = await self._db.folio_charges.find_one(

@@ -94,7 +94,7 @@ from pydantic import BaseModel, Field
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from core.tenant_db import set_tenant_context
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
@@ -119,6 +119,8 @@ def _hash_api_key(key: str) -> str:
 
 
 def _require_hotel_staff(user: User):
+    if _is_super_admin(user):
+        return
     if user.role in ("agency_admin", "agency_agent"):
         raise HTTPException(status_code=403, detail="Acente kullanicilari bu islemi yapamaz")
 

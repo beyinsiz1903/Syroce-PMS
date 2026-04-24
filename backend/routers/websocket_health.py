@@ -5,7 +5,7 @@ Event Broadcast / WebSocket Health Router.
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
@@ -59,7 +59,15 @@ async def unregister_session(session_id: str, current_user: User = Depends(get_c
     sess = tenant_sessions.get(session_id)
     if not sess:
         raise HTTPException(status_code=404, detail="session not found")
-    is_admin = str(getattr(current_user.role, "value", current_user.role)) in ("super_admin", "admin", "owner")
+    primary_role = str(getattr(current_user.role, "value", current_user.role))
+    extra_roles = getattr(current_user, "roles", None) or []
+    extra_role_strs = {str(r) for r in extra_roles if r is not None} if isinstance(extra_roles, list) else set()
+    admin_set = {"super_admin", "admin", "owner"}
+    is_admin = (
+        _is_super_admin(current_user)
+        or primary_role in admin_set
+        or bool(extra_role_strs & admin_set)
+    )
     if not is_admin and sess.get("user_id") != current_user.id:
         raise HTTPException(status_code=403, detail="cannot unregister another user's session")
     svc.unregister_session(current_user.tenant_id, session_id)

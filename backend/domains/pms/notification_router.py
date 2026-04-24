@@ -629,7 +629,8 @@ async def send_system_alert(
     """
     current_user = await get_current_user(credentials)
 
-    if current_user.role != 'admin':
+    from core.security import _is_super_admin
+    if not _is_super_admin(current_user) and current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="Only admin can send system alerts")
 
     # Get users with target roles

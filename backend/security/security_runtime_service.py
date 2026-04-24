@@ -90,7 +90,7 @@ class SecurityRuntimeService:
         })
 
     async def check_credentials(self, ctx: OperationContext) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin access required", "FORBIDDEN")
         result = await self._credential_guard.scan_weak_credentials(tenant_id=ctx.tenant_id)
 
@@ -154,7 +154,7 @@ class SecurityRuntimeService:
         })
 
     async def check_secret_leakage(self, ctx: OperationContext, text: str) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin access required", "FORBIDDEN")
         leaked = self._detect_leakage(text)
         return ServiceResult.success({

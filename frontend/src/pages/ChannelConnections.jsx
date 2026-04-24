@@ -28,7 +28,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
   const [disconnecting, setDisconnecting] = useState(null);
   const [showPassword, setShowPassword] = useState({});
 
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
 
   const [hrForm, setHrForm] = useState({
     token: '', hr_id: '', property_name: '',

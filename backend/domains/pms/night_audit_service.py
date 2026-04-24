@@ -53,7 +53,7 @@ class NightAuditService:
         start_date: str | None = None, end_date: str | None = None,
         limit: int = 100,
     ) -> ServiceResult:
-        if ctx.actor_role not in ("super_admin", "admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("super_admin", "admin"):
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
 
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}

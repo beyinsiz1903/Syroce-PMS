@@ -593,14 +593,26 @@ async def _activate_subscription(order: dict) -> None:
 # ── Authorization helpers ────────────────────────────────────────
 def _is_platform_admin(user: User) -> bool:
     """Platform-wide admin (Syroce staff). Manages product catalog."""
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return True
     role = (user.role or "").lower()
-    return role in ("super_admin", "platform_admin")
+    if role in ("super_admin", "platform_admin"):
+        return True
+    roles = getattr(user, "roles", None) or []
+    return any(r in ("super_admin", "platform_admin") for r in roles)
 
 
 def _is_tenant_admin(user: User) -> bool:
     """Hotel-level admin. May only see own tenant's data."""
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return True
     role = (user.role or "").lower()
-    return role in ("admin", "super_admin", "owner", "gm", "platform_admin")
+    if role in ("admin", "super_admin", "owner", "gm", "platform_admin"):
+        return True
+    roles = getattr(user, "roles", None) or []
+    return any(r in ("admin", "super_admin", "owner", "gm", "platform_admin") for r in roles)
 
 
 def _require_platform_admin(user: User) -> None:

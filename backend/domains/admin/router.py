@@ -15,6 +15,7 @@ from core.helpers import (
     require_super_admin_guard,
 )
 from core.security import (
+    _is_super_admin,
     get_current_user,
 )
 from modules.pms_core.role_permission_service import require_op  # v90 DW
@@ -958,7 +959,7 @@ async def change_subscription_plan(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can change the plan")
 
     new_tier = payload.new_tier.lower()
@@ -1074,7 +1075,7 @@ async def update_hotel_info(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update hotel/tenant information (admin only)"""
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can update hotel information")
 
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
@@ -1156,7 +1157,7 @@ async def get_available_roles(current_user: User = Depends(get_current_user)):
 @router.get("/hotel/team")
 async def list_hotel_team(current_user: User = Depends(get_current_user)):
     """List all team members for the current hotel (hotel admin only)"""
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can view team members")
 
     users_raw = await db.users.find(
@@ -1196,7 +1197,7 @@ async def add_team_member(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Add a new team member to the current hotel"""
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can add team members")
 
     # Get tenant tier
@@ -1263,7 +1264,7 @@ async def update_team_member_role(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update a team member's role"""
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can change roles")
 
     # Find team member
@@ -1313,7 +1314,7 @@ async def remove_team_member(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Remove a team member"""
-    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+    if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can remove members")
 
     if user_id == current_user.id:
@@ -1428,7 +1429,7 @@ async def admin_list_pms_lite_leads(
     current_user: User = Depends(get_current_user),
 ):
     """List PMS Lite marketing leads for super admin."""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if not _is_super_admin(current_user) and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can access leads")
 
     query: dict[str, Any] = {"source": "pms_lite_landing"}
@@ -1485,7 +1486,7 @@ async def admin_export_pms_lite_leads_csv(
     current_user: User = Depends(get_current_user),
 ):
     """Export PMS Lite marketing leads as CSV for super admin."""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if not _is_super_admin(current_user) and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can export leads")
 
     import csv
@@ -1612,7 +1613,7 @@ async def admin_update_pms_lite_lead(
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Update status/note of a PMS Lite marketing lead (super_admin only)."""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if not _is_super_admin(current_user) and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can update leads")
 
     update: dict[str, Any] = {}

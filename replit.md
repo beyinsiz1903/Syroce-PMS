@@ -4510,3 +4510,25 @@ Spa ve MICE artık tüm planlardan ayrı satılan add-on modüller; sadece super
 - Architect 1. tur: FAIL → 2 bypass yolu (events + B2B spa) tespit. Bu turda fixed; live test geçti.
 
 Marker: `# v106 add-on gating` (kod yorum).
+
+### v109 — super_admin universal access (April 2026)
+
+`role='super_admin'` VEYA `roles[]` içinde `super_admin` olan kullanıcılar tüm modül/sayfa/admin özelliklerine erişir (backend + frontend).
+
+**Backend bypass merkezleri:**
+- `core/security.py::_is_super_admin(user)` — primary `role` veya `roles[]` üzerinden kontrol.
+- `modules/pms_core/role_permission_service.py` — `require_op`, `require_role`, `require_roles` super_admin bypass.
+- `core/entitlement.py` — ASGI middleware `$or {id, user_id}` query, TTL cache, super_admin entitlement bypass.
+- `common/context.py` — `OperationContext.actor_is_super_admin` alanı `from_user()`'da set; service-layer bypass için kullanılır.
+
+**Patch'lenen router/service'ler (toplam 19+ tur architect doğrulaması):**
+- analytics, channel_manager, approvals, pos_fnb (+v2), admin/router (9 site), spa_mice_authz, supplies_market, security routers (pii/field/encryption), marketplace, integrations_afsadakat, night_audit, xchange, pci_compliance, ops_guard, websocket_health, cross_property._chain_tenant_ids, incident_service, security_runtime_service, pilot_readiness, notification_router, onboarding, b2b_analytics, report_scheduler, misc_router (export_folio_csv).
+- Service ctx: frontdesk_service_v2 + 4 service-layer dosya `actor_is_super_admin` bypass.
+- Agency cluster: `agency_portal.py` (login + profile + 3 helper guard), `agency_content.py`, `agency_contracts.py`, `b2b_api.py`, `marketplace_b2b.py` (system_admin endpoint'i artık JWT super_admin'i de kabul eder, env token fallback korundu).
+
+**Frontend:**
+- `utils/authRoles.js` — paylaşılan helper: `isSuperAdmin(user)`, `hasRole(user, role)`.
+- Patch'lenenler: Layout, App, Dashboard, PlanRouteGuard, InvoiceModule, OnboardingWizard, Settings, BulkRoomsDialog, ChannelConnections, ChannelManagerDashboardV2, GoLiveReadinessCockpit, AgencyContentDistribution, MobileDashboard, MobileApprovals, MobileInventory.
+- Pattern: `user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'))` + roles[] union.
+
+**Doğrulama:** 19 round architect re-verification; final round PASS verdiği önemli noktalar — agency_login response'u `roles[]`-only super_admin için `roles` alanını döner, hydration tamamlanır.

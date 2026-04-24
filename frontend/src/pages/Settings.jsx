@@ -118,7 +118,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   const [invoiceSaving, setInvoiceSaving] = useState(false);
 
   // Room management (super_admin only)
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [roomsList, setRoomsList] = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [showBulkRoomsDialog, setShowBulkRoomsDialog] = useState(false);
@@ -871,10 +871,10 @@ const Settings = ({ user, tenant, onLogout }) => {
                       <CardDescription>Otel odalarını ekleyin, düzenleyin veya silin</CardDescription>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn" disabled={user?.role !== 'super_admin'} title={user?.role !== 'super_admin' ? 'Yalnızca süper-admin' : undefined}>
+                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn" disabled={!isSuperAdmin} title={!isSuperAdmin ? 'Yalnızca süper-admin' : undefined}>
                         <Plus className="w-4 h-4 mr-1" /> Toplu Oda Ekle
                       </Button>
-                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn" disabled={user?.role !== 'super_admin'} title={user?.role !== 'super_admin' ? 'Yalnızca süper-admin' : undefined}>
+                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn" disabled={!isSuperAdmin} title={!isSuperAdmin ? 'Yalnızca süper-admin' : undefined}>
                         <Plus className="w-4 h-4 mr-1" /> Tek Oda Ekle
                       </Button>
                     </div>

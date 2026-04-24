@@ -758,7 +758,8 @@ async def export_folio_csv(
     _perm: None = Depends(require_op("export_data")),
 ):
     """Export folio transactions as CSV"""
-    if not has_permission(current_user.role, Permission.EXPORT_DATA):
+    from core.security import _is_super_admin
+    if not _is_super_admin(current_user) and not has_permission(current_user.role, Permission.EXPORT_DATA):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     import csv

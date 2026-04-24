@@ -106,9 +106,16 @@ async def webhook(
 
 # ── Platform admin ──────────────────────────────────────────────
 def _require_platform_admin(user: User) -> None:
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return
     role = (user.role or "").lower()
-    if role not in ("super_admin", "platform_admin"):
-        raise HTTPException(status_code=403, detail="Platform admin gerekli")
+    if role in ("super_admin", "platform_admin"):
+        return
+    roles = getattr(user, "roles", None) or []
+    if any(r in ("super_admin", "platform_admin") for r in roles):
+        return
+    raise HTTPException(status_code=403, detail="Platform admin gerekli")
 
 
 class AdminProvisionIn(BaseModel):
