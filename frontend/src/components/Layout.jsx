@@ -130,8 +130,16 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const getUpgradeTier = (itemTier) => itemTier === 'professional' ? 'professional' : 'enterprise';
 
+  // Paid add-on modules: route guard requires explicit `true` (strict).
+  // Keep nav visibility consistent so users don't see buttons that bounce
+  // back to home. Source of truth: `strict: true` flags in routeDefinitions.jsx.
+  const STRICT_MODULES = new Set(['mice', 'spa']);
+
   const isModuleEnabled = (moduleKey) => {
     if (!moduleKey) return true;
+    if (STRICT_MODULES.has(moduleKey)) {
+      return modules?.[moduleKey] === true;
+    }
     if (!modules || Object.keys(modules).length === 0) return true;
     // Only hide if explicitly set to false; treat missing/undefined as enabled
     return modules[moduleKey] !== false;
