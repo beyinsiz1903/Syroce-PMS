@@ -1,0 +1,48 @@
+~/workspace$ git push origin main
+Enumerating objects: 1751, done.
+Counting objects: 100% (1726/1726), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (1388/1388), done.
+Writing objects: 100% (1393/1393), 1.02 MiB | 3.10 MiB/s, done.
+Total 1393 (delta 1280), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (1280/1280), completed with 259 local objects.
+To https://github.com/beyinsiz1903/emergent-yeni-uygulama
+ ! [remote rejected]   main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci-cd.yml` without `workflow` scope)
+error: failed to push some refs to 'https://github.com/beyinsiz1903/emergent-yeni-uygulama'
+~/workspace$ # Son 5 commit'i tek bir commit'e topla, ci-cd.yml dokunulmamış halde bırak
+git fetch origin main
+git reset --soft origin/main
+git checkout origin/main -- .github/workflows/ci-cd.yml
+git add -A
+git commit -m "Round-9 closure: IDOR fixes + security backlog"
+git push origin main
+From https://github.com/beyinsiz1903/emergent-yeni-uygulama
+ * branch              main       -> FETCH_HEAD
+[main b3766df0] Round-9 closure: IDOR fixes + security backlog
+ 250 files changed, 17984 insertions(+), 1746 deletions(-)
+ create mode 100644 attached_assets/image_1777032957450.png
+ create mode 100644 attached_assets/image_1777033207043.png
+ create mode 100644 backend/core/csv_safe.py
+ create mode 100644 backend/core/mailing_safe.py
+ create mode 100644 backend/middleware/upload_size_limit.py
+ create mode 100644 backend/security/auth_throttle.py
+ create mode 100644 backend/security/query_safety.py
+ create mode 100644 backend/security/upload_validator.py
+ create mode 100644 backend/tests/test_egress_ci_guard.py
+ create mode 100644 backend/tests/test_pending_assignment_guard.py
+ create mode 100644 backend/tests/test_production_blockers.py
+ create mode 100644 backend/tests/test_safety_rebinding.py
+ create mode 100644 backend/uv.lock
+ create mode 100644 docs/SECURITY_HARDENING_BACKLOG.md
+ create mode 100644 quick-id/backups/backup_20260422_204302_be5c6b7d.json
+ create mode 100644 quick-id/backups/backup_20260423_222046_19dffa80.json
+ create mode 100644 scripts/ci_cache_audit.py
+Enumerating objects: 671, done.
+Counting objects: 100% (646/646), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (315/315), done.
+Writing objects: 100% (316/316), 582.62 KiB | 10.04 MiB/s, done.
+Total 316 (delta 257), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (257/257), completed with 254 local objects.
+To https://github.com/beyinsiz1903/emergent-yeni-uygulama
+   5f161761..b3766df0  main -> main
