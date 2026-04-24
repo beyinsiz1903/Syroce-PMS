@@ -895,9 +895,12 @@ async def get_available_rooms_for_booking(
 
     # Fetch all real rooms (skip "V-..." virtual no-show placeholder rooms).
     blocked_statuses = {'out_of_service', 'maintenance', 'blocked'}
+    # Skip "V-..." virtual no-show placeholder rooms and any room whose
+    # number starts with formula-injection characters (= @ + -) — these are
+    # not real rooms and would not be valid move targets.
     all_rooms = await db.rooms.find({
         'tenant_id': current_user.tenant_id,
-        'room_number': {'$not': {'$regex': '^V-', '$options': 'i'}},
+        'room_number': {'$not': {'$regex': r'^(V-|[=@+\-])', '$options': 'i'}},
         'status': {'$nin': list(blocked_statuses)},
     }).to_list(1000)
 
