@@ -893,46 +893,47 @@ async def get_available_rooms_for_booking(
     check_out = datetime.fromisoformat(booking.get('check_out'))
     requested_type = booking.get('room_type', 'standard')
 
-    # Get all rooms
-    all_rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}).to_list(1000)
+    # Fetch all real rooms (skip "V-..." virtual no-show placeholder rooms).
+    blocked_statuses = {'out_of_service', 'maintenance', 'blocked'}
+    all_rooms = await db.rooms.find({
+        'tenant_id': current_user.tenant_id,
+        'room_number': {'$not': {'$regex': '^V-', '$options': 'i'}},
+        'status': {'$nin': list(blocked_statuses)},
+    }).to_list(1000)
 
+    # Single query to find every room_id that conflicts in this date range,
+    # instead of one count_documents per room (N+1 → 2 queries).
+    conflicting_cursor = db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'id': {'$ne': booking_id},
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        '$or': [
+            {'check_in': {'$lte': check_in.isoformat()},
+             'check_out': {'$gt': check_in.isoformat()}},
+            {'check_in': {'$lt': check_out.isoformat()},
+             'check_out': {'$gte': check_out.isoformat()}},
+        ],
+    }, {'room_id': 1})
+    conflicting_ids = {doc['room_id'] async for doc in conflicting_cursor if doc.get('room_id')}
+
+    booking_rate = booking.get('rate') or 0
+    requested_type_lower = (requested_type or '').lower()
     available_rooms = []
     for room in all_rooms:
-        # Check if room has conflicts
-        conflicts = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'room_id': room['id'],
-            'id': {'$ne': booking_id},
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-            '$or': [
-                {
-                    'check_in': {'$lte': check_in.isoformat()},
-                    'check_out': {'$gt': check_in.isoformat()}
-                },
-                {
-                    'check_in': {'$lt': check_out.isoformat()},
-                    'check_out': {'$gte': check_out.isoformat()}
-                }
-            ]
+        if room['id'] in conflicting_ids:
+            continue
+        room_price = room.get('price_per_night') or 0
+        available_rooms.append({
+            'id': room['id'],
+            'room_number': room['room_number'],
+            'room_type': room['room_type'],
+            'floor': room.get('floor', 1),
+            'status': room.get('status'),
+            'price_per_night': room_price,
+            'is_same_type': (room.get('room_type') or '').lower() == requested_type_lower,
+            'is_upgrade': room_price > booking_rate,
+            'amenities': room.get('amenities', []),
         })
-
-        # Block only rooms that physically cannot be used at the target dates.
-        # Current room.status reflects today's occupancy, not future availability.
-        blocked_statuses = {'out_of_service', 'maintenance', 'blocked'}
-        if conflicts == 0 and room.get('status') not in blocked_statuses:
-            room_price = room.get('price_per_night') or 0
-            booking_rate = booking.get('rate') or 0
-            available_rooms.append({
-                'id': room['id'],
-                'room_number': room['room_number'],
-                'room_type': room['room_type'],
-                'floor': room.get('floor', 1),
-                'status': room['status'],
-                'price_per_night': room_price,
-                'is_same_type': (room.get('room_type') or '').lower() == (requested_type or '').lower(),
-                'is_upgrade': room_price > booking_rate,
-                'amenities': room.get('amenities', [])
-            })
 
     # Sort: same type first, then by floor
     available_rooms.sort(key=lambda x: (not x['is_same_type'], x['floor']))
