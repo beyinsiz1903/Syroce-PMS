@@ -508,6 +508,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) { toast.error('Failed to create task'); }
   };
 
+  const handleAssignHKTask = async (taskId, assignedTo) => {
+    try {
+      await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { assigned_to: assignedTo } });
+      toast.success(`Görev ${assignedTo} kişisine atandı`);
+      loadHousekeepingData();
+    } catch (error) { toast.error('Atama başarısız'); }
+  };
+
   const handleUpdateHKTask = async (taskId, status) => {
     try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Task updated'); loadHousekeepingData(); loadData();
     } catch (error) { toast.error('Failed to update task'); }
@@ -724,7 +732,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </TabsList>
 
           <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loading={fdLoading} error={fdError} tenant={tenant} />
-          <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} onBookingCardClick={async (bookingId) => {
+          <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} onBookingCardClick={async (bookingId) => {
             let booking = bookings.find(b => b.id === bookingId);
             if (!booking) {
               try {

@@ -1,10 +1,65 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TabsContent } from '@/components/ui/tabs';
-import { LogOut, Home, LogIn, Plus, Clock, CheckCircle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
+import { LogOut, Home, LogIn, Plus, Clock, CheckCircle, UserPlus } from 'lucide-react';
+
+const AssignPopover = ({ task, staffOptions, currentUserName, onAssign }) => {
+  const [open, setOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const submit = (name) => {
+    const v = (name || '').trim();
+    if (!v) return;
+    onAssign(task.id, v);
+    setOpen(false);
+    setNewName('');
+  };
+  const isAssigned = task.assigned_to && task.assigned_to !== 'Unassigned';
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+          <UserPlus className="w-4 h-4 mr-1" />
+          {isAssigned ? 'Değiştir' : 'Ata'}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2 space-y-1" align="end">
+        {currentUserName && (
+          <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(currentUserName)}>
+            🙋 Bana ata ({currentUserName})
+          </Button>
+        )}
+        {staffOptions.length > 0 && (
+          <div className="border-t pt-1 mt-1">
+            <div className="text-xs text-gray-500 px-2 py-1">Mevcut personel</div>
+            {staffOptions.map((s) => (
+              <Button key={s} size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(s)}>
+                {s}
+              </Button>
+            ))}
+          </div>
+        )}
+        <div className="border-t pt-2 mt-1 space-y-1">
+          <div className="text-xs text-gray-500 px-2">Yeni isim</div>
+          <div className="flex gap-1 px-1">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(newName); }}
+              placeholder="Personel adı"
+              className="h-8 text-sm"
+            />
+            <Button size="sm" onClick={() => submit(newName)} disabled={!newName.trim()}>Ekle</Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const HousekeepingTab = ({
   roomBlocks,
@@ -20,12 +75,23 @@ const HousekeepingTab = ({
   setMaintenanceForm,
   setMaintenanceDialogOpen,
   handleUpdateHKTask,
+  handleAssignHKTask,
+  currentUserName,
   onBookingCardClick,
   toast,
   loading,
 }) => {
   const { t } = useTranslation();
   const tc = (k) => t(`pmsComponents.housekeeping.${k}`);
+
+  const staffOptions = useMemo(() => {
+    const set = new Set();
+    (housekeepingTasks || []).forEach(t => {
+      const a = (t.assigned_to || '').trim();
+      if (a && a.toLowerCase() !== 'unassigned') set.add(a);
+    });
+    return Array.from(set).sort();
+  }, [housekeepingTasks]);
 
   if (loading) {
     return (
@@ -379,6 +445,14 @@ const HousekeepingTab = ({
                       )}
                     </div>
                     <div className="space-x-2 flex items-center gap-2">
+                      {handleAssignHKTask && task.status !== 'completed' && (
+                        <AssignPopover
+                          task={task}
+                          staffOptions={staffOptions}
+                          currentUserName={currentUserName}
+                          onAssign={handleAssignHKTask}
+                        />
+                      )}
                       {task.status === 'pending' && (
                         <Button size="sm" onClick={() => handleUpdateHKTask(task.id, 'in_progress')}>
                           <Clock className="w-4 h-4 mr-2" />
