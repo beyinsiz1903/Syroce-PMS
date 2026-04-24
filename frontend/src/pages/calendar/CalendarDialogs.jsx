@@ -313,9 +313,229 @@ export const NewBookingDialog = ({
   );
 };
 
+// Inline room-change panel used inside BookingDetailsDialog.
+// Loads availability for this booking's date range, lets the user pick
+// a new room (same or different type), and — when the type changes —
+// asks whether to keep the current price or enter a new one.
+const RoomChangePanel = ({ booking, onMoved, onClose }) => {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [available, setAvailable] = useState([]);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [keepPrice, setKeepPrice] = useState(true);
+  const [newPrice, setNewPrice] = useState('');
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const nights = Math.max(
+    1,
+    Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24)),
+  );
+  const currentRate = booking.total_amount ? booking.total_amount / nights : 0;
+
+  const loadAvailable = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`/pms/bookings/${booking.id}/available-rooms`);
+      const data = Array.isArray(res.data) ? res.data : (res.data?.rooms || []);
+      data.sort((a, b) => (b.is_same_type ? 1 : 0) - (a.is_same_type ? 1 : 0));
+      setAvailable(data);
+    } catch (err) {
+      console.error('available-rooms error', err);
+      setAvailable([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [booking.id]);
+
+  const togglePanel = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && available.length === 0 && !loading) loadAvailable();
+  };
+
+  const handleSelect = (room) => {
+    setSelectedRoom(room);
+    if (room.is_same_type) {
+      setKeepPrice(true);
+      setNewPrice('');
+    } else {
+      setKeepPrice(true);
+      setNewPrice(String(((room.price_per_night || 0) * nights).toFixed(2)));
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!selectedRoom) return;
+    if (!reason.trim()) { alert('Lütfen oda değişim nedenini seçin'); return; }
+    const sameType = selectedRoom.is_same_type;
+    const useNewPrice = !sameType && !keepPrice;
+    const payload = {
+      room_id: selectedRoom.id,
+      room_type: selectedRoom.room_type,
+      room_change_reason: reason,
+    };
+    if (useNewPrice) {
+      const amount = parseFloat(newPrice);
+      if (Number.isNaN(amount) || amount < 0) { alert('Geçerli bir fiyat girin'); return; }
+      payload.total_amount = amount;
+    }
+    setSubmitting(true);
+    try {
+      const idemKey = globalThis.crypto?.randomUUID?.() || `room-change-${Date.now()}`;
+      await axios.put(`/pms/bookings/${booking.id}`, payload, {
+        headers: { 'Idempotency-Key': idemKey },
+      });
+      await axios.post('/pms/room-move-history', {
+        booking_id: booking.id,
+        old_room: booking.room_number || booking.room_id,
+        new_room: selectedRoom.room_number,
+        to_room_id: selectedRoom.id,
+        reason,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+      if (onMoved) onMoved();
+      if (onClose) onClose();
+    } catch (err) {
+      console.error('room change error', err);
+      alert(err.response?.data?.detail || 'Oda değiştirilemedi');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sameType = available.filter((r) => r.is_same_type);
+  const otherType = available.filter((r) => !r.is_same_type);
+
+  return (
+    <div className="border rounded-lg bg-amber-50 border-amber-200">
+      <button
+        type="button"
+        onClick={togglePanel}
+        className="w-full text-left px-3 py-2 text-sm font-semibold text-amber-900 flex items-center justify-between"
+        data-testid="toggle-room-change"
+      >
+        <span>Oda Değiştir / Move Room</span>
+        <span className="text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-3">
+          {loading && <div className="text-sm text-gray-600">Müsait odalar yükleniyor...</div>}
+          {!loading && available.length === 0 && (
+            <div className="text-sm text-gray-600">Bu tarih aralığı için müsait oda bulunamadı.</div>
+          )}
+          {!loading && sameType.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-gray-700 mb-1">Aynı oda tipi</div>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {sameType.map((r) => (
+                  <button
+                    type="button"
+                    key={r.id}
+                    onClick={() => handleSelect(r)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded border ${
+                      selectedRoom?.id === r.id ? 'bg-blue-100 border-blue-400' : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                    data-testid={`pick-room-${r.room_number}`}
+                  >
+                    <span className="font-semibold">Oda {r.room_number}</span>
+                    <span className="text-gray-500 ml-2">{r.room_type} · Kat {r.floor}</span>
+                    <span className="text-gray-500 ml-2">${r.price_per_night}/gece</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!loading && otherType.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-gray-700 mb-1">Farklı oda tipi</div>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {otherType.map((r) => (
+                  <button
+                    type="button"
+                    key={r.id}
+                    onClick={() => handleSelect(r)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded border ${
+                      selectedRoom?.id === r.id ? 'bg-blue-100 border-blue-400' : 'bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                    data-testid={`pick-room-${r.room_number}`}
+                  >
+                    <span className="font-semibold">Oda {r.room_number}</span>
+                    <span className="text-gray-500 ml-2">{r.room_type} · Kat {r.floor}</span>
+                    <span className="text-gray-500 ml-2">${r.price_per_night}/gece</span>
+                    {r.is_upgrade && <Badge className="ml-2 bg-purple-100 text-purple-800">Upgrade</Badge>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedRoom && !selectedRoom.is_same_type && (
+            <div className="bg-white border rounded p-2 space-y-2">
+              <div className="text-xs font-semibold text-gray-700">Fiyat değişikliği</div>
+              <label className="flex items-center text-sm gap-2">
+                <input type="radio" checked={keepPrice} onChange={() => setKeepPrice(true)} />
+                Mevcut fiyatı koru (${currentRate.toFixed(2)}/gece · ${booking.total_amount})
+              </label>
+              <label className="flex items-center text-sm gap-2">
+                <input type="radio" checked={!keepPrice} onChange={() => setKeepPrice(false)} />
+                Yeni toplam fiyat gir
+              </label>
+              {!keepPrice && (
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newPrice}
+                  onChange={(e) => setNewPrice(e.target.value)}
+                  placeholder="Toplam tutar"
+                  data-testid="room-change-price"
+                />
+              )}
+            </div>
+          )}
+
+          {selectedRoom && (
+            <div>
+              <Label className="text-xs">Değişim Nedeni *</Label>
+              <select
+                className="w-full border rounded-md p-1.5 text-sm"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                data-testid="room-change-reason"
+              >
+                <option value="">Seçin...</option>
+                <option value="Guest Request">Misafir Talebi</option>
+                <option value="Room Maintenance">Oda Bakımı</option>
+                <option value="Upgrade">Upgrade</option>
+                <option value="Downgrade">Downgrade</option>
+                <option value="Overbooking">Overbooking Çözümü</option>
+                <option value="VIP Guest">VIP Misafir</option>
+                <option value="Room Issue">Oda Sorunu</option>
+                <option value="Operational">Operasyonel</option>
+              </select>
+            </div>
+          )}
+
+          {selectedRoom && (
+            <Button
+              onClick={handleConfirm}
+              disabled={submitting || !reason}
+              className="w-full"
+              data-testid="confirm-room-change"
+            >
+              {submitting ? 'Kaydediliyor...' : `Oda ${selectedRoom.room_number}'a Taşı`}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Booking Details Dialog
 export const BookingDetailsDialog = ({
-  open, onOpenChange, selectedBooking, rooms, onEdit,
+  open, onOpenChange, selectedBooking, rooms, onEdit, onMoved,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -433,6 +653,11 @@ export const BookingDetailsDialog = ({
               <div className="text-sm text-gray-500 italic">No room moves recorded</div>
             )}
           </div>
+          <RoomChangePanel
+            booking={selectedBooking}
+            onMoved={onMoved}
+            onClose={() => onOpenChange(false)}
+          />
           <div className="flex space-x-2 pt-4 border-t">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
             <Button

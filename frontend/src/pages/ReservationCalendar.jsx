@@ -551,9 +551,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleEditReservation = (booking) => {
     setShowSidebar(false);
     setShowDetailsDialog(false);
-    const id = booking?.id || selectedBooking?.id;
-    // PMS module hash-tab routing: #bookings activates the bookings tab.
-    // ?edit=<id> is read by PMSModule to auto-open the booking edit form.
+    const target = booking || selectedBooking;
+    const id = target?.id;
+    // Persist the full booking object so PMSModule can open the detail
+    // dialog even when the booking is outside its loaded date range.
+    if (target && typeof window !== 'undefined' && window.sessionStorage) {
+      try { window.sessionStorage.setItem('pms_edit_booking', JSON.stringify(target)); } catch {}
+    }
     if (id) {
       navigate(`/app/pms?edit=${id}#bookings`);
     } else {
@@ -878,6 +882,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         selectedBooking={selectedBooking}
         rooms={rooms}
         onEdit={handleEditReservation}
+        onMoved={loadCalendarData}
       />
 
       <MoveReasonDialog

@@ -214,15 +214,28 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   // Auto-open booking detail when navigated with ?edit=<id>
   // (used by ReservationCalendar "Düzenle" → /app/pms?edit=ID#bookings).
+  // The full booking object is passed via sessionStorage so this works
+  // even when the booking is outside the PMS module's loaded date range.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const editId = params.get('edit');
-    if (!editId || !bookings || bookings.length === 0) return;
-    const target = bookings.find((b) => b.id === editId);
+    if (!editId) return;
+    let target = null;
+    try {
+      const stored = window.sessionStorage?.getItem('pms_edit_booking');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.id === editId) target = parsed;
+      }
+    } catch {}
+    if (!target && bookings && bookings.length > 0) {
+      target = bookings.find((b) => b.id === editId) || null;
+    }
     if (!target) return;
     setSelectedBookingDetail(target);
     setOpenDialog('bookingDetail');
+    try { window.sessionStorage?.removeItem('pms_edit_booking'); } catch {}
     // Clean URL so back-nav / refresh does not re-open.
     params.delete('edit');
     const newSearch = params.toString();
