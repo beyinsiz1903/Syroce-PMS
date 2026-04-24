@@ -313,9 +313,9 @@ async def create_rate_override_with_panel(
 
     await db.rate_override_logs.insert_one(override_log)
 
-    # Update booking
+    # Update booking (tenant-pinned defense-in-depth, v107 P0)
     await db.bookings.update_one(
-        {'id': booking_id},
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'total_amount': new_rate,
             'base_rate': original_rate,

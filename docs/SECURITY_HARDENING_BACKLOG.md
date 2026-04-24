@@ -27,9 +27,11 @@ defense-in-depth için kademeli olarak temizlenmeli.
 
 ## P0 — Doğrudan Kullanıcı Girdisi (öncelikli)
 
+> v107 mini-batch: 3 yer kapatıldı (checkin/online, pms_reservations rate-override, finance/cashiering payment). Ek olarak `checkin_router` `rooms` lookup'una da tenant_id eklendi. Aşağıdaki ✅ işaretliler tamam.
+
 | Dosya:Satır | Kollek. | Notlar |
 |-------------|---------|--------|
-| `backend/domains/guest/checkin_router.py:68` | bookings | `request.booking_id` doğrudan |
+| ✅ `backend/domains/guest/checkin_router.py:68,81` | bookings/rooms | v107: tenant_id eklendi |
 | `backend/domains/guest/operations_router.py:476,709,721,1255` | bookings/rooms/guests | Path/body param |
 | `backend/domains/guest/router.py:80,140` | guests | `guest_id` path param |
 | `backend/domains/admin/router.py:411,793,1284` | users | `user_id` path param (admin route ama yine de) |
@@ -40,11 +42,11 @@ defense-in-depth için kademeli olarak temizlenmeli.
 | `backend/domains/pms/mobile_router.py:1069` | rooms (update_many) | `room_ids` listesi |
 | `backend/domains/revenue/analytics_router.py:1367,1396` | rooms | `room_id` body param |
 | `backend/routers/finance/accounting.py:1167,1377` | folios/invoices | `folio_id`/`invoice_id` body |
-| `backend/routers/finance/cashiering.py:144` | bookings | |
+| ✅ `backend/routers/finance/cashiering.py:144` | bookings | v107: tenant_id eklendi |
 | `backend/routers/finance/dashboards.py:488` | folios | |
 | `backend/routers/finance/folio.py:493,545,604,608,648,...` | folios | Folio operasyonları (6 yer) |
 | `backend/routers/finance/konaklama_vergisi.py:566` | folios | |
-| `backend/routers/pms_reservations.py:317` | bookings | |
+| ✅ `backend/routers/pms_reservations.py:317` | bookings | v107: tenant_id eklendi (rate-override) |
 
 ## P1 — _id-pinned Sonrası Yazım (defense-in-depth)
 

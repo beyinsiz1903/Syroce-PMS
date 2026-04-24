@@ -140,9 +140,9 @@ async def process_split_payment(
         await db.payments.insert_one(payment_record)
         payment_records.append(payment_record)
 
-    # Update booking status
+    # Update booking status (tenant-pinned defense-in-depth, v107 P0)
     await db.bookings.update_one(
-        {'id': booking_id},
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'payment_status': 'paid', 'paid_at': datetime.now(UTC).isoformat()}}
     )
 

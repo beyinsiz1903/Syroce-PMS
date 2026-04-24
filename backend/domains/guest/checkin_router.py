@@ -66,7 +66,7 @@ async def submit_online_checkin(
     await db.online_checkins.insert_one(checkin_record)
 
     await db.bookings.update_one(
-        {"id": request.booking_id},
+        {"id": request.booking_id, "tenant_id": current_user.tenant_id},
         {
             "$set": {
                 "online_checkin_completed": True,
@@ -78,7 +78,9 @@ async def submit_online_checkin(
     )
 
     upsell_offers = []
-    current_room = await db.rooms.find_one({"id": booking["room_id"]}, {"_id": 0})
+    current_room = await db.rooms.find_one(
+        {"id": booking["room_id"], "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
     if current_room and current_room["room_type"] == "Standard":
         upsell_offers.append({
             "id": str(uuid.uuid4()),

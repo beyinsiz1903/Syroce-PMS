@@ -4442,3 +4442,46 @@ All 4 prior `APP_ENV`-only fail-hard sites in `backend/startup.py` (crypto init,
 - Backend boot: clean, all workers + indexes + integrations initialized; `/api/health` → 307; Quick-ID `/api/health` → 200.
 
 **Cumulative across full round-7 + round-8 closure: 1901 endpoints + 3 SMTP sites + 24 regression/CI tests.**
+
+---
+
+## v106 round-9 closure + v107 mini-batch (24 Apr 2026)
+
+### Round-9 (CLOSED — architect PASS)
+
+T01-T06 single session execution:
+
+- **T01 HotelRunner v2 router** — Verified router-level dependency at `channel_manager/connectors/hotelrunner_v2/router.py:76` covers all 38 endpoints; no per-endpoint patch needed.
+- **T02 Mass-assignment** — Pydantic `extra="ignore"` on schemas + no privileged fields exposed in spa/mice request models. Confirmed safe.
+- **T03 IDOR (P2 audit)** — 9 direct-IDOR sites patched: `housekeeping`, `departments`, `pms_rooms`, `reports`, `cross_property`, `b2b_api`. All `update_one`/`delete_one` now tenant-pinned.
+- **T04 Webhooks** — All inbound webhook routes verified: HMAC (HotelRunner), svix (Exely), Bearer (channel_manager), auth-gated (payment).
+- **T05 Module entitlement** — Middleware `ROUTE_MODULE_MAP` at `core/entitlement.py:23` covers all gated routes. `/api/spa` and `/api/mice` intentionally exempt (product decision).
+- **T06 Race conditions** — `atomic_booking` unique compound index + `atomic_checkin` transactions + `room_type_inventory` unique indexes. All in place.
+
+24/24 security regression tests pass (9 rebinding + 3 CI egress guard + 12 production blocker). Backend `/api/health` → 307, Quick-ID `/api/health` → 200.
+
+### CI hardening + GitHub push closure
+
+- Added 3 security regression tests to `.github/workflows/ci-cd.yml` curated CI test suite (lines 154-156): `test_safety_rebinding.py`, `test_egress_ci_guard.py`, `test_production_blockers.py` — now hard merge-gate.
+- GitHub push (commit `b3766df0`): IDOR fixes + security backlog merged to `main` after squash workaround for missing `workflow` OAuth scope.
+- Workflow file changes added via GitHub web UI (commit `5df41f27`), then merged back to local via `git pull --no-rebase --no-edit` (commit `459d4666`).
+
+### CI ruff cleanup
+
+- `cd backend && ruff check .` initially failed with 180 errors (mostly I001 import ordering, 2 F401 unused imports, 2 C401 set comprehension).
+- Fixed 178 auto + 2 manual: `core/csv_safe.py:33` and `core/mailing_safe.py:41` set comprehension rewrites.
+- `All checks passed!` Backend boot still clean; 87/87 pure unit tests pass (no regression from import reordering).
+
+### v107 P0 mini-batch (3 sites)
+
+Top-priority defense-in-depth tenant pin closures from `docs/SECURITY_HARDENING_BACKLOG.md` P0 section:
+
+- ✅ `backend/domains/guest/checkin_router.py:71,84` — `bookings.update_one` + `rooms.find_one` now include `tenant_id`.
+- ✅ `backend/routers/pms_reservations.py:320` — rate-override `bookings.update_one` tenant-pinned.
+- ✅ `backend/routers/finance/cashiering.py:147` — payment posting `bookings.update_one` tenant-pinned.
+
+Backlog updated: 3 ✅ marked DONE, ~19 P0 sites remaining for next round. Each fix is single-line `tenant_id` addition to filter dict — no business-logic change.
+
+### Test landscape note
+
+`tests/battle/test_sprint2_*` (12 errors) and `tests/test_atomic_checkin_checkout` (7 errors) have **pre-existing fixture infrastructure requirements** (replica-set MongoDB / live test server) that are not provisioned in the dev container. These are NOT regressions — they error in pytest setup phase, not assertion phase. Pure unit suite (87 tests) all green.
