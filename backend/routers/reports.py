@@ -17,7 +17,6 @@ from core.helpers import (
     require_module,
 )
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
 from models.enums import (
     ChargeCategory,
 )
@@ -25,6 +24,7 @@ from models.schemas import (
     FolioCharge,
     User,
 )
+from modules.pms_core.role_permission_service import require_op
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord

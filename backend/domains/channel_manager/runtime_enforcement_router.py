@@ -11,7 +11,6 @@ API endpoints for the runtime enforcement layers:
   6. Rollout Framework — controlled live deployment
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -28,6 +27,7 @@ from domains.channel_manager.auto_heal_service import (
     run_auto_heal_cycle,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger("lockdown.runtime")
 router = APIRouter(prefix="/api/lockdown/runtime", tags=["Runtime Enforcement"])

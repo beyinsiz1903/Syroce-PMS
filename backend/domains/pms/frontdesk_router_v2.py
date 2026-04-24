@@ -5,14 +5,14 @@ room_move, late_checkout, no_show, walk_in, post_charge, void_charge.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from modules.pms_core.role_permission_service import require_op  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
 from domains.pms.frontdesk_service_v2 import frontdesk_service_v2
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v97 DW
 
 router = APIRouter(prefix="/api/frontdesk/v2", tags=["Front Desk v2"])
 

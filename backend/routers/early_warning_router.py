@@ -14,7 +14,6 @@ Provides:
   - GET /api/ops-events/early-warnings/engine/status — Engine status
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from routers.early_warning_engine import (
     analyze_connector_warnings,
     emit_warning_events,

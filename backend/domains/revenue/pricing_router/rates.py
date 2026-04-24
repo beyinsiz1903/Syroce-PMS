@@ -3,7 +3,6 @@ Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 import logging
 import uuid
@@ -22,6 +21,7 @@ from core.security import (
 )
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from models.schemas import Package, RatePlan, User
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
 

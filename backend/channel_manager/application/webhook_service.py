@@ -218,7 +218,7 @@ class WebhookService:
         legacy paths that explicitly opted out of replay protection).
         """
         if timestamp:
-            signed_payload = f"{timestamp}.".encode("utf-8") + body
+            signed_payload = f"{timestamp}.".encode() + body
         else:
             signed_payload = body
         expected = hmac.new(

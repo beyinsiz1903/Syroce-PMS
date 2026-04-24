@@ -5,12 +5,12 @@ Unified router for: runtime validation, incident drills,
 observability validation, go-live scoring.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 from ops.golive_scorer import golive_scorer
 from ops.incident_drill import incident_drill_service
 from ops.observability_validation import observability_validation_service

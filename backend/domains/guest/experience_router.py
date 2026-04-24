@@ -4,7 +4,6 @@ Domain Router: Guest Experience
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -22,6 +21,7 @@ from models.schemas import (
     SubmitSurveyResponseRequest,
     User,
 )
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api", tags=["guest-experience"])
 

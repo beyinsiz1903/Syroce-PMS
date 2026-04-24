@@ -4,8 +4,6 @@ Domain Router: POS & F&B
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,9 +14,13 @@ from pydantic import BaseModel
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
-from modules.pms_core.role_permission_service import require_op  # v88 DW
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module  # v89 DW
+from modules.pms_core.role_permission_service import (
+    require_module,  # v89 DW
+    require_op,  # v88 DW
+)
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
 router = APIRouter(prefix="/api", tags=["pos-fnb"])
 

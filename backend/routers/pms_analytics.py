@@ -3,7 +3,6 @@ PMS Advanced Analytics Router
 Channel Loss Analysis, Overbooking Heatmap, Rule Engine (Light), No-Show Prediction (Basic)
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 router = APIRouter(prefix="/api", tags=["pms-analytics"])
 

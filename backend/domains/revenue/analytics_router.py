@@ -13,9 +13,10 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.cache import cached
 from core.database import db
 from core.helpers import require_module
-from modules.pms_core.role_permission_service import require_module as require_module_rbac, require_op  # v89 DW
 from core.security import get_current_user, security
 from models.enums import ChannelType
+from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
+from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.role_permission_service import require_role as _require_role
 
 # v67 Bug DD: frontdesk/* endpoint'lerinde RBAC eksikti — HK kullanıcı guest PII (search-bookings),

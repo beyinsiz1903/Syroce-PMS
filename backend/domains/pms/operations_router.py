@@ -1,8 +1,4 @@
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
-from modules.pms_core.role_permission_service import require_op  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -10,6 +6,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_op  # v97 DW
 
 router = APIRouter(prefix="/api", tags=["PMS / Operations"])
 

@@ -5,7 +5,6 @@ Immutable folio ledger endpoints: charge, payment, void, transfer, reconciliatio
 """
 
 from datetime import UTC
-from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -13,7 +12,10 @@ from pydantic import BaseModel, Field
 from core.folio_ledger_service import FolioLedgerService, ReconciliationEngine
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import RolePermissionService
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v94 DW
+)
 
 # Bug CQ fix — RBAC enforcement (paralel endpoint set'inde RBAC eksikti, hk yapabiliyordu)
 _rps = RolePermissionService()

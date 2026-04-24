@@ -14,7 +14,6 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
-from core.security import get_current_user  # v92.2 DW
 from modules.pms_core.role_permission_service import require_op  # v92.2 DW
 
 logger = logging.getLogger("routers.inventory")

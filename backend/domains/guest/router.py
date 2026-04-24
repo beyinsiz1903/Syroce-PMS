@@ -5,7 +5,6 @@ Extracted from legacy_routes.py — VIP protocols, blacklist, celebrations,
 enhanced preferences, complete profile, VIP list.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 router = APIRouter(prefix="/api", tags=["guest-profile-domain"])
 

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
-from modules.pms_core.role_permission_service import require_op  # v89 DW
+
 from core.security import get_current_user  # v89 DW
 
 router = APIRouter(prefix="/api/guest/messages", tags=["guest-messaging"])

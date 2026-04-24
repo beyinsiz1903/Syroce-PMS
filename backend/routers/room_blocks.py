@@ -10,12 +10,12 @@ Endpoints:
   GET /api/room-blocks         — List active blocks
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 logger = logging.getLogger("routers.room_blocks")
 

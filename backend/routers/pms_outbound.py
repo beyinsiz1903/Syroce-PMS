@@ -10,13 +10,17 @@ This is the read-only PMS surface Af-sadakat needs:
 - folio.charge — push a charge from Af-sadakat into PMS folio
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v92 DW
-from fastapi import Depends  # v92 DW
 
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,  # v92 DW
+    Header,
+    HTTPException,
+    Query,
+)
 from pydantic import BaseModel, Field
 
 from core.afsadakat_provisioner import (
@@ -24,6 +28,7 @@ from core.afsadakat_provisioner import (
     find_tenant_by_api_key,
 )
 from core.subscriptions import tenant_has_module
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pms-outbound", tags=["pms-outbound"])

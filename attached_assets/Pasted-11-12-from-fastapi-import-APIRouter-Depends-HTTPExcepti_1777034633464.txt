@@ -1,0 +1,265 @@
+11 | |
+12 | | from fastapi import APIRouter, Depends, HTTPException, Request
+13 | | from pydantic import BaseModel, Field
+14 | |
+15 | | from core.database import db
+16 | | from core.security import get_current_user
+17 | | from models.schemas import User, _ensure_hotel_context
+18 | | from modules.pms_core.role_permission_service import RolePermissionService
+   | |__________________________________________________________________________^
+19 |
+20 |   # Bug CP fix — shared role-permission enforcement for financial endpoints
+   |
+help: Organize imports
+
+F401 [*] `typing.Any` imported but unused
+  --> routers/reservation_detail.py:10:20
+   |
+ 8 | from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+ 9 | from datetime import UTC, datetime, timedelta
+10 | from typing import Any
+   |                    ^^^
+11 |
+12 | from fastapi import APIRouter, Depends, HTTPException, Request
+   |
+help: Remove unused import: `typing.Any`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/room_blocks.py:12:1
+   |
+10 |     GET /api/room-blocks         — List active blocks
+11 |   """
+12 | / import logging
+13 | | from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+14 | |
+15 | | from fastapi import APIRouter, Depends, HTTPException
+16 | | from pydantic import BaseModel
+17 | |
+18 | | from core.security import get_current_user
+   | |__________________________________________^
+19 |
+20 |   logger = logging.getLogger("routers.room_blocks")
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/runtime_infrastructure.py:5:1
+   |
+ 3 |   Redis/Event Bus, Messaging Providers, Persistence Health, Alerts, Observability.
+ 4 |   """
+ 5 | / from fastapi import APIRouter, Depends, Query
+ 6 | | from modules.pms_core.role_permission_service import require_op  # v100 DW
+ 7 | |
+ 8 | | from core.security import get_current_user
+ 9 | | from models.schemas import User
+   | |_______________________________^
+10 |
+11 |   router = APIRouter(prefix="/api/runtime", tags=["runtime-infrastructure"])
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/sales_catering.py:12:1
+   |
+10 |   Authorisation reuses existing MICE roles via require_mice_ops.
+11 |   """
+12 | / from __future__ import annotations
+13 | | from modules.pms_core.role_permission_service import require_op  # v95 DW
+14 | |
+15 | | import uuid
+16 | | from datetime import UTC, datetime
+17 | | from typing import Any
+18 | |
+19 | | from fastapi import APIRouter, Depends, HTTPException, Query
+20 | | from pydantic import BaseModel, Field
+21 | |
+22 | | from core.audit import log_audit_event
+23 | | from core.database import db
+24 | | from core.security import get_current_user
+25 | | from core.spa_mice_authz import require_catalog, require_mice_ops
+26 | | from models.schemas import User
+   | |_______________________________^
+27 |
+28 |   router = APIRouter(prefix="/api/mice/sales", tags=["sales-catering"])
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/security_2fa.py:174:5
+    |
+172 |     # access_token would otherwise let an attacker brute-force the password
+173 |     # here at bcrypt-throttled speed, completely bypassing login throttles.
+174 |     from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+175 |     await _throttle(SENSITIVE_AUTH_USER, f"2fadis:{current_user.id}", "2FA kapatma denemesi")
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/security_2fa.py:242:5
+    |
+241 |     # v48 (Bug CE): per-user throttle on TOTP brute-force surface.
+242 |     from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+243 |     await _throttle(SENSITIVE_AUTH_USER, f"2farb:{current_user.id}", "yedek kod yenileme denemesi")
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/security_hardening.py:4:1
+   |
+ 2 |   Security Hardening Router - API endpoints for multi-tenant security.
+ 3 |   """
+ 4 | / from typing import Any
+ 5 | |
+ 6 | | from fastapi import APIRouter, Body, Depends, Query
+ 7 | |
+ 8 | | from core.cache import cached
+ 9 | | from modules.security_hardening.audit_completeness import audit_completeness
+10 | | from modules.security_hardening.credential_vault import credential_vault
+11 | | from modules.security_hardening.data_masking import data_masking
+12 | | from modules.security_hardening.property_permissions import property_permissions
+13 | | from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+14 | | from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
+15 | | from shared_kernel.tenancy_context import TenantContext, get_current_tenant
+   | |___________________________________________________________________________^
+16 |
+17 |   router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/spa.py:12:1
+   |
+10 |     Xchange POSTING_CHARGE event so SAP/finance partners stay in sync)
+11 |   """
+12 | / from __future__ import annotations
+13 | | from modules.pms_core.role_permission_service import require_op  # v101 DW
+14 | |
+15 | | import uuid
+16 | | from datetime import UTC, datetime, timedelta
+17 | | from typing import Any
+18 | |
+19 | | from fastapi import APIRouter, Depends, HTTPException, Query
+20 | | from pydantic import BaseModel, Field
+21 | |
+22 | | from cache_manager import cache as _cache
+23 | | from cache_manager import cached as _cached
+24 | | from core.booking_atomicity import (
+25 | |     is_replica_set_unavailable,
+26 | |     standalone_fallback_allowed,
+27 | |     with_resource_locks,
+28 | | )
+29 | | from core.security import get_current_user
+30 | | from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
+31 | | from core.tenant_db import get_system_db
+32 | | from models.schemas import User
+   | |_______________________________^
+33 |
+34 |   router = APIRouter(prefix="/api/spa", tags=["spa"])
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/vcc_router.py:8:1
+   |
+ 6 |   Every view is logged in the activity log for audit trail.
+ 7 |   """
+ 8 | / import uuid
+ 9 | | from modules.pms_core.role_permission_service import require_op  # v97 DW
+10 | | from datetime import UTC, datetime
+11 | |
+12 | | from fastapi import APIRouter, Depends, HTTPException
+13 | | from pydantic import BaseModel
+14 | |
+15 | | from core.database import db
+16 | | from core.security import get_current_user
+17 | | from models.schemas import User, _ensure_hotel_context
+18 | | from modules.pms_core.role_permission_service import RolePermissionService
+19 | | from security.field_encryption import get_field_encryption_service
+   | |__________________________________________________________________^
+20 |
+21 |   _role_perm = RolePermissionService()
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> routers/websocket_health.py:5:1
+   |
+ 3 |   """
+ 4 |
+ 5 | / from fastapi import APIRouter, Depends, Query
+ 6 | | from modules.pms_core.role_permission_service import require_op  # v101 DW
+ 7 | | from pydantic import BaseModel
+ 8 | |
+ 9 | | from core.security import get_current_user
+10 | | from models.schemas import User
+   | |_______________________________^
+11 |
+12 |   router = APIRouter(prefix="/api/websocket", tags=["websocket"])
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> security/hardening_router.py:7:1
+   |
+ 5 |   Thin router: delegates all business logic to SecurityRuntimeService.
+ 6 |   """
+ 7 | / from fastapi import APIRouter, Depends, HTTPException, Query
+ 8 | | from modules.pms_core.role_permission_service import require_op  # v101 DW
+ 9 | |
+10 | | from common.context import OperationContext
+11 | | from core.security import get_current_user
+12 | | from models.schemas import User
+13 | | from security.security_runtime_service import security_runtime_service
+   | |______________________________________________________________________^
+14 |
+15 |   router = APIRouter(prefix="/api/security", tags=["Security / Hardening"])
+   |
+help: Organize imports
+
+F401 [*] `pathlib.Path` imported but unused
+  --> security/upload_validator.py:17:21
+   |
+16 | import io
+17 | from pathlib import Path
+   |                     ^^^^
+18 |
+19 | from fastapi import HTTPException
+   |
+help: Remove unused import: `pathlib.Path`
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> server.py:261:1
+    |
+259 |     return value
+260 |
+261 | from core.tenant_db import TenantViolationError as _TenantViolationError  # Bug AR follow-up
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+262 |
+263 | @app.exception_handler(_TenantViolationError)
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> workers/hardening_router.py:8:1
+   |
+ 6 |   """
+ 7 |
+ 8 | / from fastapi import APIRouter, Depends, HTTPException, Query
+ 9 | | from modules.pms_core.role_permission_service import require_op  # v101 DW
+10 | |
+11 | | from cache_manager import cached
+12 | | from common.context import OperationContext
+13 | | from core.security import get_current_user
+14 | | from models.schemas import User
+15 | | from workers.worker_runtime_service import worker_runtime_service
+   | |_________________________________________________________________^
+16 |
+17 |   router = APIRouter(prefix="/api/workers", tags=["Workers / Hardening"])
+   |
+help: Organize imports
+
+Found 180 errors.
+[*] 178 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Error: Process completed with exit code 1.

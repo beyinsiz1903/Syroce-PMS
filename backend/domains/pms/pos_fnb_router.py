@@ -3,8 +3,6 @@ PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -23,7 +21,9 @@ from core.security import (
 )
 from models.enums import ChargeCategory
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, Order, OrderCreate, User
-from modules.pms_core.role_permission_service import require_op, require_module  # v89 DW
+from modules.pms_core.role_permission_service import require_module, require_op  # v89 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:

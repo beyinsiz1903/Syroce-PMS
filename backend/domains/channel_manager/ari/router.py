@@ -15,11 +15,15 @@ GET  /api/channel-manager/ari/stats
 GET  /api/channel-manager/ari/engine-stats
 """
 import logging
+
+from fastapi import (
+    APIRouter,
+    Depends,  # v92 DW
+    HTTPException,
+    Query,
+)
+
 from modules.pms_core.role_permission_service import require_op  # v92 DW
-from fastapi import Depends  # v92 DW
-
-from fastapi import APIRouter, HTTPException, Query
-
 from workers.ari_drift_worker import DRIFT_CONFIG, get_drift_mode, set_drift_mode
 
 from . import drift_worker, outbound_service

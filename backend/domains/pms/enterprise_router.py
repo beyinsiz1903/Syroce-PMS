@@ -4,12 +4,13 @@ Domain Router: Enterprise Features
 Critical features, task management, RBAC, enterprise audit logging.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 
 def _jsonable(value):

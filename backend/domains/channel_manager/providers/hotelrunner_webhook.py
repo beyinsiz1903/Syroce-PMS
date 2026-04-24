@@ -12,7 +12,6 @@ UNIFIED CALLBACK: Single /callback endpoint for HotelRunner "Dönüş adresi" co
 HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected via state field.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
@@ -24,6 +23,7 @@ from domains.channel_manager.providers.hotelrunner_shared import (
     explode_multi_room_reservation,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,10 @@ router = APIRouter(
 # channel-manager state poisoning). Fail-closed if secret is unset; explicit
 # dev escape hatch via ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK=1.
 async def _verify_hotelrunner_signature(request: Request) -> None:
-    import os as _os, hmac as _hmac, hashlib as _hashlib, time as _time
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import os as _os
+    import time as _time
     secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
     if not secret:
         if _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") != "1":

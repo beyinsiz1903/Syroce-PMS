@@ -4,7 +4,6 @@ Exposes hardened night audit execution, status, items, resume, abort,
 plus legacy schedule management and financial reporting.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +12,7 @@ from common.context import OperationContext
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,6 @@ Actual implementation split into:
 API endpoints remain in this file for router registration compatibility.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -33,6 +32,7 @@ from domains.channel_manager.providers.sync_scheduler import (  # noqa: F401
     pull_scheduler,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 logger = logging.getLogger(__name__)
 

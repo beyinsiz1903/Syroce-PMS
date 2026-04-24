@@ -17,8 +17,6 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
 from core.database import db
 
 logger = logging.getLogger("monitoring.dispatch")

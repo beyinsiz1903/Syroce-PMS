@@ -171,7 +171,8 @@ async def disable_2fa(
     # v48 (Bug CE): per-user throttle on the password verify. A stolen
     # access_token would otherwise let an attacker brute-force the password
     # here at bcrypt-throttled speed, completely bypassing login throttles.
-    from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    from security.auth_throttle import SENSITIVE_AUTH_USER
+    from security.auth_throttle import enforce as _throttle
     await _throttle(SENSITIVE_AUTH_USER, f"2fadis:{current_user.id}", "2FA kapatma denemesi")
 
     hashed = doc.get("hashed_password") or doc.get("password_hash") or doc.get("password", "")
@@ -239,7 +240,8 @@ async def regenerate_backup_codes(
         raise HTTPException(status_code=400, detail="2FA etkin değil")
 
     # v48 (Bug CE): per-user throttle on TOTP brute-force surface.
-    from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    from security.auth_throttle import SENSITIVE_AUTH_USER
+    from security.auth_throttle import enforce as _throttle
     await _throttle(SENSITIVE_AUTH_USER, f"2farb:{current_user.id}", "yedek kod yenileme denemesi")
 
     secret = decrypt_secret(doc.get("two_factor_secret_enc", ""))

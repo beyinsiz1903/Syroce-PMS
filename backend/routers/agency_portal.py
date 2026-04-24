@@ -22,15 +22,13 @@ Endpoints:
     GET    /api/agency-portal/reservations - List own reservations
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel
 
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import (
     JWT_ALGORITHM,
@@ -42,6 +40,7 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api", tags=["agency-portal"])
 

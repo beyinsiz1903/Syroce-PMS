@@ -3,7 +3,6 @@ PMS Hardening Router - Production-grade API endpoints for all PMS core operation
 Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Audit, Dashboard.
 """
 from datetime import UTC, datetime
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,8 +20,11 @@ from modules.pms_core.multi_property_audit_service import MultiPropertyAuditServ
 from modules.pms_core.night_audit_engine import NightAuditEngine
 from modules.pms_core.pms_dashboard_service import PMSDashboardService
 from modules.pms_core.reservation_state_machine import ReservationStateMachine
-from modules.pms_core.role_permission_service import RolePermissionService
-from modules.pms_core.role_permission_service import require_op  # v90 DW
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v90 DW
+)
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 router = APIRouter(prefix="/api/pms-core", tags=["pms-core"])
 

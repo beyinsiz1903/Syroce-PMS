@@ -6,12 +6,12 @@ smoke tests, and canary analysis — all wired through a single router.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/deploy", tags=["Deploy Pipeline"])
 

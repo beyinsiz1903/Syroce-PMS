@@ -3,7 +3,6 @@ Enterprise Live Router - WebSocket push, messaging, auto-pricing, cross-module i
 Production-grade endpoints for enterprise hotel operations.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -14,6 +13,7 @@ from modules.platform_scaling.cross_module_bus import cross_module_bus
 from modules.platform_scaling.messaging_gateway import messaging_gateway
 from modules.platform_scaling.revenue_autopricing import autopricing
 from modules.platform_scaling.websocket_hub import ws_hub
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 logger = logging.getLogger(__name__)
 

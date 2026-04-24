@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 try:
@@ -18,7 +18,6 @@ except ImportError:
 
 from core.database import db
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
 from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from models.enums import PaymentStatus
 from models.schemas import (
@@ -31,6 +30,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.role_permission_service import require_op
 
 try:
     from cache_manager import cached
@@ -1175,7 +1175,8 @@ async def generate_invoice_from_folio(
         # so user-controlled fields can't break out of their elements/attributes
         # and inject arbitrary UBL nodes (which would corrupt the GİB submission
         # or, worse, smuggle alternate billing data past tax controls).
-        from xml.sax.saxutils import escape as _xe, quoteattr as _qa
+        from xml.sax.saxutils import escape as _xe
+        from xml.sax.saxutils import quoteattr as _qa
         efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
     <ID>{_xe(str(invoice_number))}</ID>
@@ -1286,7 +1287,8 @@ async def generate_efatura_for_invoice(
     # quoteattr handles attribute values including embedded quotes. Without
     # this, customer_name=`</Name>...<EVIL>...</EVIL><Name>x` smuggles arbitrary
     # nodes into the UBL tree.
-    from xml.sax.saxutils import escape as _xe, quoteattr as _qa
+    from xml.sax.saxutils import escape as _xe
+    from xml.sax.saxutils import quoteattr as _qa
     currency = invoice.get('currency', 'TRY')
     efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">

@@ -95,8 +95,9 @@ async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None,
     if not jti:
         return False
     await _ensure_revoked_tokens_index()
-    from core.tenant_db import get_system_db
     from pymongo.errors import DuplicateKeyError
+
+    from core.tenant_db import get_system_db
     sys_db = get_system_db()
     try:
         await sys_db.revoked_tokens.insert_one({

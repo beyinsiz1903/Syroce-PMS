@@ -17,7 +17,6 @@ Models:
   ExtraChargeCreate, MultiRoomReservationCreate
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 from enum import Enum
 
@@ -31,6 +30,7 @@ from core.security import get_current_user
 from core.utils import get_cancellation_policy_details
 from models.enums import CancellationPolicyType
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from routers.pms_shared import get_guest_name
 
 router = APIRouter(prefix="/api", tags=["pms-reservations"])

@@ -1,6 +1,5 @@
 # Accounting Endpoints to be integrated into server.py
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v94 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 api_router = APIRouter(prefix="/api")
 

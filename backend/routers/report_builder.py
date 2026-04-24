@@ -3,7 +3,6 @@ Report Builder Router - Özel Rapor Oluşturucu
 Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktarmasını sağlar.
 """
 import io
-from modules.pms_core.role_permission_service import require_op  # v92 DW
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -12,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,6 @@ Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v99 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 from . import unified_repository as repo
 from .data_model import (

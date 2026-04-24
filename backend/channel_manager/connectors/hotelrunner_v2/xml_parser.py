@@ -22,12 +22,13 @@ import hashlib
 import logging
 import uuid
 from typing import Any
+from xml.etree.ElementTree import Element as _Element  # noqa: E402 (type-hint only)
+
 # Use defusedxml for *parsing* (entity-blocking), but pull Element /
 # ParseError from stdlib for type hints and exception classes —
 # defusedxml.ElementTree intentionally does not re-export the Element
 # class (only safe parse functions). ParseError IS the same class.
 from defusedxml import ElementTree as ET
-from xml.etree.ElementTree import Element as _Element  # noqa: E402 (type-hint only)
 
 from .connector_errors import XmlParseError
 from .contract_errors import (

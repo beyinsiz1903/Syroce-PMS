@@ -8,7 +8,6 @@ API endpoints for the high-signal notification system:
   - Manual evaluation trigger
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from fastapi import APIRouter, Depends, Query
 
@@ -20,6 +19,7 @@ from domains.channel_manager.notification_events_service import (
     get_event_summary,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 logger = logging.getLogger("lockdown.notifications")
 router = APIRouter(prefix="/api/lockdown/notifications", tags=["Notification Events"])

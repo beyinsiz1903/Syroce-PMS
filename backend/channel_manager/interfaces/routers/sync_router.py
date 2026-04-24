@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 from ...application.connector_service import ConnectorService
 from ...application.event_sync_service import EventSyncService
@@ -14,7 +15,6 @@ from ...application.inventory_sync_service import InventorySyncService
 from ...application.mapping_service import MappingService
 from ...application.provider_adapters import InventoryProviderAdapter, RateProviderAdapter
 from ...application.scheduler_service import SchedulerService
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger("channel_manager.routers.sync")
 

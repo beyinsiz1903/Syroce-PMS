@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 
 try:
     from openpyxl import Workbook
@@ -20,7 +20,6 @@ from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
 from core.utils import calculate_folio_balance, excel_response
 from models.enums import ChargeCategory, FolioOperationType
 from models.schemas import (
@@ -36,6 +35,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.role_permission_service import require_op
 from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:

@@ -260,6 +260,7 @@ def _redact_pii(value):
 
 from core.tenant_db import TenantViolationError as _TenantViolationError  # Bug AR follow-up
 
+
 @app.exception_handler(_TenantViolationError)
 async def _tenant_violation_handler(request: Request, exc: _TenantViolationError):
     # Bug AR (architect follow-up, April 2026): map TenantViolationError → 403

@@ -95,8 +95,9 @@ def require_op(operation: str):
     atlanır. Bu helper bir Depends üretir: dependency injection cache wrapper'ından
     önce çalışır, dolayısıyla cache poisoning üzerinden RBAC bypass mümkün olmaz.
     """
-    from core.security import get_current_user
     from fastapi import Depends as _Depends
+
+    from core.security import get_current_user
     from models.schemas import User as _User
 
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
@@ -110,8 +111,10 @@ def require_module(module: str):
     Used for cross-domain endpoints where multiple roles legitimately operate
     (e.g. housekeeping mobile usable by HK + MANAGER + ADMIN).
     """
+    from fastapi import Depends as _Depends
+    from fastapi import HTTPException as _HTTPException
+
     from core.security import get_current_user
-    from fastapi import Depends as _Depends, HTTPException as _HTTPException
     from models.schemas import User as _User
 
     allowed = MODULE_ROLES.get(module, set())
@@ -131,8 +134,10 @@ def require_role(*allowed_roles):
     Bug CV v61: `@cached`-dekoratorlu endpoint'lerde body içinde role check'i
     cache hit'te atlanır. Bu dependency cache wrapper'ından önce çalışır.
     """
+    from fastapi import Depends as _Depends
+    from fastapi import HTTPException as _HTTPException
+
     from core.security import get_current_user
-    from fastapi import Depends as _Depends, HTTPException as _HTTPException
     from models.schemas import User as _User
 
     # v66 Bug DC2: Python 3.11+ `str(StrEnum)` returns 'UserRole.X' (not 'x') —

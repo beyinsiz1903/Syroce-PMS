@@ -8,7 +8,6 @@ and injecting test events.
 Prefix: /api/channel-manager/ingest/
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,6 +30,7 @@ from domains.channel_manager.ingest.workers import (
     trigger_replay_now,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger("ingest.router")
 

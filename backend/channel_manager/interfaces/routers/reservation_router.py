@@ -1,12 +1,12 @@
 """Reservation import, review queue, batch, ACK, audit-trail endpoints."""
 import logging
-from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from ...application.reservation_import_service import ReservationImportService
 

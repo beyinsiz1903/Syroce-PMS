@@ -1,12 +1,12 @@
 """Alerting system and reliability monitoring endpoints."""
 import logging
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 from ...application.alerting_service import AlertingService
 from ...application.multi_property_service import MultiPropertyService

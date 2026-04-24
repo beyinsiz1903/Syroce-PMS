@@ -3,8 +3,6 @@ PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import base64
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
-from modules.pms_core.role_permission_service import require_op  # v94 DW
 import io
 import json
 import logging
@@ -26,6 +24,8 @@ from core.utils import generate_folio_number
 from domains.pms.frontdesk_service import frontdesk_service
 from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
 from models.schemas import Booking, Guest, User
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 logger = logging.getLogger(__name__)
 

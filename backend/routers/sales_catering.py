@@ -10,7 +10,6 @@ Closes the gap with OPERA Sales & Catering:
 Authorisation reuses existing MICE roles via require_mice_ops.
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 import uuid
 from datetime import UTC, datetime
@@ -24,6 +23,7 @@ from core.database import db
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_mice_ops
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 router = APIRouter(prefix="/api/mice/sales", tags=["sales-catering"])
 

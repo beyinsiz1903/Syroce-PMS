@@ -14,7 +14,6 @@ Endpoint'ler:
 """
 
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 import uuid
 from datetime import UTC, datetime
@@ -26,6 +25,7 @@ from core.database import db
 from core.security import get_current_user
 from core.tenant_db import tenant_context
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/kbs", tags=["KBS"])
 

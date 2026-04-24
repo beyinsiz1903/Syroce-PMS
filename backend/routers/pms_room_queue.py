@@ -10,6 +10,7 @@ Routes:
   DELETE /rooms/queue/{queue_id}
 """
 import logging
+
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
 logger = logging.getLogger(__name__)

@@ -3,11 +3,11 @@ ML Scheduler Router - Schedule policies, execution triggers, status monitoring.
 """
 
 from fastapi import APIRouter, Depends, Query
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api/data-intelligence/schedules", tags=["ml-scheduler"])
 

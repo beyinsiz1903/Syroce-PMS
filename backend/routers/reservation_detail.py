@@ -4,10 +4,7 @@ Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -15,7 +12,11 @@ from pydantic import BaseModel, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import RolePermissionService
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v97 DW
+)
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
 _rps = RolePermissionService()

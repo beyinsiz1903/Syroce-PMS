@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from core.security import get_current_user
 from models.schemas import User
 from modules.data_intelligence.guest_intelligence import guest_intelligence
-from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
 from modules.data_intelligence.operational_ai import operational_ai
 from modules.data_intelligence.revenue_ml_pipeline import revenue_pipeline
+from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
 
 try:
     from cache_manager import cache, cached

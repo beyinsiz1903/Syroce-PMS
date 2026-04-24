@@ -3,7 +3,6 @@ HotelRunner Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 """
 import asyncio
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -33,6 +32,7 @@ from domains.channel_manager.rate_utils import (
     get_holiday_periods as _get_holiday_periods,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,6 @@ Sales / CRM Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v92 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -17,6 +16,7 @@ from core.security import (
 )
 from models.enums import CompanyStatus
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,6 @@ Unified API for:
 - Final platform maturity score
 """
 from typing import Any
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -20,6 +19,7 @@ from pydantic import BaseModel
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from ops.canary_deployment_service import canary_deployment_service
 from ops.golive_scorer import golive_scorer
 from ops.pilot_monitoring_service import pilot_monitoring_service

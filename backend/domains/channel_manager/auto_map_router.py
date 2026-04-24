@@ -4,7 +4,6 @@ PMS oda tipleri ile provider (Exely/HotelRunner) oda tiplerini
 isim benzerligine gore otomatik eslestirme.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
@@ -15,6 +14,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger(__name__)
 

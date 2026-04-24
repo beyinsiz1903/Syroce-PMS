@@ -27,7 +27,7 @@ from __future__ import annotations
 # allowing bypasses like " \t=cmd|...". We treat ANY leading whitespace
 # or control char as suspicious and prepend the apostrophe sentinel.
 _DANGEROUS_LEAD_CHARS = ("=", "+", "-", "@")
-_WHITESPACE_OR_CONTROL = set(chr(i) for i in range(0x00, 0x21)) | {"\x7f"}  # 0x21 includes 0x20 space
+_WHITESPACE_OR_CONTROL = {chr(i) for i in range(0x00, 0x21)} | {"\x7f"}  # 0x21 includes 0x20 space
 
 
 def csv_safe(value) -> str:

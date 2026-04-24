@@ -22,10 +22,9 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-
-from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel, Field
 
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import get_current_user
 from core.tenant_db import get_system_db, tenant_context

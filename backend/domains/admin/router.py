@@ -3,7 +3,6 @@ Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -18,6 +17,7 @@ from core.helpers import (
 from core.security import (
     get_current_user,
 )
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 require_super_admin = require_super_admin_guard()
 from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings

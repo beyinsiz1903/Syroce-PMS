@@ -3,7 +3,6 @@ PMS / Notifications Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -19,6 +18,7 @@ from core.security import (
 )
 from domains.pms.pos_fnb.schemas import Alert
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 logger = logging.getLogger(__name__)
 

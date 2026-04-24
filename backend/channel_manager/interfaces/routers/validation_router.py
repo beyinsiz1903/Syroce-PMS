@@ -3,12 +3,12 @@ Enhanced Sandbox Validation Router + Mapping Completeness + Rate Push Tracking +
 Health Trend Analytics + WebSocket endpoints.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from ...application.health_trend_service import HealthTrendService
 from ...application.mapping_completeness_service import MappingCompletenessService

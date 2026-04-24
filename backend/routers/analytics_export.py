@@ -2,7 +2,6 @@
 Analytics Export Router.
 """
 import io
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -10,6 +9,7 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/reports/export", tags=["analytics-export"])
 

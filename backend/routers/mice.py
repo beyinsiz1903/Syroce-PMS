@@ -11,7 +11,6 @@ Mirrors the Opera/Protel banquet management spine:
 * Charge-to-master integration emitting Xchange POSTING_CHARGE
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -32,6 +31,7 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 router = APIRouter(prefix="/api/mice", tags=["mice"])
 

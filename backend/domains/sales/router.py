@@ -5,8 +5,6 @@ Extracted from legacy_routes.py — leads, funnel, activities,
 campaigns, segments, complaints, spa, events.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v98 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -14,6 +12,8 @@ from fastapi import APIRouter, Depends
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api", tags=["sales-crm-domain"])
 

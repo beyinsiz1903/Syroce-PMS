@@ -3,12 +3,12 @@ Event Bus Router — publish, subscribe, replay, status, metrics.
 """
 
 from datetime import UTC
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/event-bus", tags=["event-bus"])
 

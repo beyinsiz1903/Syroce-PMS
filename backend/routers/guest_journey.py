@@ -4,13 +4,13 @@ All endpoints under /api/guest-journey/
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from modules.pms_core.role_permission_service import require_op  # v100 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
 from modules.guest_journey.guest_journey_service import GuestJourneyService
+from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 router = APIRouter(prefix="/api/guest-journey", tags=["guest-journey"])
 journey_svc = GuestJourneyService()

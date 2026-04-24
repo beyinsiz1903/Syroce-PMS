@@ -3,8 +3,9 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 logger = logging.getLogger(__name__)
 import hashlib
@@ -15,7 +16,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from modules.pms_core.role_permission_service import require_op  # v82 DR
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -23,6 +23,7 @@ from core.helpers import create_audit_log, require_module
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
+from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 try:
     from security.encrypted_lookup import decrypt_booking_doc

@@ -7,7 +7,6 @@ replies go straight to them; the visible "From" remains the verified
 Syroce domain for deliverability.
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 import logging
 import os
@@ -22,6 +21,7 @@ from pydantic import BaseModel, Field
 from core.email import send_email
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 from security.encrypted_lookup import decrypt_user_doc
 
 logger = logging.getLogger(__name__)
@@ -433,7 +433,9 @@ async def resend_webhook(request: Request) -> dict:
         # Format: signed string = "{svix-id}.{svix-timestamp}.{body}"
         #         signature header = "v1,<base64(hmac)> v1,<base64(hmac2)> ..."
         #         secret = "whsec_<base64-encoded-key>"
-        import hmac as _hmac, hashlib as _hashlib, base64 as _b64
+        import base64 as _b64
+        import hashlib as _hashlib
+        import hmac as _hmac
         msg_id = request.headers.get("svix-id") or ""
         msg_ts = request.headers.get("svix-timestamp") or ""
         msg_sig = request.headers.get("svix-signature") or ""

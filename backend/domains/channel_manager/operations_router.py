@@ -40,8 +40,8 @@ except ImportError:
 
 # v66 Bug DC: Channel Manager RBAC — OTA credentials + price push çok hassas.
 # Önceki durum: tüm endpoint'ler sadece get_current_user, hk dahil herkes okuyup yazabiliyordu.
-from modules.pms_core.role_permission_service import require_role as _require_role
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import require_role as _require_role
 
 # v66 architect (post-fix): least-privilege — front_desk OTA credentials/parity görmemeli.
 # Operational (front_desk OK): durum panoları, ota rezervasyon listesi, exception kuyruğu.

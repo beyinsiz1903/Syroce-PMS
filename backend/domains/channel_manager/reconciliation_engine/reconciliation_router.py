@@ -17,7 +17,6 @@ Endpoints:
   GET  /api/channel-manager/reconciliation/worker/status — Worker status
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 from typing import Any
 
@@ -32,6 +31,7 @@ from domains.channel_manager.data_model import (
     CaseStatus,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from .reconciliation_worker import (
     get_reconciliation_worker_state,

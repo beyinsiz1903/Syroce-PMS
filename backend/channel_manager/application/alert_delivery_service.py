@@ -22,8 +22,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
-
 from core.database import db
 
 from ..infrastructure.repository import ChannelManagerRepository

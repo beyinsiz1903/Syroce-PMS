@@ -4,7 +4,6 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v99 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -15,6 +14,7 @@ from models.schemas import (
     DemandForecastRequest,
     User,
 )
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 

@@ -6,7 +6,6 @@
 - /api/integrations/afsadakat/admin/* (platform admin)
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 import logging
 
@@ -26,6 +25,7 @@ from core.afsadakat_provisioner import (
 from core.security import get_current_user
 from core.subscriptions import tenant_has_module
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/integrations/afsadakat", tags=["af-sadakat"])

@@ -35,7 +35,7 @@ from __future__ import annotations
 import html as _html
 
 # C0 + DEL — anything that could split a header or hide payload.
-_BAD_SUBJECT_CHARS = set(chr(c) for c in range(0x00, 0x20)) | {"\x7f"}
+_BAD_SUBJECT_CHARS = {chr(c) for c in range(0x00, 0x20)} | {"\x7f"}
 
 
 def safe_html_value(v) -> str:

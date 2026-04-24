@@ -15,7 +15,6 @@ Endpoints:
   GET    /api/report-scheduler/report-types       — Mevcut rapor tipleri
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 import re as _re
 import traceback
 import uuid
@@ -28,6 +27,7 @@ from core.database import db
 from core.security import get_current_user
 from models.enums import UserRole
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger(__name__)
 

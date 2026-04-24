@@ -1,9 +1,7 @@
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v97 DW
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -12,6 +10,7 @@ from core.database import db
 from core.security import get_current_user
 from models.enums import ChannelType
 from models.schemas import Booking, BookingCreate, Guest, GuestCreate, OTAReservation, User
+from modules.pms_core.role_permission_service import require_op  # v97 DW
 
 
 class BookingCredentialManager:

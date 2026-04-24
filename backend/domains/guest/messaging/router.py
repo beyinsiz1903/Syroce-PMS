@@ -3,7 +3,6 @@ Guest / Messaging Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -19,6 +18,7 @@ from core.security import (
     security,
 )
 from models.schemas import SendEmailRequest, SendSMSRequest, SendWhatsAppRequest, User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 logger = logging.getLogger(__name__)
 

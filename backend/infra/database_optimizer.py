@@ -420,6 +420,7 @@ class DatabaseOptimizer:
 
 # API endpoint for database optimization
 from fastapi import APIRouter, Depends
+
 from modules.pms_core.role_permission_service import require_op  # v88 DW
 
 db_optimizer_router = APIRouter(prefix="/api/db-optimizer", tags=["database-optimization"])

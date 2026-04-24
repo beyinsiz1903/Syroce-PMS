@@ -11,7 +11,6 @@ Models:
   RoomNote, MiniBarUpdate
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 try:
     from cache_manager import cached

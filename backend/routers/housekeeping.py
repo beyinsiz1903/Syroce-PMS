@@ -3,6 +3,7 @@ Housekeeping Router - Room status, tasks, assignments, reports
 Extracted from server.py for modularity.
 """
 import logging
+
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,8 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
-from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
 from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
+from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
 
 try:
     from domains.pms.room_block_models import BlockStatus, RoomBlock, RoomBlockCreate, RoomBlockUpdate

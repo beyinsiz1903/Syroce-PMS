@@ -13,8 +13,9 @@ from pydantic import BaseModel
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
-from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.role_permission_service import require_module  # v89 DW
+from modules.pms_core.role_permission_service import (
+    require_op,
+)
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 

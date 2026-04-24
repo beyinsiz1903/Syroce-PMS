@@ -10,12 +10,12 @@ Endpoints for managing booking holds with automatic TTL-based expiry.
   POST /api/booking-holds/sweep     — Manually trigger expired hold cleanup
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 logger = logging.getLogger("routers.booking_holds")
 

@@ -4,7 +4,6 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 

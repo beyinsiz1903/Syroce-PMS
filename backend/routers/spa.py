@@ -10,7 +10,6 @@ Goes well beyond the original 6-treatment template:
   Xchange POSTING_CHARGE event so SAP/finance partners stay in sync)
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -30,6 +29,7 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api/spa", tags=["spa"])
 

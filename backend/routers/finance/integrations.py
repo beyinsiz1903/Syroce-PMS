@@ -1,11 +1,12 @@
 """Auto-split from finance.py — section: integrations."""
 import asyncio
-from modules.pms_core.role_permission_service import require_op  # v94 DW
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
+
+from modules.pms_core.role_permission_service import require_op  # v94 DW
 
 try:
     from openpyxl import Workbook

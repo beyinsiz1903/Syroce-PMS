@@ -3,7 +3,6 @@ PMS / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,8 +20,9 @@ from core.security import (
     security,
 )
 from models.enums import ROLE_PERMISSIONS, CompanyStatus, Permission, UserRole
-from modules.pms_core.role_permission_service import require_op
 from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_op
 
 DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
 

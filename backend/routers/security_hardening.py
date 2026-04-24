@@ -6,12 +6,12 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query
 
 from core.cache import cached
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 from modules.security_hardening.audit_completeness import audit_completeness
 from modules.security_hardening.credential_vault import credential_vault
 from modules.security_hardening.data_masking import data_masking
 from modules.security_hardening.property_permissions import property_permissions
 from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
-from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
 from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])

@@ -13,6 +13,8 @@ stages to the event timeline for full end-to-end traceability.
 """
 import logging
 import uuid
+from datetime import UTC, datetime
+
 # v109 Bug DAL round-7 (T11 CRITICAL XXE): inbound Exely SOAP webhook was
 # previously parsed with stdlib xml.etree.ElementTree which resolves DOCTYPE
 # external entities by default. An attacker reaching the webhook (post-IP-
@@ -24,8 +26,6 @@ import uuid
 # entity resolution, DTD processing, and external references.
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
@@ -320,8 +320,8 @@ async def receive_reservation(request: Request):
     #   4. If EXELY_TRUST_FORWARDED=1 but EXELY_TRUSTED_PROXY_IPS unset, we
     #      DO NOT trust the header at all — guarded by startup guardrail
     #      that logs CRITICAL on this misconfiguration (see server.py).
-    import os
     import ipaddress as _ipa
+    import os
 
     def _parse_cidrs(spec: str):
         out = []

@@ -3,13 +3,13 @@ Channel Manager — Provider Validation API Router
 =================================================
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
 from domains.channel_manager.provider_validation import provider_validation_service
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api/cm/validation", tags=["CM Provider Validation"])
 

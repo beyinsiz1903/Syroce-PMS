@@ -5,7 +5,6 @@ iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 `tenant_subscriptions` koleksiyonuna abonelik kaydı düşer.
 """
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 import logging
 import uuid
@@ -18,6 +17,7 @@ from pydantic import BaseModel, Field
 from core.security import get_current_user
 from core.subscriptions import ensure_indexes, get_active_subscriptions
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v93 DW
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/module-store", tags=["module-store"])

@@ -6,7 +6,6 @@ never-again rules, and learning dashboard.
 """
 
 from datetime import UTC
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -19,6 +18,7 @@ from core.learning_loop import (
 )
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api/ops/learning", tags=["Learning Loop"])
 

@@ -5,13 +5,13 @@ Alert management: evaluate rules, list active, acknowledge, resolve, get summary
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from modules.pms_core.role_permission_service import require_op  # v100 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
 from modules.observability.alert_enrichment import alert_enrichment_engine
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 router = APIRouter(prefix="/api/alerts", tags=["Alert Enrichment"])
 

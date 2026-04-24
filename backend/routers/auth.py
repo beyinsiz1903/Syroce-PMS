@@ -285,7 +285,11 @@ async def register_tenant(data: TenantRegister, request: Request):
     # endpoint allowed unbounded tenant creation and account-enumeration
     # via the existing/new email response shape difference.
     from security.auth_throttle import (
-        REGISTER_IP, REGISTER_EMAIL, client_ip, enforce, normalize_identity,
+        REGISTER_EMAIL,
+        REGISTER_IP,
+        client_ip,
+        enforce,
+        normalize_identity,
     )
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
@@ -340,7 +344,11 @@ async def register_tenant(data: TenantRegister, request: Request):
 async def register_guest(data: GuestRegister, request: Request):
     # v54 (Bug CO): per-IP and per-email throttle (see register_tenant).
     from security.auth_throttle import (
-        REGISTER_IP, REGISTER_EMAIL, client_ip, enforce, normalize_identity,
+        REGISTER_EMAIL,
+        REGISTER_IP,
+        client_ip,
+        enforce,
+        normalize_identity,
     )
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
@@ -911,7 +919,8 @@ async def change_password(
     # bcrypt-throttled speed (login throttle does not apply because the call
     # is authenticated). Allow a few attempts per 15 min for legitimate UX
     # then 429.
-    from security.auth_throttle import SENSITIVE_AUTH_USER, enforce as _throttle
+    from security.auth_throttle import SENSITIVE_AUTH_USER
+    from security.auth_throttle import enforce as _throttle
     await _throttle(SENSITIVE_AUTH_USER, f"chgpw:{current_user.id}", "şifre değiştirme denemesi")
 
     user_doc = await db.users.find_one({"id": current_user.id})
@@ -1204,7 +1213,11 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
         request latency.
     """
     from security.auth_throttle import (
-        REGISTER_IP, REGISTER_EMAIL, client_ip, enforce, normalize_identity,
+        REGISTER_EMAIL,
+        REGISTER_IP,
+        client_ip,
+        enforce,
+        normalize_identity,
     )
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
@@ -1435,9 +1448,10 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
 
         async def _bg_reset():
             try:
-                from modules.messaging.email_service import email_service
-                from core.email import _frontend_base_url, render_password_reset_email, send_email
                 import secrets as _secrets
+
+                from core.email import _frontend_base_url, render_password_reset_email, send_email
+                from modules.messaging.email_service import email_service
 
                 code = email_service.generate_verification_code()
                 token = _secrets.token_urlsafe(32)

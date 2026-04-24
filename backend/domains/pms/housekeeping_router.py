@@ -3,8 +3,6 @@ PMS / Housekeeping Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import base64
-from modules.pms_core.role_permission_service import require_op  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -23,6 +21,8 @@ from core.security import (
     security,
 )
 from models.schemas import ReportIssueRequest, UploadPhotoRequest, User
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 logger = logging.getLogger(__name__)
 

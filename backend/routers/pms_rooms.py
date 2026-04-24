@@ -3,7 +3,6 @@ PMS Rooms Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Room CRUD, bulk operations, CSV import, image upload.
 """
 import csv
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 import io
 import logging
 import os
@@ -14,6 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 

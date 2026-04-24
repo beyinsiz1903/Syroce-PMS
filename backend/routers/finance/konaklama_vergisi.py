@@ -12,7 +12,6 @@ Bu modül `db.city_tax_rules` (mevcut config koleksiyonu) ve
 Posting izi `db.accommodation_tax_postings` koleksiyonunda tutulur.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +25,7 @@ from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.enums import ChargeCategory
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/finance/konaklama-vergisi", tags=["konaklama-vergisi"])

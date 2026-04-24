@@ -1,12 +1,12 @@
 """Hotel-facing endpoints — uses the existing staff JWT (get_current_user)."""
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 from .models import OrderCreate, OrderOut, ProductOut
 from .repository import orders_col, products_col

@@ -97,7 +97,9 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
                 detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
             )
     else:
-        import hmac as _hmac, hashlib as _hashlib, time as _time
+        import hashlib as _hashlib
+        import hmac as _hmac
+        import time as _time
         sig_header = (
             request.headers.get("X-HotelRunner-Signature")
             or request.headers.get("X-Signature")

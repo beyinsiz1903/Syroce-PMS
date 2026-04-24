@@ -15,7 +15,6 @@ except ImportError:
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
 from models.schemas import (
     Invoice,
     InvoiceCreate,
@@ -23,6 +22,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.role_permission_service import require_op
 
 try:
     from cache_manager import cached

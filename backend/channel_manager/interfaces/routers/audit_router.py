@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 from ...application.connector_service import ConnectorService
 from ...application.error_queue_service import ErrorQueueService
@@ -20,7 +21,6 @@ from ...application.scheduler_service import SchedulerService
 from ...application.webhook_service import WebhookService
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 logger = logging.getLogger("channel_manager.routers.audit")
 

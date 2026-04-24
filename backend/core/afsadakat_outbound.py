@@ -27,8 +27,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
-
 from core.database import db
 
 logger = logging.getLogger(__name__)

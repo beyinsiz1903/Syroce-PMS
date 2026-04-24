@@ -11,7 +11,6 @@ Provides endpoints for:
   - Prioritized incident feed
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v95 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 logger = logging.getLogger("ops_timeline")
 

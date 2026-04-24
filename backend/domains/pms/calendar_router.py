@@ -7,13 +7,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import (
     get_current_user,
-    security,
 )
 from models.schemas import CreateRateCodeRequest, GetCalendarTooltipRequest, User
 from modules.pms_core.role_permission_service import require_op  # v74 Bug DJ

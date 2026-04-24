@@ -4,9 +4,6 @@ Domain Router: POS Marketplace
 POS enhancements, warehouse procurement, marketplace extensions.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v95 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +30,9 @@ from models.schemas import (
     UpdateSupplierCreditRequest,
     User,
 )
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 

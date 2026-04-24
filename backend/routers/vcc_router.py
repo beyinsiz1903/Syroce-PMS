@@ -6,7 +6,6 @@ Hoteliers can view card details a maximum of 3 times, enforced at the API level.
 Every view is logged in the activity log for audit trail.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v97 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,7 +14,10 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import RolePermissionService
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v97 DW
+)
 from security.field_encryption import get_field_encryption_service
 
 _role_perm = RolePermissionService()

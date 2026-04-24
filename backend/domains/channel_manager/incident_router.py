@@ -8,7 +8,6 @@ Endpoints for managing operational incidents:
 - Audit trail per incident
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,6 +25,7 @@ from domains.channel_manager.reconciliation_truth import (
     get_resolution_for_drift,
 )
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger("incident.panel")
 router = APIRouter(prefix="/api/ops/incidents", tags=["Operator Incident Panel"])

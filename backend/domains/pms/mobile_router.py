@@ -4,7 +4,6 @@ Domain Router: Mobile
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
 import uuid
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,8 +15,11 @@ from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.role_permission_service import require_op, require_module  # v89 DW
+from modules.pms_core.role_permission_service import (
+    require_module,  # v89 DW
+    require_op,
+)
+from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 

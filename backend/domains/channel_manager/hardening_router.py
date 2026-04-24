@@ -5,12 +5,12 @@ sync scheduling, provider health, and credential management.
 Thin router: delegates all business logic to CMRuntimeService.
 """
 from fastapi import APIRouter, Depends, Query
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 from common.context import OperationContext
 from core.security import get_current_user
 from domains.channel_manager.cm_runtime_service import cm_runtime_service
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 router = APIRouter(prefix="/api/channel-manager", tags=["Channel Manager / Hardening"])
 

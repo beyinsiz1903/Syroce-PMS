@@ -1,11 +1,12 @@
 """Auto-split from finance.py — section: mobile."""
 import uuid
-from modules.pms_core.role_permission_service import require_op  # v92 DW
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+
+from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 try:
     from openpyxl import Workbook

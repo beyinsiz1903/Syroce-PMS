@@ -15,7 +15,6 @@ kullanarak arama/rezervasyon akışlarını gate eder.
 """
 
 from __future__ import annotations
-from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 import logging
 import uuid
@@ -29,6 +28,7 @@ from pymongo.errors import DuplicateKeyError
 from core.security import get_current_user
 from core.tenant_db import get_system_db, tenant_context  # noqa: F401
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 logger = logging.getLogger(__name__)
 

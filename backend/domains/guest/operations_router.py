@@ -3,8 +3,6 @@ Guest / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -17,8 +15,12 @@ from core.security import (
     security,
 )
 from models.enums import UserRole
-from modules.pms_core.role_permission_service import require_role
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
+from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
+from modules.pms_core.role_permission_service import (
+    require_op,  # v96 DW
+    require_role,
+)
 
 logger = logging.getLogger(__name__)
 

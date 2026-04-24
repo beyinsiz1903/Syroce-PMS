@@ -3,7 +3,6 @@ HotelRunner Integration Router
 API endpoints for HotelRunner connection management, testing, and operations.
 """
 import logging
-from modules.pms_core.role_permission_service import require_op  # v96 DW
 import uuid
 from datetime import UTC, datetime
 
@@ -14,6 +13,7 @@ from core.database import db
 from core.secrets import get_secrets_manager
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 logger = logging.getLogger(__name__)
 

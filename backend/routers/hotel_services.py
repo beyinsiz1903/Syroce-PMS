@@ -3,13 +3,14 @@ Hotel Services Router - Housekeeping Status, Wake-up Calls, Lost & Found,
 Hotel Settings (logo/template), Group Folio Merging, PDF Invoice Generation
 """
 import html as _html
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 import logging
 import re as _re
 import uuid
 from datetime import UTC, datetime, timedelta
+
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 
 def _e(value) -> str:

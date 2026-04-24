@@ -5,15 +5,15 @@ create_order, close_order, void_order, stock_adjust, table_reserve.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
 from domains.pms.pos_fnb.pos_fnb_service_v2 import pos_fnb_service_v2
+from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 

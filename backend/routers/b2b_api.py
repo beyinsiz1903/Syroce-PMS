@@ -82,7 +82,6 @@ Webhooks — API Key Auth:
   POST   /api/b2b/webhooks/{webhook_id}/test     - Webhook test
 """
 import hashlib
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 import hmac
 import json
 import logging
@@ -90,16 +89,15 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-
-from core.atomic_booking import BookingConflictError, create_booking_atomic
 from pydantic import BaseModel, Field
 
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import get_current_user
 from core.tenant_db import set_tenant_context
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 
