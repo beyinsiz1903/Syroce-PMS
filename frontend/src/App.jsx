@@ -234,10 +234,11 @@ function App() {
                         />
                       );
                     } else if (rc.type === "module") {
+                      const isSuperAdmin = (user?.roles || []).includes("super_admin") || user?.role === "super_admin";
                       element = (
                         <ModuleGuardedRoute
                           isAuthenticated={isAuthenticated}
-                          moduleEnabled={modules?.[rc.moduleKey]}
+                          moduleEnabled={isSuperAdmin ? true : modules?.[rc.moduleKey]}
                           strict={rc.strict}
                           element={<rc.component {...rc.props} />}
                         />
@@ -251,9 +252,10 @@ function App() {
                         element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
                       }
                     } else if (rc.requireSuperAdmin) {
+                      const isSuperAdmin = (user?.roles || []).includes("super_admin") || user?.role === "super_admin";
                       if (!isAuthenticated) {
                         element = <Navigate to="/auth" replace />;
-                      } else if (user?.role !== "super_admin") {
+                      } else if (!isSuperAdmin) {
                         element = <Navigate to="/app/dashboard" replace />;
                       } else {
                         element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;

@@ -102,7 +102,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
 
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const navRef = useRef(null);
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
@@ -137,6 +137,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const isModuleEnabled = (moduleKey) => {
     if (!moduleKey) return true;
+    // Super admin bypasses all module gating (full access).
+    if (isSuperAdmin) return true;
     if (STRICT_MODULES.has(moduleKey)) {
       return modules?.[moduleKey] === true;
     }
