@@ -4485,3 +4485,28 @@ Backlog updated: 3 ✅ marked DONE, ~19 P0 sites remaining for next round. Each 
 ### Test landscape note
 
 `tests/battle/test_sprint2_*` (12 errors) and `tests/test_atomic_checkin_checkout` (7 errors) have **pre-existing fixture infrastructure requirements** (replica-set MongoDB / live test server) that are not provisioned in the dev container. These are NOT regressions — they error in pytest setup phase, not assertion phase. Pure unit suite (87 tests) all green.
+
+### v108 — Spa & MICE add-on gating (Yol 2 — paid add-on, default OFF) (April 2026)
+
+Spa ve MICE artık tüm planlardan ayrı satılan add-on modüller; sadece super_admin Admin > Modül Yönetimi'nden tenant başına etkinleştirir.
+
+**Backend (defense-in-depth, fail-closed):**
+- `core/entitlement.py` — `ROUTE_MODULE_MAP`: `/api/spa→spa`, `/api/mice→mice`, `/api/events/→mice` (sales router'daki Meeting & Events alternate path).
+- `core/helpers.py` `MODULE_DEFAULTS` + `domains/admin/subscription_models.py` `PLAN_MODULE_DEFAULTS` (basic/professional/enterprise üçü) → `spa:False, mice:False`.
+- `core/entitlement.py` → public `check_module_access()` helper expose; `routers/b2b_api.py` `/spa/services` + `/spa/booking` handler'ları başına inline kontrol (B2B X-API-Key auth JWT-driven middleware'i atlıyor).
+- `scripts/enable_spa_mice_for_demo.py` — idempotent migration, sadece Syroce Demo tenant için ON (mevcut 22 spa_services + 5 mice_menus korundu).
+
+**Frontend:**
+- `pages/admin/tenantConstants.jsx` → "Add-on Modüller" grubu `addon:true` flag; `isModuleIncludedInPlan` add-on'lar için her zaman false (admin UI'da "Plana dahil değil" upsell badge).
+- `routes/ProtectedRoute.jsx` `ModuleGuardedRoute` → `strict` prop; `strict=true` iken `moduleEnabled !== true` redirect (undefined da bloklanır). Normal modüllerde eski davranış (`=== false` redirect) korundu.
+- `routes/routeDefinitions.jsx` `pm()` helper opts.strict; `/app/mice`, `/spa-wellness`, `/meeting-events` strict:true.
+- `pages/Dashboard.jsx` add-on kart filtresi strict `=== true`.
+
+**Tarama (kapsam doğrulaması):** `db.{spa_services,spa_bookings,mice_*,event_bookings}` koleksiyonlarına dokunan 5 dosya: `routers/spa.py`, `routers/mice.py` (gated prefix); `domains/sales/router.py` (`/api/events/→mice` mapping); `routers/b2b_api.py` (inline check); `scripts/enable_spa_mice_for_demo.py` (script). Tüm yollar kapatıldı. `/api/b2b/groups*` `room_blocks` koleksiyonunu kullanıyor (klasik oda bloku, MICE add-on değil — kapsam dışı).
+
+**Live verification (Syroce Demo):**
+- modules OFF → `/api/events/bookings` GET+POST 403, `/api/spa/services` 403, `/api/mice/spaces` 403.
+- modules ON → hepsi 200 (22 spa services, 14 mice spaces).
+- Architect 1. tur: FAIL → 2 bypass yolu (events + B2B spa) tespit. Bu turda fixed; live test geçti.
+
+Marker: `# v106 add-on gating` (kod yorum).
