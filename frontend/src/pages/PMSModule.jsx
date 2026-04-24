@@ -212,6 +212,24 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     }
   }, [tenant, activeTab]);
 
+  // Auto-open booking detail when navigated with ?edit=<id>
+  // (used by ReservationCalendar "Düzenle" → /app/pms?edit=ID#bookings).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get('edit');
+    if (!editId || !bookings || bookings.length === 0) return;
+    const target = bookings.find((b) => b.id === editId);
+    if (!target) return;
+    setSelectedBookingDetail(target);
+    setOpenDialog('bookingDetail');
+    // Clean URL so back-nav / refresh does not re-open.
+    params.delete('edit');
+    const newSearch = params.toString();
+    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }, [bookings]);
+
   useEffect(() => {
     if (!isLite || openDialog !== 'booking') return;
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
