@@ -28,9 +28,14 @@ export function ProtectedRouteWithMemory({ isAuthenticated, element, targetPath 
   return <Suspense fallback={<LoadingFallback />}>{element}</Suspense>;
 }
 
-export function ModuleGuardedRoute({ isAuthenticated, moduleEnabled, element }) {
+export function ModuleGuardedRoute({ isAuthenticated, moduleEnabled, element, strict = false }) {
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
-  if (moduleEnabled === false) return <Navigate to="/" replace />;
+  // strict=true → deny when not explicitly true (used for paid add-on
+  // modules like spa/mice so a stale or empty modules payload cannot
+  // accidentally render the page shell).
+  if (strict ? moduleEnabled !== true : moduleEnabled === false) {
+    return <Navigate to="/" replace />;
+  }
   return <Suspense fallback={<LoadingFallback />}>{element}</Suspense>;
 }
 

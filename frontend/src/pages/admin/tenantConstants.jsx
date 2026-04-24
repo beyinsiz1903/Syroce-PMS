@@ -1,4 +1,4 @@
-import { Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield } from 'lucide-react';
+import { Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles } from 'lucide-react';
 
 export const PLANS = {
   basic: {
@@ -118,6 +118,16 @@ export const MODULE_GROUPS = [
       { key: 'ai_predictive', label: 'AI Tahminler', hint: 'No-show, demand prediction', tier: 'enterprise' },
     ],
   },
+  {
+    id: 'addons',
+    title: 'Add-on Modüller (Ekstra Ücretli)',
+    icon: Sparkles,
+    color: 'pink',
+    items: [
+      { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true },
+      { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true },
+    ],
+  },
 ];
 
 export const ROLE_LABELS = {
@@ -136,6 +146,9 @@ export const ROLE_LABELS = {
 export const tierRank = { basic: 0, professional: 1, enterprise: 2 };
 
 export const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
+  // Add-on modules are never "included" in any plan — they're always
+  // upsell items that super_admin enables per-tenant.
+  if (moduleItem.addon || moduleItem.tier === 'addon') return false;
   const moduleTier = moduleItem.tier || 'enterprise';
   return tierRank[tenantTier] >= tierRank[moduleTier];
 };

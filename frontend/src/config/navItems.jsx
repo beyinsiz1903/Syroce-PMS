@@ -645,6 +645,7 @@ export const NAV_ITEMS = [
     key: "mice",
     label: "MICE & Banquet",
     path: "/app/mice",
+    moduleKey: "mice",
     tier: "basic",
     group: "core",
     navGroup: "operations",

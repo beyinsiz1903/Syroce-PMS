@@ -523,6 +523,10 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       if (m.path === '/pms') return modules.pms !== false;
       if (m.path === '/mobile' || m.path?.startsWith('/mobile/')) return modules.pms_mobile !== false;
 
+      // Add-on modules — sold separately, default OFF for all plans
+      if (m.path === '/spa-wellness') return modules.spa === true;
+      if (m.path === '/meeting-events' || m.path === '/app/mice') return modules.mice === true;
+
       // Raporlar
       if (m.path === '/reports' || m.path === '/flash-report') return modules.reports !== false;
 

@@ -239,9 +239,10 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     requireSuperAdmin: true,
   });
 
-  const pm = (Component, moduleKey, extra) => ({
+  const pm = (Component, moduleKey, extra, opts = {}) => ({
     type: "module",
     moduleKey,
+    strict: !!opts.strict,
     component: Component,
     props: { user, tenant, onLogout, modules, ...extra },
   });
@@ -264,7 +265,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/profile", ...p(ProfilePage) },
     { path: "/app/compliance/pci", ...p(PCIComplianceDashboard) },
     { path: "/app/xchange", ...p(XchangePage) },
-    { path: "/app/mice", ...p(MicePage) },
+    { path: "/app/mice", ...pm(MicePage, "mice", undefined, { strict: true }) },
     { path: "/app/procurement", ...p(ProcurementPage) },
     { path: "/app/stock-rehber", ...p(InventoryProcurementGuide) },
     { path: "/app/mailing", ...p(MailingPage) },
@@ -467,8 +468,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/vip-management", ...p(VIPManagement) },
     { path: "/sales-crm", ...p(SalesCRM) },
     { path: "/service-recovery", ...p(ServiceRecovery) },
-    { path: "/spa-wellness", ...p(SpaWellness) },
-    { path: "/meeting-events", ...p(MeetingEvents) },
+    { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
+    { path: "/meeting-events", ...pm(MeetingEvents, "mice", undefined, { strict: true }) },
     { path: "/multi-property", ...p(MultiProperty) },
     { path: "/payment-gateway", ...p(PaymentGateway) },
     { path: "/advanced-loyalty", ...p(AdvancedLoyalty) },

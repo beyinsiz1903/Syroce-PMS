@@ -1851,6 +1851,11 @@ async def b2b_concierge_request(
 async def b2b_spa_services(agency: dict = Depends(get_b2b_agency)):
     """Spa hizmet ve fiyat listesi."""
     tenant_id = agency["tenant_id"]
+    # v106 add-on gating: B2B API-key flow bypasses the JWT-driven
+    # entitlement middleware, so we must enforce the spa add-on here.
+    from core.entitlement import check_module_access
+    if not await check_module_access(tenant_id, "spa"):
+        raise HTTPException(status_code=403, detail="Spa modulu bu otelde etkin degil")
     services = await db.spa_services.find(
         {"tenant_id": tenant_id, "is_active": True},
         {"_id": 0, "tenant_id": 0},
@@ -1885,6 +1890,11 @@ async def b2b_spa_booking(
 ):
     """Spa randevusu olustur."""
     tenant_id = agency["tenant_id"]
+    # v106 add-on gating: same reason as /spa/services — entitlement
+    # middleware uses JWT, but B2B is API-key authenticated.
+    from core.entitlement import check_module_access
+    if not await check_module_access(tenant_id, "spa"):
+        raise HTTPException(status_code=403, detail="Spa modulu bu otelde etkin degil")
     # v65 Bug DB: cross-agency IDOR guard
     booking = await _agency_owns_booking(tenant_id, agency["agency_id"], data.booking_id)
     if not booking:

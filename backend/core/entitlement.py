@@ -39,6 +39,14 @@ ROUTE_MODULE_MAP: dict[str, str] = {
     # Marketplace-purchased integration. Aliases (quick_id_integration)
     # are resolved inside core.subscriptions.tenant_has_module.
     "/api/quick-id/": "quick_id",
+    # Add-on modules — sold separately, default OFF for all tiers.
+    # Super-admin enables per-tenant from Admin > Modül Yönetimi.
+    "/api/spa": "spa",
+    "/api/mice": "mice",
+    # Alternate MICE entry-point in sales router (Meeting & Events).
+    # Without this mapping, MICE-equivalent functionality is reachable
+    # via /api/events/* even when the `mice` add-on is disabled.
+    "/api/events/": "mice",
     # NOTE: /api/mailing/ is intentionally NOT entitlement-gated.
     # Mailing is sold as credit packs and is enforced at send-time
     # by the mailing credit balance check, not by route gating.
@@ -96,6 +104,13 @@ def _match_route_module(path: str) -> str | None:
         if path.startswith(prefix):
             return module
     return None
+
+
+async def check_module_access(tenant_id: str, module: str) -> bool:
+    """Public re-export of `_check_module_access` for use by routes that
+    bypass the path-based middleware (e.g. B2B API-key endpoints whose
+    tenant is resolved from an agency record, not a JWT)."""
+    return await _check_module_access(tenant_id, module)
 
 
 async def _check_module_access(tenant_id: str, module: str) -> bool:

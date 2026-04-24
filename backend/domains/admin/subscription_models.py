@@ -135,6 +135,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,   # Basic'te bile açık (temel misafir hizmeti)
         "quick_id": False,          # Upsell: Pro+'ta açılır
+        # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "spa": False,
+        "mice": False,
     },
     "professional": {
         # CORE - Açık
@@ -182,6 +185,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,
+        # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "spa": False,
+        "mice": False,
     },
     "enterprise": {
         # CORE - Açık
@@ -229,6 +235,9 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,
+        # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "spa": False,
+        "mice": False,
     },
 }
 

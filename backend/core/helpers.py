@@ -176,6 +176,8 @@ MODULE_DEFAULTS: dict[str, bool] = {
     "ai": True, "ai_chatbot": True, "ai_pricing": True, "ai_whatsapp": True,
     "ai_predictive": True, "ai_reputation": True, "ai_revenue_autopilot": True,
     "ai_social_radar": True,
+    # Add-on modules — sold separately, default OFF.
+    "spa": False, "mice": False,
 }
 
 

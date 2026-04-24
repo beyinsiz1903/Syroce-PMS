@@ -238,6 +238,7 @@ function App() {
                         <ModuleGuardedRoute
                           isAuthenticated={isAuthenticated}
                           moduleEnabled={modules?.[rc.moduleKey]}
+                          strict={rc.strict}
                           element={<rc.component {...rc.props} />}
                         />
                       );
