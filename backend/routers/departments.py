@@ -920,15 +920,17 @@ async def get_available_rooms_for_booking(
         # Current room.status reflects today's occupancy, not future availability.
         blocked_statuses = {'out_of_service', 'maintenance', 'blocked'}
         if conflicts == 0 and room.get('status') not in blocked_statuses:
+            room_price = room.get('price_per_night') or 0
+            booking_rate = booking.get('rate') or 0
             available_rooms.append({
                 'id': room['id'],
                 'room_number': room['room_number'],
                 'room_type': room['room_type'],
                 'floor': room.get('floor', 1),
                 'status': room['status'],
-                'price_per_night': room.get('price_per_night', 0),
-                'is_same_type': room['room_type'].lower() == requested_type.lower(),
-                'is_upgrade': room.get('price_per_night', 0) > booking.get('rate', 0),
+                'price_per_night': room_price,
+                'is_same_type': (room.get('room_type') or '').lower() == (requested_type or '').lower(),
+                'is_upgrade': room_price > booking_rate,
                 'amenities': room.get('amenities', [])
             })
 
