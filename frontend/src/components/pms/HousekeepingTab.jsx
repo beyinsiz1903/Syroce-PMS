@@ -20,6 +20,7 @@ const HousekeepingTab = ({
   setMaintenanceForm,
   setMaintenanceDialogOpen,
   handleUpdateHKTask,
+  onBookingCardClick,
   toast,
   loading,
 }) => {
@@ -105,7 +106,14 @@ const HousekeepingTab = ({
               <div className="text-center text-gray-400 py-4">{tc('noDueOut')}</div>
             ) : (
               dueOutRooms.map((room, idx) => (
-                <div key={idx} className={`p-3 rounded border ${room.is_today ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
+                <div
+                  key={idx}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onBookingCardClick && room.booking_id && onBookingCardClick(room.booking_id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onBookingCardClick && room.booking_id) onBookingCardClick(room.booking_id); }}
+                  className={`p-3 rounded border cursor-pointer transition hover:shadow-md hover:scale-[1.01] ${room.is_today ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-orange-50 border-orange-200 hover:bg-orange-100'}`}
+                >
                   <div className="font-bold">{tc('roomPrefix')} {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs text-gray-500">
@@ -130,7 +138,14 @@ const HousekeepingTab = ({
               <div className="text-center text-gray-400 py-4">{tc('noStayover')}</div>
             ) : (
               stayoverRooms.map((room, idx) => (
-                <div key={idx} className="p-3 rounded border bg-blue-50 border-blue-200">
+                <div
+                  key={idx}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onBookingCardClick && room.booking_id && onBookingCardClick(room.booking_id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onBookingCardClick && room.booking_id) onBookingCardClick(room.booking_id); }}
+                  className="p-3 rounded border bg-blue-50 border-blue-200 cursor-pointer transition hover:shadow-md hover:scale-[1.01] hover:bg-blue-100"
+                >
                   <div className="font-bold">{tc('roomPrefix')} {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs text-gray-500">
@@ -154,9 +169,16 @@ const HousekeepingTab = ({
               <div className="text-center text-gray-400 py-4">{tc('noArrivals')}</div>
             ) : (
               arrivalRooms.map((room, idx) => (
-                <div key={idx} className={`p-3 rounded border ${
-                  room.ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
-                }`}>
+                <div
+                  key={idx}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onBookingCardClick && room.booking_id && onBookingCardClick(room.booking_id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onBookingCardClick && room.booking_id) onBookingCardClick(room.booking_id); }}
+                  className={`p-3 rounded border cursor-pointer transition hover:shadow-md hover:scale-[1.01] ${
+                    room.ready ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100'
+                  }`}
+                >
                   <div className="font-bold">{tc('roomPrefix')} {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs flex items-center justify-between">
