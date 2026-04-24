@@ -548,9 +548,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleEditReservation = () => {
+  const handleEditReservation = (booking) => {
     setShowSidebar(false);
-    navigate('/pms#bookings');
+    setShowDetailsDialog(false);
+    const id = booking?.id || selectedBooking?.id;
+    // PMS module hash-tab routing: #bookings activates the bookings tab.
+    // ?edit=<id> is read by PMSModule to auto-open the booking edit form.
+    if (id) {
+      navigate(`/app/pms?edit=${id}#bookings`);
+    } else {
+      navigate('/app/pms#bookings');
+    }
   };
 
   const handleSendConfirmation = async (booking) => {
@@ -869,6 +877,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         onOpenChange={setShowDetailsDialog}
         selectedBooking={selectedBooking}
         rooms={rooms}
+        onEdit={handleEditReservation}
       />
 
       <MoveReasonDialog

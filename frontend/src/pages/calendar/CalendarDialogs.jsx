@@ -315,7 +315,7 @@ export const NewBookingDialog = ({
 
 // Booking Details Dialog
 export const BookingDetailsDialog = ({
-  open, onOpenChange, selectedBooking, rooms,
+  open, onOpenChange, selectedBooking, rooms, onEdit,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -435,7 +435,15 @@ export const BookingDetailsDialog = ({
           </div>
           <div className="flex space-x-2 pt-4 border-t">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Edit Booking</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                if (onEdit) onEdit(selectedBooking);
+              }}
+            >
+              Düzenle
+            </Button>
           </div>
         </div>
       )}
