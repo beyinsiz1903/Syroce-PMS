@@ -16,6 +16,14 @@ if str(TESTS_DIR) not in sys.path:
 # Ensure TESTING=1 so rate limiter uses relaxed limits during test runs
 os.environ.setdefault("TESTING", "1")
 
+# Mongo: tests run outside start.sh so MONGO_URL may be unset.
+# Fallback to MONGO_ATLAS_URI (the same source start.sh uses).
+if not os.environ.get("MONGO_URL"):
+    _atlas = os.environ.get("MONGO_ATLAS_URI")
+    if _atlas:
+        os.environ["MONGO_URL"] = _atlas
+        os.environ.setdefault("DB_NAME", "syroce-pms")
+
 
 # ── Quarantine Auto-Skip Hook (ADR-002) ──────────────────────────────────
 # Loads the quarantine manifest and auto-skips listed tests at collection time.
@@ -35,9 +43,11 @@ def pytest_collection_modifyitems(config, items):
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
 
-# Ensure VITE_BACKEND_URL is set for test files that read it directly
+# Ensure VITE_BACKEND_URL is set for test files that read it directly.
+# Backend listens on 8000 (start.sh:69 → uvicorn --port 8000).
 if not os.environ.get("VITE_BACKEND_URL"):
-    os.environ["VITE_BACKEND_URL"] = "http://localhost:8001"
+    os.environ["VITE_BACKEND_URL"] = "http://localhost:8000"
+    BASE_URL = "http://localhost:8000"
 
 
 @pytest.fixture(scope="session")

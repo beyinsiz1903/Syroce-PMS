@@ -3,6 +3,7 @@ Tests for Atomic Check-in / Check-out
 Restored from quarantine: stale_room_locks — added lock cleanup before booking creation.
 """
 import asyncio
+import os
 import uuid
 import random
 from datetime import datetime, timezone, timedelta
@@ -10,7 +11,8 @@ from datetime import datetime, timezone, timedelta
 import pytest
 import httpx
 
-BASE_URL = "http://localhost:8001/api"
+# Resolve from env so the test follows the same backend URL as the rest of the suite.
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8000").rstrip("/") + "/api"
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 
@@ -41,8 +43,10 @@ def _idem():
 
 async def _get_db():
     from motor.motor_asyncio import AsyncIOMotorClient
-    client = AsyncIOMotorClient("mongodb://localhost:27017/hotel_pms")
-    return client, client["hotel_pms"]
+    mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI")
+    db_name = os.environ.get("DB_NAME", "syroce-pms")
+    client = AsyncIOMotorClient(mongo_url)
+    return client, client[db_name]
 
 
 async def _find_available_room(headers):
