@@ -233,15 +233,19 @@ async def create_tenant(
 ):
     """Create a new hotel/tenant (SUPER ADMIN only)"""
 
+    # Cross-tenant platform op: bypass tenant scoping for tenant/user creation.
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
+
     # Check if tenant with same email already exists
-    existing = await db.tenants.find_one({
+    existing = await sys_db.tenants.find_one({
         "$or": [{"contact_email": payload.email}, {"email": payload.email}]
     })
     if existing:
         raise HTTPException(status_code=400, detail="A hotel is already registered with this email address")
 
     # Also check if user email is taken
-    existing_user = await db.users.find_one(build_user_email_query(payload.email))
+    existing_user = await sys_db.users.find_one(build_user_email_query(payload.email))
     if existing_user:
         raise HTTPException(status_code=400, detail="This email address is already in use")
 
@@ -279,7 +283,7 @@ async def create_tenant(
         dashboard_layout = "standard"
 
     from core.hotel_ids import generate_unique_hotel_id
-    new_hotel_id = await generate_unique_hotel_id(db)
+    new_hotel_id = await generate_unique_hotel_id(sys_db)
 
     new_tenant = Tenant(
         hotel_id=new_hotel_id,
@@ -307,7 +311,7 @@ async def create_tenant(
     tenant_dict['dashboard_layout'] = dashboard_layout
     tenant_dict['hidden_nav_groups'] = nav_config.get("hidden_nav_groups", [])
     tenant_dict['hidden_nav_items'] = nav_config.get("hidden_nav_items", [])
-    await db.tenants.insert_one(tenant_dict)
+    await sys_db.tenants.insert_one(tenant_dict)
 
     # Create admin user for this tenant
     hashed_password = hash_password(payload.password)
@@ -326,7 +330,7 @@ async def create_tenant(
     # Rename password_hash to hashed_password for login compatibility
     user_dict['hashed_password'] = user_dict.pop('password_hash', hashed_password)
     user_dict = encrypt_user_doc(user_dict)
-    await db.users.insert_one(user_dict)
+    await sys_db.users.insert_one(user_dict)
 
     return {
         "success": True,

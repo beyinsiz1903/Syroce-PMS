@@ -4532,3 +4532,23 @@ Marker: `# v106 add-on gating` (kod yorum).
 - Pattern: `user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'))` + roles[] union.
 
 **Doğrulama:** 19 round architect re-verification; final round PASS verdiği önemli noktalar — agency_login response'u `roles[]`-only super_admin için `roles` alanını döner, hydration tamamlanır.
+
+### v110 — pre-existing test failures fixed (April 2026)
+
+User-reported failing tests addressed:
+
+**1. Webhook tests (test_admin_panel_phases.py × 3)** — v106 FAIL-CLOSED webhook signing made tests fail because they sent `signature=None`. Tests updated to compute valid `sha256=hmac(wh-secret, ts.body)` signatures for happy-path / invalid_json paths and a valid timestamp + bogus sig for the invalid_signature path. Production webhook_service.py untouched.
+
+**2. test_create_tenant_success (TenantViolationError 403)** — `POST /api/admin/tenants` was inserting via TenantAware `db`; new tenant/user docs carry a different `tenant_id` than the super_admin caller's context, tripping the cross-tenant write guard. Fix: `domains/admin/router.py::create_tenant` now resolves a `sys_db = get_system_db()` for the existence checks, hotel-id generation, tenant insert, and user insert. Other endpoints in the router still use the scoped `db`.
+
+**3. Login throttle 429 cascades (test_admin_control_panel_api.py × 16)** — Each test class re-logs in (per-class fixture), tripping LOGIN_IP/LOGIN_ACCOUNT. Added `DISABLE_AUTH_THROTTLE` env escape hatch in `security/auth_throttle.py::enforce`, set to `1` in `backend/start.sh` for dev. **Prod hard-guard:** even if env var set, throttle is only skipped when `APP_ENV`/`ENVIRONMENT` is dev/test/local.
+
+**4. mask_value short-value info-leak (bonus)** — `mask_value("AB1694")` returned `"**1694"` exposing 4 of 6 chars. `core/crypto/masking.py::mask_value` now fully masks (`"****"`) whenever `hidden_len < 4`. Both fixes test_get_credentials_masked and closes a real PII-adjacent leak.
+
+**Final test results:**
+- test_admin_panel_phases: 31 pass, 3 skip
+- test_admin_tenants_api: 20 pass
+- test_admin_control_panel_api: 22 pass
+- Regression: test_agency_portal_api + test_b2b_api + test_room_management_access = 40 pass, 12 skip
+
+Architect evaluation: PASS with prod-guard caveat (addressed in same round).

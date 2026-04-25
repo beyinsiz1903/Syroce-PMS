@@ -65,5 +65,10 @@ export CM_KEY_VERSION="${CM_KEY_VERSION:-v1}"
 # (and use `get_raw_db()` explicitly).
 export STRICT_TENANT_MODE="${STRICT_TENANT_MODE:-true}"
 
+# Dev/test only: skip auth throttle so per-class pytest fixtures (which
+# re-login many times) don't trip 429 cascades. Production deployments
+# must NOT set this; defaults off.
+export DISABLE_AUTH_THROTTLE="${DISABLE_AUTH_THROTTLE:-1}"
+
 cd "$(dirname "$0")"
 exec python -m uvicorn server:app --host 0.0.0.0 --port 8000

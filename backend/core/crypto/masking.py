@@ -13,14 +13,21 @@ def mask_value(
 ) -> str:
     """Mask a credential value for display.
 
+    Always emits at least 4 asterisks. Short values (where the visible window
+    would leave fewer than 4 hidden chars) are fully masked — exposing the
+    last 4 chars of a 6-digit code (`**1694`) leaks too much.
+
     Examples:
         mask_value("sk-1234567890")       → "********7890"
         mask_value("short")               → "****"
-        mask_value("abc", visible_prefix=1, visible_suffix=1) → "a*c"
+        mask_value("AB1694")              → "****"   (was "**1694")
+        mask_value("abc", visible_prefix=1, visible_suffix=1) → "****"  (hidden_len<4)
     """
-    if not value or len(value) <= (visible_prefix + visible_suffix):
+    if not value:
         return "****"
     hidden_len = len(value) - visible_prefix - visible_suffix
+    if hidden_len < 4:
+        return "****"
     return value[:visible_prefix] + "*" * hidden_len + value[-visible_suffix:]
 
 

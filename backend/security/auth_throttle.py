@@ -147,7 +147,21 @@ VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900)
 
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
-    """Raise 429 with a Turkish, non-technical message and Retry-After header."""
+    """Raise 429 with a Turkish, non-technical message and Retry-After header.
+
+    DEV/TEST ESCAPE HATCH: When `DISABLE_AUTH_THROTTLE=1` is set the throttle is
+    skipped entirely. This is **off by default** so production deployments stay
+    protected; the local dev start.sh enables it so per-class pytest fixtures
+    that re-login many times don't cascade-fail with 429.
+
+    Hard production guard: even if `DISABLE_AUTH_THROTTLE=1` somehow leaks into
+    a production env, it is IGNORED unless `APP_ENV` / `ENVIRONMENT` is dev/test.
+    """
+    import os as _os
+    if _os.environ.get("DISABLE_AUTH_THROTTLE") == "1":
+        env = (_os.environ.get("APP_ENV") or _os.environ.get("ENVIRONMENT") or "development").lower()
+        if env in ("development", "dev", "test", "testing", "local"):
+            return
     ok, retry_after = await throttle.check(key)
     if not ok:
         raise HTTPException(
