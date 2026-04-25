@@ -484,6 +484,47 @@ async def create_walk_in_booking(
         except CheckInError as e:
             raise HTTPException(status_code=400, detail=f"Walk-in booking created but check-in failed: {e}")
 
+        # 6. KBS auto-notify when a real ID number was provided (TC kimlik / passport)
+        # Skips placeholder IDs (those start with "WALKIN-").
+        kbs_notified = False
+        kbs_reference = None
+        try:
+            real_id = (request.guest_id_number or '').strip()
+            if real_id and not real_id.upper().startswith('WALKIN-'):
+                kbs_reference = str(uuid.uuid4())[:8].upper()
+                kbs_doc = {
+                    "_id": str(uuid.uuid4()),
+                    "tenant_id": current_user.tenant_id,
+                    "booking_id": new_booking.id,
+                    "kbs_reference": kbs_reference,
+                    "status": "sent",
+                    "sent_at": datetime.now(UTC).isoformat(),
+                    "sent_by": current_user.email,
+                    "source": "walk_in_auto",
+                    "guest_data": {
+                        "name": request.guest_name,
+                        "id_number": real_id,
+                        "nationality": request.nationality,
+                        "phone": request.guest_phone,
+                    },
+                }
+                await db.kbs_notifications.insert_one(kbs_doc)
+                await db.bookings.update_one(
+                    {"id": new_booking.id, "tenant_id": current_user.tenant_id},
+                    {"$set": {
+                        "kbs_status": "sent",
+                        "kbs_sent_at": datetime.now(UTC).isoformat(),
+                        "kbs_reference": kbs_reference,
+                    }}
+                )
+                kbs_notified = True
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "KBS auto-notify failed for walk-in booking %s; booking remains valid",
+                new_booking.id,
+            )
+
         return {
             'success': True,
             'message': "Walk-in booking created and checked in successfully",
@@ -494,6 +535,8 @@ async def create_walk_in_booking(
             'check_out': check_out.isoformat(),
             'total_amount': total_amount,
             'checked_in_at': checkin_result.get('checked_in_at'),
+            'kbs_notified': kbs_notified,
+            'kbs_reference': kbs_reference,
         }
 
     except HTTPException:

@@ -39,7 +39,7 @@ const FrontdeskTab = ({
   const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
-  const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
+  const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
   const [walkInSubmitting, setWalkInSubmitting] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
 
@@ -110,7 +110,7 @@ const FrontdeskTab = ({
   };
 
   const resetWalkInForm = () => {
-    setWalkInForm({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
+    setWalkInForm({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
   };
 
   const handleWalkInSubmit = async () => {
@@ -128,6 +128,7 @@ const FrontdeskTab = ({
       const payload = {
         guest_name: walkInForm.guest_name.trim(),
         guest_phone: walkInForm.phone?.trim() || '',
+        guest_email: walkInForm.email?.trim() || null,
         guest_id_number: walkInForm.id_number?.trim() || null,
         room_id: matchedRoom.id,
         nights: Math.max(1, parseInt(walkInForm.nights) || 1),
@@ -218,7 +219,7 @@ const FrontdeskTab = ({
   return (
     <TabsContent value="frontdesk" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <Card className="cursor-pointer hover:shadow-lg transition" onClick={loadFrontDeskData}>
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">{t('pms.todayArrivals')}</CardTitle>
           </CardHeader>
@@ -227,7 +228,7 @@ const FrontdeskTab = ({
             <p className="text-xs text-gray-500">{t('pms.expectedCheckins')}</p>
           </CardContent>
         </Card>
-        <Card className="cursor-pointer hover:shadow-lg transition" onClick={loadFrontDeskData}>
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">{t('pms.todayDepartures')}</CardTitle>
           </CardHeader>
@@ -236,7 +237,7 @@ const FrontdeskTab = ({
             <p className="text-xs text-gray-500">{t('pms.expectedCheckouts')}</p>
           </CardContent>
         </Card>
-        <Card className="cursor-pointer hover:shadow-lg transition" onClick={loadFrontDeskData}>
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">{t('pms.inHouseGuests')}</CardTitle>
           </CardHeader>
@@ -649,9 +650,10 @@ const FrontdeskTab = ({
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-xs text-gray-500 -mt-1">{tf('walkInIntro')}</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div><Label>{tf('guestName')}</Label><Input value={walkInForm.guest_name} onChange={e => setWalkInForm(p => ({ ...p, guest_name: e.target.value }))} /></div>
               <div><Label>{t('pmsComponents.guests.phone')}</Label><Input value={walkInForm.phone} onChange={e => setWalkInForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div><Label>{tf('emailOptional')}</Label><Input type="email" value={walkInForm.email} onChange={e => setWalkInForm(p => ({ ...p, email: e.target.value }))} placeholder="ornek@mail.com" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{tf('idPassport')}</Label><Input value={walkInForm.id_number} onChange={e => setWalkInForm(p => ({ ...p, id_number: e.target.value }))} /></div>

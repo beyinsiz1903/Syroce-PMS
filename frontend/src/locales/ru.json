@@ -2041,7 +2041,8 @@
       "arrivalToday": "Сегодня заезд",
       "inhouseNow": "В отеле",
       "loyaltyPoints": "{{points}} баллов",
-      "clickToOpenBooking": "Нажмите, чтобы открыть бронь"
+      "clickToOpenBooking": "Нажмите, чтобы открыть бронь",
+      "emailOptional": "E-mail (необязательно)"
     },
     "housekeeping": {
       "loading": "Загрузка данных уборки...",

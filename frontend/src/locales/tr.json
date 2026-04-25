@@ -2041,7 +2041,8 @@
       "arrivalToday": "Bugün geliyor",
       "inhouseNow": "Otelde",
       "loyaltyPoints": "{{points}} puan",
-      "clickToOpenBooking": "Rezervasyonu açmak için tıklayın"
+      "clickToOpenBooking": "Rezervasyonu açmak için tıklayın",
+      "emailOptional": "E-posta (opsiyonel)"
     },
     "housekeeping": {
       "loading": "Kat hizmetleri verileri yükleniyor...",

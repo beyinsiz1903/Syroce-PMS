@@ -2041,7 +2041,8 @@
       "arrivalToday": "今日到达",
       "inhouseNow": "在住",
       "loyaltyPoints": "{{points}} 分",
-      "clickToOpenBooking": "点击打开预订"
+      "clickToOpenBooking": "点击打开预订",
+      "emailOptional": "邮箱(可选)"
     },
     "housekeeping": {
       "loading": "正在加载客房清洁数据...",

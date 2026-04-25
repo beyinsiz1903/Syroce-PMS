@@ -2041,7 +2041,8 @@
       "arrivalToday": "قادم اليوم",
       "inhouseNow": "داخل الفندق",
       "loyaltyPoints": "{{points}} نقطة",
-      "clickToOpenBooking": "انقر لفتح الحجز"
+      "clickToOpenBooking": "انقر لفتح الحجز",
+      "emailOptional": "البريد الإلكتروني (اختياري)"
     },
     "housekeeping": {
       "loading": "جاري تحميل بيانات التدبير المنزلي...",

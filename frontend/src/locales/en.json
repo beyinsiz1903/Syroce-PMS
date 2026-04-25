@@ -2041,7 +2041,8 @@
       "arrivalToday": "Arriving today",
       "inhouseNow": "In-house",
       "loyaltyPoints": "{{points}} pts",
-      "clickToOpenBooking": "Click to open booking"
+      "clickToOpenBooking": "Click to open booking",
+      "emailOptional": "Email (optional)"
     },
     "housekeeping": {
       "loading": "Loading housekeeping data...",

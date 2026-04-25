@@ -2041,7 +2041,8 @@
       "arrivalToday": "Chega hoje",
       "inhouseNow": "Hospedado",
       "loyaltyPoints": "{{points}} pts",
-      "clickToOpenBooking": "Clique para abrir a reserva"
+      "clickToOpenBooking": "Clique para abrir a reserva",
+      "emailOptional": "E-mail (opcional)"
     },
     "housekeeping": {
       "loading": "Carregando dados de governança...",

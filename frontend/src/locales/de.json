@@ -2041,7 +2041,8 @@
       "arrivalToday": "Heute Anreise",
       "inhouseNow": "Im Haus",
       "loyaltyPoints": "{{points}} Pkt.",
-      "clickToOpenBooking": "Klicken, um Buchung zu öffnen"
+      "clickToOpenBooking": "Klicken, um Buchung zu öffnen",
+      "emailOptional": "E-Mail (optional)"
     },
     "housekeeping": {
       "loading": "Housekeeping-Daten werden geladen...",
