@@ -312,8 +312,10 @@ Turkish (All responses must be in Turkish)
 - ~~Channel Manager Dashboard (reservations, failed imports, push queue, health)~~ → DONE (2026-04-09)
 - Make unassigned reservations more prominent in calendar
 - Improve Auto Room Mapping (capacity + base price matching)
-- Refactor: BasicReports.jsx (>1200 lines) — component extraction (P2/P3 teknik borç)
-- Refactor: hotelrunner_sync.py (~1000 lines)
+- ~~Refactor: BasicReports.jsx (>1200 lines)~~ → DONE — file already trimmed to 342 lines (audited 2026-04-25)
+- ~~Refactor: hotelrunner_sync.py (~1000 lines)~~ → DONE — file already trimmed to 222 lines / 5 functions (audited 2026-04-25)
+- Refactor: DisplacementAnalysis.jsx (~710 lines) — split 4 tabs into `frontend/src/pages/displacement/{MarketOverviewTab,AnalysisTab,CompareTab,HistoryTab}.jsx` + shared helpers (P2 teknik borç)
+- Refactor: hotelrunner_router.py (~726 lines) — split route handlers by domain (push, pull, settings, debug) (P2 teknik borç)
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
 - Real competitor price integration via SerpApi or OTA Insight (when budget allows)
 - Automated Email Scheduler for Reports (daily/weekly report dispatch)
