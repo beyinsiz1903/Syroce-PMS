@@ -24,19 +24,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
+from pathlib import Path
 from typing import Any
 
 # Allow running as a script (python backend/scripts/normalize_pr_departments.py)
-if __package__ is None or __package__ == "":
-    import os
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-    sys.path.insert(
-        0,
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
-    )
+from dotenv import load_dotenv  # noqa: E402
+from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-from backend.database import get_database  # noqa: E402
+# Load backend/.env so MONGO_URL / DB_NAME match the running API.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # Canonical (current) values come from ProcurementPage.jsx PR Modal dropdown.
 CANONICAL = {
@@ -101,7 +101,16 @@ def canonicalize(raw: Any) -> str | None:
 
 
 async def run(tenant: str | None, dry_run: bool, aggressive: bool) -> None:
-    db = get_database()
+    # Mirror backend/start.sh precedence: MONGO_URL wins, else MONGO_ATLAS_URI.
+    mongo_url = (
+        os.environ.get("MONGO_URL")
+        or os.environ.get("MONGO_ATLAS_URI")
+        or "mongodb://localhost:27017"
+    )
+    db_name = os.environ.get("DB_NAME", "syroce-pms")
+    client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+    db = client[db_name]
+    print(f"Connected: db={db_name}")
     # Active runtime collection — see backend/routers/procurement.py.
     coll = db["proc_purchase_requests"]
     query: dict[str, Any] = {}
