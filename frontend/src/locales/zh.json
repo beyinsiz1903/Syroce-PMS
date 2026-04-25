@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "配额管理",
       "subtitle": "旅行社配额合同",
+      "cmNoticeTitle": "渠道管理器提示：",
+      "cmNoticeBody": "此处的配额合同仅供内部跟踪，不会自动在渠道管理器中阻止可用性。当旅行社售出房间时，请在 PMS 中手动录入为预订，否则可能在 OTA 渠道上发生超额预订。",
       "refresh": "刷新",
       "newContract": "新合同",
       "contractCount": "合同数",

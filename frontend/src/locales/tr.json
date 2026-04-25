@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Kontenjan Yönetimi",
       "subtitle": "Tur operatörü kontenjan sözleşmeleri",
+      "cmNoticeTitle": "Channel Manager Uyarısı:",
+      "cmNoticeBody": "Buradaki kontenjan sözleşmeleri sadece iç takip içindir. Channel Manager'a otomatik bloke göndermez. Tur operatöründen gelen satışları PMS'e manuel rezervasyon olarak girmeyi unutmayın — aksi halde kanallarda double-booking riski oluşur.",
       "refresh": "Yenile",
       "newContract": "Yeni Sözleşme",
       "contractCount": "Sözleşme Sayısı",

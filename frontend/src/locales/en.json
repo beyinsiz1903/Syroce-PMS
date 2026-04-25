@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Allotment Management",
       "subtitle": "Tour operator allotment contracts",
+      "cmNoticeTitle": "Channel Manager Notice:",
+      "cmNoticeBody": "Allotment contracts here are for internal tracking only. They do NOT automatically block availability in your Channel Manager. When the tour operator sells a room, enter it as a manual booking in the PMS — otherwise you risk double-booking on OTA channels.",
       "refresh": "Refresh",
       "newContract": "New Contract",
       "contractCount": "Contracts",

@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Kontingent-Verwaltung",
       "subtitle": "Reiseveranstalter-Kontingentverträge",
+      "cmNoticeTitle": "Channel-Manager-Hinweis:",
+      "cmNoticeBody": "Die Kontingentverträge hier dienen nur der internen Verfolgung. Sie blockieren NICHT automatisch die Verfügbarkeit im Channel Manager. Wenn der Reiseveranstalter ein Zimmer verkauft, geben Sie es manuell als Buchung im PMS ein — andernfalls riskieren Sie Doppelbuchungen auf OTA-Kanälen.",
       "refresh": "Aktualisieren",
       "newContract": "Neuer Vertrag",
       "contractCount": "Verträge",

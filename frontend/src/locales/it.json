@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Gestione allotment",
       "subtitle": "Contratti allotment tour operator",
+      "cmNoticeTitle": "Avviso Channel Manager:",
+      "cmNoticeBody": "I contratti allotment qui sono solo per tracciamento interno. NON bloccano automaticamente la disponibilità nel Channel Manager. Quando il tour operator vende una camera, inseriscila manualmente come prenotazione nel PMS — altrimenti c'è rischio di overbooking sui canali OTA.",
       "refresh": "Aggiorna",
       "newContract": "Nuovo contratto",
       "contractCount": "Contratti",

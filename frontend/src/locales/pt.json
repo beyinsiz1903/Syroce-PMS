@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Gestão de Allotment",
       "subtitle": "Contratos de allotment de operadoras",
+      "cmNoticeTitle": "Aviso do Channel Manager:",
+      "cmNoticeBody": "Os contratos de allotment aqui são apenas para acompanhamento interno. NÃO bloqueiam automaticamente a disponibilidade no Channel Manager. Quando a operadora vender um quarto, registre-o manualmente como reserva no PMS — caso contrário, há risco de overbooking nos canais OTA.",
       "refresh": "Atualizar",
       "newContract": "Novo Contrato",
       "contractCount": "Contratos",

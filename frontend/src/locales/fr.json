@@ -2162,6 +2162,8 @@
     "allotment": {
       "title": "Gestion des contingents",
       "subtitle": "Contrats de contingent tour-opérateur",
+      "cmNoticeTitle": "Avis Channel Manager :",
+      "cmNoticeBody": "Les contrats de contingent ici sont uniquement pour le suivi interne. Ils NE bloquent PAS automatiquement la disponibilité dans le Channel Manager. Lorsque le tour-opérateur vend une chambre, saisissez-la manuellement comme réservation dans le PMS — sinon il y a un risque de surréservation sur les canaux OTA.",
       "refresh": "Actualiser",
       "newContract": "Nouveau contrat",
       "contractCount": "Contrats",
