@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Kontenjan Yönetimi",
       "subtitle": "Tur operatörü kontenjan sözleşmeleri",
-      "cmNoticeTitle": "Channel Manager Uyarısı:",
-      "cmNoticeBody": "Buradaki kontenjan sözleşmeleri sadece iç takip içindir. Channel Manager'a otomatik bloke göndermez. Tur operatöründen gelen satışları PMS'e manuel rezervasyon olarak girmeyi unutmayın — aksi halde kanallarda double-booking riski oluşur.",
+      "cmNoticeTitle": "Channel Manager ile birlikte kullanım:",
+      "cmNoticeBody": "Acente Channel Manager'a (Exely / HotelRunner) bağlıysa rezervasyonlar otomatik olarak PMS'e düşer — manuel giriş gerekmez. Acente CM dışında ise (doğrudan kontenjan sözleşmesi), satışları manuel rezervasyon olarak girersiniz. Bu sözleşmeler CM müsaitliğine otomatik bloke göndermez; kontenjan iç takip + raporlama amaçlıdır.",
+      "cmNoticeMatchHint": "Eşleşme kuralı: Bir rezervasyonun bu sözleşmeye sayılması için oda tipi + tarih aralığı uymalı VE rezervasyondaki acente / kanal alanlarından (agency_name, channel, ota_channel) biri buraya yazdığınız \"Tur Operatörü\" adını içermeli (büyük/küçük harf duyarsız). Örn. operatör adını \"TUI\" girerseniz, kanalı \"TUI Belgium\" olan tüm OTA rezervasyonları otomatik sayılır.",
+      "tourOperatorHint": "Önemli: Bu adın, OTA'dan gelen rezervasyonlardaki kanal/acente adıyla eşleşmesi lazım. Örn. Booking üzerinden TUI ise \"TUI\" yazın, alt-marka adlarını da kapsar.",
+      "matchedRevenue": "Eşleşen Ciro:",
       "refresh": "Yenile",
       "newContract": "Yeni Sözleşme",
       "contractCount": "Sözleşme Sayısı",

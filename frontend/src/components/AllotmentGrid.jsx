@@ -97,10 +97,11 @@ const AllotmentGrid = () => {
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-start gap-2">
-        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-        <div className="text-sm text-amber-900 leading-relaxed">
-          <span className="font-semibold">{ta('cmNoticeTitle')}</span> {ta('cmNoticeBody')}
+      <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 flex items-start gap-2">
+        <AlertTriangle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+        <div className="text-sm text-blue-900 leading-relaxed space-y-1">
+          <div><span className="font-semibold">{ta('cmNoticeTitle')}</span> {ta('cmNoticeBody')}</div>
+          <div className="text-xs text-blue-800">{ta('cmNoticeMatchHint')}</div>
         </div>
       </div>
 
@@ -186,6 +187,12 @@ const AllotmentGrid = () => {
                       <div className="bg-purple-500 h-full rounded-full" style={{ width: `${Math.min(usagePct, 100)}%` }} />
                     </div>
                     <p className="text-xs text-gray-400 text-center">{ta('usage')} %{usagePct}</p>
+                    {(contract.bookings_count > 0 || contract.total_revenue > 0) && (
+                      <div className="flex justify-between border-t pt-2">
+                        <span className="text-gray-600">{ta('matchedRevenue')}</span>
+                        <span className="font-semibold text-emerald-600">{fmt(contract.total_revenue)} {cur}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('price')}</span>
                       <span className="font-semibold">{fmt(contract.rate)} {cur}{ta('perNight')}</span>
@@ -220,6 +227,7 @@ const AllotmentGrid = () => {
             <div>
               <Label>{ta('tourOperator')}</Label>
               <Input value={formData.tour_operator} onChange={(e) => setFormData({ ...formData, tour_operator: e.target.value })} placeholder={ta('tourOperatorPlaceholder')} />
+              <p className="text-xs text-gray-500 mt-1">{ta('tourOperatorHint')}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Gestion des contingents",
       "subtitle": "Contrats de contingent tour-opérateur",
-      "cmNoticeTitle": "Avis Channel Manager :",
-      "cmNoticeBody": "Les contrats de contingent ici sont uniquement pour le suivi interne. Ils NE bloquent PAS automatiquement la disponibilité dans le Channel Manager. Lorsque le tour-opérateur vend une chambre, saisissez-la manuellement comme réservation dans le PMS — sinon il y a un risque de surréservation sur les canaux OTA.",
+      "cmNoticeTitle": "Travailler avec le Channel Manager :",
+      "cmNoticeBody": "Si l'agence est connectée à votre Channel Manager (Exely / HotelRunner), les réservations arrivent automatiquement dans le PMS — pas besoin de saisie manuelle. Si l'agence est hors CM (contrat de contingent direct), saisissez les ventes comme réservations manuelles. Ces contrats N'envoient PAS de blocage automatique de disponibilité au CM ; le contingent sert au suivi interne + reporting.",
+      "cmNoticeMatchHint": "Règle de correspondance : Pour qu'une réservation soit comptée dans ce contrat, le type de chambre + la plage de dates doivent se chevaucher ET l'un des champs agence/canal de la réservation (agency_name, channel, ota_channel) doit contenir le nom du \"Tour-opérateur\" saisi ici (insensible à la casse). Ex. : saisissez \"TUI\" et toute réservation OTA avec canal \"TUI Belgium\" sera comptée automatiquement.",
+      "tourOperatorHint": "Important : Ce nom doit correspondre au champ canal/agence des réservations OTA entrantes. Ex. : si la réservation vient via TUI, saisissez \"TUI\" — les sous-marques correspondront aussi.",
+      "matchedRevenue": "Chiffre d'affaires associé :",
       "refresh": "Actualiser",
       "newContract": "Nouveau contrat",
       "contractCount": "Contrats",

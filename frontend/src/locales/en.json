@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Allotment Management",
       "subtitle": "Tour operator allotment contracts",
-      "cmNoticeTitle": "Channel Manager Notice:",
-      "cmNoticeBody": "Allotment contracts here are for internal tracking only. They do NOT automatically block availability in your Channel Manager. When the tour operator sells a room, enter it as a manual booking in the PMS — otherwise you risk double-booking on OTA channels.",
+      "cmNoticeTitle": "Working with Channel Manager:",
+      "cmNoticeBody": "If the agency is connected to your Channel Manager (Exely / HotelRunner), bookings arrive in the PMS automatically — no manual entry needed. If the agency is outside your CM (direct allotment contract), enter sales as manual bookings. These contracts do NOT push automatic availability blocks to your CM; allotment is for internal tracking + reporting.",
+      "cmNoticeMatchHint": "Match rule: For a booking to count against this contract, room type + date range must overlap AND one of the booking's agency/channel fields (agency_name, channel, ota_channel) must contain the \"Tour Operator\" name you enter here (case-insensitive). E.g. enter \"TUI\" and any OTA booking with channel \"TUI Belgium\" is automatically counted.",
+      "tourOperatorHint": "Important: This name must match the channel/agency field on incoming OTA bookings. E.g. if booking comes via TUI, enter \"TUI\" — sub-brand names will also match.",
+      "matchedRevenue": "Matched Revenue:",
       "refresh": "Refresh",
       "newContract": "New Contract",
       "contractCount": "Contracts",

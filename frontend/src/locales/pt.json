@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Gestão de Allotment",
       "subtitle": "Contratos de allotment de operadoras",
-      "cmNoticeTitle": "Aviso do Channel Manager:",
-      "cmNoticeBody": "Os contratos de allotment aqui são apenas para acompanhamento interno. NÃO bloqueiam automaticamente a disponibilidade no Channel Manager. Quando a operadora vender um quarto, registre-o manualmente como reserva no PMS — caso contrário, há risco de overbooking nos canais OTA.",
+      "cmNoticeTitle": "Trabalhando com o Channel Manager:",
+      "cmNoticeBody": "Se a agência está conectada ao seu Channel Manager (Exely / HotelRunner), as reservas chegam ao PMS automaticamente — sem entrada manual. Se a agência está fora do CM (contrato de allotment direto), registre as vendas como reservas manuais. Esses contratos NÃO enviam bloqueios automáticos de disponibilidade ao CM; o allotment é para acompanhamento interno + relatórios.",
+      "cmNoticeMatchHint": "Regra de correspondência: Para uma reserva ser contada neste contrato, o tipo de quarto + intervalo de datas devem sobrepor-se E um dos campos de agência/canal da reserva (agency_name, channel, ota_channel) deve conter o nome da \"Operadora\" inserido aqui (sem distinção de maiúsculas). Ex.: insira \"TUI\" e qualquer reserva OTA com canal \"TUI Belgium\" será contada automaticamente.",
+      "tourOperatorHint": "Importante: Este nome deve corresponder ao campo canal/agência nas reservas OTA recebidas. Ex.: se a reserva vem via TUI, insira \"TUI\" — sub-marcas também serão correspondidas.",
+      "matchedRevenue": "Receita Correspondente:",
       "refresh": "Atualizar",
       "newContract": "Novo Contrato",
       "contractCount": "Contratos",

@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Kontingent-Verwaltung",
       "subtitle": "Reiseveranstalter-Kontingentverträge",
-      "cmNoticeTitle": "Channel-Manager-Hinweis:",
-      "cmNoticeBody": "Die Kontingentverträge hier dienen nur der internen Verfolgung. Sie blockieren NICHT automatisch die Verfügbarkeit im Channel Manager. Wenn der Reiseveranstalter ein Zimmer verkauft, geben Sie es manuell als Buchung im PMS ein — andernfalls riskieren Sie Doppelbuchungen auf OTA-Kanälen.",
+      "cmNoticeTitle": "Zusammenarbeit mit dem Channel Manager:",
+      "cmNoticeBody": "Wenn die Agentur an Ihren Channel Manager (Exely / HotelRunner) angebunden ist, kommen Buchungen automatisch ins PMS — keine manuelle Eingabe nötig. Wenn die Agentur außerhalb des CM steht (Direktkontingentvertrag), erfassen Sie Verkäufe als manuelle Buchungen. Diese Verträge senden KEINE automatische Verfügbarkeitssperre an Ihren CM; Kontingente dienen der internen Verfolgung + Berichten.",
+      "cmNoticeMatchHint": "Match-Regel: Damit eine Buchung diesem Vertrag zugerechnet wird, müssen Zimmertyp + Zeitraum überlappen UND eines der Agentur-/Kanalfelder der Buchung (agency_name, channel, ota_channel) den hier eingegebenen \"Reiseveranstalter\"-Namen enthalten (Groß-/Kleinschreibung egal). Beispiel: Geben Sie \"TUI\" ein, und jede OTA-Buchung mit Kanal \"TUI Belgium\" wird automatisch gezählt.",
+      "tourOperatorHint": "Wichtig: Dieser Name muss mit dem Kanal-/Agenturfeld eingehender OTA-Buchungen übereinstimmen. Wenn die Buchung z. B. über TUI kommt, geben Sie \"TUI\" ein — Sub-Markennamen passen ebenfalls.",
+      "matchedRevenue": "Zugeordneter Umsatz:",
       "refresh": "Aktualisieren",
       "newContract": "Neuer Vertrag",
       "contractCount": "Verträge",

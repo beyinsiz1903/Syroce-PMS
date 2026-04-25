@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "配额管理",
       "subtitle": "旅行社配额合同",
-      "cmNoticeTitle": "渠道管理器提示：",
-      "cmNoticeBody": "此处的配额合同仅供内部跟踪，不会自动在渠道管理器中阻止可用性。当旅行社售出房间时，请在 PMS 中手动录入为预订，否则可能在 OTA 渠道上发生超额预订。",
+      "cmNoticeTitle": "与渠道管理器配合使用：",
+      "cmNoticeBody": "如果旅行社已连接到您的渠道管理器（Exely / HotelRunner），预订会自动到达 PMS，无需手动录入。如果旅行社不在渠道管理器中（直接配额合同），请将销售作为手动预订录入。这些合同不会向渠道管理器发送自动可用性阻止；配额仅用于内部跟踪和报告。",
+      "cmNoticeMatchHint": "匹配规则：要使预订计入此合同，房型 + 日期范围必须重叠，且预订的代理/渠道字段之一（agency_name、channel、ota_channel）必须包含此处输入的\"旅行社\"名称（不区分大小写）。例如：输入\"TUI\"，任何渠道为\"TUI Belgium\"的 OTA 预订都将自动计入。",
+      "tourOperatorHint": "重要：此名称必须与传入 OTA 预订中的渠道/代理字段匹配。例如：如果预订来自 TUI，请输入\"TUI\" — 子品牌名称也会匹配。",
+      "matchedRevenue": "匹配收入：",
       "refresh": "刷新",
       "newContract": "新合同",
       "contractCount": "合同数",

@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Gestión de contingentes",
       "subtitle": "Contratos de contingente de touroperadores",
-      "cmNoticeTitle": "Aviso del Channel Manager:",
-      "cmNoticeBody": "Los contratos de contingente aquí son solo para seguimiento interno. NO bloquean automáticamente la disponibilidad en el Channel Manager. Cuando el touroperador venda una habitación, regístrela manualmente como reserva en el PMS — de lo contrario, hay riesgo de overbooking en los canales OTA.",
+      "cmNoticeTitle": "Trabajando con el Channel Manager:",
+      "cmNoticeBody": "Si la agencia está conectada a tu Channel Manager (Exely / HotelRunner), las reservas llegan al PMS automáticamente — sin entrada manual. Si la agencia está fuera del CM (contrato de contingente directo), registra las ventas como reservas manuales. Estos contratos NO envían bloqueos automáticos de disponibilidad al CM; el contingente es para seguimiento interno + reportes.",
+      "cmNoticeMatchHint": "Regla de coincidencia: Para que una reserva cuente en este contrato, el tipo de habitación + rango de fechas deben superponerse Y uno de los campos de agencia/canal de la reserva (agency_name, channel, ota_channel) debe contener el nombre del \"Touroperador\" ingresado aquí (sin distinguir mayúsculas). Ej.: ingresa \"TUI\" y cualquier reserva OTA con canal \"TUI Belgium\" se cuenta automáticamente.",
+      "tourOperatorHint": "Importante: Este nombre debe coincidir con el campo canal/agencia en las reservas OTA entrantes. Ej.: si la reserva viene por TUI, ingresa \"TUI\" — los sub-nombres también coincidirán.",
+      "matchedRevenue": "Ingresos coincidentes:",
       "refresh": "Actualizar",
       "newContract": "Nuevo contrato",
       "contractCount": "Contratos",

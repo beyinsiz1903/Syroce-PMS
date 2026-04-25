@@ -2162,8 +2162,11 @@
     "allotment": {
       "title": "Gestione allotment",
       "subtitle": "Contratti allotment tour operator",
-      "cmNoticeTitle": "Avviso Channel Manager:",
-      "cmNoticeBody": "I contratti allotment qui sono solo per tracciamento interno. NON bloccano automaticamente la disponibilità nel Channel Manager. Quando il tour operator vende una camera, inseriscila manualmente come prenotazione nel PMS — altrimenti c'è rischio di overbooking sui canali OTA.",
+      "cmNoticeTitle": "Lavorare con il Channel Manager:",
+      "cmNoticeBody": "Se l'agenzia è collegata al tuo Channel Manager (Exely / HotelRunner), le prenotazioni arrivano nel PMS automaticamente — nessun inserimento manuale necessario. Se l'agenzia è fuori dal CM (contratto allotment diretto), inserisci le vendite come prenotazioni manuali. Questi contratti NON inviano blocchi automatici di disponibilità al CM; l'allotment serve per tracciamento interno + reportistica.",
+      "cmNoticeMatchHint": "Regola di abbinamento: Affinché una prenotazione venga conteggiata in questo contratto, il tipo di camera + intervallo date devono sovrapporsi E uno dei campi agenzia/canale della prenotazione (agency_name, channel, ota_channel) deve contenere il nome del \"Tour Operator\" inserito qui (case-insensitive). Es.: inserisci \"TUI\" e qualsiasi prenotazione OTA con canale \"TUI Belgium\" sarà conteggiata automaticamente.",
+      "tourOperatorHint": "Importante: Questo nome deve corrispondere al campo canale/agenzia nelle prenotazioni OTA in arrivo. Es.: se la prenotazione arriva tramite TUI, inserisci \"TUI\" — anche i sotto-brand corrisponderanno.",
+      "matchedRevenue": "Ricavi associati:",
       "refresh": "Aggiorna",
       "newContract": "Nuovo contratto",
       "contractCount": "Contratti",

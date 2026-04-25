@@ -192,36 +192,93 @@ async def get_allotment_contracts(
     page_size: int = 50,
     current_user: User = Depends(get_current_user)
 ):
-    """Get tour operator allotment contracts with dynamic usage count"""
+    """Get tour operator allotment contracts with dynamic usage count.
+
+    `used_rooms` is calculated by matching active bookings to the contract via:
+      - room_type matches contract.room_type
+      - check-in/out overlaps contract date range
+      - status is active (pending/confirmed/guaranteed/checked_in)
+      - tour_operator name matches one of the booking's agency/channel fields
+        (agency_name, channel_display, channel, source_channel, ota_channel)
+        OR the booking is explicitly linked via allotment_contract_id.
+    Also returns `total_revenue` and `bookings_count` for reporting.
+    """
+    import re
     query = {'tenant_id': current_user.tenant_id}
     total = await db.allotment_contracts.count_documents(query)
     skip = (page - 1) * page_size
     contracts = await db.allotment_contracts.find(query, {'_id': 0}).skip(skip).limit(page_size).to_list(page_size)
 
-    # Dynamically calculate used_rooms from active bookings
     ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
     for contract in contracts:
         room_type = contract.get('room_type')
         start_date = contract.get('start_date')
         end_date = contract.get('end_date')
-        if room_type and start_date and end_date:
-            # Find rooms of this type
-            room_ids = []
-            async for room in db.rooms.find(
-                {"tenant_id": current_user.tenant_id, "room_type": room_type},
-                {"_id": 0, "id": 1}
-            ):
-                room_ids.append(room["id"])
+        tour_operator = (contract.get('tour_operator') or '').strip()
+        contract_id = contract.get('id')
 
-            if room_ids:
-                used = await db.bookings.count_documents({
-                    "tenant_id": current_user.tenant_id,
-                    "room_id": {"$in": room_ids},
-                    "status": {"$in": ACTIVE_STATUSES},
-                    "check_in": {"$lt": end_date},
-                    "check_out": {"$gt": start_date},
-                })
-                contract['used_rooms'] = used
+        # Defaults if calculation can't run
+        contract.setdefault('used_rooms', 0)
+        contract['bookings_count'] = 0
+        contract['total_revenue'] = 0.0
+
+        # Need at least date range + (tour_operator OR contract_id) to attribute bookings
+        if not (room_type and start_date and end_date):
+            continue
+        if not tour_operator and not contract_id:
+            continue
+
+        # Find rooms of this type
+        room_ids = []
+        async for room in db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "room_type": room_type},
+            {"_id": 0, "id": 1}
+        ):
+            room_ids.append(room["id"])
+        if not room_ids:
+            continue
+
+        # Build $or: explicit allotment_contract_id link AND/OR
+        # case-insensitive substring match on operator name across agency/channel fields.
+        match_or = []
+        if contract_id:
+            match_or.append({"allotment_contract_id": contract_id})
+        if tour_operator:
+            op_regex = re.escape(tour_operator)
+            match_or.extend([
+                {"agency_name": {"$regex": op_regex, "$options": "i"}},
+                {"channel_display": {"$regex": op_regex, "$options": "i"}},
+                {"channel": {"$regex": op_regex, "$options": "i"}},
+                {"source_channel": {"$regex": op_regex, "$options": "i"}},
+                {"ota_channel": {"$regex": op_regex, "$options": "i"}},
+            ])
+
+        # Single aggregation: count + revenue server-side (no cursor iteration)
+        pipeline = [
+            {"$match": {
+                "tenant_id": current_user.tenant_id,
+                "room_id": {"$in": room_ids},
+                "status": {"$in": ACTIVE_STATUSES},
+                "check_in": {"$lt": end_date},
+                "check_out": {"$gt": start_date},
+                "$or": match_or,
+            }},
+            {"$group": {
+                "_id": None,
+                "count": {"$sum": 1},
+                "revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
+            }},
+        ]
+        agg = await db.bookings.aggregate(pipeline).to_list(1)
+        if agg:
+            used = int(agg[0].get("count") or 0)
+            try:
+                revenue = float(agg[0].get("revenue") or 0)
+            except (TypeError, ValueError):
+                revenue = 0.0
+            contract['used_rooms'] = used
+            contract['bookings_count'] = used
+            contract['total_revenue'] = round(revenue, 2)
 
     return {'contracts': contracts, 'total': total, 'page': page, 'page_size': page_size}
 
