@@ -25,8 +25,14 @@ from the `hotelrunner/` package:
 
 All paths and methods exposed before the refactor are preserved
 byte-for-byte. Handler bodies were copied verbatim into their respective
-sub-router; only helper import names were normalized
-(`_get_provider` → `get_provider`, `_log_sync` → `log_sync`).
+sub-router; helper import names were normalized to `get_provider` and
+`log_sync` (canonical path: `hotelrunner.factory` and `hotelrunner.sync_log`).
+The temporary back-compat shims for legacy `_get_provider` / `_log_sync`
+imports were removed on 2026-04-25 after a repo-wide scan confirmed all
+4 lazy callers (availability_auto_sync, availability_reconciliation_worker,
+hr_rate_manager_router, unified_rate_manager_router) were migrated to
+canonical imports and a 6-endpoint live smoke (HTTP 403 = endpoint
+resolved, auth gate active) passed.
 """
 from fastapi import APIRouter
 
@@ -36,15 +42,6 @@ from domains.channel_manager.providers.hotelrunner import (
     router_mappings,
     router_sync,
 )
-
-# Backward-compat shims for legacy callers that still import the underscored
-# names from this module (availability_auto_sync, availability_reconciliation_worker,
-# hr_rate_manager_router, unified_rate_manager_router). The new canonical
-# import paths are `hotelrunner.factory.get_provider` and
-# `hotelrunner.sync_log.log_sync`. These shims keep zero behavior change for
-# external code paths during the migration window.
-from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider  # noqa: F401
-from domains.channel_manager.providers.hotelrunner.sync_log import log_sync as _log_sync  # noqa: F401
 
 router = APIRouter(prefix="/api/channel-manager/hotelrunner", tags=["HotelRunner Integration"])
 
