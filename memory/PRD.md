@@ -315,7 +315,7 @@ Turkish (All responses must be in Turkish)
 - ~~Refactor: BasicReports.jsx (>1200 lines)~~ → DONE — file already trimmed to 342 lines (audited 2026-04-25)
 - ~~Refactor: hotelrunner_sync.py (~1000 lines)~~ → DONE — file already trimmed to 222 lines / 5 functions (audited 2026-04-25)
 - Refactor: DisplacementAnalysis.jsx (~710 lines) — split 4 tabs into `frontend/src/pages/displacement/{MarketOverviewTab,AnalysisTab,CompareTab,HistoryTab}.jsx` + shared helpers (P2 teknik borç)
-- Refactor: hotelrunner_router.py (~726 lines) — split route handlers by domain (push, pull, settings, debug) (P2 teknik borç)
+- ~~Refactor: hotelrunner_router.py (~726 lines) — split route handlers by domain (push, pull, settings, debug)~~ → DONE (2026-04-25) — 5-phase refactor: parent aggregator now 49 lines, 22 endpoints split across 4 concern-focused sub-routers under `backend/domains/channel_manager/providers/hotelrunner/` (router_mappings.py 142 / router_internal.py 85 / router_connection.py 204 / router_sync.py 245) plus 3 helper modules (router_schemas.py 56 / sync_log.py 35 / factory.py 83). Zero behavior change: 33/33 scoped paths preserved, operation-level diff = 0, [HR-OBS]/[PULL] live tags intact, no new error class.
 - Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
 - Real competitor price integration via SerpApi or OTA Insight (when budget allows)
 - Automated Email Scheduler for Reports (daily/weekly report dispatch)

@@ -282,7 +282,7 @@ async def _push_reconciliation_hr(
             return 0
 
         try:
-            from domains.channel_manager.providers.hotelrunner_router import _get_provider
+            from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
             provider, _ = await _get_provider(tenant_id)
         except Exception as e:
             logger.warning("[AVAIL-RECON] Cannot get HR provider: %s", e)

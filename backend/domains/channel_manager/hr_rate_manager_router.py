@@ -87,7 +87,7 @@ def _extract_room_types_and_rate_plans(cached_rooms: list) -> tuple[list, list]:
 
 async def _get_hr_provider(tenant_id: str):
     """Get HotelRunner provider instance."""
-    from domains.channel_manager.providers.hotelrunner_router import _get_provider
+    from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
     try:
         provider, conn = await _get_provider(tenant_id)
         return provider, conn

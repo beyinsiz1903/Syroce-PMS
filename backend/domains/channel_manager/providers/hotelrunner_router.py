@@ -1,267 +1,58 @@
 """
-HotelRunner Integration Router
-API endpoints for HotelRunner connection management, testing, and operations.
+HotelRunner Integration Router (Aggregator)
+============================================
+
+This file is the public entry-point for the
+`/api/channel-manager/hotelrunner` API surface. After the Phase 1–5
+refactor it contains only the parent `APIRouter` definition plus the
+`include_router(...)` calls that mount four concern-focused sub-routers
+from the `hotelrunner/` package:
+
+  - router_schemas.py    : Pydantic request/response DTOs (no endpoints)
+  - sync_log.py          : `log_sync` helper (UI-facing sync history writer)
+  - factory.py           : `get_provider` helper (connection + secrets resolution)
+  - router_mappings.py   : 4 endpoints — room mapping CRUD (DB-only)
+  - router_internal.py   : 5 endpoints — read-only diagnostics (DB-only +
+                           in-process usage counters)
+  - router_connection.py : 7 endpoints — connection/settings + channel
+                           discovery + transaction lookup (provider HTTP
+                           egress for /test, /channels, /transactions)
+  - router_sync.py       : 6 endpoints — CRITICAL push/pull (rooms,
+                           rooms/update, rooms/bulk-update, reservations,
+                           reservations/sync, reservations/{id}/confirm).
+                           Live HotelRunner HTTP egress with retry,
+                           rate-limit, and observability.
+
+All paths and methods exposed before the refactor are preserved
+byte-for-byte. Handler bodies were copied verbatim into their respective
+sub-router; only helper import names were normalized
+(`_get_provider` → `get_provider`, `_log_sync` → `log_sync`).
 """
-import logging
-import uuid
-from datetime import UTC, datetime
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends, HTTPException
-
-from core.database import db
-from core.security import get_current_user
-from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v96 DW
-
-# Phase 1 refactor: helpers extracted into the hotelrunner provider package.
-# Router schemas (Pydantic DTOs) live in router_schemas.py — kept separate
-# from schemas.py (provider-internal dataclasses).
-from domains.channel_manager.providers.hotelrunner.router_schemas import (
-    HRARIUpdate,
-    HRConnectionSetup,
-    HRCredentials,  # noqa: F401  (re-export for backward import compatibility)
-    HRReservationFilter,  # noqa: F401  (re-export for backward import compatibility)
+from domains.channel_manager.providers.hotelrunner import (
+    router_connection,
+    router_internal,
+    router_mappings,
+    router_sync,
 )
-from domains.channel_manager.providers.hotelrunner.sync_log import log_sync as _log_sync
-from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
-from domains.channel_manager.providers.hotelrunner import router_mappings as _router_mappings
-from domains.channel_manager.providers.hotelrunner import router_internal as _router_internal
-from domains.channel_manager.providers.hotelrunner import router_connection as _router_connection
 
-logger = logging.getLogger(__name__)
+# Backward-compat shims for legacy callers that still import the underscored
+# names from this module (availability_auto_sync, availability_reconciliation_worker,
+# hr_rate_manager_router, unified_rate_manager_router). The new canonical
+# import paths are `hotelrunner.factory.get_provider` and
+# `hotelrunner.sync_log.log_sync`. These shims keep zero behavior change for
+# external code paths during the migration window.
+from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider  # noqa: F401
+from domains.channel_manager.providers.hotelrunner.sync_log import log_sync as _log_sync  # noqa: F401
 
 router = APIRouter(prefix="/api/channel-manager/hotelrunner", tags=["HotelRunner Integration"])
 
-# Phase 2 refactor: DB-only sub-routers mounted at the same prefix.
-router.include_router(_router_mappings.router)
-router.include_router(_router_internal.router)
-# Phase 3 refactor: connection / settings sub-router (provider HTTP egress
-# only for /test, /channels, /channels/connected, /transactions/{tid}).
-router.include_router(_router_connection.router)
-
-
-# ── Room / Inventory Operations ──────────────────────────────────────
-
-@router.get("/rooms")
-async def get_rooms(current_user: User = Depends(get_current_user)):
-    """Fetch all rooms/rates from HotelRunner."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-    result = await provider.get_rooms()
-
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"HotelRunner API hatasi: {result['error']}")
-
-    rooms = result["data"].get("rooms", [])
-
-    await db.hotelrunner_connections.update_one(
-        {"tenant_id": current_user.tenant_id},
-        {"$set": {"cached_rooms": rooms, "rooms_fetched_at": datetime.now(UTC).isoformat()}},
-    )
-
-    return {"rooms": rooms, "count": len(rooms)}
-
-
-@router.put("/rooms/update")
-async def update_room_ari(
-    payload: HRARIUpdate,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
-):
-    """Push ARI update to HotelRunner."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-
-    update_data = payload.model_dump(exclude_none=True)
-    result = await provider.update_room(**update_data)
-
-    status = "success" if result["success"] else "failed"
-    await _log_sync(current_user.tenant_id, "ari_push", status,
-                     duration_ms=result.get("duration_ms", 0), records=1,
-                     error=result.get("error"), user_name=current_user.name)
-
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"ARI guncelleme hatasi: {result['error']}")
-
-    return {
-        "message": "ARI guncelleme basarili",
-        "transaction_id": result["data"].get("transaction_id"),
-        "status": result["data"].get("status"),
-    }
-
-
-@router.post("/rooms/bulk-update")
-async def bulk_update_ari(
-    updates: list[HRARIUpdate],
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
-):
-    """Push multiple ARI updates to HotelRunner."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-
-    update_dicts = [u.model_dump(exclude_none=True) for u in updates]
-    results = await provider.push_ari_bulk(update_dicts)
-
-    success_count = sum(1 for r in results if r.get("success"))
-    fail_count = len(results) - success_count
-
-    await _log_sync(current_user.tenant_id, "ari_bulk_push", "success" if fail_count == 0 else "partial",
-                     records=success_count, user_name=current_user.name)
-
-    return {
-        "total": len(results),
-        "success": success_count,
-        "failed": fail_count,
-        "results": results,
-    }
-
-
-# ── Reservation Operations ───────────────────────────────────────────
-
-@router.get("/reservations")
-async def get_reservations(
-    undelivered: bool = True,
-    from_date: str | None = None,
-    per_page: int = 10,
-    page: int = 1,
-    current_user: User = Depends(get_current_user),
-):
-    """Fetch reservations from HotelRunner."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-
-    result = await provider.get_reservations(
-        undelivered=undelivered,
-        from_date=from_date,
-        per_page=per_page,
-        page=page,
-    )
-
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Rezervasyon cekme hatasi: {result['error']}")
-
-    data = result["data"]
-    return {
-        "reservations": data.get("reservations", []),
-        "count": data.get("count", 0),
-        "current_page": data.get("current_page", 1),
-        "pages": data.get("pages", 1),
-    }
-
-
-@router.post("/reservations/sync")
-async def sync_reservations(current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
-):
-    """Pull all undelivered reservations and store them for PMS import."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-
-    result = await provider.sync_reservations()
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Senkronizasyon hatasi: {result['error']}")
-
-    imported = 0
-    for res in result["reservations"]:
-        hr_number = res.get("hr_number", "")
-        existing = await db.hotelrunner_reservations.find_one({
-            "tenant_id": current_user.tenant_id,
-            "hr_number": hr_number,
-        })
-
-        reservation_doc = {
-            "tenant_id": current_user.tenant_id,
-            "hr_number": hr_number,
-            "hr_reservation_id": res.get("reservation_id"),
-            "channel": res.get("channel"),
-            "channel_display": res.get("channel_display"),
-            "state": res.get("state"),
-            "guest_name": res.get("guest"),
-            "guest_firstname": res.get("firstname"),
-            "guest_lastname": res.get("lastname"),
-            "guest_email": res.get("address", {}).get("email"),
-            "guest_phone": res.get("address", {}).get("phone"),
-            "guest_country": res.get("country"),
-            "checkin_date": res.get("checkin_date"),
-            "checkout_date": res.get("checkout_date"),
-            "total": res.get("total"),
-            "currency": res.get("currency"),
-            "payment_method": res.get("payment"),
-            "total_rooms": res.get("total_rooms"),
-            "total_guests": res.get("total_guests"),
-            "rooms": res.get("rooms", []),
-            "note": res.get("note"),
-            "message_uid": res.get("message_uid"),
-            "raw_data": res,
-            "pms_status": "pending",
-            "pms_booking_id": None,
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
-
-        if existing:
-            await db.hotelrunner_reservations.update_one(
-                {"_id": existing["_id"]},
-                {"$set": reservation_doc},
-            )
-        else:
-            reservation_doc["id"] = str(uuid.uuid4())
-            reservation_doc["created_at"] = datetime.now(UTC).isoformat()
-            await db.hotelrunner_reservations.insert_one(reservation_doc)
-            imported += 1
-
-    await db.hotelrunner_connections.update_one(
-        {"tenant_id": current_user.tenant_id},
-        {"$set": {"last_sync_at": datetime.now(UTC).isoformat()}},
-    )
-
-    await _log_sync(current_user.tenant_id, "reservation_sync", "success",
-                     records=imported, user_name=current_user.name)
-
-    return {
-        "message": f"{imported} yeni rezervasyon senkronize edildi",
-        "total_fetched": result["count"],
-        "new_imported": imported,
-    }
-
-
-@router.post("/reservations/{hr_number}/confirm")
-async def confirm_reservation_delivery(
-    hr_number: str,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
-):
-    """Confirm reservation delivery to HotelRunner."""
-    provider, conn = await _get_provider(current_user.tenant_id)
-
-    res = await db.hotelrunner_reservations.find_one({
-        "tenant_id": current_user.tenant_id,
-        "hr_number": hr_number,
-    })
-    if not res:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
-
-    message_uid = res.get("message_uid")
-    if not message_uid:
-        raise HTTPException(status_code=400, detail="message_uid bulunamadi")
-
-    result = await provider.confirm_delivery(
-        message_uid=message_uid,
-        pms_number=res.get("pms_booking_id"),
-    )
-
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Teslimat onay hatasi: {result['error']}")
-
-    await db.hotelrunner_reservations.update_one(
-        {"tenant_id": current_user.tenant_id, "hr_number": hr_number},
-        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
-    )
-
-    return {"message": "Rezervasyon teslimati onaylandi", "hr_number": hr_number}
-
-
-# NOTE (Phase 2-3 refactor): the following endpoint groups now live in
-# sub-routers and are mounted near the top of this file via include_router:
-#   - Room mappings  → ./hotelrunner/router_mappings.py
-#   - Diagnostic / read-only (pms-room-types, cached-rooms,
-#     reservations/local, sync-logs, usage)
-#                    → ./hotelrunner/router_internal.py
-#   - Connection / settings (connect, connection, test, disconnect,
-#     channels, channels/connected, transactions/{tid})
-#                    → ./hotelrunner/router_connection.py
+# Phase 2: DB-only sub-routers.
+router.include_router(router_mappings.router)
+router.include_router(router_internal.router)
+# Phase 3: connection / settings sub-router (provider HTTP egress for
+# /test, /channels, /channels/connected, /transactions/{tid}).
+router.include_router(router_connection.router)
+# Phase 4: CRITICAL push/pull sub-router (live HotelRunner integration).
+router.include_router(router_sync.router)

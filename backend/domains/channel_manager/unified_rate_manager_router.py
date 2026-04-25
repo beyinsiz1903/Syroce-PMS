@@ -713,7 +713,7 @@ async def unified_bulk_grid_update(
 async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_fields, selected_days_set):
     """HotelRunner'a arka planda push gonder."""
     try:
-        from domains.channel_manager.providers.hotelrunner_router import _get_provider
+        from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
         logger.info("[UNIFIED] HR push baslatiliyor tenant=%s", tenant_id)
         provider, conn = await _get_provider(tenant_id)
         if not provider:
