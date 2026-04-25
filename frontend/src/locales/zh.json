@@ -2086,7 +2086,32 @@
       "completed": "已完成",
       "ongoing": "进行中",
       "waiting": "等待中",
-      "showingAllTasks": "显示所有任务"
+      "showingAllTasks": "显示所有任务",
+      "viewOperations": "操作",
+      "viewRooms": "房间状态",
+      "roomGrid": {
+        "title": "房间状态",
+        "subtitle": "跟踪和管理客房清洁状态",
+        "refresh": "刷新",
+        "searchPlaceholder": "搜索房号、类型或客人...",
+        "bulkUpdate": "批量更新",
+        "clearFilter": "清除筛选",
+        "loading": "加载中...",
+        "noRooms": "未找到房间",
+        "standardType": "标准",
+        "statusUpdated": "房间状态已更新为\"{label}\"",
+        "updateFailed": "状态更新失败",
+        "selectRoom": "请选择房间",
+        "bulkUpdated": "{count} 间客房已更新为\"{label}\"",
+        "bulkFailed": "批量更新错误",
+        "statuses": {
+          "clean": "清洁",
+          "dirty": "脏",
+          "inspected": "已检查",
+          "maintenance": "维护中",
+          "out_of_order": "停用"
+        }
+      }
     },
     "pos": {
       "title": "POS集成",

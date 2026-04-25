@@ -2086,7 +2086,32 @@
       "completed": "Abgeschlossen",
       "ongoing": "In Bearbeitung",
       "waiting": "Wartend",
-      "showingAllTasks": "Alle Aufgaben angezeigt"
+      "showingAllTasks": "Alle Aufgaben angezeigt",
+      "viewOperations": "Betrieb",
+      "viewRooms": "Zimmerstatus",
+      "roomGrid": {
+        "title": "Zimmerstatus",
+        "subtitle": "Reinigungsstatus der Zimmer verfolgen und verwalten",
+        "refresh": "Aktualisieren",
+        "searchPlaceholder": "Zimmernr., Typ oder Gast suchen...",
+        "bulkUpdate": "Massenupdate",
+        "clearFilter": "Filter löschen",
+        "loading": "Lädt...",
+        "noRooms": "Keine Zimmer gefunden",
+        "standardType": "Standard",
+        "statusUpdated": "Zimmerstatus auf \"{label}\" aktualisiert",
+        "updateFailed": "Statusaktualisierung fehlgeschlagen",
+        "selectRoom": "Bitte Zimmer auswählen",
+        "bulkUpdated": "{count} Zimmer auf \"{label}\" aktualisiert",
+        "bulkFailed": "Massenupdate-Fehler",
+        "statuses": {
+          "clean": "Sauber",
+          "dirty": "Schmutzig",
+          "inspected": "Geprüft",
+          "maintenance": "Wartung",
+          "out_of_order": "Außer Betrieb"
+        }
+      }
     },
     "pos": {
       "title": "POS-Integration",

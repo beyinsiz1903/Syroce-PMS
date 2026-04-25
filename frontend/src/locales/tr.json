@@ -2086,7 +2086,32 @@
       "completed": "Tamamlandı",
       "ongoing": "Devam Ediyor",
       "waiting": "Bekliyor",
-      "showingAllTasks": "Tüm görevler gösteriliyor"
+      "showingAllTasks": "Tüm görevler gösteriliyor",
+      "viewOperations": "Operasyon",
+      "viewRooms": "Oda Durumları",
+      "roomGrid": {
+        "title": "Oda Durumları",
+        "subtitle": "Oda temizlik durumlarını takip edin ve yönetin",
+        "refresh": "Yenile",
+        "searchPlaceholder": "Oda no, tip veya misafir ara...",
+        "bulkUpdate": "Toplu Güncelle",
+        "clearFilter": "Filtreyi Temizle",
+        "loading": "Yükleniyor...",
+        "noRooms": "Oda bulunamadı",
+        "standardType": "Standart",
+        "statusUpdated": "Oda durumu \"{label}\" olarak güncellendi",
+        "updateFailed": "Durum güncellenemedi",
+        "selectRoom": "Oda seçiniz",
+        "bulkUpdated": "{count} oda \"{label}\" olarak güncellendi",
+        "bulkFailed": "Toplu güncelleme hatası",
+        "statuses": {
+          "clean": "Temiz",
+          "dirty": "Kirli",
+          "inspected": "Kontrol Edildi",
+          "maintenance": "Bakımda",
+          "out_of_order": "Kullanım Dışı"
+        }
+      }
     },
     "pos": {
       "title": "POS Entegrasyonu",

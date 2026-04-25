@@ -2086,7 +2086,32 @@
       "completed": "Concluída",
       "ongoing": "Em andamento",
       "waiting": "Aguardando",
-      "showingAllTasks": "Mostrando todas as tarefas"
+      "showingAllTasks": "Mostrando todas as tarefas",
+      "viewOperations": "Operações",
+      "viewRooms": "Estado dos Quartos",
+      "roomGrid": {
+        "title": "Estado dos Quartos",
+        "subtitle": "Rastrear e gerenciar estados de limpeza",
+        "refresh": "Atualizar",
+        "searchPlaceholder": "Buscar número, tipo ou hóspede...",
+        "bulkUpdate": "Atualização em Massa",
+        "clearFilter": "Limpar Filtro",
+        "loading": "Carregando...",
+        "noRooms": "Nenhum quarto encontrado",
+        "standardType": "Padrão",
+        "statusUpdated": "Estado do quarto atualizado para \"{label}\"",
+        "updateFailed": "Falha ao atualizar estado",
+        "selectRoom": "Selecione um quarto",
+        "bulkUpdated": "{count} quartos atualizados para \"{label}\"",
+        "bulkFailed": "Erro de atualização em massa",
+        "statuses": {
+          "clean": "Limpo",
+          "dirty": "Sujo",
+          "inspected": "Inspecionado",
+          "maintenance": "Manutenção",
+          "out_of_order": "Fora de Serviço"
+        }
+      }
     },
     "pos": {
       "title": "Integração POS",

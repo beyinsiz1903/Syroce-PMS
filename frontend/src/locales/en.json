@@ -2086,7 +2086,32 @@
       "completed": "Completed",
       "ongoing": "In Progress",
       "waiting": "Waiting",
-      "showingAllTasks": "Showing all tasks"
+      "showingAllTasks": "Showing all tasks",
+      "viewOperations": "Operations",
+      "viewRooms": "Room Status",
+      "roomGrid": {
+        "title": "Room Status",
+        "subtitle": "Track and manage room cleaning statuses",
+        "refresh": "Refresh",
+        "searchPlaceholder": "Search room no, type or guest...",
+        "bulkUpdate": "Bulk Update",
+        "clearFilter": "Clear Filter",
+        "loading": "Loading...",
+        "noRooms": "No rooms found",
+        "standardType": "Standard",
+        "statusUpdated": "Room status updated to \"{label}\"",
+        "updateFailed": "Status update failed",
+        "selectRoom": "Please select a room",
+        "bulkUpdated": "{count} rooms updated to \"{label}\"",
+        "bulkFailed": "Bulk update error",
+        "statuses": {
+          "clean": "Clean",
+          "dirty": "Dirty",
+          "inspected": "Inspected",
+          "maintenance": "Maintenance",
+          "out_of_order": "Out of Order"
+        }
+      }
     },
     "pos": {
       "title": "POS Integration",

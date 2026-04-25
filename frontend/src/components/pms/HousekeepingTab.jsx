@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
-import { LogOut, Home, LogIn, Plus, Clock, CheckCircle, UserPlus } from 'lucide-react';
+import { LogOut, Home, LogIn, Plus, Clock, CheckCircle, UserPlus, Bed, ListChecks } from 'lucide-react';
+import HousekeepingRoomGrid from '@/components/pms/HousekeepingRoomGrid';
 
 const AssignPopover = ({ task, staffOptions, currentUserName, onAssign }) => {
   const [open, setOpen] = useState(false);
@@ -80,9 +81,11 @@ const HousekeepingTab = ({
   onBookingCardClick,
   toast,
   loading,
+  loadHousekeepingData,
 }) => {
   const { t } = useTranslation();
   const tc = (k) => t(`pmsComponents.housekeeping.${k}`);
+  const [view, setView] = useState('operations');
 
   const staffOptions = useMemo(() => {
     const set = new Set();
@@ -106,20 +109,52 @@ const HousekeepingTab = ({
 
   return (
     <TabsContent value="housekeeping" className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold">{tc('title')}</h2>
-        <div className="space-x-2">
-          <Button onClick={() => setOpenDialog('hktask')}>
-            <Plus className="w-4 h-4 mr-2" />
-            {tc('createTask')}
-          </Button>
-          <Button onClick={() => setOpenDialog('roomblock')} variant="outline">
-            <Plus className="w-4 h-4 mr-2" />
-            {tc('roomBlock')}
-          </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border bg-white p-0.5" data-testid="hk-view-toggle">
+            <button
+              type="button"
+              onClick={() => setView('operations')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition flex items-center gap-1.5 ${
+                view === 'operations' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="hk-view-operations"
+            >
+              <ListChecks className="w-4 h-4" />
+              {tc('viewOperations')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('rooms')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition flex items-center gap-1.5 ${
+                view === 'rooms' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="hk-view-rooms"
+            >
+              <Bed className="w-4 h-4" />
+              {tc('viewRooms')}
+            </button>
+          </div>
+          {view === 'operations' && (
+            <>
+              <Button onClick={() => setOpenDialog('hktask')}>
+                <Plus className="w-4 h-4 mr-2" />
+                {tc('createTask')}
+              </Button>
+              <Button onClick={() => setOpenDialog('roomblock')} variant="outline">
+                <Plus className="w-4 h-4 mr-2" />
+                {tc('roomBlock')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
+      {view === 'rooms' ? (
+        <HousekeepingRoomGrid embedded={true} onChange={loadHousekeepingData} />
+      ) : (
+      <>
       {roomBlocks.length > 0 && (
         <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border">
           <div className="flex items-center gap-2">
@@ -492,6 +527,8 @@ const HousekeepingTab = ({
             ))
         )}
       </div>
+      </>
+      )}
     </TabsContent>
   );
 };

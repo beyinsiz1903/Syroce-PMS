@@ -2086,7 +2086,32 @@
       "completed": "Завершена",
       "ongoing": "В работе",
       "waiting": "Ожидание",
-      "showingAllTasks": "Показаны все задачи"
+      "showingAllTasks": "Показаны все задачи",
+      "viewOperations": "Операции",
+      "viewRooms": "Статус Номеров",
+      "roomGrid": {
+        "title": "Статус Номеров",
+        "subtitle": "Отслеживайте и управляйте статусом уборки",
+        "refresh": "Обновить",
+        "searchPlaceholder": "Поиск по номеру, типу или гостю...",
+        "bulkUpdate": "Массовое обновление",
+        "clearFilter": "Сбросить фильтр",
+        "loading": "Загрузка...",
+        "noRooms": "Номера не найдены",
+        "standardType": "Стандарт",
+        "statusUpdated": "Статус номера обновлен на \"{label}\"",
+        "updateFailed": "Ошибка обновления статуса",
+        "selectRoom": "Выберите номер",
+        "bulkUpdated": "{count} номеров обновлены на \"{label}\"",
+        "bulkFailed": "Ошибка массового обновления",
+        "statuses": {
+          "clean": "Чистый",
+          "dirty": "Грязный",
+          "inspected": "Проверен",
+          "maintenance": "Обслуживание",
+          "out_of_order": "Не в строю"
+        }
+      }
     },
     "pos": {
       "title": "Интеграция POS",

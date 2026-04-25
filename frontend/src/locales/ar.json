@@ -2086,7 +2086,32 @@
       "completed": "مكتملة",
       "ongoing": "جارية",
       "waiting": "في الانتظار",
-      "showingAllTasks": "عرض جميع المهام"
+      "showingAllTasks": "عرض جميع المهام",
+      "viewOperations": "العمليات",
+      "viewRooms": "حالة الغرف",
+      "roomGrid": {
+        "title": "حالة الغرف",
+        "subtitle": "تتبع وإدارة حالات تنظيف الغرف",
+        "refresh": "تحديث",
+        "searchPlaceholder": "ابحث عن رقم أو نوع أو ضيف...",
+        "bulkUpdate": "تحديث جماعي",
+        "clearFilter": "مسح المرشح",
+        "loading": "جاري التحميل...",
+        "noRooms": "لم يتم العثور على غرف",
+        "standardType": "قياسي",
+        "statusUpdated": "تم تحديث حالة الغرفة إلى \"{label}\"",
+        "updateFailed": "فشل تحديث الحالة",
+        "selectRoom": "يرجى اختيار غرفة",
+        "bulkUpdated": "تم تحديث {count} غرف إلى \"{label}\"",
+        "bulkFailed": "خطأ في التحديث الجماعي",
+        "statuses": {
+          "clean": "نظيف",
+          "dirty": "متسخ",
+          "inspected": "تم الفحص",
+          "maintenance": "صيانة",
+          "out_of_order": "خارج الخدمة"
+        }
+      }
     },
     "pos": {
       "title": "تكامل نقطة البيع",
