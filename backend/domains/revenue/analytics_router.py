@@ -13,7 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.cache import cached
 from core.database import db
 from core.helpers import require_module
-from core.security import get_current_user, security, _is_super_admin
+from core.security import _is_super_admin, get_current_user, security
 from models.enums import ChannelType
 from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
 from modules.pms_core.role_permission_service import require_op

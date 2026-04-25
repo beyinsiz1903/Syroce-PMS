@@ -6,7 +6,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
 

@@ -571,12 +571,6 @@ async def generate_internal_pricing(
                 },
             )
 
-    real_total_rooms = await db.rooms.count_documents({"tenant_id": tid})
-    if real_total_rooms == 0 and demo_mode:
-        total_rooms = DEMO_FALLBACK_TOTAL_ROOMS
-    else:
-        total_rooms = real_total_rooms
-
     # Load yield rules
     yield_rules = await db.yield_rules.find(
         {"tenant_id": tid, "is_active": True}, {"_id": 0}

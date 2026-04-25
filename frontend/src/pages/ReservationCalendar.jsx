@@ -556,7 +556,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     // Persist the full booking object so PMSModule can open the detail
     // dialog even when the booking is outside its loaded date range.
     if (target && typeof window !== 'undefined' && window.sessionStorage) {
-      try { window.sessionStorage.setItem('pms_edit_booking', JSON.stringify(target)); } catch {}
+      try { window.sessionStorage.setItem('pms_edit_booking', JSON.stringify(target)); } catch { /* ignore */ }
     }
     if (id) {
       navigate(`/app/pms?edit=${id}#bookings`);

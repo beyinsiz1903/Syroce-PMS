@@ -239,14 +239,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         const parsed = JSON.parse(stored);
         if (parsed?.id === editId) target = parsed;
       }
-    } catch {}
+    } catch { /* ignore sessionStorage parse errors */ }
     if (!target && bookings && bookings.length > 0) {
       target = bookings.find((b) => b.id === editId) || null;
     }
     if (!target) return;
     setSelectedBookingDetail(target);
     setOpenDialog('bookingDetail');
-    try { window.sessionStorage?.removeItem('pms_edit_booking'); } catch {}
+    try { window.sessionStorage?.removeItem('pms_edit_booking'); } catch { /* ignore */ }
     // Clean URL so back-nav / refresh does not re-open.
     params.delete('edit');
     const newSearch = params.toString();

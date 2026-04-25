@@ -11,6 +11,7 @@ Idempotent — safe to re-run.
 import asyncio
 import os
 import sys
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 DEMO_TENANT_ID = "5bad4a34-6ee3-4566-9053-741b7375a9cf"
