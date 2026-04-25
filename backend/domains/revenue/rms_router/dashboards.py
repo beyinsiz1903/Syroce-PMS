@@ -20,9 +20,163 @@ from modules.pms_core.role_permission_service import require_op  # v98 DW
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
 # ========================================
+# Demo mode constants (kept identical to legacy hardcoded fallbacks
+# so that turning the flag on reproduces the previous behaviour).
+DEMO_FALLBACK_TOTAL_ROOMS = 30
+DEMO_FALLBACK_RT_ROOMS = 5
+DEMO_FALLBACK_CANCEL_RATE = 0.10
+DEMO_FALLBACK_ROOM_TYPE = {
+    "name": "Standard",
+    "base_rate": 4500,
+    "min_rate": 2500,
+    "max_rate": 9000,
+}
+# Pricing engine needs *some* historical signal to be meaningful.
+PRICING_MIN_BOOKINGS = 10
+PRICING_MIN_HISTORY_DAYS = 14
+KPI_MIN_BOOKINGS = 1
+
+
+async def is_rms_demo_mode(tenant_id: str) -> bool:
+    """Read tenant.settings.rms_demo_mode (default False).
+
+    When True the legacy hardcoded fallbacks are used so a freshly
+    provisioned tenant can demo the RMS module without real data.
+    """
+    doc = await db.tenants.find_one(
+        {"id": tenant_id}, {"_id": 0, "settings": 1}
+    )
+    if not doc:
+        return False
+    return bool((doc.get("settings") or {}).get("rms_demo_mode", False))
+
+
+async def _build_data_quality(tenant_id: str, period_days: int = 30) -> dict:
+    """Inspect tenant's RMS-relevant data and report sufficiency."""
+    rooms_count = await db.rooms.count_documents({"tenant_id": tenant_id})
+    room_types_count = await db.room_types.count_documents(
+        {"tenant_id": tenant_id}
+    )
+    yield_rules_count = await db.yield_rules.count_documents(
+        {"tenant_id": tenant_id, "is_active": True}
+    )
+    seasons_count = await db.seasonal_calendar.count_documents(
+        {"tenant_id": tenant_id, "is_active": True}
+    )
+
+    now = datetime.now(UTC)
+    period_start_iso = (now - timedelta(days=period_days)).isoformat()
+    bookings_in_period = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "check_in": {"$gte": period_start_iso},
+        "status": {"$in": [
+            "confirmed", "guaranteed", "checked_in", "checked_out"
+        ]},
+    })
+
+    # How many days of history do we have? Use earliest booking date.
+    earliest = await db.bookings.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "created_at": 1, "check_in": 1},
+    ).sort("created_at", 1).limit(1).to_list(1)
+    days_of_history = 0
+    if earliest:
+        try:
+            stamp = earliest[0].get("created_at") or earliest[0].get("check_in")
+            if stamp:
+                stamp_dt = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+                if stamp_dt.tzinfo is None:
+                    stamp_dt = stamp_dt.replace(tzinfo=UTC)
+                days_of_history = max(0, (now - stamp_dt).days)
+        except Exception:
+            days_of_history = 0
+
+    warnings: list[str] = []
+    if rooms_count == 0:
+        warnings.append("no_rooms")
+    if room_types_count == 0:
+        warnings.append("no_room_types")
+    if bookings_in_period < KPI_MIN_BOOKINGS:
+        warnings.append("no_bookings_in_period")
+    if bookings_in_period < PRICING_MIN_BOOKINGS:
+        warnings.append("insufficient_bookings_for_pricing")
+    if days_of_history < PRICING_MIN_HISTORY_DAYS:
+        warnings.append("insufficient_history_for_pricing")
+    if yield_rules_count == 0:
+        warnings.append("no_yield_rules")
+    if seasons_count == 0:
+        warnings.append("no_seasons")
+
+    sufficient_for_kpis = (
+        rooms_count > 0 and bookings_in_period >= KPI_MIN_BOOKINGS
+    )
+    sufficient_for_pricing = (
+        rooms_count > 0
+        and room_types_count > 0
+        and bookings_in_period >= PRICING_MIN_BOOKINGS
+        and days_of_history >= PRICING_MIN_HISTORY_DAYS
+    )
+
+    return {
+        "has_rooms": rooms_count > 0,
+        "rooms_count": rooms_count,
+        "has_room_types": room_types_count > 0,
+        "room_types_count": room_types_count,
+        "has_bookings": bookings_in_period > 0,
+        "bookings_count": bookings_in_period,
+        "days_of_history": days_of_history,
+        "yield_rules_count": yield_rules_count,
+        "seasons_count": seasons_count,
+        "sufficient_for_kpis": sufficient_for_kpis,
+        "sufficient_for_pricing": sufficient_for_pricing,
+        "warnings": warnings,
+        "thresholds": {
+            "min_bookings_for_kpis": KPI_MIN_BOOKINGS,
+            "min_bookings_for_pricing": PRICING_MIN_BOOKINGS,
+            "min_history_days_for_pricing": PRICING_MIN_HISTORY_DAYS,
+        },
+    }
 
 
 # ─── Endpoints (split: dashboards) ───
+
+
+@router.get("/rms/settings")
+async def get_rms_settings(current_user: User = Depends(get_current_user)):
+    """Return RMS-specific tenant settings (currently just demo mode flag)."""
+    doc = await db.tenants.find_one(
+        {"id": current_user.tenant_id}, {"_id": 0, "settings": 1}
+    )
+    settings = (doc or {}).get("settings") or {}
+    return {
+        "rms_demo_mode": bool(settings.get("rms_demo_mode", False)),
+    }
+
+
+class RMSSettingsUpdate(BaseModel):
+    rms_demo_mode: bool
+
+
+@router.patch("/rms/settings")
+async def update_rms_settings(
+    payload: RMSSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle RMS demo mode (super_admin / hotel admin only)."""
+    if current_user.role not in ("super_admin", "admin", "hotel_admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only super_admin or hotel admin can change RMS settings",
+        )
+    await db.tenants.update_one(
+        {"id": current_user.tenant_id},
+        {"$set": {
+            "settings.rms_demo_mode": bool(payload.rms_demo_mode),
+            "settings.rms_demo_mode_updated_at": datetime.now(UTC).isoformat(),
+            "settings.rms_demo_mode_updated_by": current_user.email,
+        }},
+    )
+    return {"rms_demo_mode": bool(payload.rms_demo_mode)}
 
 
 @router.get("/rms/dashboard-kpis")
@@ -38,10 +192,13 @@ async def get_rms_dashboard_kpis(
     prev_period_start = (now - timedelta(days=days * 2)).isoformat()
     prev_period_end = period_start
     tid = current_user.tenant_id
+    demo_mode = await is_rms_demo_mode(tid)
 
-    total_rooms = await db.rooms.count_documents({"tenant_id": tid})
-    if total_rooms == 0:
-        total_rooms = 30
+    real_total_rooms = await db.rooms.count_documents({"tenant_id": tid})
+    if real_total_rooms == 0 and demo_mode:
+        total_rooms = DEMO_FALLBACK_TOTAL_ROOMS
+    else:
+        total_rooms = real_total_rooms
 
     # Current period bookings
     current_bookings = await db.bookings.find(
@@ -139,6 +296,11 @@ async def get_rms_dashboard_kpis(
         daily_trend.append({"date": day_date, "occupancy": day_occ, "rooms_sold": day_bookings})
     daily_trend.reverse()
 
+    data_quality = await _build_data_quality(tid, period_days=days)
+    # Reflect demo mode in the contract so the frontend can show a badge.
+    data_quality["demo_mode"] = demo_mode
+    data_quality["effective_total_rooms"] = total_rooms
+
     return {
         "kpis": {
             "occupancy": occupancy,
@@ -159,6 +321,7 @@ async def get_rms_dashboard_kpis(
         "room_type_performance": room_type_perf,
         "daily_trend": daily_trend,
         "period_days": days,
+        "data_quality": data_quality,
     }
 
 
@@ -370,17 +533,49 @@ async def generate_internal_pricing(
     days_count = (end - start).days + 1
     tid = current_user.tenant_id
     now = datetime.now(UTC)
+    demo_mode = await is_rms_demo_mode(tid)
+
+    # Data sufficiency guard — refuse to invent numbers in prod mode.
+    data_quality = await _build_data_quality(tid, period_days=30)
+    if not demo_mode and not data_quality["sufficient_for_pricing"]:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "insufficient_data_for_pricing",
+                "message": (
+                    "Fiyat onerisi uretmek icin yeterli veri yok. "
+                    "Once oda tipi tanimlayin, oda envanteri girin "
+                    "ve en az birkac gun rezervasyon verisi biriktirin. "
+                    "Sandbox/test icin RMS Demo modunu acabilirsiniz."
+                ),
+                "data_quality": data_quality,
+            },
+        )
 
     room_types_query = {"tenant_id": tid}
     if request.room_type:
         room_types_query["name"] = request.room_type
     room_types = await db.room_types.find(room_types_query, {"_id": 0}).to_list(100)
     if not room_types:
-        room_types = [{"name": "Standard", "base_rate": 4500, "min_rate": 2500, "max_rate": 9000}]
+        if demo_mode:
+            room_types = [dict(DEMO_FALLBACK_ROOM_TYPE)]
+        else:
+            # Should be caught by sufficiency guard, but be defensive.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "no_room_types",
+                    "message": (
+                        "Once oda tipi tanimlamaniz gerekiyor."
+                    ),
+                },
+            )
 
-    total_rooms = await db.rooms.count_documents({"tenant_id": tid})
-    if total_rooms == 0:
-        total_rooms = 30
+    real_total_rooms = await db.rooms.count_documents({"tenant_id": tid})
+    if real_total_rooms == 0 and demo_mode:
+        total_rooms = DEMO_FALLBACK_TOTAL_ROOMS
+    else:
+        total_rooms = real_total_rooms
 
     # Load yield rules
     yield_rules = await db.yield_rules.find(
@@ -392,7 +587,9 @@ async def generate_internal_pricing(
         {"tenant_id": tid, "is_active": True}, {"_id": 0}
     ).to_list(50)
 
-    # Historical cancellation rate (last 90 days)
+    # Historical cancellation rate (last 90 days). When no history exists
+    # we leave the signal *unset* in prod mode — the cancel-rate factor
+    # in the loop will then skip its multiplier instead of inventing 10%.
     ninety_days_ago = (now - timedelta(days=90)).isoformat()
     total_hist = await db.bookings.count_documents(
         {"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}}
@@ -400,7 +597,12 @@ async def generate_internal_pricing(
     cancelled_hist = await db.bookings.count_documents(
         {"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}, "status": "cancelled"}
     )
-    hist_cancel_rate = cancelled_hist / total_hist if total_hist > 0 else 0.1
+    if total_hist > 0:
+        hist_cancel_rate = cancelled_hist / total_hist
+    elif demo_mode:
+        hist_cancel_rate = DEMO_FALLBACK_CANCEL_RATE
+    else:
+        hist_cancel_rate = None
 
     # Channel performance (last 30 days)
     thirty_days = (now - timedelta(days=30)).isoformat()
@@ -437,9 +639,16 @@ async def generate_internal_pricing(
         days_to_arrival = (date_obj - now).days
 
         for rt in room_types:
-            base_rate = rt.get("base_rate", 4500)
-            min_rate = rt.get("min_rate", base_rate * 0.5)
-            max_rate = rt.get("max_rate", base_rate * 2)
+            raw_base = rt.get("base_rate")
+            if raw_base in (None, 0):
+                if not demo_mode:
+                    # Prod mode: skip room types missing rate config so we
+                    # don't fabricate a price out of thin air.
+                    continue
+                raw_base = DEMO_FALLBACK_ROOM_TYPE["base_rate"]
+            base_rate = raw_base
+            min_rate = rt.get("min_rate") or base_rate * 0.5
+            max_rate = rt.get("max_rate") or base_rate * 2
 
             # Current occupancy for this date
             occ_count = await db.bookings.count_documents({
@@ -450,7 +659,15 @@ async def generate_internal_pricing(
             })
             rt_rooms = await db.rooms.count_documents({"tenant_id": tid, "room_type": rt["name"]})
             if rt_rooms == 0:
-                rt_rooms = rt.get("total_rooms", 5)
+                # In demo mode, fall back to legacy 5-rooms guess so the
+                # rest of the algorithm has something to chew on. In prod
+                # mode, prefer the room_type's declared inventory if any,
+                # otherwise leave 0 so occupancy_pct stays 0 (no false
+                # signal).
+                if demo_mode:
+                    rt_rooms = rt.get("total_rooms", DEMO_FALLBACK_RT_ROOMS)
+                else:
+                    rt_rooms = rt.get("total_rooms", 0) or 0
             occupancy_pct = (occ_count / rt_rooms * 100) if rt_rooms > 0 else 0
 
             # Booking pace (last 7 days for this target date)
@@ -532,13 +749,15 @@ async def generate_internal_pricing(
                     multiplier *= 1.10
                     reasons.append("Kis tatili: +10%")
 
-            # FACTOR 5: Cancellation Rate (10%)
-            if hist_cancel_rate > 0.2:
-                multiplier *= 1.05
-                reasons.append(f"Yuksek iptal orani ({hist_cancel_rate:.0%}): +5% (telafi)")
-            elif hist_cancel_rate < 0.05:
-                multiplier *= 0.98
-                reasons.append("Dusuk iptal orani: -2%")
+            # FACTOR 5: Cancellation Rate (10%) — only apply if we have a
+            # real measurement. None means no booking history yet.
+            if hist_cancel_rate is not None:
+                if hist_cancel_rate > 0.2:
+                    multiplier *= 1.05
+                    reasons.append(f"Yuksek iptal orani ({hist_cancel_rate:.0%}): +5% (telafi)")
+                elif hist_cancel_rate < 0.05:
+                    multiplier *= 0.98
+                    reasons.append("Dusuk iptal orani: -2%")
 
             # FACTOR 6: Channel Performance (10%)
             best_ch = max(channel_adr.items(), key=lambda x: x[1]["revenue"] / max(x[1]["nights"], 1), default=None)
