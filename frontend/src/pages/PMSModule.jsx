@@ -742,7 +742,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             })}
           </TabsList>
 
-          <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} />
+          <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} onBookingCardClick={async (bookingId) => {
             let booking = bookings.find(b => b.id === bookingId);
             if (!booking) {

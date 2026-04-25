@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "夜间价格必须大于 0。",
       "walkInRoomNotFound": "未找到房间:{{roomNo}}",
       "walkInRoomNotAvailable": "房间 {{roomNo}} 不可用(状态:{{status}})。",
-      "walkInBookingFailed": "快速入住失败。"
+      "walkInBookingFailed": "快速入住失败。",
+      "financialPulseTitle": "今日财务脉动",
+      "expectedRevenueToday": "今日预计收入",
+      "expectedCollectionsToday": "今日预计收款",
+      "inhouseOutstanding": "在住客人未结余额",
+      "occupancyNow": "当前入住率",
+      "fromArrivals": "来自 {{count}} 个到店",
+      "fromDepartures": "来自 {{count}} 个离店",
+      "inhouseGuestsCount": "{{count}} 位客人",
+      "occupiedOfTotal": "{{occ}} / {{total}} 间客房",
+      "attentionTitle": "需要关注:VIP 和特殊要求",
+      "arrivalToday": "今日到达",
+      "inhouseNow": "在住",
+      "loyaltyPoints": "{{points}} 分",
+      "clickToOpenBooking": "点击打开预订"
     },
     "housekeeping": {
       "loading": "正在加载客房清洁数据...",

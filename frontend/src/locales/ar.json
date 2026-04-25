@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "يجب أن يكون السعر الليلي أكبر من 0.",
       "walkInRoomNotFound": "الغرفة غير موجودة: {{roomNo}}",
       "walkInRoomNotAvailable": "الغرفة {{roomNo}} غير متاحة (الحالة: {{status}}).",
-      "walkInBookingFailed": "فشل تسجيل دخول النزيل."
+      "walkInBookingFailed": "فشل تسجيل دخول النزيل.",
+      "financialPulseTitle": "النبض المالي لليوم",
+      "expectedRevenueToday": "الإيرادات المتوقعة اليوم",
+      "expectedCollectionsToday": "التحصيلات المتوقعة اليوم",
+      "inhouseOutstanding": "رصيد النزلاء داخل الفندق",
+      "occupancyNow": "نسبة الإشغال الحالية",
+      "fromArrivals": "من {{count}} وصول",
+      "fromDepartures": "من {{count}} مغادرة",
+      "inhouseGuestsCount": "{{count}} نزيل",
+      "occupiedOfTotal": "{{occ}} / {{total}} غرفة",
+      "attentionTitle": "يستحق الاهتمام: VIP وطلبات خاصة",
+      "arrivalToday": "قادم اليوم",
+      "inhouseNow": "داخل الفندق",
+      "loyaltyPoints": "{{points}} نقطة",
+      "clickToOpenBooking": "انقر لفتح الحجز"
     },
     "housekeeping": {
       "loading": "جاري تحميل بيانات التدبير المنزلي...",

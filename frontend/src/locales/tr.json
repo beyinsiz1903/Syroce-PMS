@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "Gecelik fiyat 0’dan büyük olmalı.",
       "walkInRoomNotFound": "Oda bulunamadı: {{roomNo}}",
       "walkInRoomNotAvailable": "Oda {{roomNo}} müsait değil (durum: {{status}}).",
-      "walkInBookingFailed": "Walk-in girişi başarısız oldu."
+      "walkInBookingFailed": "Walk-in girişi başarısız oldu.",
+      "financialPulseTitle": "Bugünün Finansal Nabzı",
+      "expectedRevenueToday": "Bugün beklenen ciro",
+      "expectedCollectionsToday": "Bugün tahsilat beklenen",
+      "inhouseOutstanding": "İçerideki bakiye",
+      "occupancyNow": "Anlık doluluk",
+      "fromArrivals": "{{count}} gelişten",
+      "fromDepartures": "{{count}} çıkıştan",
+      "inhouseGuestsCount": "{{count}} misafir",
+      "occupiedOfTotal": "{{occ}} / {{total}} oda",
+      "attentionTitle": "Dikkat: VIP & Özel İstek",
+      "arrivalToday": "Bugün geliyor",
+      "inhouseNow": "Otelde",
+      "loyaltyPoints": "{{points}} puan",
+      "clickToOpenBooking": "Rezervasyonu açmak için tıklayın"
     },
     "housekeeping": {
       "loading": "Kat hizmetleri verileri yükleniyor...",

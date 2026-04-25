@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "Nightly rate must be greater than 0.",
       "walkInRoomNotFound": "Room not found: {{roomNo}}",
       "walkInRoomNotAvailable": "Room {{roomNo}} is not available (status: {{status}}).",
-      "walkInBookingFailed": "Walk-in check-in failed."
+      "walkInBookingFailed": "Walk-in check-in failed.",
+      "financialPulseTitle": "Today's Financial Pulse",
+      "expectedRevenueToday": "Expected revenue today",
+      "expectedCollectionsToday": "Expected collections today",
+      "inhouseOutstanding": "In-house outstanding",
+      "occupancyNow": "Occupancy now",
+      "fromArrivals": "from {{count}} arrivals",
+      "fromDepartures": "from {{count}} departures",
+      "inhouseGuestsCount": "{{count}} guests",
+      "occupiedOfTotal": "{{occ}} / {{total}} rooms",
+      "attentionTitle": "Needs Attention: VIP & Special Requests",
+      "arrivalToday": "Arriving today",
+      "inhouseNow": "In-house",
+      "loyaltyPoints": "{{points}} pts",
+      "clickToOpenBooking": "Click to open booking"
     },
     "housekeeping": {
       "loading": "Loading housekeeping data...",

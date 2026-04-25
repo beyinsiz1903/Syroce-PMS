@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo } from 'react';
+import React, { memo, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,7 @@ const FrontdeskTab = ({
   aiPatterns,
   bookings,
   rooms = [],
+  guests = [],
   handleCheckIn,
   handleCheckOut,
   loadFolio,
@@ -32,9 +33,10 @@ const FrontdeskTab = ({
   loading,
   error,
   tenant,
+  setReservationDetailId,
 }) => {
   const { t } = useTranslation();
-  const tf = (k) => t(`pmsComponents.frontdesk.${k}`);
+  const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
   const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
@@ -56,6 +58,56 @@ const FrontdeskTab = ({
       .filter(r => ['available', 'inspected'].includes(r.status))
       .slice(0, 6);
   }, [rooms]);
+
+  // Today's financial pulse (computed client-side from already-loaded data)
+  const financialPulse = useMemo(() => {
+    const sumNum = (arr, key) => arr.reduce((acc, b) => acc + (Number(b?.[key]) || 0), 0);
+    const expectedRevenue = sumNum(arrivals, 'total_amount');
+    const expectedCollections = sumNum(departures, 'balance');
+    const inhouseOutstanding = sumNum(inhouse, 'balance');
+    const occRooms = rooms.filter(r => ['occupied', 'reserved'].includes(r.status)).length;
+    const totalRooms = rooms.length || 0;
+    const occupancyPct = totalRooms > 0 ? Math.round((occRooms / totalRooms) * 100) : 0;
+    return { expectedRevenue, expectedCollections, inhouseOutstanding, occupancyPct, occRooms, totalRooms };
+  }, [arrivals, departures, inhouse, rooms]);
+
+  // VIP & special-request alerts: scan today's arrivals + in-house
+  const guestById = useMemo(() => {
+    const m = new Map();
+    for (const g of guests) m.set(g.id, g);
+    return m;
+  }, [guests]);
+
+  const attentionList = useMemo(() => {
+    const items = [];
+    const seen = new Set();
+    const addBooking = (b, source) => {
+      if (!b || seen.has(b.id)) return;
+      const guest = b.guest_id ? guestById.get(b.guest_id) : null;
+      const isVip = !!(guest?.vip_status || b.vip_status);
+      const sr = (b.special_requests || '').trim();
+      if (!isVip && !sr) return;
+      seen.add(b.id);
+      items.push({
+        id: b.id,
+        bookingId: b.id,
+        roomNumber: b.room_number || b.room?.room_number || '-',
+        guestName: b.guest_name || guest?.name || tf('guest'),
+        isVip,
+        loyaltyPoints: guest?.loyalty_points || 0,
+        specialRequests: sr,
+        source, // 'arrival' | 'inhouse'
+      });
+    };
+    (arrivals || []).forEach(b => addBooking(b, 'arrival'));
+    (inhouse || []).forEach(b => addBooking(b, 'inhouse'));
+    return items.slice(0, 12); // cap to prevent overflow
+  }, [arrivals, inhouse, guestById, tf]);
+
+  const formatMoney = (n) => {
+    const v = Number(n) || 0;
+    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  };
 
   const resetWalkInForm = () => {
     setWalkInForm({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
@@ -220,6 +272,104 @@ const FrontdeskTab = ({
           </Card>
         )}
       </div>
+
+      {/* Today's Financial Pulse — quick at-a-glance numbers for the front desk */}
+      <Card className="border-blue-100">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2 text-blue-700">
+            <TrendingUp className="w-4 h-4" /> {tf('financialPulseTitle')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-md bg-emerald-50 border border-emerald-100 p-3">
+              <p className="text-[11px] text-emerald-700 font-medium">{tf('expectedRevenueToday')}</p>
+              <p className="text-xl font-bold text-emerald-800 mt-1">
+                {formatMoney(financialPulse.expectedRevenue)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+              </p>
+              <p className="text-[10px] text-emerald-600 mt-0.5">{tf('fromArrivals', { count: arrivals.length })}</p>
+            </div>
+            <div className="rounded-md bg-amber-50 border border-amber-100 p-3">
+              <p className="text-[11px] text-amber-700 font-medium">{tf('expectedCollectionsToday')}</p>
+              <p className="text-xl font-bold text-amber-800 mt-1">
+                {formatMoney(financialPulse.expectedCollections)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+              </p>
+              <p className="text-[10px] text-amber-600 mt-0.5">{tf('fromDepartures', { count: departures.length })}</p>
+            </div>
+            <div className="rounded-md bg-rose-50 border border-rose-100 p-3">
+              <p className="text-[11px] text-rose-700 font-medium">{tf('inhouseOutstanding')}</p>
+              <p className="text-xl font-bold text-rose-800 mt-1">
+                {formatMoney(financialPulse.inhouseOutstanding)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+              </p>
+              <p className="text-[10px] text-rose-600 mt-0.5">{tf('inhouseGuestsCount', { count: inhouse.length })}</p>
+            </div>
+            <div className="rounded-md bg-indigo-50 border border-indigo-100 p-3">
+              <p className="text-[11px] text-indigo-700 font-medium">{tf('occupancyNow')}</p>
+              <p className="text-xl font-bold text-indigo-800 mt-1">
+                %{financialPulse.occupancyPct}
+              </p>
+              <p className="text-[10px] text-indigo-600 mt-0.5">
+                {tf('occupiedOfTotal', { occ: financialPulse.occRooms, total: financialPulse.totalRooms })}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* VIP & Special Requests attention strip */}
+      {attentionList.length > 0 && (
+        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
+              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+              {tf('attentionTitle')}
+              <Badge variant="outline" className="ml-1 text-[10px] border-amber-300 text-amber-800">
+                {attentionList.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {attentionList.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setReservationDetailId?.(item.bookingId)}
+                  className="text-left rounded-md border bg-white border-amber-200 p-2 hover:shadow-md hover:border-amber-400 transition"
+                  title={tf('clickToOpenBooking')}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1 min-w-0">
+                      {item.isVip && (
+                        <Badge className="text-[9px] bg-amber-500 hover:bg-amber-500 text-white">VIP</Badge>
+                      )}
+                      <span className="font-semibold text-xs text-gray-800 truncate">{item.guestName}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                      {tf('room')} {item.roomNumber}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 mb-1">
+                    <Badge variant="outline" className="text-[9px] border-gray-300">
+                      {item.source === 'arrival' ? tf('arrivalToday') : tf('inhouseNow')}
+                    </Badge>
+                    {item.loyaltyPoints > 0 && (
+                      <Badge variant="outline" className="text-[9px] border-purple-300 text-purple-700">
+                        {tf('loyaltyPoints', { points: item.loyaltyPoints })}
+                      </Badge>
+                    )}
+                  </div>
+                  {item.specialRequests && (
+                    <p className="text-[11px] text-gray-700 italic line-clamp-2">
+                      „{item.specialRequests}"
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={() => setShowWalkIn(true)}>

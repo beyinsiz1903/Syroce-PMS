@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "Цена за ночь должна быть больше 0.",
       "walkInRoomNotFound": "Номер не найден: {{roomNo}}",
       "walkInRoomNotAvailable": "Номер {{roomNo}} недоступен (статус: {{status}}).",
-      "walkInBookingFailed": "Не удалось выполнить заезд walk-in."
+      "walkInBookingFailed": "Не удалось выполнить заезд walk-in.",
+      "financialPulseTitle": "Финансовый пульс дня",
+      "expectedRevenueToday": "Ожидаемая выручка сегодня",
+      "expectedCollectionsToday": "Ожидаемые сборы сегодня",
+      "inhouseOutstanding": "Задолженность гостей в отеле",
+      "occupancyNow": "Текущая загрузка",
+      "fromArrivals": "из {{count}} заездов",
+      "fromDepartures": "из {{count}} выездов",
+      "inhouseGuestsCount": "{{count}} гостей",
+      "occupiedOfTotal": "{{occ}} / {{total}} номеров",
+      "attentionTitle": "Требуют внимания: VIP и спецпожелания",
+      "arrivalToday": "Сегодня заезд",
+      "inhouseNow": "В отеле",
+      "loyaltyPoints": "{{points}} баллов",
+      "clickToOpenBooking": "Нажмите, чтобы открыть бронь"
     },
     "housekeeping": {
       "loading": "Загрузка данных уборки...",

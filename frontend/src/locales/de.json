@@ -2027,7 +2027,21 @@
       "walkInRateRequired": "Übernachtungspreis muss größer als 0 sein.",
       "walkInRoomNotFound": "Zimmer nicht gefunden: {{roomNo}}",
       "walkInRoomNotAvailable": "Zimmer {{roomNo}} ist nicht verfügbar (Status: {{status}}).",
-      "walkInBookingFailed": "Walk-in Check-in fehlgeschlagen."
+      "walkInBookingFailed": "Walk-in Check-in fehlgeschlagen.",
+      "financialPulseTitle": "Finanzpuls heute",
+      "expectedRevenueToday": "Erwarteter Umsatz heute",
+      "expectedCollectionsToday": "Erwartete Einnahmen heute",
+      "inhouseOutstanding": "Offene Beträge im Haus",
+      "occupancyNow": "Aktuelle Auslastung",
+      "fromArrivals": "aus {{count}} Anreisen",
+      "fromDepartures": "aus {{count}} Abreisen",
+      "inhouseGuestsCount": "{{count}} Gäste",
+      "occupiedOfTotal": "{{occ}} / {{total}} Zimmer",
+      "attentionTitle": "Aufmerksamkeit: VIP & Sonderwünsche",
+      "arrivalToday": "Heute Anreise",
+      "inhouseNow": "Im Haus",
+      "loyaltyPoints": "{{points}} Pkt.",
+      "clickToOpenBooking": "Klicken, um Buchung zu öffnen"
     },
     "housekeeping": {
       "loading": "Housekeeping-Daten werden geladen...",
