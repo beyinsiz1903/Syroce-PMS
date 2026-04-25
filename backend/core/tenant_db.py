@@ -50,7 +50,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "suppliers", "expenses", "bank_accounts", "staff",
     "gdpr_consents", "ip_rules", "user_2fa", "notifications",
     "pos_orders", "restaurant_tables", "menu_items",
-    "spa_services", "spa_bookings", "meeting_rooms", "events",
+    "spa_services", "spa_bookings", "events",
     "group_bookings", "crm_contacts", "crm_activities",
     "loyalty_members", "loyalty_transactions",
     "channel_mappings", "ota_connections",

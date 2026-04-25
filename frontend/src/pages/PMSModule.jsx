@@ -36,7 +36,6 @@ import ReportsTab from '@/components/pms/ReportsTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
 import RoomTimelineView from '@/components/pms/RoomTimelineView';
 import LaundryTab from '@/components/pms/LaundryTab';
-import MeetingRoomTab from '@/components/pms/MeetingRoomTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
 import ConciergeDesk from '@/components/pms/ConciergeDesk';
@@ -168,7 +167,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
     { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
     { key: 'laundry', labelText: 'Çamaşırhane', icon: Shirt, testId: 'tab-laundry' },
-    { key: 'meeting', labelText: 'Toplantı', icon: Building2, testId: 'tab-meeting' },
     { key: 'timeline', labelText: 'Zaman Çizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
     { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
     { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
@@ -181,16 +179,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key))
     : ALL_TABS;
 
+  const validTabKeys = useMemo(() => new Set(visibleTabs.map((t) => t.key)), [visibleTabs]);
+
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && (!isLite || LITE_TABS.has(hash))) return hash;
+    const validKeys = isLite
+      ? new Set(ALL_TABS.filter((t) => LITE_TABS.has(t.key)).map((t) => t.key))
+      : new Set(ALL_TABS.map((t) => t.key));
+    if (hash && validKeys.has(hash)) return hash;
     return 'frontdesk';
   });
 
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      if (isLite && hash && !LITE_TABS.has(hash)) {
+      if (hash && !validTabKeys.has(hash)) {
         setActiveTab('frontdesk');
         window.location.hash = 'frontdesk';
         return;
@@ -199,7 +202,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [isLite]);
+  }, [validTabKeys]);
+
+  useEffect(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash && !validTabKeys.has(hash)) {
+      setActiveTab('frontdesk');
+      window.location.hash = 'frontdesk';
+    }
+  }, [validTabKeys]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
@@ -759,7 +770,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>
           <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>
           <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>
-          <TabsContent value="meeting" className="space-y-4"><MeetingRoomTab /></TabsContent>
           <TabsContent value="timeline" className="space-y-4"><RoomTimelineView rooms={rooms} bookings={bookings} onBookingClick={(booking) => setReservationDetailId(booking.id)} /></TabsContent>
           <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>
           <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>
