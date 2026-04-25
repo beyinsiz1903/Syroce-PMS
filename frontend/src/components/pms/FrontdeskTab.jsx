@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { TableLoadingSkeleton } from '@/utils/lazyLoad';
 import {
   Calendar, Users, TrendingUp, LogIn, LogOut, Star,
-  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, CheckCircle2, XCircle
+  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, CheckCircle2, XCircle,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
@@ -42,6 +43,11 @@ const FrontdeskTab = ({
   const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
   const [walkInSubmitting, setWalkInSubmitting] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
+  // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
+  const [expandedKpi, setExpandedKpi] = useState(null);
+  const toggleKpi = useCallback((key) => {
+    setExpandedKpi(prev => (prev === key ? null : key));
+  }, []);
 
   // Live preview: lookup room by typed room_number
   const matchedRoom = useMemo(() => {
@@ -219,27 +225,60 @@ const FrontdeskTab = ({
   return (
     <TabsContent value="frontdesk" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          aria-expanded={expandedKpi === 'arrivals'}
+          onClick={() => toggleKpi('arrivals')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKpi('arrivals'); } }}
+          className={`cursor-pointer transition-all hover:shadow-md hover:border-blue-300 ${expandedKpi === 'arrivals' ? 'ring-2 ring-blue-400 border-blue-300' : ''}`}
+          data-testid="kpi-arrivals"
+        >
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{t('pms.todayArrivals')}</CardTitle>
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span>{t('pms.todayArrivals')}</span>
+              {expandedKpi === 'arrivals' ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{arrivals.length}</div>
             <p className="text-xs text-gray-500">{t('pms.expectedCheckins')}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          aria-expanded={expandedKpi === 'departures'}
+          onClick={() => toggleKpi('departures')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKpi('departures'); } }}
+          className={`cursor-pointer transition-all hover:shadow-md hover:border-blue-300 ${expandedKpi === 'departures' ? 'ring-2 ring-blue-400 border-blue-300' : ''}`}
+          data-testid="kpi-departures"
+        >
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{t('pms.todayDepartures')}</CardTitle>
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span>{t('pms.todayDepartures')}</span>
+              {expandedKpi === 'departures' ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{departures.length}</div>
             <p className="text-xs text-gray-500">{t('pms.expectedCheckouts')}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          aria-expanded={expandedKpi === 'inhouse'}
+          onClick={() => toggleKpi('inhouse')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKpi('inhouse'); } }}
+          className={`cursor-pointer transition-all hover:shadow-md hover:border-blue-300 ${expandedKpi === 'inhouse' ? 'ring-2 ring-blue-400 border-blue-300' : ''}`}
+          data-testid="kpi-inhouse"
+        >
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{t('pms.inHouseGuests')}</CardTitle>
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span>{t('pms.inHouseGuests')}</span>
+              {expandedKpi === 'inhouse' ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{inhouse.length}</div>
@@ -273,6 +312,87 @@ const FrontdeskTab = ({
           </Card>
         )}
       </div>
+
+      {/* Expanded guest list — appears below the KPI cards when one of the top 3 is clicked */}
+      {expandedKpi && (
+        <Card className="border-blue-200 bg-blue-50/30" data-testid={`kpi-expanded-${expandedKpi}`}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center justify-between text-blue-800">
+              <span className="flex items-center gap-2">
+                {expandedKpi === 'arrivals' && <><LogIn className="w-4 h-4" /> {t('pms.todayArrivals')}</>}
+                {expandedKpi === 'departures' && <><LogOut className="w-4 h-4" /> {t('pms.todayDepartures')}</>}
+                {expandedKpi === 'inhouse' && <><Users className="w-4 h-4" /> {t('pms.inHouseGuests')}</>}
+                <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700">
+                  {expandedKpi === 'arrivals' ? arrivals.length : expandedKpi === 'departures' ? departures.length : inhouse.length}
+                </Badge>
+              </span>
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => setExpandedKpi(null)}>
+                <XCircle className="w-3.5 h-3.5 mr-1" /> {tf('close')}
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const list =
+                expandedKpi === 'arrivals' ? arrivals :
+                expandedKpi === 'departures' ? departures : inhouse;
+              if (!list || list.length === 0) {
+                return (
+                  <p className="text-center py-4 text-sm text-gray-400">
+                    {expandedKpi === 'arrivals' && tf('noArrivalsToday')}
+                    {expandedKpi === 'departures' && tf('noDeparturesToday')}
+                    {expandedKpi === 'inhouse' && tf('noInhouseGuests')}
+                  </p>
+                );
+              }
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[280px] overflow-y-auto pr-1">
+                  {list.map((b) => {
+                    const guestName = b.guest?.name || b.guest_name || tf('guest');
+                    const roomNo = b.room?.room_number || b.room_number || '-';
+                    const isVip = !!(b.guest?.vip_status || b.vip_status);
+                    const balance = Number(b.balance) || 0;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setReservationDetailId?.(b.id)}
+                        className="text-left rounded-md border bg-white border-blue-100 p-2 hover:shadow-md hover:border-blue-400 transition focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        title={tf('clickToOpenBooking')}
+                        data-testid={`kpi-guest-${b.id}`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-1 min-w-0">
+                            {isVip && (
+                              <Badge className="text-[9px] bg-purple-500 hover:bg-purple-500 text-white">VIP</Badge>
+                            )}
+                            <span className="font-semibold text-xs text-gray-800 truncate">{guestName}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                            {tf('room')} {roomNo}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {b.check_in && (
+                            <span className="text-[10px] text-gray-500">
+                              {new Date(b.check_in).toLocaleDateString('tr-TR')} → {new Date(b.check_out).toLocaleDateString('tr-TR')}
+                            </span>
+                          )}
+                          {balance > 0 && (
+                            <Badge variant="outline" className="text-[9px] border-red-300 text-red-700 ml-auto">
+                              {tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Today's Financial Pulse — quick at-a-glance numbers for the front desk */}
       <Card className="border-blue-100">
