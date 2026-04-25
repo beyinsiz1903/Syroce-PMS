@@ -28,6 +28,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("quickid")
 
+# Suppress cosmetic passlib bcrypt-version detection warning. passlib's version
+# probe uses `bcrypt.__about__.__version__`, removed in bcrypt ≥4.1. The hash
+# round-trip itself is unaffected; only the noisy WARNING is silenced.
+logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
+logging.getLogger("passlib").setLevel(logging.ERROR)
+
 from auth import (
     hash_password, verify_password, create_token,
     require_auth, require_admin, get_current_user, security, decode_token,

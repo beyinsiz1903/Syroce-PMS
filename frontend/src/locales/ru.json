@@ -1342,7 +1342,22 @@
     "features": "Features",
     "aiTechnology": "AI Technology",
     "solutions": "Solutions",
-    "signIn": "Войти"
+    "signIn": "Войти",
+    "footer": {
+      "tagline": "Самая любимая в Турции система управления отелем. Просто, умно, мощно.",
+      "productHeading": "Продукт",
+      "benefits": "Преимущества",
+      "features": "Возможности",
+      "pricing": "Цены",
+      "companyHeading": "Компания",
+      "about": "О нас",
+      "careers": "Карьера",
+      "contactHeading": "Контакты",
+      "copyright": "© {{year}} Syroce. Все права защищены.",
+      "privacy": "Конфиденциальность",
+      "terms": "Условия",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "Эта функция недоступна в вашем плане",
@@ -2788,121 +2803,179 @@
     "installmentPaid": "Платеж отмечен как оплаченный"
   },
   "mobileInventory": {
-    "title": "Inventory Management",
-    "subtitle": "Mobile View",
+    "title": "Склад",
+    "subtitle": "Быстрое управление запасами",
     "loading": "Loading stock data...",
     "errors": {
-      "loadFailed": "Failed to load stock data",
+      "loadFailed": "Не удалось загрузить склад",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock"
+      "updateFailed": "Failed to update stock",
+      "saveFailed": "Не удалось сохранить"
     },
     "success": {
       "adjusted": "Stock updated successfully"
     },
     "stats": {
-      "total": "Total",
+      "total": "Всего",
       "good": "Good",
-      "low": "Low",
-      "outOfStock": "Out"
+      "low": "Низкий",
+      "outOfStock": "Out",
+      "value": "Стоимость"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
     "showLowOnly": "Show only low stock items",
-    "empty": "No stock records found",
+    "empty": "Нет позиций",
     "current": "Current Stock",
     "minimum": "Minimum",
     "lowStockWarning": "Stock low! Order required",
     "adjust": "Adjust Stock",
     "alertsModal": {
-      "title": "Low Stock Alerts",
+      "title": "Оповещения склада",
       "urgency": {
         "critical": "CRITICAL",
-        "high": "HIGH",
-        "medium": "MEDIUM"
+        "high": "Высокая",
+        "medium": "Средняя",
+        "low": "Низкая"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order"
+      "recommendedOrder": "Recommended order",
+      "empty": "Активных оповещений нет",
+      "current": "Сейчас",
+      "needed": "Нужно",
+      "createPR": "Создать заявку"
     },
     "movementsModal": {
-      "title": "Stock Movements (Last 7 Days)"
+      "title": "Движения",
+      "empty": "Движений нет",
+      "in": "Приход",
+      "out": "Расход",
+      "by": "Кем"
     },
     "adjustModal": {
-      "title": "Adjust Stock",
+      "title": "Корректировка запаса",
       "currentLabel": "Current",
-      "type": "Operation Type",
+      "type": "Тип",
       "typeIn": "In (+)",
       "typeOut": "Out (-)",
       "typeAdjustment": "Adjustment (Set)",
       "quantity": "Quantity",
       "quantityPlaceholder": "Enter quantity",
-      "reason": "Reason *",
+      "reason": "Причина",
       "reasonSelect": "Select...",
       "reasons": {
         "supplier": "Supplier delivery",
         "fbSale": "F&B sale",
         "waste": "Waste",
-        "return": "Return",
-        "count": "Count adjustment",
-        "other": "Other"
+        "return": "Возврат",
+        "count": "Инвентаризация",
+        "other": "Другое",
+        "purchase": "Закупка",
+        "consumption": "Расход",
+        "damage": "Повреждение",
+        "theft": "Кража",
+        "expired": "Просрочка"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
-      "cancel": "Cancel",
-      "save": "Save"
+      "cancel": "Отмена",
+      "save": "Сохранить",
+      "types": {
+        "in": "Приход",
+        "out": "Расход",
+        "count": "Учёт"
+      },
+      "amount": "Кол-во",
+      "note": "Примечание",
+      "saved": "Корректировка сохранена"
+    },
+    "search": "Поиск…",
+    "filters": {
+      "all": "Все",
+      "low": "Низкий запас",
+      "out": "Закончилось"
+    },
+    "lowStockBanner": "Низкий запас: {{count}}",
+    "alertsBtn": "Оповещения",
+    "movementsBtn": "Движения",
+    "adjustBtn": "Корректировка",
+    "qty": "Количество",
+    "unit": "Ед.",
+    "reorderLevel": "Точка заказа",
+    "actions": {
+      "adjust": "Корректировка",
+      "alerts": "Оповещения",
+      "movements": "Движения"
     }
   },
   "mobileApprovals": {
-    "title": "Approval Mechanism",
-    "subtitle": "Pending Approvals",
-    "loading": "Loading approvals...",
+    "title": "Согласования",
+    "subtitle": "Заявки на рассмотрении",
+    "loading": "Загрузка…",
     "errors": {
-      "loadFailed": "Failed to load approvals",
+      "loadFailed": "Не удалось загрузить",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Rejection reason required"
+      "reasonRequired": "Укажите причину",
+      "actionFailed": "Действие не выполнено"
     },
     "success": {
       "approved": "Request approved",
       "rejected": "Request rejected"
     },
     "types": {
-      "discount": "Discount",
+      "discount": "Скидка",
       "priceOverride": "Price Override",
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
-      "refund": "Refund",
-      "compRoom": "Complimentary Room"
+      "refund": "Возврат",
+      "compRoom": "Complimentary Room",
+      "pr": "Заявка на закупку",
+      "po": "Заказ",
+      "expense": "Расход",
+      "leave": "Отпуск",
+      "other": "Другое"
     },
     "statuses": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected"
+      "pending": "В ожидании",
+      "approved": "Одобрено",
+      "rejected": "Отклонено",
+      "cancelled": "Отменено"
     },
     "priority": {
       "urgent": "URGENT",
       "high": "High"
     },
     "tabs": {
-      "pending": "Pending",
-      "myRequests": "My Requests"
+      "pending": "В ожидании",
+      "myRequests": "My Requests",
+      "approved": "Одобренные",
+      "rejected": "Отклонённые",
+      "all": "Все"
     },
-    "urgentBanner": "{{count}} urgent approval(s) waiting!",
+    "urgentBanner": "Срочных: {{count}}",
     "empty": {
-      "pending": "No pending approvals",
-      "myRequests": "You haven't created any requests yet"
+      "pending": "Ожидающих согласований нет",
+      "myRequests": "Вы ещё не создали ни одной заявки"
     },
     "fields": {
-      "amount": "Amount:",
+      "amount": "Сумма",
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:"
+      "reason": "Reason:",
+      "requester": "Инициатор",
+      "department": "Отдел",
+      "submitted": "Подано",
+      "type": "Тип",
+      "priority": "Приоритет"
     },
     "actions": {
-      "reject": "Reject",
-      "approve": "Approve",
-      "cancel": "Cancel"
+      "reject": "Отклонить",
+      "approve": "Одобрить",
+      "cancel": "Cancel",
+      "viewDetails": "Детали"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -2915,14 +2988,30 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes..."
+      "notesPlaceholder": "Additional notes...",
+      "title": "Рассмотреть заявку",
+      "comment": "Комментарий (необязательно)",
+      "rejectReason": "Причина отклонения (обязательно)",
+      "cancel": "Отмена",
+      "approve": "Одобрить",
+      "reject": "Отклонить"
+    },
+    "priorities": {
+      "low": "Низкий",
+      "medium": "Средний",
+      "high": "Высокий",
+      "urgent": "Срочный"
+    },
+    "toasts": {
+      "approved": "Одобрено",
+      "rejected": "Отклонено"
     }
   },
   "frontDeskEnhanced": {
-    "title": "Front Desk",
+    "title": "Расширенная стойка",
     "scanPassport": "Scan Passport",
     "walkInBooking": "Walk-in Booking",
-    "todayArrivals": "Today's Arrivals ({{count}})",
+    "todayArrivals": "Заезды сегодня ({{count}})",
     "alerts": "Alerts",
     "quickCheckin": "Quick Check-in",
     "guest": "Guest",
@@ -2949,7 +3038,41 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed"
+      "checkinFailed": "Guest check-in failed",
+      "created": "Заезд создан: {{folio}}",
+      "alertCreated": "Оповещение создано",
+      "scanStarted": "Сканирование запущено",
+      "actionFailed": "Действие не выполнено"
+    },
+    "subtitle": "Режим киоска и заезд без брони",
+    "scanBtn": "Сканировать документ",
+    "walkInBtn": "Без брони",
+    "noArrivals": "Заездов сегодня нет",
+    "guestAlerts": {
+      "title": "Оповещения о госте",
+      "vip": "VIP-гость",
+      "blacklist": "Чёрный список",
+      "frequent": "Постоянный гость",
+      "noShow": "Ранее не явился",
+      "complaint": "Прошлая жалоба"
+    },
+    "walkIn": {
+      "title": "Бронирование без брони",
+      "guestName": "Имя гостя",
+      "phone": "Телефон",
+      "email": "Эл. почта",
+      "adults": "Взрослые",
+      "children": "Дети",
+      "nights": "Ночей",
+      "roomType": "Тип номера",
+      "rate": "Тариф",
+      "notes": "Примечания",
+      "cancel": "Отмена",
+      "create": "Создать"
+    },
+    "errors": {
+      "loadFailed": "Не удалось загрузить",
+      "guestNameRequired": "Требуется имя гостя"
     }
   },
   "procurement": {
@@ -2965,6 +3088,226 @@
         "administration": "Administration",
         "other": "Other"
       }
+    },
+    "errors": {
+      "loadFailed": "Не удалось загрузить данные закупок",
+      "nameRequired": "Имя обязательно (≥2 символов)",
+      "saveFailed": "Не удалось сохранить",
+      "deleteFailed": "Не удалось удалить",
+      "createFailed": "Не удалось создать",
+      "updateFailed": "Не удалось обновить",
+      "departmentLineRequired": "Нужны отдел и хотя бы одна позиция",
+      "supplierLineRequired": "Нужны поставщик и хотя бы одна позиция",
+      "reasonMinLen": "Причина не короче 5 символов",
+      "leastOneQty": "Укажите количество для хотя бы одной позиции",
+      "grnFailed": "Приёмка не выполнена",
+      "poLoadFailed": "Не удалось загрузить заказ"
+    },
+    "toasts": {
+      "supplierUpdated": "Поставщик обновлён",
+      "supplierAdded": "Поставщик добавлен",
+      "supplierDeleted": "Удалено",
+      "prCreated": "Заявка создана",
+      "statusUpdated": "Статус обновлён",
+      "poCreated": "Заказ создан",
+      "grnCreated": "GRN {{no}} создан — заказ: {{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "Удалить поставщика?",
+      "rejectReason": "Причина отклонения (≥5 символов):",
+      "cancelReason": "Причина отмены (≥5 символов):"
+    },
+    "header": {
+      "title": "Закупки и снабжение",
+      "subtitle": "Поставщики, заявки (PR), заказы (PO), приёмка (GRN).",
+      "refresh": "Обновить"
+    },
+    "summary": {
+      "activeSuppliers": "Активных поставщиков",
+      "pendingPR": "Ожидающие PR",
+      "approvedPR": "Одобренные PR",
+      "openPO": "Открытые PO",
+      "completedPO": "Завершённые PO",
+      "openAmount": "Открытая сумма"
+    },
+    "tabs": {
+      "prs": "PR",
+      "pos": "PO",
+      "suppliers": "Поставщики"
+    },
+    "prStatuses": {
+      "draft": "Черновик",
+      "submitted": "Подана",
+      "approved": "Одобрено",
+      "rejected": "Отклонено",
+      "cancelled": "Отменено",
+      "converted": "Преобразовано в PO"
+    },
+    "poStatuses": {
+      "draft": "Черновик",
+      "sent": "Отправлено",
+      "partially_received": "Частично получено",
+      "received": "Полностью получено",
+      "cancelled": "Отменено",
+      "closed": "Закрыто"
+    },
+    "prList": {
+      "title": "Заявки на закупку",
+      "description": "Поток заявок отделов, согласование и преобразование в PO.",
+      "newPR": "Новая заявка",
+      "columns": {
+        "no": "№",
+        "department": "Отдел",
+        "requester": "Инициатор",
+        "items": "Позиция",
+        "estimated": "Оценка",
+        "status": "Статус",
+        "action": "Действие"
+      },
+      "empty": "Заявок нет",
+      "actions": {
+        "send": "Отправить",
+        "approve": "Одобрить",
+        "reject": "Отклонить",
+        "convertToPo": "Преобразовать в PO",
+        "history": "История",
+        "cancel": "Отменить"
+      }
+    },
+    "poList": {
+      "title": "Заказы на закупку",
+      "description": "Заказы поставщикам и отслеживание приёмки.",
+      "newPO": "Новый заказ",
+      "columns": {
+        "no": "№",
+        "supplier": "Поставщик",
+        "items": "Позиция",
+        "amount": "Сумма",
+        "status": "Статус",
+        "action": "Действие"
+      },
+      "empty": "Заказов нет",
+      "actions": {
+        "details": "Детали",
+        "send": "Отправить",
+        "receiveGoods": "Принять товар",
+        "close": "Закрыть",
+        "history": "История",
+        "cancel": "Отменить"
+      }
+    },
+    "supplierList": {
+      "title": "Поставщики",
+      "description": "Реестр поставщиков — категория, отсрочка, ИНН.",
+      "newSupplier": "Новый поставщик",
+      "columns": {
+        "code": "Код",
+        "name": "Имя",
+        "taxNo": "ИНН",
+        "contact": "Контакт",
+        "paymentDays": "Срок",
+        "status": "Статус",
+        "action": "Действие"
+      },
+      "empty": "Поставщиков нет",
+      "daysSuffix": "дн.",
+      "active": "Активен",
+      "inactive": "Неактивен",
+      "edit": "Изменить"
+    },
+    "supplierModal": {
+      "titleNew": "Новый поставщик",
+      "titleEdit": "Изменить поставщика",
+      "name": "Имя *",
+      "code": "Код",
+      "taxNo": "ИНН",
+      "contact": "Контактное лицо",
+      "email": "Эл. почта",
+      "phone": "Телефон",
+      "address": "Адрес",
+      "paymentTerms": "Срок оплаты (дни)",
+      "categories": "Категории (через запятую)",
+      "active": "Активен",
+      "notes": "Примечания",
+      "cancel": "Отмена",
+      "save": "Сохранить"
+    },
+    "prModalForm": {
+      "title": "Новая заявка на закупку",
+      "department": "Отдел *",
+      "requester": "Инициатор",
+      "neededBy": "Требуется к",
+      "notes": "Примечания",
+      "items": "Позиции",
+      "addItem": "Добавить",
+      "itemHeader": "Позиция",
+      "skuHeader": "SKU",
+      "qtyHeader": "Кол-во",
+      "unitHeader": "Ед.",
+      "estUnitHeader": "Цена за ед. (оценка)",
+      "itemPlaceholder": "Выбрать со склада или ввести…",
+      "datalistAvailable": "В наличии",
+      "hint": "Подсказка: начните вводить название позиции, чтобы получить подсказки из склада. Единица и цена заполнятся автоматически.",
+      "cancel": "Отмена",
+      "create": "Создать заявку",
+      "seedNote": "Запас {{name}} опустился ниже критического уровня."
+    },
+    "poModal": {
+      "titleNew": "Новый заказ",
+      "titleFromPR": "Заказ из заявки",
+      "supplier": "Поставщик *",
+      "supplierSelect": "— Выбрать —",
+      "expectedDelivery": "Ожидаемая поставка",
+      "taxRate": "НДС %",
+      "items": "Позиции",
+      "addItem": "Добавить",
+      "itemHeader": "Позиция",
+      "skuHeader": "SKU",
+      "qtyHeader": "Кол-во",
+      "unitHeader": "Ед.",
+      "unitPriceHeader": "Цена за ед.",
+      "totalHeader": "Итого",
+      "itemPlaceholder": "Выбрать со склада или ввести…",
+      "subtotal": "Промежуточный итог:",
+      "vat": "НДС ({{rate}}%):",
+      "grandTotal": "Итого:",
+      "cancel": "Отмена",
+      "create": "Создать заказ"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "Статус:",
+      "expected": "Ожид.:",
+      "total": "Итого:",
+      "items": "Позиции",
+      "itemHeader": "Позиция",
+      "orderedHeader": "Зак.",
+      "receivedHeader": "Получ.",
+      "remainingHeader": "Ост.",
+      "unitHeader": "Ед.",
+      "totalHeader": "Итого",
+      "grnNotes": "Приёмки",
+      "grnSummary": "{{count}} поз. · {{user}}",
+      "receiveGoods": "Принять товар",
+      "history": "История"
+    },
+    "grnModal": {
+      "title": "Приёмка — PO {{no}}",
+      "supplier": "Поставщик:",
+      "itemHeader": "Позиция",
+      "orderedHeader": "Зак.",
+      "previousHeader": "Ранее",
+      "thisShipmentHeader": "В этой поставке",
+      "qcHeader": "QC",
+      "noteHeader": "Примечание",
+      "qc": {
+        "accepted": "Принято",
+        "partial": "Частично",
+        "rejected": "Отказ"
+      },
+      "generalNote": "Общее примечание",
+      "cancel": "Отмена",
+      "confirm": "Подтвердить приёмку"
     }
   }
 }

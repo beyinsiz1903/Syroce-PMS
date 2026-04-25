@@ -1342,7 +1342,22 @@
     "features": "Features",
     "aiTechnology": "AI Technology",
     "solutions": "Solutions",
-    "signIn": "Sign In"
+    "signIn": "Sign In",
+    "footer": {
+      "tagline": "Turkey's most-loved hotel management system. Simple, smart, powerful.",
+      "productHeading": "Product",
+      "benefits": "Benefits",
+      "features": "Features",
+      "pricing": "Pricing",
+      "companyHeading": "Company",
+      "about": "About Us",
+      "careers": "Careers",
+      "contactHeading": "Contact",
+      "copyright": "© {{year}} Syroce. All rights reserved.",
+      "privacy": "Privacy",
+      "terms": "Terms of Use",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "This feature is not available in your plan",
@@ -2965,6 +2980,226 @@
         "administration": "Administration",
         "other": "Other"
       }
+    },
+    "errors": {
+      "loadFailed": "Failed to load procurement data",
+      "nameRequired": "Name is required (≥2 chars)",
+      "saveFailed": "Save failed",
+      "deleteFailed": "Delete failed",
+      "createFailed": "Create failed",
+      "updateFailed": "Update failed",
+      "departmentLineRequired": "Department and at least one line item required",
+      "supplierLineRequired": "Supplier and at least one line item required",
+      "reasonMinLen": "Reason must be at least 5 characters",
+      "leastOneQty": "Enter quantity for at least one line",
+      "grnFailed": "Goods receipt failed",
+      "poLoadFailed": "Failed to load PO"
+    },
+    "toasts": {
+      "supplierUpdated": "Supplier updated",
+      "supplierAdded": "Supplier added",
+      "supplierDeleted": "Deleted",
+      "prCreated": "Request created",
+      "statusUpdated": "Status updated",
+      "poCreated": "Order created",
+      "grnCreated": "GRN {{no}} created — PO: {{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "Delete supplier?",
+      "rejectReason": "Rejection reason (≥5 chars):",
+      "cancelReason": "Cancellation reason (≥5 chars):"
+    },
+    "header": {
+      "title": "Procurement & Supply",
+      "subtitle": "Suppliers, purchase requests (PR), orders (PO), goods receipt (GRN).",
+      "refresh": "Refresh"
+    },
+    "summary": {
+      "activeSuppliers": "Active Suppliers",
+      "pendingPR": "Pending PR",
+      "approvedPR": "Approved PR",
+      "openPO": "Open PO",
+      "completedPO": "Completed PO",
+      "openAmount": "Open Amount"
+    },
+    "tabs": {
+      "prs": "PRs",
+      "pos": "POs",
+      "suppliers": "Suppliers"
+    },
+    "prStatuses": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled",
+      "converted": "Converted to PO"
+    },
+    "poStatuses": {
+      "draft": "Draft",
+      "sent": "Sent",
+      "partially_received": "Partially Received",
+      "received": "Fully Received",
+      "cancelled": "Cancelled",
+      "closed": "Closed"
+    },
+    "prList": {
+      "title": "Purchase Requests",
+      "description": "Department request flow, approval and PO conversion.",
+      "newPR": "New Request",
+      "columns": {
+        "no": "No",
+        "department": "Department",
+        "requester": "Requester",
+        "items": "Items",
+        "estimated": "Estimated",
+        "status": "Status",
+        "action": "Action"
+      },
+      "empty": "No requests",
+      "actions": {
+        "send": "Send",
+        "approve": "Approve",
+        "reject": "Reject",
+        "convertToPo": "Convert to PO",
+        "history": "History",
+        "cancel": "Cancel"
+      }
+    },
+    "poList": {
+      "title": "Purchase Orders",
+      "description": "Orders sent to suppliers and goods-receipt tracking.",
+      "newPO": "New Order",
+      "columns": {
+        "no": "No",
+        "supplier": "Supplier",
+        "items": "Items",
+        "amount": "Amount",
+        "status": "Status",
+        "action": "Action"
+      },
+      "empty": "No orders",
+      "actions": {
+        "details": "Details",
+        "send": "Send",
+        "receiveGoods": "Receive Goods",
+        "close": "Close",
+        "history": "History",
+        "cancel": "Cancel"
+      }
+    },
+    "supplierList": {
+      "title": "Suppliers",
+      "description": "Vendor master — category, payment terms, tax id.",
+      "newSupplier": "New Supplier",
+      "columns": {
+        "code": "Code",
+        "name": "Name",
+        "taxNo": "Tax No",
+        "contact": "Contact",
+        "paymentDays": "Terms",
+        "status": "Status",
+        "action": "Action"
+      },
+      "empty": "No suppliers",
+      "daysSuffix": "days",
+      "active": "Active",
+      "inactive": "Inactive",
+      "edit": "Edit"
+    },
+    "supplierModal": {
+      "titleNew": "New Supplier",
+      "titleEdit": "Edit Supplier",
+      "name": "Name *",
+      "code": "Code",
+      "taxNo": "Tax No",
+      "contact": "Contact Person",
+      "email": "Email",
+      "phone": "Phone",
+      "address": "Address",
+      "paymentTerms": "Payment Terms (days)",
+      "categories": "Categories (comma-separated)",
+      "active": "Active",
+      "notes": "Notes",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "prModalForm": {
+      "title": "New Purchase Request",
+      "department": "Department *",
+      "requester": "Requester",
+      "neededBy": "Needed By",
+      "notes": "Notes",
+      "items": "Items",
+      "addItem": "Add",
+      "itemHeader": "Item",
+      "skuHeader": "SKU",
+      "qtyHeader": "Qty",
+      "unitHeader": "Unit",
+      "estUnitHeader": "Est. Unit",
+      "itemPlaceholder": "Pick from stock or type…",
+      "datalistAvailable": "Available",
+      "hint": "Tip: Start typing in the item field to get suggestions from your stock. Unit and price auto-fill on selection.",
+      "cancel": "Cancel",
+      "create": "Create Request",
+      "seedNote": "{{name}} stock fell below the critical level."
+    },
+    "poModal": {
+      "titleNew": "New Order",
+      "titleFromPR": "Order from Request",
+      "supplier": "Supplier *",
+      "supplierSelect": "— Select —",
+      "expectedDelivery": "Expected Delivery",
+      "taxRate": "VAT %",
+      "items": "Items",
+      "addItem": "Add",
+      "itemHeader": "Item",
+      "skuHeader": "SKU",
+      "qtyHeader": "Qty",
+      "unitHeader": "Unit",
+      "unitPriceHeader": "Unit Price",
+      "totalHeader": "Total",
+      "itemPlaceholder": "Pick from stock or type…",
+      "subtotal": "Subtotal:",
+      "vat": "VAT ({{rate}}%):",
+      "grandTotal": "Grand Total:",
+      "cancel": "Cancel",
+      "create": "Create Order"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "Status:",
+      "expected": "Expected:",
+      "total": "Total:",
+      "items": "Items",
+      "itemHeader": "Item",
+      "orderedHeader": "Ord.",
+      "receivedHeader": "Received",
+      "remainingHeader": "Remain.",
+      "unitHeader": "Unit",
+      "totalHeader": "Total",
+      "grnNotes": "Goods Receipt Notes",
+      "grnSummary": "{{count}} item(s) · {{user}}",
+      "receiveGoods": "Receive Goods",
+      "history": "History"
+    },
+    "grnModal": {
+      "title": "Goods Receipt — PO {{no}}",
+      "supplier": "Supplier:",
+      "itemHeader": "Item",
+      "orderedHeader": "Ord.",
+      "previousHeader": "Previous",
+      "thisShipmentHeader": "This Shipment",
+      "qcHeader": "QC",
+      "noteHeader": "Note",
+      "qc": {
+        "accepted": "Accepted",
+        "partial": "Partial",
+        "rejected": "Rejected"
+      },
+      "generalNote": "General Note",
+      "cancel": "Cancel",
+      "confirm": "Confirm Receipt"
     }
   }
 }

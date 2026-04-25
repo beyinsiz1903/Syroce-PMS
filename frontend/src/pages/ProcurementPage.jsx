@@ -18,22 +18,23 @@ import {
 import Layout from '@/components/Layout';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
-const PR_STATUS = {
-  draft: { label: 'Taslak', cls: 'bg-slate-100 text-slate-700' },
-  submitted: { label: 'Gönderildi', cls: 'bg-amber-100 text-amber-800' },
-  approved: { label: 'Onaylandı', cls: 'bg-emerald-100 text-emerald-800' },
-  rejected: { label: 'Red', cls: 'bg-red-100 text-red-800' },
-  cancelled: { label: 'İptal', cls: 'bg-slate-100 text-slate-700' },
-  converted: { label: 'POya Dönüştü', cls: 'bg-sky-100 text-sky-800' },
+// Status → CSS class only. Display label comes from i18n via prStatuses/poStatuses.
+const PR_STATUS_CLS = {
+  draft: 'bg-slate-100 text-slate-700',
+  submitted: 'bg-amber-100 text-amber-800',
+  approved: 'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-red-100 text-red-800',
+  cancelled: 'bg-slate-100 text-slate-700',
+  converted: 'bg-sky-100 text-sky-800',
 };
 
-const PO_STATUS = {
-  draft: { label: 'Taslak', cls: 'bg-slate-100 text-slate-700' },
-  sent: { label: 'Gönderildi', cls: 'bg-amber-100 text-amber-800' },
-  partially_received: { label: 'Kısmi Alındı', cls: 'bg-sky-100 text-sky-800' },
-  received: { label: 'Tamamı Alındı', cls: 'bg-emerald-100 text-emerald-800' },
-  cancelled: { label: 'İptal', cls: 'bg-red-100 text-red-800' },
-  closed: { label: 'Kapalı', cls: 'bg-slate-200 text-slate-700' },
+const PO_STATUS_CLS = {
+  draft: 'bg-slate-100 text-slate-700',
+  sent: 'bg-amber-100 text-amber-800',
+  partially_received: 'bg-sky-100 text-sky-800',
+  received: 'bg-emerald-100 text-emerald-800',
+  cancelled: 'bg-red-100 text-red-800',
+  closed: 'bg-slate-200 text-slate-700',
 };
 
 const tl = (n) => `${Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
@@ -71,6 +72,9 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const [grnForm, setGrnForm] = useState(null);
   const [selectedPo, setSelectedPo] = useState(null);
 
+  const prLabel = (code) => t(`procurement.prStatuses.${code || 'draft'}`);
+  const poLabel = (code) => t(`procurement.poStatuses.${code || 'draft'}`);
+
   const refresh = async () => {
     setLoading(true);
     try {
@@ -87,7 +91,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       setPos(po.data?.items || []);
       setInventoryItems(inv.data?.items || []);
     } catch (e) {
-      toast.error('Satınalma verileri alınamadı');
+      toast.error(t('procurement.errors.loadFailed'));
     } finally { setLoading(false); }
   };
   useEffect(() => { refresh(); }, []);
@@ -99,7 +103,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       setPrForm({
         department: seed.department || '',
         requester: '',
-        notes: `${seed.name} stoğu kritik seviyenin altına düştü.`,
+        notes: t('procurement.prModalForm.seedNote', { name: seed.name }),
         lines: [{
           item_name: seed.name || '',
           sku: seed.sku || '',
@@ -139,29 +143,29 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     try {
       const body = { ...supplierForm };
       if (!body.name || body.name.length < 2) {
-        toast.error('İsim zorunlu (≥2 karakter)'); return;
+        toast.error(t('procurement.errors.nameRequired')); return;
       }
       if (supplierForm.id) {
         await axios.put(`/procurement/suppliers/${supplierForm.id}`, body);
-        toast.success('Tedarikçi güncellendi');
+        toast.success(t('procurement.toasts.supplierUpdated'));
       } else {
         await axios.post('/procurement/suppliers', body);
-        toast.success('Tedarikçi eklendi');
+        toast.success(t('procurement.toasts.supplierAdded'));
       }
       setSupplierForm(null);
       refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Kaydedilemedi');
+      toast.error(e.response?.data?.detail || t('procurement.errors.saveFailed'));
     }
   };
   const deleteSupplier = async (id) => {
-    if (!window.confirm('Tedarikçi silinsin mi?')) return;
+    if (!window.confirm(t('procurement.prompts.confirmDeleteSupplier'))) return;
     try {
       await axios.delete(`/procurement/suppliers/${id}`);
-      toast.success('Silindi');
+      toast.success(t('procurement.toasts.supplierDeleted'));
       refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Silinemedi');
+      toast.error(e.response?.data?.detail || t('procurement.errors.deleteFailed'));
     }
   };
 
@@ -169,30 +173,33 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const savePR = async () => {
     try {
       if (!prForm.department || !prForm.lines?.length) {
-        toast.error('Departman ve en az bir kalem gerekli'); return;
+        toast.error(t('procurement.errors.departmentLineRequired')); return;
       }
       await axios.post('/procurement/purchase-requests', prForm);
-      toast.success('Talep oluşturuldu');
+      toast.success(t('procurement.toasts.prCreated'));
       setPrForm(null); refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Oluşturulamadı');
+      toast.error(e.response?.data?.detail || t('procurement.errors.createFailed'));
     }
   };
   const changePRStatus = async (id, status) => {
     try {
       let reason = null;
       if (status === 'rejected' || status === 'cancelled') {
-        reason = window.prompt(`${status === 'rejected' ? 'Red' : 'İptal'} nedeni (≥5 karakter):`);
+        const promptKey = status === 'rejected'
+          ? 'procurement.prompts.rejectReason'
+          : 'procurement.prompts.cancelReason';
+        reason = window.prompt(t(promptKey));
         if (!reason || reason.trim().length < 5) {
-          toast.error('Neden en az 5 karakter olmalı'); return;
+          toast.error(t('procurement.errors.reasonMinLen')); return;
         }
       }
       await axios.post(`/procurement/purchase-requests/${id}/status`,
         { status, reason });
-      toast.success('Durum güncellendi');
+      toast.success(t('procurement.toasts.statusUpdated'));
       refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Güncellenemedi');
+      toast.error(e.response?.data?.detail || t('procurement.errors.updateFailed'));
     }
   };
   const convertPRtoPO = (pr) => {
@@ -216,38 +223,38 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const savePO = async () => {
     try {
       if (!poForm.supplier_id || !poForm.lines?.length) {
-        toast.error('Tedarikçi ve en az bir kalem gerekli'); return;
+        toast.error(t('procurement.errors.supplierLineRequired')); return;
       }
       await axios.post('/procurement/purchase-orders', poForm);
-      toast.success('Sipariş oluşturuldu');
+      toast.success(t('procurement.toasts.poCreated'));
       setPoForm(null); refresh();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Oluşturulamadı');
+      toast.error(e.response?.data?.detail || t('procurement.errors.createFailed'));
     }
   };
   const changePOStatus = async (id, status) => {
     try {
       let reason = null;
       if (status === 'cancelled') {
-        reason = window.prompt('İptal nedeni (≥5 karakter):');
+        reason = window.prompt(t('procurement.prompts.cancelReason'));
         if (!reason || reason.trim().length < 5) {
-          toast.error('Neden en az 5 karakter olmalı'); return;
+          toast.error(t('procurement.errors.reasonMinLen')); return;
         }
       }
       await axios.post(`/procurement/purchase-orders/${id}/status`,
         { status, reason });
-      toast.success('Durum güncellendi');
+      toast.success(t('procurement.toasts.statusUpdated'));
       refresh();
       if (selectedPo?.id === id) openPo(id);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Güncellenemedi');
+      toast.error(e.response?.data?.detail || t('procurement.errors.updateFailed'));
     }
   };
   const openPo = async (id) => {
     try {
       const r = await axios.get(`/procurement/purchase-orders/${id}`);
       setSelectedPo(r.data);
-    } catch { toast.error('PO yüklenemedi'); }
+    } catch { toast.error(t('procurement.errors.poLoadFailed')); }
   };
 
   // ── GRN ops ────────────────────────────────────────────
@@ -277,17 +284,19 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           notes: l.notes,
         }));
       if (!lines.length) {
-        toast.error('En az bir kalem için miktar girin'); return;
+        toast.error(t('procurement.errors.leastOneQty')); return;
       }
       const r = await axios.post(
         `/procurement/purchase-orders/${grnForm.po.id}/grn`,
         { notes: grnForm.notes, lines });
-      toast.success(`GRN ${r.data.grn?.grn_no} oluşturuldu — PO: ${r.data.po_status}`);
+      toast.success(t('procurement.toasts.grnCreated', {
+        no: r.data.grn?.grn_no, status: r.data.po_status,
+      }));
       setGrnForm(null);
       refresh();
       if (selectedPo?.id === grnForm.po.id) openPo(grnForm.po.id);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Mal kabul yapılamadı');
+      toast.error(e.response?.data?.detail || t('procurement.errors.grnFailed'));
     }
   };
 
@@ -297,27 +306,27 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Truck className="w-6 h-6" /> Satınalma & Tedarik
+            <Truck className="w-6 h-6" /> {t('procurement.header.title')}
           </h1>
           <p className="text-sm text-slate-600">
-            Tedarikçiler, satınalma talebi (PR), sipariş (PO), mal kabul (GRN).
+            {t('procurement.header.subtitle')}
           </p>
         </div>
         <Button onClick={refresh} variant="outline" disabled={loading}>
           <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-          Yenile
+          {t('procurement.header.refresh')}
         </Button>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
-          ['Aktif Tedarikçi', summary.suppliers_active ?? 0],
-          ['Bekleyen PR', summary.pr_pending ?? 0],
-          ['Onaylı PR', summary.pr_approved ?? 0],
-          ['Açık PO', summary.po_open ?? 0],
-          ['Tamamlanan PO', summary.po_received ?? 0],
-          ['Açık Tutar', tl(summary.open_commitment_value)],
+          [t('procurement.summary.activeSuppliers'), summary.suppliers_active ?? 0],
+          [t('procurement.summary.pendingPR'), summary.pr_pending ?? 0],
+          [t('procurement.summary.approvedPR'), summary.pr_approved ?? 0],
+          [t('procurement.summary.openPO'), summary.po_open ?? 0],
+          [t('procurement.summary.completedPO'), summary.po_received ?? 0],
+          [t('procurement.summary.openAmount'), tl(summary.open_commitment_value)],
         ].map(([k, v]) => (
           <Card key={k}><CardContent className="p-3">
             <div className="text-xs text-slate-500">{k}</div>
@@ -328,9 +337,9 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="summary"><ClipboardList className="w-4 h-4 mr-1" />PRs</TabsTrigger>
-          <TabsTrigger value="pos"><Package className="w-4 h-4 mr-1" />POs</TabsTrigger>
-          <TabsTrigger value="suppliers"><Truck className="w-4 h-4 mr-1" />Tedarikçiler</TabsTrigger>
+          <TabsTrigger value="summary"><ClipboardList className="w-4 h-4 mr-1" />{t('procurement.tabs.prs')}</TabsTrigger>
+          <TabsTrigger value="pos"><Package className="w-4 h-4 mr-1" />{t('procurement.tabs.pos')}</TabsTrigger>
+          <TabsTrigger value="suppliers"><Truck className="w-4 h-4 mr-1" />{t('procurement.tabs.suppliers')}</TabsTrigger>
         </TabsList>
 
         {/* ── PR LIST ─────────────────────────────────────── */}
@@ -338,27 +347,30 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle>Satınalma Talepleri</CardTitle>
-                <CardDescription>Departmanların talep akışı, onay ve POya dönüştürme.</CardDescription>
+                <CardTitle>{t('procurement.prList.title')}</CardTitle>
+                <CardDescription>{t('procurement.prList.description')}</CardDescription>
               </div>
               <Button onClick={() => setPrForm({
                 department: '', requester: '', notes: '',
                 lines: [{ item_name: '', quantity: 1, unit: 'adet', est_unit_cost: 0 }],
               })}>
-                <Plus className="w-4 h-4 mr-1" /> Yeni Talep
+                <Plus className="w-4 h-4 mr-1" /> {t('procurement.prList.newPR')}
               </Button>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm">
                 <thead><tr className="text-left border-b text-slate-600">
-                  <th className="p-2">No</th><th className="p-2">Departman</th>
-                  <th className="p-2">Talep Eden</th><th className="p-2">Kalem</th>
-                  <th className="p-2 text-right">Tahmini</th>
-                  <th className="p-2">Durum</th><th className="p-2 text-right">İşlem</th>
+                  <th className="p-2">{t('procurement.prList.columns.no')}</th>
+                  <th className="p-2">{t('procurement.prList.columns.department')}</th>
+                  <th className="p-2">{t('procurement.prList.columns.requester')}</th>
+                  <th className="p-2">{t('procurement.prList.columns.items')}</th>
+                  <th className="p-2 text-right">{t('procurement.prList.columns.estimated')}</th>
+                  <th className="p-2">{t('procurement.prList.columns.status')}</th>
+                  <th className="p-2 text-right">{t('procurement.prList.columns.action')}</th>
                 </tr></thead>
                 <tbody>
                   {prs.map((pr) => {
-                    const st = PR_STATUS[pr.status] || PR_STATUS.draft;
+                    const cls = PR_STATUS_CLS[pr.status] || PR_STATUS_CLS.draft;
                     return (
                       <tr key={pr.id} className="border-b hover:bg-slate-50">
                         <td className="p-2 font-mono text-xs">{pr.pr_no}</td>
@@ -366,20 +378,25 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                         <td className="p-2 text-xs text-slate-600">{pr.requester}</td>
                         <td className="p-2">{pr.lines?.length || 0}</td>
                         <td className="p-2 text-right">{tl(pr.lines_total)}</td>
-                        <td className="p-2"><Badge className={`${st.cls} border-0`}>{st.label}</Badge></td>
+                        <td className="p-2"><Badge className={`${cls} border-0`}>{prLabel(pr.status)}</Badge></td>
                         <td className="p-2 text-right space-x-1 whitespace-nowrap">
                           {pr.status === 'draft' &&
                             <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'submitted')}>Gönder</Button>}
+                              onClick={() => changePRStatus(pr.id, 'submitted')}>{t('procurement.prList.actions.send')}</Button>}
                           {pr.status === 'submitted' && <>
                             <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'approved')}>Onayla</Button>
+                              onClick={() => changePRStatus(pr.id, 'approved')}>{t('procurement.prList.actions.approve')}</Button>
                             <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'rejected')}>Reddet</Button>
+                              onClick={() => changePRStatus(pr.id, 'rejected')}>{t('procurement.prList.actions.reject')}</Button>
+                            <Button size="sm" variant="ghost"
+                              onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>
                           </>}
-                          {pr.status === 'approved' &&
-                            <Button size="sm" onClick={() => convertPRtoPO(pr)}>POya Çevir</Button>}
-                          <Button size="sm" variant="ghost" title="Geçmiş"
+                          {pr.status === 'approved' && <>
+                            <Button size="sm" onClick={() => convertPRtoPO(pr)}>{t('procurement.prList.actions.convertToPo')}</Button>
+                            <Button size="sm" variant="ghost"
+                              onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>
+                          </>}
+                          <Button size="sm" variant="ghost" title={t('procurement.prList.actions.history')}
                             onClick={() => setHistory({ type: 'proc_pr', id: pr.id, title: pr.pr_no })}>
                             <HistoryIcon className="w-4 h-4" />
                           </Button>
@@ -387,7 +404,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                       </tr>
                     );
                   })}
-                  {prs.length === 0 && <tr><td colSpan="7" className="p-4 text-center text-slate-400">Talep yok</td></tr>}
+                  {prs.length === 0 && <tr><td colSpan="7" className="p-4 text-center text-slate-400">{t('procurement.prList.empty')}</td></tr>}
                 </tbody>
               </table>
             </CardContent>
@@ -399,47 +416,53 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle>Satınalma Siparişleri</CardTitle>
-                <CardDescription>Tedarikçiye gönderilen siparişler ve mal kabul takibi.</CardDescription>
+                <CardTitle>{t('procurement.poList.title')}</CardTitle>
+                <CardDescription>{t('procurement.poList.description')}</CardDescription>
               </div>
               <Button onClick={() => setPoForm({
                 supplier_id: '', currency: 'TRY', tax_rate: 20,
                 lines: [{ item_name: '', quantity: 1, unit: 'adet', unit_cost: 0 }],
               })}>
-                <Plus className="w-4 h-4 mr-1" /> Yeni Sipariş
+                <Plus className="w-4 h-4 mr-1" /> {t('procurement.poList.newPO')}
               </Button>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm">
                 <thead><tr className="text-left border-b text-slate-600">
-                  <th className="p-2">No</th><th className="p-2">Tedarikçi</th>
-                  <th className="p-2">Kalem</th><th className="p-2 text-right">Tutar</th>
-                  <th className="p-2">Durum</th><th className="p-2 text-right">İşlem</th>
+                  <th className="p-2">{t('procurement.poList.columns.no')}</th>
+                  <th className="p-2">{t('procurement.poList.columns.supplier')}</th>
+                  <th className="p-2">{t('procurement.poList.columns.items')}</th>
+                  <th className="p-2 text-right">{t('procurement.poList.columns.amount')}</th>
+                  <th className="p-2">{t('procurement.poList.columns.status')}</th>
+                  <th className="p-2 text-right">{t('procurement.poList.columns.action')}</th>
                 </tr></thead>
                 <tbody>
                   {pos.map((po) => {
-                    const st = PO_STATUS[po.status] || PO_STATUS.draft;
+                    const cls = PO_STATUS_CLS[po.status] || PO_STATUS_CLS.draft;
                     return (
                       <tr key={po.id} className="border-b hover:bg-slate-50">
                         <td className="p-2 font-mono text-xs">{po.po_no}</td>
                         <td className="p-2">{po.supplier_name}</td>
                         <td className="p-2">{po.lines?.length || 0}</td>
                         <td className="p-2 text-right">{tl(po.grand_total)}</td>
-                        <td className="p-2"><Badge className={`${st.cls} border-0`}>{st.label}</Badge></td>
+                        <td className="p-2"><Badge className={`${cls} border-0`}>{poLabel(po.status)}</Badge></td>
                         <td className="p-2 text-right space-x-1 whitespace-nowrap">
-                          <Button size="sm" variant="ghost" onClick={() => openPo(po.id)}>Detay</Button>
+                          <Button size="sm" variant="ghost" onClick={() => openPo(po.id)}>{t('procurement.poList.actions.details')}</Button>
                           {po.status === 'draft' &&
                             <Button size="sm" onClick={() => changePOStatus(po.id, 'sent')}>
-                              <Send className="w-3 h-3 mr-1" />Gönder
+                              <Send className="w-3 h-3 mr-1" />{t('procurement.poList.actions.send')}
                             </Button>}
                           {(po.status === 'sent' || po.status === 'partially_received') &&
                             <Button size="sm" onClick={() => openGrnForm(po)}>
-                              <FileCheck2 className="w-3 h-3 mr-1" />Mal Kabul
+                              <FileCheck2 className="w-3 h-3 mr-1" />{t('procurement.poList.actions.receiveGoods')}
                             </Button>}
+                          {(po.status === 'draft' || po.status === 'sent') &&
+                            <Button size="sm" variant="ghost"
+                              onClick={() => changePOStatus(po.id, 'cancelled')}>{t('procurement.poList.actions.cancel')}</Button>}
                           {po.status === 'received' &&
                             <Button size="sm" variant="ghost"
-                              onClick={() => changePOStatus(po.id, 'closed')}>Kapat</Button>}
-                          <Button size="sm" variant="ghost" title="Geçmiş"
+                              onClick={() => changePOStatus(po.id, 'closed')}>{t('procurement.poList.actions.close')}</Button>}
+                          <Button size="sm" variant="ghost" title={t('procurement.poList.actions.history')}
                             onClick={() => setHistory({ type: 'proc_po', id: po.id, title: po.po_no })}>
                             <HistoryIcon className="w-4 h-4" />
                           </Button>
@@ -447,7 +470,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                       </tr>
                     );
                   })}
-                  {pos.length === 0 && <tr><td colSpan="6" className="p-4 text-center text-slate-400">Sipariş yok</td></tr>}
+                  {pos.length === 0 && <tr><td colSpan="6" className="p-4 text-center text-slate-400">{t('procurement.poList.empty')}</td></tr>}
                 </tbody>
               </table>
             </CardContent>
@@ -459,23 +482,26 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle>Tedarikçiler</CardTitle>
-                <CardDescription>Vendor master — kategori, ödeme vadesi, vergi no.</CardDescription>
+                <CardTitle>{t('procurement.supplierList.title')}</CardTitle>
+                <CardDescription>{t('procurement.supplierList.description')}</CardDescription>
               </div>
               <Button onClick={() => setSupplierForm({
                 name: '', code: '', tax_no: '', contact_name: '', email: '', phone: '',
                 address: '', payment_terms_days: 30, categories: [], notes: '', active: true,
               })}>
-                <Plus className="w-4 h-4 mr-1" /> Yeni Tedarikçi
+                <Plus className="w-4 h-4 mr-1" /> {t('procurement.supplierList.newSupplier')}
               </Button>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm">
                 <thead><tr className="text-left border-b text-slate-600">
-                  <th className="p-2">Kod</th><th className="p-2">İsim</th>
-                  <th className="p-2">Vergi No</th><th className="p-2">İletişim</th>
-                  <th className="p-2 text-right">Vade</th>
-                  <th className="p-2">Durum</th><th className="p-2 text-right">İşlem</th>
+                  <th className="p-2">{t('procurement.supplierList.columns.code')}</th>
+                  <th className="p-2">{t('procurement.supplierList.columns.name')}</th>
+                  <th className="p-2">{t('procurement.supplierList.columns.taxNo')}</th>
+                  <th className="p-2">{t('procurement.supplierList.columns.contact')}</th>
+                  <th className="p-2 text-right">{t('procurement.supplierList.columns.paymentDays')}</th>
+                  <th className="p-2">{t('procurement.supplierList.columns.status')}</th>
+                  <th className="p-2 text-right">{t('procurement.supplierList.columns.action')}</th>
                 </tr></thead>
                 <tbody>
                   {suppliers.map((s) => (
@@ -484,21 +510,21 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                       <td className="p-2 font-medium">{s.name}</td>
                       <td className="p-2 text-xs">{s.tax_no || '—'}</td>
                       <td className="p-2 text-xs">{s.contact_name || s.email || s.phone || '—'}</td>
-                      <td className="p-2 text-right">{s.payment_terms_days} gün</td>
+                      <td className="p-2 text-right">{s.payment_terms_days} {t('procurement.supplierList.daysSuffix')}</td>
                       <td className="p-2">
                         <Badge className={s.active ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-slate-200 text-slate-600 border-0'}>
-                          {s.active ? 'Aktif' : 'Pasif'}
+                          {s.active ? t('procurement.supplierList.active') : t('procurement.supplierList.inactive')}
                         </Badge>
                       </td>
                       <td className="p-2 text-right space-x-1">
-                        <Button size="sm" variant="ghost" onClick={() => setSupplierForm(s)}>Düzenle</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setSupplierForm(s)}>{t('procurement.supplierList.edit')}</Button>
                         <Button size="sm" variant="ghost" onClick={() => deleteSupplier(s.id)}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </td>
                     </tr>
                   ))}
-                  {suppliers.length === 0 && <tr><td colSpan="7" className="p-4 text-center text-slate-400">Tedarikçi yok</td></tr>}
+                  {suppliers.length === 0 && <tr><td colSpan="7" className="p-4 text-center text-slate-400">{t('procurement.supplierList.empty')}</td></tr>}
                 </tbody>
               </table>
             </CardContent>
@@ -508,34 +534,34 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
 
       {/* ── Supplier Modal ─────────────────────────────── */}
       {supplierForm && (
-        <Modal title={supplierForm.id ? 'Tedarikçi Düzenle' : 'Yeni Tedarikçi'}
+        <Modal title={supplierForm.id ? t('procurement.supplierModal.titleEdit') : t('procurement.supplierModal.titleNew')}
                onClose={() => setSupplierForm(null)}>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>İsim *</Label>
+            <div><Label>{t('procurement.supplierModal.name')}</Label>
               <Input value={supplierForm.name || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} /></div>
-            <div><Label>Kod</Label>
+            <div><Label>{t('procurement.supplierModal.code')}</Label>
               <Input value={supplierForm.code || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, code: e.target.value })} /></div>
-            <div><Label>Vergi No</Label>
+            <div><Label>{t('procurement.supplierModal.taxNo')}</Label>
               <Input value={supplierForm.tax_no || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, tax_no: e.target.value })} /></div>
-            <div><Label>İletişim Kişisi</Label>
+            <div><Label>{t('procurement.supplierModal.contact')}</Label>
               <Input value={supplierForm.contact_name || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, contact_name: e.target.value })} /></div>
-            <div><Label>E-posta</Label>
+            <div><Label>{t('procurement.supplierModal.email')}</Label>
               <Input value={supplierForm.email || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} /></div>
-            <div><Label>Telefon</Label>
+            <div><Label>{t('procurement.supplierModal.phone')}</Label>
               <Input value={supplierForm.phone || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} /></div>
-            <div className="col-span-2"><Label>Adres</Label>
+            <div className="col-span-2"><Label>{t('procurement.supplierModal.address')}</Label>
               <Input value={supplierForm.address || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} /></div>
-            <div><Label>Ödeme Vadesi (gün)</Label>
+            <div><Label>{t('procurement.supplierModal.paymentTerms')}</Label>
               <Input type="number" value={supplierForm.payment_terms_days || 30}
                 onChange={(e) => setSupplierForm({ ...supplierForm, payment_terms_days: Number(e.target.value) })} /></div>
-            <div><Label>Kategoriler (virgülle)</Label>
+            <div><Label>{t('procurement.supplierModal.categories')}</Label>
               <Input value={(supplierForm.categories || []).join(', ')}
                 onChange={(e) => setSupplierForm({
                   ...supplierForm,
@@ -544,24 +570,24 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             <div className="col-span-2 flex items-center gap-2">
               <input type="checkbox" id="sf-active" checked={!!supplierForm.active}
                 onChange={(e) => setSupplierForm({ ...supplierForm, active: e.target.checked })} />
-              <label htmlFor="sf-active" className="text-sm">Aktif</label>
+              <label htmlFor="sf-active" className="text-sm">{t('procurement.supplierModal.active')}</label>
             </div>
-            <div className="col-span-2"><Label>Notlar</Label>
+            <div className="col-span-2"><Label>{t('procurement.supplierModal.notes')}</Label>
               <Input value={supplierForm.notes || ''}
                 onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })} /></div>
           </div>
           <div className="mt-4 text-right space-x-2">
-            <Button variant="outline" onClick={() => setSupplierForm(null)}>Vazgeç</Button>
-            <Button onClick={saveSupplier}>Kaydet</Button>
+            <Button variant="outline" onClick={() => setSupplierForm(null)}>{t('procurement.supplierModal.cancel')}</Button>
+            <Button onClick={saveSupplier}>{t('procurement.supplierModal.save')}</Button>
           </div>
         </Modal>
       )}
 
       {/* ── PR Modal ─────────────────────────────────── */}
       {prForm && (
-        <Modal title="Yeni Satınalma Talebi" onClose={() => setPrForm(null)} wide>
+        <Modal title={t('procurement.prModalForm.title')} onClose={() => setPrForm(null)} wide>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Departman *</Label>
+            <div><Label>{t('procurement.prModalForm.department')}</Label>
               <select
                 value={prForm.department || ''}
                 onChange={(e) => setPrForm({ ...prForm, department: e.target.value })}
@@ -578,36 +604,39 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 <option value="Diğer">{t('procurement.prModal.departments.other')}</option>
               </select>
             </div>
-            <div><Label>Talep Eden</Label>
+            <div><Label>{t('procurement.prModalForm.requester')}</Label>
               <Input value={prForm.requester || ''}
                 onChange={(e) => setPrForm({ ...prForm, requester: e.target.value })} /></div>
-            <div><Label>İhtiyaç Tarihi</Label>
+            <div><Label>{t('procurement.prModalForm.neededBy')}</Label>
               <Input type="date" value={prForm.needed_by || ''}
                 onChange={(e) => setPrForm({ ...prForm, needed_by: e.target.value || null })} /></div>
-            <div className="col-span-2"><Label>Notlar</Label>
+            <div className="col-span-2"><Label>{t('procurement.prModalForm.notes')}</Label>
               <Input value={prForm.notes || ''}
                 onChange={(e) => setPrForm({ ...prForm, notes: e.target.value })} /></div>
           </div>
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm">Kalemler</h3>
+              <h3 className="font-semibold text-sm">{t('procurement.prModalForm.items')}</h3>
               <Button size="sm" variant="outline" onClick={() => setPrForm({
                 ...prForm,
                 lines: [...prForm.lines, { item_name: '', quantity: 1, unit: 'adet', est_unit_cost: 0 }],
-              })}><Plus className="w-3 h-3 mr-1" /> Ekle</Button>
+              })}><Plus className="w-3 h-3 mr-1" /> {t('procurement.prModalForm.addItem')}</Button>
             </div>
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-slate-600">
-                <th className="p-1">Kalem</th><th className="p-1">SKU</th>
-                <th className="p-1 w-20">Miktar</th><th className="p-1 w-20">Birim</th>
-                <th className="p-1 w-24">Birim Tahmini</th><th className="p-1"></th>
+                <th className="p-1">{t('procurement.prModalForm.itemHeader')}</th>
+                <th className="p-1">{t('procurement.prModalForm.skuHeader')}</th>
+                <th className="p-1 w-20">{t('procurement.prModalForm.qtyHeader')}</th>
+                <th className="p-1 w-20">{t('procurement.prModalForm.unitHeader')}</th>
+                <th className="p-1 w-24">{t('procurement.prModalForm.estUnitHeader')}</th>
+                <th className="p-1"></th>
               </tr></thead>
               <tbody>
                 {prForm.lines.map((l, i) => (
                   <tr key={i}>
                     <td className="p-1">
                       <Input value={l.item_name} list="inv-items-pr"
-                        placeholder="Stoktan seç veya yaz…"
+                        placeholder={t('procurement.prModalForm.itemPlaceholder')}
                         onChange={(e) => setPrForm({
                           ...prForm,
                           lines: fillFromInventory(prForm.lines, i, e.target.value, 'est_unit_cost'),
@@ -645,66 +674,68 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             <datalist id="inv-items-pr">
               {inventoryItems.map((it) => (
                 <option key={it.id || it._id || it.name} value={it.name}>
-                  {it.sku ? `${it.sku} · ` : ''}Mevcut: {it.quantity} {it.unit}
+                  {it.sku ? `${it.sku} · ` : ''}{t('procurement.prModalForm.datalistAvailable')}: {it.quantity} {it.unit}
                 </option>
               ))}
             </datalist>
             {inventoryItems.length > 0 && (
               <p className="text-xs text-slate-500 mt-2">
-                İpucu: Kalem adı kutusuna yazmaya başlayın, stoğunuzdaki kalemler otomatik önerilir.
-                Seçtiğinizde birim ve fiyat otomatik dolar.
+                {t('procurement.prModalForm.hint')}
               </p>
             )}
           </div>
           <div className="mt-4 text-right space-x-2">
-            <Button variant="outline" onClick={() => setPrForm(null)}>Vazgeç</Button>
-            <Button onClick={savePR}>Talep Oluştur</Button>
+            <Button variant="outline" onClick={() => setPrForm(null)}>{t('procurement.prModalForm.cancel')}</Button>
+            <Button onClick={savePR}>{t('procurement.prModalForm.create')}</Button>
           </div>
         </Modal>
       )}
 
       {/* ── PO Modal ─────────────────────────────────── */}
       {poForm && (
-        <Modal title={poForm.source_pr_id ? 'Talepten Sipariş' : 'Yeni Sipariş'}
+        <Modal title={poForm.source_pr_id ? t('procurement.poModal.titleFromPR') : t('procurement.poModal.titleNew')}
                onClose={() => setPoForm(null)} wide>
           <div className="grid grid-cols-3 gap-3">
-            <div><Label>Tedarikçi *</Label>
+            <div><Label>{t('procurement.poModal.supplier')}</Label>
               <select className="w-full border rounded p-2"
                 value={poForm.supplier_id}
                 onChange={(e) => setPoForm({ ...poForm, supplier_id: e.target.value })}>
-                <option value="">— Seç —</option>
+                <option value="">{t('procurement.poModal.supplierSelect')}</option>
                 {suppliers.filter((s) => s.active).map((s) =>
                   <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <div><Label>Beklenen Teslimat</Label>
+            <div><Label>{t('procurement.poModal.expectedDelivery')}</Label>
               <Input type="date" value={poForm.expected_delivery || ''}
                 onChange={(e) => setPoForm({ ...poForm, expected_delivery: e.target.value || null })} /></div>
-            <div><Label>KDV %</Label>
+            <div><Label>{t('procurement.poModal.taxRate')}</Label>
               <Input type="number" value={poForm.tax_rate}
                 onChange={(e) => setPoForm({ ...poForm, tax_rate: Number(e.target.value) })} /></div>
           </div>
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm">Kalemler</h3>
+              <h3 className="font-semibold text-sm">{t('procurement.poModal.items')}</h3>
               <Button size="sm" variant="outline" onClick={() => setPoForm({
                 ...poForm,
                 lines: [...poForm.lines, { item_name: '', quantity: 1, unit: 'adet', unit_cost: 0 }],
-              })}><Plus className="w-3 h-3 mr-1" /> Ekle</Button>
+              })}><Plus className="w-3 h-3 mr-1" /> {t('procurement.poModal.addItem')}</Button>
             </div>
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-slate-600">
-                <th className="p-1">Kalem</th><th className="p-1">SKU</th>
-                <th className="p-1 w-20">Miktar</th><th className="p-1 w-20">Birim</th>
-                <th className="p-1 w-24">Birim Fiyat</th>
-                <th className="p-1 w-24 text-right">Toplam</th><th className="p-1"></th>
+                <th className="p-1">{t('procurement.poModal.itemHeader')}</th>
+                <th className="p-1">{t('procurement.poModal.skuHeader')}</th>
+                <th className="p-1 w-20">{t('procurement.poModal.qtyHeader')}</th>
+                <th className="p-1 w-20">{t('procurement.poModal.unitHeader')}</th>
+                <th className="p-1 w-24">{t('procurement.poModal.unitPriceHeader')}</th>
+                <th className="p-1 w-24 text-right">{t('procurement.poModal.totalHeader')}</th>
+                <th className="p-1"></th>
               </tr></thead>
               <tbody>
                 {poForm.lines.map((l, i) => (
                   <tr key={i}>
                     <td className="p-1">
                       <Input value={l.item_name} list="inv-items-po"
-                        placeholder="Stoktan seç veya yaz…"
+                        placeholder={t('procurement.poModal.itemPlaceholder')}
                         onChange={(e) => setPoForm({
                           ...poForm,
                           lines: fillFromInventory(poForm.lines, i, e.target.value, 'unit_cost'),
@@ -743,21 +774,21 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               </tbody>
               <tfoot>
                 <tr className="border-t font-semibold">
-                  <td colSpan="5" className="p-2 text-right">Ara Toplam:</td>
+                  <td colSpan="5" className="p-2 text-right">{t('procurement.poModal.subtotal')}</td>
                   <td className="p-2 text-right">
                     {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0))}
                   </td>
                   <td></td>
                 </tr>
                 <tr>
-                  <td colSpan="5" className="p-2 text-right">KDV ({poForm.tax_rate}%):</td>
+                  <td colSpan="5" className="p-2 text-right">{t('procurement.poModal.vat', { rate: poForm.tax_rate })}</td>
                   <td className="p-2 text-right">
                     {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * poForm.tax_rate / 100)}
                   </td>
                   <td></td>
                 </tr>
                 <tr className="font-bold text-base">
-                  <td colSpan="5" className="p-2 text-right">Genel Toplam:</td>
+                  <td colSpan="5" className="p-2 text-right">{t('procurement.poModal.grandTotal')}</td>
                   <td className="p-2 text-right">
                     {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * (1 + poForm.tax_rate / 100))}
                   </td>
@@ -768,33 +799,36 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             <datalist id="inv-items-po">
               {inventoryItems.map((it) => (
                 <option key={it.id || it._id || it.name} value={it.name}>
-                  {it.sku ? `${it.sku} · ` : ''}Mevcut: {it.quantity} {it.unit}
+                  {it.sku ? `${it.sku} · ` : ''}{t('procurement.prModalForm.datalistAvailable')}: {it.quantity} {it.unit}
                 </option>
               ))}
             </datalist>
           </div>
           <div className="mt-4 text-right space-x-2">
-            <Button variant="outline" onClick={() => setPoForm(null)}>Vazgeç</Button>
-            <Button onClick={savePO}>Sipariş Oluştur</Button>
+            <Button variant="outline" onClick={() => setPoForm(null)}>{t('procurement.poModal.cancel')}</Button>
+            <Button onClick={savePO}>{t('procurement.poModal.create')}</Button>
           </div>
         </Modal>
       )}
 
       {/* ── PO Detail ────────────────────────────────── */}
       {selectedPo && (
-        <Modal title={`PO ${selectedPo.po_no} — ${selectedPo.supplier_name}`}
+        <Modal title={t('procurement.poDetail.title', { no: selectedPo.po_no, supplier: selectedPo.supplier_name })}
                onClose={() => setSelectedPo(null)} wide>
           <div className="grid grid-cols-3 gap-3 text-sm">
-            <div><span className="text-slate-500">Durum:</span> <Badge className={`${(PO_STATUS[selectedPo.status] || PO_STATUS.draft).cls} border-0`}>{(PO_STATUS[selectedPo.status] || PO_STATUS.draft).label}</Badge></div>
-            <div><span className="text-slate-500">Beklenen:</span> {selectedPo.expected_delivery || '—'}</div>
-            <div><span className="text-slate-500">Toplam:</span> <strong>{tl(selectedPo.grand_total)}</strong></div>
+            <div><span className="text-slate-500">{t('procurement.poDetail.status')}</span> <Badge className={`${PO_STATUS_CLS[selectedPo.status] || PO_STATUS_CLS.draft} border-0`}>{poLabel(selectedPo.status)}</Badge></div>
+            <div><span className="text-slate-500">{t('procurement.poDetail.expected')}</span> {selectedPo.expected_delivery || '—'}</div>
+            <div><span className="text-slate-500">{t('procurement.poDetail.total')}</span> <strong>{tl(selectedPo.grand_total)}</strong></div>
           </div>
-          <h3 className="font-semibold text-sm mt-4 mb-1">Kalemler</h3>
+          <h3 className="font-semibold text-sm mt-4 mb-1">{t('procurement.poDetail.items')}</h3>
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b text-slate-600">
-              <th className="p-1">Kalem</th><th className="p-1 w-16">Sip.</th>
-              <th className="p-1 w-16">Alınan</th><th className="p-1 w-16">Kalan</th>
-              <th className="p-1 w-24 text-right">Birim</th><th className="p-1 w-24 text-right">Toplam</th>
+              <th className="p-1">{t('procurement.poDetail.itemHeader')}</th>
+              <th className="p-1 w-16">{t('procurement.poDetail.orderedHeader')}</th>
+              <th className="p-1 w-16">{t('procurement.poDetail.receivedHeader')}</th>
+              <th className="p-1 w-16">{t('procurement.poDetail.remainingHeader')}</th>
+              <th className="p-1 w-24 text-right">{t('procurement.poDetail.unitHeader')}</th>
+              <th className="p-1 w-24 text-right">{t('procurement.poDetail.totalHeader')}</th>
             </tr></thead>
             <tbody>
               {(selectedPo.lines || []).map((l, i) => (
@@ -810,12 +844,12 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             </tbody>
           </table>
           {selectedPo.grns?.length > 0 && <>
-            <h3 className="font-semibold text-sm mt-4 mb-1">Mal Kabul Notları</h3>
+            <h3 className="font-semibold text-sm mt-4 mb-1">{t('procurement.poDetail.grnNotes')}</h3>
             <ul className="text-xs space-y-1">
               {selectedPo.grns.map((g) => (
                 <li key={g.id} className="border-b py-1 flex justify-between">
                   <span>{g.grn_no} — {new Date(g.received_at).toLocaleString('tr-TR')}</span>
-                  <span>{g.lines?.length || 0} kalem · {g.received_by}</span>
+                  <span>{t('procurement.poDetail.grnSummary', { count: g.lines?.length || 0, user: g.received_by })}</span>
                 </li>
               ))}
             </ul>
@@ -823,29 +857,30 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <div className="mt-4 text-right space-x-2">
             {(selectedPo.status === 'sent' || selectedPo.status === 'partially_received') &&
               <Button onClick={() => { openGrnForm(selectedPo); }}>
-                <FileCheck2 className="w-4 h-4 mr-1" /> Mal Kabul
+                <FileCheck2 className="w-4 h-4 mr-1" /> {t('procurement.poDetail.receiveGoods')}
               </Button>}
             <Button variant="ghost" onClick={() => setHistory({
               type: 'proc_po', id: selectedPo.id, title: selectedPo.po_no,
-            })}><HistoryIcon className="w-4 h-4 mr-1" /> Geçmiş</Button>
+            })}><HistoryIcon className="w-4 h-4 mr-1" /> {t('procurement.poDetail.history')}</Button>
           </div>
         </Modal>
       )}
 
       {/* ── GRN Modal ────────────────────────────────── */}
       {grnForm && (
-        <Modal title={`Mal Kabul — PO ${grnForm.po.po_no}`}
+        <Modal title={t('procurement.grnModal.title', { no: grnForm.po.po_no })}
                onClose={() => setGrnForm(null)} wide>
           <div className="text-xs text-slate-600 mb-2">
-            Tedarikçi: <strong>{grnForm.po.supplier_name}</strong>
+            {t('procurement.grnModal.supplier')} <strong>{grnForm.po.supplier_name}</strong>
           </div>
           <table className="w-full text-sm">
             <thead><tr className="text-left border-b text-slate-600">
-              <th className="p-1">Kalem</th><th className="p-1 w-16">Sip.</th>
-              <th className="p-1 w-16">Önceki</th>
-              <th className="p-1 w-24">Bu Sevkte</th>
-              <th className="p-1 w-32">QC</th>
-              <th className="p-1">Not</th>
+              <th className="p-1">{t('procurement.grnModal.itemHeader')}</th>
+              <th className="p-1 w-16">{t('procurement.grnModal.orderedHeader')}</th>
+              <th className="p-1 w-16">{t('procurement.grnModal.previousHeader')}</th>
+              <th className="p-1 w-24">{t('procurement.grnModal.thisShipmentHeader')}</th>
+              <th className="p-1 w-32">{t('procurement.grnModal.qcHeader')}</th>
+              <th className="p-1">{t('procurement.grnModal.noteHeader')}</th>
             </tr></thead>
             <tbody>
               {grnForm.lines.map((l, i) => (
@@ -867,9 +902,9 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                         lines[i].qc_status = e.target.value;
                         setGrnForm({ ...grnForm, lines });
                       }}>
-                      <option value="accepted">Kabul</option>
-                      <option value="partial">Kısmi</option>
-                      <option value="rejected">Red</option>
+                      <option value="accepted">{t('procurement.grnModal.qc.accepted')}</option>
+                      <option value="partial">{t('procurement.grnModal.qc.partial')}</option>
+                      <option value="rejected">{t('procurement.grnModal.qc.rejected')}</option>
                     </select>
                   </td>
                   <td className="p-1"><Input value={l.notes || ''}
@@ -882,12 +917,12 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               ))}
             </tbody>
           </table>
-          <div className="mt-3"><Label>Genel Not</Label>
+          <div className="mt-3"><Label>{t('procurement.grnModal.generalNote')}</Label>
             <Input value={grnForm.notes || ''}
               onChange={(e) => setGrnForm({ ...grnForm, notes: e.target.value })} /></div>
           <div className="mt-4 text-right space-x-2">
-            <Button variant="outline" onClick={() => setGrnForm(null)}>Vazgeç</Button>
-            <Button onClick={saveGRN}>Mal Kabulü Onayla</Button>
+            <Button variant="outline" onClick={() => setGrnForm(null)}>{t('procurement.grnModal.cancel')}</Button>
+            <Button onClick={saveGRN}>{t('procurement.grnModal.confirm')}</Button>
           </div>
         </Modal>
       )}

@@ -1342,7 +1342,22 @@
     "features": "Features",
     "aiTechnology": "AI Technology",
     "solutions": "Solutions",
-    "signIn": "تسجيل الدخول"
+    "signIn": "تسجيل الدخول",
+    "footer": {
+      "tagline": "النظام الأحب لإدارة الفنادق في تركيا. بسيط، ذكي، قوي.",
+      "productHeading": "المنتج",
+      "benefits": "المزايا",
+      "features": "الميزات",
+      "pricing": "الأسعار",
+      "companyHeading": "الشركة",
+      "about": "من نحن",
+      "careers": "الوظائف",
+      "contactHeading": "اتصل بنا",
+      "copyright": "© {{year}} Syroce. جميع الحقوق محفوظة.",
+      "privacy": "الخصوصية",
+      "terms": "شروط الاستخدام",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "هذه الميزة غير متاحة في خطتك",
@@ -2788,121 +2803,179 @@
     "installmentPaid": "تم وضع علامة مدفوع على القسط"
   },
   "mobileInventory": {
-    "title": "Inventory Management",
-    "subtitle": "Mobile View",
+    "title": "المخزون",
+    "subtitle": "إدارة سريعة للمخزون",
     "loading": "Loading stock data...",
     "errors": {
-      "loadFailed": "Failed to load stock data",
+      "loadFailed": "تعذّر تحميل المخزون",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock"
+      "updateFailed": "Failed to update stock",
+      "saveFailed": "فشل الحفظ"
     },
     "success": {
       "adjusted": "Stock updated successfully"
     },
     "stats": {
-      "total": "Total",
+      "total": "الإجمالي",
       "good": "Good",
-      "low": "Low",
-      "outOfStock": "Out"
+      "low": "منخفض",
+      "outOfStock": "Out",
+      "value": "القيمة"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
     "showLowOnly": "Show only low stock items",
-    "empty": "No stock records found",
+    "empty": "لا توجد أصناف",
     "current": "Current Stock",
     "minimum": "Minimum",
     "lowStockWarning": "Stock low! Order required",
     "adjust": "Adjust Stock",
     "alertsModal": {
-      "title": "Low Stock Alerts",
+      "title": "تنبيهات المخزون",
       "urgency": {
         "critical": "CRITICAL",
-        "high": "HIGH",
-        "medium": "MEDIUM"
+        "high": "عالية",
+        "medium": "متوسطة",
+        "low": "منخفضة"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order"
+      "recommendedOrder": "Recommended order",
+      "empty": "لا توجد تنبيهات نشطة",
+      "current": "الحالي",
+      "needed": "المطلوب",
+      "createPR": "إنشاء طلب"
     },
     "movementsModal": {
-      "title": "Stock Movements (Last 7 Days)"
+      "title": "الحركات",
+      "empty": "لا توجد حركات",
+      "in": "وارد",
+      "out": "صادر",
+      "by": "بواسطة"
     },
     "adjustModal": {
-      "title": "Adjust Stock",
+      "title": "تعديل المخزون",
       "currentLabel": "Current",
-      "type": "Operation Type",
+      "type": "النوع",
       "typeIn": "In (+)",
       "typeOut": "Out (-)",
       "typeAdjustment": "Adjustment (Set)",
       "quantity": "Quantity",
       "quantityPlaceholder": "Enter quantity",
-      "reason": "Reason *",
+      "reason": "السبب",
       "reasonSelect": "Select...",
       "reasons": {
         "supplier": "Supplier delivery",
         "fbSale": "F&B sale",
         "waste": "Waste",
-        "return": "Return",
-        "count": "Count adjustment",
-        "other": "Other"
+        "return": "إرجاع",
+        "count": "جرد فعلي",
+        "other": "أخرى",
+        "purchase": "شراء",
+        "consumption": "استهلاك",
+        "damage": "تلف",
+        "theft": "سرقة",
+        "expired": "منتهي الصلاحية"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
-      "cancel": "Cancel",
-      "save": "Save"
+      "cancel": "إلغاء",
+      "save": "حفظ",
+      "types": {
+        "in": "وارد",
+        "out": "صرف",
+        "count": "جرد"
+      },
+      "amount": "الكمية",
+      "note": "ملاحظة",
+      "saved": "تم حفظ التعديل"
+    },
+    "search": "بحث…",
+    "filters": {
+      "all": "الكل",
+      "low": "مخزون منخفض",
+      "out": "نفد"
+    },
+    "lowStockBanner": "{{count}} صنف بمخزون منخفض",
+    "alertsBtn": "التنبيهات",
+    "movementsBtn": "الحركات",
+    "adjustBtn": "تعديل",
+    "qty": "الكمية",
+    "unit": "الوحدة",
+    "reorderLevel": "حد إعادة الطلب",
+    "actions": {
+      "adjust": "تعديل",
+      "alerts": "التنبيهات",
+      "movements": "الحركات"
     }
   },
   "mobileApprovals": {
-    "title": "Approval Mechanism",
-    "subtitle": "Pending Approvals",
-    "loading": "Loading approvals...",
+    "title": "الموافقات",
+    "subtitle": "الطلبات قيد الانتظار",
+    "loading": "جارٍ التحميل…",
     "errors": {
-      "loadFailed": "Failed to load approvals",
+      "loadFailed": "فشل التحميل",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Rejection reason required"
+      "reasonRequired": "السبب إلزامي",
+      "actionFailed": "فشل التنفيذ"
     },
     "success": {
       "approved": "Request approved",
       "rejected": "Request rejected"
     },
     "types": {
-      "discount": "Discount",
+      "discount": "خصم",
       "priceOverride": "Price Override",
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
-      "refund": "Refund",
-      "compRoom": "Complimentary Room"
+      "refund": "استرداد",
+      "compRoom": "Complimentary Room",
+      "pr": "طلب شراء",
+      "po": "أمر شراء",
+      "expense": "مصروف",
+      "leave": "إجازة",
+      "other": "أخرى"
     },
     "statuses": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected"
+      "pending": "قيد الانتظار",
+      "approved": "موافق عليه",
+      "rejected": "مرفوض",
+      "cancelled": "ملغى"
     },
     "priority": {
       "urgent": "URGENT",
       "high": "High"
     },
     "tabs": {
-      "pending": "Pending",
-      "myRequests": "My Requests"
+      "pending": "قيد الانتظار",
+      "myRequests": "My Requests",
+      "approved": "موافق عليها",
+      "rejected": "مرفوضة",
+      "all": "الكل"
     },
-    "urgentBanner": "{{count}} urgent approval(s) waiting!",
+    "urgentBanner": "{{count}} عاجلة",
     "empty": {
-      "pending": "No pending approvals",
-      "myRequests": "You haven't created any requests yet"
+      "pending": "لا توجد موافقات معلّقة",
+      "myRequests": "لم تُنشئ أي طلبات بعد"
     },
     "fields": {
-      "amount": "Amount:",
+      "amount": "المبلغ",
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:"
+      "reason": "Reason:",
+      "requester": "مقدم الطلب",
+      "department": "القسم",
+      "submitted": "تاريخ التقديم",
+      "type": "النوع",
+      "priority": "الأولوية"
     },
     "actions": {
-      "reject": "Reject",
-      "approve": "Approve",
-      "cancel": "Cancel"
+      "reject": "رفض",
+      "approve": "موافقة",
+      "cancel": "Cancel",
+      "viewDetails": "التفاصيل"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -2915,14 +2988,30 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes..."
+      "notesPlaceholder": "Additional notes...",
+      "title": "مراجعة الطلب",
+      "comment": "تعليق (اختياري)",
+      "rejectReason": "سبب الرفض (إلزامي)",
+      "cancel": "إلغاء",
+      "approve": "موافقة",
+      "reject": "رفض"
+    },
+    "priorities": {
+      "low": "منخفض",
+      "medium": "متوسط",
+      "high": "عالي",
+      "urgent": "عاجل"
+    },
+    "toasts": {
+      "approved": "تمت الموافقة",
+      "rejected": "تم الرفض"
     }
   },
   "frontDeskEnhanced": {
-    "title": "Front Desk",
+    "title": "الاستقبال المتقدم",
     "scanPassport": "Scan Passport",
     "walkInBooking": "Walk-in Booking",
-    "todayArrivals": "Today's Arrivals ({{count}})",
+    "todayArrivals": "وصولات اليوم ({{count}})",
     "alerts": "Alerts",
     "quickCheckin": "Quick Check-in",
     "guest": "Guest",
@@ -2949,7 +3038,41 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed"
+      "checkinFailed": "Guest check-in failed",
+      "created": "تم إنشاء الحجز: {{folio}}",
+      "alertCreated": "تم إنشاء التنبيه",
+      "scanStarted": "بدأ المسح",
+      "actionFailed": "فشل التنفيذ"
+    },
+    "subtitle": "وضع الكشك والوصول دون حجز",
+    "scanBtn": "مسح الهوية",
+    "walkInBtn": "وصول دون حجز",
+    "noArrivals": "لا توجد وصولات اليوم",
+    "guestAlerts": {
+      "title": "تنبيهات النزيل",
+      "vip": "نزيل VIP",
+      "blacklist": "القائمة السوداء",
+      "frequent": "نزيل دائم",
+      "noShow": "تخلّف سابق",
+      "complaint": "شكوى سابقة"
+    },
+    "walkIn": {
+      "title": "حجز فوري",
+      "guestName": "اسم النزيل",
+      "phone": "الهاتف",
+      "email": "البريد",
+      "adults": "بالغون",
+      "children": "أطفال",
+      "nights": "ليالٍ",
+      "roomType": "نوع الغرفة",
+      "rate": "السعر",
+      "notes": "ملاحظات",
+      "cancel": "إلغاء",
+      "create": "إنشاء"
+    },
+    "errors": {
+      "loadFailed": "فشل التحميل",
+      "guestNameRequired": "اسم النزيل مطلوب"
     }
   },
   "procurement": {
@@ -2965,6 +3088,226 @@
         "administration": "Administration",
         "other": "Other"
       }
+    },
+    "errors": {
+      "loadFailed": "تعذّر تحميل بيانات المشتريات",
+      "nameRequired": "الاسم مطلوب (≥2 حرفًا)",
+      "saveFailed": "فشل الحفظ",
+      "deleteFailed": "فشل الحذف",
+      "createFailed": "فشل الإنشاء",
+      "updateFailed": "فشل التحديث",
+      "departmentLineRequired": "القسم وعنصر واحد على الأقل مطلوبان",
+      "supplierLineRequired": "المورد وعنصر واحد على الأقل مطلوبان",
+      "reasonMinLen": "يجب أن يكون السبب 5 أحرف على الأقل",
+      "leastOneQty": "أدخل كمية لعنصر واحد على الأقل",
+      "grnFailed": "فشل استلام البضائع",
+      "poLoadFailed": "تعذّر تحميل أمر الشراء"
+    },
+    "toasts": {
+      "supplierUpdated": "تم تحديث المورد",
+      "supplierAdded": "تم إضافة المورد",
+      "supplierDeleted": "تم الحذف",
+      "prCreated": "تم إنشاء الطلب",
+      "statusUpdated": "تم تحديث الحالة",
+      "poCreated": "تم إنشاء أمر الشراء",
+      "grnCreated": "تم إنشاء GRN {{no}} — أمر الشراء: {{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "حذف المورد؟",
+      "rejectReason": "سبب الرفض (≥5 أحرف):",
+      "cancelReason": "سبب الإلغاء (≥5 أحرف):"
+    },
+    "header": {
+      "title": "المشتريات والتوريد",
+      "subtitle": "الموردون، طلبات الشراء (PR)، أوامر الشراء (PO)، استلام البضائع (GRN).",
+      "refresh": "تحديث"
+    },
+    "summary": {
+      "activeSuppliers": "موردون نشطون",
+      "pendingPR": "PR قيد الانتظار",
+      "approvedPR": "PR موافق عليها",
+      "openPO": "PO مفتوحة",
+      "completedPO": "PO مكتملة",
+      "openAmount": "المبلغ المفتوح"
+    },
+    "tabs": {
+      "prs": "PR",
+      "pos": "PO",
+      "suppliers": "الموردون"
+    },
+    "prStatuses": {
+      "draft": "مسودة",
+      "submitted": "مُرسلة",
+      "approved": "موافق عليها",
+      "rejected": "مرفوضة",
+      "cancelled": "ملغاة",
+      "converted": "حُوِّلت إلى PO"
+    },
+    "poStatuses": {
+      "draft": "مسودة",
+      "sent": "مُرسل",
+      "partially_received": "تم استلامه جزئيًا",
+      "received": "تم استلامه كليًا",
+      "cancelled": "ملغى",
+      "closed": "مغلق"
+    },
+    "prList": {
+      "title": "طلبات الشراء",
+      "description": "تدفّق طلبات الأقسام، الموافقة والتحويل إلى PO.",
+      "newPR": "طلب جديد",
+      "columns": {
+        "no": "رقم",
+        "department": "القسم",
+        "requester": "مقدم الطلب",
+        "items": "عنصر",
+        "estimated": "تقديري",
+        "status": "الحالة",
+        "action": "الإجراء"
+      },
+      "empty": "لا توجد طلبات",
+      "actions": {
+        "send": "إرسال",
+        "approve": "موافقة",
+        "reject": "رفض",
+        "convertToPo": "تحويل إلى PO",
+        "history": "السجل",
+        "cancel": "إلغاء"
+      }
+    },
+    "poList": {
+      "title": "أوامر الشراء",
+      "description": "أوامر مرسلة للموردين وتتبع الاستلام.",
+      "newPO": "أمر جديد",
+      "columns": {
+        "no": "رقم",
+        "supplier": "المورد",
+        "items": "عنصر",
+        "amount": "المبلغ",
+        "status": "الحالة",
+        "action": "الإجراء"
+      },
+      "empty": "لا توجد أوامر",
+      "actions": {
+        "details": "التفاصيل",
+        "send": "إرسال",
+        "receiveGoods": "استلام البضائع",
+        "close": "إغلاق",
+        "history": "السجل",
+        "cancel": "إلغاء"
+      }
+    },
+    "supplierList": {
+      "title": "الموردون",
+      "description": "البيانات الرئيسية — الفئة، شروط الدفع، الرقم الضريبي.",
+      "newSupplier": "مورد جديد",
+      "columns": {
+        "code": "الكود",
+        "name": "الاسم",
+        "taxNo": "الرقم الضريبي",
+        "contact": "الاتصال",
+        "paymentDays": "الأجل",
+        "status": "الحالة",
+        "action": "الإجراء"
+      },
+      "empty": "لا يوجد موردون",
+      "daysSuffix": "يوم",
+      "active": "نشط",
+      "inactive": "غير نشط",
+      "edit": "تعديل"
+    },
+    "supplierModal": {
+      "titleNew": "مورد جديد",
+      "titleEdit": "تعديل المورد",
+      "name": "الاسم *",
+      "code": "الكود",
+      "taxNo": "الرقم الضريبي",
+      "contact": "شخص الاتصال",
+      "email": "البريد",
+      "phone": "الهاتف",
+      "address": "العنوان",
+      "paymentTerms": "شروط الدفع (أيام)",
+      "categories": "الفئات (مفصولة بفاصلة)",
+      "active": "نشط",
+      "notes": "ملاحظات",
+      "cancel": "إلغاء",
+      "save": "حفظ"
+    },
+    "prModalForm": {
+      "title": "طلب شراء جديد",
+      "department": "القسم *",
+      "requester": "مقدم الطلب",
+      "neededBy": "مطلوب بحلول",
+      "notes": "ملاحظات",
+      "items": "العناصر",
+      "addItem": "إضافة",
+      "itemHeader": "عنصر",
+      "skuHeader": "SKU",
+      "qtyHeader": "الكمية",
+      "unitHeader": "الوحدة",
+      "estUnitHeader": "السعر التقديري للوحدة",
+      "itemPlaceholder": "اختر من المخزون أو اكتب…",
+      "datalistAvailable": "المتاح",
+      "hint": "نصيحة: ابدأ بالكتابة في حقل العنصر للحصول على اقتراحات من مخزونك. تُملأ الوحدة والسعر تلقائيًا.",
+      "cancel": "إلغاء",
+      "create": "إنشاء الطلب",
+      "seedNote": "انخفض مخزون {{name}} عن الحد الحرج."
+    },
+    "poModal": {
+      "titleNew": "أمر جديد",
+      "titleFromPR": "أمر من طلب",
+      "supplier": "المورد *",
+      "supplierSelect": "— اختر —",
+      "expectedDelivery": "التسليم المتوقع",
+      "taxRate": "ضريبة %",
+      "items": "العناصر",
+      "addItem": "إضافة",
+      "itemHeader": "عنصر",
+      "skuHeader": "SKU",
+      "qtyHeader": "الكمية",
+      "unitHeader": "الوحدة",
+      "unitPriceHeader": "سعر الوحدة",
+      "totalHeader": "الإجمالي",
+      "itemPlaceholder": "اختر من المخزون أو اكتب…",
+      "subtotal": "الإجمالي الفرعي:",
+      "vat": "ضريبة ({{rate}}%):",
+      "grandTotal": "الإجمالي العام:",
+      "cancel": "إلغاء",
+      "create": "إنشاء أمر الشراء"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "الحالة:",
+      "expected": "متوقع:",
+      "total": "الإجمالي:",
+      "items": "العناصر",
+      "itemHeader": "عنصر",
+      "orderedHeader": "مطلوب",
+      "receivedHeader": "مستلم",
+      "remainingHeader": "متبقي",
+      "unitHeader": "الوحدة",
+      "totalHeader": "الإجمالي",
+      "grnNotes": "ملاحظات الاستلام",
+      "grnSummary": "{{count}} عنصر · {{user}}",
+      "receiveGoods": "استلام البضائع",
+      "history": "السجل"
+    },
+    "grnModal": {
+      "title": "استلام — PO {{no}}",
+      "supplier": "المورد:",
+      "itemHeader": "عنصر",
+      "orderedHeader": "مطلوب",
+      "previousHeader": "السابق",
+      "thisShipmentHeader": "هذه الشحنة",
+      "qcHeader": "QC",
+      "noteHeader": "ملاحظة",
+      "qc": {
+        "accepted": "مقبول",
+        "partial": "جزئي",
+        "rejected": "مرفوض"
+      },
+      "generalNote": "ملاحظة عامة",
+      "cancel": "إلغاء",
+      "confirm": "تأكيد الاستلام"
     }
   }
 }

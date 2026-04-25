@@ -4627,3 +4627,51 @@ TR uses Turkish; en + 8 others use English fallback.
 **Critical pattern preserved:** dropdown `<option value="...">` attributes kept in original Turkish strings (e.g., `value="Tedarikçi teslimatı"`, `value="Kat Hizmetleri"`) because backend stores/expects exact values; only display text uses `t()`. This way language switching does not change submitted values, preventing data inconsistency.
 
 **Architect review (evaluate_task):** PASS. Vite build clean, no missing keys, no namespace collisions, all interpolation params ({{count}}, {{name}}, {{folio}}, {{adults}}, {{children}}, {{hours}}) consistent. Backend `PRIn.department` is free string — no API breakage.
+
+## v113 — i18n closeout + Procurement full-page i18n + Quick-ID polish (2026-04-25)
+
+Closed all 5 v112 deferred items with concrete deliverables.
+
+**1. ProcurementPage full i18n.** Rewrote `frontend/src/pages/ProcurementPage.jsx` (~700 lines). All ~80 hardcoded TR strings now route through `t()`:
+- `PR_STATUS_CLS`/`PO_STATUS_CLS` reduced to className-only maps; status display goes through `prLabel(code) = t('procurement.prStatuses.' + code)` and `poLabel(code) = t('procurement.poStatuses.' + code)`
+- Header (title/subtitle/refresh), 6 summary cards, 3 tabs (PR/PO/Suppliers), 4 modals (Supplier/PR/PO Detail/GRN), all toasts/errors/prompts (incl. interpolated `{{no}}/{{status}}/{{name}}` params)
+- `<select>` `value=` attributes for departments stay Turkish (`Kat Hizmetleri`, `F&B`, `Teknik`, `Ön Büro`, `Bakım`, `Güvenlik`, `Yönetim`, `Diğer`) — backend wire format unchanged; only labels translated via `procurement.prModal.departments.*` (preserved from v112)
+
+**2. LandingPage footer i18n.** Added `useTranslation` to `frontend/src/pages/LandingPage.jsx`; footer now uses `t('landing.footer.tagline / productHeading / benefits / features / pricing / companyHeading / about / careers / contactHeading / copyright / privacy / terms / kvkk')` with `{{year}}` interpolation for copyright.
+
+**3. 8-language real translations (no more EN fallback).** `.local/i18n_translate_v113.py` writes proper translations for `de/fr/es/it/pt/ru/ar/zh` across:
+- `mobileInventory.*` (~35 keys per lang)
+- `mobileApprovals.*` (~30 keys per lang)
+- `frontDeskEnhanced.*` (~25 keys per lang)
+- `procurement.*` full v113 shape (~120 keys per lang including errors/toasts/prompts/header/summary/tabs/prStatuses/poStatuses/prList/poList/supplierList/supplierModal/prModalForm/poModal/poDetail/grnModal)
+- `landing.footer.*` (~13 keys per lang)
+- Total ≈ 1800 strings translated. Idempotent (deep-merge — TR/EN untouched, v112 keys like `procurement.prModal.departments.*` preserved).
+
+**4. Backend dept normalize migration.** New `backend/scripts/normalize_pr_departments.py` (one-shot, idempotent). Maps legacy English/lowercase/aliased department values on `purchase_requests` to the 8 canonical Turkish values used by the v112+ PR Modal. Flags: `--dry-run` (preview), `--tenant <uuid>` (single-tenant scope), `--aggressive` (force unknown→`Diğer`). Safe to re-run; never executed automatically — operator-driven.
+
+**5. Quick-ID bcrypt warning fix.** `quick-id/backend/server.py` now silences passlib's noisy `(trapped) error reading bcrypt version` WARNING after `logging.basicConfig`:
+```python
+logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
+logging.getLogger("passlib").setLevel(logging.ERROR)
+```
+Root cause: bcrypt ≥4.1 dropped `bcrypt.__about__.__version__`; passlib's version probe falls back loudly. Hash round-trip (login/register) is unaffected. Replit's shared `.pythonlibs` cannot be downgraded via `pip install bcrypt==4.0.1`, so cosmetic suppression is the durable fix.
+
+**Files touched:**
+- `frontend/src/pages/ProcurementPage.jsx` (full rewrite)
+- `frontend/src/pages/LandingPage.jsx` (footer + `useTranslation` import)
+- `frontend/src/locales/{tr,en,de,fr,es,it,pt,ru,ar,zh}.json` (deep-merged via 2 scripts)
+- `backend/scripts/normalize_pr_departments.py` (new)
+- `quick-id/backend/server.py` (4 lines added after `logging.basicConfig`)
+- `.local/i18n_payload_v113.py` + `.local/i18n_translate_v113.py` (idempotent payload scripts)
+
+**Verification:** Backend / Quick-ID / Vite all RUNNING after restart. Quick-ID startup log no longer carries the passlib WARNING. Frontend hot-reloaded all 10 locale files without errors. Landing page renders correctly in TR; lang switcher applies new strings live without missing-key warnings.
+
+### v113 post-review fixes (architect feedback)
+
+Three issues caught by code review and patched in the same window:
+
+1. **Migration script collection name (High).** `backend/scripts/normalize_pr_departments.py` was scanning `purchase_requests`; the runtime collection is `proc_purchase_requests` (per `backend/routers/procurement.py`). Fixed; comment added pointing to the source of truth.
+
+2. **`mobileApprovals.empty` namespace shape (Medium).** TR/EN store `empty` as `{pending, myRequests}` (used by `MobileApprovals.jsx` lines ~263, ~344). The v113 8-language pass had collapsed it to a single string in de/fr/es/it/pt/ru/ar/zh, which would break the nested lookups. Restored as the proper object in all 8 locales with localized strings.
+
+3. **Procurement cancel actions (Medium).** Backend allows `cancelled` transitions for PR (submitted/approved → cancelled) and PO (draft/sent → cancelled), and the v113 page already wired the cancel handler/prompt. The matching action buttons were missing. Added: PR table now shows "Cancel" alongside Approve/Reject (submitted) and ConvertToPo (approved); PO table shows "Cancel" while in draft or sent. New translation key `procurement.{prList,poList}.actions.cancel` injected into all 10 locales.

@@ -1342,7 +1342,22 @@
     "features": "功能",
     "aiTechnology": "AI技术",
     "solutions": "解决方案",
-    "signIn": "登录"
+    "signIn": "登录",
+    "footer": {
+      "tagline": "土耳其最受欢迎的酒店管理系统。简洁、智能、强大。",
+      "productHeading": "产品",
+      "benefits": "优势",
+      "features": "功能",
+      "pricing": "价格",
+      "companyHeading": "公司",
+      "about": "关于我们",
+      "careers": "招聘",
+      "contactHeading": "联系",
+      "copyright": "© {{year}} Syroce. 版权所有。",
+      "privacy": "隐私",
+      "terms": "使用条款",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "此功能在您的计划中不可用",
@@ -2788,121 +2803,179 @@
     "installmentPaid": "分期标记为已付"
   },
   "mobileInventory": {
-    "title": "Inventory Management",
-    "subtitle": "Mobile View",
+    "title": "库存",
+    "subtitle": "快速库存管理",
     "loading": "Loading stock data...",
     "errors": {
-      "loadFailed": "Failed to load stock data",
+      "loadFailed": "加载库存失败",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock"
+      "updateFailed": "Failed to update stock",
+      "saveFailed": "保存失败"
     },
     "success": {
       "adjusted": "Stock updated successfully"
     },
     "stats": {
-      "total": "Total",
+      "total": "总计",
       "good": "Good",
-      "low": "Low",
-      "outOfStock": "Out"
+      "low": "偏低",
+      "outOfStock": "Out",
+      "value": "价值"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
     "showLowOnly": "Show only low stock items",
-    "empty": "No stock records found",
+    "empty": "无库存项",
     "current": "Current Stock",
     "minimum": "Minimum",
     "lowStockWarning": "Stock low! Order required",
     "adjust": "Adjust Stock",
     "alertsModal": {
-      "title": "Low Stock Alerts",
+      "title": "库存预警",
       "urgency": {
         "critical": "CRITICAL",
-        "high": "HIGH",
-        "medium": "MEDIUM"
+        "high": "高",
+        "medium": "中",
+        "low": "低"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order"
+      "recommendedOrder": "Recommended order",
+      "empty": "暂无预警",
+      "current": "当前",
+      "needed": "所需",
+      "createPR": "创建请购单"
     },
     "movementsModal": {
-      "title": "Stock Movements (Last 7 Days)"
+      "title": "出入库",
+      "empty": "暂无记录",
+      "in": "入库",
+      "out": "出库",
+      "by": "操作人"
     },
     "adjustModal": {
-      "title": "Adjust Stock",
+      "title": "调整库存",
       "currentLabel": "Current",
-      "type": "Operation Type",
+      "type": "类型",
       "typeIn": "In (+)",
       "typeOut": "Out (-)",
       "typeAdjustment": "Adjustment (Set)",
       "quantity": "Quantity",
       "quantityPlaceholder": "Enter quantity",
-      "reason": "Reason *",
+      "reason": "原因",
       "reasonSelect": "Select...",
       "reasons": {
         "supplier": "Supplier delivery",
         "fbSale": "F&B sale",
         "waste": "Waste",
-        "return": "Return",
-        "count": "Count adjustment",
-        "other": "Other"
+        "return": "退货",
+        "count": "实盘",
+        "other": "其他",
+        "purchase": "采购",
+        "consumption": "消耗",
+        "damage": "损坏",
+        "theft": "失窃",
+        "expired": "过期"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
-      "cancel": "Cancel",
-      "save": "Save"
+      "cancel": "取消",
+      "save": "保存",
+      "types": {
+        "in": "入库",
+        "out": "出库",
+        "count": "盘点"
+      },
+      "amount": "数量",
+      "note": "备注",
+      "saved": "调整已保存"
+    },
+    "search": "搜索…",
+    "filters": {
+      "all": "全部",
+      "low": "低库存",
+      "out": "缺货"
+    },
+    "lowStockBanner": "{{count}} 项库存偏低",
+    "alertsBtn": "预警",
+    "movementsBtn": "出入库",
+    "adjustBtn": "调整",
+    "qty": "数量",
+    "unit": "单位",
+    "reorderLevel": "再订货点",
+    "actions": {
+      "adjust": "调整",
+      "alerts": "预警",
+      "movements": "出入库"
     }
   },
   "mobileApprovals": {
-    "title": "Approval Mechanism",
-    "subtitle": "Pending Approvals",
-    "loading": "Loading approvals...",
+    "title": "审批",
+    "subtitle": "待审批申请",
+    "loading": "加载中…",
     "errors": {
-      "loadFailed": "Failed to load approvals",
+      "loadFailed": "加载失败",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Rejection reason required"
+      "reasonRequired": "原因必填",
+      "actionFailed": "操作失败"
     },
     "success": {
       "approved": "Request approved",
       "rejected": "Request rejected"
     },
     "types": {
-      "discount": "Discount",
+      "discount": "折扣",
       "priceOverride": "Price Override",
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
-      "refund": "Refund",
-      "compRoom": "Complimentary Room"
+      "refund": "退款",
+      "compRoom": "Complimentary Room",
+      "pr": "采购申请",
+      "po": "采购订单",
+      "expense": "费用",
+      "leave": "休假",
+      "other": "其他"
     },
     "statuses": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected"
+      "pending": "待审",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "cancelled": "已取消"
     },
     "priority": {
       "urgent": "URGENT",
       "high": "High"
     },
     "tabs": {
-      "pending": "Pending",
-      "myRequests": "My Requests"
+      "pending": "待审",
+      "myRequests": "My Requests",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "all": "全部"
     },
-    "urgentBanner": "{{count}} urgent approval(s) waiting!",
+    "urgentBanner": "{{count}} 项紧急",
     "empty": {
-      "pending": "No pending approvals",
-      "myRequests": "You haven't created any requests yet"
+      "pending": "暂无待审批",
+      "myRequests": "您尚未创建任何申请"
     },
     "fields": {
-      "amount": "Amount:",
+      "amount": "金额",
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:"
+      "reason": "Reason:",
+      "requester": "申请人",
+      "department": "部门",
+      "submitted": "提交时间",
+      "type": "类型",
+      "priority": "优先级"
     },
     "actions": {
-      "reject": "Reject",
-      "approve": "Approve",
-      "cancel": "Cancel"
+      "reject": "拒绝",
+      "approve": "批准",
+      "cancel": "Cancel",
+      "viewDetails": "详情"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -2915,14 +2988,30 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes..."
+      "notesPlaceholder": "Additional notes...",
+      "title": "审批申请",
+      "comment": "备注（可选）",
+      "rejectReason": "拒绝原因（必填）",
+      "cancel": "取消",
+      "approve": "批准",
+      "reject": "拒绝"
+    },
+    "priorities": {
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "urgent": "紧急"
+    },
+    "toasts": {
+      "approved": "已批准",
+      "rejected": "已拒绝"
     }
   },
   "frontDeskEnhanced": {
-    "title": "Front Desk",
+    "title": "进阶前台",
     "scanPassport": "Scan Passport",
     "walkInBooking": "Walk-in Booking",
-    "todayArrivals": "Today's Arrivals ({{count}})",
+    "todayArrivals": "今日到达 ({{count}})",
     "alerts": "Alerts",
     "quickCheckin": "Quick Check-in",
     "guest": "Guest",
@@ -2949,7 +3038,41 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed"
+      "checkinFailed": "Guest check-in failed",
+      "created": "已创建到访: {{folio}}",
+      "alertCreated": "提醒已创建",
+      "scanStarted": "扫描开始",
+      "actionFailed": "操作失败"
+    },
+    "subtitle": "自助模式与到访登记",
+    "scanBtn": "扫描证件",
+    "walkInBtn": "到访登记",
+    "noArrivals": "今日无到达",
+    "guestAlerts": {
+      "title": "客人提醒",
+      "vip": "VIP 客人",
+      "blacklist": "黑名单",
+      "frequent": "常客",
+      "noShow": "曾经未到",
+      "complaint": "历史投诉"
+    },
+    "walkIn": {
+      "title": "到访登记",
+      "guestName": "客人姓名",
+      "phone": "电话",
+      "email": "邮箱",
+      "adults": "成人",
+      "children": "儿童",
+      "nights": "晚数",
+      "roomType": "房型",
+      "rate": "价格",
+      "notes": "备注",
+      "cancel": "取消",
+      "create": "创建"
+    },
+    "errors": {
+      "loadFailed": "加载失败",
+      "guestNameRequired": "请填写客人姓名"
     }
   },
   "procurement": {
@@ -2965,6 +3088,226 @@
         "administration": "Administration",
         "other": "Other"
       }
+    },
+    "errors": {
+      "loadFailed": "加载采购数据失败",
+      "nameRequired": "名称必填（≥2 个字符）",
+      "saveFailed": "保存失败",
+      "deleteFailed": "删除失败",
+      "createFailed": "创建失败",
+      "updateFailed": "更新失败",
+      "departmentLineRequired": "需要部门和至少一行明细",
+      "supplierLineRequired": "需要供应商和至少一行明细",
+      "reasonMinLen": "原因至少 5 个字符",
+      "leastOneQty": "至少为一行明细输入数量",
+      "grnFailed": "收货失败",
+      "poLoadFailed": "加载订单失败"
+    },
+    "toasts": {
+      "supplierUpdated": "供应商已更新",
+      "supplierAdded": "已添加供应商",
+      "supplierDeleted": "已删除",
+      "prCreated": "请购单已创建",
+      "statusUpdated": "状态已更新",
+      "poCreated": "采购订单已创建",
+      "grnCreated": "收货单 {{no}} 已创建 — 订单：{{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "删除该供应商？",
+      "rejectReason": "拒绝原因（≥5 字符）：",
+      "cancelReason": "取消原因（≥5 字符）："
+    },
+    "header": {
+      "title": "采购与供应",
+      "subtitle": "供应商、请购单（PR）、采购订单（PO）、收货（GRN）。",
+      "refresh": "刷新"
+    },
+    "summary": {
+      "activeSuppliers": "活跃供应商",
+      "pendingPR": "待审 PR",
+      "approvedPR": "已批准 PR",
+      "openPO": "未结 PO",
+      "completedPO": "已完成 PO",
+      "openAmount": "未结金额"
+    },
+    "tabs": {
+      "prs": "请购单",
+      "pos": "采购订单",
+      "suppliers": "供应商"
+    },
+    "prStatuses": {
+      "draft": "草稿",
+      "submitted": "已提交",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "cancelled": "已取消",
+      "converted": "已转为 PO"
+    },
+    "poStatuses": {
+      "draft": "草稿",
+      "sent": "已发送",
+      "partially_received": "部分收货",
+      "received": "全部收货",
+      "cancelled": "已取消",
+      "closed": "已关闭"
+    },
+    "prList": {
+      "title": "请购单",
+      "description": "部门请购流程、审批和转为采购订单。",
+      "newPR": "新建请购",
+      "columns": {
+        "no": "编号",
+        "department": "部门",
+        "requester": "申请人",
+        "items": "物料",
+        "estimated": "预估",
+        "status": "状态",
+        "action": "操作"
+      },
+      "empty": "暂无请购",
+      "actions": {
+        "send": "提交",
+        "approve": "批准",
+        "reject": "拒绝",
+        "convertToPo": "转为 PO",
+        "history": "历史",
+        "cancel": "取消"
+      }
+    },
+    "poList": {
+      "title": "采购订单",
+      "description": "发送给供应商的订单及收货跟踪。",
+      "newPO": "新建订单",
+      "columns": {
+        "no": "编号",
+        "supplier": "供应商",
+        "items": "物料",
+        "amount": "金额",
+        "status": "状态",
+        "action": "操作"
+      },
+      "empty": "暂无订单",
+      "actions": {
+        "details": "详情",
+        "send": "提交",
+        "receiveGoods": "收货",
+        "close": "关闭",
+        "history": "历史",
+        "cancel": "取消"
+      }
+    },
+    "supplierList": {
+      "title": "供应商",
+      "description": "供应商主数据 — 类别、付款条件、税号。",
+      "newSupplier": "新增供应商",
+      "columns": {
+        "code": "代码",
+        "name": "名称",
+        "taxNo": "税号",
+        "contact": "联系人",
+        "paymentDays": "账期",
+        "status": "状态",
+        "action": "操作"
+      },
+      "empty": "暂无供应商",
+      "daysSuffix": "天",
+      "active": "启用",
+      "inactive": "停用",
+      "edit": "编辑"
+    },
+    "supplierModal": {
+      "titleNew": "新增供应商",
+      "titleEdit": "编辑供应商",
+      "name": "名称 *",
+      "code": "代码",
+      "taxNo": "税号",
+      "contact": "联系人",
+      "email": "邮箱",
+      "phone": "电话",
+      "address": "地址",
+      "paymentTerms": "付款条件（天）",
+      "categories": "类别（逗号分隔）",
+      "active": "启用",
+      "notes": "备注",
+      "cancel": "取消",
+      "save": "保存"
+    },
+    "prModalForm": {
+      "title": "新建请购单",
+      "department": "部门 *",
+      "requester": "申请人",
+      "neededBy": "需求日期",
+      "notes": "备注",
+      "items": "明细",
+      "addItem": "新增",
+      "itemHeader": "物料",
+      "skuHeader": "SKU",
+      "qtyHeader": "数量",
+      "unitHeader": "单位",
+      "estUnitHeader": "预估单价",
+      "itemPlaceholder": "从库存选择或输入…",
+      "datalistAvailable": "可用",
+      "hint": "提示：在物料字段中输入即可获得库存建议，单位和价格将自动填充。",
+      "cancel": "取消",
+      "create": "创建请购",
+      "seedNote": "{{name}} 库存已低于临界值。"
+    },
+    "poModal": {
+      "titleNew": "新建订单",
+      "titleFromPR": "由请购转单",
+      "supplier": "供应商 *",
+      "supplierSelect": "— 选择 —",
+      "expectedDelivery": "预计交付",
+      "taxRate": "税率 %",
+      "items": "明细",
+      "addItem": "新增",
+      "itemHeader": "物料",
+      "skuHeader": "SKU",
+      "qtyHeader": "数量",
+      "unitHeader": "单位",
+      "unitPriceHeader": "单价",
+      "totalHeader": "合计",
+      "itemPlaceholder": "从库存选择或输入…",
+      "subtotal": "小计：",
+      "vat": "税额（{{rate}}%）：",
+      "grandTotal": "总计：",
+      "cancel": "取消",
+      "create": "创建订单"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "状态：",
+      "expected": "预计：",
+      "total": "合计：",
+      "items": "明细",
+      "itemHeader": "物料",
+      "orderedHeader": "订",
+      "receivedHeader": "已收",
+      "remainingHeader": "未收",
+      "unitHeader": "单位",
+      "totalHeader": "合计",
+      "grnNotes": "收货记录",
+      "grnSummary": "{{count}} 行 · {{user}}",
+      "receiveGoods": "收货",
+      "history": "历史"
+    },
+    "grnModal": {
+      "title": "收货 — PO {{no}}",
+      "supplier": "供应商：",
+      "itemHeader": "物料",
+      "orderedHeader": "订",
+      "previousHeader": "之前",
+      "thisShipmentHeader": "本次到货",
+      "qcHeader": "QC",
+      "noteHeader": "备注",
+      "qc": {
+        "accepted": "接受",
+        "partial": "部分",
+        "rejected": "拒收"
+      },
+      "generalNote": "总体备注",
+      "cancel": "取消",
+      "confirm": "确认收货"
     }
   }
 }

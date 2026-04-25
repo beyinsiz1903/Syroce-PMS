@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowRight, Check, TrendingUp, Smile, Clock, ShieldCheck,
   Calendar, Users, BarChart3, Sparkles, Star, Phone, Mail
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button';
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -375,26 +377,26 @@ const LandingPage = () => {
             <div>
               <img src="/syroce-logo.svg" alt="Syroce" className="h-9 w-auto mb-4 brightness-0 invert" />
               <p className="text-sm text-gray-400 leading-relaxed">
-                Türkiye'nin en sevilen otel yönetim sistemi. Sade, akıllı, güçlü.
+                {t('landing.footer.tagline')}
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-white mb-3 text-sm">Ürün</h4>
+              <h4 className="font-semibold text-white mb-3 text-sm">{t('landing.footer.productHeading')}</h4>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li><a href="#avantajlar" className="hover:text-white">Avantajlar</a></li>
-                <li><a href="#ozellikler" className="hover:text-white">Özellikler</a></li>
-                <li><a href="#fiyatlar" className="hover:text-white">Fiyatlar</a></li>
+                <li><a href="#avantajlar" className="hover:text-white">{t('landing.footer.benefits')}</a></li>
+                <li><a href="#ozellikler" className="hover:text-white">{t('landing.footer.features')}</a></li>
+                <li><a href="#fiyatlar" className="hover:text-white">{t('landing.footer.pricing')}</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-white mb-3 text-sm">Şirket</h4>
+              <h4 className="font-semibold text-white mb-3 text-sm">{t('landing.footer.companyHeading')}</h4>
               <ul className="space-y-2 text-sm text-gray-400">
                 <li>
                   <a
                     href="mailto:destek@syroce.com?subject=Hakk%C4%B1m%C4%B1zda%20bilgi%20talebi"
                     className="hover:text-white"
                   >
-                    Hakkımızda
+                    {t('landing.footer.about')}
                   </a>
                 </li>
                 <li>
@@ -402,13 +404,13 @@ const LandingPage = () => {
                     href="mailto:kariyer@syroce.com?subject=Kariyer%20ba%C5%9Fvurusu"
                     className="hover:text-white"
                   >
-                    Kariyer
+                    {t('landing.footer.careers')}
                   </a>
                 </li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-white mb-3 text-sm">İletişim</h4>
+              <h4 className="font-semibold text-white mb-3 text-sm">{t('landing.footer.contactHeading')}</h4>
               <ul className="space-y-2 text-sm text-gray-400">
                 <li className="flex items-center gap-2"><Mail className="w-4 h-4" /> destek@syroce.com</li>
                 <li className="flex items-center gap-2"><Phone className="w-4 h-4" /> 0 (850) 000 00 00</li>
@@ -416,11 +418,11 @@ const LandingPage = () => {
             </div>
           </div>
           <div className="border-t border-gray-800 pt-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-gray-500">
-            <p>© {new Date().getFullYear()} Syroce. Tüm hakları saklıdır.</p>
+            <p>{t('landing.footer.copyright', { year: new Date().getFullYear() })}</p>
             <div className="flex gap-5">
-              <a href="/privacy-policy" className="hover:text-white">Gizlilik</a>
-              <a href="/privacy-policy" className="hover:text-white">Kullanım Şartları</a>
-              <a href="/privacy-policy#kvkk" className="hover:text-white">KVKK</a>
+              <a href="/privacy-policy" className="hover:text-white">{t('landing.footer.privacy')}</a>
+              <a href="/privacy-policy" className="hover:text-white">{t('landing.footer.terms')}</a>
+              <a href="/privacy-policy#kvkk" className="hover:text-white">{t('landing.footer.kvkk')}</a>
             </div>
           </div>
         </div>

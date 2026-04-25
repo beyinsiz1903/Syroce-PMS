@@ -1342,7 +1342,22 @@
     "features": "Features",
     "aiTechnology": "AI Technology",
     "solutions": "Solutions",
-    "signIn": "Iniciar sesión"
+    "signIn": "Iniciar sesión",
+    "footer": {
+      "tagline": "El sistema de gestión hotelera más querido en Turquía. Simple, inteligente, potente.",
+      "productHeading": "Producto",
+      "benefits": "Beneficios",
+      "features": "Funciones",
+      "pricing": "Precios",
+      "companyHeading": "Empresa",
+      "about": "Sobre nosotros",
+      "careers": "Carreras",
+      "contactHeading": "Contacto",
+      "copyright": "© {{year}} Syroce. Todos los derechos reservados.",
+      "privacy": "Privacidad",
+      "terms": "Términos de uso",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "Esta función no está disponible en tu plan",
@@ -2788,14 +2803,15 @@
     "installmentPaid": "Cuota marcada como pagada"
   },
   "mobileInventory": {
-    "title": "Inventory Management",
-    "subtitle": "Mobile View",
+    "title": "Inventario",
+    "subtitle": "Gestión rápida de stock",
     "loading": "Loading stock data...",
     "errors": {
-      "loadFailed": "Failed to load stock data",
+      "loadFailed": "Error al cargar inventario",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock"
+      "updateFailed": "Failed to update stock",
+      "saveFailed": "Error al guardar"
     },
     "success": {
       "adjusted": "Stock updated successfully"
@@ -2803,106 +2819,163 @@
     "stats": {
       "total": "Total",
       "good": "Good",
-      "low": "Low",
-      "outOfStock": "Out"
+      "low": "Bajo",
+      "outOfStock": "Out",
+      "value": "Valor"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
     "showLowOnly": "Show only low stock items",
-    "empty": "No stock records found",
+    "empty": "Sin artículos",
     "current": "Current Stock",
     "minimum": "Minimum",
     "lowStockWarning": "Stock low! Order required",
     "adjust": "Adjust Stock",
     "alertsModal": {
-      "title": "Low Stock Alerts",
+      "title": "Alertas de inventario",
       "urgency": {
         "critical": "CRITICAL",
-        "high": "HIGH",
-        "medium": "MEDIUM"
+        "high": "Alta",
+        "medium": "Media",
+        "low": "Baja"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order"
+      "recommendedOrder": "Recommended order",
+      "empty": "Sin alertas activas",
+      "current": "Actual",
+      "needed": "Necesario",
+      "createPR": "Crear solicitud"
     },
     "movementsModal": {
-      "title": "Stock Movements (Last 7 Days)"
+      "title": "Movimientos",
+      "empty": "Sin movimientos",
+      "in": "Entrada",
+      "out": "Salida",
+      "by": "Por"
     },
     "adjustModal": {
-      "title": "Adjust Stock",
+      "title": "Ajustar inventario",
       "currentLabel": "Current",
-      "type": "Operation Type",
+      "type": "Tipo",
       "typeIn": "In (+)",
       "typeOut": "Out (-)",
       "typeAdjustment": "Adjustment (Set)",
       "quantity": "Quantity",
       "quantityPlaceholder": "Enter quantity",
-      "reason": "Reason *",
+      "reason": "Motivo",
       "reasonSelect": "Select...",
       "reasons": {
         "supplier": "Supplier delivery",
         "fbSale": "F&B sale",
         "waste": "Waste",
-        "return": "Return",
-        "count": "Count adjustment",
-        "other": "Other"
+        "return": "Devolución",
+        "count": "Recuento físico",
+        "other": "Otro",
+        "purchase": "Compra",
+        "consumption": "Consumo",
+        "damage": "Daño",
+        "theft": "Robo",
+        "expired": "Caducado"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
-      "cancel": "Cancel",
-      "save": "Save"
+      "cancel": "Cancelar",
+      "save": "Guardar",
+      "types": {
+        "in": "Entrada",
+        "out": "Consumo",
+        "count": "Recuento"
+      },
+      "amount": "Cantidad",
+      "note": "Nota",
+      "saved": "Ajuste guardado"
+    },
+    "search": "Buscar…",
+    "filters": {
+      "all": "Todos",
+      "low": "Stock bajo",
+      "out": "Agotado"
+    },
+    "lowStockBanner": "{{count}} artículo(s) con stock bajo",
+    "alertsBtn": "Alertas",
+    "movementsBtn": "Movimientos",
+    "adjustBtn": "Ajustar",
+    "qty": "Cantidad",
+    "unit": "Unidad",
+    "reorderLevel": "Punto de reorden",
+    "actions": {
+      "adjust": "Ajustar",
+      "alerts": "Alertas",
+      "movements": "Movimientos"
     }
   },
   "mobileApprovals": {
-    "title": "Approval Mechanism",
-    "subtitle": "Pending Approvals",
-    "loading": "Loading approvals...",
+    "title": "Aprobaciones",
+    "subtitle": "Solicitudes pendientes",
+    "loading": "Cargando…",
     "errors": {
-      "loadFailed": "Failed to load approvals",
+      "loadFailed": "Error al cargar",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Rejection reason required"
+      "reasonRequired": "El motivo es obligatorio",
+      "actionFailed": "Acción fallida"
     },
     "success": {
       "approved": "Request approved",
       "rejected": "Request rejected"
     },
     "types": {
-      "discount": "Discount",
+      "discount": "Descuento",
       "priceOverride": "Price Override",
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
-      "refund": "Refund",
-      "compRoom": "Complimentary Room"
+      "refund": "Reembolso",
+      "compRoom": "Complimentary Room",
+      "pr": "Solicitud de compra",
+      "po": "Orden de compra",
+      "expense": "Gasto",
+      "leave": "Permiso",
+      "other": "Otro"
     },
     "statuses": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected"
+      "pending": "Pendiente",
+      "approved": "Aprobada",
+      "rejected": "Rechazada",
+      "cancelled": "Cancelada"
     },
     "priority": {
       "urgent": "URGENT",
       "high": "High"
     },
     "tabs": {
-      "pending": "Pending",
-      "myRequests": "My Requests"
+      "pending": "Pendientes",
+      "myRequests": "My Requests",
+      "approved": "Aprobadas",
+      "rejected": "Rechazadas",
+      "all": "Todas"
     },
-    "urgentBanner": "{{count}} urgent approval(s) waiting!",
+    "urgentBanner": "{{count}} urgente(s)",
     "empty": {
-      "pending": "No pending approvals",
-      "myRequests": "You haven't created any requests yet"
+      "pending": "Sin aprobaciones pendientes",
+      "myRequests": "Aún no ha creado solicitudes"
     },
     "fields": {
-      "amount": "Amount:",
+      "amount": "Importe",
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:"
+      "reason": "Reason:",
+      "requester": "Solicitante",
+      "department": "Departamento",
+      "submitted": "Enviada",
+      "type": "Tipo",
+      "priority": "Prioridad"
     },
     "actions": {
-      "reject": "Reject",
-      "approve": "Approve",
-      "cancel": "Cancel"
+      "reject": "Rechazar",
+      "approve": "Aprobar",
+      "cancel": "Cancel",
+      "viewDetails": "Detalles"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -2915,14 +2988,30 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes..."
+      "notesPlaceholder": "Additional notes...",
+      "title": "Revisar solicitud",
+      "comment": "Comentario (opcional)",
+      "rejectReason": "Motivo del rechazo (obligatorio)",
+      "cancel": "Cancelar",
+      "approve": "Aprobar",
+      "reject": "Rechazar"
+    },
+    "priorities": {
+      "low": "Baja",
+      "medium": "Media",
+      "high": "Alta",
+      "urgent": "Urgente"
+    },
+    "toasts": {
+      "approved": "Aprobada",
+      "rejected": "Rechazada"
     }
   },
   "frontDeskEnhanced": {
-    "title": "Front Desk",
+    "title": "Recepción avanzada",
     "scanPassport": "Scan Passport",
     "walkInBooking": "Walk-in Booking",
-    "todayArrivals": "Today's Arrivals ({{count}})",
+    "todayArrivals": "Llegadas de hoy ({{count}})",
     "alerts": "Alerts",
     "quickCheckin": "Quick Check-in",
     "guest": "Guest",
@@ -2949,7 +3038,41 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed"
+      "checkinFailed": "Guest check-in failed",
+      "created": "Sin reserva creada: {{folio}}",
+      "alertCreated": "Alerta creada",
+      "scanStarted": "Escaneo iniciado",
+      "actionFailed": "Acción fallida"
+    },
+    "subtitle": "Modo quiosco y sin reserva",
+    "scanBtn": "Escanear documento",
+    "walkInBtn": "Sin reserva",
+    "noArrivals": "Hoy no hay llegadas",
+    "guestAlerts": {
+      "title": "Alertas de cliente",
+      "vip": "Cliente VIP",
+      "blacklist": "Lista negra",
+      "frequent": "Cliente frecuente",
+      "noShow": "Ausencia previa",
+      "complaint": "Reclamación previa"
+    },
+    "walkIn": {
+      "title": "Reserva sin cita",
+      "guestName": "Nombre del cliente",
+      "phone": "Teléfono",
+      "email": "Correo",
+      "adults": "Adultos",
+      "children": "Niños",
+      "nights": "Noches",
+      "roomType": "Tipo de habitación",
+      "rate": "Tarifa",
+      "notes": "Notas",
+      "cancel": "Cancelar",
+      "create": "Crear"
+    },
+    "errors": {
+      "loadFailed": "Error al cargar",
+      "guestNameRequired": "Nombre del cliente requerido"
     }
   },
   "procurement": {
@@ -2965,6 +3088,226 @@
         "administration": "Administration",
         "other": "Other"
       }
+    },
+    "errors": {
+      "loadFailed": "Error al cargar datos de compras",
+      "nameRequired": "Nombre obligatorio (≥2 caracteres)",
+      "saveFailed": "Error al guardar",
+      "deleteFailed": "Error al eliminar",
+      "createFailed": "Error al crear",
+      "updateFailed": "Error al actualizar",
+      "departmentLineRequired": "Departamento y al menos una línea requeridos",
+      "supplierLineRequired": "Proveedor y al menos una línea requeridos",
+      "reasonMinLen": "El motivo debe tener al menos 5 caracteres",
+      "leastOneQty": "Indique cantidad para al menos una línea",
+      "grnFailed": "Recepción de mercancía falló",
+      "poLoadFailed": "Error al cargar la orden"
+    },
+    "toasts": {
+      "supplierUpdated": "Proveedor actualizado",
+      "supplierAdded": "Proveedor añadido",
+      "supplierDeleted": "Eliminado",
+      "prCreated": "Solicitud creada",
+      "statusUpdated": "Estado actualizado",
+      "poCreated": "Orden creada",
+      "grnCreated": "GRN {{no}} creado — OC: {{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "¿Eliminar proveedor?",
+      "rejectReason": "Motivo de rechazo (≥5 caracteres):",
+      "cancelReason": "Motivo de cancelación (≥5 caracteres):"
+    },
+    "header": {
+      "title": "Compras y Suministros",
+      "subtitle": "Proveedores, solicitudes (PR), órdenes (PO), recepción (GRN).",
+      "refresh": "Actualizar"
+    },
+    "summary": {
+      "activeSuppliers": "Proveedores activos",
+      "pendingPR": "PR pendientes",
+      "approvedPR": "PR aprobadas",
+      "openPO": "PO abiertas",
+      "completedPO": "PO completadas",
+      "openAmount": "Importe abierto"
+    },
+    "tabs": {
+      "prs": "PRs",
+      "pos": "POs",
+      "suppliers": "Proveedores"
+    },
+    "prStatuses": {
+      "draft": "Borrador",
+      "submitted": "Enviada",
+      "approved": "Aprobada",
+      "rejected": "Rechazada",
+      "cancelled": "Cancelada",
+      "converted": "Convertida a PO"
+    },
+    "poStatuses": {
+      "draft": "Borrador",
+      "sent": "Enviada",
+      "partially_received": "Recibida parcialmente",
+      "received": "Recibida totalmente",
+      "cancelled": "Cancelada",
+      "closed": "Cerrada"
+    },
+    "prList": {
+      "title": "Solicitudes de compra",
+      "description": "Flujo de solicitudes departamentales, aprobación y conversión a PO.",
+      "newPR": "Nueva solicitud",
+      "columns": {
+        "no": "Nº",
+        "department": "Departamento",
+        "requester": "Solicitante",
+        "items": "Artículo",
+        "estimated": "Estimado",
+        "status": "Estado",
+        "action": "Acción"
+      },
+      "empty": "Sin solicitudes",
+      "actions": {
+        "send": "Enviar",
+        "approve": "Aprobar",
+        "reject": "Rechazar",
+        "convertToPo": "Convertir a PO",
+        "history": "Historial",
+        "cancel": "Cancelar"
+      }
+    },
+    "poList": {
+      "title": "Órdenes de compra",
+      "description": "Órdenes enviadas a proveedores y seguimiento de recepción.",
+      "newPO": "Nueva orden",
+      "columns": {
+        "no": "Nº",
+        "supplier": "Proveedor",
+        "items": "Artículo",
+        "amount": "Importe",
+        "status": "Estado",
+        "action": "Acción"
+      },
+      "empty": "Sin órdenes",
+      "actions": {
+        "details": "Detalles",
+        "send": "Enviar",
+        "receiveGoods": "Recibir mercancía",
+        "close": "Cerrar",
+        "history": "Historial",
+        "cancel": "Cancelar"
+      }
+    },
+    "supplierList": {
+      "title": "Proveedores",
+      "description": "Maestro de proveedores — categoría, plazo de pago, NIF.",
+      "newSupplier": "Nuevo proveedor",
+      "columns": {
+        "code": "Código",
+        "name": "Nombre",
+        "taxNo": "NIF",
+        "contact": "Contacto",
+        "paymentDays": "Plazo",
+        "status": "Estado",
+        "action": "Acción"
+      },
+      "empty": "Sin proveedores",
+      "daysSuffix": "días",
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "edit": "Editar"
+    },
+    "supplierModal": {
+      "titleNew": "Nuevo proveedor",
+      "titleEdit": "Editar proveedor",
+      "name": "Nombre *",
+      "code": "Código",
+      "taxNo": "NIF",
+      "contact": "Persona de contacto",
+      "email": "Email",
+      "phone": "Teléfono",
+      "address": "Dirección",
+      "paymentTerms": "Plazo de pago (días)",
+      "categories": "Categorías (separadas por coma)",
+      "active": "Activo",
+      "notes": "Notas",
+      "cancel": "Cancelar",
+      "save": "Guardar"
+    },
+    "prModalForm": {
+      "title": "Nueva solicitud de compra",
+      "department": "Departamento *",
+      "requester": "Solicitante",
+      "neededBy": "Fecha necesaria",
+      "notes": "Notas",
+      "items": "Artículos",
+      "addItem": "Añadir",
+      "itemHeader": "Artículo",
+      "skuHeader": "SKU",
+      "qtyHeader": "Cant.",
+      "unitHeader": "Unidad",
+      "estUnitHeader": "Precio unit. est.",
+      "itemPlaceholder": "Seleccionar del stock o escribir…",
+      "datalistAvailable": "Disponible",
+      "hint": "Consejo: escriba en el campo del artículo para obtener sugerencias de su stock. La unidad y el precio se rellenan automáticamente.",
+      "cancel": "Cancelar",
+      "create": "Crear solicitud",
+      "seedNote": "El stock de {{name}} cayó por debajo del nivel crítico."
+    },
+    "poModal": {
+      "titleNew": "Nueva orden",
+      "titleFromPR": "Orden desde solicitud",
+      "supplier": "Proveedor *",
+      "supplierSelect": "— Seleccionar —",
+      "expectedDelivery": "Entrega prevista",
+      "taxRate": "IVA %",
+      "items": "Artículos",
+      "addItem": "Añadir",
+      "itemHeader": "Artículo",
+      "skuHeader": "SKU",
+      "qtyHeader": "Cant.",
+      "unitHeader": "Unidad",
+      "unitPriceHeader": "Precio unitario",
+      "totalHeader": "Total",
+      "itemPlaceholder": "Seleccionar del stock o escribir…",
+      "subtotal": "Subtotal:",
+      "vat": "IVA ({{rate}}%):",
+      "grandTotal": "Total general:",
+      "cancel": "Cancelar",
+      "create": "Crear orden"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "Estado:",
+      "expected": "Previsto:",
+      "total": "Total:",
+      "items": "Artículos",
+      "itemHeader": "Artículo",
+      "orderedHeader": "Ped.",
+      "receivedHeader": "Recibido",
+      "remainingHeader": "Resto",
+      "unitHeader": "Unidad",
+      "totalHeader": "Total",
+      "grnNotes": "Notas de recepción",
+      "grnSummary": "{{count}} artículo(s) · {{user}}",
+      "receiveGoods": "Recibir mercancía",
+      "history": "Historial"
+    },
+    "grnModal": {
+      "title": "Recepción — PO {{no}}",
+      "supplier": "Proveedor:",
+      "itemHeader": "Artículo",
+      "orderedHeader": "Ped.",
+      "previousHeader": "Anterior",
+      "thisShipmentHeader": "Este envío",
+      "qcHeader": "QC",
+      "noteHeader": "Nota",
+      "qc": {
+        "accepted": "Aceptado",
+        "partial": "Parcial",
+        "rejected": "Rechazado"
+      },
+      "generalNote": "Nota general",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar recepción"
     }
   }
 }

@@ -1342,7 +1342,22 @@
     "features": "Özellikler",
     "aiTechnology": "AI Teknolojisi",
     "solutions": "Çözümler",
-    "signIn": "Giriş Yap"
+    "signIn": "Giriş Yap",
+    "footer": {
+      "tagline": "Türkiye'nin en sevilen otel yönetim sistemi. Sade, akıllı, güçlü.",
+      "productHeading": "Ürün",
+      "benefits": "Avantajlar",
+      "features": "Özellikler",
+      "pricing": "Fiyatlar",
+      "companyHeading": "Şirket",
+      "about": "Hakkımızda",
+      "careers": "Kariyer",
+      "contactHeading": "İletişim",
+      "copyright": "© {{year}} Syroce. Tüm hakları saklıdır.",
+      "privacy": "Gizlilik",
+      "terms": "Kullanım Şartları",
+      "kvkk": "KVKK"
+    }
   },
   "notAvailable": {
     "title": "Bu özellik paketinizde mevcut değil",
@@ -2965,6 +2980,226 @@
         "administration": "Yönetim",
         "other": "Diğer"
       }
+    },
+    "errors": {
+      "loadFailed": "Satınalma verileri alınamadı",
+      "nameRequired": "İsim zorunlu (≥2 karakter)",
+      "saveFailed": "Kaydedilemedi",
+      "deleteFailed": "Silinemedi",
+      "createFailed": "Oluşturulamadı",
+      "updateFailed": "Güncellenemedi",
+      "departmentLineRequired": "Departman ve en az bir kalem gerekli",
+      "supplierLineRequired": "Tedarikçi ve en az bir kalem gerekli",
+      "reasonMinLen": "Neden en az 5 karakter olmalı",
+      "leastOneQty": "En az bir kalem için miktar girin",
+      "grnFailed": "Mal kabul yapılamadı",
+      "poLoadFailed": "PO yüklenemedi"
+    },
+    "toasts": {
+      "supplierUpdated": "Tedarikçi güncellendi",
+      "supplierAdded": "Tedarikçi eklendi",
+      "supplierDeleted": "Silindi",
+      "prCreated": "Talep oluşturuldu",
+      "statusUpdated": "Durum güncellendi",
+      "poCreated": "Sipariş oluşturuldu",
+      "grnCreated": "GRN {{no}} oluşturuldu — PO: {{status}}"
+    },
+    "prompts": {
+      "confirmDeleteSupplier": "Tedarikçi silinsin mi?",
+      "rejectReason": "Red nedeni (≥5 karakter):",
+      "cancelReason": "İptal nedeni (≥5 karakter):"
+    },
+    "header": {
+      "title": "Satınalma & Tedarik",
+      "subtitle": "Tedarikçiler, satınalma talebi (PR), sipariş (PO), mal kabul (GRN).",
+      "refresh": "Yenile"
+    },
+    "summary": {
+      "activeSuppliers": "Aktif Tedarikçi",
+      "pendingPR": "Bekleyen PR",
+      "approvedPR": "Onaylı PR",
+      "openPO": "Açık PO",
+      "completedPO": "Tamamlanan PO",
+      "openAmount": "Açık Tutar"
+    },
+    "tabs": {
+      "prs": "PRs",
+      "pos": "POs",
+      "suppliers": "Tedarikçiler"
+    },
+    "prStatuses": {
+      "draft": "Taslak",
+      "submitted": "Gönderildi",
+      "approved": "Onaylandı",
+      "rejected": "Red",
+      "cancelled": "İptal",
+      "converted": "POya Dönüştü"
+    },
+    "poStatuses": {
+      "draft": "Taslak",
+      "sent": "Gönderildi",
+      "partially_received": "Kısmi Alındı",
+      "received": "Tamamı Alındı",
+      "cancelled": "İptal",
+      "closed": "Kapalı"
+    },
+    "prList": {
+      "title": "Satınalma Talepleri",
+      "description": "Departmanların talep akışı, onay ve POya dönüştürme.",
+      "newPR": "Yeni Talep",
+      "columns": {
+        "no": "No",
+        "department": "Departman",
+        "requester": "Talep Eden",
+        "items": "Kalem",
+        "estimated": "Tahmini",
+        "status": "Durum",
+        "action": "İşlem"
+      },
+      "empty": "Talep yok",
+      "actions": {
+        "send": "Gönder",
+        "approve": "Onayla",
+        "reject": "Reddet",
+        "convertToPo": "POya Çevir",
+        "history": "Geçmiş",
+        "cancel": "İptal"
+      }
+    },
+    "poList": {
+      "title": "Satınalma Siparişleri",
+      "description": "Tedarikçiye gönderilen siparişler ve mal kabul takibi.",
+      "newPO": "Yeni Sipariş",
+      "columns": {
+        "no": "No",
+        "supplier": "Tedarikçi",
+        "items": "Kalem",
+        "amount": "Tutar",
+        "status": "Durum",
+        "action": "İşlem"
+      },
+      "empty": "Sipariş yok",
+      "actions": {
+        "details": "Detay",
+        "send": "Gönder",
+        "receiveGoods": "Mal Kabul",
+        "close": "Kapat",
+        "history": "Geçmiş",
+        "cancel": "İptal"
+      }
+    },
+    "supplierList": {
+      "title": "Tedarikçiler",
+      "description": "Vendor master — kategori, ödeme vadesi, vergi no.",
+      "newSupplier": "Yeni Tedarikçi",
+      "columns": {
+        "code": "Kod",
+        "name": "İsim",
+        "taxNo": "Vergi No",
+        "contact": "İletişim",
+        "paymentDays": "Vade",
+        "status": "Durum",
+        "action": "İşlem"
+      },
+      "empty": "Tedarikçi yok",
+      "daysSuffix": "gün",
+      "active": "Aktif",
+      "inactive": "Pasif",
+      "edit": "Düzenle"
+    },
+    "supplierModal": {
+      "titleNew": "Yeni Tedarikçi",
+      "titleEdit": "Tedarikçi Düzenle",
+      "name": "İsim *",
+      "code": "Kod",
+      "taxNo": "Vergi No",
+      "contact": "İletişim Kişisi",
+      "email": "E-posta",
+      "phone": "Telefon",
+      "address": "Adres",
+      "paymentTerms": "Ödeme Vadesi (gün)",
+      "categories": "Kategoriler (virgülle)",
+      "active": "Aktif",
+      "notes": "Notlar",
+      "cancel": "Vazgeç",
+      "save": "Kaydet"
+    },
+    "prModalForm": {
+      "title": "Yeni Satınalma Talebi",
+      "department": "Departman *",
+      "requester": "Talep Eden",
+      "neededBy": "İhtiyaç Tarihi",
+      "notes": "Notlar",
+      "items": "Kalemler",
+      "addItem": "Ekle",
+      "itemHeader": "Kalem",
+      "skuHeader": "SKU",
+      "qtyHeader": "Miktar",
+      "unitHeader": "Birim",
+      "estUnitHeader": "Birim Tahmini",
+      "itemPlaceholder": "Stoktan seç veya yaz…",
+      "datalistAvailable": "Mevcut",
+      "hint": "İpucu: Kalem adı kutusuna yazmaya başlayın, stoğunuzdaki kalemler otomatik önerilir. Seçtiğinizde birim ve fiyat otomatik dolar.",
+      "cancel": "Vazgeç",
+      "create": "Talep Oluştur",
+      "seedNote": "{{name}} stoğu kritik seviyenin altına düştü."
+    },
+    "poModal": {
+      "titleNew": "Yeni Sipariş",
+      "titleFromPR": "Talepten Sipariş",
+      "supplier": "Tedarikçi *",
+      "supplierSelect": "— Seç —",
+      "expectedDelivery": "Beklenen Teslimat",
+      "taxRate": "KDV %",
+      "items": "Kalemler",
+      "addItem": "Ekle",
+      "itemHeader": "Kalem",
+      "skuHeader": "SKU",
+      "qtyHeader": "Miktar",
+      "unitHeader": "Birim",
+      "unitPriceHeader": "Birim Fiyat",
+      "totalHeader": "Toplam",
+      "itemPlaceholder": "Stoktan seç veya yaz…",
+      "subtotal": "Ara Toplam:",
+      "vat": "KDV ({{rate}}%):",
+      "grandTotal": "Genel Toplam:",
+      "cancel": "Vazgeç",
+      "create": "Sipariş Oluştur"
+    },
+    "poDetail": {
+      "title": "PO {{no}} — {{supplier}}",
+      "status": "Durum:",
+      "expected": "Beklenen:",
+      "total": "Toplam:",
+      "items": "Kalemler",
+      "itemHeader": "Kalem",
+      "orderedHeader": "Sip.",
+      "receivedHeader": "Alınan",
+      "remainingHeader": "Kalan",
+      "unitHeader": "Birim",
+      "totalHeader": "Toplam",
+      "grnNotes": "Mal Kabul Notları",
+      "grnSummary": "{{count}} kalem · {{user}}",
+      "receiveGoods": "Mal Kabul",
+      "history": "Geçmiş"
+    },
+    "grnModal": {
+      "title": "Mal Kabul — PO {{no}}",
+      "supplier": "Tedarikçi:",
+      "itemHeader": "Kalem",
+      "orderedHeader": "Sip.",
+      "previousHeader": "Önceki",
+      "thisShipmentHeader": "Bu Sevkte",
+      "qcHeader": "QC",
+      "noteHeader": "Not",
+      "qc": {
+        "accepted": "Kabul",
+        "partial": "Kısmi",
+        "rejected": "Red"
+      },
+      "generalNote": "Genel Not",
+      "cancel": "Vazgeç",
+      "confirm": "Mal Kabulü Onayla"
     }
   }
 }
