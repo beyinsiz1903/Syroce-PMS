@@ -373,7 +373,7 @@ const FrontdeskTab = ({
                           </span>
                         </div>
                         <div className="flex items-center gap-1 flex-wrap">
-                          {b.check_in && (
+                          {b.check_in && b.check_out && (
                             <span className="text-[10px] text-gray-500">
                               {new Date(b.check_in).toLocaleDateString('tr-TR')} → {new Date(b.check_out).toLocaleDateString('tr-TR')}
                             </span>
