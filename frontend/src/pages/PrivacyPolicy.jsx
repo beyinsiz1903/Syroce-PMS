@@ -73,8 +73,8 @@ export default function PrivacyPolicy() {
             <p className="mt-1">We retain your personal data for as long as we provide services and as required by legal obligations. When you delete your account, your personal data will be deleted within a reasonable time.</p>
           </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Kullanici Haklari / Your Rights</h2>
+          <section id="kvkk" className="scroll-mt-24">
+            <h2 className="text-xl font-semibold text-gray-900 mb-3">7. KVKK & GDPR — Kullanici Haklari / Your Rights</h2>
             <p>KVKK ve GDPR kapsaminda asagidaki haklara sahipsiniz / Under KVKK and GDPR, you have the right to:</p>
             <ul className="list-disc pl-6 space-y-1 mt-2">
               <li>Verilerinize erisim talep etme / Request access to your data</li>

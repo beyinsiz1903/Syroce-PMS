@@ -352,7 +352,7 @@ const HousekeepingTab = ({
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:shadow-lg transition" onClick={() => toast.info(tc('allTasks'))}>
+        <Card title={tc('allTasks')}>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-gray-700">{housekeepingTasks.length}</div>
             <div className="text-xs text-gray-600">{tc('totalTasks')}</div>

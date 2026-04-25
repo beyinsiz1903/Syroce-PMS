@@ -303,27 +303,26 @@ const AuthPage = ({ onLogin }) => {
               <div className="space-y-4">
                 <div className="text-center">
                   <Shield className="w-10 h-10 mx-auto text-violet-600 mb-2" />
-                  <h3 className="text-lg font-semibold">İki Adımlı Doğrulama</h3>
+                  <h3 className="text-lg font-semibold">{t('auth.twoFATitle')}</h3>
                   <p className="text-sm text-gray-500 mt-1">
                     {twoFAChallenge.user_email}
                   </p>
                   <p className="text-xs text-gray-500 mt-2">
-                    Authenticator uygulamanızdan 6 haneli kodu veya bir
-                    yedek kodu girin.
+                    {t('auth.twoFAHint')}
                   </p>
                 </div>
                 <form onSubmit={handleTwoFAVerify} className="space-y-3">
                   <Input
                     autoFocus
                     autoComplete="one-time-code"
-                    inputMode="numeric"
+                    inputMode="text"
                     placeholder="123 456"
                     value={twoFACode}
                     onChange={(e) => setTwoFACode(e.target.value)}
                     style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.25rem' }}
                   />
                   <Button type="submit" className="w-full" disabled={loading || twoFACode.trim().length < 6}>
-                    {loading ? 'Doğrulanıyor…' : 'Doğrula ve Giriş Yap'}
+                    {loading ? t('auth.twoFAVerifying') : t('auth.twoFAVerifyButton')}
                   </Button>
                   <Button
                     type="button"
@@ -331,7 +330,7 @@ const AuthPage = ({ onLogin }) => {
                     className="w-full"
                     onClick={() => { setTwoFAChallenge(null); setTwoFACode(''); }}
                   >
-                    İptal
+                    {t('auth.twoFACancel')}
                   </Button>
                 </form>
               </div>
@@ -360,14 +359,14 @@ const AuthPage = ({ onLogin }) => {
                     {!showForgotPassword ? (
                       <form onSubmit={handleHotelLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
                         <div>
-                          <Label>E-posta</Label>
+                          <Label>{t('common.email')}</Label>
                           <Input
                             type="email"
                             value={hotelLoginData.email}
                             onChange={(e) => setHotelLoginData({...hotelLoginData, email: e.target.value})}
                             required
                             data-testid="hotel-login-email"
-                            placeholder="ornek@hotel.com"
+                            placeholder={t('auth.emailPlaceholder')}
                             autoCapitalize="none"
                             autoCorrect="off"
                             autoComplete="email"
@@ -383,6 +382,7 @@ const AuthPage = ({ onLogin }) => {
                             required
                             data-testid="hotel-login-password"
                             placeholder="••••••••"
+                            autoComplete="current-password"
                             style={isMobile ? { fontSize: '16px' } : {}}
                           />
                         </div>
@@ -435,7 +435,7 @@ const AuthPage = ({ onLogin }) => {
                                 value={forgotEmail}
                                 onChange={(e) => setForgotEmail(e.target.value)}
                                 required
-                                placeholder="ornek@hotel.com"
+                                placeholder={t('auth.emailPlaceholder')}
                               />
                               <p className="text-xs text-gray-500 mt-1">
                                 {t('auth.sendVerificationCode')}
@@ -479,6 +479,7 @@ const AuthPage = ({ onLogin }) => {
                                 onChange={(e) => setHotelLoginData({...hotelLoginData, password: e.target.value})}
                                 required
                                 placeholder="••••••••"
+                                autoComplete="new-password"
                                 minLength={6}
                               />
                               <p className="text-xs text-gray-500 mt-1">
@@ -498,17 +499,17 @@ const AuthPage = ({ onLogin }) => {
                     {registrationSuccess ? (
                       <div className="space-y-4 py-4">
                         <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                          <p className="text-sm font-bold text-green-900 mb-2">✅ Hesabınız oluşturuldu!</p>
+                          <p className="text-sm font-bold text-green-900 mb-2">{t('auth.accountCreatedTitle')}</p>
                           <p className="text-xs text-green-800 mb-3">
-                            Bu bilgileri güvenli bir yere kaydedin. Bir sonraki girişinizde gerekecek.
+                            {t('auth.accountCreatedNote')}
                           </p>
                           <div className="bg-white border border-green-300 rounded p-3 space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">Otel ID</span>
+                              <span className="text-xs text-gray-500">{t('auth.hotelIdLabel')}</span>
                               <span className="text-lg font-mono font-bold text-green-700">{registrationSuccess.hotel_id || '—'}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">Kullanıcı Adı</span>
+                              <span className="text-xs text-gray-500">{t('auth.username')}</span>
                               <span className="text-base font-mono font-semibold text-gray-900">{registrationSuccess.username}</span>
                             </div>
                           </div>
@@ -521,7 +522,7 @@ const AuthPage = ({ onLogin }) => {
                             onLogin(s.token, s.user, s.tenant);
                           }}
                         >
-                          Devam Et
+                          {t('auth.continueButton')}
                         </Button>
                       </div>
                     ) : registrationStep === 'form' ? (
@@ -532,7 +533,7 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.property_name}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, property_name: e.target.value})}
                             required
-                            placeholder="Grand Hotel"
+                            placeholder={t('auth.hotelNamePlaceholder')}
                           />
                         </div>
                         <div>
@@ -541,7 +542,7 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.name}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, name: e.target.value})}
                             required
-                            placeholder="Ahmet Yılmaz"
+                            placeholder={t('auth.authorizedPersonPlaceholder')}
                           />
                         </div>
                         <div>
@@ -551,12 +552,12 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.email}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, email: e.target.value})}
                             required
-                            placeholder="ornek@hotel.com"
+                            placeholder={t('auth.emailPlaceholder')}
                           />
-                          <p className="text-xs text-gray-500 mt-1">Şifre sıfırlama e-postaları bu adrese gönderilir.</p>
+                          <p className="text-xs text-gray-500 mt-1">{t('auth.passwordResetEmailNote')}</p>
                         </div>
                         <div>
-                          <Label>Kullanıcı Adı</Label>
+                          <Label>{t('auth.username')}</Label>
                           <Input
                             value={hotelRegisterData.username}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, username: e.target.value.replace(/\s/g, '').toLowerCase()})}
@@ -566,9 +567,9 @@ const AuthPage = ({ onLogin }) => {
                             autoCapitalize="none"
                             autoCorrect="off"
                             pattern="[a-z0-9_.\-]{3,32}"
-                            placeholder="ör. admin"
+                            placeholder={t('auth.usernamePlaceholder')}
                           />
-                          <p className="text-xs text-gray-500 mt-1">Sadece küçük harf, rakam ve _ . - (3-32 karakter).</p>
+                          <p className="text-xs text-gray-500 mt-1">{t('auth.usernameHint')}</p>
                         </div>
                         <div>
                           <Label>{t('common.phone')}</Label>
@@ -576,7 +577,7 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.phone}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, phone: e.target.value})}
                             required
-                            placeholder="+90 555 123 45 67"
+                            placeholder={t('auth.phonePlaceholder')}
                           />
                         </div>
                         <div>
@@ -587,11 +588,12 @@ const AuthPage = ({ onLogin }) => {
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, password: e.target.value})}
                             required
                             minLength={6}
+                            autoComplete="new-password"
                             placeholder={t('auth.minSixCharsPlaceholder')}
                           />
                         </div>
                         <Button type="submit" className="w-full" disabled={loading}>
-                          {loading ? t('common.loading') : 'Hesabımı Oluştur'}
+                          {loading ? t('common.loading') : t('auth.createMyAccountSubmit')}
                         </Button>
                       </form>
                     ) : (
@@ -606,7 +608,7 @@ const AuthPage = ({ onLogin }) => {
                         </div>
                         <form onSubmit={handleVerifyCode} className="space-y-4">
                           <div>
-                            <Label>Doğrulama Kodu</Label>
+                            <Label>{t('auth.verificationCodeLabel')}</Label>
                             <Input
                               type="text"
                               value={verificationCode}
@@ -665,7 +667,7 @@ const AuthPage = ({ onLogin }) => {
                           onChange={(e) => setGuestLoginData({...guestLoginData, email: e.target.value})}
                           required
                           data-testid="guest-login-email"
-                          placeholder="ornek@hotel.com"
+                          placeholder={t('auth.emailPlaceholder')}
                           style={isMobile ? { fontSize: '16px' } : {}}
                         />
                       </div>
@@ -678,6 +680,7 @@ const AuthPage = ({ onLogin }) => {
                           required
                           data-testid="guest-login-password"
                           placeholder="••••••••"
+                          autoComplete="current-password"
                           style={isMobile ? { fontSize: '16px' } : {}}
                         />
                       </div>

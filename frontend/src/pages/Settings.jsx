@@ -938,7 +938,7 @@ const Settings = ({ user, tenant, onLogout }) => {
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="w-5 h-5" /> Ekip Üyesi Ekle</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>İsim *</Label><Input value={newMember.name} onChange={(e) => setNewMember({ ...newMember, name: e.target.value })} placeholder="Ahmet Yılmaz" /></div>
-            <div><Label>Email *</Label><Input type="email" value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder="ahmet@otel.com" /></div>
+            <div><Label>{t('common.email')} *</Label><Input type="email" value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder={t('auth.emailPlaceholder')} /></div>
             <div><Label>Telefon</Label><Input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} placeholder="+905551234567" /></div>
             <div><Label>Şifre *</Label><Input type="password" value={newMember.password} onChange={(e) => setNewMember({ ...newMember, password: e.target.value })} placeholder="Min 6 karakter" /></div>
             <div>

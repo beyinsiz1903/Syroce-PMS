@@ -69,7 +69,18 @@ const CredentialsTab = () => {
                 <Button data-testid={`test-cred-${c.connector_id}`} size="sm" variant="ghost" className="text-emerald-400 h-7 px-2" disabled={actionLoading === `test-${c.connector_id}`} onClick={() => handleTest(c.connector_id)}>
                   {actionLoading === `test-${c.connector_id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
                 </Button>
-                <Button size="sm" variant="ghost" className="text-blue-400 h-7 px-2" onClick={() => toast.info('Credential rotation için yeni degerler gerekli')}><RotateCcw className="w-3 h-3" /></Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-blue-400 h-7 px-2"
+                  title="Rotation için credential'ı silip yeni değerlerle tekrar ekleyin"
+                  onClick={() => toast.info(
+                    "Rotation: Önce bu credential'ı 'Devre dışı bırak' ile silin, ardından yeni değerlerle tekrar ekleyin.",
+                    { duration: 6000 }
+                  )}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </Button>
                 <Button data-testid={`disable-${c.connector_id}`} size="sm" variant="ghost" className="text-red-400 h-7 px-2" disabled={actionLoading === `disable-${c.connector_id}`} onClick={() => handleDisable(c.connector_id)}>
                   {actionLoading === `disable-${c.connector_id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
                 </Button>
