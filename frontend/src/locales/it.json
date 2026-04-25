@@ -2012,7 +2012,22 @@
       "batchDesc": "Selezionare le prenotazioni di gruppo per il check-in di gruppo.",
       "checkinCount": "Registra {{count}} ospiti",
       "dataLoadError": "Impossibile caricare i dati",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "walkInIntro": "Per ospiti senza prenotazione: inserisci prima un numero di camera disponibile, poi completa i dati ed effettua il check-in.",
+      "roomNoPlaceholder": "es. 101",
+      "roomBookable": "✓ Disponibile — {{type}} · piano {{floor}}",
+      "roomBlocked": "✗ Questa camera non è disponibile (stato: {{status}})",
+      "roomNotFoundHint": "Nessuna camera trovata con questo numero. Seleziona una camera disponibile dall’elenco sotto.",
+      "quickPickAvailable": "Camere attualmente disponibili (clicca per selezionare):",
+      "walkInWhatHappens": "Questa azione: crea l’ospite, prenota per oggi e lo registra in camera — tutto in un unico passaggio. L’ospite comparirà nell’elenco “In casa”.",
+      "walkInProcessing": "Elaborazione...",
+      "walkInSuccess": "✓ {{guest}} → check-in in camera {{roomNo}} completato.",
+      "walkInGuestRequired": "Il nome dell’ospite è obbligatorio.",
+      "walkInRoomRequired": "Il numero di camera è obbligatorio.",
+      "walkInRateRequired": "La tariffa per notte deve essere maggiore di 0.",
+      "walkInRoomNotFound": "Camera non trovata: {{roomNo}}",
+      "walkInRoomNotAvailable": "La camera {{roomNo}} non è disponibile (stato: {{status}}).",
+      "walkInBookingFailed": "Check-in walk-in non riuscito."
     },
     "housekeeping": {
       "loading": "Caricamento dati pulizie...",

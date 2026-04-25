@@ -2012,7 +2012,22 @@
       "batchDesc": "Selecione reservas do grupo para check-in em massa.",
       "checkinCount": "Registrar {{count}} hóspedes",
       "dataLoadError": "Não foi possível carregar os dados",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "walkInIntro": "Para hóspedes que chegam sem reserva: insira primeiro um número de quarto disponível, depois complete os dados e faça o check-in.",
+      "roomNoPlaceholder": "ex. 101",
+      "roomBookable": "✓ Disponível — {{type}} · andar {{floor}}",
+      "roomBlocked": "✗ Este quarto não está disponível (status: {{status}})",
+      "roomNotFoundHint": "Nenhum quarto encontrado com esse número. Escolha um da lista de disponíveis abaixo.",
+      "quickPickAvailable": "Quartos disponíveis agora (clique para selecionar):",
+      "walkInWhatHappens": "Esta ação: cria o hóspede, reserva para hoje e faz o check-in no quarto — tudo em uma só etapa. O hóspede aparecerá na lista “Hospedado”.",
+      "walkInProcessing": "Processando...",
+      "walkInSuccess": "✓ {{guest}} → check-in no quarto {{roomNo}} concluído.",
+      "walkInGuestRequired": "Nome do hóspede é obrigatório.",
+      "walkInRoomRequired": "Número do quarto é obrigatório.",
+      "walkInRateRequired": "A diária deve ser maior que 0.",
+      "walkInRoomNotFound": "Quarto não encontrado: {{roomNo}}",
+      "walkInRoomNotAvailable": "Quarto {{roomNo}} não está disponível (status: {{status}}).",
+      "walkInBookingFailed": "Falha no check-in walk-in."
     },
     "housekeeping": {
       "loading": "Carregando dados de governança...",

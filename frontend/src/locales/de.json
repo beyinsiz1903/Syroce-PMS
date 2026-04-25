@@ -2012,7 +2012,22 @@
       "batchDesc": "Wählen Sie Gruppenreservierungen für Sammel-Check-in.",
       "checkinCount": "{{count}} Gäste einchecken",
       "dataLoadError": "Daten konnten nicht geladen werden",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "walkInIntro": "Für Gäste ohne Reservierung: Geben Sie zuerst eine verfügbare Zimmernummer ein, vervollständigen Sie die Daten und checken Sie ein.",
+      "roomNoPlaceholder": "z. B. 101",
+      "roomBookable": "✓ Verfügbar — {{type}} · Etage {{floor}}",
+      "roomBlocked": "✗ Dieses Zimmer ist nicht verfügbar (Status: {{status}})",
+      "roomNotFoundHint": "Keine Zimmernummer gefunden. Wählen Sie ein Zimmer aus der Liste unten.",
+      "quickPickAvailable": "Aktuell verfügbare Zimmer (zum Auswählen klicken):",
+      "walkInWhatHappens": "Diese Aktion: Gast anlegen + heute buchen + ins Zimmer einchecken – alles in einem Schritt. Der Gast erscheint in der „Im Haus“-Liste.",
+      "walkInProcessing": "Wird verarbeitet...",
+      "walkInSuccess": "✓ {{guest}} → in Zimmer {{roomNo}} eingecheckt.",
+      "walkInGuestRequired": "Gastname ist erforderlich.",
+      "walkInRoomRequired": "Zimmernummer ist erforderlich.",
+      "walkInRateRequired": "Übernachtungspreis muss größer als 0 sein.",
+      "walkInRoomNotFound": "Zimmer nicht gefunden: {{roomNo}}",
+      "walkInRoomNotAvailable": "Zimmer {{roomNo}} ist nicht verfügbar (Status: {{status}}).",
+      "walkInBookingFailed": "Walk-in Check-in fehlgeschlagen."
     },
     "housekeeping": {
       "loading": "Housekeeping-Daten werden geladen...",

@@ -2012,7 +2012,22 @@
       "batchDesc": "Sélectionnez les réservations de groupe pour l'enregistrement groupé.",
       "checkinCount": "Enregistrer {{count}} clients",
       "dataLoadError": "Les données n'ont pas pu être chargées",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "walkInIntro": "Pour les clients sans réservation : saisissez d’abord un numéro de chambre disponible, complétez les informations et enregistrez l’arrivée.",
+      "roomNoPlaceholder": "ex. 101",
+      "roomBookable": "✓ Disponible — {{type}} · étage {{floor}}",
+      "roomBlocked": "✗ Cette chambre n’est pas disponible (statut : {{status}})",
+      "roomNotFoundHint": "Aucune chambre trouvée avec ce numéro. Choisissez une chambre disponible ci-dessous.",
+      "quickPickAvailable": "Chambres actuellement disponibles (cliquez pour choisir) :",
+      "walkInWhatHappens": "Cette action : crée le client, réserve pour aujourd’hui et effectue l’arrivée — le tout en une étape. Le client apparaîtra dans la liste « En maison ».",
+      "walkInProcessing": "Traitement...",
+      "walkInSuccess": "✓ {{guest}} → arrivée enregistrée en chambre {{roomNo}}.",
+      "walkInGuestRequired": "Le nom du client est requis.",
+      "walkInRoomRequired": "Le numéro de chambre est requis.",
+      "walkInRateRequired": "Le tarif par nuit doit être supérieur à 0.",
+      "walkInRoomNotFound": "Chambre introuvable : {{roomNo}}",
+      "walkInRoomNotAvailable": "La chambre {{roomNo}} n’est pas disponible (statut : {{status}}).",
+      "walkInBookingFailed": "L’enregistrement walk-in a échoué."
     },
     "housekeeping": {
       "loading": "Chargement des données ménage...",

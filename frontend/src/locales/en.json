@@ -2012,7 +2012,22 @@
       "batchDesc": "Select group reservations for batch check-in.",
       "checkinCount": "Check-in {{count}} Guests",
       "dataLoadError": "Data could not be loaded",
-      "retry": "Retry"
+      "retry": "Retry",
+      "walkInIntro": "For guests arriving without a reservation: enter an available room number first, then complete the details and check in.",
+      "roomNoPlaceholder": "e.g. 101",
+      "roomBookable": "✓ Available — {{type}} · floor {{floor}}",
+      "roomBlocked": "✗ This room is not available (status: {{status}})",
+      "roomNotFoundHint": "No room found with this number. Pick one from the available list below.",
+      "quickPickAvailable": "Currently available rooms (click to pick):",
+      "walkInWhatHappens": "This action: creates the guest, books today, and checks them into the room — all in one step. The guest will appear in the “In-house” list.",
+      "walkInProcessing": "Processing...",
+      "walkInSuccess": "✓ {{guest}} → checked in to Room {{roomNo}}.",
+      "walkInGuestRequired": "Guest name is required.",
+      "walkInRoomRequired": "Room number is required.",
+      "walkInRateRequired": "Nightly rate must be greater than 0.",
+      "walkInRoomNotFound": "Room not found: {{roomNo}}",
+      "walkInRoomNotAvailable": "Room {{roomNo}} is not available (status: {{status}}).",
+      "walkInBookingFailed": "Walk-in check-in failed."
     },
     "housekeeping": {
       "loading": "Loading housekeeping data...",

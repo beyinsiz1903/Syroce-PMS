@@ -2012,7 +2012,22 @@
       "batchDesc": "اختر حجوزات المجموعة للتسجيل الجماعي.",
       "checkinCount": "تسجيل {{count}} ضيوف",
       "dataLoadError": "تعذر تحميل البيانات",
-      "retry": "إعادة المحاولة"
+      "retry": "إعادة المحاولة",
+      "walkInIntro": "للنزلاء الذين يصلون دون حجز: أدخل أولاً رقم غرفة متاحة ثم أكمل البيانات وقم بتسجيل الدخول.",
+      "roomNoPlaceholder": "مثال: 101",
+      "roomBookable": "✓ متاحة — {{type}} · الطابق {{floor}}",
+      "roomBlocked": "✗ هذه الغرفة غير متاحة حاليًا (الحالة: {{status}})",
+      "roomNotFoundHint": "لم يتم العثور على غرفة بهذا الرقم. اختر إحدى الغرف المتاحة أدناه.",
+      "quickPickAvailable": "الغرف المتاحة حاليًا (اضغط لاختيار واحدة):",
+      "walkInWhatHappens": "يؤدي هذا الإجراء إلى: إنشاء النزيل وحجز اليوم وتسجيل دخوله إلى الغرفة دفعة واحدة. سيظهر النزيل في قائمة \"داخل الفندق\".",
+      "walkInProcessing": "جارٍ المعالجة...",
+      "walkInSuccess": "✓ {{guest}} → تم تسجيل الدخول إلى الغرفة {{roomNo}}.",
+      "walkInGuestRequired": "اسم النزيل مطلوب.",
+      "walkInRoomRequired": "رقم الغرفة مطلوب.",
+      "walkInRateRequired": "يجب أن يكون السعر الليلي أكبر من 0.",
+      "walkInRoomNotFound": "الغرفة غير موجودة: {{roomNo}}",
+      "walkInRoomNotAvailable": "الغرفة {{roomNo}} غير متاحة (الحالة: {{status}}).",
+      "walkInBookingFailed": "فشل تسجيل دخول النزيل."
     },
     "housekeeping": {
       "loading": "جاري تحميل بيانات التدبير المنزلي...",

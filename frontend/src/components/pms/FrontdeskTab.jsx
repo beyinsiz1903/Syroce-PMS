@@ -1,4 +1,6 @@
 import React, { memo, useState, useMemo } from 'react';
+import axios from 'axios';
+import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { TableLoadingSkeleton } from '@/utils/lazyLoad';
 import {
   Calendar, Users, TrendingUp, LogIn, LogOut, Star,
-  AlertTriangle, Clock, UserPlus, CheckSquare, Printer
+  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, CheckCircle2, XCircle
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
@@ -21,10 +23,12 @@ const FrontdeskTab = ({
   aiPrediction,
   aiPatterns,
   bookings,
+  rooms = [],
   handleCheckIn,
   handleCheckOut,
   loadFolio,
   loadFrontDeskData,
+  loadData,
   loading,
   error,
   tenant,
@@ -34,7 +38,68 @@ const FrontdeskTab = ({
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
   const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
+  const [walkInSubmitting, setWalkInSubmitting] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
+
+  // Live preview: lookup room by typed room_number
+  const matchedRoom = useMemo(() => {
+    const rn = (walkInForm.room_number || '').trim();
+    if (!rn) return null;
+    return rooms.find(r => String(r.room_number) === rn) || null;
+  }, [walkInForm.room_number, rooms]);
+
+  const isRoomBookable = matchedRoom && ['available', 'inspected'].includes(matchedRoom.status);
+
+  // Quick-pick: first 6 currently bookable rooms
+  const availableRoomQuickPicks = useMemo(() => {
+    return rooms
+      .filter(r => ['available', 'inspected'].includes(r.status))
+      .slice(0, 6);
+  }, [rooms]);
+
+  const resetWalkInForm = () => {
+    setWalkInForm({ guest_name: '', phone: '', id_number: '', room_number: '', nights: 1, rate: 0 });
+  };
+
+  const handleWalkInSubmit = async () => {
+    if (!walkInForm.guest_name?.trim()) { toast.error(tf('walkInGuestRequired')); return; }
+    if (!walkInForm.room_number?.trim()) { toast.error(tf('walkInRoomRequired')); return; }
+    if (!walkInForm.rate || walkInForm.rate <= 0) { toast.error(tf('walkInRateRequired')); return; }
+    if (!matchedRoom) { toast.error(tf('walkInRoomNotFound', { roomNo: walkInForm.room_number })); return; }
+    if (!isRoomBookable) {
+      toast.error(tf('walkInRoomNotAvailable', { roomNo: matchedRoom.room_number, status: matchedRoom.status }));
+      return;
+    }
+
+    setWalkInSubmitting(true);
+    try {
+      const payload = {
+        guest_name: walkInForm.guest_name.trim(),
+        guest_phone: walkInForm.phone?.trim() || '',
+        guest_id_number: walkInForm.id_number?.trim() || null,
+        room_id: matchedRoom.id,
+        nights: Math.max(1, parseInt(walkInForm.nights) || 1),
+        adults: 1,
+        children: 0,
+        rate_per_night: parseFloat(walkInForm.rate) || 0,
+      };
+      const res = await axios.post('/frontdesk/walk-in-booking', payload);
+      const data = res.data || {};
+      toast.success(tf('walkInSuccess', {
+        roomNo: data.room_number || matchedRoom.room_number,
+        guest: walkInForm.guest_name.trim(),
+      }));
+      resetWalkInForm();
+      setShowWalkIn(false);
+      // Refresh both front desk data and the rooms/bookings list so the new check-in is visible everywhere
+      try { await Promise.all([loadFrontDeskData?.(), loadData?.()]); } catch (_) { /* non-fatal */ }
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || tf('walkInBookingFailed');
+      toast.error(typeof msg === 'string' ? msg : tf('walkInBookingFailed'));
+    } finally {
+      setWalkInSubmitting(false);
+    }
+  };
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -423,31 +488,91 @@ const FrontdeskTab = ({
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showWalkIn} onOpenChange={setShowWalkIn}>
+      <Dialog open={showWalkIn} onOpenChange={(open) => {
+        if (!open && walkInSubmitting) return; // prevent closing mid-submit
+        setShowWalkIn(open);
+        if (!open) resetWalkInForm();
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><UserPlus className="w-5 h-5" /> {tf('walkInTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            <p className="text-xs text-gray-500 -mt-1">{tf('walkInIntro')}</p>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{tf('guestName')}</Label><Input value={walkInForm.guest_name} onChange={e => setWalkInForm(p => ({ ...p, guest_name: e.target.value }))} /></div>
               <div><Label>{t('pmsComponents.guests.phone')}</Label><Input value={walkInForm.phone} onChange={e => setWalkInForm(p => ({ ...p, phone: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{tf('idPassport')}</Label><Input value={walkInForm.id_number} onChange={e => setWalkInForm(p => ({ ...p, id_number: e.target.value }))} /></div>
-              <div><Label>{tf('roomNo')}</Label><Input value={walkInForm.room_number} onChange={e => setWalkInForm(p => ({ ...p, room_number: e.target.value }))} /></div>
+              <div>
+                <Label>{tf('roomNo')}</Label>
+                <Input value={walkInForm.room_number} onChange={e => setWalkInForm(p => ({ ...p, room_number: e.target.value }))} placeholder={tf('roomNoPlaceholder')} />
+                {walkInForm.room_number?.trim() && (
+                  matchedRoom ? (
+                    isRoomBookable ? (
+                      <p className="text-[11px] text-emerald-700 mt-1 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        {tf('roomBookable', { type: matchedRoom.room_type || '-', floor: matchedRoom.floor ?? '-' })}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-red-700 mt-1 flex items-center gap-1">
+                        <XCircle className="w-3 h-3" />
+                        {tf('roomBlocked', { status: matchedRoom.status })}
+                      </p>
+                    )
+                  ) : (
+                    <p className="text-[11px] text-amber-700 mt-1 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> {tf('roomNotFoundHint')}
+                    </p>
+                  )
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>{tf('nights')}</Label><Input type="number" min="1" value={walkInForm.nights} onChange={e => setWalkInForm(p => ({ ...p, nights: parseInt(e.target.value) || 1 }))} /></div>
               <div><Label>{tf('nightlyRate')}</Label><Input type="number" value={walkInForm.rate} onChange={e => setWalkInForm(p => ({ ...p, rate: parseFloat(e.target.value) || 0 }))} /></div>
             </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => {
-              if (!walkInForm.guest_name?.trim()) { return; }
-              if (!walkInForm.room_number?.trim()) { return; }
-              if (!walkInForm.rate || walkInForm.rate <= 0) { return; }
-              setShowWalkIn(false);
-            }} disabled={!walkInForm.guest_name?.trim() || !walkInForm.room_number?.trim() || !walkInForm.rate || walkInForm.rate <= 0}>
-              <LogIn className="w-4 h-4 mr-2" /> {tf('quickCheckin')}
+
+            {availableRoomQuickPicks.length > 0 && (
+              <div className="rounded-md border border-emerald-100 bg-emerald-50/60 p-2">
+                <p className="text-[11px] text-emerald-800 mb-1 font-medium">{tf('quickPickAvailable')}</p>
+                <div className="flex flex-wrap gap-1">
+                  {availableRoomQuickPicks.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setWalkInForm(p => ({
+                        ...p,
+                        room_number: String(r.room_number),
+                        rate: p.rate || r.base_price || r.price || 0,
+                      }))}
+                      className="px-2 py-0.5 rounded border border-emerald-300 bg-white text-[11px] text-emerald-800 hover:bg-emerald-100"
+                    >
+                      {r.room_number} · {r.room_type || '-'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-md border bg-gray-50 p-2 text-[11px] text-gray-600">
+              {tf('walkInWhatHappens')}
+            </div>
+
+            <Button
+              className="w-full bg-emerald-600 hover:bg-emerald-700"
+              onClick={handleWalkInSubmit}
+              disabled={
+                walkInSubmitting ||
+                !walkInForm.guest_name?.trim() ||
+                !walkInForm.room_number?.trim() ||
+                !walkInForm.rate || walkInForm.rate <= 0 ||
+                !isRoomBookable
+              }
+            >
+              <LogIn className="w-4 h-4 mr-2" />
+              {walkInSubmitting ? tf('walkInProcessing') : tf('quickCheckin')}
             </Button>
           </div>
         </DialogContent>

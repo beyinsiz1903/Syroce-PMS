@@ -2012,7 +2012,22 @@
       "batchDesc": "选择团体预订进行批量登记。",
       "checkinCount": "登记 {{count}} 位客人",
       "dataLoadError": "数据加载失败",
-      "retry": "重试"
+      "retry": "重试",
+      "walkInIntro": "为无预订到达的客人办理入住:先输入一个可用的房间号,然后填写信息并完成入住。",
+      "roomNoPlaceholder": "例如 101",
+      "roomBookable": "✓ 可入住 — {{type}} · {{floor}} 楼",
+      "roomBlocked": "✗ 此房间当前不可用(状态:{{status}})",
+      "roomNotFoundHint": "未找到该房号。请从下面的可用房间中选择。",
+      "quickPickAvailable": "当前可用房间(点击选择):",
+      "walkInWhatHappens": "此操作将一次性完成:创建客人 + 当天预订 + 办理入住。完成后客人会出现在“在住”列表中。",
+      "walkInProcessing": "处理中...",
+      "walkInSuccess": "✓ {{guest}} → 已入住 {{roomNo}} 号房间。",
+      "walkInGuestRequired": "请输入客人姓名。",
+      "walkInRoomRequired": "请输入房间号。",
+      "walkInRateRequired": "夜间价格必须大于 0。",
+      "walkInRoomNotFound": "未找到房间:{{roomNo}}",
+      "walkInRoomNotAvailable": "房间 {{roomNo}} 不可用(状态:{{status}})。",
+      "walkInBookingFailed": "快速入住失败。"
     },
     "housekeeping": {
       "loading": "正在加载客房清洁数据...",

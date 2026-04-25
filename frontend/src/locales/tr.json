@@ -2012,7 +2012,22 @@
       "batchDesc": "Gruba ait rezervasyonları seçin ve toplu giriş yapın.",
       "checkinCount": "{{count}} Misafiri Giriş Yap",
       "dataLoadError": "Veriler yüklenemedi",
-      "retry": "Tekrar Dene"
+      "retry": "Tekrar Dene",
+      "walkInIntro": "Rezervasyonsuz gelen misafir için: önce müsait bir oda numarası girin, sonra bilgileri tamamlayıp giriş yapın.",
+      "roomNoPlaceholder": "örn. 101",
+      "roomBookable": "✓ Müsait — {{type}} · {{floor}}. kat",
+      "roomBlocked": "✗ Bu oda şu an müsait değil (durum: {{status}})",
+      "roomNotFoundHint": "Bu numarada oda bulunamadı. Aşağıdaki müsait odalardan birini seçin.",
+      "quickPickAvailable": "Şu an müsait olan odalar (tıklayıp seçin):",
+      "walkInWhatHappens": "Bu işlem: misafir kaydı + bugün için rezervasyon + odaya check-in’i tek adımda yapar. İşlem sonrası misafir “Otelde” listesinde görünür.",
+      "walkInProcessing": "İşleniyor...",
+      "walkInSuccess": "✓ {{guest}} → Oda {{roomNo}} girişi tamamlandı.",
+      "walkInGuestRequired": "Misafir adı zorunlu.",
+      "walkInRoomRequired": "Oda numarası zorunlu.",
+      "walkInRateRequired": "Gecelik fiyat 0’dan büyük olmalı.",
+      "walkInRoomNotFound": "Oda bulunamadı: {{roomNo}}",
+      "walkInRoomNotAvailable": "Oda {{roomNo}} müsait değil (durum: {{status}}).",
+      "walkInBookingFailed": "Walk-in girişi başarısız oldu."
     },
     "housekeeping": {
       "loading": "Kat hizmetleri verileri yükleniyor...",
