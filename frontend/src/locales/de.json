@@ -3309,5 +3309,82 @@
       "cancel": "Abbrechen",
       "confirm": "Wareneingang bestätigen"
     }
+  },
+  "opsCenter": {
+    "title": "Operations Command Center",
+    "subtitle": "Stock & procurement operations — at a glance",
+    "headerHint": "Live data · refresh to pull latest",
+    "refresh": "Refresh",
+    "goStock": "Go to Stock",
+    "newPR": "New Request",
+    "errorLoad": "Failed to load data. Please refresh.",
+    "kpi": {
+      "critical": "Critical Stock",
+      "criticalSub": "items awaiting reorder",
+      "pending": "Pending Approval",
+      "pendingSub": "purchase requests",
+      "openPO": "Open Orders",
+      "openPOSub": "with supplier / in transit",
+      "received": "Goods Received",
+      "receivedSub": "awaiting close-out",
+      "suppliers": "Active Suppliers",
+      "suppliersSub": "registered & enabled",
+      "commitment": "Open Commitment",
+      "commitmentSub": "not yet received"
+    },
+    "panels": {
+      "critical": {
+        "title": "Critical Stock Items",
+        "empty": "No items at critical level right now 🎉",
+        "footer": "Open full stock screen",
+        "action": "Create Request",
+        "stockInfo": "On hand: {{stock}} · Min: {{min}}"
+      },
+      "pending": {
+        "title": "Requests Awaiting Approval",
+        "empty": "No requests awaiting approval",
+        "footer": "Open all requests",
+        "items": "items"
+      },
+      "incoming": {
+        "title": "Incoming Deliveries",
+        "empty": "No open supplier orders",
+        "footer": "Open all orders",
+        "partial": "partially received"
+      }
+    },
+    "guide": {
+      "title": "How it works",
+      "subtitle": "6 steps from stock to receipt",
+      "stepLabel": "STEP {{num}}",
+      "steps": {
+        "1": {
+          "title": "Stock drops",
+          "desc": "An item falls below its critical threshold."
+        },
+        "2": {
+          "title": "Request (PR)",
+          "desc": "Department creates a new request."
+        },
+        "3": {
+          "title": "Approval",
+          "desc": "Manager reviews, approves or rejects."
+        },
+        "4": {
+          "title": "Order (PO)",
+          "desc": "Approved request is sent to the supplier."
+        },
+        "5": {
+          "title": "Goods Receipt",
+          "desc": "Goods are checked and recorded on arrival."
+        },
+        "6": {
+          "title": "Stock updated",
+          "desc": "Hotel inventory increases automatically."
+        }
+      }
+    },
+    "errorPartial": "Some data could not be loaded ({{count}}). The rest is shown.",
+    "retry": "Retry"
   }
 }

@@ -4675,3 +4675,56 @@ Three issues caught by code review and patched in the same window:
 2. **`mobileApprovals.empty` namespace shape (Medium).** TR/EN store `empty` as `{pending, myRequests}` (used by `MobileApprovals.jsx` lines ~263, ~344). The v113 8-language pass had collapsed it to a single string in de/fr/es/it/pt/ru/ar/zh, which would break the nested lookups. Restored as the proper object in all 8 locales with localized strings.
 
 3. **Procurement cancel actions (Medium).** Backend allows `cancelled` transitions for PR (submitted/approved → cancelled) and PO (draft/sent → cancelled), and the v113 page already wired the cancel handler/prompt. The matching action buttons were missing. Added: PR table now shows "Cancel" alongside Approve/Reject (submitted) and ConvertToPo (approved); PO table shows "Cancel" while in draft or sent. New translation key `procurement.{prList,poList}.actions.cancel` injected into all 10 locales.
+
+## v114 — Operations Command Center (Stock & Procurement) (2026-04-25)
+
+`InventoryProcurementGuide.jsx` (route `/app/stock-rehber`) was a static "how it works" illustration with no live data — the Operations menu surfaced it as a dead leaf. Rewrote as a live operational dashboard while keeping the route, file name and menu wiring untouched (zero-config change).
+
+**New page layout:**
+- Header strip: live-data hint + Refresh / "Go to Stock" / "New Request" quick actions.
+- 6-card KPI grid (clickable, deep-link into ProcurementPage tabs):
+  - Critical stock (`/inventory/alerts` count)
+  - Pending approvals (`procurement_summary.pr_pending`)
+  - Open POs (`po_open`)
+  - Goods received awaiting close-out (`po_received`)
+  - Active suppliers (`suppliers_active`)
+  - Open commitment value `₺` (`open_commitment_value`, formatted via `Intl.NumberFormat`)
+- 3-column action panels (each with empty state, scrolling list, footer "open all"):
+  - Critical Stock Items — per-row "Create Request" deep-links to `/app/procurement?action=newPR&item=...`
+  - Pending Approval Requests — submitted-only PRs, click → `/app/procurement?tab=requests&id=...`
+  - Incoming Deliveries — open POs (sent + partially_received), click → `/app/procurement?tab=orders&id=...`
+- Collapsible "How it works" — the original 6-step flow shrunk into an accordion at the bottom.
+
+**Endpoints used** (all existing, no backend changes):
+- `GET /api/procurement/summary` (KPI counters + open commitment)
+- `GET /api/inventory/alerts` (critical stock list)
+- `GET /api/procurement/purchase-requests?status=submitted` (approval queue)
+- `GET /api/procurement/purchase-orders` (filtered client-side to open statuses)
+
+All four wrapped in `Promise.all` with `.catch` per-request fallbacks so a partial outage degrades gracefully (per-card "—" rather than a blank page).
+
+**i18n:** new `opsCenter.*` namespace (~50 keys) injected into all 10 locales via `.local/i18n_opscenter.py`. TR + EN have real copy; the other 8 locales receive English text for now (i18next `fallbackLng: 'en'` would have masked anything missing, but explicit copies prevent missing-key warnings and give translators a stable shape to work from). Steps 1–6 of the embedded guide are localised via `opsCenter.guide.steps.{1..6}.{title,desc}`.
+
+**ProcurementPage deep-link parameters consumed:**
+- `?action=newPR` and `?action=newPR&item=<name>` — opens the New PR modal, optionally pre-seeded.
+- `?tab=requests|orders|suppliers` — switches the active tab.
+- `?tab=...&id=<doc-id>` — opens the matching detail modal.
+
+These are read by `ProcurementPage.jsx` via the existing query-string handler (or trivially added if missing — see follow-up). The Ops Center is functional regardless; the deep-links degrade to "land on tab" if param wiring is incomplete.
+
+### v114 post-review fixes (architect feedback)
+
+Architect flagged four issues; all patched in the same window:
+
+1. **Deep-link contract not consumed (High).** Guide originally navigated with `?action/?tab/?id` query strings, but `ProcurementPage` only reads `location.state`. Re-routed all Guide deep-links to use `navigate('/app/procurement', { state: {...} })`. Added a small `initialTab` handler in `ProcurementPage`'s existing seed-effect: if `location.state.initialTab` is one of `summary | pos | suppliers`, the page calls `setTab(initialTab)` and clears the navigation state on the same `navigate(replace:true, state:null)` call as the existing seed handler.
+2. **Tab-key mismatch (High).** Guide previously used `requests/orders`; corrected to `summary/pos` to match `<TabsTrigger value="...">` exactly. Documented the contract in a comment above `goToTab`.
+3. **Dynamic Tailwind classes purge-prone (High).** Replaced runtime `bg-${color}-100` interpolation with a static `COLORS` map containing the full class strings for the 6 palettes (`orange/blue/indigo/purple/emerald/rose`). Tailwind's JIT now sees every class as a literal string in the source, so production builds cannot purge them. No safelist needed.
+4. **Promise.all swallowed errors (Medium).** Switched to `Promise.allSettled`; each rejected call is collected into a `failed` list and surfaced in an amber partial-error banner with a Retry button (`opsCenter.errorPartial`/`opsCenter.retry`, added to all 10 locales). Successful calls still render — partial outage no longer blanks the page nor hides itself.
+5. **Data-shape corrections (Medium).** Added `Array.isArray` guards around every list assignment. Pending-PR rows now use the actual backend schema (`pr.lines`/`pr.lines_total`) instead of guessed `items/estimated_total`. Critical-stock rows include `critical_level` in the min-stock fallback chain (`min_stock ?? critical_level ?? threshold ?? reorder_point`).
+
+Files touched in the fix pass:
+- `frontend/src/pages/InventoryProcurementGuide.jsx` (full rewrite to absorb fixes 1–5)
+- `frontend/src/pages/ProcurementPage.jsx` (single useEffect now also handles `initialTab`)
+- `frontend/src/locales/{tr,en,de,fr,es,it,pt,ru,ar,zh}.json` (added `opsCenter.errorPartial` + `opsCenter.retry`)
+
+Lint clean on both pages. Vite HMR picked up locale + page updates without errors.

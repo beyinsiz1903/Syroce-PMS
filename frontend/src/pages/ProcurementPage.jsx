@@ -96,9 +96,12 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   };
   useEffect(() => { refresh(); }, []);
 
-  // Stok ekranından "Talep Oluştur" ile gelindiğinde formu otomatik aç
+  // Stok ekranından "Talep Oluştur" ile gelindiğinde formu otomatik aç +
+  // Operasyon Komuta Merkezi'nden gelen `initialTab` ile sekme ön-seçimi.
   useEffect(() => {
     const seed = location.state?.newPRItem;
+    const initialTab = location.state?.initialTab;
+    let consumed = false;
     if (seed) {
       setPrForm({
         department: seed.department || '',
@@ -113,6 +116,13 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           est_unit_cost: seed.unit_cost || 0,
         }],
       });
+      consumed = true;
+    }
+    if (initialTab && ['summary', 'pos', 'suppliers'].includes(initialTab)) {
+      setTab(initialTab);
+      consumed = true;
+    }
+    if (consumed) {
       navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.state]);

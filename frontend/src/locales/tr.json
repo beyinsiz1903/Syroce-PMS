@@ -3201,5 +3201,82 @@
       "cancel": "Vazgeç",
       "confirm": "Mal Kabulü Onayla"
     }
+  },
+  "opsCenter": {
+    "title": "Operasyon Komuta Merkezi",
+    "subtitle": "Stok ve satın alma operasyonu — tek bakışta",
+    "headerHint": "Canlı veriler · değişiklikleri görmek için yenileyin",
+    "refresh": "Yenile",
+    "goStock": "Stoğa Git",
+    "newPR": "Yeni Talep",
+    "errorLoad": "Veriler yüklenemedi. Lütfen yenileyin.",
+    "kpi": {
+      "critical": "Kritik Stok",
+      "criticalSub": "kalem yenileme bekliyor",
+      "pending": "Onay Bekleyen",
+      "pendingSub": "satın alma talebi",
+      "openPO": "Açık Sipariş",
+      "openPOSub": "tedarikçide / yolda",
+      "received": "Mal Kabul Edilen",
+      "receivedSub": "kapanış bekliyor",
+      "suppliers": "Aktif Tedarikçi",
+      "suppliersSub": "kayıtlı ve çalışılır",
+      "commitment": "Açık Taahhüt",
+      "commitmentSub": "henüz teslim alınmamış"
+    },
+    "panels": {
+      "critical": {
+        "title": "Kritik Stok Kalemleri",
+        "empty": "Şu an kritik seviyede kalem yok 🎉",
+        "footer": "Tüm stok ekranını aç",
+        "action": "Talep Oluştur",
+        "stockInfo": "Mevcut: {{stock}} · Min: {{min}}"
+      },
+      "pending": {
+        "title": "Onay Bekleyen Talepler",
+        "empty": "Onay bekleyen talep yok",
+        "footer": "Tüm talepleri aç",
+        "items": "kalem"
+      },
+      "incoming": {
+        "title": "Yaklaşan Teslimatlar",
+        "empty": "Açık tedarikçi siparişi yok",
+        "footer": "Tüm siparişleri aç",
+        "partial": "kısmi alındı"
+      }
+    },
+    "guide": {
+      "title": "Nasıl çalışır?",
+      "subtitle": "stoktan teslim alıma 6 adım",
+      "stepLabel": "ADIM {{num}}",
+      "steps": {
+        "1": {
+          "title": "Stok azalır",
+          "desc": "Bir kalem kritik seviyenin altına düşer."
+        },
+        "2": {
+          "title": "Talep (PR)",
+          "desc": "Departman yeni talep oluşturur."
+        },
+        "3": {
+          "title": "Onay",
+          "desc": "Yetkili inceler, onaylar veya reddeder."
+        },
+        "4": {
+          "title": "Sipariş (PO)",
+          "desc": "Onaylı talep tedarikçiye iletilir."
+        },
+        "5": {
+          "title": "Mal Kabul",
+          "desc": "Mal geldiğinde kontrol edilip girilir."
+        },
+        "6": {
+          "title": "Stok Güncel",
+          "desc": "Otel stoğu otomatik artar."
+        }
+      }
+    },
+    "errorPartial": "Bazı veriler yüklenemedi ({{count}}). Diğerleri görüntüleniyor.",
+    "retry": "Tekrar dene"
   }
 }
