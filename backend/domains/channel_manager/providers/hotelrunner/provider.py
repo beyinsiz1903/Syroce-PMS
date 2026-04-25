@@ -599,25 +599,91 @@ class HotelRunnerProvider:
         When days is provided, the update only applies to those weekdays
         within the start_date→end_date range (single API call instead of
         one call per non-consecutive date).
+
+        Routed through retry policy + observability recorder so it has the
+        same operational guarantees as push_daily_inventory / fetch_*.
         """
-        query_params = {}
-        for key in ("inv_code", "start_date", "end_date"):
-            if key in kwargs:
-                query_params[key] = str(kwargs[key])
-        for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
-            if key in kwargs and kwargs[key] is not None:
-                query_params[key] = str(kwargs[key])
+        start = time.time()
+        try:
+            query_params: dict[str, Any] = {}
+            for key in ("inv_code", "start_date", "end_date"):
+                if key in kwargs:
+                    query_params[key] = str(kwargs[key])
+            for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
+                if key in kwargs and kwargs[key] is not None:
+                    query_params[key] = str(kwargs[key])
 
-        # days[] — day-of-week filter (list of ints: 0=Sun..6=Sat)
-        days = kwargs.get("days")
-        if days is not None and len(days) < 7:
-            # httpx handles list values as repeated params: days[]=0&days[]=6
-            query_params["days[]"] = [str(d) for d in days]
+            # days[] — day-of-week filter (list of ints: 0=Sun..6=Sat)
+            days = kwargs.get("days")
+            if days is not None and len(days) < 7:
+                # httpx handles list values as repeated params: days[]=0&days[]=6
+                query_params["days[]"] = [str(d) for d in days]
 
-        result = await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
-        if result.success:
-            return {"success": True, "data": result.data, "duration_ms": result.duration_ms}
-        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
+            async def _call():
+                return await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
+
+            result = await self._retry.execute(_call)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                path=ep.ROOMS_DATERANGE, method="PUT",
+                status_code=result.status_code,
+                duration_ms=duration_ms, success=result.success,
+                connection_id=self._connection_id,
+            )
+            if result.success:
+                return {"success": True, "data": result.data, "duration_ms": duration_ms}
+            return {"success": False, "error": result.error, "duration_ms": duration_ms}
+        except HotelRunnerError as e:
+            pr = self._handle_error(e, start, ep.ROOMS_DATERANGE)
+            return {"success": pr.success, "data": pr.data, "error": pr.error, "duration_ms": pr.duration_ms}
+
+    async def push_ari_bulk(self, updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Bulk ARI push: invoke update_room for each item, preserving order.
+
+        Each input dict carries the same kwargs as update_room (inv_code,
+        start_date, end_date, availability, price, stop_sale, min_stay,
+        cta, ctd, days). Returns a list of update_room result dicts so the
+        caller can compute success/fail counts and surface per-row errors.
+
+        Sequential by design — bulk inventory pushes share rate-limit
+        budget with single pushes; parallelizing here would amplify 429s.
+        """
+        results: list[dict[str, Any]] = []
+        for upd in updates:
+            results.append(await self.update_room(**upd))
+        return results
+
+    async def get_transaction_details(self, transaction_id: str) -> dict[str, Any]:
+        """Fetch HotelRunner transaction status via GET /infos/transaction_details.
+
+        Used by the /transactions/{transaction_id} endpoint to surface
+        push delivery status to the UI. Routed through retry +
+        observability like other GET calls.
+        """
+        start = time.time()
+        try:
+            async def _call():
+                return await self._client.get(
+                    ep.TRANSACTION_DETAILS,
+                    params={"transaction_id": transaction_id},
+                )
+
+            result = await self._retry.execute(_call)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                path=ep.TRANSACTION_DETAILS, method="GET",
+                status_code=result.status_code,
+                duration_ms=duration_ms, success=result.success,
+                connection_id=self._connection_id,
+            )
+            if result.success:
+                return {"success": True, "data": result.data, "duration_ms": duration_ms}
+            return {"success": False, "error": result.error, "duration_ms": duration_ms}
+        except HotelRunnerError as e:
+            pr = self._handle_error(e, start, ep.TRANSACTION_DETAILS)
+            return {"success": pr.success, "data": pr.data, "error": pr.error, "duration_ms": pr.duration_ms}
 
     def get_usage_stats(self) -> dict[str, Any]:
         """Legacy: Get API usage statistics."""
