@@ -2786,5 +2786,185 @@
     "planCreated": "付款计划已创建",
     "planError": "创建付款计划失败",
     "installmentPaid": "分期标记为已付"
+  },
+  "mobileInventory": {
+    "title": "Inventory Management",
+    "subtitle": "Mobile View",
+    "loading": "Loading stock data...",
+    "errors": {
+      "loadFailed": "Failed to load stock data",
+      "movementsFailed": "Failed to load movements",
+      "fillAllFields": "Please fill all fields",
+      "updateFailed": "Failed to update stock"
+    },
+    "success": {
+      "adjusted": "Stock updated successfully"
+    },
+    "stats": {
+      "total": "Total",
+      "good": "Good",
+      "low": "Low",
+      "outOfStock": "Out"
+    },
+    "alertsBanner": "{{count}} low stock alerts",
+    "details": "Details",
+    "showLowOnly": "Show only low stock items",
+    "empty": "No stock records found",
+    "current": "Current Stock",
+    "minimum": "Minimum",
+    "lowStockWarning": "Stock low! Order required",
+    "adjust": "Adjust Stock",
+    "alertsModal": {
+      "title": "Low Stock Alerts",
+      "urgency": {
+        "critical": "CRITICAL",
+        "high": "HIGH",
+        "medium": "MEDIUM"
+      },
+      "shortage": "Shortage",
+      "recommendedOrder": "Recommended order"
+    },
+    "movementsModal": {
+      "title": "Stock Movements (Last 7 Days)"
+    },
+    "adjustModal": {
+      "title": "Adjust Stock",
+      "currentLabel": "Current",
+      "type": "Operation Type",
+      "typeIn": "In (+)",
+      "typeOut": "Out (-)",
+      "typeAdjustment": "Adjustment (Set)",
+      "quantity": "Quantity",
+      "quantityPlaceholder": "Enter quantity",
+      "reason": "Reason *",
+      "reasonSelect": "Select...",
+      "reasons": {
+        "supplier": "Supplier delivery",
+        "fbSale": "F&B sale",
+        "waste": "Waste",
+        "return": "Return",
+        "count": "Count adjustment",
+        "other": "Other"
+      },
+      "notes": "Notes",
+      "notesPlaceholder": "Additional notes (optional)",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
+  },
+  "mobileApprovals": {
+    "title": "Approval Mechanism",
+    "subtitle": "Pending Approvals",
+    "loading": "Loading approvals...",
+    "errors": {
+      "loadFailed": "Failed to load approvals",
+      "approveFailed": "Approval failed",
+      "rejectFailed": "Rejection failed",
+      "reasonRequired": "Rejection reason required"
+    },
+    "success": {
+      "approved": "Request approved",
+      "rejected": "Request rejected"
+    },
+    "types": {
+      "discount": "Discount",
+      "priceOverride": "Price Override",
+      "budgetExpense": "Budget Expense",
+      "rateChange": "Rate Change",
+      "refund": "Refund",
+      "compRoom": "Complimentary Room"
+    },
+    "statuses": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "priority": {
+      "urgent": "URGENT",
+      "high": "High"
+    },
+    "tabs": {
+      "pending": "Pending",
+      "myRequests": "My Requests"
+    },
+    "urgentBanner": "{{count}} urgent approval(s) waiting!",
+    "empty": {
+      "pending": "No pending approvals",
+      "myRequests": "You haven't created any requests yet"
+    },
+    "fields": {
+      "amount": "Amount:",
+      "oldNew": "Old → New:",
+      "waitingHours": "Waiting:",
+      "waitingHoursValue": "{{hours}} hours",
+      "reason": "Reason:"
+    },
+    "actions": {
+      "reject": "Reject",
+      "approve": "Approve",
+      "cancel": "Cancel"
+    },
+    "approvedBy": "Approved by {{name}}",
+    "rejectionLabel": "Rejected:",
+    "modal": {
+      "approveTitle": "Approve Request",
+      "rejectTitle": "Reject Request",
+      "requestedBy": "Requested by:",
+      "amountField": "Amount:",
+      "reasonField": "Reason:",
+      "rejectionReason": "Rejection Reason",
+      "rejectionPlaceholder": "Specify rejection reason...",
+      "notes": "Notes (Optional)",
+      "notesPlaceholder": "Additional notes..."
+    }
+  },
+  "frontDeskEnhanced": {
+    "title": "Front Desk",
+    "scanPassport": "Scan Passport",
+    "walkInBooking": "Walk-in Booking",
+    "todayArrivals": "Today's Arrivals ({{count}})",
+    "alerts": "Alerts",
+    "quickCheckin": "Quick Check-in",
+    "guest": "Guest",
+    "room": "Room:",
+    "tba": "TBA",
+    "adultsChildren": "{{adults}} Adults, {{children}} Children",
+    "guestAlertsTitle": "Guest Alerts - {{name}}",
+    "close": "Close",
+    "walkInModal": {
+      "title": "Quick Walk-in Booking",
+      "guestName": "Guest Name*",
+      "phone": "Phone*",
+      "email": "Email",
+      "roomId": "Room ID*",
+      "nights": "Nights*",
+      "adults": "Adults*",
+      "children": "Children",
+      "cancel": "Cancel",
+      "submit": "Create & Check-in"
+    },
+    "toasts": {
+      "passportScanned": "Passport scanned successfully",
+      "passportFailed": "Passport scan failed",
+      "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
+      "walkInFailed": "Failed to create walk-in booking",
+      "checkedIn": "Guest checked in successfully",
+      "checkinFailed": "Guest check-in failed"
+    }
+  },
+  "procurement": {
+    "prModal": {
+      "departmentSelectPlaceholder": "Select department",
+      "departments": {
+        "housekeeping": "Housekeeping",
+        "fnb": "F&B (Food & Beverage)",
+        "engineering": "Engineering",
+        "frontOffice": "Front Office",
+        "maintenance": "Maintenance",
+        "security": "Security",
+        "administration": "Administration",
+        "other": "Other"
+      }
+    }
   }
 }

@@ -72,7 +72,7 @@ const MobileInventory = ({ user }) => {
       setLowStockAlerts(alertsRes.data.alerts || []);
     } catch (error) {
       console.error('Failed to load inventory data:', error);
-      toast.error('Stok verileri yüklenemedi');
+      toast.error(t('mobileInventory.errors.loadFailed'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -96,13 +96,13 @@ const MobileInventory = ({ user }) => {
       setMovementsModalOpen(true);
     } catch (error) {
       console.error('Failed to load movements:', error);
-      toast.error('Hareketler yüklenemedi');
+      toast.error(t('mobileInventory.errors.movementsFailed'));
     }
   };
 
   const handleAdjustStock = async () => {
     if (!selectedItem || !adjustQuantity || !adjustReason) {
-      toast.error('Lütfen tüm alanları doldurun');
+      toast.error(t('mobileInventory.errors.fillAllFields'));
       return;
     }
 
@@ -115,13 +115,13 @@ const MobileInventory = ({ user }) => {
         notes: adjustNotes
       });
       
-      toast.success('Stok başarıyla güncellendi');
+      toast.success(t('mobileInventory.success.adjusted'));
       setAdjustModalOpen(false);
       resetAdjustForm();
       loadData();
     } catch (error) {
       console.error('Failed to adjust stock:', error);
-      const errorMsg = error.response?.data?.detail || 'Stok güncellenemedi';
+      const errorMsg = error.response?.data?.detail || t('mobileInventory.errors.updateFailed');
       toast.error(errorMsg);
     }
   };
@@ -207,7 +207,7 @@ const MobileInventory = ({ user }) => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Stok verileri yükleniyor...</p>
+          <p className="text-gray-600">{t('mobileInventory.loading')}</p>
         </div>
       </div>
     );
@@ -223,8 +223,8 @@ const MobileInventory = ({ user }) => {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-xl font-bold">Stok Yönetimi</h1>
-              <p className="text-blue-100 text-sm">Mobil Görünüm</p>
+              <h1 className="text-xl font-bold">{t('mobileInventory.title')}</h1>
+              <p className="text-blue-100 text-sm">{t('mobileInventory.subtitle')}</p>
             </div>
           </div>
           
@@ -249,19 +249,19 @@ const MobileInventory = ({ user }) => {
         <div className="grid grid-cols-4 gap-2">
           <div className="bg-white/20 rounded-lg p-2 text-center">
             <div className="text-2xl font-bold">{stats.total}</div>
-            <div className="text-xs">Toplam</div>
+            <div className="text-xs">{t('mobileInventory.stats.total')}</div>
           </div>
           <div className="bg-green-500/80 rounded-lg p-2 text-center">
             <div className="text-2xl font-bold">{stats.good}</div>
-            <div className="text-xs">İyi</div>
+            <div className="text-xs">{t('mobileInventory.stats.good')}</div>
           </div>
           <div className="bg-orange-500/80 rounded-lg p-2 text-center">
             <div className="text-2xl font-bold">{stats.low}</div>
-            <div className="text-xs">Düşük</div>
+            <div className="text-xs">{t('mobileInventory.stats.low')}</div>
           </div>
           <div className="bg-red-500/80 rounded-lg p-2 text-center">
             <div className="text-2xl font-bold">{stats.outOfStock}</div>
-            <div className="text-xs">Tükendi</div>
+            <div className="text-xs">{t('mobileInventory.stats.outOfStock')}</div>
           </div>
         </div>
       </div>
@@ -275,9 +275,9 @@ const MobileInventory = ({ user }) => {
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 animate-pulse" />
-              <span className="font-semibold">{lowStockAlerts.length} düşük stok uyarısı</span>
+              <span className="font-semibold">{t('mobileInventory.alertsBanner', { count: lowStockAlerts.length })}</span>
             </div>
-            <span className="text-sm">Detaylar →</span>
+            <span className="text-sm">{t('mobileInventory.details')} →</span>
           </button>
         </div>
       )}
@@ -291,7 +291,7 @@ const MobileInventory = ({ user }) => {
             onChange={(e) => setShowLowStockOnly(e.target.checked)}
             className="w-4 h-4"
           />
-          <span className="text-sm font-medium">Sadece düşük stokları göster</span>
+          <span className="text-sm font-medium">{t('mobileInventory.showLowOnly')}</span>
         </label>
       </div>
 
@@ -301,7 +301,7 @@ const MobileInventory = ({ user }) => {
           <Card>
             <CardContent className="pt-6 text-center">
               <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">Stok kaydı bulunamadı</p>
+              <p className="text-gray-500">{t('mobileInventory.empty')}</p>
             </CardContent>
           </Card>
         ) : (
@@ -325,14 +325,14 @@ const MobileInventory = ({ user }) => {
 
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
-                    <div className="text-sm text-gray-500">Mevcut Stok</div>
+                    <div className="text-sm text-gray-500">{t('mobileInventory.current')}</div>
                     <div className="text-2xl font-bold text-blue-600">
                       {item.current_quantity}
                       <span className="text-sm text-gray-500 ml-1">{item.unit_of_measure}</span>
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500">Minimum</div>
+                    <div className="text-sm text-gray-500">{t('mobileInventory.minimum')}</div>
                     <div className="text-2xl font-bold text-gray-400">
                       {item.minimum_quantity}
                       <span className="text-sm text-gray-500 ml-1">{item.unit_of_measure}</span>
@@ -345,7 +345,7 @@ const MobileInventory = ({ user }) => {
                   <div className="bg-orange-100 border border-orange-200 rounded p-2 mb-3">
                     <div className="flex items-center gap-2 text-orange-700 text-sm">
                       <AlertTriangle className="h-4 w-4" />
-                      <span className="font-semibold">Stok düşük! Sipariş verilmeli</span>
+                      <span className="font-semibold">{t('mobileInventory.lowStockWarning')}</span>
                     </div>
                   </div>
                 )}
@@ -358,7 +358,7 @@ const MobileInventory = ({ user }) => {
                     className="w-full bg-blue-600 hover:bg-blue-700"
                   >
                     <Edit className="h-4 w-4 mr-2" />
-                    Stok Ayarla
+                    {t('mobileInventory.adjust')}
                   </Button>
                 )}
               </CardContent>
@@ -373,7 +373,7 @@ const MobileInventory = ({ user }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-orange-500" />
-              Düşük Stok Uyarıları
+              {t('mobileInventory.alertsModal.title')}
             </DialogTitle>
           </DialogHeader>
           
@@ -392,16 +392,20 @@ const MobileInventory = ({ user }) => {
                 <div className="flex justify-between items-start mb-2">
                   <div className="font-semibold">{alert.product_name}</div>
                   <Badge variant={alert.urgency === 'critical' ? 'destructive' : 'default'}>
-                    {alert.urgency === 'critical' ? 'KRİTİK' : alert.urgency === 'high' ? 'YÜKSEK' : 'ORTA'}
+                    {alert.urgency === 'critical'
+                      ? t('mobileInventory.alertsModal.urgency.critical')
+                      : alert.urgency === 'high'
+                      ? t('mobileInventory.alertsModal.urgency.high')
+                      : t('mobileInventory.alertsModal.urgency.medium')}
                   </Badge>
                 </div>
                 <div className="text-sm space-y-1">
                   <div>{alert.alert_message}</div>
                   <div className="text-gray-600">
-                    Eksik: {alert.shortage} {alert.unit_of_measure}
+                    {t('mobileInventory.alertsModal.shortage')}: {alert.shortage} {alert.unit_of_measure}
                   </div>
                   <div className="text-blue-600 font-semibold">
-                    Önerilen sipariş: {alert.recommended_order} {alert.unit_of_measure}
+                    {t('mobileInventory.alertsModal.recommendedOrder')}: {alert.recommended_order} {alert.unit_of_measure}
                   </div>
                 </div>
               </div>
@@ -416,7 +420,7 @@ const MobileInventory = ({ user }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
-              Stok Hareketleri (Son 7 Gün)
+              {t('mobileInventory.movementsModal.title')}
             </DialogTitle>
           </DialogHeader>
           
@@ -454,7 +458,7 @@ const MobileInventory = ({ user }) => {
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Stok Ayarla</DialogTitle>
+            <DialogTitle>{t('mobileInventory.adjustModal.title')}</DialogTitle>
           </DialogHeader>
           
           {selectedItem && (
@@ -462,57 +466,57 @@ const MobileInventory = ({ user }) => {
               <div className="bg-blue-50 p-3 rounded">
                 <div className="font-semibold">{selectedItem.product_name}</div>
                 <div className="text-sm text-gray-600">
-                  Mevcut: {selectedItem.current_quantity} {selectedItem.unit_of_measure}
+                  {t('mobileInventory.adjustModal.currentLabel')}: {selectedItem.current_quantity} {selectedItem.unit_of_measure}
                 </div>
               </div>
 
               <div>
-                <Label>İşlem Tipi</Label>
+                <Label>{t('mobileInventory.adjustModal.type')}</Label>
                 <select
                   value={adjustType}
                   onChange={(e) => setAdjustType(e.target.value)}
                   className="w-full p-2 border rounded mt-1"
                 >
-                  <option value="in">Giriş (+)</option>
-                  <option value="out">Çıkış (-)</option>
-                  <option value="adjustment">Düzeltme (Sabit)</option>
+                  <option value="in">{t('mobileInventory.adjustModal.typeIn')}</option>
+                  <option value="out">{t('mobileInventory.adjustModal.typeOut')}</option>
+                  <option value="adjustment">{t('mobileInventory.adjustModal.typeAdjustment')}</option>
                 </select>
               </div>
 
               <div>
-                <Label>Miktar</Label>
+                <Label>{t('mobileInventory.adjustModal.quantity')}</Label>
                 <Input
                   type="number"
                   value={adjustQuantity}
                   onChange={(e) => setAdjustQuantity(e.target.value)}
-                  placeholder="Miktar giriniz"
+                  placeholder={t('mobileInventory.adjustModal.quantityPlaceholder')}
                   min="1"
                 />
               </div>
 
               <div>
-                <Label>Sebep *</Label>
+                <Label>{t('mobileInventory.adjustModal.reason')}</Label>
                 <select
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   className="w-full p-2 border rounded mt-1"
                 >
-                  <option value="">Seçiniz...</option>
-                  <option value="Tedarikçi teslimatı">Tedarikçi teslimatı</option>
-                  <option value="F&B satışı">F&B satışı</option>
-                  <option value="Fire">Fire</option>
-                  <option value="İade">İade</option>
-                  <option value="Sayım düzeltmesi">Sayım düzeltmesi</option>
-                  <option value="Diğer">Diğer</option>
+                  <option value="">{t('mobileInventory.adjustModal.reasonSelect')}</option>
+                  <option value="Tedarikçi teslimatı">{t('mobileInventory.adjustModal.reasons.supplier')}</option>
+                  <option value="F&B satışı">{t('mobileInventory.adjustModal.reasons.fbSale')}</option>
+                  <option value="Fire">{t('mobileInventory.adjustModal.reasons.waste')}</option>
+                  <option value="İade">{t('mobileInventory.adjustModal.reasons.return')}</option>
+                  <option value="Sayım düzeltmesi">{t('mobileInventory.adjustModal.reasons.count')}</option>
+                  <option value="Diğer">{t('mobileInventory.adjustModal.reasons.other')}</option>
                 </select>
               </div>
 
               <div>
-                <Label>Notlar</Label>
+                <Label>{t('mobileInventory.adjustModal.notes')}</Label>
                 <Textarea
                   value={adjustNotes}
                   onChange={(e) => setAdjustNotes(e.target.value)}
-                  placeholder="Ek notlar (opsiyonel)"
+                  placeholder={t('mobileInventory.adjustModal.notesPlaceholder')}
                   rows={3}
                 />
               </div>
@@ -526,13 +530,13 @@ const MobileInventory = ({ user }) => {
                   }}
                   className="flex-1"
                 >
-                  İptal
+                  {t('mobileInventory.adjustModal.cancel')}
                 </Button>
                 <Button
                   onClick={handleAdjustStock}
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                 >
-                  Kaydet
+                  {t('mobileInventory.adjustModal.save')}
                 </Button>
               </div>
             </div>

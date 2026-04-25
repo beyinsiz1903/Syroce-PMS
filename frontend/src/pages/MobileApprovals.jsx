@@ -54,7 +54,7 @@ const MobileApprovals = ({ user }) => {
       }
     } catch (error) {
       console.error('Failed to load approvals:', error);
-      toast.error('Onaylar yüklenemedi');
+      toast.error(t('mobileApprovals.errors.loadFailed'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -69,19 +69,19 @@ const MobileApprovals = ({ user }) => {
         notes: actionNotes
       });
       
-      toast.success('Onay isteği onaylandı');
+      toast.success(t('mobileApprovals.success.approved'));
       setActionModalOpen(false);
       setActionNotes('');
       loadData();
     } catch (error) {
       console.error('Failed to approve:', error);
-      toast.error(error.response?.data?.detail || 'Onaylama başarısız');
+      toast.error(error.response?.data?.detail || t('mobileApprovals.errors.approveFailed'));
     }
   };
 
   const handleReject = async () => {
     if (!selectedApproval || !rejectionReason) {
-      toast.error('Red sebebi gerekli');
+      toast.error(t('mobileApprovals.errors.reasonRequired'));
       return;
     }
 
@@ -91,14 +91,14 @@ const MobileApprovals = ({ user }) => {
         notes: actionNotes
       });
       
-      toast.success('Onay isteği reddedildi');
+      toast.success(t('mobileApprovals.success.rejected'));
       setActionModalOpen(false);
       setActionNotes('');
       setRejectionReason('');
       loadData();
     } catch (error) {
       console.error('Failed to reject:', error);
-      toast.error(error.response?.data?.detail || 'Reddetme başarısız');
+      toast.error(error.response?.data?.detail || t('mobileApprovals.errors.rejectFailed'));
     }
   };
 
@@ -114,15 +114,15 @@ const MobileApprovals = ({ user }) => {
   };
 
   const getApprovalTypeLabel = (type) => {
-    const labels = {
-      discount: 'İndirim',
-      price_override: 'Fiyat Değişikliği',
-      budget_expense: 'Bütçe Harcama',
-      rate_change: 'Oran Değişikliği',
-      refund: 'İade',
-      comp_room: 'Complimentary Oda'
+    const keys = {
+      discount: 'discount',
+      price_override: 'priceOverride',
+      budget_expense: 'budgetExpense',
+      rate_change: 'rateChange',
+      refund: 'refund',
+      comp_room: 'compRoom'
     };
-    return labels[type] || type;
+    return keys[type] ? t(`mobileApprovals.types.${keys[type]}`) : type;
   };
 
   const getApprovalTypeIcon = (type) => {
@@ -141,9 +141,9 @@ const MobileApprovals = ({ user }) => {
 
   const getStatusBadge = (status) => {
     const config = {
-      pending: { label: 'Bekliyor', color: 'bg-yellow-500', icon: Clock },
-      approved: { label: 'Onaylandı', color: 'bg-green-500', icon: CheckCircle },
-      rejected: { label: 'Reddedildi', color: 'bg-red-500', icon: XCircle }
+      pending: { label: t('mobileApprovals.statuses.pending'), color: 'bg-yellow-500', icon: Clock },
+      approved: { label: t('mobileApprovals.statuses.approved'), color: 'bg-green-500', icon: CheckCircle },
+      rejected: { label: t('mobileApprovals.statuses.rejected'), color: 'bg-red-500', icon: XCircle }
     };
     
     const cfg = config[status] || config.pending;
@@ -159,10 +159,10 @@ const MobileApprovals = ({ user }) => {
 
   const getPriorityBadge = (priority, isUrgent) => {
     if (isUrgent || priority === 'urgent') {
-      return <Badge variant="destructive" className="animate-pulse">ACİL</Badge>;
+      return <Badge variant="destructive" className="animate-pulse">{t('mobileApprovals.priority.urgent')}</Badge>;
     }
     if (priority === 'high') {
-      return <Badge variant="default" className="bg-orange-500">Yüksek</Badge>;
+      return <Badge variant="default" className="bg-orange-500">{t('mobileApprovals.priority.high')}</Badge>;
     }
     return null;
   };
@@ -187,7 +187,7 @@ const MobileApprovals = ({ user }) => {
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="h-12 w-12 animate-spin text-purple-600 mx-auto mb-4" />
-          <p className="text-gray-600">Onaylar yükleniyor...</p>
+          <p className="text-gray-600">{t('mobileApprovals.loading')}</p>
         </div>
       </div>
     );
@@ -203,8 +203,8 @@ const MobileApprovals = ({ user }) => {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-xl font-bold">Onay Mekanizması</h1>
-              <p className="text-purple-100 text-sm">Bekleyen Onaylar</p>
+              <h1 className="text-xl font-bold">{t('mobileApprovals.title')}</h1>
+              <p className="text-purple-100 text-sm">{t('mobileApprovals.subtitle')}</p>
             </div>
           </div>
           
@@ -227,7 +227,7 @@ const MobileApprovals = ({ user }) => {
                 : 'bg-white/20 text-white'
             }`}
           >
-            Bekleyen ({stats.pending})
+            {t('mobileApprovals.tabs.pending')} ({stats.pending})
           </button>
           <button
             onClick={() => setActiveTab('my-requests')}
@@ -237,7 +237,7 @@ const MobileApprovals = ({ user }) => {
                 : 'bg-white/20 text-white'
             }`}
           >
-            İsteklerim ({stats.my_requests})
+            {t('mobileApprovals.tabs.myRequests')} ({stats.my_requests})
           </button>
         </div>
       </div>
@@ -247,7 +247,7 @@ const MobileApprovals = ({ user }) => {
         <div className="mx-4 mt-4">
           <div className="bg-red-500 text-white p-3 rounded-lg flex items-center gap-2 animate-pulse">
             <AlertTriangle className="h-5 w-5" />
-            <span className="font-semibold">{stats.urgent} acil onay bekliyor!</span>
+            <span className="font-semibold">{t('mobileApprovals.urgentBanner', { count: stats.urgent })}</span>
           </div>
         </div>
       )}
@@ -260,7 +260,7 @@ const MobileApprovals = ({ user }) => {
               <Card>
                 <CardContent className="pt-6 text-center">
                   <CheckCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">Bekleyen onay bulunmuyor</p>
+                  <p className="text-gray-500">{t('mobileApprovals.empty.pending')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -285,25 +285,25 @@ const MobileApprovals = ({ user }) => {
 
                     <div className="bg-gray-50 rounded p-3 mb-3 space-y-1">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Miktar:</span>
+                        <span className="text-gray-600">{t('mobileApprovals.fields.amount')}</span>
                         <span className="font-bold">₺{approval.amount.toFixed(2)}</span>
                       </div>
                       {approval.original_value && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Eski → Yeni:</span>
+                          <span className="text-gray-600">{t('mobileApprovals.fields.oldNew')}</span>
                           <span>₺{approval.original_value} → ₺{approval.new_value}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Bekliyor:</span>
+                        <span className="text-gray-600">{t('mobileApprovals.fields.waitingHours')}</span>
                         <span className={approval.is_urgent ? 'text-red-600 font-semibold' : ''}>
-                          {approval.time_waiting_hours} saat
+                          {t('mobileApprovals.fields.waitingHoursValue', { hours: approval.time_waiting_hours })}
                         </span>
                       </div>
                     </div>
 
                     <div className="text-sm text-gray-700 mb-3">
-                      <span className="font-semibold">Sebep: </span>
+                      <span className="font-semibold">{t('mobileApprovals.fields.reason')} </span>
                       {approval.reason}
                     </div>
 
@@ -316,7 +316,7 @@ const MobileApprovals = ({ user }) => {
                           className="flex-1 border-red-200 hover:bg-red-50"
                         >
                           <XCircle className="h-4 w-4 mr-2" />
-                          Reddet
+                          {t('mobileApprovals.actions.reject')}
                         </Button>
                         <Button
                           size="sm"
@@ -324,7 +324,7 @@ const MobileApprovals = ({ user }) => {
                           className="flex-1 bg-green-600 hover:bg-green-700"
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
-                          Onayla
+                          {t('mobileApprovals.actions.approve')}
                         </Button>
                       </div>
                     )}
@@ -341,7 +341,7 @@ const MobileApprovals = ({ user }) => {
               <Card>
                 <CardContent className="pt-6 text-center">
                   <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">Henüz istek oluşturmadınız</p>
+                  <p className="text-gray-500">{t('mobileApprovals.empty.myRequests')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -363,24 +363,24 @@ const MobileApprovals = ({ user }) => {
 
                     <div className="text-sm space-y-1 mb-2">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Miktar:</span>
+                        <span className="text-gray-600">{t('mobileApprovals.fields.amount')}</span>
                         <span className="font-semibold">₺{request.amount.toFixed(2)}</span>
                       </div>
                       <div className="text-gray-700">
-                        <span className="font-semibold">Sebep: </span>
+                        <span className="font-semibold">{t('mobileApprovals.fields.reason')} </span>
                         {request.reason}
                       </div>
                     </div>
 
                     {request.status === 'approved' && request.approved_by && (
                       <div className="text-xs text-green-600 bg-green-50 p-2 rounded">
-                        ✓ {request.approved_by} tarafından onaylandı
+                        ✓ {t('mobileApprovals.approvedBy', { name: request.approved_by })}
                       </div>
                     )}
 
                     {request.status === 'rejected' && request.rejection_reason && (
                       <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                        ✗ Red: {request.rejection_reason}
+                        ✗ {t('mobileApprovals.rejectionLabel')} {request.rejection_reason}
                       </div>
                     )}
                   </CardContent>
@@ -396,7 +396,7 @@ const MobileApprovals = ({ user }) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {actionType === 'approve' ? 'Onay İsteğini Onayla' : 'Onay İsteğini Reddet'}
+              {actionType === 'approve' ? t('mobileApprovals.modal.approveTitle') : t('mobileApprovals.modal.rejectTitle')}
             </DialogTitle>
           </DialogHeader>
           
@@ -405,32 +405,32 @@ const MobileApprovals = ({ user }) => {
               <div className="bg-gray-50 p-3 rounded">
                 <div className="font-semibold mb-2">{getApprovalTypeLabel(selectedApproval.approval_type)}</div>
                 <div className="text-sm space-y-1">
-                  <div>Talep Eden: {selectedApproval.requested_by}</div>
-                  <div>Miktar: ₺{selectedApproval.amount.toFixed(2)}</div>
-                  <div>Sebep: {selectedApproval.reason}</div>
+                  <div>{t('mobileApprovals.modal.requestedBy')} {selectedApproval.requested_by}</div>
+                  <div>{t('mobileApprovals.modal.amountField')} ₺{selectedApproval.amount.toFixed(2)}</div>
+                  <div>{t('mobileApprovals.modal.reasonField')} {selectedApproval.reason}</div>
                 </div>
               </div>
 
               {actionType === 'reject' && (
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Red Sebebi <span className="text-red-500">*</span>
+                    {t('mobileApprovals.modal.rejectionReason')} <span className="text-red-500">*</span>
                   </label>
                   <Textarea
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
-                    placeholder="Red sebebini belirtin..."
+                    placeholder={t('mobileApprovals.modal.rejectionPlaceholder')}
                     rows={3}
                   />
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-2">Notlar (Opsiyonel)</label>
+                <label className="block text-sm font-medium mb-2">{t('mobileApprovals.modal.notes')}</label>
                 <Textarea
                   value={actionNotes}
                   onChange={(e) => setActionNotes(e.target.value)}
-                  placeholder="Ek notlar..."
+                  placeholder={t('mobileApprovals.modal.notesPlaceholder')}
                   rows={2}
                 />
               </div>
@@ -445,7 +445,7 @@ const MobileApprovals = ({ user }) => {
                   }}
                   className="flex-1"
                 >
-                  İptal
+                  {t('mobileApprovals.actions.cancel')}
                 </Button>
                 <Button
                   onClick={actionType === 'approve' ? handleApprove : handleReject}
@@ -455,7 +455,7 @@ const MobileApprovals = ({ user }) => {
                       : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {actionType === 'approve' ? 'Onayla' : 'Reddet'}
+                  {actionType === 'approve' ? t('mobileApprovals.actions.approve') : t('mobileApprovals.actions.reject')}
                 </Button>
               </div>
             </div>

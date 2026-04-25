@@ -4605,3 +4605,25 @@ Architect review identified 4 issues; all addressed:
 4. **`landing.footer.*` keys missing in 8 locales** → removed unused keys from tr/en (LandingPage uses hardcoded TR strings; keys had no consumers). Will re-add when LandingPage footer is i18n'd.
 
 Vite hot-reloaded both locale files cleanly. No console errors.
+
+## v112 — Mobile + FrontDesk + Procurement i18n completion (2026-04-25)
+
+Closed v111's 4 deferred i18n items. All 4 modules pass architect review.
+
+**Files touched:**
+- `frontend/src/pages/MobileInventory.jsx` — ~30 hardcoded TR strings → `t('mobileInventory.*')` (header, stats, alerts banner, low-stock warning, adjust modal with type/reason dropdowns, alerts modal urgency badges, movements modal)
+- `frontend/src/pages/MobileApprovals.jsx` — ~25 strings → `t('mobileApprovals.*')` (type/status/priority labels via lookup keys, tabs, urgent banner, fields, actions, approve/reject modal)
+- `frontend/src/components/EnhancedFrontDesk.jsx` — full rewrite added `useTranslation` import, ~12 EN strings → `t('frontDeskEnhanced.*')` (separate namespace from existing `nav.frontDesk` to avoid collision; covers header, scan/walk-in buttons, today's arrivals, guest alerts modal, walk-in form labels, all toasts)
+- `frontend/src/pages/ProcurementPage.jsx` — added `useTranslation`; PR Modal department field changed from free-text Input to `<select>` dropdown with 8 hard-coded Turkish values (Kat Hizmetleri, F&B, Teknik, Ön Büro, Bakım, Güvenlik, Yönetim, Diğer); display labels via `t('procurement.prModal.departments.*')`
+
+**Locale namespaces injected** via `.local/i18n_payload.py` into all 10 files:
+- `mobileInventory.*` (~35 keys)
+- `mobileApprovals.*` (~30 keys)
+- `frontDeskEnhanced.*` (~25 keys, separate from existing `nav.frontDesk`)
+- `procurement.prModal.*` (department dropdown labels, 8 entries)
+
+TR uses Turkish; en + 8 others use English fallback.
+
+**Critical pattern preserved:** dropdown `<option value="...">` attributes kept in original Turkish strings (e.g., `value="Tedarikçi teslimatı"`, `value="Kat Hizmetleri"`) because backend stores/expects exact values; only display text uses `t()`. This way language switching does not change submitted values, preventing data inconsistency.
+
+**Architect review (evaluate_task):** PASS. Vite build clean, no missing keys, no namespace collisions, all interpolation params ({{count}}, {{name}}, {{folio}}, {{adults}}, {{children}}, {{hours}}) consistent. Backend `PRIn.department` is free string — no API breakage.

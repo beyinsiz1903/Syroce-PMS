@@ -2786,5 +2786,185 @@
     "planCreated": "Ödeme planı oluşturuldu",
     "planError": "Ödeme planı oluşturulamadı",
     "installmentPaid": "Taksit ödendi olarak işaretlendi"
+  },
+  "mobileInventory": {
+    "title": "Stok Yönetimi",
+    "subtitle": "Mobil Görünüm",
+    "loading": "Stok verileri yükleniyor...",
+    "errors": {
+      "loadFailed": "Stok verileri yüklenemedi",
+      "movementsFailed": "Hareketler yüklenemedi",
+      "fillAllFields": "Lütfen tüm alanları doldurun",
+      "updateFailed": "Stok güncellenemedi"
+    },
+    "success": {
+      "adjusted": "Stok başarıyla güncellendi"
+    },
+    "stats": {
+      "total": "Toplam",
+      "good": "İyi",
+      "low": "Düşük",
+      "outOfStock": "Tükendi"
+    },
+    "alertsBanner": "{{count}} düşük stok uyarısı",
+    "details": "Detaylar",
+    "showLowOnly": "Sadece düşük stokları göster",
+    "empty": "Stok kaydı bulunamadı",
+    "current": "Mevcut Stok",
+    "minimum": "Minimum",
+    "lowStockWarning": "Stok düşük! Sipariş verilmeli",
+    "adjust": "Stok Ayarla",
+    "alertsModal": {
+      "title": "Düşük Stok Uyarıları",
+      "urgency": {
+        "critical": "KRİTİK",
+        "high": "YÜKSEK",
+        "medium": "ORTA"
+      },
+      "shortage": "Eksik",
+      "recommendedOrder": "Önerilen sipariş"
+    },
+    "movementsModal": {
+      "title": "Stok Hareketleri (Son 7 Gün)"
+    },
+    "adjustModal": {
+      "title": "Stok Ayarla",
+      "currentLabel": "Mevcut",
+      "type": "İşlem Tipi",
+      "typeIn": "Giriş (+)",
+      "typeOut": "Çıkış (-)",
+      "typeAdjustment": "Düzeltme (Sabit)",
+      "quantity": "Miktar",
+      "quantityPlaceholder": "Miktar giriniz",
+      "reason": "Sebep *",
+      "reasonSelect": "Seçiniz...",
+      "reasons": {
+        "supplier": "Tedarikçi teslimatı",
+        "fbSale": "F&B satışı",
+        "waste": "Fire",
+        "return": "İade",
+        "count": "Sayım düzeltmesi",
+        "other": "Diğer"
+      },
+      "notes": "Notlar",
+      "notesPlaceholder": "Ek notlar (opsiyonel)",
+      "cancel": "İptal",
+      "save": "Kaydet"
+    }
+  },
+  "mobileApprovals": {
+    "title": "Onay Mekanizması",
+    "subtitle": "Bekleyen Onaylar",
+    "loading": "Onaylar yükleniyor...",
+    "errors": {
+      "loadFailed": "Onaylar yüklenemedi",
+      "approveFailed": "Onaylama başarısız",
+      "rejectFailed": "Reddetme başarısız",
+      "reasonRequired": "Red sebebi gerekli"
+    },
+    "success": {
+      "approved": "Onay isteği onaylandı",
+      "rejected": "Onay isteği reddedildi"
+    },
+    "types": {
+      "discount": "İndirim",
+      "priceOverride": "Fiyat Değişikliği",
+      "budgetExpense": "Bütçe Harcama",
+      "rateChange": "Oran Değişikliği",
+      "refund": "İade",
+      "compRoom": "Complimentary Oda"
+    },
+    "statuses": {
+      "pending": "Bekliyor",
+      "approved": "Onaylandı",
+      "rejected": "Reddedildi"
+    },
+    "priority": {
+      "urgent": "ACİL",
+      "high": "Yüksek"
+    },
+    "tabs": {
+      "pending": "Bekleyen",
+      "myRequests": "İsteklerim"
+    },
+    "urgentBanner": "{{count}} acil onay bekliyor!",
+    "empty": {
+      "pending": "Bekleyen onay bulunmuyor",
+      "myRequests": "Henüz istek oluşturmadınız"
+    },
+    "fields": {
+      "amount": "Miktar:",
+      "oldNew": "Eski → Yeni:",
+      "waitingHours": "Bekliyor:",
+      "waitingHoursValue": "{{hours}} saat",
+      "reason": "Sebep:"
+    },
+    "actions": {
+      "reject": "Reddet",
+      "approve": "Onayla",
+      "cancel": "İptal"
+    },
+    "approvedBy": "{{name}} tarafından onaylandı",
+    "rejectionLabel": "Red:",
+    "modal": {
+      "approveTitle": "Onay İsteğini Onayla",
+      "rejectTitle": "Onay İsteğini Reddet",
+      "requestedBy": "Talep Eden:",
+      "amountField": "Miktar:",
+      "reasonField": "Sebep:",
+      "rejectionReason": "Red Sebebi",
+      "rejectionPlaceholder": "Red sebebini belirtin...",
+      "notes": "Notlar (Opsiyonel)",
+      "notesPlaceholder": "Ek notlar..."
+    }
+  },
+  "frontDeskEnhanced": {
+    "title": "Ön Büro",
+    "scanPassport": "Pasaport Tara",
+    "walkInBooking": "Walk-in Rezervasyon",
+    "todayArrivals": "Bugünün Girişleri ({{count}})",
+    "alerts": "Uyarılar",
+    "quickCheckin": "Hızlı Giriş",
+    "guest": "Misafir",
+    "room": "Oda:",
+    "tba": "Belirsiz",
+    "adultsChildren": "{{adults}} Yetişkin, {{children}} Çocuk",
+    "guestAlertsTitle": "Misafir Uyarıları - {{name}}",
+    "close": "Kapat",
+    "walkInModal": {
+      "title": "Hızlı Walk-in Rezervasyon",
+      "guestName": "Misafir Adı*",
+      "phone": "Telefon*",
+      "email": "E-posta",
+      "roomId": "Oda ID*",
+      "nights": "Gece*",
+      "adults": "Yetişkin*",
+      "children": "Çocuk",
+      "cancel": "İptal",
+      "submit": "Oluştur ve Giriş Yap"
+    },
+    "toasts": {
+      "passportScanned": "Pasaport başarıyla tarandı",
+      "passportFailed": "Pasaport taranamadı",
+      "walkInCreated": "Walk-in rezervasyon oluşturuldu • Folyo: {{folio}}",
+      "walkInFailed": "Walk-in rezervasyon oluşturulamadı",
+      "checkedIn": "Misafir girişi başarıyla tamamlandı",
+      "checkinFailed": "Misafir giriş yapılamadı"
+    }
+  },
+  "procurement": {
+    "prModal": {
+      "departmentSelectPlaceholder": "Departman seçin",
+      "departments": {
+        "housekeeping": "Kat Hizmetleri",
+        "fnb": "F&B (Yiyecek-İçecek)",
+        "engineering": "Teknik / Mühendislik",
+        "frontOffice": "Ön Büro",
+        "maintenance": "Bakım",
+        "security": "Güvenlik",
+        "administration": "Yönetim",
+        "other": "Diğer"
+      }
+    }
   }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -52,6 +53,7 @@ const Modal = ({ title, children, onClose, wide }) => (
 );
 
 const ProcurementPage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = useState('summary');
@@ -560,9 +562,22 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
         <Modal title="Yeni Satınalma Talebi" onClose={() => setPrForm(null)} wide>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Departman *</Label>
-              <Input value={prForm.department}
+              <select
+                value={prForm.department || ''}
                 onChange={(e) => setPrForm({ ...prForm, department: e.target.value })}
-                placeholder="Housekeeping / F&B / Engineering" /></div>
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="">{t('procurement.prModal.departmentSelectPlaceholder')}</option>
+                <option value="Kat Hizmetleri">{t('procurement.prModal.departments.housekeeping')}</option>
+                <option value="F&B">{t('procurement.prModal.departments.fnb')}</option>
+                <option value="Teknik">{t('procurement.prModal.departments.engineering')}</option>
+                <option value="Ön Büro">{t('procurement.prModal.departments.frontOffice')}</option>
+                <option value="Bakım">{t('procurement.prModal.departments.maintenance')}</option>
+                <option value="Güvenlik">{t('procurement.prModal.departments.security')}</option>
+                <option value="Yönetim">{t('procurement.prModal.departments.administration')}</option>
+                <option value="Diğer">{t('procurement.prModal.departments.other')}</option>
+              </select>
+            </div>
             <div><Label>Talep Eden</Label>
               <Input value={prForm.requester || ''}
                 onChange={(e) => setPrForm({ ...prForm, requester: e.target.value })} /></div>
