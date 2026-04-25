@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from '@/lib/axiosConfig';
+import axios from 'axios';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import {
