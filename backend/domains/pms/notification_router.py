@@ -2,7 +2,9 @@
 PMS / Notifications Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -23,6 +25,58 @@ from modules.pms_core.role_permission_service import require_op  # v100 DW
 logger = logging.getLogger(__name__)
 
 DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"]
+
+# Per-user micro-cache for /notifications/list. The dashboard polls this every
+# few seconds; the underlying Mongo query (no index on user_id+created_at) costs
+# ~1s on the first call. A 10-second TTL keeps the UI responsive while cutting
+# DB load by ~10x and stays well below "user perceives stale" threshold.
+_NOTIF_LIST_CACHE: dict[tuple[str, bool, int], tuple[float, dict]] = {}
+_NOTIF_LIST_TTL_SEC = 10.0
+
+# Index creation guard: serialize first-request concurrency with a Lock and
+# track success vs transient failure separately so transient errors are retried
+# (with backoff) instead of being permanently suppressed.
+_NOTIF_INDEX_LOCK = asyncio.Lock()
+_NOTIF_INDEX_CREATED = False
+_NOTIF_INDEX_LAST_ATTEMPT = 0.0
+_NOTIF_INDEX_RETRY_BACKOFF_SEC = 60.0  # after a failure, wait at least 60s before retrying
+
+
+async def _ensure_notif_indexes() -> None:
+    """Create compound indexes the first time the notifications endpoint is hit.
+
+    - Idempotent: Mongo's create_index is a no-op if the index already exists.
+    - Concurrency-safe: a single asyncio.Lock prevents the first 50 concurrent
+      requests after a fresh start from all calling create_index simultaneously.
+    - Transient-failure resilient: on error we backoff for 60s rather than
+      permanently disabling retries (which would leave the table un-indexed
+      until the next process restart).
+    """
+    global _NOTIF_INDEX_CREATED, _NOTIF_INDEX_LAST_ATTEMPT
+    if _NOTIF_INDEX_CREATED:
+        return
+    now = time.monotonic()
+    if (now - _NOTIF_INDEX_LAST_ATTEMPT) < _NOTIF_INDEX_RETRY_BACKOFF_SEC:
+        return  # last attempt failed recently, don't hammer Mongo
+    async with _NOTIF_INDEX_LOCK:
+        if _NOTIF_INDEX_CREATED:  # double-checked locking
+            return
+        _NOTIF_INDEX_LAST_ATTEMPT = time.monotonic()
+        try:
+            await db.notifications.create_index(
+                [("user_id", 1), ("created_at", -1)], background=True
+            )
+            await db.notifications.create_index(
+                [("tenant_id", 1), ("user_id", 1), ("created_at", -1)], background=True
+            )
+            _NOTIF_INDEX_CREATED = True
+            logger.info("notifications: ensured (user_id, created_at) compound indexes")
+        except Exception as exc:
+            # Stays False so the next request (after backoff) retries.
+            logger.warning(
+                "notifications: index creation failed (will retry in %ss): %s",
+                int(_NOTIF_INDEX_RETRY_BACKOFF_SEC), exc,
+            )
 
 
 async def _collect_push_devices(
@@ -550,6 +604,14 @@ async def get_notifications_list(
     """
     current_user = await get_current_user(credentials)
 
+    cache_key = (current_user.id, unread_only, limit)
+    now = time.monotonic()
+    cached = _NOTIF_LIST_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _NOTIF_LIST_TTL_SEC:
+        return cached[1]
+
+    await _ensure_notif_indexes()
+
     query = {
         '$or': [
             {'user_id': current_user.id},
@@ -573,11 +635,13 @@ async def get_notifications_list(
             'action_url': notif.get('action_url')
         })
 
-    return {
+    result = {
         'notifications': notifications,
         'count': len(notifications),
         'unread_count': len([n for n in notifications if not n['read']])
     }
+    _NOTIF_LIST_CACHE[cache_key] = (now, result)
+    return result
 
 
 # 4. PUT /api/notifications/{notification_id}/mark-read - Mark as read

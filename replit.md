@@ -176,6 +176,38 @@ Reduced from 1309 lines via dialog extraction.
 - **Logger geçişi**: 209 `print()` → `logger.info()` (28 üretim dosyası), test/scripts dokunulmadı; frontend için Vite zaten `oxc.drop: ['console','debugger']` ile production build'de log temizliyor.
 - **Quick-ID API workflow** restart ile düzeltildi (artık 200 dönüyor).
 
+## Smoke-Fix Pass (Apr 25, 2026)
+
+End-to-end smoke testi sonrası tespit edilen yavaş endpoint'ler ve gürültü düzeltildi.
+
+**Latency:**
+- `/api/openapi.json`: 1595ms → ~150ms (`backend/app.py`'da `application.openapi_schema` cache wrapper; rotalar boot-time eklendiği için invalidation gerekmez).
+- `/api/notifications/list`: 1049ms → ~275ms cache hit (`backend/domains/pms/notification_router.py`'da per-user 10s in-process cache + `(user_id, created_at)` ve `(tenant_id, user_id, created_at)` Mongo compound index'leri; `_ensure_notif_indexes()` ilk istekte `asyncio.Lock` ile dogpile koruması altında çalışır, hata durumunda 60s backoff ile tekrar dener — kalıcı suppression yok).
+- `/api/channel-manager/hotelrunner/usage`: 1072ms → ~415ms cache hit (per-tenant 30s in-process cache `router_internal.py`'da).
+
+**Router mount temizliği — server.py artık SADECE bootstrap'in yapamadığı işleri yapıyor:**
+- 9 router (`report_builder`, `guest_messaging`, `cm_hardening`, `cm_v2`, `room_qr`, `ops_events`, `ops_timeline`, `early_warning`, `outbox_admin`, `import_admin`) `server.py`'dan kaldırıldı; her biri zaten `bootstrap/router_registry.py`'da kayıtlıydı, çift mount FastAPI'nin OpenAPI üretiminde "Duplicate Operation ID" uyarısı çıkartıyordu.
+- Sonuç: Cosmetic uyarı sayısı 246 → 39, gerçek `operationId` çakışması 4 → 0.
+- **Init pattern korundu:** `report_builder` ve `guest_messaging` modül-seviye db/auth bağımlılıklarını `init_*(db, get_current_user)` ile kuruyor; `app.include_router(...)` çağrıları silindi ama `init_*()` çağrıları korundu (router'lar bootstrap üzerinden mount oluyor, sadece bağımlılık enjeksiyonu için init lazım).
+- **YENİ ROUTER EKLERKEN:** Önce `bootstrap/router_registry.py:_EXTRACTED_ROUTERS` listesine ekle. `server.py`'a `app.include_router(...)` ekleme — çift mount uyarısına yol açar.
+
+**Real `operationId` collision fix:**
+- `backend/domains/pms/pos_router.py`'da 4 handler (`get_channel_distribution_mobile`, `get_pickup_graph_mobile`, `get_revenue_forecast_mobile`, `create_rate_override_mobile`) ile `backend/domains/revenue/pricing_router/revenue_mobile.py`'daki aynı isimli handler'lar farklı path'lerde olmasına rağmen aynı auto-generated opId üretiyordu. POS tarafına explicit `operation_id="pos_..."` prefix eklendi (path değişmedi).
+
+**Vite HMR fix:**
+- `frontend/vite.config.js`: HMR WebSocket'i artık `process.env.REPLIT_DEV_DOMAIN` host + 443/wss kullanıyor; env yoksa HMR `false` (önce `localhost`'a bağlanmaya çalışıp `ECONNREFUSED` alıyordu).
+
+**Bilinçli olarak BIRAKILAN 39 cosmetic warning:**
+Aynı path'i iki farklı router dosyası tanımlıyor (kısmi göç kalıntıları). Hangi dosyanın canonical olduğu kullanıcı kararı:
+- `/accounting/*` → `routers/finance/accounting.py` ↔ `domains/accounting/endpoints.py`
+- `/pms/room-blocks` → `routers/housekeeping.py` ↔ `routers/pms_availability.py`
+- `/folio/booking/*` → `domains/pms/misc_router.py` ↔ `routers/finance/folio.py`
+- `/ai/pms/{occupancy-prediction,guest-patterns}` → `domains/ai/router.py` ↔ `domains/ai/endpoints.py`
+- `/api/imports/*` → `cache_manager.py` ↔ `routers/import_admin.py`
+- `/api/outbox/*` → `cache_manager.py` ↔ `routers/outbox_admin.py`
+- `/marketplace/*` ↔ `/pos/menu_items` → `marketplace_router.py` (kendi içinde router içeriklerinden ötürü)
+- `/notifications/{notification_id}/mark-read` → `domains/pms/notification_router.py` ↔ `domains/notifications_router.py`
+
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management
 - `GET/POST/PATCH /api/laundry/orders` — Laundry order management

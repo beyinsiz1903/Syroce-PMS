@@ -105,12 +105,20 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5000,
     allowedHosts: true,
-    hmr: {
-      clientPort: 443,
-      protocol: 'wss',
-      // Shorter timeout = more frequent pings = WebSocket stays alive through proxy
-      timeout: 15000,
-    },
+    // HMR through Replit's mTLS proxy:
+    //   - host: must be the public REPLIT_DEV_DOMAIN, NOT localhost
+    //     (otherwise the browser tries wss://localhost and gets ECONNREFUSED).
+    //   - clientPort 443 because the browser hits the proxy on https/wss.
+    //   - hmr is disabled when REPLIT_DEV_DOMAIN is missing (e.g. CI builds)
+    //     so a missing env var never poisons the WS URL.
+    hmr: process.env.REPLIT_DEV_DOMAIN
+      ? {
+          host: process.env.REPLIT_DEV_DOMAIN,
+          clientPort: 443,
+          protocol: 'wss',
+          timeout: 15000,
+        }
+      : false,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

@@ -345,20 +345,20 @@ if _failed_routers:
 
 # Report Builder & Guest Messaging (init pattern)
 try:
+    # Router itself is mounted via bootstrap/router_registry.py:72 — we only
+    # need to call init_report_builder here so the handlers see db + auth.
     from routers.report_builder import init_report_builder
-    from routers.report_builder import router as report_builder_router
     init_report_builder(db, get_current_user)
-    app.include_router(report_builder_router, tags=["Report Builder"])
 except Exception as _rb_err:
-    logger.warning("Report Builder router skipped: %s", _rb_err)
+    logger.warning("Report Builder init skipped: %s", _rb_err)
 
 try:
+    # Router itself is mounted via bootstrap/router_registry.py:73 — we only
+    # need to call init_guest_messaging here so the handlers see db + auth.
     from routers.guest_messaging import init_guest_messaging
-    from routers.guest_messaging import router as guest_messaging_router
     init_guest_messaging(db, get_current_user)
-    app.include_router(guest_messaging_router, tags=["Guest Messaging"])
 except Exception as _gm_err:
-    logger.warning("Guest Messaging router skipped: %s", _gm_err)
+    logger.warning("Guest Messaging init skipped: %s", _gm_err)
 
 # Supplies Marketplace (B2B) — vendor portal + hotel storefront + admin
 try:
@@ -397,29 +397,16 @@ try:
 except Exception as _ws_sock_err:
     logger.warning("WebSocket server skipped: %s", _ws_sock_err)
 
-# Channel Manager — Hardening (runtime status, drift, reconciliation, etc.)
-try:
-    from domains.channel_manager.hardening_router import router as cm_hardening_router
-    app.include_router(cm_hardening_router)
-    logger.info("  ✅ Channel Manager hardening router loaded")
-except Exception as _cmh_err:
-    logger.warning("Channel Manager hardening router skipped: %s", _cmh_err)
+# Channel Manager — Hardening: mounted via bootstrap/router_registry.py:122.
+# DO NOT re-include here — it would double-register all hardening routes and
+# emit "Duplicate Operation ID" warnings at OpenAPI generation time.
 
-# Channel Manager v2
-try:
-    from channel_manager.interfaces.router_registry import router as cm_v2_router
-    app.include_router(cm_v2_router, tags=["Channel Manager v2"])
-    logger.info("  ✅ Channel Manager v2 router loaded (connector-first architecture)")
-except Exception as _cmv2_err:
-    logger.warning("Channel Manager v2 router skipped: %s", _cmv2_err)
+# Channel Manager v2 — included via bootstrap/router_registry.py:256.
+# DO NOT also include it here, it would double-mount 147 routes and emit
+# ~213 "Duplicate Operation ID" warnings at OpenAPI generation time.
 
 # OTA-002: Outbox Admin endpoints (requeue, replay, status)
-try:
-    from routers.outbox_admin import outbox_admin_router
-    app.include_router(outbox_admin_router, prefix="/api", tags=["Outbox Admin"])
-    logger.info("  ✅ OTA Outbox Admin router loaded (requeue/replay/status)")
-except Exception as _outbox_err:
-    logger.warning("Outbox Admin router skipped: %s", _outbox_err)
+# Mounted via bootstrap/router_registry.py:247 — not here.
 
 # Webhook Admin endpoints (deliveries, DLQ, manual retry)
 try:
@@ -430,12 +417,7 @@ except Exception as _wh_err:
     logger.warning("Webhook Admin router skipped: %s", _wh_err)
 
 # DATA-001: Import Admin endpoints (review queue, retry, approve, dismiss)
-try:
-    from routers.import_admin import import_admin_router
-    app.include_router(import_admin_router, prefix="/api", tags=["Import Admin"])
-    logger.info("  ✅ Import Admin router loaded (DATA-001 review queue/retry)")
-except Exception as _import_err:
-    logger.warning("Import Admin router skipped: %s", _import_err)
+# Mounted via bootstrap/router_registry.py:248 — not here.
 
 # Entitlement, Metering & Feature Flags Admin API
 try:
@@ -462,11 +444,10 @@ except Exception as _ws_err:
     logger.warning(f"Wire Status router skipped: {_ws_err}")
 
 # Quick-ID Microservice Proxy (kimlik tarama)
+# Note: room_qr_router is mounted via bootstrap/router_registry.py:250 — not here.
 try:
     from routers.quick_id_proxy import router as quick_id_proxy_router
     app.include_router(quick_id_proxy_router)
-    from routers.room_qr_requests import router as room_qr_router
-    app.include_router(room_qr_router)
     logger.info("  ✅ Quick-ID proxy router loaded")
 except Exception as _qid_err:
     logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")
@@ -504,20 +485,10 @@ except Exception as _notif_err:
     logger.warning(f"Notifications router skipped: {_notif_err}")
 
 # ── Ops Events & Telemetry Router ───────────────────────────────────
-try:
-    from routers.ops_events_router import router as ops_events_router
-    app.include_router(ops_events_router, tags=["Ops Events & Telemetry"])
-    logger.info("  ✅ Ops Events & Telemetry router loaded")
-except Exception as _ops_err:
-    logger.warning(f"Ops Events router skipped: {_ops_err}")
+# Mounted via bootstrap/router_registry.py:243 — not here.
 
 # ── Ops Timeline & Incident Correlation Router ──────────────────────
-try:
-    from routers.ops_timeline_router import router as ops_timeline_router
-    app.include_router(ops_timeline_router, tags=["Ops Timeline & Incidents"])
-    logger.info("  ✅ Ops Timeline & Incidents router loaded")
-except Exception as _timeline_err:
-    logger.warning(f"Ops Timeline router skipped: {_timeline_err}")
+# Mounted via bootstrap/router_registry.py:244 — not here.
 
 # ── Encryption Management Router ─────────────────────────────────────
 try:
@@ -528,12 +499,7 @@ except Exception as _enc_mgmt_err:
     logger.warning(f"Encryption Management router skipped: {_enc_mgmt_err}")
 
 # ── Early Warning & Predictive Alerting Router ───────────────────────
-try:
-    from routers.early_warning_router import router as early_warning_router
-    app.include_router(early_warning_router, tags=["Early Warning & Predictive"])
-    logger.info("  ✅ Early Warning router loaded")
-except Exception as _ew_err:
-    logger.warning(f"Early Warning router skipped: {_ew_err}")
+# Mounted via bootstrap/router_registry.py:245 — not here.
 
 
 # ── Lifecycle events ────────────────────────────────────────────────

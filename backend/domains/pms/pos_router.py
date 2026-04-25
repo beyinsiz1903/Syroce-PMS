@@ -1427,7 +1427,7 @@ async def get_segment_analysis_mobile(
     }
 
 
-@router.get("/revenue/mobile/channel-distribution")
+@router.get("/revenue/mobile/channel-distribution", operation_id="pos_get_channel_distribution_mobile")
 async def get_channel_distribution_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1488,7 +1488,7 @@ async def get_channel_distribution_mobile(
     }
 
 
-@router.get("/revenue/mobile/pickup-graph")
+@router.get("/revenue/mobile/pickup-graph", operation_id="pos_get_pickup_graph_mobile")
 async def get_pickup_graph_mobile(
     arrival_date: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1540,7 +1540,7 @@ async def get_pickup_graph_mobile(
     }
 
 
-@router.get("/revenue/mobile/forecast")
+@router.get("/revenue/mobile/forecast", operation_id="pos_get_revenue_forecast_mobile")
 async def get_revenue_forecast_mobile(
     forecast_days: int = 90,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1769,7 +1769,7 @@ async def get_cancellations_noshows_mobile(
     }
 
 
-@router.post("/revenue/mobile/rate-override")
+@router.post("/revenue/mobile/rate-override", operation_id="pos_create_rate_override_mobile")
 async def create_rate_override_mobile(
     room_type: str,
     date: str,

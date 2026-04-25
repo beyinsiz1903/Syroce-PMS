@@ -95,4 +95,24 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         import logging
         logging.getLogger(__name__).warning("Upload static mount failed (%s): %s", upload_dir, e)
 
+    # ── OpenAPI schema cache ────────────────────────────────────────
+    # With ~2435 paths, FastAPI's default openapi() rebuild costs ~1.5s per request
+    # (called by /docs, /redoc, /api/openapi.json). Cache the generated dict so the
+    # second and later calls are served from memory.
+    from fastapi.openapi.utils import get_openapi as _get_openapi
+
+    def _cached_openapi():
+        if application.openapi_schema is None:
+            application.openapi_schema = _get_openapi(
+                title=application.title,
+                version=application.version,
+                description=application.description,
+                routes=application.routes,
+                tags=application.openapi_tags,
+                servers=application.servers,
+            )
+        return application.openapi_schema
+
+    application.openapi = _cached_openapi  # type: ignore[assignment]
+
     return application

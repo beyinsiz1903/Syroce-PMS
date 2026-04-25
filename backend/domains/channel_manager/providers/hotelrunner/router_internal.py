@@ -12,6 +12,8 @@ Read-only diagnostic endpoints used by the Channel Manager UI:
 Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
+import time
+
 from fastapi import APIRouter, Depends
 
 from core.database import db
@@ -21,6 +23,13 @@ from models.schemas import User
 from .factory import get_provider
 
 router = APIRouter()
+
+# In-process micro-cache for /usage. The endpoint is polled by the CM dashboard
+# every few seconds; rebuilding the provider + reading two timestamps from Mongo
+# costs ~1s per call. A 30-second TTL is well below operator perception while
+# slashing per-tenant load by ~30x.
+_USAGE_CACHE: dict[str, tuple[float, dict]] = {}
+_USAGE_TTL_SEC = 30.0
 
 
 @router.get("/pms-room-types")
@@ -78,8 +87,15 @@ async def get_sync_logs(
 @router.get("/usage")
 async def get_api_usage(current_user: User = Depends(get_current_user)):
     """Get HotelRunner API usage statistics (in-process counters, no HTTP egress)."""
-    provider, conn = await get_provider(current_user.tenant_id)
+    tenant_id = current_user.tenant_id
+    now = time.monotonic()
+    cached = _USAGE_CACHE.get(tenant_id)
+    if cached and (now - cached[0]) < _USAGE_TTL_SEC:
+        return cached[1]
+
+    provider, conn = await get_provider(tenant_id)
     stats = provider.get_usage_stats()
     stats["last_sync_at"] = conn.get("last_sync_at")
     stats["connected_at"] = conn.get("connected_at")
+    _USAGE_CACHE[tenant_id] = (now, stats)
     return stats
