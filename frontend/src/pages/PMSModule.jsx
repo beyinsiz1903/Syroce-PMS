@@ -32,7 +32,7 @@ import PaymentDialog from '@/components/pms/PaymentDialog';
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
 import CashierTab from '@/components/pms/CashierTab';
 import UpsellTab from '@/components/pms/UpsellTab';
-import MessagingTab from '@/components/pms/MessagingTab';
+import InternalChatTab from '@/components/pms/InternalChatTab';
 import ReportsTab from '@/components/pms/ReportsTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
 import RoomTimelineView from '@/components/pms/RoomTimelineView';
@@ -161,7 +161,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'bookings', labelText: 'Rezervasyonlar', icon: Calendar, testId: 'tab-bookings' },
     { key: 'cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
     { key: 'upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
-    { key: 'messaging', labelText: 'Mesajlaşma', icon: MessageSquare, testId: 'tab-messaging' },
+    { key: 'internal_chat', labelText: 'İletişim', icon: MessageSquare, testId: 'tab-internal-chat' },
     { key: 'reports', labelText: 'Raporlar', icon: FileText, testId: 'tab-reports' },
     { key: 'flash', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
     { key: 'tasks', labelText: 'Görevler', icon: Wrench, testId: 'tab-tasks' },
@@ -769,7 +769,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
           <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>
           <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>
-          <TabsContent value="messaging" className="space-y-4"><MessagingTab guests={guests} /></TabsContent>
+          <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>
           <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>
           <TabsContent value="flash" className="space-y-4"><FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
           <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>
