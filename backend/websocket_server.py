@@ -113,6 +113,11 @@ def _internal_chat_rooms(tenant_id: str, user_id: str, department: str | None) -
     return rooms
 
 
+def _is_internal_chat_room(room: str) -> bool:
+    """Whether a room name belongs to the protected internal chat namespace."""
+    return isinstance(room, str) and room.startswith('internal_chat:')
+
+
 @sio.event
 async def connect(sid, environ, auth):
     """Handle client connection.
@@ -202,10 +207,47 @@ async def disconnect(sid):
                         f"({sid} → {room}): {e}"
                     )
 
+def _is_internal_chat_room(room: str) -> bool:
+    return isinstance(room, str) and room.startswith('internal_chat:')
+
+
 @sio.event
 async def join_room(sid, data):
-    """Join a specific room for targeted updates"""
-    room = data.get('room', 'general')
+    """Join a specific room for targeted updates.
+
+    Membership for `internal_chat:*` rooms is granted exclusively at
+    `connect` time based on the authenticated identity (tenant + user +
+    department). Manual join requests for those rooms are rejected here so
+    a logged-in user cannot eavesdrop on another user's, department's, or
+    tenant's chat events by guessing a room name.
+
+    Other shared rooms (dashboard, pms, notifications, kitchen,
+    system-health, cockpit) remain freely joinable for backward
+    compatibility — those streams are not user-private.
+    """
+    room = (data or {}).get('room', 'general') if isinstance(data, dict) else 'general'
+
+    if _is_internal_chat_room(room):
+        identity = sid_identity.get(sid)
+        allowed = False
+        if identity:
+            allowed_rooms = set(_internal_chat_rooms(
+                identity.get('tenant_id'),
+                identity.get('user_id'),
+                identity.get('department'),
+            ))
+            allowed = room in allowed_rooms
+        if not allowed:
+            logger.warning(
+                f"Client {sid} denied join to internal_chat room {room!r} "
+                f"(authenticated={bool(identity)})"
+            )
+            await sio.emit('room_join_denied', {
+                'room': room,
+                'reason': 'not_authorized',
+            }, to=sid)
+            return
+
     await sio.enter_room(sid, room)
 
     if room in connected_clients:
@@ -219,8 +261,20 @@ async def join_room(sid, data):
 
 @sio.event
 async def leave_room(sid, data):
-    """Leave a specific room"""
-    room = data.get('room', 'general')
+    """Leave a specific room.
+
+    `internal_chat:*` rooms cannot be left manually — they are tied to the
+    authenticated identity and are torn down on disconnect. Allowing a
+    client to leave them would silently disable their own read receipts
+    and typing indicators while leaving the rest of the app in an
+    inconsistent state.
+    """
+    room = (data or {}).get('room', 'general') if isinstance(data, dict) else 'general'
+
+    if _is_internal_chat_room(room):
+        logger.debug(f"Client {sid} attempted to leave protected room {room!r}; ignored")
+        return
+
     await sio.leave_room(sid, room)
 
     if room in connected_clients and sid in connected_clients[room]:
@@ -372,19 +426,28 @@ async def broadcast_internal_message_read(
     message_ids: list[str] | None = None,
     partner_id: str | None = None,
 ):
-    """Notify the `pms` room that `reader_id` has read messages.
+    """Notify the original sender that `reader_id` has read their messages.
 
-    Frontend filters by `sender_id == currentUser.id` and
-    `reader_id == selectedConvUserId` to update outgoing-message ✓✓ state
-    without waiting for the next 15-sec poll.
+    Routed only to the sender's tenant-scoped DM room
+    (`internal_chat:{tenant_id}:user:{sender_id}`) so unrelated staff in the
+    same tenant don't receive each other's read receipts. The 15-sec polling
+    fallback in the frontend covers the case where WS is unavailable.
 
-    Routed through `ws_redis_adapter` so that with horizontal scaling the
-    event reaches clients connected to other backend instances; if Redis
-    is unavailable the adapter falls back to local-only delivery.
+    Delivery goes through `ws_redis_adapter.publish(...)` so that under
+    horizontal scaling the event also reaches the sender if their socket is
+    pinned to another backend instance; if Redis is unavailable the adapter
+    falls back to local-only fan-out via the same `local_broadcast` handler.
+
+    No-op if either `tenant_id` or `sender_id` is missing — without those we
+    cannot address the right recipient and broadcasting to everyone would
+    leak who is chatting with whom (the very issue this routing fixes).
     """
+    if not tenant_id or not sender_id:
+        return
+    target_room = f"internal_chat:{tenant_id}:user:{sender_id}"
     try:
         from infra.ws_redis_adapter import ws_redis_adapter
-        await ws_redis_adapter.publish('pms', 'internal_message_read', {
+        await ws_redis_adapter.publish(target_room, 'internal_message_read', {
             'reader_id': reader_id,
             'sender_id': sender_id,
             'tenant_id': tenant_id,
@@ -398,29 +461,43 @@ async def broadcast_internal_message_read(
 
 @sio.event
 async def internal_typing(sid, data):
-    """Relay a typing indicator between two users in the pms room.
+    """Relay a typing indicator from the sender to a single recipient.
 
     Payload: {from_user_id, from_user_name, to_user_id, tenant_id, is_typing}
-    Emits `internal_user_typing` so the recipient's open thread can show
-    a "yazıyor…" indicator. Best-effort, non-authenticated relay — typing
-    state is non-sensitive and the worst case is a misleading indicator.
 
-    Routed through `ws_redis_adapter` so the indicator reaches recipients
-    connected to other backend instances under horizontal scaling.
+    The event is delivered only to the recipient's tenant-scoped DM room
+    (`internal_chat:{tenant_id}:user:{to_user_id}`) instead of the global
+    `pms` room, so other staff don't see who is chatting with whom.
+
+    The authoritative `tenant_id` and `from_user_id` come from the socket's
+    authenticated identity (set during `connect`) — client-supplied values
+    for those fields are ignored to prevent a logged-in user from spoofing
+    typing indicators on behalf of someone else or in another tenant.
+    Unauthenticated sockets are silently dropped.
+
+    Delivery goes through `ws_redis_adapter.publish(...)` so the indicator
+    reaches the recipient even when their socket is pinned to a different
+    backend instance under horizontal scaling. The adapter falls back to
+    local-only fan-out when Redis is unavailable.
     """
     try:
         if not isinstance(data, dict):
             return
-        from_user_id = data.get('from_user_id')
+        identity = sid_identity.get(sid)
+        if not identity:
+            return  # only authenticated sockets may relay typing events
+        tenant_id = identity.get('tenant_id')
+        from_user_id = identity.get('user_id')
         to_user_id = data.get('to_user_id')
-        if not from_user_id or not to_user_id:
+        if not tenant_id or not from_user_id or not to_user_id:
             return
+        target_room = f"internal_chat:{tenant_id}:user:{to_user_id}"
         from infra.ws_redis_adapter import ws_redis_adapter
-        await ws_redis_adapter.publish('pms', 'internal_user_typing', {
+        await ws_redis_adapter.publish(target_room, 'internal_user_typing', {
             'from_user_id': from_user_id,
             'from_user_name': data.get('from_user_name'),
             'to_user_id': to_user_id,
-            'tenant_id': data.get('tenant_id'),
+            'tenant_id': tenant_id,
             'is_typing': bool(data.get('is_typing', True)),
             'timestamp': datetime.utcnow().isoformat(),
         })

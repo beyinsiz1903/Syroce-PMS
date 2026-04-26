@@ -106,3 +106,24 @@ Ruff configuration in `pyproject.toml`:
 - Target: Python 3.11
 - Rules: E9, F63, F7, F82
 - Excludes: `_legacy/`, test generators, demo data scripts
+
+## Real-time event rooms (Socket.IO)
+
+Live internal-chat events are routed through tenant-scoped rooms instead of
+the legacy global `pms` room, so a tenant's read receipts and typing
+indicators only reach the directly involved user(s). The auth payload
+attached to the socket on `connect` enrols the client into the rooms below
+automatically (`websocket_server.py::_internal_chat_rooms`).
+
+| Room name pattern                                | Joined by                                | Used for                                                         |
+|--------------------------------------------------|------------------------------------------|------------------------------------------------------------------|
+| `internal_chat:{tenant_id}:user:{user_id}`       | the authenticated user of that socket    | DMs, read receipts (sent to the message author), typing-from-partner |
+| `internal_chat:{tenant_id}:dept:{department}`    | every authenticated user in that dept    | department-targeted internal messages                            |
+| `internal_chat:{tenant_id}:broadcast`            | every authenticated user in the tenant   | tenant-wide announcements                                        |
+
+Rules of thumb when adding a new live event:
+- Address the smallest plausible audience (`:user:` first, then `:dept:`, then `:broadcast`).
+- Never reuse the global `pms` room for anything user/tenant specific — it is shared across all signed-in clients.
+- The 15-second polling fallback in the chat UI must keep covering the WS
+  outage path, so live events are an optimisation, not a correctness
+  requirement.
