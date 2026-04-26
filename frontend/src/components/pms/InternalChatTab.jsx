@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
@@ -39,6 +40,18 @@ const STAFF_ROLES = new Set([
   'super_admin', 'admin', 'supervisor',
   'front_desk', 'housekeeping', 'maintenance', 'finance', 'sales',
 ]);
+
+// Department filter options for the conversations list. Each entry maps a
+// human-readable label to the set of backend `role` values it should match.
+// `value: 'all'` is the no-op default that keeps every conversation visible.
+const CONVERSATION_DEPARTMENT_FILTERS = [
+  { value: 'all', label: 'Tümü', roles: null },
+  { value: 'front_desk', label: 'Ön Büro', roles: ['front_desk'] },
+  { value: 'housekeeping', label: 'HK', roles: ['housekeeping'] },
+  { value: 'maintenance', label: 'Teknik', roles: ['maintenance'] },
+  { value: 'finance', label: 'Muhasebe', roles: ['finance'] },
+  { value: 'management', label: 'Yönetim', roles: ['super_admin', 'admin', 'supervisor'] },
+];
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -74,6 +87,8 @@ const InternalChatTab = ({ currentUser }) => {
   const [threadPriority, setThreadPriority] = useState('normal');
   const [sendingThreadReply, setSendingThreadReply] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
+  const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
 
   const pollTimerRef = useRef(null);
   const conversationPollTimerRef = useRef(null);
@@ -401,12 +416,30 @@ const InternalChatTab = ({ currentUser }) => {
   }, [users, userSearch]);
 
   const filteredConversations = useMemo(() => {
-    if (!conversationSearch.trim()) return conversations;
     const q = conversationSearch.trim().toLocaleLowerCase('tr');
-    return conversations.filter((c) =>
-      (c.user_name || '').toLocaleLowerCase('tr').includes(q),
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find(
+      (opt) => opt.value === conversationDeptFilter,
     );
-  }, [conversations, conversationSearch]);
+    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
+
+    return conversations.filter((c) => {
+      if (q && !(c.user_name || '').toLocaleLowerCase('tr').includes(q)) {
+        return false;
+      }
+      if (allowedRoles && !allowedRoles.has(c.user_role || '')) {
+        return false;
+      }
+      if (conversationOnlyUnread && (c.unread_count || 0) <= 0) {
+        return false;
+      }
+      return true;
+    });
+  }, [conversations, conversationSearch, conversationDeptFilter, conversationOnlyUnread]);
+
+  const conversationFiltersActive =
+    conversationDeptFilter !== 'all' ||
+    conversationOnlyUnread ||
+    !!conversationSearch.trim();
 
   const totalConversationUnread = useMemo(
     () => conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0),
@@ -860,6 +893,37 @@ const InternalChatTab = ({ currentUser }) => {
             data-testid="input-conversation-search"
           />
         </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={conversationDeptFilter}
+            onValueChange={setConversationDeptFilter}
+          >
+            <SelectTrigger
+              className="h-9 flex-1"
+              data-testid="select-conversation-department"
+            >
+              <SelectValue placeholder="Departman" />
+            </SelectTrigger>
+            <SelectContent>
+              {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <label
+            className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-pointer select-none"
+            title="Sadece okunmamış mesajları göster"
+          >
+            <Switch
+              checked={conversationOnlyUnread}
+              onCheckedChange={setConversationOnlyUnread}
+              data-testid="switch-conversation-only-unread"
+            />
+            <span>Okunmamış</span>
+          </label>
+        </div>
       </div>
       {loadingConversations && conversations.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground text-sm">Yükleniyor…</div>
@@ -874,7 +938,25 @@ const InternalChatTab = ({ currentUser }) => {
               </p>
             </>
           ) : (
-            <p className="text-sm">Eşleşen konuşma bulunamadı.</p>
+            <>
+              <p className="text-sm">Eşleşen konuşma bulunamadı.</p>
+              {conversationFiltersActive && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-7 text-xs"
+                  onClick={() => {
+                    setConversationSearch('');
+                    setConversationDeptFilter('all');
+                    setConversationOnlyUnread(false);
+                  }}
+                  data-testid="button-clear-conversation-filters"
+                >
+                  Filtreleri temizle
+                </Button>
+              )}
+            </>
           )}
         </div>
       ) : (
