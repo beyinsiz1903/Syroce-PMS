@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from core.audit import log_audit_event
 from core.database import db
 from core.security import (
     get_current_user,
@@ -346,7 +347,7 @@ async def send_internal_message(
     msg_dict['created_at'] = msg_dict['created_at'].isoformat()
     await db.internal_messages.insert_one(msg_dict)
 
-    # Create alert for urgent messages
+    # Create alert + audit trail for urgent messages
     if priority == 'urgent':
         await db.alerts.insert_one({
             'id': str(uuid.uuid4()),
@@ -361,6 +362,40 @@ async def send_internal_message(
             'status': 'unread',
             'created_at': datetime.now(UTC).isoformat()
         })
+
+        # Audit trail: every urgent internal message is logged separately
+        # so abuse / unnecessary alarms can be reviewed by managers later.
+        recipient_label = (
+            to_user_name
+            or to_department
+            or 'all_departments'
+        )
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="send_urgent_internal_message",
+            entity_type="internal_message",
+            entity_id=message_obj.id,
+            details=(
+                f"Acil mesaj: {current_user.name} ({from_department}) → "
+                f"{recipient_label} | {message[:120]}"
+            ),
+            before_value=None,
+            after_value={
+                "message_id": message_obj.id,
+                "from_user_id": current_user.id,
+                "from_user_name": current_user.name,
+                "from_department": from_department,
+                "to_user_id": to_user_id,
+                "to_user_name": to_user_name,
+                "to_department": to_department,
+                "priority": "urgent",
+                "message_type": message_type,
+                "message_preview": message[:240],
+                "sent_at": msg_dict['created_at'],
+            },
+            db=db,
+        )
 
     # ── Real-time delivery: WebSocket push to recipients ──
     # `delivered_to` is what the inbox endpoint returns to clients, so we
