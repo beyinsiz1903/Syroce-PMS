@@ -1,13 +1,18 @@
-# Syroce PMS — KBS Agent Uygulaması Kontratı (v1)
+# Syroce PMS — KBS Agent Uygulaması Kontratı (v2)
 
 Bu doküman, **PMS sunucusu** (FastAPI, `https://<otel>.syroce.com/api`) ile
 **otel masaüstündeki KBS Agent uygulaması** arasındaki resmi sözleşmeyi tanımlar.
 Agent uygulaması bu kontrata göre yazılırsa, PMS tarafında ek geliştirme
 gerektirmeden çalışır.
 
-> **Not:** GitHub'daki `beyinsiz1903/kbs` reposu şu anda public değil veya henüz
-> oluşturulmamış (kontrol tarihinde 404). Agent uygulamasını yazarken bu doküman
-> tek geçerli kaynak olmalıdır.
+> **v2 değişiklikleri (2026-04-26):**
+> - Login alanı `username` (email değil — backend `username` veya legacy `email` kabul eder)
+> - Auto-enqueue: PMS check-in/checkout sonrası otomatik kuyruğa alıyor (KBS_AUTO_ENQUEUE=1 default)
+> - 4 endpoint'te `Idempotency-Key` header desteği (queue, claim**, complete, fail)
+> - GET `/queue?status=pending` lease süresi dolmuş in_progress'ı da döndürür (stuck recovery)
+> - Yeni: `/api/kbs/alerts`, `/api/kbs/alerts/{id}/ack`, `/api/kbs/setup-info`
+> - Test mode: `KBS_TEST_MODE=1` env iken complete `kbs_reference="TEST-..."` zorunlu
+> - Enqueue zamanında payload validation (TC misafir → 11 hane id_number, yabancı → passport)
 
 ---
 
@@ -49,10 +54,10 @@ gerektirmeden çalışır.
 
 ### `POST /api/auth/login`
 ```jsonc
-// Request
+// Request — `username` ve `email` ikisi de kabul edilir (backwards compat)
 {
   "hotel_id": "100001",
-  "email": "kbs-bot@otel.com",
+  "username": "kbs-bot@otel.com",
   "password": "<güçlü şifre>"
 }
 // Response 200
@@ -66,9 +71,14 @@ gerektirmeden çalışır.
 Agent her isteğe `Authorization: Bearer <token>` ekler. Token süresi yaklaşık
 24 saat; 401 alınırsa yeniden login çağırır.
 
-**Tavsiye:** Otelde KBS bildirimleri için ayrı bir kullanıcı oluştur
-(`kbs-bot@otel.com`), `frontdesk` veya `view_reports` modülüne sahip rol ata.
-İnsan operatör hesaplarını agent için kullanma.
+**Önerilen kurulum (kbs-bot kullanıcısı):**
+1. PMS'te **Yönetim → Kullanıcılar → Yeni kullanıcı**
+2. E-posta: `kbs-bot@<oteldomain>` (insan operatör değil; sadece ajan kullanır)
+3. Rol: `frontdesk` (KBS izni içerir) veya `view_reports`
+4. Güçlü parola üret (min 16 karakter), parola yöneticisinde sakla
+5. Parola rotasyonu: 90 günde bir
+6. İlk login sonrası `GET /api/kbs/me` 200 dönmeli; doğrulama yap
+7. Detaylı kurulum bilgisi: `GET /api/kbs/setup-info` (login sonrası çağrılır)
 
 ### `GET /api/kbs/me`
 Login doğrulaması; cevap: `{user_id, email, tenant_id, role}`. Agent başlangıçta
@@ -427,14 +437,74 @@ curl -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 |-----|--------|-------|
 | **1** | Backend kuyruk altyapısı (5 endpoint + collection) | ✅ Tamamlandı (2026-04) |
 | 2 | Agent referans uygulaması (Python httpx + Tray UI) | Sende geliştirilecek |
-| **3** | PMS UI: durum çubuğu + kuyruk sekmesi | ✅ Tamamlandı (2026-04) |
-| 4 | Auto-enqueue: check-in event'inde otomatik kuyruğa ekleme | Bekliyor |
+| **3** | PMS UI: durum çubuğu + kuyruk sekmesi + manuel buton | ✅ Tamamlandı (2026-04) |
+| **4** | Auto-enqueue: check-in/checkout sonrası otomatik kuyruğa | ✅ Tamamlandı (2026-04, v2) |
+| **4b** | Idempotency-Key, payload validation, alarm, test mode | ✅ Tamamlandı (2026-04, v2) |
 | 5 | Webhook/SSE ile agent'a anlık tetikleme (polling yerine) | Opsiyonel |
+
+---
+
+## 9. v2'de eklenen davranışlar (2026-04-26)
+
+### Auto-enqueue (PMS → KBS otomatik kuyruk)
+- `core.atomic_checkin_checkout.check_in_booking_atomic()` başarıyla tamamlandığında
+  PMS otomatik olarak `kbs_jobs` koleksiyonuna `action="checkin"` job ekler.
+- Aynı şey `check_out_booking_atomic()` için `action="checkout"` ile yapılır.
+- Eksik veriyle (TC numarası yok, pasaport yok, doğum tarihi yok) iş açılmaz —
+  yerine `kbs_alerts` koleksiyonuna `kind="missing_data"` alarmı yazılır.
+- Kapama: `KBS_AUTO_ENQUEUE=0` env değişkeni.
+
+### Idempotency-Key (ağ retry koruması)
+4 endpoint **opsiyonel** olarak `Idempotency-Key` header destekler:
+- `POST /api/kbs/queue` — scope: `kbs:queue:{booking_id}:{action}`
+- `POST /api/kbs/queue/{id}/complete` — scope: `kbs:complete:{job_id}`
+- `POST /api/kbs/queue/{id}/fail` — scope: `kbs:fail:{job_id}`
+- (claim endpoint'i CAS ile zaten doğal idempotent; key gereksiz)
+
+Aynı key ile gelen ikinci istek **aynı yanıtı** döner (replay). Hâlâ işleniyorsa
+409 döner — agent kısa bekledikten sonra retry edebilir. UUID önerilir.
+
+### GET /queue?status=pending — stuck recovery
+Pending listesinde lease süresi dolmuş `in_progress` işler de görünür. Agent
+ek sorgu yapmadan otomatik olarak çakılmış worker işlerini görür. (Claim
+endpoint'i bunları zaten kabul ediyordu; eksik olan görünürlüktü.)
+
+### Payload validation (enqueue zamanında)
+`POST /queue` çağrıldığında polise gönderilemeyecek eksik veri tespit
+edilirse 422 dönülür:
+```json
+{
+  "detail": {
+    "error": "kbs_payload_incomplete",
+    "missing_fields": ["id_number", "birth_date"],
+    "message": "..."
+  }
+}
+```
+Operatör eksik bilgiyi tamamlayıp tekrar dener veya `force=true` ile
+bilinçli olarak bypass eder (geç düzeltme senaryoları).
+
+### Test mode
+`KBS_TEST_MODE=1` env iken complete çağrısında `kbs_reference` mutlaka
+`TEST-` prefix'i ile başlamalı. Booking üzerinde `kbs_test=true` bayrağı
+yazılır — sertifika gelmeden ajanı end-to-end test etmek için kullanılır.
+
+### Alarmlar
+- `GET /api/kbs/alerts?acknowledged=false` — okunmamış alarmlar (GM rozet)
+- `POST /api/kbs/alerts/{id}/ack` — alarm görüldü işaretle
+- Alarm tipleri: `dead_letter` (max retry), `missing_data` (auto-enqueue blocked),
+  `max_attempts` (claim sırasında attempt sayısı aşıldı)
+
+### Setup-info endpoint
+`GET /api/kbs/setup-info` ajan kurulumu için merkezi bilgi paketi döner
+(önerilen bot user formatı, gerekli rol, izinler, header şablonları, env flag'ler).
+Ajan ilk login sonrası bunu çağırıp ekrana gösterebilir.
 
 ---
 
 ## Kontak & Sürüm
 
-- **Şema sürümü:** v1 (2026-04-26)
-- **Geriye uyumluluk:** Bu sürüm değişmeden bırakılacak. Yeni alanlar eklenirse
-  agent eski şemayla çalışmaya devam etmelidir (additive only).
+- **Şema sürümü:** v2 (2026-04-26)
+- **Geriye uyumluluk:** Tüm v1 endpoint'leri ve şemaları korundu. v2 eklemeleri
+  opsiyonel (Idempotency-Key, alarmlar, setup-info). Eski v1 ajan çalışmaya
+  devam eder.

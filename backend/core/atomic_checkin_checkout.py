@@ -203,6 +203,18 @@ async def check_in_booking_atomic(
         "Atomic check-in completed: booking=%s room=%s actor=%s",
         booking_id, room_id, actor_id,
     )
+
+    # KBS auto-enqueue (transaction sonrası, non-blocking).
+    # Hata olursa log'lar; check-in başarısız olmaz.
+    try:
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+        await auto_enqueue_kbs(
+            tenant_id, booking_id, action="checkin",
+            actor=f"system:checkin:{actor_id}",
+        )
+    except Exception as e:
+        logger.warning("KBS auto-enqueue (checkin) failed: %s", e)
+
     return {
         "success": True,
         "booking_id": booking_id,
@@ -411,6 +423,16 @@ async def check_out_booking_atomic(
         )
     except Exception:
         pass
+
+    # KBS auto-enqueue (transaction sonrası, non-blocking).
+    try:
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+        await auto_enqueue_kbs(
+            tenant_id, booking_id, action="checkout",
+            actor=f"system:checkout:{actor_id}",
+        )
+    except Exception as e:
+        logger.warning("KBS auto-enqueue (checkout) failed: %s", e)
 
     logger.info(
         "Atomic check-out completed: booking=%s room=%s actor=%s forced=%s",

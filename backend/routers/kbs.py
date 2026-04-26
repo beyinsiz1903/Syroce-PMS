@@ -22,19 +22,72 @@ Endpoint'ler (Faz 1 — kuyruk altyapısı, agent uygulaması için):
 
 from __future__ import annotations
 
+import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from core.database import db
+from core.kbs_payload_validation import validate_kbs_payload
 from core.security import get_current_user
 from core.tenant_db import tenant_context
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
+
+logger = logging.getLogger("routers.kbs")
 
 router = APIRouter(prefix="/api/kbs", tags=["KBS"])
+
+
+def _kbs_test_mode() -> bool:
+    """KBS_TEST_MODE=1 → reference 'TEST-' ile başlamayan complete'ler reddedilir,
+    booking üzerine kbs_test=true bayrağı yazılır."""
+    return os.environ.get("KBS_TEST_MODE", "0") == "1"
+
+
+async def _raise_kbs_alert(
+    tenant_id: str,
+    *,
+    kind: str,
+    job: dict,
+    error: str = "",
+) -> None:
+    """Dead-letter / kritik durum alarmı üret. db.kbs_alerts'e kayıt ekler.
+
+    GM dashboard ileride bu collection'ı izleyecek; şimdilik kayıt + log.
+    Hata fırlatmaz (alarm sistemi ana akışı etkilememeli).
+    """
+    try:
+        await db.kbs_alerts.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "kind": kind,  # "dead_letter" | "missing_data" | "max_attempts"
+            "job_id": job.get("id"),
+            "booking_id": job.get("booking_id"),
+            "guest_name": (job.get("payload") or {}).get("guest_name", ""),
+            "room_number": (job.get("payload") or {}).get("room_number", ""),
+            "action": job.get("action"),
+            "attempts": job.get("attempts"),
+            "last_error": error or job.get("last_error"),
+            "worker_id": job.get("worker_id"),
+            "created_at": _now_iso(),
+            "acknowledged": False,
+        })
+        logger.warning(
+            "KBS alert raised: tenant=%s kind=%s booking=%s err=%s",
+            tenant_id, kind, job.get("booking_id"), error,
+        )
+    except Exception as e:
+        logger.warning("KBS alert insert failed: %s", e)
 
 
 def _now_iso() -> str:
@@ -342,62 +395,121 @@ class KBSQueueEnqueue(BaseModel):
 @router.post("/queue", status_code=201)
 async def kbs_queue_enqueue(
     data: KBSQueueEnqueue,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # KBS perm with legacy reports
 ):
     """Bildirimi kuyruğa ekle. Aynı (booking_id, action) için pending/in_progress
-    iş varsa mevcut işi döner (idempotent), force=true ise yeni iş açar."""
+    iş varsa mevcut işi döner (idempotent), force=true ise yeni iş açar.
+
+    Header `Idempotency-Key` (opsiyonel) verilirse aynı anahtarla gelen
+    çağrılar aynı yanıtı döner (ağ retry koruması).
+
+    Payload validation: TC misafir → id_number 11 hane; yabancı → passport.
+    `force=true` ise validation bypass edilir (geç düzeltme senaryoları için).
+    """
     tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
-    with tenant_context(tenant_id):
-        if not data.force:
-            existing = await db.kbs_reports.find_one(
-                {
-                    "_kind": QUEUE_KIND,
-                    "tenant_id": tenant_id,
-                    "booking_id": data.booking_id,
-                    "action": data.action,
-                    "status": {"$in": ["pending", "in_progress"]},
-                },
-                {"_id": 0},
-            )
-            if existing:
-                return {"job": existing, "created": False}
-
-        booking, guest, snapshot = await _build_payload_snapshot(
-            tenant_id, data.booking_id
+    idem_key = get_idempotency_key(request)
+    idem_lock_id: str | None = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db, tenant_id=tenant_id,
+            scope=f"kbs:queue:{data.booking_id}:{data.action}",
+            idempotency_key=idem_key,
         )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı Idempotency-Key işleniyor, bekleyin")
+        idem_lock_id = claim["lock_id"]
 
-        now = _now()
-        job = {
-            "_kind": QUEUE_KIND,
-            "id": _uuid(),
-            "tenant_id": tenant_id,
-            "booking_id": data.booking_id,
-            "guest_id": booking.get("guest_id"),
-            "action": data.action,
-            "status": "pending",
-            "attempts": 0,
-            "max_attempts": data.max_attempts,
-            "worker_id": None,
-            "leased_until": None,
-            "next_retry_at": None,
-            "last_error": None,
-            "kbs_reference": None,
-            "payload": snapshot,
-            "notes": data.notes,
-            "enqueued_by": current_user.email,
-            "created_at": _iso(now),
-            "updated_at": _iso(now),
-            "claimed_at": None,
-            "completed_at": None,
-            "failed_at": None,
-        }
-        await db.kbs_reports.insert_one(job)
-        job.pop("_id", None)
-    return {"job": job, "created": True}
+    try:
+        with tenant_context(tenant_id):
+            if not data.force:
+                existing = await db.kbs_reports.find_one(
+                    {
+                        "_kind": QUEUE_KIND,
+                        "tenant_id": tenant_id,
+                        "booking_id": data.booking_id,
+                        "action": data.action,
+                        "status": {"$in": ["pending", "in_progress"]},
+                    },
+                    {"_id": 0},
+                )
+                if existing:
+                    response = {"job": existing, "created": False}
+                    if idem_lock_id:
+                        await complete_idempotency(
+                            db, lock_id=idem_lock_id, response_body=response,
+                        )
+                    return response
+
+            booking, guest, snapshot = await _build_payload_snapshot(
+                tenant_id, data.booking_id
+            )
+
+            # Madde 7: enqueue zamanında payload tamlığı kontrolü.
+            # force=true → bypass (eksik bilgiyle bilinçli kuyruğa atma).
+            if not data.force:
+                ok, missing = validate_kbs_payload(snapshot)
+                if not ok:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": "kbs_payload_incomplete",
+                            "missing_fields": missing,
+                            "message": (
+                                "KBS bildirimi için zorunlu alanlar eksik: "
+                                + ", ".join(missing)
+                            ),
+                        },
+                    )
+
+            now = _now()
+            job = {
+                "_kind": QUEUE_KIND,
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "booking_id": data.booking_id,
+                "guest_id": booking.get("guest_id"),
+                "action": data.action,
+                "status": "pending",
+                "attempts": 0,
+                "max_attempts": data.max_attempts,
+                "worker_id": None,
+                "leased_until": None,
+                "next_retry_at": None,
+                "last_error": None,
+                "kbs_reference": None,
+                "payload": snapshot,
+                "notes": data.notes,
+                "enqueued_by": current_user.email,
+                "source": "manual",
+                "created_at": _iso(now),
+                "updated_at": _iso(now),
+                "claimed_at": None,
+                "completed_at": None,
+                "failed_at": None,
+            }
+            await db.kbs_reports.insert_one(job)
+            job.pop("_id", None)
+        response = {"job": job, "created": True}
+        if idem_lock_id:
+            await complete_idempotency(
+                db, lock_id=idem_lock_id, response_body=response,
+            )
+        return response
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as e:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(e))
+        raise
 
 
 # --- 2) List + stats ----------------------------------------
@@ -420,12 +532,12 @@ async def kbs_queue_list(
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
     q: dict = {"_kind": QUEUE_KIND, "tenant_id": tenant_id}
+    wanted_statuses: list[str] = []
     if status:
-        wanted = [s.strip() for s in status.split(",") if s.strip()]
-        bad = [s for s in wanted if s not in QUEUE_STATUSES]
+        wanted_statuses = [s.strip() for s in status.split(",") if s.strip()]
+        bad = [s for s in wanted_statuses if s not in QUEUE_STATUSES]
         if bad:
             raise HTTPException(400, f"Geçersiz status: {bad}")
-        q["status"] = {"$in": wanted}
     if booking_id:
         q["booking_id"] = booking_id
     if date_from or date_to:
@@ -434,6 +546,17 @@ async def kbs_queue_list(
             q["created_at"]["$gte"] = date_from
         if date_to:
             q["created_at"]["$lte"] = date_to + "T23:59:59"
+
+    # Madde 3: stuck-worker recovery — pending isteyen ajan, lease süresi
+    # dolmuş in_progress işleri de görsün (claim endpoint zaten kabul ediyor).
+    now_iso_view = _iso(_now())
+    if wanted_statuses == ["pending"]:
+        q["$or"] = [
+            {"status": "pending"},
+            {"status": "in_progress", "leased_until": {"$lt": now_iso_view}},
+        ]
+    elif wanted_statuses:
+        q["status"] = {"$in": wanted_statuses}
 
     with tenant_context(tenant_id):
         jobs = await db.kbs_reports.find(q, {"_id": 0}).sort(
@@ -562,6 +685,11 @@ async def kbs_queue_claim(
                     "last_error": "max_attempts exceeded on claim",
                 }},
             )
+            # Madde 6: dead-letter alarm
+            await _raise_kbs_alert(
+                tenant_id, kind="dead_letter", job=job,
+                error="max_attempts exceeded on claim",
+            )
             raise HTTPException(
                 409, "Maks. deneme sayısı aşıldı (dead)"
             )
@@ -581,6 +709,7 @@ class KBSQueueComplete(BaseModel):
 async def kbs_queue_complete(
     job_id: str,
     data: KBSQueueComplete,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
@@ -589,88 +718,134 @@ async def kbs_queue_complete(
     Sadece claim'i alan worker tamamlayabilir (worker_id eşleşmeli).
     Side-effect: bookings.kbs_reported = true; legacy uyumluluk için
     kbs_reports'a tek-misafir özet kaydı yazılır.
+
+    Header `Idempotency-Key` ile aynı çağrı retry edilebilir (replay).
+    `KBS_TEST_MODE=1` env iken kbs_reference "TEST-" prefix'i şart;
+    booking üzerinde `kbs_test=true` işareti tutulur.
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
-    now = _now()
-    with tenant_context(tenant_id):
-        job = await db.kbs_reports.find_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-            {"_id": 0},
+    # Madde 8: test mode — TEST- prefix zorunlu, prod referans kaçışını engeller.
+    test_mode = _kbs_test_mode()
+    is_test_ref = data.kbs_reference.startswith("TEST-")
+    if test_mode and not is_test_ref:
+        raise HTTPException(
+            422,
+            "KBS_TEST_MODE açık iken kbs_reference 'TEST-' ile başlamalı",
         )
-        if not job:
-            raise HTTPException(404, "İş bulunamadı")
-        if job["status"] != "in_progress":
-            raise HTTPException(
-                409,
-                f"Sadece in_progress işler tamamlanabilir (mevcut: {job['status']})",
-            )
-        if job.get("worker_id") != data.worker_id:
-            raise HTTPException(
-                403,
-                f"Bu işi farklı worker claim etmiş: {job.get('worker_id')}",
-            )
 
-        # CAS: yalnızca hâlâ aynı worker'ın in_progress'i ise geçir.
-        # Çift complete çağrısında ya da worker arada değiştiyse side-effect tetiklenmez.
-        cas_result = await db.kbs_reports.update_one(
-            {
-                "_kind": QUEUE_KIND,
-                "tenant_id": tenant_id,
-                "id": job_id,
-                "status": "in_progress",
-                "worker_id": data.worker_id,
-            },
-            {"$set": {
-                "status": "done",
-                "kbs_reference": data.kbs_reference,
-                "completed_at": _iso(now),
-                "updated_at": _iso(now),
-                "notes": (job.get("notes") or "") + (
-                    ("\n" + data.notes) if data.notes else ""
-                ),
-            }},
+    idem_key = get_idempotency_key(request)
+    idem_lock_id: str | None = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db, tenant_id=tenant_id,
+            scope=f"kbs:complete:{job_id}",
+            idempotency_key=idem_key,
         )
-        if cas_result.modified_count == 0:
-            # İş aralıkta değişti (lease expired + başka worker claim etti vs.)
-            raise HTTPException(
-                409,
-                "İş aralıkta değişti, complete uygulanamadı (lease expired olabilir)",
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı Idempotency-Key işleniyor, bekleyin")
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        now = _now()
+        with tenant_context(tenant_id):
+            job = await db.kbs_reports.find_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+                {"_id": 0},
             )
-        # Booking üzerine bayrak
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": job["booking_id"]},
-            {"$set": {
+            if not job:
+                raise HTTPException(404, "İş bulunamadı")
+            if job["status"] != "in_progress":
+                raise HTTPException(
+                    409,
+                    f"Sadece in_progress işler tamamlanabilir (mevcut: {job['status']})",
+                )
+            if job.get("worker_id") != data.worker_id:
+                raise HTTPException(
+                    403,
+                    f"Bu işi farklı worker claim etmiş: {job.get('worker_id')}",
+                )
+
+            # CAS: yalnızca hâlâ aynı worker'ın in_progress'i ise geçir.
+            # Çift complete çağrısında ya da worker arada değiştiyse side-effect tetiklenmez.
+            cas_result = await db.kbs_reports.update_one(
+                {
+                    "_kind": QUEUE_KIND,
+                    "tenant_id": tenant_id,
+                    "id": job_id,
+                    "status": "in_progress",
+                    "worker_id": data.worker_id,
+                },
+                {"$set": {
+                    "status": "done",
+                    "kbs_reference": data.kbs_reference,
+                    "completed_at": _iso(now),
+                    "updated_at": _iso(now),
+                    "kbs_test": is_test_ref,
+                    "notes": (job.get("notes") or "") + (
+                        ("\n" + data.notes) if data.notes else ""
+                    ),
+                }},
+            )
+            if cas_result.modified_count == 0:
+                # İş aralıkta değişti (lease expired + başka worker claim etti vs.)
+                raise HTTPException(
+                    409,
+                    "İş aralıkta değişti, complete uygulanamadı (lease expired olabilir)",
+                )
+            # Booking üzerine bayrak
+            booking_update = {
                 "kbs_reported": True,
                 "kbs_reported_at": _iso(now),
                 "kbs_reference": data.kbs_reference,
-            }},
-        )
-        # Legacy uyumluluk: kbs_reports'a özet ekle (_kind=report)
-        report_id = _uuid()
-        await db.kbs_reports.insert_one({
-            "_kind": REPORT_KIND,
-            "id": report_id,
-            "tenant_id": tenant_id,
-            "date": (job["payload"].get("check_in") or _iso(now))[:10],
-            "status": "submitted",
-            "guest_count": 1,
-            "guest_ids": [job["booking_id"]],
-            "submission_reference": data.kbs_reference,
-            "notes": data.notes or "via queue",
-            "submitted_by": f"worker:{data.worker_id}",
-            "submitted_by_email": current_user.email,
-            "queue_job_id": job_id,
-            "created_at": _iso(now),
-        })
+            }
+            if is_test_ref:
+                booking_update["kbs_test"] = True
+            await db.bookings.update_one(
+                {"tenant_id": tenant_id, "id": job["booking_id"]},
+                {"$set": booking_update},
+            )
+            # Legacy uyumluluk: kbs_reports'a özet ekle (_kind=report)
+            report_id = _uuid()
+            await db.kbs_reports.insert_one({
+                "_kind": REPORT_KIND,
+                "id": report_id,
+                "tenant_id": tenant_id,
+                "date": (job["payload"].get("check_in") or _iso(now))[:10],
+                "status": "submitted",
+                "guest_count": 1,
+                "guest_ids": [job["booking_id"]],
+                "submission_reference": data.kbs_reference,
+                "notes": data.notes or "via queue",
+                "submitted_by": f"worker:{data.worker_id}",
+                "submitted_by_email": current_user.email,
+                "queue_job_id": job_id,
+                "kbs_test": is_test_ref,
+                "created_at": _iso(now),
+            })
 
-        job = await db.kbs_reports.find_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-            {"_id": 0},
-        )
-    return {"job": job, "report_id": report_id}
+            job = await db.kbs_reports.find_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+                {"_id": 0},
+            )
+        response = {"job": job, "report_id": report_id, "test_mode": test_mode}
+        if idem_lock_id:
+            await complete_idempotency(
+                db, lock_id=idem_lock_id, response_body=response,
+            )
+        return response
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as e:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(e))
+        raise
 
 
 # --- 5) Fail (with retry / dead) ----------------------------
@@ -685,6 +860,7 @@ class KBSQueueFail(BaseModel):
 async def kbs_queue_fail(
     job_id: str,
     data: KBSQueueFail,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
@@ -692,79 +868,233 @@ async def kbs_queue_fail(
 
     retry=True ve attempts < max_attempts → status=pending,
       next_retry_at = now + exp.backoff(attempts), worker/lease temizlenir.
-    Aksi halde → status=dead, failed_at set edilir.
+    Aksi halde → status=dead, failed_at set edilir + dead-letter alarmı.
+
+    Header `Idempotency-Key` ile aynı çağrı retry edilebilir (replay).
     """
     tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
-    now = _now()
+    idem_key = get_idempotency_key(request)
+    idem_lock_id: str | None = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db, tenant_id=tenant_id,
+            scope=f"kbs:fail:{job_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı Idempotency-Key işleniyor, bekleyin")
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        now = _now()
+        with tenant_context(tenant_id):
+            job = await db.kbs_reports.find_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+                {"_id": 0},
+            )
+            if not job:
+                raise HTTPException(404, "İş bulunamadı")
+            if job["status"] != "in_progress":
+                raise HTTPException(
+                    409,
+                    f"Sadece in_progress iş fail edilebilir (mevcut: {job['status']})",
+                )
+            if job.get("worker_id") != data.worker_id:
+                raise HTTPException(
+                    403,
+                    f"Bu işi farklı worker claim etmiş: {job.get('worker_id')}",
+                )
+
+            attempts = job.get("attempts", 0)
+            max_attempts = job.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
+            will_retry = data.retry and attempts < max_attempts
+            next_retry_at = None
+
+            if will_retry:
+                next_retry_at = _iso(
+                    now + timedelta(seconds=_backoff_seconds(attempts))
+                )
+                update = {
+                    "status": "pending",
+                    "worker_id": None,
+                    "leased_until": None,
+                    "next_retry_at": next_retry_at,
+                    "last_error": data.error,
+                    "updated_at": _iso(now),
+                }
+            else:
+                update = {
+                    "status": "dead",
+                    "failed_at": _iso(now),
+                    "last_error": data.error,
+                    "updated_at": _iso(now),
+                }
+
+            # CAS: idempotent. İş aralıkta başka bir transition geçirdiyse no-op
+            cas_result = await db.kbs_reports.update_one(
+                {
+                    "_kind": QUEUE_KIND,
+                    "tenant_id": tenant_id,
+                    "id": job_id,
+                    "status": "in_progress",
+                    "worker_id": data.worker_id,
+                },
+                {"$set": update},
+            )
+            if cas_result.modified_count == 0:
+                raise HTTPException(
+                    409,
+                    "İş aralıkta değişti, fail uygulanamadı (lease expired olabilir)",
+                )
+            job = await db.kbs_reports.find_one(
+                {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+                {"_id": 0},
+            )
+
+        # Madde 6: dead-letter alarmı (transaction sonrası)
+        if not will_retry and job and job.get("status") == "dead":
+            await _raise_kbs_alert(
+                tenant_id, kind="dead_letter", job=job, error=data.error,
+            )
+
+        response = {
+            "job": job,
+            "will_retry": will_retry,
+            "next_retry_at": next_retry_at,
+        }
+        if idem_lock_id:
+            await complete_idempotency(
+                db, lock_id=idem_lock_id, response_body=response,
+            )
+        return response
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as e:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(e))
+        raise
+
+
+# ============================================================
+# Faz 4 — Alarm + setup-info (madde 6 + 9)
+# ============================================================
+
+
+@router.get("/alerts")
+async def kbs_alerts_list(
+    acknowledged: bool | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """KBS alarmları (dead_letter, missing_data, max_attempts).
+
+    GM dashboard'da kırmızı rozet için kullanılır. acknowledged=False
+    sadece aksiyon alınmamışları döner.
+    """
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+
+    q: dict = {"tenant_id": tenant_id}
+    if acknowledged is not None:
+        q["acknowledged"] = acknowledged
+
     with tenant_context(tenant_id):
-        job = await db.kbs_reports.find_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-            {"_id": 0},
+        alerts = await db.kbs_alerts.find(q, {"_id": 0}).sort(
+            "created_at", -1
+        ).to_list(limit)
+        unack_count = await db.kbs_alerts.count_documents(
+            {"tenant_id": tenant_id, "acknowledged": False},
         )
-        if not job:
-            raise HTTPException(404, "İş bulunamadı")
-        if job["status"] != "in_progress":
-            raise HTTPException(
-                409,
-                f"Sadece in_progress iş fail edilebilir (mevcut: {job['status']})",
-            )
-        if job.get("worker_id") != data.worker_id:
-            raise HTTPException(
-                403,
-                f"Bu işi farklı worker claim etmiş: {job.get('worker_id')}",
-            )
+    return {"alerts": alerts, "total": len(alerts), "unack_count": unack_count}
 
-        attempts = job.get("attempts", 0)
-        max_attempts = job.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
-        will_retry = data.retry and attempts < max_attempts
-        next_retry_at = None
 
-        if will_retry:
-            next_retry_at = _iso(
-                now + timedelta(seconds=_backoff_seconds(attempts))
-            )
-            update = {
-                "status": "pending",
-                "worker_id": None,
-                "leased_until": None,
-                "next_retry_at": next_retry_at,
-                "last_error": data.error,
-                "updated_at": _iso(now),
-            }
-        else:
-            update = {
-                "status": "dead",
-                "failed_at": _iso(now),
-                "last_error": data.error,
-                "updated_at": _iso(now),
-            }
-
-        # CAS: idempotent. İş aralıkta başka bir transition geçirdiyse no-op
-        cas_result = await db.kbs_reports.update_one(
-            {
-                "_kind": QUEUE_KIND,
-                "tenant_id": tenant_id,
-                "id": job_id,
-                "status": "in_progress",
-                "worker_id": data.worker_id,
-            },
-            {"$set": update},
+@router.post("/alerts/{alert_id}/ack")
+async def kbs_alert_ack(
+    alert_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Alarmı görüldü işaretle."""
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+    with tenant_context(tenant_id):
+        result = await db.kbs_alerts.update_one(
+            {"tenant_id": tenant_id, "id": alert_id},
+            {"$set": {
+                "acknowledged": True,
+                "acknowledged_by": current_user.email,
+                "acknowledged_at": _now_iso(),
+            }},
         )
-        if cas_result.modified_count == 0:
-            raise HTTPException(
-                409,
-                "İş aralıkta değişti, fail uygulanamadı (lease expired olabilir)",
-            )
-        job = await db.kbs_reports.find_one(
-            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-            {"_id": 0},
-        )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Alarm bulunamadı")
+    return {"ok": True}
+
+
+@router.get("/setup-info")
+async def kbs_setup_info(current_user: User = Depends(get_current_user)):
+    """KBS Agent kurulum bilgileri (Madde 9).
+
+    Otele gönderilen ajan teknisyenine veya bot kullanıcı kurulum
+    rehberi olarak gösterilen sabit bilgi paketi (tenant'a özel).
+    """
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
     return {
-        "job": job,
-        "will_retry": will_retry,
-        "next_retry_at": next_retry_at,
+        "tenant_id": tenant_id,
+        "api_base": "/api",
+        "kbs_base": "/api/kbs",
+        "auth_endpoint": "/api/auth/login",
+        "auth_payload_format": {
+            "hotel_id": "<otelin numerik ID'si, ör: 100001>",
+            "username": "kbs-bot@hotel.example",
+            "password": "<güçlü parola>",
+        },
+        "recommended_bot_user": {
+            "email_format": "kbs-bot@<oteldomain>.com",
+            "role": "frontdesk",
+            "required_permissions": ["view_reports"],
+            "rotation_policy": "90 gün",
+            "creation_steps": [
+                "1) Yönetim → Kullanıcılar → Yeni kullanıcı",
+                "2) E-posta: kbs-bot@<oteldomain>",
+                "3) Rol: frontdesk (KBS bildirim izni içerir)",
+                "4) Güçlü parola üret, ajan kurulum dosyasında sakla",
+                "5) İlk login sonrası /api/kbs/me 200 dönmeli",
+            ],
+        },
+        "endpoints": {
+            "me": "GET /api/kbs/me",
+            "queue_list": "GET /api/kbs/queue?status=pending",
+            "queue_claim": "POST /api/kbs/queue/{id}/claim",
+            "queue_complete": "POST /api/kbs/queue/{id}/complete",
+            "queue_fail": "POST /api/kbs/queue/{id}/fail",
+            "alerts": "GET /api/kbs/alerts?acknowledged=false",
+        },
+        "headers": {
+            "Authorization": "Bearer <jwt_from_login>",
+            "Idempotency-Key": "Önerilen (queue/complete/fail için)",
+        },
+        "test_mode": {
+            "env_flag": "KBS_TEST_MODE=1 (PMS server tarafında set edilir)",
+            "behavior": "complete'de kbs_reference 'TEST-' ile başlamalı",
+            "note": "Sertifika gelmeden test için kullanılır",
+        },
+        "auto_enqueue": {
+            "enabled": os.environ.get("KBS_AUTO_ENQUEUE", "1") != "0",
+            "trigger": "atomik check-in/checkout sonrası otomatik kuyruğa alma",
+            "disable_env": "KBS_AUTO_ENQUEUE=0",
+        },
     }
