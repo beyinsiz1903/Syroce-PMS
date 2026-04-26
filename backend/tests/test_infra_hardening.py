@@ -471,3 +471,219 @@ class TestWSRedisAdapter:
         finally:
             await adapter_a.close()
             await adapter_b.close()
+
+    @pytest.mark.asyncio
+    async def test_subscribe_is_reference_counted(self):
+        """Two callers subscribing to the same room should result in a
+        single Redis SUBSCRIBE; the channel only goes away once both
+        have unsubscribed. Mirrors the connect/disconnect bookkeeping
+        for shared rooms (department, tenant broadcast)."""
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        sub_calls: list[str] = []
+        unsub_calls: list[str] = []
+
+        class _FakePubSub:
+            async def subscribe(self, channel):
+                sub_calls.append(channel)
+
+            async def unsubscribe(self, channel=None):
+                unsub_calls.append(channel)
+
+            async def listen(self):
+                # Idle generator: tests don't exercise the listener path.
+                if False:
+                    yield None  # pragma: no cover
+
+            async def close(self):
+                pass
+
+        class _FakeRedis:
+            def pubsub(self):
+                return _FakePubSub()
+
+        adapter = WebSocketRedisAdapter()
+        await adapter.initialize(_FakeRedis(), "inst-X", local_handler=None)
+
+        room = "internal_chat:t1:dept:Reception"
+        await adapter.subscribe(room)
+        await adapter.subscribe(room)
+        await adapter.subscribe(room)
+
+        # Only one Redis SUBSCRIBE despite three local subscribers.
+        assert sub_calls == [f"{adapter.CHANNEL_PREFIX}{room}"]
+        assert adapter.get_metrics()["channels_active"] == 1
+
+        await adapter.unsubscribe(room)
+        await adapter.unsubscribe(room)
+        # Still subscribed — one local subscriber remains.
+        assert unsub_calls == []
+        assert adapter.get_metrics()["channels_active"] == 1
+
+        await adapter.unsubscribe(room)
+        # Last subscriber gone → Redis UNSUBSCRIBE issued.
+        assert unsub_calls == [f"{adapter.CHANNEL_PREFIX}{room}"]
+        assert adapter.get_metrics()["channels_active"] == 0
+
+        # Extra unsubscribe is a safe no-op (no negative refcounts).
+        await adapter.unsubscribe(room)
+        assert len(unsub_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_noop_when_redis_inactive(self):
+        """In single-instance mode (Redis unavailable), subscribe/unsubscribe
+        must be safe no-ops so connect/disconnect bookkeeping in
+        websocket_server doesn't blow up."""
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        adapter = WebSocketRedisAdapter()
+        await adapter.initialize(None, "single-instance", local_handler=None)
+        assert adapter._active is False
+
+        # Should not raise and should not affect channel count.
+        await adapter.subscribe("internal_chat:t1:user:u1")
+        await adapter.unsubscribe("internal_chat:t1:user:u1")
+        assert adapter.get_metrics()["channels_active"] == 0
+
+    @pytest.mark.asyncio
+    async def test_connect_disconnect_subscribes_and_unsubscribes_rooms(self):
+        """Authenticated socket connect/disconnect must subscribe and
+        unsubscribe the adapter to all three tenant-scoped rooms (DM,
+        broadcast, department) so cross-instance delivery works for the
+        connection's full lifetime — and exactly that long."""
+        from unittest.mock import AsyncMock, patch
+
+        import websocket_server as ws
+
+        sub_calls: list[str] = []
+        unsub_calls: list[str] = []
+
+        async def fake_subscribe(room):
+            sub_calls.append(room)
+
+        async def fake_unsubscribe(room):
+            unsub_calls.append(room)
+
+        async def fake_resolve(_auth):
+            return {
+                "user_id": "u1",
+                "tenant_id": "t1",
+                "role": "front_desk",
+                "department": "Reception",
+            }
+
+        with patch.object(ws, "_resolve_user_identity", fake_resolve), \
+             patch.object(ws.sio, "emit", AsyncMock()), \
+             patch.object(ws.sio, "enter_room", AsyncMock()), \
+             patch(
+                 "infra.ws_redis_adapter.ws_redis_adapter.subscribe",
+                 side_effect=fake_subscribe,
+             ), \
+             patch(
+                 "infra.ws_redis_adapter.ws_redis_adapter.unsubscribe",
+                 side_effect=fake_unsubscribe,
+             ):
+            await ws.connect("sid-test", {}, {"token": "x"})
+            assert sorted(sub_calls) == sorted([
+                "internal_chat:t1:user:u1",
+                "internal_chat:t1:broadcast",
+                "internal_chat:t1:dept:Reception",
+            ])
+            assert unsub_calls == []
+
+            await ws.disconnect("sid-test")
+            assert sorted(unsub_calls) == sorted(sub_calls)
+            # Identity bookkeeping was cleared so a stale disconnect
+            # cannot double-unsubscribe.
+            assert "sid-test" not in ws.sid_identity
+
+    @pytest.mark.asyncio
+    async def test_internal_message_bridges_across_instances(self):
+        """End-to-end: `broadcast_internal_message` published on instance A
+        must reach a client connected to instance B that has subscribed to
+        the same tenant-scoped room."""
+        import asyncio
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        queues: dict[str, list[asyncio.Queue]] = {}
+
+        class _FakePubSub:
+            def __init__(self):
+                self._queues: list[asyncio.Queue] = []
+
+            async def subscribe(self, channel):
+                q: asyncio.Queue = asyncio.Queue()
+                queues.setdefault(channel, []).append(q)
+                self._queues.append(q)
+
+            async def listen(self):
+                while True:
+                    for q in list(self._queues):
+                        try:
+                            msg = q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            continue
+                        yield msg
+                    await asyncio.sleep(0.01)
+
+            async def unsubscribe(self, channel=None):
+                pass
+
+            async def close(self):
+                pass
+
+        class _FakeRedis:
+            def __init__(self, pubsub):
+                self._pubsub = pubsub
+
+            def pubsub(self):
+                return self._pubsub
+
+            async def publish(self, channel, message):
+                for q in queues.get(channel, []):
+                    await q.put({"type": "message", "data": message})
+                return len(queues.get(channel, []))
+
+        # Instance A — publisher (no local subscriber on the target room).
+        ps_a = _FakePubSub()
+        adapter_a = WebSocketRedisAdapter()
+        received_a: list[tuple] = []
+
+        async def handler_a(room, event, data):
+            received_a.append((room, event, data))
+
+        await adapter_a.initialize(_FakeRedis(ps_a), "inst-A", local_handler=handler_a)
+
+        # Instance B — recipient subscribed to the same DM room.
+        ps_b = _FakePubSub()
+        adapter_b = WebSocketRedisAdapter()
+        received_b: list[tuple] = []
+
+        async def handler_b(room, event, data):
+            received_b.append((room, event, data))
+
+        await adapter_b.initialize(_FakeRedis(ps_b), "inst-B", local_handler=handler_b)
+
+        room = "internal_chat:t1:user:u-recipient"
+        await adapter_b.subscribe(room)
+
+        # Publishing instance does NOT subscribe (sender has no local
+        # client listening on the recipient's DM room) — exactly the
+        # scenario this task fixes.
+        envelope = {"message": {"id": "m1", "content": "hi"}, "tenant_id": "t1"}
+        await adapter_a.publish(room, "internal_message", envelope)
+
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if received_b:
+                break
+
+        try:
+            assert received_b == [(room, "internal_message", envelope)]
+            # Publisher had no local subscriber on this room, but the
+            # local handler still fired (publish always delivers locally).
+            assert received_a == [(room, "internal_message", envelope)]
+            assert adapter_b.get_metrics()["messages_forwarded"] == 1
+        finally:
+            await adapter_a.close()
+            await adapter_b.close()

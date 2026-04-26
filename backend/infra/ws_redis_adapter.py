@@ -20,6 +20,11 @@ class WebSocketRedisAdapter:
         self._redis = None
         self._pubsub = None
         self._subscribed_channels: set[str] = set()
+        # Reference counts per channel so that dynamic, per-user/per-tenant
+        # rooms (e.g. ``internal_chat:{tenant}:user:{id}``) only unsubscribe
+        # from Redis when the *last* local subscriber leaves.
+        self._channel_refcounts: dict[str, int] = {}
+        self._sub_lock: asyncio.Lock | None = None
         self._listener_task: asyncio.Task | None = None
         self._local_handler = None
         self._active = False
@@ -49,21 +54,71 @@ class WebSocketRedisAdapter:
         else:
             logger.info("WS Redis adapter: no Redis, using local-only mode")
 
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the subscription lock on the running event loop.
+
+        The adapter is a module-level singleton instantiated at import time
+        (no loop yet). Creating the lock on first use binds it to the loop
+        actually running the server.
+        """
+        if self._sub_lock is None:
+            self._sub_lock = asyncio.Lock()
+        return self._sub_lock
+
     async def subscribe(self, room: str):
-        """Subscribe to a room's broadcast channel."""
+        """Subscribe to a room's broadcast channel.
+
+        Reference-counted: subsequent ``subscribe`` calls for the same room
+        only bump the local refcount; the underlying Redis ``SUBSCRIBE`` is
+        issued exactly once per channel until the matching number of
+        :meth:`unsubscribe` calls have been made. This makes the API safe
+        to call from per-connection enrolment for dynamic rooms like
+        ``internal_chat:{tenant}:user:{id}``.
+        """
         channel = f"{self.CHANNEL_PREFIX}{room}"
         if not self._active or not self._pubsub:
             return
-        if channel in self._subscribed_channels:
+        async with self._get_lock():
+            if channel in self._subscribed_channels:
+                self._channel_refcounts[channel] = (
+                    self._channel_refcounts.get(channel, 0) + 1
+                )
+                return
+            try:
+                await self._pubsub.subscribe(channel)
+                self._subscribed_channels.add(channel)
+                self._channel_refcounts[channel] = 1
+                self._metrics["channels_active"] = len(self._subscribed_channels)
+                if not self._listener_task or self._listener_task.done():
+                    self._listener_task = asyncio.create_task(self._listen())
+            except Exception as e:
+                logger.error(f"WS subscribe error ({room}): {e}")
+
+    async def unsubscribe(self, room: str):
+        """Decrement the local refcount for ``room`` and, when it reaches
+        zero, issue ``UNSUBSCRIBE`` to Redis.
+
+        No-op when Redis is not active or the room was never subscribed.
+        """
+        channel = f"{self.CHANNEL_PREFIX}{room}"
+        if not self._active or not self._pubsub:
             return
-        try:
-            await self._pubsub.subscribe(channel)
-            self._subscribed_channels.add(channel)
+        async with self._get_lock():
+            count = self._channel_refcounts.get(channel, 0)
+            if count <= 0:
+                return
+            count -= 1
+            if count > 0:
+                self._channel_refcounts[channel] = count
+                return
+            # Last subscriber gone — drop the Redis subscription.
+            self._channel_refcounts.pop(channel, None)
+            self._subscribed_channels.discard(channel)
             self._metrics["channels_active"] = len(self._subscribed_channels)
-            if not self._listener_task or self._listener_task.done():
-                self._listener_task = asyncio.create_task(self._listen())
-        except Exception as e:
-            logger.error(f"WS subscribe error ({room}): {e}")
+            try:
+                await self._pubsub.unsubscribe(channel)
+            except Exception as e:
+                logger.error(f"WS unsubscribe error ({room}): {e}")
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis.
@@ -135,6 +190,9 @@ class WebSocketRedisAdapter:
                 await self._pubsub.close()
             except Exception:
                 pass
+        self._subscribed_channels.clear()
+        self._channel_refcounts.clear()
+        self._metrics["channels_active"] = 0
         self._active = False
 
     def get_metrics(self) -> dict[str, Any]:

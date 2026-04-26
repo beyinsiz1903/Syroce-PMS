@@ -120,6 +120,13 @@ async def connect(sid, environ, auth):
     If the client provided a valid JWT in the auth payload, we enrol them
     in their tenant-scoped internal_chat rooms (DM, department, broadcast)
     so messages pushed by /messaging/internal/send arrive in real time.
+
+    When a Redis pub/sub bridge is configured, we also subscribe the
+    adapter to those tenant-scoped channels so a `broadcast_internal_message`
+    published on a different backend instance still reaches this client.
+    Subscriptions are reference-counted on the adapter side so shared rooms
+    (department / tenant broadcast) only translate to a single Redis
+    SUBSCRIBE per channel.
     """
     logger.info(f"Client connected: {sid}")
     identity = await _resolve_user_identity(auth)
@@ -130,6 +137,24 @@ async def connect(sid, environ, auth):
         )
         for room in rooms:
             await sio.enter_room(sid, room)
+        # Bridge each tenant-scoped room to Redis pub/sub. No-op when the
+        # adapter is in local-only mode, so single-instance behaviour is
+        # preserved. Per-room try/except so one failed subscription does
+        # not skip the remaining rooms (e.g. DM works even if the
+        # department channel temporarily fails).
+        try:
+            from infra.ws_redis_adapter import ws_redis_adapter
+        except Exception as e:
+            logger.warning(f"WS adapter import failed at connect for {sid}: {e}")
+        else:
+            for room in rooms:
+                try:
+                    await ws_redis_adapter.subscribe(room)
+                except Exception as e:
+                    logger.warning(
+                        f"WS adapter subscribe-on-connect failed "
+                        f"({sid} → {room}): {e}"
+                    )
         connected_clients['internal-chat'].add(sid)
         logger.info(
             f"Socket {sid} authenticated user={identity['user_id']} "
@@ -151,7 +176,31 @@ async def disconnect(sid):
         if sid in clients:
             clients.remove(sid)
             logger.info(f"Removed {sid} from room: {room}")
-    sid_identity.pop(sid, None)
+    # Drop this connection's contribution to the tenant-scoped Redis
+    # subscriptions (refcounted, so shared rooms stay subscribed while
+    # any other client on this instance is still using them).
+    identity = sid_identity.pop(sid, None)
+    if identity and identity.get('tenant_id'):
+        rooms = _internal_chat_rooms(
+            identity['tenant_id'], identity['user_id'], identity.get('department')
+        )
+        try:
+            from infra.ws_redis_adapter import ws_redis_adapter
+        except Exception as e:
+            logger.warning(
+                f"WS adapter import failed at disconnect for {sid}: {e}"
+            )
+        else:
+            # Per-room error isolation so one failed unsubscribe doesn't
+            # leak the remaining refcounts.
+            for room in rooms:
+                try:
+                    await ws_redis_adapter.unsubscribe(room)
+                except Exception as e:
+                    logger.warning(
+                        f"WS adapter unsubscribe-on-disconnect failed "
+                        f"({sid} → {room}): {e}"
+                    )
 
 @sio.event
 async def join_room(sid, data):
@@ -408,6 +457,26 @@ async def broadcast_cockpit_snapshot(snapshot: dict[str, Any], tenant_id: str = 
 
 # ── Internal Chat Live Events ──
 
+def _internal_message_targets(
+    tenant_id: str,
+    *,
+    to_user_id: str | None,
+    to_department: str | None,
+) -> list[str]:
+    """Resolve the tenant-scoped room set for an internal chat event.
+
+    Routing rules mirror the inbox query in messaging/router.py:
+      - to_user_id provided → DM, deliver only to that user's room
+      - to_department provided → deliver to that department's room
+      - neither → broadcast to all users in the tenant
+    """
+    if to_user_id:
+        return [f"internal_chat:{tenant_id}:user:{to_user_id}"]
+    if to_department:
+        return [f"internal_chat:{tenant_id}:dept:{to_department}"]
+    return [f"internal_chat:{tenant_id}:broadcast"]
+
+
 async def broadcast_internal_message(
     tenant_id: str,
     message_payload: dict[str, Any],
@@ -415,23 +484,19 @@ async def broadcast_internal_message(
     to_user_id: str | None = None,
     to_department: str | None = None,
 ) -> None:
-    """Broadcast an internal chat message to the appropriate tenant-scoped rooms.
+    """Broadcast a brand new internal chat message to the appropriate
+    tenant-scoped rooms.
 
-    Routing rules mirror the inbox query in messaging/router.py:
-      - to_user_id provided → DM, deliver only to that user's room
-      - to_department provided → deliver to that department's room
-      - neither → broadcast to all users in the tenant
+    Routed through ``ws_redis_adapter`` so that under horizontal scaling
+    a message sent on instance A reaches recipients connected to instance
+    B without waiting for the safety-net poll. The adapter delivers
+    locally first (so the publishing instance never depends on Redis
+    loopback) and then bridges via pub/sub; if Redis is unavailable the
+    publish call still fans out to local clients via the wired
+    ``local_handler``.
     """
     if not tenant_id:
         return
-
-    targets: list[str] = []
-    if to_user_id:
-        targets.append(f"internal_chat:{tenant_id}:user:{to_user_id}")
-    elif to_department:
-        targets.append(f"internal_chat:{tenant_id}:dept:{to_department}")
-    else:
-        targets.append(f"internal_chat:{tenant_id}:broadcast")
 
     envelope = {
         'message': message_payload,
@@ -441,9 +506,20 @@ async def broadcast_internal_message(
         'timestamp': datetime.utcnow().isoformat(),
     }
 
-    for room in targets:
+    try:
+        from infra.ws_redis_adapter import ws_redis_adapter
+    except Exception as e:
+        logger.error(f"WS adapter import failed (internal_message): {e}")
+        ws_redis_adapter = None  # type: ignore[assignment]
+
+    for room in _internal_message_targets(
+        tenant_id, to_user_id=to_user_id, to_department=to_department
+    ):
         try:
-            await sio.emit('internal_message', envelope, room=room)
+            if ws_redis_adapter is not None:
+                await ws_redis_adapter.publish(room, 'internal_message', envelope)
+            else:
+                await sio.emit('internal_message', envelope, room=room)
             logger.debug(f"Internal message broadcasted to room={room}")
         except Exception as e:
             logger.error(f"Failed to broadcast internal_message to {room}: {e}")
@@ -462,17 +538,12 @@ async def broadcast_internal_message_update(
     can replace the previous bubble text and surface the "düzenlendi" badge
     without waiting for the safety-net poll. Routing rules mirror the
     original send so the message reaches exactly the same room set.
+
+    Routed through ``ws_redis_adapter`` so the update reaches recipients
+    connected to a different backend instance under horizontal scaling.
     """
     if not tenant_id:
         return
-
-    targets: list[str] = []
-    if to_user_id:
-        targets.append(f"internal_chat:{tenant_id}:user:{to_user_id}")
-    elif to_department:
-        targets.append(f"internal_chat:{tenant_id}:dept:{to_department}")
-    else:
-        targets.append(f"internal_chat:{tenant_id}:broadcast")
 
     envelope = {
         'message': message_payload,
@@ -482,9 +553,22 @@ async def broadcast_internal_message_update(
         'timestamp': datetime.utcnow().isoformat(),
     }
 
-    for room in targets:
+    try:
+        from infra.ws_redis_adapter import ws_redis_adapter
+    except Exception as e:
+        logger.error(f"WS adapter import failed (internal_message_updated): {e}")
+        ws_redis_adapter = None  # type: ignore[assignment]
+
+    for room in _internal_message_targets(
+        tenant_id, to_user_id=to_user_id, to_department=to_department
+    ):
         try:
-            await sio.emit('internal_message_updated', envelope, room=room)
+            if ws_redis_adapter is not None:
+                await ws_redis_adapter.publish(
+                    room, 'internal_message_updated', envelope
+                )
+            else:
+                await sio.emit('internal_message_updated', envelope, room=room)
             logger.debug(f"Internal message update broadcasted to room={room}")
         except Exception as e:
             logger.error(
