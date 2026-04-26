@@ -426,6 +426,49 @@ async def broadcast_internal_message(
             logger.error(f"Failed to broadcast internal_message to {room}: {e}")
 
 
+async def broadcast_internal_message_update(
+    tenant_id: str,
+    message_payload: dict[str, Any],
+    *,
+    to_user_id: str | None = None,
+    to_department: str | None = None,
+) -> None:
+    """Broadcast an in-place update for an existing internal chat message.
+
+    Used by the edit (PATCH) endpoint so the recipient's open thread / inbox
+    can replace the previous bubble text and surface the "düzenlendi" badge
+    without waiting for the safety-net poll. Routing rules mirror the
+    original send so the message reaches exactly the same room set.
+    """
+    if not tenant_id:
+        return
+
+    targets: list[str] = []
+    if to_user_id:
+        targets.append(f"internal_chat:{tenant_id}:user:{to_user_id}")
+    elif to_department:
+        targets.append(f"internal_chat:{tenant_id}:dept:{to_department}")
+    else:
+        targets.append(f"internal_chat:{tenant_id}:broadcast")
+
+    envelope = {
+        'message': message_payload,
+        'tenant_id': tenant_id,
+        'to_user_id': to_user_id,
+        'to_department': to_department,
+        'timestamp': datetime.utcnow().isoformat(),
+    }
+
+    for room in targets:
+        try:
+            await sio.emit('internal_message_updated', envelope, room=room)
+            logger.debug(f"Internal message update broadcasted to room={room}")
+        except Exception as e:
+            logger.error(
+                f"Failed to broadcast internal_message_updated to {room}: {e}"
+            )
+
+
 # Create ASGI app.
 #
 # NOTE on the path:

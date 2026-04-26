@@ -35,7 +35,7 @@ import { hasRole } from '@/utils/authRoles';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
   Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck,
-  MoreVertical, Trash2,
+  MoreVertical, Trash2, Pencil, X,
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -91,6 +91,12 @@ const TYPING_INDICATOR_TTL_MS = 4000;
 // Throttle how often we emit `internal_typing` while the user is typing.
 const TYPING_EMIT_THROTTLE_MS = 1500;
 
+// Same 5-minute window applies to in-place edits — kept identical to the
+// recall window so the menu logic is straightforward (one age check covers
+// both actions). Backend enforces the same limit and rejects stale edits
+// with HTTP 400.
+const EDIT_WINDOW_MS = 5 * 60 * 1000;
+
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
@@ -135,6 +141,12 @@ const InternalChatTab = ({ currentUser }) => {
   const [threadPriority, setThreadPriority] = useState('normal');
   const [sendingThreadReply, setSendingThreadReply] = useState(false);
   const [urgentConfirmOpen, setUrgentConfirmOpen] = useState(false);
+  // Inline edit state — at most one message per thread can be in edit mode at
+  // a time. `editingDraft` mirrors the textarea so the user can cancel
+  // without losing their place in the thread.
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingDraft, setEditingDraft] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
@@ -340,6 +352,11 @@ const InternalChatTab = ({ currentUser }) => {
       setThreadPriority('normal');
       setThreadMessages([]);
       setUrgentConfirmOpen(false);
+      // Drop any in-flight edit when switching threads — the message id is
+      // about to disappear from the rendered list anyway.
+      setEditingMessageId(null);
+      setEditingDraft('');
+      setSavingEdit(false);
       loadThread(conv.user_id, { markRead: true });
     },
     [loadThread],
@@ -404,6 +421,100 @@ const InternalChatTab = ({ currentUser }) => {
     setUrgentConfirmOpen(false);
     performSendThreadReply();
   }, [performSendThreadReply]);
+
+  // ── Inline edit handlers ────────────────────────────────────────────────
+  // Begin editing: snapshot the current text into the draft so cancel is a
+  // pure local rollback. We deliberately allow editing even if the bubble
+  // priority is 'urgent' — the alarm has already fired and the recipient
+  // should still be able to read the corrected wording.
+  const beginEditMessage = useCallback((msg) => {
+    if (!msg) return;
+    setEditingMessageId(msg.id);
+    setEditingDraft(msg.message || '');
+  }, []);
+
+  const cancelEditMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingDraft('');
+    setSavingEdit(false);
+  }, []);
+
+  const handleSubmitEditMessage = useCallback(
+    async (messageId) => {
+      if (!messageId) return;
+      const trimmed = (editingDraft || '').trim();
+      if (!trimmed) {
+        toast({
+          title: 'Boş mesaj',
+          description: 'Mesaj metni boş olamaz.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      // No-op short-circuit — saves a server round trip and avoids polluting
+      // the edit history with a "no change" entry.
+      const original = threadMessages.find((m) => m.id === messageId);
+      if (original && (original.message || '') === trimmed) {
+        cancelEditMessage();
+        return;
+      }
+      setSavingEdit(true);
+      try {
+        const res = await axios.patch(
+          `/messaging/internal/${encodeURIComponent(messageId)}`,
+          { message: trimmed },
+        );
+        const editedAt = res.data?.edited_at || new Date().toISOString();
+        // Optimistic update: stamp the bubble with the new text + badge so
+        // the change appears instantly. The silent thread refresh + the
+        // websocket update event will reconcile shortly.
+        setThreadMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, message: trimmed, edited: true, edited_at: editedAt }
+              : m,
+          ),
+        );
+        setInbox((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, message: trimmed, edited: true, edited_at: editedAt }
+              : m,
+          ),
+        );
+        cancelEditMessage();
+        toast({
+          title: 'Mesaj güncellendi',
+          description: 'Karşı tarafta "düzenlendi" etiketi ile görünecek.',
+        });
+        if (selectedConvUserId) {
+          loadThread(selectedConvUserId, { silent: true });
+        }
+        loadConversations(true);
+      } catch (err) {
+        const status = err.response?.status;
+        let description = err.response?.data?.detail || err.message;
+        if (status === 403) {
+          description = 'Sadece kendi gönderdiğiniz mesajları düzenleyebilirsiniz.';
+        }
+        toast({
+          title: 'Mesaj düzenlenemedi',
+          description,
+          variant: 'destructive',
+        });
+        setSavingEdit(false);
+      }
+    },
+    [
+      editingDraft,
+      threadMessages,
+      cancelEditMessage,
+      selectedConvUserId,
+      loadThread,
+      loadConversations,
+      toast,
+    ],
+  );
 
   const handleRecallMessage = useCallback(
     async (messageId) => {
@@ -592,11 +703,49 @@ const InternalChatTab = ({ currentUser }) => {
       }
     };
 
+    // In-place updates (e.g. edits) — replace the existing entry rather than
+    // prepending a new bubble so the conversation stays in chronological
+    // order and the "düzenlendi" badge appears immediately for the recipient.
+    const onMessageUpdate = (envelope) => {
+      const msg = envelope?.message;
+      if (!msg || !msg.id) return;
+
+      setInbox((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                message: msg.message,
+                edited: !!msg.edited,
+                edited_at: msg.edited_at || m.edited_at,
+              }
+            : m,
+        ),
+      );
+      setThreadMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                message: msg.message,
+                edited: !!msg.edited,
+                edited_at: msg.edited_at || m.edited_at,
+              }
+            : m,
+        ),
+      );
+    };
+
     (async () => {
       try {
         await websocket.connect();
         if (cancelled) return;
-        teardown = websocket.on('internal_message', onMessage);
+        const off1 = websocket.on('internal_message', onMessage);
+        const off2 = websocket.on('internal_message_updated', onMessageUpdate);
+        teardown = () => {
+          if (off1) off1();
+          if (off2) off2();
+        };
       } catch {
         /* noop — falls back to polling */
       }
@@ -1005,7 +1154,18 @@ const InternalChatTab = ({ currentUser }) => {
                       Bu mesaj kaldırıldı
                     </p>
                   ) : (
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                    <>
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                      {msg.edited && (
+                        <span
+                          className="text-[10px] text-muted-foreground italic mt-0.5 inline-block"
+                          data-testid={`text-inbox-edited-${msg.id}`}
+                          title={msg.edited_at ? `Son düzenleme: ${msg.edited_at}` : undefined}
+                        >
+                          (düzenlendi)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -1556,14 +1716,18 @@ const InternalChatTab = ({ currentUser }) => {
             threadMessages.map((m) => {
               const fromMe = m.is_from_me;
               const isDeleted = !!m.deleted;
-              // Recall is only offered for the sender's own, non-deleted
-              // messages still inside the recall window. Parsing failures
-              // fall through as "not recallable" — better safe than sorry.
-              let withinRecallWindow = false;
+              const isEditing = editingMessageId === m.id;
+              // Recall + edit are only offered for the sender's own,
+              // non-deleted messages still inside the 5 min window. Parsing
+              // failures fall through as "not actionable" — better safe than
+              // sorry. Both actions share the same window so a single check
+              // controls the menu visibility.
+              let withinActionWindow = false;
               if (fromMe && !isDeleted && m.created_at) {
                 const sentAt = Date.parse(m.created_at);
                 if (!Number.isNaN(sentAt)) {
-                  withinRecallWindow = Date.now() - sentAt < RECALL_WINDOW_MS;
+                  withinActionWindow =
+                    Date.now() - sentAt < Math.max(RECALL_WINDOW_MS, EDIT_WINDOW_MS);
                 }
               }
               return (
@@ -1572,9 +1736,11 @@ const InternalChatTab = ({ currentUser }) => {
                   data-testid={`thread-message-${m.id}`}
                   className={`group flex ${fromMe ? 'justify-end' : 'justify-start'}`}
                 >
-                  {/* Recall menu sits outside the bubble for own messages so it
-                      doesn't affect the bubble width and stays clickable. */}
-                  {fromMe && withinRecallWindow && (
+                  {/* Action menu sits outside the bubble for own messages so it
+                      doesn't affect the bubble width and stays clickable.
+                      Hidden while inline-edit mode is open to keep focus on
+                      the textarea. */}
+                  {fromMe && withinActionWindow && !isEditing && (
                     <div className="self-center mr-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -1591,6 +1757,16 @@ const InternalChatTab = ({ currentUser }) => {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              beginEditMessage(m);
+                            }}
+                            data-testid={`button-edit-message-${m.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5 mr-2" />
+                            Düzenle
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={(e) => {
                               e.preventDefault();
@@ -1631,6 +1807,59 @@ const InternalChatTab = ({ currentUser }) => {
                       >
                         Bu mesaj kaldırıldı
                       </p>
+                    ) : isEditing ? (
+                      // Inline edit mode — keyboard shortcuts mirror the reply
+                      // box (Enter saves, Shift+Enter newline, Esc cancels).
+                      <div
+                        className="flex flex-col gap-1.5 min-w-[220px]"
+                        data-testid={`edit-message-${m.id}`}
+                      >
+                        <Textarea
+                          value={editingDraft}
+                          onChange={(e) => setEditingDraft(e.target.value)}
+                          rows={2}
+                          maxLength={2000}
+                          autoFocus
+                          disabled={savingEdit}
+                          className="resize-none min-h-[40px] max-h-32 text-sm bg-background text-foreground"
+                          data-testid={`textarea-edit-message-${m.id}`}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              if (!savingEdit) handleSubmitEditMessage(m.id);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelEditMessage();
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className={`h-6 px-2 text-[11px] ${
+                              fromMe ? 'text-primary-foreground hover:text-primary-foreground hover:bg-primary-foreground/10' : ''
+                            }`}
+                            onClick={cancelEditMessage}
+                            disabled={savingEdit}
+                            data-testid={`button-cancel-edit-${m.id}`}
+                          >
+                            <X className="h-3 w-3 mr-1" /> Vazgeç
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => handleSubmitEditMessage(m.id)}
+                            disabled={savingEdit || !editingDraft.trim()}
+                            data-testid={`button-save-edit-${m.id}`}
+                          >
+                            {savingEdit ? 'Kaydediliyor…' : 'Kaydet'}
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap break-words">
                         {m.message}
@@ -1646,6 +1875,18 @@ const InternalChatTab = ({ currentUser }) => {
                       }`}
                     >
                       <span>{m.time_ago || ''}</span>
+                      {/* "düzenlendi" rozeti — recall edilmiş mesajlarda
+                          gösterilmez (mezar taşı tek sinyal kalmalı) ve
+                          edit modunda da gizlenir (textarea zaten görünüyor). */}
+                      {!isDeleted && !isEditing && m.edited && (
+                        <span
+                          className="italic"
+                          data-testid={`text-thread-edited-${m.id}`}
+                          title={m.edited_at ? `Son düzenleme: ${m.edited_at}` : undefined}
+                        >
+                          (düzenlendi)
+                        </span>
+                      )}
                       {fromMe && !isDeleted && (
                         <CheckCheck
                           className={`h-3 w-3 ${

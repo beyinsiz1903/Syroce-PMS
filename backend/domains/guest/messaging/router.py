@@ -54,6 +54,13 @@ router = APIRouter(prefix="/api", tags=["Guest / Messaging"])
 # integrity and recall is rejected with HTTP 400.
 RECALL_WINDOW_SECONDS = 5 * 60  # 5 minutes
 
+# Same 5-minute window applies to in-place edits. After the window the message
+# is treated as historical record and can no longer be modified — operators
+# who want to clarify must send a follow-up message instead. The window is
+# intentionally identical to RECALL_WINDOW_SECONDS so the menu logic stays
+# simple ("if you can recall it, you can also edit it").
+EDIT_WINDOW_SECONDS = 5 * 60  # 5 minutes
+
 
 # ── Inline Models ──
 
@@ -131,6 +138,12 @@ class InternalMessage(BaseModel):
     read_at: datetime | None = None
     replied_to: str | None = None  # Original message ID if this is a reply
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # Edit metadata — populated by PATCH /messaging/internal/{id}. The
+    # `edit_history` array preserves every previous version (oldest first) so
+    # operators can later prove what was originally said.
+    edited: bool = False
+    edited_at: datetime | None = None
+    edit_history: list[dict] = []
 
 
 @router.post("/whatsapp/send-confirmation")
@@ -623,6 +636,11 @@ async def get_internal_messages_inbox(
             'read': is_read,
             'deleted': is_deleted,
             'deleted_at': msg.get('deleted_at'),
+            # Edit metadata — surfaced so the UI can render a "düzenlendi"
+            # badge on edited messages on both the sender and recipient side.
+            # Recalled messages drop the badge to avoid mixed signals.
+            'edited': bool(msg.get('edited')) and not is_deleted,
+            'edited_at': msg.get('edited_at'),
             'created_at': msg.get('created_at'),
             'time_ago': _time_ago(msg.get('created_at'))
         })
@@ -871,6 +889,11 @@ async def get_conversation_thread(
             'read': is_read,
             'deleted': is_deleted,
             'deleted_at': msg.get('deleted_at'),
+            # Edit metadata — both sides see the "düzenlendi" badge after a
+            # PATCH lands. Suppressed for recalled messages so the tombstone
+            # stays the only signal.
+            'edited': bool(msg.get('edited')) and not is_deleted,
+            'edited_at': msg.get('edited_at'),
         })
 
     return {
@@ -941,6 +964,163 @@ async def mark_conversation_read(
     return {
         'success': True,
         'updated_count': result.modified_count,
+    }
+
+
+class _EditInternalMessageBody(BaseModel):
+    """Body for PATCH /messaging/internal/{message_id}.
+
+    `message` is the new full text. We require the full body (rather than a
+    diff) so the server-side validation surface stays trivial and the edit
+    history snapshot is unambiguous.
+    """
+    model_config = ConfigDict(extra="ignore")
+    message: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('message', mode='before')
+    @classmethod
+    def _strip_message(cls, v):
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+
+@router.patch("/messaging/internal/{message_id}")
+async def edit_internal_message(
+    message_id: str,
+    body: _EditInternalMessageBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Edit the text of an internal message previously sent by the current user.
+
+    - Only the original sender may edit their own message.
+    - Editing is allowed within EDIT_WINDOW_SECONDS (5 minutes) of the original
+      send time. After the window the message is locked in for audit integrity
+      and the request is rejected with HTTP 400.
+    - A recalled (deleted) message can no longer be edited — once the
+      tombstone is up we don't reanimate it.
+    - Every edit appends the previous text + timestamp + actor to
+      `edit_history`, so the original wording is never lost. The current
+      `message` field is replaced with the new text and `edited`/`edited_at`
+      flags are set so both sender and recipient see the "düzenlendi" badge.
+    - When a recipient is online, the change is broadcast over the existing
+      internal-chat WebSocket so their thread updates without waiting for
+      the safety-net poll.
+    """
+    new_text = body.message
+    if not new_text:
+        raise HTTPException(status_code=400, detail="Mesaj metni boş olamaz")
+
+    msg = await db.internal_messages.find_one({
+        'id': message_id,
+        'tenant_id': current_user.tenant_id,
+    })
+    if not msg:
+        raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+    if msg.get('from_user_id') != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Sadece kendi gönderdiğiniz mesajları düzenleyebilirsiniz",
+        )
+    if msg.get('deleted'):
+        raise HTTPException(
+            status_code=400,
+            detail="Geri alınmış mesaj düzenlenemez",
+        )
+
+    # No-op short-circuit: if the new text is identical to the current one,
+    # don't bump `edited_at` or pollute the history.
+    current_text = msg.get('message') or ''
+    if new_text == current_text:
+        return {
+            'success': True,
+            'message_id': message_id,
+            'edited': bool(msg.get('edited')),
+            'edited_at': msg.get('edited_at'),
+            'noop': True,
+        }
+
+    # Time-window check — mirror of the recall flow.
+    created_at_raw = msg.get('created_at')
+    created_dt = None
+    try:
+        if isinstance(created_at_raw, str):
+            created_dt = datetime.fromisoformat(created_at_raw.replace('Z', '+00:00'))
+        elif isinstance(created_at_raw, datetime):
+            created_dt = created_at_raw
+        if created_dt is not None and created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=UTC)
+    except Exception:
+        created_dt = None
+
+    if created_dt is not None:
+        elapsed = (datetime.now(UTC) - created_dt).total_seconds()
+        if elapsed > EDIT_WINDOW_SECONDS:
+            minutes = EDIT_WINDOW_SECONDS // 60
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Bu mesaj {minutes} dakikadan eski olduğu için düzenlenemez."
+                ),
+            )
+
+    now_iso = datetime.now(UTC).isoformat()
+    history_entry = {
+        # Snapshot of the *previous* message version so the audit trail can
+        # reconstruct the conversation as the recipient originally saw it.
+        'message': current_text,
+        'edited_at': now_iso,
+        'edited_by': current_user.id,
+        'edited_by_name': current_user.name,
+    }
+    await db.internal_messages.update_one(
+        {'id': message_id, 'tenant_id': current_user.tenant_id},
+        {
+            '$set': {
+                'message': new_text,
+                'edited': True,
+                'edited_at': now_iso,
+                'last_edited_by': current_user.id,
+            },
+            '$push': {'edit_history': history_entry},
+        },
+    )
+
+    # Live update: push the new text to the recipient(s) so their open thread
+    # reflects the edit immediately. Routing mirrors the original send.
+    update_payload = {
+        'id': message_id,
+        'from_user_id': msg.get('from_user_id'),
+        'from_user_name': msg.get('from_user_name'),
+        'from_department': msg.get('from_department'),
+        'to_user_id': msg.get('to_user_id'),
+        'to_user_name': msg.get('to_user_name'),
+        'to_department': msg.get('to_department') or 'All',
+        'message': new_text,
+        'priority': msg.get('priority'),
+        'message_type': msg.get('message_type'),
+        'edited': True,
+        'edited_at': now_iso,
+        'created_at': msg.get('created_at'),
+        'time_ago': _time_ago(msg.get('created_at')),
+    }
+    try:
+        from websocket_server import broadcast_internal_message_update
+        await broadcast_internal_message_update(
+            current_user.tenant_id,
+            update_payload,
+            to_user_id=msg.get('to_user_id'),
+            to_department=msg.get('to_department'),
+        )
+    except Exception as ws_err:
+        logger.warning("internal_message edit live push failed: %s", ws_err)
+
+    return {
+        'success': True,
+        'message_id': message_id,
+        'edited': True,
+        'edited_at': now_iso,
+        'message': new_text,
     }
 
 
