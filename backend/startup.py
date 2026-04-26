@@ -540,6 +540,7 @@ async def on_startup(app):
     # client + cross-instance subscriptions when the connection succeeds.
     from infra.ws_redis_adapter import ws_redis_adapter
     from infra.auth_cache_pubsub import auth_cache_pubsub
+    from infra.kbs_queue_pubsub import kbs_queue_pubsub
     from websocket_server import local_broadcast as _ws_local_broadcast
 
     try:
@@ -589,6 +590,17 @@ async def on_startup(app):
                 )
             except Exception as e:
                 logger.warning(f"Auth cache pub/sub init warning: {e}")
+            # KBS queue SSE bridge. Without this the desktop KBS agent
+            # subscribed to ``GET /api/kbs/queue/stream`` on W1 would
+            # never see jobs enqueued on W2 — the local-only fallback
+            # keeps single-worker correctness.
+            try:
+                await kbs_queue_pubsub.initialize(
+                    redis_cluster.get_pubsub_client(),
+                    instance_id,
+                )
+            except Exception as e:
+                logger.warning(f"KBS queue pub/sub init warning: {e}")
             from infra.horizontal_scaling import scaling_manager
             await scaling_manager.initialize(redis_cluster.get_client())
             logger.info(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
@@ -777,6 +789,11 @@ async def on_shutdown(app):
             await auth_cache_pubsub.close()
         except Exception as e:
             logger.warning(f"Auth cache pub/sub shutdown warning: {e}")
+        try:
+            from infra.kbs_queue_pubsub import kbs_queue_pubsub
+            await kbs_queue_pubsub.close()
+        except Exception as e:
+            logger.warning(f"KBS queue pub/sub shutdown warning: {e}")
         from infra.redis_cluster import redis_cluster
         await redis_cluster.close()
     except Exception as e:

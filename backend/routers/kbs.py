@@ -15,6 +15,7 @@ Endpoint'ler (legacy / pull-mark akışı):
 Endpoint'ler (Faz 1 — kuyruk altyapısı, agent uygulaması için):
   POST /api/kbs/queue              — bildirim kuyruğa ekle (idempotent)
   GET  /api/kbs/queue              — kuyruk listele + stat'lar
+  GET  /api/kbs/queue/stream       — SSE: yeni iş bildirimlerini push olarak al
   POST /api/kbs/queue/{id}/claim   — atomik lease (worker iş alır)
   POST /api/kbs/queue/{id}/complete — başarı + KBS referans no
   POST /api/kbs/queue/{id}/fail    — hata + exp. backoff retry / dead
@@ -22,18 +23,22 @@ Endpoint'ler (Faz 1 — kuyruk altyapısı, agent uygulaması için):
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.database import db
 from core.kbs_payload_validation import validate_kbs_payload
 from core.security import get_current_user
 from core.tenant_db import tenant_context
+from infra.kbs_queue_pubsub import kbs_queue_pubsub
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 from shared_kernel.idempotency import (
@@ -542,6 +547,20 @@ async def kbs_queue_enqueue(
             await complete_idempotency(
                 db, lock_id=idem_lock_id, response_body=response,
             )
+        # SSE fan-out: tell every connected agent (this worker AND
+        # other workers via Redis) that a new job is ready to claim.
+        # Best-effort — a publish failure must never poison the
+        # successful enqueue response.
+        try:
+            await kbs_queue_pubsub.publish(
+                "job.available",
+                tenant_id,
+                job_id=job["id"],
+                booking_id=job["booking_id"],
+                action=job["action"],
+            )
+        except Exception as _pub_err:  # pragma: no cover — defensive
+            logger.warning(f"KBS SSE publish (enqueue) error: {_pub_err}")
         return response
     except HTTPException:
         if idem_lock_id:
@@ -590,12 +609,31 @@ async def kbs_queue_list(
 
     # Madde 3: stuck-worker recovery — pending isteyen ajan, lease süresi
     # dolmuş in_progress işleri de görsün (claim endpoint zaten kabul ediyor).
+    #
+    # Madde 5 (Faz 5 / SSE coherence): "pending" listing must hide
+    # retry-deferred jobs whose ``next_retry_at`` is still in the
+    # future — otherwise an agent reconnecting and reconciling via
+    # ``GET /queue?status=pending`` would call ``POST /claim`` on
+    # them, get HTTP 409 (claim CAS already filters
+    # ``next_retry_at <= now``), and tight-loop. We mirror the claim
+    # endpoint's filter here so list <-> claim stay coherent and the
+    # SSE contract's promise ("retry not visible until back-off
+    # elapses") is actually true.
     now_iso_view = _iso(_now())
     if wanted_statuses == ["pending"]:
-        q["$or"] = [
-            {"status": "pending"},
-            {"status": "in_progress", "leased_until": {"$lt": now_iso_view}},
-        ]
+        pending_claimable = {
+            "status": "pending",
+            "$or": [
+                {"next_retry_at": None},
+                {"next_retry_at": {"$exists": False}},
+                {"next_retry_at": {"$lte": now_iso_view}},
+            ],
+        }
+        in_progress_stuck = {
+            "status": "in_progress",
+            "leased_until": {"$lt": now_iso_view},
+        }
+        q["$or"] = [pending_claimable, in_progress_stuck]
     elif wanted_statuses:
         q["status"] = {"$in": wanted_statuses}
 
@@ -887,6 +925,18 @@ async def kbs_queue_complete(
             await complete_idempotency(
                 db, lock_id=idem_lock_id, response_body=response,
             )
+        # SSE fan-out: notify other connected agents that this job is
+        # closed so a stale UI can stop showing it. Best-effort.
+        try:
+            await kbs_queue_pubsub.publish(
+                "job.completed",
+                tenant_id,
+                job_id=job_id,
+                booking_id=job.get("booking_id", ""),
+                action=job.get("action", ""),
+            )
+        except Exception as _pub_err:  # pragma: no cover — defensive
+            logger.warning(f"KBS SSE publish (complete) error: {_pub_err}")
         return response
     except HTTPException:
         if idem_lock_id:
@@ -1025,6 +1075,41 @@ async def kbs_queue_fail(
             await complete_idempotency(
                 db, lock_id=idem_lock_id, response_body=response,
             )
+        # SSE fan-out:
+        #   will_retry=True  → ``job.retry_scheduled`` *now*. The job
+        #     IS NOT immediately claimable: ``GET /queue?status=pending``
+        #     and ``POST /claim`` filter on ``next_retry_at <= now``,
+        #     so emitting ``job.available`` here would just spam 409s.
+        #     The agent uses ``next_retry_at`` to schedule a delayed
+        #     reconcile/claim instead of reacting instantly.
+        #   will_retry=False → ``job.failed`` (terminal) so UIs can
+        #     remove it from the active list and surface the error.
+        try:
+            if will_retry:
+                await kbs_queue_pubsub.publish(
+                    "job.retry_scheduled",
+                    tenant_id,
+                    job_id=job_id,
+                    booking_id=(job or {}).get("booking_id", ""),
+                    action=(job or {}).get("action", ""),
+                    extra={
+                        "next_retry_at": next_retry_at,
+                        "attempts": (job or {}).get("attempts", 0),
+                        "max_attempts": (job or {}).get(
+                            "max_attempts", DEFAULT_MAX_ATTEMPTS
+                        ),
+                    },
+                )
+            else:
+                await kbs_queue_pubsub.publish(
+                    "job.failed",
+                    tenant_id,
+                    job_id=job_id,
+                    booking_id=(job or {}).get("booking_id", ""),
+                    action=(job or {}).get("action", ""),
+                )
+        except Exception as _pub_err:  # pragma: no cover — defensive
+            logger.warning(f"KBS SSE publish (fail) error: {_pub_err}")
         return response
     except HTTPException:
         if idem_lock_id:
@@ -1034,6 +1119,147 @@ async def kbs_queue_fail(
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id, error=str(e))
         raise
+
+
+# ============================================================
+# Faz 3.5 — Server-Sent Events (push notification stream)
+# ============================================================
+
+# Heartbeat cadence — must be shorter than common idle-timeout values
+# of intermediary proxies / load balancers (typically 60 s on cloud
+# providers). 25 s gives a comfortable margin and also acts as the
+# probe that detects half-closed sockets so the server-side asyncio
+# task can clean up its subscriber slot.
+_SSE_HEARTBEAT_SECONDS = 25.0
+
+# Maximum stream lifetime. Forces a clean reconnect every ~6 hours
+# even on perfectly healthy connections so long-running agents
+# refresh JWTs and re-establish a known-good state.
+_SSE_MAX_STREAM_SECONDS = 6 * 60 * 60
+
+
+@router.get("/queue/stream")
+async def kbs_queue_stream(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Server-Sent Events stream of KBS queue lifecycle events for the
+    caller's tenant. Designed for the desktop KBS agent app to replace
+    polling ``GET /queue`` with push-based notifications.
+
+    Auth: Bearer JWT (same as every other ``/api/kbs/*`` endpoint).
+    The agent reuses the operator's session token; no separate API key
+    is required. ``tenant_id`` is derived from the token, not from a
+    query parameter — so the stream is automatically scoped to one
+    hotel and cannot be tricked into receiving another tenant's
+    events.
+
+    Events:
+      - ``ready``               sent once on connect with ``{"instance":...}``.
+      - ``job.available``       a fresh enqueue — claim immediately.
+      - ``job.retry_scheduled`` a previously-failed job will be
+                                claimable at ``next_retry_at`` (in
+                                payload). Schedule a delayed claim;
+                                do NOT race to claim now (server
+                                blocks until the back-off elapses).
+      - ``job.completed``       another worker reported success.
+      - ``job.failed``          job moved to terminal ``dead`` state.
+      - ``heartbeat``           every 25 s, ``data: {"ts":"..."}``. The
+                                client may use this as a liveness probe;
+                                absence of a heartbeat for >60 s is a
+                                strong signal the connection is broken
+                                and the client should reconnect.
+
+    Reconnect: SSE is a one-way HTTP stream over a long-lived response.
+    On disconnect (network blip, reverse proxy timeout, the 6 h
+    server-side rotation) the client reconnects via standard
+    EventSource semantics; missed events should be reconciled with a
+    single ``GET /queue?status=pending`` call after each reconnect
+    (this endpoint is intentionally fire-and-forget — no on-disk
+    backlog or Last-Event-ID replay).
+
+    Multi-worker correctness: events published on any worker reach
+    every connected agent through the Redis pub/sub bridge in
+    ``infra.kbs_queue_pubsub``.
+    """
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+
+    # Register *before* the generator starts so we can't miss an event
+    # that arrives between the HTTP handshake and the first ``await``.
+    queue = await kbs_queue_pubsub.add_subscriber(tenant_id)
+    started_at = datetime.now(UTC)
+
+    async def event_generator():
+        try:
+            # Initial ``ready`` frame so the client knows the stream
+            # is live (without waiting up to 25 s for the first
+            # heartbeat). Includes the worker instance id for
+            # operational debugging — it has no security value and
+            # the same id is in the Redis pubsub envelope.
+            metrics = kbs_queue_pubsub.get_metrics()
+            ready_payload = {
+                "instance": metrics.get("instance_id", ""),
+                "ts": _iso(_now()),
+                "heartbeat_seconds": _SSE_HEARTBEAT_SECONDS,
+            }
+            yield f"event: ready\ndata: {json.dumps(ready_payload)}\n\n"
+
+            while True:
+                # Disconnect / lifetime check.
+                if await request.is_disconnected():
+                    break
+                if (datetime.now(UTC) - started_at).total_seconds() > _SSE_MAX_STREAM_SECONDS:
+                    yield (
+                        "event: server_rotate\n"
+                        f"data: {{\"reason\": \"max_stream_age\"}}\n\n"
+                    )
+                    break
+
+                # Wait for next event or heartbeat tick — whichever
+                # comes first. ``wait_for`` cancels the queue.get
+                # cleanly on timeout so we never leak tasks.
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=_SSE_HEARTBEAT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    yield (
+                        f"event: heartbeat\n"
+                        f"data: {json.dumps({'ts': _iso(_now())})}\n\n"
+                    )
+                    continue
+
+                event_type = str(event.get("type") or "message")
+                # Defense in depth: although the pubsub bridge is
+                # already filtering by tenant_id, double-check here
+                # so a future routing bug can't leak cross-tenant.
+                if event.get("tenant_id") and event["tenant_id"] != tenant_id:
+                    continue
+                yield f"event: {event_type}\ndata: {json.dumps(event)}\n\n"
+        except asyncio.CancelledError:
+            # Client closed; FastAPI cancels the generator task. No
+            # logging — happens on every legitimate disconnect.
+            raise
+        except Exception as e:
+            logger.warning(f"KBS SSE generator error: {e}")
+        finally:
+            await kbs_queue_pubsub.remove_subscriber(tenant_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            # Disable any reverse-proxy buffering (nginx etc.) so
+            # events flush immediately.
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ============================================================
