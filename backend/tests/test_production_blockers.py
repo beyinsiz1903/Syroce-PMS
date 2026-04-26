@@ -54,9 +54,25 @@ def clean_env(monkeypatch):
         "AFSADAKAT_ADMIN_TOKEN",
         "CM_MASTER_KEY_CURRENT",
         "HR_TOKEN",
+        # Task #33: VAPID gate is also exercised by startup_check; clear
+        # the env so each test opts in to the values it wants to assert
+        # on. Tests that drive other gates (tenant/forbidden) set both
+        # VAPID vars to a sentinel so the VAPID gate does not interfere.
+        "VAPID_PUBLIC_KEY",
+        "VAPID_PRIVATE_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     return monkeypatch
+
+
+def _set_vapid(env, value: str = "test-only") -> None:
+    """Helper: set both VAPID env vars so the VAPID gate is satisfied.
+
+    Used by tests that target *other* startup_check gates and need a clean
+    baseline where the VAPID check passes.
+    """
+    env.setenv("VAPID_PUBLIC_KEY", value)
+    env.setenv("VAPID_PRIVATE_KEY", value)
 
 
 # ─── Production-mode detection (unified APP_ENV/ENVIRONMENT/NODE_ENV) ───────
@@ -85,6 +101,7 @@ def test_is_production_env_false_for_dev_values(clean_env):
 def test_production_requires_strict_tenant_mode(clean_env, env_key):
     """Setting ANY of the 3 env keys to production triggers the tenant guard."""
     clean_env.setenv(env_key, "production")
+    _set_vapid(clean_env)  # isolate: only the tenant gate should fire
     # STRICT_TENANT_MODE intentionally unset
     with pytest.raises(RuntimeError) as exc:
         production_config.startup_check()
@@ -104,6 +121,7 @@ def test_production_refuses_boot_with_forbidden_secret(clean_env, monkeypatch):
     clean_env.setenv("APP_ENV", "production")
     clean_env.setenv("STRICT_TENANT_MODE", "true")
     clean_env.setenv(SENTINEL_VAR, SENTINEL_VALUE)
+    _set_vapid(clean_env)  # isolate: only the forbidden-secret gate should fire
 
     monkeypatch.setattr(
         pc_mod,
@@ -124,6 +142,7 @@ def test_production_pass_when_sentinel_value_does_not_match(clean_env, monkeypat
     clean_env.setenv("APP_ENV", "production")
     clean_env.setenv("STRICT_TENANT_MODE", "true")
     clean_env.setenv(SENTINEL_VAR, "different-fresh-value-2026")
+    _set_vapid(clean_env)
 
     monkeypatch.setattr(
         pc_mod,
@@ -149,5 +168,80 @@ def test_production_accepts_rotated_secrets(clean_env):
     clean_env.setenv("APP_ENV", "production")
     clean_env.setenv("STRICT_TENANT_MODE", "true")
     clean_env.setenv(SENTINEL_VAR, "freshly-rotated-2026-not-a-leak")
+    _set_vapid(clean_env)
     result = production_config.startup_check()
     assert result["forbidden_dev_secrets_present"] == []
+    assert result["vapid_keys_missing"] == []
+
+
+# ─── Task #33: Web Push VAPID boot-time gate ─────────────────────────────
+
+@pytest.mark.parametrize("env_key", ["APP_ENV", "ENVIRONMENT", "NODE_ENV"])
+def test_production_refuses_boot_when_vapid_keys_missing(clean_env, env_key):
+    """Production + missing VAPID env vars ⇒ startup_check raises RuntimeError.
+
+    Mirrors `web_push.get_vapid_keys()`'s production fail-hard behaviour but
+    surfaces the failure at boot instead of at first push delivery.
+    """
+    clean_env.setenv(env_key, "production")
+    clean_env.setenv("STRICT_TENANT_MODE", "true")
+    # VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY intentionally unset by clean_env
+
+    with pytest.raises(RuntimeError) as exc:
+        production_config.startup_check()
+    msg = str(exc.value)
+    assert "VAPID_PUBLIC_KEY" in msg
+    assert "VAPID_PRIVATE_KEY" in msg
+
+
+def test_production_refuses_boot_when_only_one_vapid_key_set(clean_env):
+    """Half-configured VAPID (only public, missing private) still aborts."""
+    clean_env.setenv("APP_ENV", "production")
+    clean_env.setenv("STRICT_TENANT_MODE", "true")
+    clean_env.setenv("VAPID_PUBLIC_KEY", "pub-only")
+
+    with pytest.raises(RuntimeError) as exc:
+        production_config.startup_check()
+    assert "VAPID_PRIVATE_KEY" in str(exc.value)
+    assert "VAPID_PUBLIC_KEY" not in str(exc.value).split("VAPID_PRIVATE_KEY")[0]
+
+
+def test_production_passes_vapid_gate_when_keys_present(clean_env):
+    """Production + both VAPID keys set ⇒ no VAPID violation, no raise.
+
+    We don't assert the overall ``status`` because the test environment
+    intentionally omits unrelated critical vars (MONGO_URL, JWT_SECRET,
+    CORS_ORIGINS) — those drive ``status='fail'`` via the missing-vars
+    branch, which is logged-only and does not raise. The contract for
+    this test is specifically the VAPID gate.
+    """
+    clean_env.setenv("APP_ENV", "production")
+    clean_env.setenv("STRICT_TENANT_MODE", "true")
+    _set_vapid(clean_env, "real-rotated-key-2026")
+
+    result = production_config.startup_check()
+    assert result["vapid_keys_missing"] == []
+
+
+def test_dev_warns_but_does_not_raise_when_vapid_missing(clean_env, caplog):
+    """Non-production: missing VAPID keys log a warning but do not raise.
+
+    The dev fallback in `web_push.get_vapid_keys()` (db-persisted
+    auto-generated keypair) must keep working for local development.
+    """
+    # No APP_ENV / ENVIRONMENT / NODE_ENV set ⇒ dev mode
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING, logger="infra.production_config"):
+        result = production_config.startup_check()
+    assert result["vapid_keys_missing"] == ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"]
+    # Warning was emitted so a developer notices the missing config.
+    assert any("VAPID" in rec.message for rec in caplog.records)
+
+
+def test_vapid_keys_listed_in_production_variables():
+    """Schema check: PRODUCTION_VARIABLES advertises both VAPID keys as critical."""
+    from infra.production_config import PRODUCTION_VARIABLES
+    for var in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"):
+        assert var in PRODUCTION_VARIABLES, f"{var} missing from PRODUCTION_VARIABLES"
+        assert PRODUCTION_VARIABLES[var]["critical"] is True
+        assert PRODUCTION_VARIABLES[var]["category"] == "messaging"

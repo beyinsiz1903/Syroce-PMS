@@ -83,6 +83,15 @@ PRODUCTION_VARIABLES = {
     "SENDGRID_FROM_EMAIL": {"category": "messaging", "critical": False, "description": "SendGrid sender email"},
     "WHATSAPP_PROVIDER_KEY": {"category": "messaging", "critical": False, "description": "WhatsApp provider key"},
 
+    # Web Push (PWA) — VAPID keypair shared by every backend instance.
+    # Required in production: web_push.get_vapid_keys() refuses to fall back to
+    # a per-process keypair (which would invalidate every browser
+    # PushSubscription pinned to the previous public key and write the private
+    # key to MongoDB in plain text). Marked critical so they surface in the
+    # readiness report; the explicit boot-time gate lives in startup_check().
+    "VAPID_PUBLIC_KEY": {"category": "messaging", "critical": True, "description": "Web Push VAPID public key (P-256 raw, base64url)"},
+    "VAPID_PRIVATE_KEY": {"category": "messaging", "critical": True, "description": "Web Push VAPID private key (32-byte scalar, base64url)"},
+
     # Secrets Management
     "SECRETS_PROVIDER": {"category": "secrets", "critical": False, "description": "Secrets provider: aws|vault|env"},
     "AWS_REGION": {"category": "secrets", "critical": False, "description": "AWS region for Secrets Manager"},
@@ -226,7 +235,21 @@ class ProductionConfigValidator:
                 if value and hashlib.sha256(value.encode()).hexdigest() == expected_hash:
                     forbidden_present.append(var_name)
 
-        status = "pass" if not missing and not tenant_guard_violation and not forbidden_present else "fail"
+        # Task #33: surface missing Web Push VAPID keys at boot instead of
+        # only at first push delivery. `web_push.get_vapid_keys()` already
+        # raises `VapidKeysMissingError` in production when these env vars
+        # are unset, but that exception fires lazily on the first urgent
+        # message, often hours/days after the deploy. Promote the same gate
+        # to startup time so a misconfigured production deploy fails loud
+        # immediately. Dev keeps the historical fallback (db-persisted
+        # auto-generated keypair) and only logs a warning here.
+        vapid_missing = [
+            v for v in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY")
+            if not os.environ.get(v, "")
+        ]
+        vapid_violation = is_prod and bool(vapid_missing)
+
+        status = "pass" if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation else "fail"
         if missing:
             level = logging.WARNING if not is_prod else logging.ERROR
             logger.log(level, "Startup check — missing critical vars: %s", missing)
@@ -250,7 +273,30 @@ class ProductionConfigValidator:
                 f"Production refused to boot: forbidden dev secret values detected for "
                 f"{forbidden_present}. See replit.md → Round-8 production checklist."
             )
-        if not missing and not tenant_guard_violation and not forbidden_present:
+        # Task #33: VAPID gate. In production, missing Web Push keys must
+        # abort the boot so urgent push notifications never silently degrade.
+        # In dev, log a single warning so the developer notices but local
+        # work is unaffected (web_push.get_vapid_keys keeps the db fallback).
+        if vapid_missing:
+            if vapid_violation:
+                logger.error(
+                    "Startup check FAILED — Web Push VAPID keys are not configured: %s. "
+                    "Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY as Replit Secrets so every "
+                    "backend instance shares the same keypair and the private key is never "
+                    "written to MongoDB. Refusing to boot.",
+                    vapid_missing,
+                )
+                raise RuntimeError(
+                    f"Production refused to boot: missing Web Push VAPID env vars "
+                    f"{vapid_missing}. Configure them in Replit Secrets before deploying."
+                )
+            logger.warning(
+                "Startup check — Web Push VAPID keys are not set (%s). Development "
+                "fallback (db-persisted auto-generated keypair) will be used; production "
+                "deploys will refuse to start without these env vars.",
+                vapid_missing,
+            )
+        if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation:
             logger.info("Startup check passed — all critical variables present")
 
         return {
@@ -258,6 +304,7 @@ class ProductionConfigValidator:
             "missing_critical": missing,
             "strict_tenant_mode": strict_ok,
             "forbidden_dev_secrets_present": forbidden_present,
+            "vapid_keys_missing": vapid_missing,
             "checked_at": datetime.now(UTC).isoformat(),
             "startup_time": self._startup_time,
         }
