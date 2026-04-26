@@ -427,6 +427,7 @@ async def get_internal_messages_inbox(
             'from_user_id': msg.get('from_user_id'),
             'from_user_name': msg.get('from_user_name'),
             'from_department': msg.get('from_department'),
+            'to_user_id': msg.get('to_user_id'),
             'to_user_name': msg.get('to_user_name'),
             'to_department': msg.get('to_department') or 'All',
             'message': msg.get('message'),
@@ -498,6 +499,122 @@ async def mark_internal_message_read(
 
 
 
+@router.get("/messaging/internal/conversations")
+async def list_dm_conversations(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List DM conversation partners for the current user.
+
+    Aggregates all internal messages where either the sender or recipient is
+    the current user AND the message is a direct DM (i.e. `to_user_id` is set,
+    excluding department or broadcast messages). Returns one row per partner
+    with the most recent message preview, timestamp, and unread count.
+    """
+    pipeline = [
+        {
+            '$match': {
+                'tenant_id': current_user.tenant_id,
+                'to_user_id': {'$ne': None},
+                '$or': [
+                    {'from_user_id': current_user.id},
+                    {'to_user_id': current_user.id},
+                ],
+            }
+        },
+        {
+            '$addFields': {
+                'partner_id': {
+                    '$cond': [
+                        {'$eq': ['$from_user_id', current_user.id]},
+                        '$to_user_id',
+                        '$from_user_id',
+                    ]
+                },
+                'partner_name': {
+                    '$cond': [
+                        {'$eq': ['$from_user_id', current_user.id]},
+                        '$to_user_name',
+                        '$from_user_name',
+                    ]
+                },
+                '_from_me': {'$eq': ['$from_user_id', current_user.id]},
+                '_is_unread_for_me': {
+                    '$and': [
+                        {'$eq': ['$to_user_id', current_user.id]},
+                        {
+                            '$not': {
+                                '$in': [
+                                    current_user.id,
+                                    {'$ifNull': ['$read_by', []]},
+                                ]
+                            }
+                        },
+                        {'$ne': ['$read', True]},
+                    ]
+                },
+            }
+        },
+        {'$match': {'partner_id': {'$ne': None}}},
+        {'$sort': {'created_at': -1}},
+        {
+            '$group': {
+                '_id': '$partner_id',
+                'partner_name': {'$first': '$partner_name'},
+                'last_message': {'$first': '$message'},
+                'last_message_at': {'$first': '$created_at'},
+                'last_from_me': {'$first': '$_from_me'},
+                'last_priority': {'$first': '$priority'},
+                'unread_count': {
+                    '$sum': {'$cond': ['$_is_unread_for_me', 1, 0]}
+                },
+            }
+        },
+        {'$sort': {'last_message_at': -1}},
+        {'$limit': 200},
+    ]
+
+    rows: list[dict] = []
+    partner_ids: list[str] = []
+    async for doc in db.internal_messages.aggregate(pipeline):
+        partner_id = doc.get('_id')
+        if not partner_id:
+            continue
+        partner_ids.append(partner_id)
+        rows.append({
+            'user_id': partner_id,
+            'user_name': doc.get('partner_name') or 'Bilinmeyen',
+            'last_message': doc.get('last_message') or '',
+            'last_message_at': doc.get('last_message_at'),
+            'last_from_me': bool(doc.get('last_from_me')),
+            'last_priority': doc.get('last_priority') or 'normal',
+            'unread_count': int(doc.get('unread_count') or 0),
+            'time_ago': _time_ago(doc.get('last_message_at')),
+        })
+
+    # Resolve partner display names from the users collection — covers cases
+    # where historical messages stored an empty/stale `to_user_name`/`from_user_name`.
+    if partner_ids:
+        names_by_id: dict[str, str] = {}
+        roles_by_id: dict[str, str] = {}
+        async for u in db.users.find(
+            {'id': {'$in': partner_ids}, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'name': 1, 'username': 1, 'email': 1, 'role': 1, 'is_active': 1},
+        ):
+            names_by_id[u['id']] = u.get('name') or u.get('username') or u.get('email') or 'Kullanıcı'
+            roles_by_id[u['id']] = u.get('role') or ''
+        for row in rows:
+            resolved = names_by_id.get(row['user_id'])
+            if resolved:
+                row['user_name'] = resolved
+            row['user_role'] = roles_by_id.get(row['user_id'], '')
+
+    return {
+        'conversations': rows,
+        'total_count': len(rows),
+    }
+
+
 @router.get("/messaging/internal/conversation/{user_id}")
 async def get_conversation_thread(
     user_id: str,
@@ -512,20 +629,62 @@ async def get_conversation_thread(
             {'from_user_id': user_id, 'to_user_id': current_user.id}
         ]
     }).sort('created_at', 1):
+        read_by = msg.get('read_by') or []
+        is_from_me = msg.get('from_user_id') == current_user.id
+        # For my own outgoing messages, "read" means the recipient has read it.
+        # For incoming messages, "read" means I have read it.
+        if is_from_me:
+            is_read = user_id in read_by or bool(msg.get('read'))
+        else:
+            is_read = current_user.id in read_by or bool(msg.get('read'))
         messages.append({
             'id': msg.get('id'),
             'from_user_id': msg.get('from_user_id'),
             'from_user_name': msg.get('from_user_name'),
+            'to_user_id': msg.get('to_user_id'),
+            'to_user_name': msg.get('to_user_name'),
             'message': msg.get('message'),
             'priority': msg.get('priority'),
             'created_at': msg.get('created_at'),
-            'is_from_me': msg.get('from_user_id') == current_user.id
+            'time_ago': _time_ago(msg.get('created_at')),
+            'is_from_me': is_from_me,
+            'read': is_read,
         })
 
     return {
         'user_id': user_id,
         'message_count': len(messages),
         'messages': messages
+    }
+
+
+@router.put("/messaging/internal/conversation/{user_id}/mark-read")
+async def mark_conversation_read(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Mark every DM in the thread with `user_id` (sent by them, addressed to me)
+    as read by the current user.
+
+    Idempotent — only updates messages where the current user's id is not
+    already in `read_by`. Returns the number of newly-marked messages.
+    """
+    now_iso = datetime.now(UTC).isoformat()
+    result = await db.internal_messages.update_many(
+        {
+            'tenant_id': current_user.tenant_id,
+            'from_user_id': user_id,
+            'to_user_id': current_user.id,
+            'read_by': {'$ne': current_user.id},
+        },
+        {
+            '$addToSet': {'read_by': current_user.id},
+            '$set': {'last_read_at': now_iso, 'read': True},
+        },
+    )
+    return {
+        'success': True,
+        'updated_count': result.modified_count,
     }
 
 
