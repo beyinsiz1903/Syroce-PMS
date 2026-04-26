@@ -25,6 +25,7 @@ class CacheWarmer:
         await asyncio.gather(
             self.warm_rooms_cache(tenant_id),
             self.warm_bookings_cache(tenant_id),
+            self.warm_guest_room_maps_cache(tenant_id),
             self.warm_dashboard_cache(tenant_id),
             self.warm_kpi_cache(tenant_id),
             self.warm_housekeeping_endpoints(tenant_id),
@@ -33,6 +34,83 @@ class CacheWarmer:
         )
 
         logger.info(f"✅ Cache warming complete for tenant: {tenant_id}")
+
+    async def warm_guest_room_maps_cache(self, tenant_id: str):
+        """Pre-build guest_id→name and room_id→{number,type} maps per tenant.
+
+        Why: the bookings list endpoint (cache-hit path) needs to enrich
+        each booking row with guest_name and room_number. Doing that as
+        two batched Atlas round-trips per request adds ~500ms (Atlas is
+        cross-region). Pre-building these maps once and serving from RAM
+        cuts the bookings endpoint from ~1.8s to ~200ms.
+
+        TTL is short (20s) — same as the other warmed caches — so a
+        renamed guest or renumbered room shows up within a few seconds.
+        For instant invalidation after a mutation, callers can use
+        :meth:`invalidate` with key ``guest_map:{tenant_id}`` /
+        ``room_map:{tenant_id}``.
+        """
+        try:
+            # Guests: project the minimum we need to compute a display name
+            guest_map: dict[str, str] = {}
+            async for g in self.db.guests.find(
+                {'tenant_id': tenant_id},
+                {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
+            ):
+                gid = g.get('id')
+                if not gid:
+                    continue
+                nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+                if nm:
+                    guest_map[gid] = nm
+
+            # Rooms: project number + type for the booking row
+            room_map: dict[str, dict] = {}
+            async for r in self.db.rooms.find(
+                {'tenant_id': tenant_id},
+                {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
+            ):
+                rid = r.get('id')
+                if not rid:
+                    continue
+                room_map[rid] = {
+                    'room_number': r.get('room_number'),
+                    'room_type': r.get('room_type'),
+                }
+
+            # TTL is generous (180s) so the entry stays warm BETWEEN the
+            # background refresh cycles (default 120s). If TTL were shorter
+            # than the refresh interval, every Nth request would miss the
+            # cache and fall back to a slow Atlas round-trip — which is
+            # exactly the regression we just fixed for the bookings list.
+            self.cache[f"guest_map:{tenant_id}"] = {
+                'data': guest_map,
+                'expires_at': datetime.utcnow() + timedelta(seconds=180),
+            }
+            self.cache[f"room_map:{tenant_id}"] = {
+                'data': room_map,
+                'expires_at': datetime.utcnow() + timedelta(seconds=180),
+            }
+            logger.info(
+                f"  ✅ Guest/Room maps warmed for tenant {tenant_id[:8]}: "
+                f"{len(guest_map)} guests, {len(room_map)} rooms"
+            )
+        except Exception as e:
+            logger.info(f"  ❌ Guest/Room map warming failed: {e}")
+
+    def invalidate(self, *cache_keys: str) -> int:
+        """Drop cache entries by key. Returns number of entries removed.
+
+        Use after a mutation that would make a warmed entry stale (e.g.
+        renaming a guest → ``invalidate(f"guest_map:{tenant_id}")``).
+        Safe to call with keys that aren't present.
+        """
+        removed = 0
+        for k in cache_keys:
+            if k in self.cache:
+                del self.cache[k]
+                removed += 1
+        return removed
 
     async def warm_housekeeping_endpoints(self, tenant_id: str):
         """Pre-call housekeeping endpoints so their @cached results are hot.
@@ -152,7 +230,11 @@ class CacheWarmer:
                     cache_key = f"bookings:{t_id}"
                     self.cache[cache_key] = {
                         'data': tenant_bookings,
-                        'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
+                        # TTL=180s lives ONE refresh cycle longer than the
+                        # 120s background interval, so the entry never goes
+                        # cold between refreshes. Without this, every ~6th
+                        # request would fall back to a 1.8s Atlas query.
+                        'expires_at': datetime.utcnow() + timedelta(seconds=180)
                     }
                     logger.info(f"  ✅ Bookings cache warmed for tenant {t_id[:8]}: {len(tenant_bookings)} bookings")
             else:
@@ -281,10 +363,15 @@ class CacheWarmer:
                 if cycle % full_every == 0:
                     await self.warm_all_caches(tenant_id)
                 else:
-                    # Hafif refresh: sadece dashboard + kpi
+                    # Hafif refresh: dashboard + kpi + bookings + guest/room
+                    # maps. The latter three MUST be refreshed every cycle —
+                    # otherwise their 180s TTL outlives the warm copy and
+                    # the bookings endpoint goes cold every other minute.
                     await asyncio.gather(
                         self.warm_dashboard_cache(tenant_id),
                         self.warm_kpi_cache(tenant_id),
+                        self.warm_bookings_cache(tenant_id),
+                        self.warm_guest_room_maps_cache(tenant_id),
                         return_exceptions=True,
                     )
             except Exception as e:

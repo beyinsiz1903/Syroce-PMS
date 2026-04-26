@@ -8,6 +8,18 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+# ``redis.exceptions.TimeoutError`` does NOT inherit from the built-in
+# ``TimeoutError`` (its MRO is ``[TimeoutError(redis), RedisError, Exception]``
+# where the leftmost ``TimeoutError`` is redis's own class, not Python's).
+# We import it explicitly so the idle-pubsub timeout path can catch it
+# and downgrade the log level. ImportError is tolerated because some
+# minimal redis builds may not expose this submodule.
+try:
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+except Exception:  # pragma: no cover — defensive
+    class RedisTimeoutError(Exception):
+        """Shim used when redis.exceptions is unavailable."""
+
 logger = logging.getLogger("infra.ws_redis_adapter")
 
 
@@ -229,7 +241,7 @@ class WebSocketRedisAdapter:
                     )
                 except asyncio.CancelledError:
                     return
-                except (TimeoutError, asyncio.TimeoutError) as e:
+                except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
                     # Pub/sub idle socket timeout (default redis socket_timeout
                     # ~30s). No message arrived in the read window — this is
                     # normal for low-traffic channels, NOT an error. Quiet
