@@ -10,6 +10,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
@@ -86,6 +96,7 @@ const InternalChatTab = ({ currentUser }) => {
   const [threadReply, setThreadReply] = useState('');
   const [threadPriority, setThreadPriority] = useState('normal');
   const [sendingThreadReply, setSendingThreadReply] = useState(false);
+  const [urgentConfirmOpen, setUrgentConfirmOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
@@ -270,12 +281,13 @@ const InternalChatTab = ({ currentUser }) => {
       setThreadReply('');
       setThreadPriority('normal');
       setThreadMessages([]);
+      setUrgentConfirmOpen(false);
       loadThread(conv.user_id, { markRead: true });
     },
     [loadThread],
   );
 
-  const handleSendThreadReply = useCallback(async () => {
+  const performSendThreadReply = useCallback(async () => {
     const trimmed = threadReply.trim();
     if (!trimmed || !selectedConvUserId) return;
     setSendingThreadReply(true);
@@ -305,6 +317,24 @@ const InternalChatTab = ({ currentUser }) => {
       setSendingThreadReply(false);
     }
   }, [threadReply, threadPriority, selectedConvUserId, loadThread, loadConversations, toast]);
+
+  // Wrapper used by Send button / Enter key. For "urgent" priority we first
+  // pop a quick confirmation so a misclick on Acil doesn't blast an alarm.
+  // Normal/High priorities are unaffected.
+  const handleSendThreadReply = useCallback(() => {
+    const trimmed = threadReply.trim();
+    if (!trimmed || !selectedConvUserId || sendingThreadReply) return;
+    if (threadPriority === 'urgent') {
+      setUrgentConfirmOpen(true);
+      return;
+    }
+    performSendThreadReply();
+  }, [threadReply, selectedConvUserId, sendingThreadReply, threadPriority, performSendThreadReply]);
+
+  const handleConfirmUrgentSend = useCallback(() => {
+    setUrgentConfirmOpen(false);
+    performSendThreadReply();
+  }, [performSendThreadReply]);
 
   const handleStartConversationFromUser = useCallback(
     (user) => {
@@ -1268,6 +1298,52 @@ const InternalChatTab = ({ currentUser }) => {
             </Button>
           </div>
         </div>
+
+        {/* Urgent confirmation: a single extra step to avoid accidental
+            alarms. The destructive action is auto-focused so a second Enter
+            keypress confirms — keeping the flow fast for intentional sends. */}
+        <AlertDialog
+          open={urgentConfirmOpen}
+          onOpenChange={(open) => {
+            if (!sendingThreadReply) setUrgentConfirmOpen(open);
+          }}
+        >
+          <AlertDialogContent
+            data-testid="dialog-urgent-confirm"
+            onOpenAutoFocus={(e) => {
+              e.preventDefault();
+              const node = e.currentTarget?.querySelector?.(
+                '[data-testid="button-urgent-confirm"]',
+              );
+              node?.focus();
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+                Acil mesaj göndermek istediğinize emin misiniz?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Acil mesaj alıcıda alarm oluşturur. Onaylamak için Enter'a,
+                vazgeçmek için Esc'e basabilirsiniz.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-urgent-cancel">
+                Vazgeç
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmUrgentSend}
+                disabled={sendingThreadReply}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-urgent-confirm"
+              >
+                <AlertCircle className="h-4 w-4 mr-1" />
+                Acil Gönder
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   };
