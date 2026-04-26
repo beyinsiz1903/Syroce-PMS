@@ -4800,3 +4800,18 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
 - Backend `experience_router` import OK; üç review-invite endpoint mount edildi.
 - Curl: `GET /api/feedback/public/invite/<bilinmeyen-token>` → 404 `{detail: "Davet bulunamadı"}` (auth bypass çalışıyor).
 - Frontend Vite HMR temiz; preview yeniden başlatıldı.
+
+## 2026-04-26 — 6+ Maddelik Bug-fix/Feature Batch (tamamlandı)
+
+**Backend değişiklikleri:**
+1. `backend/routers/pms_rooms.py` — `_ROOM_UPDATE_ALLOWED`'a `base_price` eklendi (frontend bunu kullanıyordu, sessizce düşüyordu) + negative-value 422 guard. **Güvenlik düzeltmesi**: PUT readback `find_one({'id': room_id, 'tenant_id': ...})` ile tenant-scoped, `matched_count==0` → 404 (cross-tenant veri sızıntısı kapatıldı).
+2. `backend/domains/pms/pos_fnb_router.py:308` — `split_check`'te `transaction.get('order_items') or transaction.get('items', [])` (geriye uyumlu).
+3. `backend/routers/pms_guests.py` — yeni **DELETE /pms/guests/{id}** soft-delete (`status='deleted'`, `deleted_at`); aktif rezervasyonu olan misafir 409 ile bloklanır. POST /pms/guests opsiyonel `Idempotency-Key` destekliyor.
+4. `backend/routers/housekeeping.py` — POST /housekeeping/tasks query params → `HousekeepingTaskCreate` JSON body (task_type/priority enum + tenant-scoped room varlık doğrulaması). Frontend `PMSModule.jsx:521` hizalandı.
+5. `backend/routers/housekeeping.py` — yeni **DELETE /housekeeping/tasks/{id}**. **Atomik guard**: `delete_one({"id":..., "tenant_id":..., "status":{"$ne":"in_progress"}})` (TOCTOU race kapatıldı), 409/404 ayrımı için ayrıca readback.
+6. `backend/domains/guest/experience_router.py` — yeni **POST /ai/upsell/offers** (manuel tek teklif): `_MANUAL_UPSELL_TYPES` whitelist, fiyat validasyonu, booking tenant doğrulaması, `source: "manual"`.
+7. `backend/shared_kernel/idempotency.py` — `claim_idempotency` / `complete_idempotency` / `release_idempotency` helper'ları (MongoDB unique-`_id` üzerinden atomik claim, completed → replay, in_flight → 409). Üç POST'a (guests, housekeeping, manuel upsell) opsiyonel `Idempotency-Key` desteği eklendi.
+
+**Güvenlik düzeltmesi (PII)**: Guest create idempotency cache yalnızca `{id, tenant_id}` saklıyor; replay path'i `db.guests`'ten encrypted doc okuyup decrypt ederek döndürüyor. Plaintext PII kesinlikle `idempotency_keys` koleksiyonuna yazılmıyor.
+
+**Smoke test (17/17 + 5/5 edge yeşil)**: rooms PUT base_price + negatif 422 + bilinmeyen id 404, hk POST body + invalid task_type 422 + fake room 404 + idem replay aynı id, hk DELETE + 404 + in_progress→409, guest POST idem replay aynı id (re-fetch path), guest DELETE soft + 404, manuel upsell POST idem replay + bad type/negatif fiyat 422, POS split-check fake id 404 (regression).

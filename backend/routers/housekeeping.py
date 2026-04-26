@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
@@ -19,6 +20,12 @@ from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
 from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 try:
     from domains.pms.room_block_models import BlockStatus, RoomBlock, RoomBlockCreate, RoomBlockUpdate
@@ -60,15 +67,116 @@ async def get_housekeeping_tasks(status: str | None = None, current_user: User =
             rooms_by_id[r['id']] = r
     return [{**task, 'room': rooms_by_id.get(task.get('room_id'))} for task in tasks]
 
+class HousekeepingTaskCreate(BaseModel):
+    """Body schema for POST /housekeeping/tasks.
+
+    Backwards-compatible: previous callers used query params. The new endpoint
+    accepts a JSON body matching the same fields. Frontend should pass these
+    as the request body, not querystring.
+    """
+    room_id: str = Field(..., min_length=1)
+    task_type: str = Field(..., min_length=1)
+    priority: str = "normal"
+    notes: str | None = None
+
+
+_HK_VALID_TASK_TYPES = {"cleaning", "inspection", "maintenance", "deep_cleaning", "turndown", "linen_change"}
+_HK_VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
+
+
 @router.post("/housekeeping/tasks")
-async def create_housekeeping_task(room_id: str, task_type: str, priority: str = "normal", notes: str | None = None, current_user: User = Depends(get_current_user),
+async def create_housekeeping_task(
+    payload: HousekeepingTaskCreate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
-    task = HousekeepingTask(tenant_id=current_user.tenant_id, room_id=room_id, task_type=task_type, priority=priority, notes=notes)
-    task_dict = task.model_dump()
-    task_dict['created_at'] = task_dict['created_at'].isoformat()
-    await db.housekeeping_tasks.insert_one(task_dict)
-    return task
+    if payload.task_type not in _HK_VALID_TASK_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Gecersiz task_type. Izinli={sorted(_HK_VALID_TASK_TYPES)}",
+        )
+    if payload.priority not in _HK_VALID_PRIORITIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Gecersiz priority. Izinli={sorted(_HK_VALID_PRIORITIES)}",
+        )
+    # Verify room exists in this tenant — prevents cross-tenant id forging.
+    room = await db.rooms.find_one(
+        {"id": payload.room_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
+    )
+    if not room:
+        raise HTTPException(status_code=404, detail="Oda bulunamadi")
+
+    # Optional Idempotency-Key replay protection (e.g. retry after timeout).
+    idem_key = get_idempotency_key(request)
+    lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope="housekeeping_task_create",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        lock_id = claim["lock_id"]
+
+    try:
+        task = HousekeepingTask(
+            tenant_id=current_user.tenant_id,
+            room_id=payload.room_id,
+            task_type=payload.task_type,
+            priority=payload.priority,
+            notes=payload.notes,
+        )
+        task_dict = task.model_dump()
+        task_dict['created_at'] = task_dict['created_at'].isoformat()
+        await db.housekeeping_tasks.insert_one(task_dict.copy())
+        task_dict.pop('_id', None)
+        if lock_id:
+            await complete_idempotency(db, lock_id=lock_id, response_body=task_dict)
+        return task
+    except Exception as exc:
+        if lock_id:
+            await release_idempotency(db, lock_id=lock_id, error=str(exc))
+        raise
+
+
+@router.delete("/housekeeping/tasks/{task_id}")
+async def delete_housekeeping_task(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),
+):
+    """Hard-delete a housekeeping task scoped to the caller's tenant.
+
+    In-progress tasks are protected: the status guard is applied inside the
+    delete filter itself (atomic). Splitting find + delete would let a task
+    that flips to in_progress between the two ops still be removed.
+    """
+    # Atomic guarded delete — status check is part of the WHERE clause.
+    result = await db.housekeeping_tasks.delete_one({
+        "id": task_id,
+        "tenant_id": current_user.tenant_id,
+        "status": {"$ne": "in_progress"},
+    })
+    if result.deleted_count == 1:
+        return {"success": True, "task_id": task_id, "deleted": 1}
+
+    # Disambiguate 404 vs 409: re-read without the status filter to see why
+    # the delete didn't match.
+    existing = await db.housekeeping_tasks.find_one(
+        {"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "status": 1}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Gorev bulunamadi")
+    raise HTTPException(status_code=409, detail="Devam eden gorev silinemez")
 
 @router.put("/housekeeping/tasks/{task_id}")
 async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, current_user: User = Depends(get_current_user),

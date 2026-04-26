@@ -515,7 +515,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const handleCreateHKTask = async (e) => {
     e.preventDefault();
-    try { await axios.post('/housekeeping/tasks', null, { params: newHKTask }); toast.success('Task created'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
+    try { await axios.post('/housekeeping/tasks', newHKTask); toast.success('Task created'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
     } catch (error) { toast.error('Failed to create task'); }
   };
 

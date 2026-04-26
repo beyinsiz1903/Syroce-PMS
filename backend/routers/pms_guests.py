@@ -3,7 +3,7 @@ PMS Guests Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Guest CRUD and search with field-level PII encryption.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.database import db
 from core.helpers import require_module
@@ -11,6 +11,12 @@ from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from models.schemas import Guest, GuestCreate, User
 from modules.pms_core.role_permission_service import require_op
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 try:
     from security.field_encryption import get_field_encryption_service
@@ -48,15 +54,61 @@ def _decrypt_guest(doc: dict) -> dict:
 @router.post("/pms/guests", response_model=Guest)
 async def create_guest(
     guest_data: GuestCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
-    guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
-    guest_dict = guest.model_dump()
-    guest_dict['created_at'] = guest_dict['created_at'].isoformat()
-    guest_dict = _encrypt_guest(guest_dict)
-    await db.guests.insert_one(guest_dict)
-    return guest
+    # Optional Idempotency-Key replay protection: same key returns the original
+    # guest object instead of creating a duplicate (e.g. on UI double-submit).
+    idem_key = get_idempotency_key(request)
+    lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope="guest_create",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            # Cache only stored {id, tenant_id} (no PII); re-fetch the encrypted
+            # guest doc, decrypt, and return the same shape the original POST did.
+            replay = claim["response"] or {}
+            replay_id = replay.get("id")
+            if replay_id:
+                doc = await db.guests.find_one(
+                    {"id": replay_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+                )
+                if doc:
+                    return _decrypt_guest(doc)
+            # Cache pointer is stale (guest was hard-deleted out of band) —
+            # fall through to a fresh insert under the same key.
+        elif claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        lock_id = claim.get("lock_id")
+
+    try:
+        guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
+        guest_dict = guest.model_dump()
+        guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+        guest_dict_to_store = _encrypt_guest(guest_dict.copy())
+        await db.guests.insert_one(guest_dict_to_store)
+        if lock_id:
+            # Persist ONLY the guest id + tenant in the idempotency cache to
+            # avoid leaking PII outside the encrypted `guests` collection.
+            # Replay handler re-fetches & decrypts from `guests` instead.
+            await complete_idempotency(
+                db,
+                lock_id=lock_id,
+                response_body={"id": guest.id, "tenant_id": current_user.tenant_id},
+            )
+        return guest
+    except Exception as exc:
+        if lock_id:
+            await release_idempotency(db, lock_id=lock_id, error=str(exc))
+        raise
 
 
 @router.get("/pms/guests", response_model=list[Guest])
@@ -221,3 +273,48 @@ async def update_guest(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
     return _decrypt_guest(updated)
+
+
+@router.delete("/pms/guests/{guest_id}")
+async def delete_guest(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Soft-delete a guest record.
+
+    We never hard-delete because guests are referenced by historical bookings,
+    folios, and KBS submissions. The record is marked deleted and excluded from
+    list/search responses by downstream filters when they choose to honor it.
+    Active bookings (confirmed / checked_in / guaranteed) block deletion to
+    prevent breaking referential integrity for in-flight stays.
+    """
+    from datetime import UTC, datetime
+
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+
+    active = await db.bookings.count_documents({
+        "tenant_id": current_user.tenant_id,
+        "guest_id": guest_id,
+        "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+    })
+    if active > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Aktif {active} rezervasyonu olan misafir silinemez",
+        )
+
+    await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "status": "deleted",
+            "deleted_at": datetime.now(UTC).isoformat(),
+            "deleted_by": getattr(current_user, "id", None),
+        }},
+    )
+    return {"success": True, "guest_id": guest_id, "soft_deleted": True}

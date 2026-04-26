@@ -601,7 +601,7 @@ async def upload_room_images(
 
 _ROOM_UPDATE_ALLOWED = {
     "room_number", "floor", "room_type", "view", "amenities",
-    "status", "price", "base_rate", "max_occupancy", "max_adults",
+    "status", "price", "base_rate", "base_price", "max_occupancy", "max_adults",
     "max_children", "is_active", "notes", "smoking", "accessible",
     "connecting_room_id", "images", "name", "description",
 }
@@ -629,10 +629,26 @@ async def update_room(room_id: str, updates: dict[str, Any], current_user: User 
                 raise HTTPException(status_code=422, detail="base_rate negatif olamaz")
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="base_rate sayi olmali")
+    if "base_price" in safe:
+        try:
+            if float(safe["base_price"]) < 0:
+                raise HTTPException(status_code=422, detail="base_price negatif olamaz")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="base_price sayi olmali")
     if not safe:
         raise HTTPException(status_code=400, detail="Guncellenecek izinli alan yok")
-    await db.rooms.update_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'$set': safe})
-    room_doc = await db.rooms.find_one({'id': room_id}, {'_id': 0})
+    result = await db.rooms.update_one(
+        {'id': room_id, 'tenant_id': current_user.tenant_id},
+        {'$set': safe},
+    )
+    # If matched_count is 0 the room either doesn't exist or belongs to another
+    # tenant. Either way we must NOT read back without a tenant filter, otherwise
+    # an attacker could fetch a foreign tenant's room document by id.
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Oda bulunamadi")
+    room_doc = await db.rooms.find_one(
+        {'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
     if not room_doc:
         raise HTTPException(status_code=404, detail="Oda bulunamadi")
     return room_doc

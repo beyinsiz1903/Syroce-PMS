@@ -9,12 +9,18 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.cache import cached
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 from models.schemas import (
     CreateDepartmentFeedbackRequest,
     CreateSurveyRequest,
@@ -376,6 +382,107 @@ async def generate_upsell_offers(
         'total_offers': len(offers),
         'estimated_revenue': round(estimated_revenue, 2)
     }
+
+
+_MANUAL_UPSELL_TYPES = {
+    "early_checkin", "late_checkout", "airport_transfer",
+    "room_upgrade", "spa_package", "dining_credit", "champagne", "custom",
+}
+
+
+@router.post("/ai/upsell/offers")
+async def create_upsell_offer(
+    payload: dict,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Manually create a single upsell offer (alternative to AI bulk generate).
+
+    Body fields:
+      - booking_id (required): owning reservation, must belong to caller tenant.
+      - type (required): one of _MANUAL_UPSELL_TYPES, or 'custom' for ad-hoc.
+      - price (required): non-negative number.
+      - target_item (optional): human label of what's being offered.
+      - reason (optional): note shown to guest.
+      - valid_until (optional ISO string): expiry; defaults to booking checkout.
+
+    Idempotency-Key header is honored: re-sending the same key returns the
+    originally-created offer instead of creating a duplicate row.
+    """
+    booking_id = payload.get("booking_id")
+    offer_type = payload.get("type")
+    price_raw = payload.get("price")
+
+    if not booking_id or not isinstance(booking_id, str):
+        raise HTTPException(status_code=422, detail="booking_id zorunlu")
+    if offer_type not in _MANUAL_UPSELL_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Gecersiz type. Izinli={sorted(_MANUAL_UPSELL_TYPES)}",
+        )
+    if isinstance(price_raw, bool):
+        raise HTTPException(status_code=422, detail="price sayi olmali")
+    try:
+        price = float(price_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="price sayi olmali")
+    if not math.isfinite(price) or price < 0 or price > 1_000_000:
+        raise HTTPException(status_code=422, detail="price gecersiz")
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    # Optional Idempotency-Key replay protection.
+    idem_key = get_idempotency_key(request)
+    lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope="upsell_offer_create",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        lock_id = claim["lock_id"]
+
+    try:
+        valid_until = payload.get("valid_until") or booking.get("check_out")
+        offer_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "guest_id": booking.get("guest_id"),
+            "booking_id": booking_id,
+            "type": offer_type,
+            "current_item": payload.get("current_item"),
+            "target_item": payload.get("target_item"),
+            "price": round(price, 2),
+            "confidence": 1.0,  # manual = full confidence
+            "reason": payload.get("reason") or "Manuel teklif",
+            "valid_until": valid_until,
+            "status": "pending",
+            "created_at": datetime.now(UTC).isoformat(),
+            "created_by": getattr(current_user, "id", None),
+            "source": "manual",
+        }
+        await db.upsell_offers.insert_one(offer_doc.copy())
+        offer_doc.pop("_id", None)
+        if lock_id:
+            await complete_idempotency(db, lock_id=lock_id, response_body=offer_doc)
+        return offer_doc
+    except Exception as exc:
+        if lock_id:
+            await release_idempotency(db, lock_id=lock_id, error=str(exc))
+        raise
 
 
 @router.get("/ai/upsell/offers")

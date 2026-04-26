@@ -301,7 +301,8 @@ async def split_check(
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     total_amount = transaction.get('total_amount', 0)
-    items = transaction.get('items', [])
+    # Item field is stored as 'order_items' on POS orders; older transactions used 'items'.
+    items = transaction.get('order_items') or transaction.get('items', [])
 
     split_transactions = []
 
