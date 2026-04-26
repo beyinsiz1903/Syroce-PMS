@@ -801,11 +801,21 @@ const InternalChatTab = ({ currentUser }) => {
                         toUserId === u.id ? 'bg-accent' : ''
                       }`}
                     >
-                      <div className="font-medium">{u.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {ROLE_LABELS[u.role] || u.role}
-                        {u.email ? ` · ${u.email}` : ''}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-medium">{u.name}</span>
+                        {u.role && ROLE_LABELS[u.role] && (
+                          <Badge
+                            variant="secondary"
+                            className="px-1.5 py-0 text-[10px] h-4 font-normal text-muted-foreground shrink-0"
+                            data-testid={`badge-user-role-${u.id}`}
+                          >
+                            {ROLE_LABELS[u.role]}
+                          </Badge>
+                        )}
                       </div>
+                      {u.email && (
+                        <div className="text-xs text-muted-foreground">{u.email}</div>
+                      )}
                     </button>
                   ))}
                   {filteredUsers.length === 0 && (
