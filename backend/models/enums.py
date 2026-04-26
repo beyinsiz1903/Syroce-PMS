@@ -58,6 +58,9 @@ class Permission(str, Enum):
     MANAGE_ROOMS = "manage_rooms"
     SYSTEM_SETTINGS = "system_settings"
 
+    # Internal messaging permissions
+    SEND_URGENT_MESSAGE = "send_urgent_message"
+
 class RoomStatus(str, Enum):
     AVAILABLE = "available"
     OCCUPIED = "occupied"
@@ -387,7 +390,8 @@ ROLE_PERMISSIONS = {
         Permission.OVERRIDE_RATE, Permission.CLOSE_FOLIO,
         Permission.VIEW_COMPANIES, Permission.EDIT_COMPANY,
         Permission.VIEW_HK_BOARD, Permission.UPDATE_ROOM_STATUS, Permission.ASSIGN_TASK,
-        Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS
+        Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS,
+        Permission.SEND_URGENT_MESSAGE,
     ],
     UserRole.FRONT_DESK: [
         Permission.VIEW_BOOKINGS, Permission.CREATE_BOOKING, Permission.EDIT_BOOKING,

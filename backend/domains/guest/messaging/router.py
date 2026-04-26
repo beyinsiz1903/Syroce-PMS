@@ -307,7 +307,28 @@ async def send_internal_message(
 
     Multi-tenant: when targeting a specific user, the recipient must belong to
     the sender's tenant. Cross-tenant addressing is rejected with 404.
+
+    Urgent priority is gated by a separate permission (`send_urgent_message`)
+    because it triggers a system alert on the recipient. Default messaging
+    access alone is NOT enough — only roles explicitly granted that permission
+    (supervisor, admin, super_admin) can use it.
     """
+    # Gate the "urgent" channel behind a dedicated permission so that the
+    # alarm-triggering path is reserved for designated responders only.
+    if priority == 'urgent':
+        from modules.pms_core.role_permission_service import RolePermissionService
+        from core.security import _is_super_admin
+        if not _is_super_admin(current_user) and not RolePermissionService().check_permission(
+            current_user.role, 'send_urgent_message'
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    'Acil mesaj gönderme yetkiniz yok. Bu kanal yalnızca '
+                    'yetkili rollere (yönetici/süpervizör) açıktır.'
+                ),
+            )
+
     # Get to_user info if specified — MUST be scoped to sender's tenant
     to_user_name = None
     if to_user_id:

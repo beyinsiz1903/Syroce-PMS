@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { websocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
+import { hasRole } from '@/utils/authRoles';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
   Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck
@@ -74,6 +75,14 @@ const InternalChatTab = ({ currentUser }) => {
   // Keep the global bell counter in sync when this tab mutates read state.
   const { decrementInternalUnread, refreshInternalUnread } = useNotifications();
   const [activeSubTab, setActiveSubTab] = useState('inbox');
+
+  // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
+  // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
+  // hiç görmesin — backend de aynı kontrolü yapıyor (defense-in-depth).
+  const canSendUrgent = useMemo(
+    () => hasRole(currentUser, 'admin', 'supervisor'),
+    [currentUser],
+  );
 
   const [inbox, setInbox] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -315,9 +324,20 @@ const InternalChatTab = ({ currentUser }) => {
       loadConversations(true);
     } catch (err) {
       const status = err.response?.status;
-      let description = err.response?.data?.detail || err.message;
+      const serverDetail = err.response?.data?.detail;
+      let description = serverDetail || err.message;
       if (status === 403) {
-        description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
+        if (threadPriority === 'urgent') {
+          // Backend gates urgent priority behind a separate permission. Show
+          // the exact reason and reset the picker so a retry without urgent
+          // succeeds without the user having to manually flip it back.
+          description =
+            serverDetail ||
+            'Acil mesaj gönderme yetkiniz yok. Bu kanal yalnızca yönetici/süpervizör rollerine açıktır.';
+          setThreadPriority('normal');
+        } else {
+          description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
+        }
       }
       toast({ title: 'Yanıt gönderilemedi', description, variant: 'destructive' });
     } finally {
@@ -638,9 +658,19 @@ const InternalChatTab = ({ currentUser }) => {
       loadInbox(true);
     } catch (err) {
       const status = err.response?.status;
-      let description = err.response?.data?.detail || err.message;
+      const serverDetail = err.response?.data?.detail;
+      let description = serverDetail || err.message;
       if (status === 403) {
-        description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
+        if (priority === 'urgent') {
+          // Surface the exact urgent-permission reason and roll the picker
+          // back to "normal" so the next attempt isn't auto-blocked again.
+          description =
+            serverDetail ||
+            'Acil mesaj gönderme yetkiniz yok. Bu kanal yalnızca yönetici/süpervizör rollerine açıktır.';
+          setPriority('normal');
+        } else {
+          description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
+        }
       }
       toast({ title: 'Gönderim başarısız', description, variant: 'destructive' });
     } finally {
@@ -965,9 +995,22 @@ const InternalChatTab = ({ currentUser }) => {
             <SelectContent>
               <SelectItem value="normal">Normal</SelectItem>
               <SelectItem value="high">Yüksek</SelectItem>
-              <SelectItem value="urgent">Acil (alarm oluşturur)</SelectItem>
+              {canSendUrgent && (
+                <SelectItem value="urgent" data-testid="select-priority-urgent">
+                  Acil (alarm oluşturur)
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
+          {!canSendUrgent && (
+            <p
+              className="text-xs text-muted-foreground mt-1"
+              data-testid="text-urgent-permission-hint"
+            >
+              Acil mesaj gönderme yetkisi yalnızca yönetici/süpervizör
+              rollerine açıktır.
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -1347,30 +1390,41 @@ const InternalChatTab = ({ currentUser }) => {
             >
               Yüksek
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={threadPriority === 'urgent' ? 'destructive' : 'outline'}
-              className={`h-7 px-2 text-xs ${
-                threadPriority === 'urgent'
-                  ? 'ring-2 ring-destructive ring-offset-1'
-                  : 'border-destructive/40 text-destructive hover:bg-destructive/10'
-              }`}
-              onClick={() => setThreadPriority('urgent')}
-              role="radio"
-              aria-checked={threadPriority === 'urgent'}
-              data-testid="button-thread-priority-urgent"
-              title="Acil — alıcıya alarm oluşturur"
-            >
-              <AlertCircle className="h-3 w-3 mr-1" />
-              Acil
-            </Button>
-            {threadPriority === 'urgent' && (
+            {canSendUrgent && (
+              <Button
+                type="button"
+                size="sm"
+                variant={threadPriority === 'urgent' ? 'destructive' : 'outline'}
+                className={`h-7 px-2 text-xs ${
+                  threadPriority === 'urgent'
+                    ? 'ring-2 ring-destructive ring-offset-1'
+                    : 'border-destructive/40 text-destructive hover:bg-destructive/10'
+                }`}
+                onClick={() => setThreadPriority('urgent')}
+                role="radio"
+                aria-checked={threadPriority === 'urgent'}
+                data-testid="button-thread-priority-urgent"
+                title="Acil — alıcıya alarm oluşturur"
+              >
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Acil
+              </Button>
+            )}
+            {canSendUrgent && threadPriority === 'urgent' && (
               <span
                 className="text-[11px] text-destructive font-medium"
                 data-testid="text-thread-priority-urgent-hint"
               >
                 Alarm oluşturulacak
+              </span>
+            )}
+            {!canSendUrgent && (
+              <span
+                className="text-[11px] text-muted-foreground"
+                data-testid="text-thread-urgent-permission-hint"
+                title="Acil mesaj yalnızca yönetici/süpervizör rollerine açıktır"
+              >
+                Acil yetkisiz
               </span>
             )}
           </div>

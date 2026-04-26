@@ -74,6 +74,10 @@ OPERATION_PERMISSIONS = {
     "manage_approvals": [Permission.SYSTEM_SETTINGS],
     "manage_sales": [Permission.VIEW_COMPANIES],  # SALES + FINANCE both have it
     "manage_guests": [Permission.VIEW_REPORTS],
+    # Internal messaging — "urgent" priority is gated separately because it
+    # generates a system alert on the recipient. Default messaging access alone
+    # must NOT be enough to trigger it.
+    "send_urgent_message": [Permission.SEND_URGENT_MESSAGE],
 }
 
 # v89: module → roles mapping for require_module() helper
