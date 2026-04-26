@@ -554,7 +554,11 @@ All frontend PMS modules systematically fixed for proper Turkish character encod
 - **Key files fixed**: ServiceRecovery, ReservationDetailModal, GovernancePanel, OperationTabs, OnlinePaymentTab, PMSModule, ReservationCalendar, EnhancedFolioManager, TemplateManager, all admin tabs, rate managers, channel manager modules, housekeeping, POS, and many more
 
 ### Session Plan T001-T006 (All Pre-completed)
-- T001: StaffTaskManager — Full Turkish UI with KPI cards, Dialog components
+- T001: StaffTaskManager — Full Turkish UI with KPI cards, Dialog components.
+  Sıkı validasyon (2026-04): backend POST `/pms/staff-tasks` artık `title` (≥3 karakter)
+  ve `room_id` (mevcut oda) zorunlu. Form `title` input'u ile genişletildi, kart UI
+  boş alanlar için "—" gösterir. `DELETE /pms/staff-tasks/cleanup-empty` endpoint'i
+  ile (Boşları Sil butonu) eski boş kayıtlar toplu silinebilir.
 - T002: POSTab — Turkish UI, ₺ currency, correct API mappings
 - T003: FeedbackSystem — Turkish UI, Dialog instead of window.prompt
 - T004: AllotmentGrid — Turkish UI, validation, Dialog components

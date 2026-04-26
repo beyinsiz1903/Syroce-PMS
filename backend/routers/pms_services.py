@@ -105,27 +105,41 @@ async def create_staff_task(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
-    """Create a new staff task"""
+    """Create a new staff task. title ve room_id zorunlu — boş kayıt üretilmez."""
+    raw_title = task_data.get('title')
+    raw_room = task_data.get('room_id')
+    # int/float gibi tipler de güvenle string'e çevrilsin (500 yerine 400 dönsün)
+    title = (str(raw_title) if raw_title is not None else '').strip()
+    room_id = (str(raw_room) if raw_room is not None else '').strip()
+    if len(title) < 3:
+        raise HTTPException(status_code=400, detail="title en az 3 karakter olmalı")
+    if not room_id:
+        raise HTTPException(status_code=400, detail="room_id zorunludur")
+
     task = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'task_type': task_data.get('task_type', 'maintenance'),
         'department': task_data.get('department', 'engineering'),
-        'title': task_data.get('title', 'Staff Task'),
-        'room_id': task_data.get('room_id'),
+        'title': title,
+        'room_id': room_id,
         'priority': task_data.get('priority', 'normal'),
-        'description': task_data.get('description'),
-        'assigned_to': task_data.get('assigned_to'),
+        'description': (task_data.get('description') or '').strip() or None,
+        'assigned_to': (task_data.get('assigned_to') or '').strip() or None,
         'status': task_data.get('status', 'pending'),
         'created_by': current_user.id,
         'created_at': datetime.now(UTC).isoformat()
     }
 
-    # Get room number if room_id provided
-    if task['room_id']:
-        room = await db.rooms.find_one({'id': task['room_id']}, {'_id': 0, 'room_number': 1})
-        if room:
-            task['room_number'] = room['room_number']
+    # Oda numarasını çöz (room_id ya UUID ya direkt oda no olabilir)
+    room = await db.rooms.find_one(
+        {'$or': [{'id': room_id}, {'room_number': room_id}], 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'room_number': 1, 'id': 1}
+    )
+    if not room:
+        raise HTTPException(status_code=400, detail=f"Oda bulunamadı: {room_id}")
+    task['room_id'] = room['id']
+    task['room_number'] = room['room_number']
 
     await db.staff_tasks.insert_one(task)
 
@@ -139,12 +153,31 @@ async def create_staff_task(
         'room_id': task['room_id'],
         'room_number': task.get('room_number'),
         'priority': task['priority'],
-        'description': task['description'],
-        'assigned_to': task['assigned_to'],
+        'description': task.get('description'),
+        'assigned_to': task.get('assigned_to'),
         'status': task['status'],
         'created_by': task['created_by'],
         'created_at': task['created_at']
     }
+
+
+@router.delete("/pms/staff-tasks/cleanup-empty")
+async def cleanup_empty_staff_tasks(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),
+):
+    """Boş/geçersiz görevleri toplu sil (title yok veya 'x' gibi tek karakter)."""
+    result = await db.staff_tasks.delete_many({
+        'tenant_id': current_user.tenant_id,
+        '$or': [
+            {'title': {'$exists': False}},
+            {'title': None},
+            {'title': ''},
+            {'title': {'$regex': r'^.{0,2}$'}},  # 0-2 karakter
+            {'title': 'Staff Task'},
+        ]
+    })
+    return {'deleted_count': result.deleted_count}
 
 
 @router.put("/pms/staff-tasks/{task_id}")

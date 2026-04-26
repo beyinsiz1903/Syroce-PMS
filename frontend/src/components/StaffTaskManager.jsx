@@ -39,10 +39,11 @@ const StaffTaskManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
-  const [formData, setFormData] = useState({
-    task_type: 'maintenance', department: 'engineering', room_id: '',
+  const emptyForm = {
+    task_type: 'maintenance', department: 'engineering', title: '', room_id: '',
     priority: 'normal', description: '', assigned_to: ''
-  });
+  };
+  const [formData, setFormData] = useState(emptyForm);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -58,15 +59,27 @@ const StaffTaskManager = () => {
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const createTask = async () => {
-    if (!formData.description.trim()) { toast.error(ts('descRequired')); return; }
+    if (formData.title.trim().length < 3) { toast.error(ts('titleRequired')); return; }
+    if (!formData.room_id.trim()) { toast.error(ts('roomRequired')); return; }
     try {
       await axios.post('/pms/staff-tasks', formData);
       toast.success(ts('taskCreated'));
       loadTasks();
       setShowDialog(false);
-      setFormData({ task_type: 'maintenance', department: 'engineering', room_id: '', priority: 'normal', description: '', assigned_to: '' });
+      setFormData(emptyForm);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || ts('createError');
+      toast.error(msg);
+    }
+  };
+
+  const cleanupEmpty = async () => {
+    try {
+      const res = await axios.delete('/pms/staff-tasks/cleanup-empty');
+      toast.success(ts('cleanupDone', { count: res.data?.deleted_count ?? 0 }));
+      loadTasks();
     } catch {
-      toast.error(ts('createError'));
+      toast.error(ts('cleanupError'));
     }
   };
 
@@ -121,6 +134,9 @@ const StaffTaskManager = () => {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadTasks} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {ts('refresh')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={cleanupEmpty} className="text-red-600 hover:text-red-700">
+            <Trash2 className="w-4 h-4 mr-1" /> {ts('cleanupEmpty')}
           </Button>
           <Button onClick={() => setShowDialog(true)}>
             <Plus className="w-4 h-4 mr-2" /> {ts('newTask')}
@@ -205,36 +221,43 @@ const StaffTaskManager = () => {
             const StIcon = STATUS_ICONS[task.status] || AlertCircle;
             const stColor = STATUS_COLORS[task.status] || 'text-gray-500';
             const prColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
+            const dash = '—';
+            const taskTitle = (task.title || '').trim() || dash;
+            const roomLabel = (task.room_number || task.room_id || dash);
+            const descLabel = (task.description || '').trim() || dash;
+            const assignedLabel = (task.assigned_to || '').trim() || dash;
             return (
               <Card key={task.id} className="hover:shadow-lg transition">
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2">
-                      <StIcon className={`w-5 h-5 ${stColor}`} />
-                      <CardTitle className="text-base">{ttIcon} {ttLabel}</CardTitle>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <StIcon className={`w-5 h-5 ${stColor} shrink-0`} />
+                      <CardTitle className="text-base truncate" title={taskTitle}>{ttIcon} {taskTitle}</CardTitle>
                     </div>
                     <Badge variant="outline" className={prColor}>{ts(task.priority)}</Badge>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">{ttLabel}</p>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {(task.room_number || task.room_id) && (
-                      <div className="text-sm flex items-center gap-1.5">
-                        <BedDouble className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="font-medium">{ts('room')}</span> {task.room_number || task.room_id}
-                      </div>
-                    )}
+                    <div className="text-sm flex items-center gap-1.5">
+                      <BedDouble className={`w-3.5 h-3.5 ${roomLabel === dash ? 'text-gray-300' : 'text-gray-400'}`} />
+                      <span className="font-medium">{ts('room')}</span>
+                      <span className={roomLabel === dash ? 'text-gray-400 italic' : ''}>{roomLabel}</span>
+                    </div>
                     <div className="text-sm flex items-center gap-1.5">
                       <Wrench className="w-3.5 h-3.5 text-gray-400" />
                       <span className="font-medium">{ts('dept')}</span> {ts(`departments.${task.department}`) || task.department}
                     </div>
-                    <p className="text-sm text-gray-600 line-clamp-2">{task.description}</p>
-                    {task.assigned_to && (
-                      <div className="text-sm flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="font-medium">{ts('assigned')}</span> {task.assigned_to}
-                      </div>
-                    )}
+                    <div className="text-sm">
+                      <span className="font-medium">{ts('descLabel')}</span>
+                      <p className={`line-clamp-2 ${descLabel === dash ? 'text-gray-400 italic' : 'text-gray-600'}`}>{descLabel}</p>
+                    </div>
+                    <div className="text-sm flex items-center gap-1.5">
+                      <User className={`w-3.5 h-3.5 ${assignedLabel === dash ? 'text-gray-300' : 'text-gray-400'}`} />
+                      <span className="font-medium">{ts('assigned')}</span>
+                      <span className={assignedLabel === dash ? 'text-gray-400 italic' : ''}>{assignedLabel}</span>
+                    </div>
                     {task.created_at && (
                       <p className="text-xs text-gray-400">{new Date(task.created_at).toLocaleString()}</p>
                     )}
@@ -290,6 +313,15 @@ const StaffTaskManager = () => {
                 </Select>
               </div>
             </div>
+            <div>
+              <Label>{ts('titleField')}</Label>
+              <Input
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder={ts('titlePlaceholder')}
+                maxLength={120}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>{ts('priority')}</Label>
@@ -303,8 +335,12 @@ const StaffTaskManager = () => {
                 </Select>
               </div>
               <div>
-                <Label>{ts('roomOptional')}</Label>
-                <Input value={formData.room_id} onChange={(e) => setFormData({ ...formData, room_id: e.target.value })} placeholder={ts('roomPlaceholder')} />
+                <Label>{ts('roomFieldRequired')}</Label>
+                <Input
+                  value={formData.room_id}
+                  onChange={(e) => setFormData({ ...formData, room_id: e.target.value })}
+                  placeholder={ts('roomPlaceholder')}
+                />
               </div>
             </div>
             <div>
@@ -312,7 +348,7 @@ const StaffTaskManager = () => {
               <Input value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })} placeholder={ts('staffPlaceholder')} />
             </div>
             <div>
-              <Label>{ts('descriptionRequired')}</Label>
+              <Label>{ts('descriptionField')}</Label>
               <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={3} placeholder={ts('descriptionPlaceholder')} />
             </div>
             <Button onClick={createTask} className="w-full">{ts('createTask')}</Button>
