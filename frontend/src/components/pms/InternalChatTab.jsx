@@ -2183,7 +2183,13 @@ const InternalChatTab = ({ currentUser }) => {
         </div>
       </div>
 
-      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+      <Dialog
+        open={composeOpen}
+        onOpenChange={(open) => {
+          setComposeOpen(open);
+          if (open) loadUsers();
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-compose">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
