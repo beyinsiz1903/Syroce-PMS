@@ -20,7 +20,11 @@ Design notes
 * In non-production environments (developer machines) we keep the historical
   fallback: if no env vars are configured we generate a keypair on first use
   and persist it to `db.web_push_keys` so subsequent restarts reuse the same
-  identifier. A warning is logged to make the fallback discoverable.
+  identifier. A warning is logged to make the fallback discoverable. Every
+  such record is stamped with `auto_generated: true` so it can be told apart
+  from a real production key — see
+  `backend/scripts/cleanup_legacy_web_push_keys.py` for the one-shot
+  maintenance script that purges these legacy rows from production Mongo.
 * Subscriptions are stored in `db.web_push_subscriptions`, keyed by
   (tenant_id, user_id, endpoint). The endpoint is the unique browser handle.
 * `pywebpush` is an *optional* dependency. If it is not installed, dispatch
