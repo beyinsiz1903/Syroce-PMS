@@ -5,6 +5,7 @@ Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
 import math
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -2446,5 +2447,272 @@ async def get_logs_dashboard(
         'unread_alerts': unread_alerts,
         'health': health
     }
+
+
+# ============================================================================
+# REVIEW INVITES — Misafire e-posta ile değerlendirme linki gönder
+# ============================================================================
+
+def _render_review_invite_email(*, hotel_name: str, guest_name: str, link: str) -> tuple[str, str]:
+    """Build (html, text) bodies for the review invite e-mail."""
+    safe_guest = (guest_name or "Değerli Misafirimiz").strip() or "Değerli Misafirimiz"
+    text = (
+        f"Merhaba {safe_guest},\n\n"
+        f"{hotel_name} olarak konaklamanızı değerlendirmenizi rica ederiz.\n"
+        f"Aşağıdaki bağlantıdan birkaç dakikanızı ayırabilirsiniz:\n\n"
+        f"{link}\n\n"
+        f"Geri bildiriminiz hizmet kalitemizi geliştirmemize yardımcı oluyor.\n"
+        f"Teşekkür ederiz.\n\n"
+        f"{hotel_name}"
+    )
+    html = f"""<!doctype html>
+<html><body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+        <tr><td style="padding:28px 32px 8px 32px;">
+          <h1 style="margin:0;font-size:20px;color:#111827;">{hotel_name}</h1>
+          <p style="margin:4px 0 0 0;color:#6b7280;font-size:13px;">Konaklama Değerlendirmesi</p>
+        </td></tr>
+        <tr><td style="padding:16px 32px 8px 32px;">
+          <p style="font-size:15px;line-height:1.6;margin:0 0 12px 0;">Merhaba <strong>{safe_guest}</strong>,</p>
+          <p style="font-size:15px;line-height:1.6;margin:0 0 16px 0;">
+            Bizi tercih ettiğiniz için teşekkür ederiz. Konaklamanızla ilgili görüşlerinizi
+            bizimle paylaşmanız hizmet kalitemizi geliştirmemize yardımcı olacaktır.
+          </p>
+          <p style="font-size:15px;line-height:1.6;margin:0 0 24px 0;">
+            Birkaç dakikanızı ayırarak değerlendirme yapabilir misiniz?
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding:8px 32px 24px 32px;">
+          <a href="{link}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:15px;">Değerlendirme Yap</a>
+        </td></tr>
+        <tr><td style="padding:0 32px 24px 32px;">
+          <p style="font-size:12px;color:#6b7280;margin:0 0 4px 0;">Bağlantı çalışmıyorsa kopyalayıp tarayıcınıza yapıştırabilirsiniz:</p>
+          <p style="font-size:12px;color:#374151;word-break:break-all;margin:0;"><a href="{link}" style="color:#2563eb;">{link}</a></p>
+        </td></tr>
+        <tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #e5e7eb;">
+          <p style="font-size:12px;color:#9ca3af;margin:0;">{hotel_name} • Bu e-posta konaklamanız sebebiyle gönderilmiştir.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    return html, text
+
+
+@router.post("/feedback/review-invite")
+async def send_review_invite(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Create a review invite for a booking and send the e-mail."""
+    booking_id = (payload or {}).get("booking_id")
+    if not booking_id or not isinstance(booking_id, str):
+        raise HTTPException(status_code=400, detail="booking_id is required")
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    guest_email = (payload.get("guest_email") or booking.get("guest_email") or "").strip().lower()
+    if not guest_email or "@" not in guest_email:
+        raise HTTPException(status_code=400, detail="Misafirin geçerli bir e-posta adresi yok")
+
+    tenant = await db.tenants.find_one(
+        {"id": current_user.tenant_id},
+        {"_id": 0, "name": 1, "hotel_name": 1},
+    ) or {}
+    hotel_name = (tenant.get("hotel_name") or tenant.get("name") or "Otel").strip()
+
+    await _ensure_review_invite_indexes()
+    token = uuid.uuid4().hex
+    invite = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "token": token,
+        "booking_id": booking_id,
+        "guest_name": booking.get("guest_name") or "",
+        "guest_email": guest_email,
+        "hotel_name": hotel_name,
+        "room_number": booking.get("room_number") or "",
+        "check_in": booking.get("check_in") or "",
+        "check_out": booking.get("check_out") or "",
+        "expires_at": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
+        "status": "pending",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
+    }
+    await db.review_invites.insert_one(invite.copy())
+
+    from core.email import _frontend_base_url, send_email  # local import; avoid circulars
+    base = _frontend_base_url()
+    link = f"{base.rstrip('/')}/review/{token}"
+    subject = f"{hotel_name} — Konaklamanızı değerlendirir misiniz?"
+    html, text = _render_review_invite_email(
+        hotel_name=hotel_name,
+        guest_name=invite["guest_name"],
+        link=link,
+    )
+
+    send_result = {"sent": False}
+    try:
+        send_result = await send_email(to=guest_email, subject=subject, html=html, text=text)
+    except Exception as exc:  # pragma: no cover - mail provider may be offline
+        logging.exception("[review-invite] e-mail send failed: %s", exc)
+        send_result = {"sent": False, "error": str(exc)}
+
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "send_review_invite",
+        "review_invite",
+        invite["id"],
+        changes={"booking_id": booking_id, "guest_email": guest_email, "sent": bool(send_result.get("sent"))},
+    )
+
+    return {
+        "success": True,
+        "invite_id": invite["id"],
+        "sent": bool(send_result.get("sent")),
+        "link": link,
+    }
+
+
+_REVIEW_INVITE_TOKEN_RE = re.compile(r"^[a-f0-9]{32}$")
+_REVIEW_INVITE_INDEX_READY = False
+
+
+async def _ensure_review_invite_indexes() -> None:
+    """Idempotently ensure unique index on review_invites.token."""
+    global _REVIEW_INVITE_INDEX_READY
+    if _REVIEW_INVITE_INDEX_READY:
+        return
+    try:
+        await db.review_invites.create_index("token", unique=True, name="uniq_token")
+        await db.review_invites.create_index("tenant_id", name="by_tenant")
+    except Exception as exc:  # pragma: no cover - best effort
+        logging.warning("[review-invite] index ensure failed: %s", exc)
+    _REVIEW_INVITE_INDEX_READY = True
+
+
+def _validate_review_invite_token(token: str) -> None:
+    if not token or not _REVIEW_INVITE_TOKEN_RE.match(token):
+        raise HTTPException(status_code=400, detail="Geçersiz bağlantı")
+
+
+def _check_invite_expiry_or_raise(expires_raw) -> None:
+    """Fail-closed: missing or unparseable expiry is treated as expired."""
+    if not expires_raw:
+        raise HTTPException(status_code=410, detail="Bu davetin süresi dolmuş")
+    try:
+        exp = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=410, detail="Bu davetin süresi dolmuş") from exc
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=UTC)
+    if exp < datetime.now(UTC):
+        raise HTTPException(status_code=410, detail="Bu davetin süresi dolmuş")
+
+
+@router.get("/feedback/public/invite/{token}")
+async def get_review_invite_public(token: str):
+    """Public lookup of a review invite (no auth)."""
+    _validate_review_invite_token(token)
+
+    invite = await db.review_invites.find_one({"token": token}, {"_id": 0})
+    if not invite:
+        raise HTTPException(status_code=404, detail="Davet bulunamadı")
+
+    if invite.get("status") == "submitted":
+        raise HTTPException(status_code=410, detail="Bu davet daha önce kullanılmış")
+
+    _check_invite_expiry_or_raise(invite.get("expires_at"))
+
+    return {
+        "token": token,
+        "hotel_name": invite.get("hotel_name"),
+        "guest_name": invite.get("guest_name"),
+        "room_number": invite.get("room_number"),
+        "check_in": invite.get("check_in"),
+        "check_out": invite.get("check_out"),
+    }
+
+
+@router.post("/feedback/public/invite/{token}")
+async def submit_review_public(token: str, payload: dict):
+    """Public submission of a review using an invite token (no auth).
+
+    Atomically claims the invite (status: pending -> submitting) before creating
+    the review to prevent concurrent double-submission.
+    """
+    _validate_review_invite_token(token)
+
+    raw_rating = (payload or {}).get("rating")
+    try:
+        rating = int(raw_rating)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Geçerli bir puan giriniz (1-5)") from exc
+    if rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Puan 1 ile 5 arasında olmalı")
+
+    # Pre-check existence + expiry so we can return accurate error codes (404/410)
+    pre = await db.review_invites.find_one({"token": token}, {"status": 1, "expires_at": 1})
+    if not pre:
+        raise HTTPException(status_code=404, detail="Davet bulunamadı")
+    if pre.get("status") == "submitted":
+        raise HTTPException(status_code=410, detail="Bu davet daha önce kullanılmış")
+    _check_invite_expiry_or_raise(pre.get("expires_at"))
+
+    # Atomic claim: only succeeds if status is still "pending".
+    claim_ts = datetime.now(UTC).isoformat()
+    invite = await db.review_invites.find_one_and_update(
+        {"token": token, "status": "pending"},
+        {"$set": {"status": "submitting", "claimed_at": claim_ts}},
+    )
+    if not invite:
+        # Lost the race or invite consumed between pre-check and claim.
+        raise HTTPException(status_code=410, detail="Bu davet daha önce kullanılmış")
+
+    comment = ((payload or {}).get("comment") or "").strip()[:2000]
+    submitted_name = ((payload or {}).get("guest_name") or "").strip()[:120]
+    final_name = submitted_name or (invite.get("guest_name") or "").strip()[:120] or "Misafir"
+
+    review = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": invite["tenant_id"],
+        "booking_id": invite.get("booking_id"),
+        "guest_name": final_name,
+        "rating": rating,
+        "comment": comment,
+        "source": "direct_invite",
+        "category": "Konaklama",
+        "sentiment": "positive" if rating >= 4 else ("neutral" if rating == 3 else "negative"),
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        await db.guest_reviews.insert_one(review.copy())
+    except Exception:
+        # Roll back the claim so the guest can retry.
+        await db.review_invites.update_one(
+            {"_id": invite["_id"], "status": "submitting"},
+            {"$set": {"status": "pending"}, "$unset": {"claimed_at": ""}},
+        )
+        raise
+
+    await db.review_invites.update_one(
+        {"_id": invite["_id"]},
+        {"$set": {
+            "status": "submitted",
+            "submitted_at": datetime.now(UTC).isoformat(),
+            "review_id": review["id"],
+        }},
+    )
+
+    return {"success": True, "review_id": review["id"]}
 
 

@@ -104,6 +104,7 @@ const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
 const RoomQrCodes = lazy(() => import("@/pages/admin/RoomQrCodes"));
 const RoomRequests = lazy(() => import("@/pages/RoomRequests"));
 const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"));
+const PublicReviewPage = lazy(() => import("@/pages/PublicReviewPage"));
 const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
 const AIModule = lazy(() => import("@/pages/AIModule"));
@@ -251,6 +252,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Public ──────────────────────────────────────────
     { path: "/landing", type: "public", component: LandingPage },
     { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
+    { path: "/review/:token", type: "public", component: PublicReviewPage },
     { path: "/privacy-policy", type: "public", component: PrivacyPolicy },
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
