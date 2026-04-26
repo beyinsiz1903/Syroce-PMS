@@ -582,6 +582,7 @@ async def kbs_queue_complete(
     job_id: str,
     data: KBSQueueComplete,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Worker başarıyla bildirdi: in_progress → done.
 
@@ -685,6 +686,7 @@ async def kbs_queue_fail(
     job_id: str,
     data: KBSQueueFail,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Worker hata bildirdi.
 
