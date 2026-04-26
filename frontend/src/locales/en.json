@@ -1475,7 +1475,17 @@
     "comingSoon": "POS Reports coming soon...",
     "comingSoonDesc": "This section will include daily sales, top items, revenue breakdown, and more.",
     "todaysOrders": "Today's Orders",
-    "revenue": "Revenue"
+    "revenue": "Revenue",
+    "outlets": "Outlets",
+    "voids": "Voids",
+    "activeOutlet": "Active Outlet",
+    "allOutlets": "All (total)",
+    "outletCount": "Outlets",
+    "menuCount": "Menu Items",
+    "todaysRevenue": "Today's Revenue",
+    "noOutletsHint": "No outlets yet — add one from the \"Outlets\" tab",
+    "createOutletFirst": "Create an outlet first",
+    "transactions": "transactions"
   },
   "mobileDashboard": {
     "title": "Mobile Management",

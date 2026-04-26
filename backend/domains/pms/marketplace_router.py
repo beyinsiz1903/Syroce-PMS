@@ -19,6 +19,7 @@ from models.schemas import (
     CreateMarketplaceProductRequest,
     CreateMenuItemRequest,
     CreateOutletRequest,
+    UpdateOutletRequest,
     CreatePOSTransactionWithMenuRequest,
     CreatePurchaseOrderRequest,
     CreateSupplierRequest,
@@ -80,6 +81,56 @@ async def create_outlet(
     outlet_copy = outlet.copy()
     await db.pos_outlets.insert_one(outlet_copy)
     return outlet
+
+@router.put("/pos/outlets/{outlet_id}")
+async def update_outlet(
+    outlet_id: str,
+    request: UpdateOutletRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Update F&B outlet (name, type, location, capacity, hours, status)."""
+    existing = await db.pos_outlets.find_one({
+        'id': outlet_id,
+        'tenant_id': current_user.tenant_id
+    })
+    if not existing:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+
+    update_fields = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Guncellenecek alan yok")
+    update_fields['updated_at'] = datetime.now(UTC).isoformat()
+
+    await db.pos_outlets.update_one(
+        {'id': outlet_id, 'tenant_id': current_user.tenant_id},
+        {'$set': update_fields}
+    )
+    updated = await db.pos_outlets.find_one(
+        {'id': outlet_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0}
+    )
+    return updated
+
+@router.delete("/pos/outlets/{outlet_id}")
+async def delete_outlet(
+    outlet_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Soft-delete: status='inactive' (siparis gecmisi korunur)."""
+    existing = await db.pos_outlets.find_one({
+        'id': outlet_id,
+        'tenant_id': current_user.tenant_id
+    })
+    if not existing:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+
+    await db.pos_outlets.update_one(
+        {'id': outlet_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {'status': 'inactive', 'deleted_at': datetime.now(UTC).isoformat()}}
+    )
+    return {'message': 'Outlet pasif duruma alindi', 'outlet_id': outlet_id}
 
 @router.get("/pos/outlets/{outlet_id}")
 async def get_outlet_details(

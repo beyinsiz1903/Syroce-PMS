@@ -26,23 +26,9 @@ router = APIRouter(prefix="/api", tags=["pos-fnb"])
 
 # ============= POS / F&B ENDPOINTS =============
 
-@router.get("/pos/outlets")
-async def get_pos_outlets(current_user: User = Depends(get_current_user)):
-    """Get all F&B outlets"""
-    try:
-        outlets = await db.fnb_outlets.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
-        return outlets
-    except Exception:
-        return []
-
-@router.get("/pos/menu-items")
-async def get_menu_items(current_user: User = Depends(get_current_user)):
-    """Get all menu items"""
-    try:
-        items = await db.menu_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-        return items
-    except Exception:
-        return []
+# NOTE: GET /pos/outlets and GET /pos/menu-items are served by marketplace_router
+# (richer logic with today_transactions enrichment). The duplicates that used to
+# live here have been removed to keep a single canonical source of truth.
 
 @router.get("/pos/daily-summary")
 async def get_pos_daily_summary(date: str = None, current_user: User = Depends(get_current_user)):
@@ -74,48 +60,115 @@ async def get_pos_transactions(limit: int = 10, current_user: User = Depends(get
         return []
 
 @router.get("/pos/z-report")
-async def get_z_report(date: str = None, current_user: User = Depends(get_current_user)):
-    """Get Z report for end of day"""
-    try:
-        transactions = await db.transactions.find({
-            'tenant_id': current_user.tenant_id
-        }, {'_id': 0}).to_list(1000)
+async def get_z_report(
+    date: str = None,
+    outlet_id: str = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Z raporu — gun sonu (gercek hesaplama).
 
-        total_sales = sum(t.get('amount', 0) for t in transactions)
+    Kaynak: pos_menu_transactions. Gecerli tarih (date) veya bugun.
+    Sahte oranlar yerine gercek odeme/kategori dagilimi.
+    """
+    try:
+        report_date = date or datetime.now(UTC).date().isoformat()
+        query = {
+            'tenant_id': current_user.tenant_id,
+            'transaction_date': report_date,
+        }
+        if outlet_id:
+            query['outlet_id'] = outlet_id
+
+        all_tx = await db.pos_menu_transactions.find(query, {'_id': 0}).to_list(5000)
+
+        valid_tx = [t for t in all_tx if t.get('status') != 'void']
+        void_tx = [t for t in all_tx if t.get('status') == 'void']
+
+        gross_sales = sum(float(t.get('total_amount', 0) or 0) for t in valid_tx)
+        discounts = sum(float(t.get('discount_amount', 0) or 0) for t in valid_tx)
+        tax_total = sum(float(t.get('tax_amount', 0) or 0) for t in valid_tx)
+        refunds = sum(float(t.get('total_amount', 0) or 0) for t in void_tx)
+        net_sales = max(gross_sales - discounts, 0)
+
+        # Odeme yontemi dagilimi (gercek)
+        payment_methods: dict[str, float] = {}
+        for t in valid_tx:
+            pm = t.get('payment_method') or 'unknown'
+            payment_methods[pm] = payment_methods.get(pm, 0) + float(t.get('total_amount', 0) or 0)
+
+        # Kategori dagilimi (gercek — items[].category)
+        category_sales: dict[str, float] = {}
+        for t in valid_tx:
+            for item in (t.get('items') or []):
+                cat = item.get('category') or 'other'
+                line_total = float(item.get('price', 0) or 0) * float(item.get('quantity', 1) or 1)
+                category_sales[cat] = category_sales.get(cat, 0) + line_total
+
+        # Outlet dagilimi
+        outlet_breakdown: dict[str, float] = {}
+        for t in valid_tx:
+            oid = t.get('outlet_id') or 'unassigned'
+            outlet_breakdown[oid] = outlet_breakdown.get(oid, 0) + float(t.get('total_amount', 0) or 0)
 
         return {
-            'report_date': date or datetime.utcnow().isoformat(),
-            'report_number': f'Z-{datetime.utcnow().strftime("%Y%m%d")}',
-            'gross_sales': total_sales,
-            'transaction_count': len(transactions),
-            'net_sales': total_sales,
-            'refunds': 0,
-            'discounts': 0,
-            'payment_methods': {
-                'cash': total_sales * 0.4,
-                'card': total_sales * 0.6
-            },
-            'category_sales': {
-                'food': total_sales * 0.5,
-                'beverage': total_sales * 0.3,
-                'other': total_sales * 0.2
-            }
+            'report_date': report_date,
+            'report_number': f'Z-{report_date.replace("-", "")}',
+            'gross_sales': round(gross_sales, 2),
+            'net_sales': round(net_sales, 2),
+            'tax_total': round(tax_total, 2),
+            'discounts': round(discounts, 2),
+            'refunds': round(refunds, 2),
+            'transaction_count': len(valid_tx),
+            'void_count': len(void_tx),
+            'payment_methods': {k: round(v, 2) for k, v in payment_methods.items()},
+            'category_sales': {k: round(v, 2) for k, v in category_sales.items()},
+            'outlet_breakdown': {k: round(v, 2) for k, v in outlet_breakdown.items()},
         }
-    except Exception:
-        return {'gross_sales': 0, 'transaction_count': 0}
+    except Exception as e:
+        return {
+            'report_date': date,
+            'gross_sales': 0,
+            'net_sales': 0,
+            'transaction_count': 0,
+            'error': str(e),
+        }
 
 @router.get("/pos/void-transactions")
-async def get_void_transactions(start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
-    """Get voided transactions"""
+async def get_void_transactions(
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    outlet_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Voided POS transactions, filtered by date/outlet — sourced from
+    pos_menu_transactions so it stays consistent with /pos/z-report."""
     try:
-        void_transactions = await db.transactions.find({
+        query: dict[str, Any] = {
             'tenant_id': current_user.tenant_id,
-            'status': 'void'
-        }, {'_id': 0}).to_list(100)
+            'status': 'void',
+        }
+        if outlet_id:
+            query['outlet_id'] = outlet_id
+        if date:
+            query['transaction_date'] = date
+        elif start_date or end_date:
+            range_q: dict[str, Any] = {}
+            if start_date:
+                range_q['$gte'] = start_date
+            if end_date:
+                range_q['$lte'] = end_date
+            if range_q:
+                query['transaction_date'] = range_q
 
-        return {'void_transactions': void_transactions}
+        voids = await db.pos_menu_transactions.find(query, {'_id': 0}).to_list(500)
+        if not voids:
+            # Legacy fallback for older data in db.transactions
+            legacy_q = dict(query)
+            voids = await db.transactions.find(legacy_q, {'_id': 0}).to_list(500)
+        return {'void_transactions': voids, 'count': len(voids)}
     except Exception:
-        return {'void_transactions': []}
+        return {'void_transactions': [], 'count': 0}
 
 @router.post("/pos/mobile/quick-order")
 async def create_quick_order(order_data: dict[str, Any], current_user: User = Depends(get_current_user),
@@ -2439,6 +2492,8 @@ class MenuItemCreate(BaseModel):
     cost: float | None = None
     available: bool = True
     image_url: str | None = None
+    tax_rate: float = 0.10  # KDV (varsayilan %10)
+    outlet_id: str | None = None
 
 @router.post("/pos/menu-item")
 async def create_menu_item(
@@ -2460,6 +2515,8 @@ async def create_menu_item(
         'cost': item.cost,
         'available': item.available,
         'image_url': item.image_url,
+        'tax_rate': item.tax_rate,
+        'outlet_id': item.outlet_id,
         'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
@@ -2469,7 +2526,8 @@ async def create_menu_item(
     return {
         'message': 'Menu item created',
         'item_id': item_id,
-        'name': item.name
+        'name': item.name,
+        'tax_rate': item.tax_rate
     }
 
 
@@ -2502,6 +2560,8 @@ async def update_menu_item(
                 'cost': item.cost,
                 'available': item.available,
                 'image_url': item.image_url,
+                'tax_rate': item.tax_rate,
+                'outlet_id': item.outlet_id,
                 'updated_at': datetime.now(UTC),
                 'updated_by': current_user.username
             }

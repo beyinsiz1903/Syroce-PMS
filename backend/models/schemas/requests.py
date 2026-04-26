@@ -257,10 +257,18 @@ class GetCalendarTooltipRequest(BaseModel):
 # POS & F&B Models
 class CreateOutletRequest(BaseModel):
     outlet_name: str
-    outlet_type: str  # restaurant, bar, room_service, cafe
+    outlet_type: str  # restaurant, bar, room_service, cafe, spa, banquet
     location: str
     capacity: int | None = None
     opening_hours: str | None = None
+
+class UpdateOutletRequest(BaseModel):
+    outlet_name: str | None = None
+    outlet_type: str | None = None
+    location: str | None = None
+    capacity: int | None = None
+    opening_hours: str | None = None
+    status: str | None = None  # active, inactive
 
 class CreateMenuItemRequest(BaseModel):
     outlet_id: str

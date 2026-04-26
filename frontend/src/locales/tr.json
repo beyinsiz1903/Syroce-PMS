@@ -1475,7 +1475,17 @@
     "comingSoon": "POS Raporları yakında...",
     "comingSoonDesc": "Bu bölüm günlük satışlar, popüler ürünler, gelir dağılımı ve daha fazlasını içerecek.",
     "todaysOrders": "Bugünkü Siparişler",
-    "revenue": "Gelir"
+    "revenue": "Gelir",
+    "outlets": "Satış Noktaları",
+    "voids": "İptaller",
+    "activeOutlet": "Aktif Satış Noktası",
+    "allOutlets": "Tümü (toplam)",
+    "outletCount": "Satış Noktası",
+    "menuCount": "Menü Ürünü",
+    "todaysRevenue": "Bugün Ciro",
+    "noOutletsHint": "Henüz satış noktası yok — \"Satış Noktaları\" sekmesinden ekleyin",
+    "createOutletFirst": "Önce bir satış noktası oluşturun",
+    "transactions": "işlem"
   },
   "mobileDashboard": {
     "title": "Mobil Yönetim",
