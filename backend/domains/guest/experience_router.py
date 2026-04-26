@@ -4,6 +4,7 @@ Domain Router: Guest Experience
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -24,6 +25,29 @@ from models.schemas import (
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api", tags=["guest-experience"])
+
+DEFAULT_UPSELL_PRICES = {
+    "early_checkin": 25.00,
+    "late_checkout": 35.00,
+    "airport_transfer": 50.00,
+}
+
+
+async def _get_upsell_prices(tenant_id: str) -> dict:
+    """Return per-tenant upsell prices, falling back to defaults for any missing key."""
+    prices = dict(DEFAULT_UPSELL_PRICES)
+    doc = await db.upsell_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    if doc and isinstance(doc.get("prices"), dict):
+        for k, v in doc["prices"].items():
+            if k in prices:
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if fv >= 0:
+                    prices[k] = fv
+    return prices
+
 
 # ============= PHASE H: GUEST CRM + UPSELL AI + MESSAGING =============
 
@@ -284,6 +308,8 @@ async def generate_upsell_offers(
     arrival_date = datetime.fromisoformat(check_in).date()
     today = datetime.now(UTC).date()
 
+    tenant_prices = await _get_upsell_prices(current_user.tenant_id)
+
     if arrival_date > today:
         offers.append({
             'id': str(uuid.uuid4()),
@@ -293,7 +319,7 @@ async def generate_upsell_offers(
             'type': 'early_checkin',
             'current_item': 'Standart 15:00 giris',
             'target_item': 'Erken 12:00 giris',
-            'price': 25.00,
+            'price': tenant_prices['early_checkin'],
             'confidence': 0.65,
             'reason': 'Yuksek degerli hizmet, dusuk maliyet',
             'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
@@ -309,7 +335,7 @@ async def generate_upsell_offers(
         'type': 'late_checkout',
         'current_item': 'Standart 11:00 cikis',
         'target_item': 'Gec 14:00 cikis',
-        'price': 35.00,
+        'price': tenant_prices['late_checkout'],
         'confidence': 0.70,
         'reason': 'Populer ek hizmet, yuksek memnuniyet',
         'valid_until': (datetime.fromisoformat(check_out) - timedelta(days=1)).isoformat(),
@@ -325,7 +351,7 @@ async def generate_upsell_offers(
         'type': 'airport_transfer',
         'current_item': None,
         'target_item': 'Premium havaalani transferi',
-        'price': 50.00,
+        'price': tenant_prices['airport_transfer'],
         'confidence': 0.55,
         'reason': 'Konfor hizmeti, iyi marj',
         'valid_until': (datetime.fromisoformat(check_in) - timedelta(days=1)).isoformat(),
@@ -373,6 +399,106 @@ async def list_upsell_offers(
             'pending': pending,
             'total_revenue': round(total_revenue, 2)
         }
+    }
+
+
+@router.get("/ai/upsell/settings")
+async def get_upsell_settings(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Return current per-tenant upsell prices alongside the system defaults."""
+    prices = await _get_upsell_prices(current_user.tenant_id)
+    return {
+        "prices": prices,
+        "defaults": dict(DEFAULT_UPSELL_PRICES),
+    }
+
+
+@router.put("/ai/upsell/settings")
+async def update_upsell_settings(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Update per-tenant upsell prices. Body: {"prices": {"early_checkin": 30, ...}}.
+
+    Validation:
+      - 'prices' must be a dict.
+      - Only the keys in DEFAULT_UPSELL_PRICES are accepted; any other key returns 400.
+      - Values must be finite numbers (no NaN/Inf), >= 0 and <= 1_000_000.
+      - At least one valid price must be supplied.
+
+    Concurrency: each provided price is written with a per-field $set
+    (e.g. {"prices.early_checkin": 30}), so concurrent partial updates do
+    not overwrite each other.
+    """
+    incoming = payload.get("prices") if isinstance(payload, dict) else None
+    if not isinstance(incoming, dict):
+        raise HTTPException(status_code=400, detail="'prices' alani sozluk olmali")
+
+    allowed_keys = set(DEFAULT_UPSELL_PRICES.keys())
+    unknown_keys = sorted(set(incoming.keys()) - allowed_keys)
+    if unknown_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bilinmeyen fiyat anahtari: {', '.join(unknown_keys)}",
+        )
+
+    sanitized: dict[str, float] = {}
+    for key in DEFAULT_UPSELL_PRICES.keys():
+        if key not in incoming:
+            continue
+        raw = incoming[key]
+        # bool is a subclass of int in Python — explicitly reject it
+        if isinstance(raw, bool):
+            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
+        if not math.isfinite(value):
+            raise HTTPException(status_code=400, detail=f"{key} icin gecersiz fiyat")
+        if value < 0:
+            raise HTTPException(status_code=400, detail=f"{key} fiyati negatif olamaz")
+        if value > 1_000_000:
+            raise HTTPException(status_code=400, detail=f"{key} fiyati cok yuksek")
+        sanitized[key] = round(value, 2)
+
+    if not sanitized:
+        raise HTTPException(status_code=400, detail="Guncellenecek fiyat bulunamadi")
+
+    now_iso = datetime.now(UTC).isoformat()
+    update_doc: dict = {f"prices.{k}": v for k, v in sanitized.items()}
+    update_doc["tenant_id"] = current_user.tenant_id
+    update_doc["updated_at"] = now_iso
+    update_doc["updated_by"] = getattr(current_user, "id", None)
+
+    await db.upsell_settings.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$set": update_doc},
+        upsert=True,
+    )
+
+    # Re-read post-write so the response and audit log reflect the actual stored state
+    final_prices = await _get_upsell_prices(current_user.tenant_id)
+
+    try:
+        await create_audit_log(
+            tenant_id=current_user.tenant_id,
+            user=current_user,
+            action="update_upsell_prices",
+            entity_type="upsell_settings",
+            entity_id=current_user.tenant_id,
+            changes={"updated_fields": sanitized, "prices": final_prices},
+        )
+    except Exception as exc:  # audit failure must not block the save
+        logging.warning("Audit log failed for upsell price update: %s", exc)
+
+    return {
+        "success": True,
+        "prices": final_prices,
+        "defaults": dict(DEFAULT_UPSELL_PRICES),
     }
 
 

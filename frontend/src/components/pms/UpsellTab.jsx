@@ -6,11 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles,
   ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3,
-  DollarSign, Target, Percent, Building2
+  DollarSign, Target, Percent, Building2, Settings as SettingsIcon
 } from 'lucide-react';
+
+const PRICE_FIELDS = [
+  { key: 'late_checkout', label: 'Geç Check-out', icon: LogOut },
+  { key: 'early_checkin', label: 'Erken Check-in', icon: LogIn },
+  { key: 'airport_transfer', label: 'Havalimanı Transfer', icon: Car },
+];
 
 const TYPE_LABELS = {
   room_upgrade: { label: 'Oda Yukseltme', icon: ArrowUpRight, color: 'bg-blue-100 text-blue-800' },
@@ -50,6 +58,57 @@ const UpsellTab = ({ bookings = [] }) => {
   const [loading, setLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [priceDefaults, setPriceDefaults] = useState({});
+  const [priceForm, setPriceForm] = useState({ late_checkout: '', early_checkin: '', airport_transfer: '' });
+
+  const openSettings = useCallback(async () => {
+    setSettingsOpen(true);
+    setSettingsLoading(true);
+    try {
+      const res = await axios.get('/ai/upsell/settings');
+      const prices = res.data?.prices || {};
+      setPriceDefaults(res.data?.defaults || {});
+      setPriceForm({
+        late_checkout: prices.late_checkout != null ? String(prices.late_checkout) : '',
+        early_checkin: prices.early_checkin != null ? String(prices.early_checkin) : '',
+        airport_transfer: prices.airport_transfer != null ? String(prices.airport_transfer) : '',
+      });
+    } catch {
+      toast.error('Fiyat ayarları yüklenemedi');
+    }
+    setSettingsLoading(false);
+  }, []);
+
+  const savePriceSettings = async () => {
+    const payload = { prices: {} };
+    for (const f of PRICE_FIELDS) {
+      const raw = priceForm[f.key];
+      if (raw === '' || raw == null) continue;
+      const num = Number(raw);
+      if (!Number.isFinite(num) || num < 0) {
+        toast.error(`${f.label} için geçerli bir fiyat girin`);
+        return;
+      }
+      payload.prices[f.key] = num;
+    }
+    if (Object.keys(payload.prices).length === 0) {
+      toast.error('En az bir fiyat girmelisiniz');
+      return;
+    }
+    setSettingsSaving(true);
+    try {
+      await axios.put('/ai/upsell/settings', payload);
+      toast.success('Upsell fiyatları güncellendi');
+      setSettingsOpen(false);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Fiyat kaydı başarısız');
+    }
+    setSettingsSaving(false);
+  };
 
   const loadAllOffers = useCallback(async () => {
     try {
@@ -154,10 +213,69 @@ const UpsellTab = ({ bookings = [] }) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Upsell & Gelir Optimizasyonu</h2>
-        <Button variant="outline" size="sm" onClick={() => { loadAllOffers(); loadInsights(); }}>
-          <RefreshCw className="w-4 h-4 mr-2" /> Yenile
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={openSettings} data-testid="btn-upsell-settings">
+            <SettingsIcon className="w-4 h-4 mr-2" /> Fiyat Ayarları
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { loadAllOffers(); loadInsights(); }}>
+            <RefreshCw className="w-4 h-4 mr-2" /> Yenile
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upsell Fiyat Ayarları</DialogTitle>
+            <DialogDescription>
+              Sabit ücretli upsell tekliflerinin fiyatlarını otelinize göre belirleyin. Oda yükseltme fiyatı oda yönetimindeki gecelik fiyatlardan otomatik hesaplanır, burada değiştirilmez.
+            </DialogDescription>
+          </DialogHeader>
+          {settingsLoading ? (
+            <div className="py-6 text-center text-sm text-gray-500">Yükleniyor...</div>
+          ) : (
+            <div className="space-y-4 py-2">
+              {PRICE_FIELDS.map((f) => {
+                const Icon = f.icon;
+                const def = priceDefaults[f.key];
+                return (
+                  <div key={f.key} className="space-y-1">
+                    <Label htmlFor={`upsell-price-${f.key}`} className="flex items-center gap-2 text-sm">
+                      <Icon className="w-4 h-4 text-gray-500" />
+                      {f.label}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`upsell-price-${f.key}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={priceForm[f.key]}
+                        onChange={(e) => setPriceForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                        placeholder={def != null ? `Varsayılan: ${def}` : ''}
+                        data-testid={`input-upsell-price-${f.key}`}
+                      />
+                      <span className="text-sm text-gray-500">TL</span>
+                    </div>
+                    {def != null && (
+                      <p className="text-xs text-gray-400">Sistem varsayılanı: {def} TL</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>
+              Vazgeç
+            </Button>
+            <Button onClick={savePriceSettings} disabled={settingsLoading || settingsSaving} data-testid="btn-save-upsell-prices">
+              {settingsSaving ? 'Kaydediliyor...' : 'Kaydet'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {kpis && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
