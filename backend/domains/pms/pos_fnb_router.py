@@ -1207,37 +1207,10 @@ async def create_pos_order(
 
 
 
-@router.get("/pos/orders")
-async def get_pos_orders(
-    booking_id: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """Get POS orders with filtering"""
-    current_user = await get_current_user(credentials)
-
-    query = {'tenant_id': current_user.tenant_id}
-
-    if booking_id:
-        query['booking_id'] = booking_id
-
-    if start_date and end_date:
-        query['created_at'] = {
-            '$gte': datetime.fromisoformat(start_date),
-            '$lte': datetime.fromisoformat(end_date)
-        }
-
-    orders = []
-    async for order in db.pos_orders.find(query).sort('created_at', -1):
-        # Remove ObjectId fields to prevent serialization issues
-        order.pop('_id', None)
-        orders.append(order)
-
-    return {
-        'orders': orders,
-        'count': len(orders)
-    }
+# NOTE: GET /pos/orders moved to pos_router.py — canonical implementation
+# reads from pos_menu_transactions (same source as Z-report) with legacy
+# fallback to db.transactions and db.pos_orders. The duplicate that used to
+# live here would have shadowed the canonical version with stale data.
 
 # ============= MOBILE ENDPOINTS — MOVED to domains/pms/mobile_router.py =============
 

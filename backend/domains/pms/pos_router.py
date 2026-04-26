@@ -48,16 +48,101 @@ async def get_pos_daily_summary(date: str = None, current_user: User = Depends(g
     except Exception:
         return {'total_sales': 0, 'transaction_count': 0, 'average_transaction': 0}
 
-@router.get("/pos/transactions")
-async def get_pos_transactions(limit: int = 10, current_user: User = Depends(get_current_user)):
-    """Get recent POS transactions"""
+async def _query_pos_transactions(
+    tenant_id: str,
+    *,
+    limit: int = 50,
+    outlet_id: str | None = None,
+    booking_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    date: str | None = None,
+) -> list[dict]:
+    """Canonical POS transaction query.
+
+    Reads from pos_menu_transactions (same source as /pos/z-report and
+    /pos/void-transactions). Falls back to legacy collections (transactions,
+    pos_orders) so older data still surfaces.
+    """
+    base_q: dict[str, Any] = {'tenant_id': tenant_id}
+    if outlet_id:
+        base_q['outlet_id'] = outlet_id
+    if booking_id:
+        base_q['booking_id'] = booking_id
+    if date:
+        base_q['transaction_date'] = date
+    elif start_date or end_date:
+        rng: dict[str, Any] = {}
+        if start_date:
+            rng['$gte'] = start_date
+        if end_date:
+            rng['$lte'] = end_date
+        if rng:
+            base_q['transaction_date'] = rng
+
     try:
-        transactions = await db.transactions.find({
-            'tenant_id': current_user.tenant_id
-        }, {'_id': 0}).sort('created_at', -1).to_list(limit)
-        return transactions
+        rows = await db.pos_menu_transactions.find(
+            base_q, {'_id': 0}
+        ).sort('created_at', -1).to_list(limit)
+        if rows:
+            return rows
+        # Legacy fallback #1: db.transactions
+        rows = await db.transactions.find(
+            base_q, {'_id': 0}
+        ).sort('created_at', -1).to_list(limit)
+        if rows:
+            return rows
+        # Legacy fallback #2: db.pos_orders
+        return await db.pos_orders.find(
+            base_q, {'_id': 0}
+        ).sort('created_at', -1).to_list(limit)
     except Exception:
         return []
+
+
+@router.get("/pos/transactions")
+async def get_pos_transactions(
+    limit: int = 50,
+    outlet_id: str | None = None,
+    booking_id: str | None = None,
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Recent POS transactions — canonical endpoint.
+
+    Returns wrapped response: {transactions, count}.
+    """
+    rows = await _query_pos_transactions(
+        current_user.tenant_id,
+        limit=limit, outlet_id=outlet_id, booking_id=booking_id,
+        date=date, start_date=start_date, end_date=end_date,
+    )
+    return {'transactions': rows, 'count': len(rows)}
+
+
+@router.get("/pos/orders")
+async def get_pos_orders(
+    limit: int = 50,
+    outlet_id: str | None = None,
+    booking_id: str | None = None,
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Alias of /pos/transactions returning {orders, count}.
+
+    Reads same canonical source so the two endpoints can never diverge.
+    Replaces the older pos_fnb_router.get_pos_orders that only read pos_orders.
+    """
+    rows = await _query_pos_transactions(
+        current_user.tenant_id,
+        limit=limit, outlet_id=outlet_id, booking_id=booking_id,
+        date=date, start_date=start_date, end_date=end_date,
+    )
+    return {'orders': rows, 'count': len(rows)}
 
 @router.get("/pos/z-report")
 async def get_z_report(

@@ -80,10 +80,18 @@ const MobileFnB = ({ user }) => {
       ]);
 
       setDailySummary(summaryRes.data);
-      setRecentTransactions(transactionsRes.data.transactions || []);
-      setOutlets(outletsRes.data.outlets || []);
-      setMenuItems(menuRes.data.menu_items || []);
-      setTopItems((menuRes.data.menu_items || []).slice(0, 5));
+      const txData = transactionsRes.data;
+      setRecentTransactions(
+        Array.isArray(txData) ? txData : (txData?.transactions || txData?.orders || [])
+      );
+      const outletData = outletsRes.data;
+      setOutlets(
+        Array.isArray(outletData) ? outletData : (outletData?.outlets || [])
+      );
+      const menuData = menuRes.data;
+      const menuList = Array.isArray(menuData) ? menuData : (menuData?.menu_items || []);
+      setMenuItems(menuList);
+      setTopItems(menuList.slice(0, 5));
     } catch (error) {
       console.error('Failed to load F&B data:', error);
       toast.error('✗ Yükleme');
