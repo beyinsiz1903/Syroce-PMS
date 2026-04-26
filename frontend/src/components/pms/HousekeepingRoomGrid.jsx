@@ -22,7 +22,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
     inspected: { label: ts('inspected'), color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Eye, dot: 'bg-blue-500' },
     maintenance: { label: ts('maintenance'), color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Wrench, dot: 'bg-amber-500' },
     out_of_order: { label: ts('out_of_order'), color: 'bg-gray-200 text-gray-700 border-gray-300', icon: AlertTriangle, dot: 'bg-gray-500' },
-  }), [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [t]);
 
   const [rooms, setRooms] = useState([]);
   const [summary, setSummary] = useState({});
