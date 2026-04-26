@@ -975,13 +975,24 @@ const InternalChatTab = ({ currentUser }) => {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-0.5">
-                      <span
-                        className={`text-sm truncate ${
-                          conv.unread_count > 0 ? 'font-semibold' : 'font-medium'
-                        }`}
-                      >
-                        {conv.user_name}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span
+                          className={`text-sm truncate ${
+                            conv.unread_count > 0 ? 'font-semibold' : 'font-medium'
+                          }`}
+                        >
+                          {conv.user_name}
+                        </span>
+                        {conv.user_role && ROLE_LABELS[conv.user_role] && (
+                          <Badge
+                            variant="secondary"
+                            className="px-1.5 py-0 text-[10px] h-4 font-normal text-muted-foreground shrink-0"
+                            data-testid={`badge-role-${conv.user_id}`}
+                          >
+                            {ROLE_LABELS[conv.user_role]}
+                          </Badge>
+                        )}
+                      </div>
                       <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">
                         {conv.time_ago || ''}
                       </span>
