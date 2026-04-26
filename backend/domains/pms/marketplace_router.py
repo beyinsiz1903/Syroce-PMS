@@ -19,7 +19,6 @@ from models.schemas import (
     CreateMarketplaceProductRequest,
     CreateMenuItemRequest,
     CreateOutletRequest,
-    UpdateOutletRequest,
     CreatePOSTransactionWithMenuRequest,
     CreatePurchaseOrderRequest,
     CreateSupplierRequest,
@@ -28,6 +27,7 @@ from models.schemas import (
     ReceivePurchaseOrderRequest,
     RejectPurchaseOrderRequest,
     UpdateDeliveryStatusRequest,
+    UpdateOutletRequest,
     UpdateSupplierCreditRequest,
     User,
 )

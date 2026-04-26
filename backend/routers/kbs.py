@@ -647,7 +647,7 @@ async def kbs_queue_list(
             {"$match": {"_kind": QUEUE_KIND, "tenant_id": tenant_id}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
-        stats = {s: 0 for s in QUEUE_STATUSES}
+        stats = dict.fromkeys(QUEUE_STATUSES, 0)
         async for row in db.kbs_reports.aggregate(pipeline):
             if row["_id"] in stats:
                 stats[row["_id"]] = row["count"]
@@ -1226,7 +1226,7 @@ async def kbs_queue_stream(
                         queue.get(),
                         timeout=_SSE_HEARTBEAT_SECONDS,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield (
                         f"event: heartbeat\n"
                         f"data: {json.dumps({'ts': _iso(_now())})}\n\n"

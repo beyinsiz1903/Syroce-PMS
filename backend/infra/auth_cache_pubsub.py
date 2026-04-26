@@ -220,7 +220,7 @@ class AuthCachePubSub:
                     )
                 except asyncio.CancelledError:
                     return
-                except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+                except (TimeoutError, RedisTimeoutError) as e:
                     self._metrics["last_listen_error"] = (
                         f"IdleTimeout: {str(e)[:120]}"
                     )

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-
 REQUIRED_BASE_FIELDS = ("guest_name", "birth_date", "check_in", "check_out")
 
 

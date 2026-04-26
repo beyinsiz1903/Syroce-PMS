@@ -55,8 +55,8 @@ def _b64url_no_pad(data: bytes) -> str:
 
 async def _generate_and_store_vapid_keys() -> dict[str, str]:
     """Generate a new VAPID P-256 keypair and persist it to db.web_push_keys."""
-    from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
 
     private_key = ec.generate_private_key(ec.SECP256R1())
     public_numbers = private_key.public_key().public_numbers()

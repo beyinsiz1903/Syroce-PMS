@@ -538,9 +538,9 @@ async def on_startup(app):
     # events still reach clients in single-instance / Redis-down mode.
     # We initialise the adapter unconditionally and only attach a Redis
     # client + cross-instance subscriptions when the connection succeeds.
-    from infra.ws_redis_adapter import ws_redis_adapter
     from infra.auth_cache_pubsub import auth_cache_pubsub
     from infra.kbs_queue_pubsub import kbs_queue_pubsub
+    from infra.ws_redis_adapter import ws_redis_adapter
     from websocket_server import local_broadcast as _ws_local_broadcast
 
     try:

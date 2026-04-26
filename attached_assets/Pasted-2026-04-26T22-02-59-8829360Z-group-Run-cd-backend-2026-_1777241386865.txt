@@ -1,0 +1,282 @@
+2026-04-26T22:02:59.8829360Z ##[group]Run cd backend
+2026-04-26T22:02:59.8829665Z [36;1mcd backend[0m
+2026-04-26T22:02:59.8829878Z [36;1mruff check .[0m
+2026-04-26T22:02:59.8851506Z shell: /usr/bin/bash -e {0}
+2026-04-26T22:02:59.8851758Z env:
+2026-04-26T22:02:59.8851935Z   PYTHON_VERSION: 3.11
+2026-04-26T22:02:59.8852156Z   NODE_VERSION: 22
+2026-04-26T22:02:59.8852378Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-04-26T22:02:59.8852715Z   MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+2026-04-26T22:02:59.8853042Z   DB_NAME: hotel_pms_test
+2026-04-26T22:02:59.8853326Z   JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+2026-04-26T22:02:59.8853636Z   REGISTRY: ghcr.io
+2026-04-26T22:02:59.8853850Z   IMAGE_PREFIX: beyinsiz1903/syroce
+2026-04-26T22:02:59.8854167Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-04-26T22:02:59.8854581Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-04-26T22:02:59.8854984Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-04-26T22:02:59.8855427Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-04-26T22:02:59.8855804Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-04-26T22:02:59.8856175Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-04-26T22:02:59.8856490Z ##[endgroup]
+2026-04-26T22:02:59.9171831Z warning: Invalid `# noqa` directive on domains/pms/pos_fnb_router.py:243: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9241542Z warning: Invalid `# noqa` directive on domains/pms/pos_router.py:584: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9271451Z warning: Invalid `# noqa` directive on domains/pms/pos_router.py:632: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9331519Z warning: Invalid `# noqa` directive on domains/revenue/analytics_router.py:385: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9361517Z warning: Invalid `# noqa` directive on domains/revenue/analytics_router.py:435: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9421548Z warning: Invalid `# noqa` directive on domains/channel_manager/operations_router.py:237: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9431665Z warning: Invalid `# noqa` directive on domains/channel_manager/operations_router.py:391: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9461574Z warning: Invalid `# noqa` directive on domains/channel_manager/operations_router.py:497: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9641442Z warning: Invalid `# noqa` directive on routers/departments.py:56: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9661589Z warning: Invalid `# noqa` directive on routers/departments.py:132: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9671441Z warning: Invalid `# noqa` directive on routers/departments.py:876: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9701445Z warning: Invalid `# noqa` directive on routers/departments.py:1065: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9731415Z warning: Invalid `# noqa` directive on routers/departments.py:2617: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9961528Z warning: Invalid `# noqa` directive on routers/housekeeping.py:51: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:02:59.9991499Z warning: Invalid `# noqa` directive on routers/housekeeping.py:209: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0031562Z warning: Invalid `# noqa` directive on routers/housekeeping.py:220: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0051508Z warning: Invalid `# noqa` directive on routers/housekeeping.py:280: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0081487Z warning: Invalid `# noqa` directive on routers/housekeeping.py:338: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0091528Z warning: Invalid `# noqa` directive on routers/housekeeping.py:503: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0111555Z warning: Invalid `# noqa` directive on routers/housekeeping.py:643: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0141497Z warning: Invalid `# noqa` directive on routers/import_admin.py:64: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0171599Z warning: Invalid `# noqa` directive on domains/guest/experience_router.py:1627: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0181496Z warning: Invalid `# noqa` directive on domains/guest/operations_router.py:613: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0201608Z warning: Invalid `# noqa` directive on domains/guest/operations_router.py:622: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0231564Z warning: Invalid `# noqa` directive on domains/guest/operations_router.py:650: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0261568Z warning: Invalid `# noqa` directive on domains/guest/operations_router.py:679: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0263322Z warning: Invalid `# noqa` directive on domains/guest/operations_router.py:939: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0264897Z warning: Invalid `# noqa` directive on routers/mice.py:102: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0266387Z warning: Invalid `# noqa` directive on routers/onboarding.py:81: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0267905Z warning: Invalid `# noqa` directive on routers/outbox_admin.py:60: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0269422Z warning: Invalid `# noqa` directive on routers/pms_availability.py:179: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0321557Z warning: Invalid `# noqa` directive on routers/pms_dashboard.py:24: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0331487Z warning: Invalid `# noqa` directive on domains/pms/enterprise_router.py:176: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0361477Z warning: Invalid `# noqa` directive on domains/pms/enterprise_router.py:443: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0381653Z warning: Invalid `# noqa` directive on domains/pms/frontdesk_router.py:307: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0411535Z warning: Invalid `# noqa` directive on domains/pms/frontdesk_router.py:316: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0421487Z warning: Invalid `# noqa` directive on domains/pms/frontdesk_router.py:325: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0451537Z warning: Invalid `# noqa` directive on routers/pms_room_details.py:67: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0471584Z warning: Invalid `# noqa` directive on routers/pms_services.py:45: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0501583Z warning: Invalid `# noqa` directive on domains/pms/housekeeping_router.py:257: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0511454Z warning: Invalid `# noqa` directive on domains/pms/maintenance_router.py:497: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0531638Z warning: Invalid `# noqa` directive on security/pii_strict_mode_router.py:100: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0651856Z warning: Invalid `# noqa` directive on workers/hardening_router.py:24: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0702993Z warning: Invalid `# noqa` directive on routers/spa.py:86: expected a comma-separated list of codes (e.g., `# noqa: F401, F841`).
+2026-04-26T22:03:00.0726761Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0727386Z    --> core/helpers.py:242:1
+2026-04-26T22:03:00.0727778Z     |
+2026-04-26T22:03:00.0728281Z 240 | # on the hot path while still re-validating tenant existence after the
+2026-04-26T22:03:00.0728822Z 241 | # TTL expires.
+2026-04-26T22:03:00.0729042Z 242 | import time as _time
+2026-04-26T22:03:00.0729337Z     | ^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0729803Z 243 | _TENANT_DOC_CACHE: dict[str, tuple[dict, float]] = {}
+2026-04-26T22:03:00.0730550Z 244 | _TENANT_DOC_CACHE_TTL = 60.0
+2026-04-26T22:03:00.0730977Z     |
+2026-04-26T22:03:00.0731293Z help: Organize imports
+2026-04-26T22:03:00.0731530Z 
+2026-04-26T22:03:00.0731733Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0732258Z   --> core/kbs_payload_validation.py:15:1
+2026-04-26T22:03:00.0732681Z    |
+2026-04-26T22:03:00.0733574Z 13 |   Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
+2026-04-26T22:03:00.0734199Z 14 |   """
+2026-04-26T22:03:00.0734521Z 15 | / from __future__ import annotations
+2026-04-26T22:03:00.0734935Z 16 | |
+2026-04-26T22:03:00.0735255Z 17 | | from fastapi import HTTPException
+2026-04-26T22:03:00.0735688Z    | |_________________________________^
+2026-04-26T22:03:00.0736074Z    |
+2026-04-26T22:03:00.0736364Z help: Organize imports
+2026-04-26T22:03:00.0736549Z 
+2026-04-26T22:03:00.0736677Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0736995Z   --> domains/guest/experience_router.py:6:1
+2026-04-26T22:03:00.0737285Z    |
+2026-04-26T22:03:00.0737654Z  4 |   Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
+2026-04-26T22:03:00.0738003Z  5 |   """
+2026-04-26T22:03:00.0738187Z  6 | / import logging
+2026-04-26T22:03:00.0738378Z  7 | | import math
+2026-04-26T22:03:00.0738654Z  8 | | import re
+2026-04-26T22:03:00.0738947Z  9 | | import uuid
+2026-04-26T22:03:00.0739301Z 10 | | from datetime import UTC, datetime, timedelta
+2026-04-26T22:03:00.0739764Z 11 | |
+2026-04-26T22:03:00.0740204Z 12 | | from fastapi import APIRouter, Depends, HTTPException, Request
+2026-04-26T22:03:00.0740963Z 13 | |
+2026-04-26T22:03:00.0741258Z 14 | | from core.cache import cached
+2026-04-26T22:03:00.0741693Z 15 | | from core.database import db
+2026-04-26T22:03:00.0742361Z 16 | | from core.helpers import create_audit_log
+2026-04-26T22:03:00.0742868Z 17 | | from core.security import get_current_user
+2026-04-26T22:03:00.0743311Z 18 | | from shared_kernel.idempotency import (
+2026-04-26T22:03:00.0743588Z 19 | |     claim_idempotency,
+2026-04-26T22:03:00.0743815Z 20 | |     complete_idempotency,
+2026-04-26T22:03:00.0744052Z 21 | |     get_idempotency_key,
+2026-04-26T22:03:00.0744282Z 22 | |     release_idempotency,
+2026-04-26T22:03:00.0744688Z 23 | | )
+2026-04-26T22:03:00.0744869Z 24 | | from models.schemas import (
+2026-04-26T22:03:00.0745134Z 25 | |     CreateDepartmentFeedbackRequest,
+2026-04-26T22:03:00.0745398Z 26 | |     CreateSurveyRequest,
+2026-04-26T22:03:00.0745640Z 27 | |     ExternalReviewWebhookRequest,
+2026-04-26T22:03:00.0745898Z 28 | |     RMSSuggestion,
+2026-04-26T22:03:00.0746118Z 29 | |     SubmitSurveyResponseRequest,
+2026-04-26T22:03:00.0746359Z 30 | |     User,
+2026-04-26T22:03:00.0746534Z 31 | | )
+2026-04-26T22:03:00.0746823Z 32 | | from modules.pms_core.role_permission_service import require_op  # v98 DW
+2026-04-26T22:03:00.0747390Z    | |_______________________________________________________________^
+2026-04-26T22:03:00.0747682Z 33 |
+2026-04-26T22:03:00.0747937Z 34 |   router = APIRouter(prefix="/api", tags=["guest-experience"])
+2026-04-26T22:03:00.0748251Z    |
+2026-04-26T22:03:00.0748415Z help: Organize imports
+2026-04-26T22:03:00.0748545Z 
+2026-04-26T22:03:00.0748665Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0748981Z    --> domains/guest/messaging/router.py:337:9
+2026-04-26T22:03:00.0749243Z     |
+2026-04-26T22:03:00.0749524Z 335 |       # alarm-triggering path is reserved for designated responders only.
+2026-04-26T22:03:00.0749888Z 336 |       if priority == 'urgent':
+2026-04-26T22:03:00.0750270Z 337 | /         from modules.pms_core.role_permission_service import RolePermissionService
+2026-04-26T22:03:00.0751001Z 338 | |         from core.security import _is_super_admin
+2026-04-26T22:03:00.0751337Z     | |_________________________________________________^
+2026-04-26T22:03:00.0751780Z 339 |           if not _is_super_admin(current_user) and not RolePermissionService().check_permission(
+2026-04-26T22:03:00.0752255Z 340 |               current_user.role, 'send_urgent_message'
+2026-04-26T22:03:00.0752530Z     |
+2026-04-26T22:03:00.0752699Z help: Organize imports
+2026-04-26T22:03:00.0752835Z 
+2026-04-26T22:03:00.0752951Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0753270Z   --> domains/guest/messaging/web_push.py:58:5
+2026-04-26T22:03:00.0753528Z    |
+2026-04-26T22:03:00.0753793Z 56 |   async def _generate_and_store_vapid_keys() -> dict[str, str]:
+2026-04-26T22:03:00.0754251Z 57 |       """Generate a new VAPID P-256 keypair and persist it to db.web_push_keys."""
+2026-04-26T22:03:00.0754722Z 58 | /     from cryptography.hazmat.primitives.asymmetric import ec
+2026-04-26T22:03:00.0755125Z 59 | |     from cryptography.hazmat.primitives import serialization
+2026-04-26T22:03:00.0755483Z    | |____________________________________________________________^
+2026-04-26T22:03:00.0755757Z 60 |
+2026-04-26T22:03:00.0755984Z 61 |       private_key = ec.generate_private_key(ec.SECP256R1())
+2026-04-26T22:03:00.0756276Z    |
+2026-04-26T22:03:00.0756438Z help: Organize imports
+2026-04-26T22:03:00.0756563Z 
+2026-04-26T22:03:00.0756681Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0756975Z   --> domains/pms/marketplace_router.py:6:1
+2026-04-26T22:03:00.0757236Z    |
+2026-04-26T22:03:00.0757501Z  4 |   POS enhancements, warehouse procurement, marketplace extensions.
+2026-04-26T22:03:00.0757835Z  5 |   """
+2026-04-26T22:03:00.0758004Z  6 | / import uuid
+2026-04-26T22:03:00.0758205Z  7 | | from datetime import UTC, datetime
+2026-04-26T22:03:00.0758441Z  8 | |
+2026-04-26T22:03:00.0758679Z  9 | | from fastapi import APIRouter, Depends, HTTPException
+2026-04-26T22:03:00.0759060Z 10 | | from fastapi.security import HTTPAuthorizationCredentials
+2026-04-26T22:03:00.0759373Z 11 | |
+2026-04-26T22:03:00.0759548Z 12 | | from core.database import db
+2026-04-26T22:03:00.0759814Z 13 | | from core.helpers import require_feature
+2026-04-26T22:03:00.0760136Z 14 | | from core.security import get_current_user, security
+2026-04-26T22:03:00.0760689Z 15 | | from models.schemas import (
+2026-04-26T22:03:00.0760957Z 16 | |     AdjustInventoryRequest,
+2026-04-26T22:03:00.0761223Z 17 | |     ApprovePurchaseOrderRequest,
+2026-04-26T22:03:00.0761489Z 18 | |     CreateDeliveryRequest,
+2026-04-26T22:03:00.0761916Z 19 | |     CreateMarketplaceProductRequest,
+2026-04-26T22:03:00.0762199Z 20 | |     CreateMenuItemRequest,
+2026-04-26T22:03:00.0762439Z 21 | |     CreateOutletRequest,
+2026-04-26T22:03:00.0762666Z 22 | |     UpdateOutletRequest,
+2026-04-26T22:03:00.0762931Z 23 | |     CreatePOSTransactionWithMenuRequest,
+2026-04-26T22:03:00.0763226Z 24 | |     CreatePurchaseOrderRequest,
+2026-04-26T22:03:00.0763481Z 25 | |     CreateSupplierRequest,
+2026-04-26T22:03:00.0763722Z 26 | |     CreateWarehouseRequest,
+2026-04-26T22:03:00.0764075Z 27 | |     GenerateZReportRequest,
+2026-04-26T22:03:00.0764320Z 28 | |     ReceivePurchaseOrderRequest,
+2026-04-26T22:03:00.0764585Z 29 | |     RejectPurchaseOrderRequest,
+2026-04-26T22:03:00.0764848Z 30 | |     UpdateDeliveryStatusRequest,
+2026-04-26T22:03:00.0765108Z 31 | |     UpdateSupplierCreditRequest,
+2026-04-26T22:03:00.0765353Z 32 | |     User,
+2026-04-26T22:03:00.0765529Z 33 | | )
+2026-04-26T22:03:00.0765909Z 34 | | from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+2026-04-26T22:03:00.0766565Z 35 | | from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+2026-04-26T22:03:00.0767132Z 36 | | from modules.pms_core.role_permission_service import require_op  # v95 DW
+2026-04-26T22:03:00.0767548Z    | |_______________________________________________________________^
+2026-04-26T22:03:00.0767828Z 37 |
+2026-04-26T22:03:00.0768073Z 38 |   router = APIRouter(prefix="/api", tags=["pos-marketplace"])
+2026-04-26T22:03:00.0768388Z    |
+2026-04-26T22:03:00.0768551Z help: Organize imports
+2026-04-26T22:03:00.0768681Z 
+2026-04-26T22:03:00.0768824Z UP041 [*] Replace aliased errors with `TimeoutError`
+2026-04-26T22:03:00.0769134Z    --> infra/auth_cache_pubsub.py:223:24
+2026-04-26T22:03:00.0769374Z     |
+2026-04-26T22:03:00.0769568Z 221 |                 except asyncio.CancelledError:
+2026-04-26T22:03:00.0769844Z 222 |                     return
+2026-04-26T22:03:00.0770205Z 223 |                 except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+2026-04-26T22:03:00.0770856Z     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0771195Z 224 |                     self._metrics["last_listen_error"] = (
+2026-04-26T22:03:00.0771518Z 225 |                         f"IdleTimeout: {str(e)[:120]}"
+2026-04-26T22:03:00.0771783Z     |
+2026-04-26T22:03:00.0771963Z help: Replace with builtin `TimeoutError`
+2026-04-26T22:03:00.0772148Z 
+2026-04-26T22:03:00.0772263Z UP041 [*] Replace aliased errors with `TimeoutError`
+2026-04-26T22:03:00.0772559Z    --> infra/kbs_queue_pubsub.py:314:24
+2026-04-26T22:03:00.0772789Z     |
+2026-04-26T22:03:00.0772982Z 312 |                 except asyncio.CancelledError:
+2026-04-26T22:03:00.0773247Z 313 |                     return
+2026-04-26T22:03:00.0773582Z 314 |                 except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+2026-04-26T22:03:00.0773991Z     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0774321Z 315 |                     self._metrics["last_listen_error"] = (
+2026-04-26T22:03:00.0774638Z 316 |                         f"IdleTimeout: {str(e)[:120]}"
+2026-04-26T22:03:00.0774896Z     |
+2026-04-26T22:03:00.0775082Z help: Replace with builtin `TimeoutError`
+2026-04-26T22:03:00.0775258Z 
+2026-04-26T22:03:00.0775378Z UP041 [*] Replace aliased errors with `TimeoutError`
+2026-04-26T22:03:00.0775663Z    --> infra/ws_redis_adapter.py:244:24
+2026-04-26T22:03:00.0775901Z     |
+2026-04-26T22:03:00.0776096Z 242 |                 except asyncio.CancelledError:
+2026-04-26T22:03:00.0776362Z 243 |                     return
+2026-04-26T22:03:00.0776697Z 244 |                 except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+2026-04-26T22:03:00.0777122Z     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0777501Z 245 |                     # Pub/sub idle socket timeout (default redis socket_timeout
+2026-04-26T22:03:00.0778288Z 246 |                     # ~30s). No message arrived in the read window — this is
+2026-04-26T22:03:00.0778606Z     |
+2026-04-26T22:03:00.0778789Z help: Replace with builtin `TimeoutError`
+2026-04-26T22:03:00.0778976Z 
+2026-04-26T22:03:00.0779183Z C420 [*] Unnecessary dict comprehension for iterable; use `dict.fromkeys` instead
+2026-04-26T22:03:00.0779586Z    --> routers/kbs.py:650:17
+2026-04-26T22:03:00.0779791Z     |
+2026-04-26T22:03:00.0780011Z 648 |             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+2026-04-26T22:03:00.0780657Z 649 |         ]
+2026-04-26T22:03:00.0780884Z 650 |         stats = {s: 0 for s in QUEUE_STATUSES}
+2026-04-26T22:03:00.0781162Z     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0781481Z 651 |         async for row in db.kbs_reports.aggregate(pipeline):
+2026-04-26T22:03:00.0781799Z 652 |             if row["_id"] in stats:
+2026-04-26T22:03:00.0782026Z     |
+2026-04-26T22:03:00.0782229Z help: Replace with `dict.fromkeys(iterable)`)
+2026-04-26T22:03:00.0782418Z 
+2026-04-26T22:03:00.0782539Z UP041 [*] Replace aliased errors with `TimeoutError`
+2026-04-26T22:03:00.0782827Z     --> routers/kbs.py:1229:24
+2026-04-26T22:03:00.0783034Z      |
+2026-04-26T22:03:00.0783241Z 1227 |                         timeout=_SSE_HEARTBEAT_SECONDS,
+2026-04-26T22:03:00.0783522Z 1228 |                     )
+2026-04-26T22:03:00.0783753Z 1229 |                 except asyncio.TimeoutError:
+2026-04-26T22:03:00.0784034Z      |                        ^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0784301Z 1230 |                     yield (
+2026-04-26T22:03:00.0784546Z 1231 |                         f"event: heartbeat\n"
+2026-04-26T22:03:00.0784794Z      |
+2026-04-26T22:03:00.0785048Z help: Replace `asyncio.TimeoutError` with builtin `TimeoutError`
+2026-04-26T22:03:00.0785298Z 
+2026-04-26T22:03:00.0785512Z F401 [*] `fastapi.security.HTTPAuthorizationCredentials` imported but unused
+2026-04-26T22:03:00.0785909Z   --> routers/pms_bookings.py:18:30
+2026-04-26T22:03:00.0786137Z    |
+2026-04-26T22:03:00.0786389Z 17 | from fastapi import APIRouter, Depends, HTTPException, Request
+2026-04-26T22:03:00.0786833Z 18 | from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+2026-04-26T22:03:00.0787217Z    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-04-26T22:03:00.0787501Z 19 | from pydantic import BaseModel, Field
+2026-04-26T22:03:00.0787741Z    |
+2026-04-26T22:03:00.0788040Z help: Remove unused import: `fastapi.security.HTTPAuthorizationCredentials`
+2026-04-26T22:03:00.0788355Z 
+2026-04-26T22:03:00.0788468Z I001 [*] Import block is un-sorted or un-formatted
+2026-04-26T22:03:00.0788747Z    --> startup.py:541:5
+2026-04-26T22:03:00.0788938Z     |
+2026-04-26T22:03:00.0789207Z 539 |       # We initialise the adapter unconditionally and only attach a Redis
+2026-04-26T22:03:00.0789667Z 540 |       # client + cross-instance subscriptions when the connection succeeds.
+2026-04-26T22:03:00.0790086Z 541 | /     from infra.ws_redis_adapter import ws_redis_adapter
+2026-04-26T22:03:00.0790733Z 542 | |     from infra.auth_cache_pubsub import auth_cache_pubsub
+2026-04-26T22:03:00.0791138Z 543 | |     from infra.kbs_queue_pubsub import kbs_queue_pubsub
+2026-04-26T22:03:00.0791552Z 544 | |     from websocket_server import local_broadcast as _ws_local_broadcast
+2026-04-26T22:03:00.0791959Z     | |_______________________________________________________________________^
+2026-04-26T22:03:00.0792256Z 545 |
+2026-04-26T22:03:00.0792447Z 546 |       try:
+2026-04-26T22:03:00.0792627Z     |
+2026-04-26T22:03:00.0792797Z help: Organize imports
+2026-04-26T22:03:00.0792924Z 
+2026-04-26T22:03:00.0793002Z Found 13 errors.
+2026-04-26T22:03:00.0793195Z [*] 13 fixable with the `--fix` option.
+2026-04-26T22:03:00.0803547Z ##[error]Process completed with exit code 1.

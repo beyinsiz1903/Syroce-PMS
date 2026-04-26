@@ -241,7 +241,7 @@ class WebSocketRedisAdapter:
                     )
                 except asyncio.CancelledError:
                     return
-                except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+                except (TimeoutError, RedisTimeoutError) as e:
                     # Pub/sub idle socket timeout (default redis socket_timeout
                     # ~30s). No message arrived in the read window — this is
                     # normal for low-traffic channels, NOT an error. Quiet

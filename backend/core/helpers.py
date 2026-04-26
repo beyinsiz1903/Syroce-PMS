@@ -240,6 +240,7 @@ def require_super_admin_guard(not_found: bool = True):
 # on the hot path while still re-validating tenant existence after the
 # TTL expires.
 import time as _time
+
 _TENANT_DOC_CACHE: dict[str, tuple[dict, float]] = {}
 _TENANT_DOC_CACHE_TTL = 60.0
 _TENANT_DOC_CACHE_MAX = 500

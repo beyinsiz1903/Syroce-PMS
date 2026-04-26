@@ -334,8 +334,8 @@ async def send_internal_message(
     # Gate the "urgent" channel behind a dedicated permission so that the
     # alarm-triggering path is reserved for designated responders only.
     if priority == 'urgent':
-        from modules.pms_core.role_permission_service import RolePermissionService
         from core.security import _is_super_admin
+        from modules.pms_core.role_permission_service import RolePermissionService
         if not _is_super_admin(current_user) and not RolePermissionService().check_permission(
             current_user.role, 'send_urgent_message'
         ):
