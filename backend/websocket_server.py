@@ -300,6 +300,62 @@ async def ping(sid):
     }, to=sid)
 
 
+# ── Internal chat: live read receipts & typing indicators ──
+
+async def broadcast_internal_message_read(
+    reader_id: str,
+    sender_id: str | None,
+    tenant_id: str | None,
+    message_ids: list[str] | None = None,
+    partner_id: str | None = None,
+):
+    """Notify the `pms` room that `reader_id` has read messages.
+
+    Frontend filters by `sender_id == currentUser.id` and
+    `reader_id == selectedConvUserId` to update outgoing-message ✓✓ state
+    without waiting for the next 15-sec poll.
+    """
+    try:
+        await sio.emit('internal_message_read', {
+            'reader_id': reader_id,
+            'sender_id': sender_id,
+            'tenant_id': tenant_id,
+            'message_ids': list(message_ids or []),
+            'partner_id': partner_id,
+            'timestamp': datetime.utcnow().isoformat(),
+        }, room='pms')
+    except Exception as e:
+        logger.error(f"Failed to broadcast internal_message_read: {e}")
+
+
+@sio.event
+async def internal_typing(sid, data):
+    """Relay a typing indicator between two users in the pms room.
+
+    Payload: {from_user_id, from_user_name, to_user_id, tenant_id, is_typing}
+    Emits `internal_user_typing` so the recipient's open thread can show
+    a "yazıyor…" indicator. Best-effort, non-authenticated relay — typing
+    state is non-sensitive and the worst case is a misleading indicator.
+    """
+    try:
+        if not isinstance(data, dict):
+            return
+        from_user_id = data.get('from_user_id')
+        to_user_id = data.get('to_user_id')
+        if not from_user_id or not to_user_id:
+            return
+        await sio.emit('internal_user_typing', {
+            'from_user_id': from_user_id,
+            'from_user_name': data.get('from_user_name'),
+            'to_user_id': to_user_id,
+            'tenant_id': data.get('tenant_id'),
+            'is_typing': bool(data.get('is_typing', True)),
+            'timestamp': datetime.utcnow().isoformat(),
+        }, room='pms')
+    except Exception as e:
+        logger.error(f"Failed to relay internal_typing event: {e}")
+
+
 # ── Cockpit Snapshot Streaming ──
 _cockpit_last_snapshot: dict[str, Any] = {}
 

@@ -135,6 +135,15 @@ class WebSocketManager {
       this.emit('internal_message', data);
     });
 
+    // Internal chat live events (read receipts + typing)
+    this.socket.on('internal_message_read', (data) => {
+      this.emit('internal_message_read', data);
+    });
+
+    this.socket.on('internal_user_typing', (data) => {
+      this.emit('internal_user_typing', data);
+    });
+
     this.socket.on('pong', () => {});
   }
 
@@ -149,6 +158,21 @@ class WebSocketManager {
     }
     this.reconnectAttempts = 0;
     return this.connect();
+  }
+
+  /**
+   * Send a raw socket.io event to the server. Use for client→server
+   * signals (e.g. typing indicators) where the WebSocketManager's
+   * internal pub/sub is not appropriate.
+   */
+  socketEmit(event, data) {
+    if (!this.socket?.connected) return false;
+    try {
+      this.socket.emit(event, data);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   joinRoom(room) {
@@ -248,6 +272,7 @@ export function useWebSocket(room = null) {
     leaveRoom: websocket.leaveRoom.bind(websocket),
     on: websocket.on.bind(websocket),
     emit: websocket.emit.bind(websocket),
+    socketEmit: websocket.socketEmit.bind(websocket),
   };
 }
 

@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { websocket } from '@/lib/websocket';
+import { websocket, useWebSocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
 import { hasRole } from '@/utils/authRoles';
 import {
@@ -85,10 +85,17 @@ const POLL_INTERVAL_MS = 60000;
 // recalls with HTTP 400.
 const RECALL_WINDOW_MS = 5 * 60 * 1000;
 
+// How long after the last `typing` event we keep the indicator visible.
+// Slightly longer than the emit cadence so brief pauses don't flicker.
+const TYPING_INDICATOR_TTL_MS = 4000;
+// Throttle how often we emit `internal_typing` while the user is typing.
+const TYPING_EMIT_THROTTLE_MS = 1500;
+
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
   const { decrementInternalUnread, refreshInternalUnread } = useNotifications();
+  const { on: wsOn, socketEmit: wsSocketEmit } = useWebSocket('pms');
   const [activeSubTab, setActiveSubTab] = useState('inbox');
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
@@ -132,6 +139,10 @@ const InternalChatTab = ({ currentUser }) => {
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
 
+  // Live "yazıyor…" indicator — partner_id of the user currently typing
+  // to me in the open thread. Auto-clears after TYPING_INDICATOR_TTL_MS.
+  const [typingPartnerName, setTypingPartnerName] = useState('');
+
   const pollTimerRef = useRef(null);
   const conversationPollTimerRef = useRef(null);
   const threadPollTimerRef = useRef(null);
@@ -143,6 +154,22 @@ const InternalChatTab = ({ currentUser }) => {
   const conversationsAbortRef = useRef(null);
   const threadRequestIdRef = useRef(0);
   const threadAbortRef = useRef(null);
+  // Refs that don't trigger re-renders — used by WS handlers and the
+  // throttled typing emitter.
+  const selectedConvUserIdRef = useRef(null);
+  const typingClearTimerRef = useRef(null);
+  const lastTypingEmitRef = useRef(0);
+
+  useEffect(() => {
+    selectedConvUserIdRef.current = selectedConvUserId;
+    // Switching threads clears any stale "yazıyor…" indicator from the
+    // previous partner.
+    setTypingPartnerName('');
+    if (typingClearTimerRef.current) {
+      clearTimeout(typingClearTimerRef.current);
+      typingClearTimerRef.current = null;
+    }
+  }, [selectedConvUserId]);
 
   const loadInbox = useCallback(async (silent = false) => {
     // Cancel any in-flight inbox request — prevents stale responses from
@@ -580,6 +607,87 @@ const InternalChatTab = ({ currentUser }) => {
       if (teardown) teardown();
     };
   }, [currentUser?.id, selectedConvUserId]);
+
+  // ── Live read receipts via WebSocket ───────────────────────────────
+  // When the partner reads my messages, flip the ✓✓ icon immediately
+  // instead of waiting for the next safety-net poll. The polling fallback
+  // remains in place so if WS is unavailable nothing breaks.
+  useEffect(() => {
+    const myId = currentUser?.id;
+    if (!myId) return undefined;
+    const off = wsOn('internal_message_read', (data) => {
+      if (!data || data.sender_id !== myId) return;
+      const readerId = data.reader_id;
+      const ids = Array.isArray(data.message_ids) ? data.message_ids : [];
+      // Update the open thread if it matches the reader.
+      if (selectedConvUserIdRef.current === readerId) {
+        setThreadMessages((prev) =>
+          prev.map((m) => {
+            if (!m.is_from_me) return m;
+            if (ids.length === 0 || ids.includes(m.id)) {
+              return { ...m, read: true };
+            }
+            return m;
+          }),
+        );
+      }
+    });
+    return off;
+  }, [wsOn, currentUser?.id]);
+
+  // ── Live "yazıyor…" indicator via WebSocket ───────────────────────
+  useEffect(() => {
+    const myId = currentUser?.id;
+    if (!myId) return undefined;
+    const off = wsOn('internal_user_typing', (data) => {
+      if (!data) return;
+      // Only react to typing events addressed to me from the open partner.
+      if (data.to_user_id !== myId) return;
+      if (data.from_user_id !== selectedConvUserIdRef.current) return;
+      if (data.is_typing === false) {
+        setTypingPartnerName('');
+        if (typingClearTimerRef.current) {
+          clearTimeout(typingClearTimerRef.current);
+          typingClearTimerRef.current = null;
+        }
+        return;
+      }
+      setTypingPartnerName(data.from_user_name || 'Kullanıcı');
+      if (typingClearTimerRef.current) {
+        clearTimeout(typingClearTimerRef.current);
+      }
+      typingClearTimerRef.current = setTimeout(() => {
+        setTypingPartnerName('');
+        typingClearTimerRef.current = null;
+      }, TYPING_INDICATOR_TTL_MS);
+    });
+    return off;
+  }, [wsOn, currentUser?.id]);
+
+  useEffect(
+    () => () => {
+      if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+    },
+    [],
+  );
+
+  // Throttled emitter for the local user's typing activity. Called from
+  // the reply textarea's onChange handler.
+  const emitTyping = useCallback(() => {
+    const partnerId = selectedConvUserIdRef.current;
+    const myId = currentUser?.id;
+    if (!partnerId || !myId) return;
+    const now = Date.now();
+    if (now - lastTypingEmitRef.current < TYPING_EMIT_THROTTLE_MS) return;
+    lastTypingEmitRef.current = now;
+    wsSocketEmit('internal_typing', {
+      from_user_id: myId,
+      from_user_name: currentUser?.name || '',
+      to_user_id: partnerId,
+      tenant_id: currentUser?.tenant_id,
+      is_typing: true,
+    });
+  }, [wsSocketEmit, currentUser?.id, currentUser?.name, currentUser?.tenant_id]);
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLocaleLowerCase('tr');
@@ -1402,8 +1510,17 @@ const InternalChatTab = ({ currentUser }) => {
             >
               {selectedConvUserName || 'Konuşma'}
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              Birebir mesaj · Otomatik yenileme: 15 sn
+            <div className="text-[11px] text-muted-foreground h-[14px]">
+              {typingPartnerName ? (
+                <span
+                  className="text-primary font-medium"
+                  data-testid="text-thread-typing-indicator"
+                >
+                  yazıyor…
+                </span>
+              ) : (
+                'Birebir mesaj · Otomatik yenileme: 15 sn'
+              )}
             </div>
           </div>
           <Button
@@ -1620,7 +1737,16 @@ const InternalChatTab = ({ currentUser }) => {
           <div className="flex items-end gap-2">
             <Textarea
               value={threadReply}
-              onChange={(e) => setThreadReply(e.target.value)}
+              onChange={(e) => {
+                setThreadReply(e.target.value);
+                // Fire a throttled typing signal so the partner sees
+                // "yazıyor…" in their thread header. Empty input still
+                // counts as activity (e.g. backspacing) — that's fine
+                // since the indicator auto-clears after a few seconds.
+                if (e.target.value.length > 0) {
+                  emitTyping();
+                }
+              }}
               placeholder="Mesajınızı yazın… (Enter göndermek için, Shift+Enter yeni satır)"
               rows={1}
               maxLength={2000}

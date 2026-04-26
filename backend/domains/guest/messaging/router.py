@@ -683,6 +683,28 @@ async def mark_internal_message_read(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Mesaj bulunamadı veya yetkiniz yok")
 
+    # Live read receipt: notify the sender's open thread without waiting
+    # for the next 15-sec poll. Best-effort — polling fallback covers the
+    # case where WS is unavailable.
+    if result.modified_count > 0:
+        try:
+            msg_doc = await db.internal_messages.find_one(
+                {'id': message_id, 'tenant_id': current_user.tenant_id},
+                {'_id': 0, 'from_user_id': 1},
+            )
+            sender_id = (msg_doc or {}).get('from_user_id')
+            if sender_id and sender_id != current_user.id:
+                from websocket_server import broadcast_internal_message_read
+                await broadcast_internal_message_read(
+                    reader_id=current_user.id,
+                    sender_id=sender_id,
+                    tenant_id=current_user.tenant_id,
+                    message_ids=[message_id],
+                    partner_id=current_user.id,
+                )
+        except Exception as _e:  # pragma: no cover - non-fatal
+            logger.debug(f"WS read-receipt emit skipped: {_e}")
+
     return {'success': True, 'message': 'Message marked as read'}
 
 
@@ -870,6 +892,25 @@ async def mark_conversation_read(
     already in `read_by`. Returns the number of newly-marked messages.
     """
     now_iso = datetime.now(UTC).isoformat()
+    # Capture the IDs about to be marked so we can include them in the
+    # live read-receipt event. Doing this before the update keeps the
+    # event payload accurate (after update they would no longer match
+    # the `read_by:{$ne:...}` filter).
+    pending_ids: list[str] = []
+    if user_id != current_user.id:
+        async for doc in db.internal_messages.find(
+            {
+                'tenant_id': current_user.tenant_id,
+                'from_user_id': user_id,
+                'to_user_id': current_user.id,
+                'read_by': {'$ne': current_user.id},
+            },
+            {'_id': 0, 'id': 1},
+        ):
+            mid = doc.get('id')
+            if mid:
+                pending_ids.append(mid)
+
     result = await db.internal_messages.update_many(
         {
             'tenant_id': current_user.tenant_id,
@@ -882,6 +923,21 @@ async def mark_conversation_read(
             '$set': {'last_read_at': now_iso, 'read': True},
         },
     )
+
+    # Live read receipt for the sender's open thread. Best-effort.
+    if result.modified_count > 0 and user_id and user_id != current_user.id:
+        try:
+            from websocket_server import broadcast_internal_message_read
+            await broadcast_internal_message_read(
+                reader_id=current_user.id,
+                sender_id=user_id,
+                tenant_id=current_user.tenant_id,
+                message_ids=pending_ids,
+                partner_id=current_user.id,
+            )
+        except Exception as _e:  # pragma: no cover - non-fatal
+            logger.debug(f"WS read-receipt emit skipped: {_e}")
+
     return {
         'success': True,
         'updated_count': result.modified_count,
