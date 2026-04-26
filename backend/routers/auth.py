@@ -21,6 +21,7 @@ from core.security import (
     create_token,
     get_current_user,
     hash_password,
+    invalidate_user_doc_cache,
     revoke_jti,
     verify_password,
 )
@@ -161,6 +162,7 @@ async def setup_make_super_admin(request: MakeSuperAdminRequest):
         build_user_email_query(request.email),
         {"$set": {"role": "super_admin"}}
     )
+    invalidate_user_doc_cache()  # update_many → flush all (cheap, setup-gated path)
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=f"No user found with email: {request.email}")
@@ -187,6 +189,7 @@ async def make_me_super_admin(
         {"id": current_user.id},
         {"$set": {"role": "super_admin"}}
     )
+    invalidate_user_doc_cache(current_user.id)
 
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Role güncellenemedi veya zaten super_admin")
@@ -220,6 +223,7 @@ async def quick_make_super_admin(
         build_user_email_query(email),
         {"$set": {"role": "super_admin"}}
     )
+    invalidate_user_doc_cache()  # update_many → flush all (cheap, setup-gated path)
 
     if result.matched_count == 0:
         # Bug CR-R3: case-insensitive fallback also enforces single-match guard
@@ -233,6 +237,7 @@ async def quick_make_super_admin(
                 detail="Multiple users match this email (case-insensitive). Refusing to elevate all.",
             )
         result = await db.users.update_many(ci_filter, {"$set": {"role": "super_admin"}})
+        invalidate_user_doc_cache()  # CI fallback also flushes
 
     return {
         "success": True,
@@ -513,6 +518,7 @@ async def login(data: UserLogin, request: Request):
                 {"tenant_id": user_doc.get("tenant_id"), "username": user_doc.get("username")} if user_doc.get("username") else build_user_email_query(data.email or ""),
                 {'$set': {'id': user_doc['id']}}
             )
+            invalidate_user_doc_cache(user_doc['id'])
     else:
         # Bug AI: keep ghost-user path as expensive as the real-user path
         # by running an equivalent dummy decrypt to prevent timing-based
@@ -808,6 +814,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
                 "$set": {"two_factor_last_used_at": datetime.now(UTC).isoformat()},
             },
         )
+        invalidate_user_doc_cache(user_id)
         if pull_res.modified_count == 0:
             await db.audit_logs.insert_one({
                 "id": str(__import__('uuid').uuid4()),
@@ -824,6 +831,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
             {"id": user_id},
             {"$set": {"two_factor_last_used_at": datetime.now(UTC).isoformat()}},
         )
+        invalidate_user_doc_cache(user_id)
 
     # jti consumption already enforced atomically at top of handler via
     # DB unique index (Bug AS fix); no further marker write needed.
@@ -886,6 +894,7 @@ async def update_me(
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
 
     await db.users.update_one({"id": current_user.id}, {"$set": update_fields})
+    invalidate_user_doc_cache(current_user.id)
 
     await db.audit_logs.insert_one({
         "id": str(__import__('uuid').uuid4()),
@@ -959,6 +968,7 @@ async def change_password(
             "$unset": {"password_hash": "", "password": ""},
         },
     )
+    invalidate_user_doc_cache(current_user.id)
 
     # Invalidate any cached login responses for this user (best-effort)
     try:
@@ -1534,6 +1544,7 @@ async def reset_password_by_token(payload: dict, request: Request):
             "tokens_invalid_before": invalid_before_ts,
         }},
     )
+    invalidate_user_doc_cache(user.get('id'))
 
     # Invalidate cached login responses
     try:
@@ -1593,6 +1604,7 @@ async def reset_password(data: ResetPasswordRequest):
             }
         }
     )
+    invalidate_user_doc_cache(user.get('id'))
 
     # Invalidate login cache for this user
     from infra.simple_cache import simple_cache as _login_cache

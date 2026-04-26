@@ -16,6 +16,7 @@ import base64
 import io
 import os
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -25,6 +26,56 @@ from passlib.context import CryptContext
 
 from core.database import db
 from models.enums import UserRole
+
+# ---------------------------------------------------------------------------
+# Per-process user-doc cache.
+#
+# Why this exists: every authenticated request used to hit Atlas with a
+# `db.users.find_one(...)` (~150ms RTT to the cluster). On the bookings
+# endpoint that single lookup accounted for the bulk of the ~265ms in-handler
+# auth time. We cache the *raw* (still-encrypted) user doc keyed by user_id
+# for 30 seconds. JWT decode, jti revocation check, and tokens_invalid_before
+# enforcement still run on every request — only the Atlas round-trip is
+# memoized. 30 s is the grace window after logout / password change before
+# in-flight tokens are rejected (acceptable: login sessions are hours long
+# and Redis-based jti revocation still bites immediately).
+#
+# Decrypted docs are deliberately NOT cached (each request re-decrypts) so
+# plaintext PII never lingers in process memory longer than one request.
+# ---------------------------------------------------------------------------
+_USER_DOC_CACHE: dict[str, tuple[dict, float]] = {}
+_USER_DOC_CACHE_TTL = 30.0  # seconds
+_USER_DOC_CACHE_MAX = 1000
+
+
+def _user_doc_cache_get(user_id: str) -> dict | None:
+    entry = _USER_DOC_CACHE.get(user_id)
+    if not entry:
+        return None
+    doc, expires_at = entry
+    if expires_at <= time.time():
+        _USER_DOC_CACHE.pop(user_id, None)
+        return None
+    return doc
+
+
+def _user_doc_cache_set(user_id: str, doc: dict) -> None:
+    if len(_USER_DOC_CACHE) >= _USER_DOC_CACHE_MAX:
+        # Cheap eviction: drop the 200 entries closest to expiry. Avoids the
+        # O(n log n) full sort of LRU; good enough for a 1k-entry bound.
+        for k in sorted(_USER_DOC_CACHE, key=lambda k: _USER_DOC_CACHE[k][1])[:200]:
+            _USER_DOC_CACHE.pop(k, None)
+    _USER_DOC_CACHE[user_id] = (doc, time.time() + _USER_DOC_CACHE_TTL)
+
+
+def invalidate_user_doc_cache(user_id: str | None = None) -> None:
+    """Force-evict cached user doc(s). Call after profile updates, password
+    changes, or role changes that must take effect immediately instead of
+    waiting up to 30 s for the cache to expire."""
+    if user_id is None:
+        _USER_DOC_CACHE.clear()
+    else:
+        _USER_DOC_CACHE.pop(user_id, None)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -175,9 +226,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if jti and await is_jti_revoked(jti):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked - please login again")
 
-        user_doc = await db.users.find_one(
-            {'$or': [{'id': user_id}, {'user_id': user_id}]}, {'_id': 0}
-        )
+        # Cached read avoids a per-request Atlas round-trip (~150 ms RTT).
+        # See `_user_doc_cache_*` block above for the full rationale and
+        # security tradeoffs (30 s grace after logout / password change).
+        user_doc = _user_doc_cache_get(user_id)
+        if user_doc is None:
+            user_doc = await db.users.find_one(
+                {'$or': [{'id': user_id}, {'user_id': user_id}]}, {'_id': 0}
+            )
+            if user_doc:
+                _user_doc_cache_set(user_id, user_doc)
 
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")

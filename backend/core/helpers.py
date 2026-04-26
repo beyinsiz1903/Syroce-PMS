@@ -232,6 +232,47 @@ def require_super_admin_guard(not_found: bool = True):
     return _guard
 
 
+# Per-process tenant-doc cache. The hotel-modules flag set rarely changes
+# (config rather than transactional data), so a 60 s TTL is safely longer
+# than the 30 s user-doc TTL above. Each authenticated request used to
+# pay another ~110 ms Atlas round-trip on `db.tenants.find_one`; with
+# this cache the require_module dependency drops to a few microseconds
+# on the hot path while still re-validating tenant existence after the
+# TTL expires.
+import time as _time
+_TENANT_DOC_CACHE: dict[str, tuple[dict, float]] = {}
+_TENANT_DOC_CACHE_TTL = 60.0
+_TENANT_DOC_CACHE_MAX = 500
+
+
+def _tenant_doc_cache_get(tenant_id: str) -> dict | None:
+    entry = _TENANT_DOC_CACHE.get(tenant_id)
+    if not entry:
+        return None
+    doc, expires_at = entry
+    if expires_at <= _time.time():
+        _TENANT_DOC_CACHE.pop(tenant_id, None)
+        return None
+    return doc
+
+
+def _tenant_doc_cache_set(tenant_id: str, doc: dict) -> None:
+    if len(_TENANT_DOC_CACHE) >= _TENANT_DOC_CACHE_MAX:
+        for k in sorted(_TENANT_DOC_CACHE, key=lambda k: _TENANT_DOC_CACHE[k][1])[:100]:
+            _TENANT_DOC_CACHE.pop(k, None)
+    _TENANT_DOC_CACHE[tenant_id] = (doc, _time.time() + _TENANT_DOC_CACHE_TTL)
+
+
+def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
+    """Force-evict cached tenant doc(s). Call after the admin toggles a
+    module flag so the change takes effect immediately instead of
+    waiting up to 60 s."""
+    if tenant_id is None:
+        _TENANT_DOC_CACHE.clear()
+    else:
+        _TENANT_DOC_CACHE.pop(tenant_id, None)
+
+
 def require_module(module_name: str):
     """Dependency to ensure the current hotel has a specific module enabled."""
     async def dependency(current_user: User = Depends(get_current_user)) -> None:
@@ -245,13 +286,17 @@ def require_module(module_name: str):
         # Super admin: bypass module-flag check only (tenant context preserved).
         if _is_super_admin(current_user):
             return
-        tenant_doc = await db.tenants.find_one({"id": current_user.tenant_id})
-        if not tenant_doc:
-            try:
-                from bson import ObjectId
-                tenant_doc = await db.tenants.find_one({"_id": ObjectId(current_user.tenant_id)})
-            except Exception:
-                tenant_doc = None
+        tenant_doc = _tenant_doc_cache_get(current_user.tenant_id)
+        if tenant_doc is None:
+            tenant_doc = await db.tenants.find_one({"id": current_user.tenant_id})
+            if not tenant_doc:
+                try:
+                    from bson import ObjectId
+                    tenant_doc = await db.tenants.find_one({"_id": ObjectId(current_user.tenant_id)})
+                except Exception:
+                    tenant_doc = None
+            if tenant_doc:
+                _tenant_doc_cache_set(current_user.tenant_id, tenant_doc)
         if not tenant_doc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Otel bulunamadi")
         modules = get_tenant_modules(tenant_doc)

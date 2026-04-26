@@ -115,6 +115,42 @@ def tenant_context(tenant_id: str):
 
 # ── TenantScopedCollection ─────────────────────────────────────
 
+# Collections whose write operations must evict the in-process auth caches
+# in core.security (_USER_DOC_CACHE) and core.helpers (_TENANT_DOC_CACHE).
+# Without this hook, password / role / module-toggle mutations would not take
+# effect until the 30s/60s TTL expired (architect "stale-authz window" finding).
+_AUTH_CACHE_USER_COLLECTIONS = frozenset({"users"})
+_AUTH_CACHE_TENANT_COLLECTIONS = frozenset({"tenants"})
+
+
+def _extract_doc_id(filter_dict: Any) -> str | None:
+    """Best-effort: pull a plain string `id` out of a Mongo filter so we can
+    do a targeted invalidate. Anything operator-shaped or non-string returns
+    None → caller falls back to a full cache flush (safe but slightly wasteful).
+    """
+    if not isinstance(filter_dict, dict):
+        return None
+    val = filter_dict.get("id")
+    if isinstance(val, str) and "$" not in val:
+        return val
+    return None
+
+
+def _invalidate_auth_caches_for(collection_name: str, filter_dict: Any) -> None:
+    """Evict user / tenant doc caches after a mutation. Imported lazily to
+    avoid an import cycle (core.security → core.database → core.tenant_db)."""
+    try:
+        if collection_name in _AUTH_CACHE_USER_COLLECTIONS:
+            from core.security import invalidate_user_doc_cache
+            invalidate_user_doc_cache(_extract_doc_id(filter_dict))
+        elif collection_name in _AUTH_CACHE_TENANT_COLLECTIONS:
+            from core.helpers import invalidate_tenant_doc_cache
+            invalidate_tenant_doc_cache(_extract_doc_id(filter_dict))
+    except Exception:
+        # Never let a cache-eviction error block the mutation result.
+        logger.debug("auth cache invalidation failed for %s", collection_name, exc_info=True)
+
+
 class TenantScopedCollection:
     """
     Wraps a Motor collection to auto-inject and validate tenant_id
@@ -182,41 +218,63 @@ class TenantScopedCollection:
         return self._coll.aggregate(pipeline, *args, **kwargs)
 
     # ── Write operations ──
+    # NOTE: every mutation method below ends with _invalidate_auth_caches_for(...)
+    # so the in-process user/tenant doc caches in core.security/core.helpers stay
+    # consistent with Atlas without each call site having to remember.
 
     async def insert_one(self, document, *args, **kwargs):
-        return await self._coll.insert_one(self._inject_doc(document), *args, **kwargs)
+        result = await self._coll.insert_one(self._inject_doc(document), *args, **kwargs)
+        _invalidate_auth_caches_for(self._name, document)
+        return result
 
     async def insert_many(self, documents, *args, **kwargs):
-        return await self._coll.insert_many(
+        result = await self._coll.insert_many(
             [self._inject_doc(d) for d in documents], *args, **kwargs
         )
+        if self._name in _AUTH_CACHE_USER_COLLECTIONS or self._name in _AUTH_CACHE_TENANT_COLLECTIONS:
+            _invalidate_auth_caches_for(self._name, None)  # bulk → flush
+        return result
 
     async def update_one(self, filter, update, *args, **kwargs):
-        return await self._coll.update_one(self._inject_filter(filter), update, *args, **kwargs)
+        result = await self._coll.update_one(self._inject_filter(filter), update, *args, **kwargs)
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def update_many(self, filter, update, *args, **kwargs):
-        return await self._coll.update_many(self._inject_filter(filter), update, *args, **kwargs)
+        result = await self._coll.update_many(self._inject_filter(filter), update, *args, **kwargs)
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def delete_one(self, filter, *args, **kwargs):
-        return await self._coll.delete_one(self._inject_filter(filter), *args, **kwargs)
+        result = await self._coll.delete_one(self._inject_filter(filter), *args, **kwargs)
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def delete_many(self, filter, *args, **kwargs):
-        return await self._coll.delete_many(self._inject_filter(filter), *args, **kwargs)
+        result = await self._coll.delete_many(self._inject_filter(filter), *args, **kwargs)
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def find_one_and_update(self, filter, update, *args, **kwargs):
-        return await self._coll.find_one_and_update(
+        result = await self._coll.find_one_and_update(
             self._inject_filter(filter), update, *args, **kwargs
         )
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def find_one_and_delete(self, filter, *args, **kwargs):
-        return await self._coll.find_one_and_delete(
+        result = await self._coll.find_one_and_delete(
             self._inject_filter(filter), *args, **kwargs
         )
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     async def find_one_and_replace(self, filter, replacement, *args, **kwargs):
-        return await self._coll.find_one_and_replace(
+        result = await self._coll.find_one_and_replace(
             self._inject_filter(filter), replacement, *args, **kwargs
         )
+        _invalidate_auth_caches_for(self._name, filter)
+        return result
 
     # ── Bulk operations (pass-through, caller must handle tenant_id) ──
 
@@ -280,11 +338,51 @@ class TenantScopedDB:
         tenant_id = object.__getattribute__(self, "_tenant_id")
         coll = raw_db[name]
         if name in GLOBAL_COLLECTIONS:
+            if name in _AUTH_CACHE_TENANT_COLLECTIONS:
+                return GlobalCachedCollection(coll, name)
             return coll
         return TenantScopedCollection(coll, tenant_id, name)
 
     def __getitem__(self, name: str):
         return self.__getattr__(name)
+
+
+class GlobalCachedCollection:
+    """
+    Pass-through wrapper for GLOBAL collections (e.g. `tenants`) whose
+    write operations must still evict the in-process auth caches.
+    Reads go straight to the raw Motor collection (no tenant scoping).
+    """
+
+    __slots__ = ("_coll", "_name")
+
+    _MUTATION_OPS = frozenset({
+        "insert_one", "insert_many",
+        "update_one", "update_many",
+        "delete_one", "delete_many",
+        "find_one_and_update", "find_one_and_delete", "find_one_and_replace",
+        "replace_one",
+    })
+
+    def __init__(self, collection, name: str):
+        self._coll = collection
+        self._name = name
+
+    def __getattr__(self, attr: str):
+        target = getattr(self._coll, attr)
+        if attr not in GlobalCachedCollection._MUTATION_OPS:
+            return target
+
+        async def _wrapped(*args, **kwargs):
+            result = await target(*args, **kwargs)
+            # First positional is the filter (or document for insert_one).
+            payload = args[0] if args else kwargs.get("filter") or kwargs.get("document")
+            if attr == "insert_many":
+                _invalidate_auth_caches_for(self._name, None)
+            else:
+                _invalidate_auth_caches_for(self._name, payload)
+            return result
+        return _wrapped
 
 
 class SchemaOnlyCollection:
@@ -356,8 +454,11 @@ class TenantAwareDBProxy:
 
         raw_coll = raw_db[name]
 
-        # Global collections → no scoping needed
+        # Global collections → no scoping, but `tenants` writes must invalidate
+        # the in-process tenant doc cache, so wrap it.
         if name in GLOBAL_COLLECTIONS:
+            if name in _AUTH_CACHE_TENANT_COLLECTIONS:
+                return GlobalCachedCollection(raw_coll, name)
             return raw_coll
 
         # Check tenant context

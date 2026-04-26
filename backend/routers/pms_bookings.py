@@ -217,12 +217,18 @@ async def get_bookings(
     end_date: str | None = None,
     status: str | None = None,
     search: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    # Use FastAPI's dependency injection so `get_current_user` is shared
+    # with the `require_module` dependency (FastAPI caches dependency
+    # results within a single request). The previous code path took the
+    # raw bearer credentials and then called `await get_current_user(...)`
+    # manually, which DOES NOT participate in the dependency cache —
+    # auth was therefore paying for two full JWT-decode + decrypt cycles
+    # per request. Routing through Depends collapses that to one.
+    current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
     """Get bookings - INSTANT RESPONSE"""
     limit, offset = p.limit, p.offset
-    current_user = await get_current_user(credentials)
 
     # If search is provided, do a text search across bookings
     if search and search.strip():
