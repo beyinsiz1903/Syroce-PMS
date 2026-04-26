@@ -244,9 +244,10 @@ async def get_bookings(
         if missing_guest_ids:
             async for g in db.guests.find(
                 {"id": {"$in": list(missing_guest_ids)}, "tenant_id": current_user.tenant_id},
-                {"_id": 0, "id": 1, "name": 1},
+                {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
-                guest_name_map[g["id"]] = g.get("name", "")
+                nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+                guest_name_map[g["id"]] = nm
         room_num_map: dict[str, str] = {}
         if missing_room_ids:
             async for r in db.rooms.find(
@@ -273,8 +274,12 @@ async def get_bookings(
                 room_ids = {b['room_id'] for b in page if b.get('room_id')}
                 guest_map: dict[str, str] = {}
                 if missing_guest_ids:
+                    # Always scope batch lookups by tenant_id — the cache key is
+                    # tenant-scoped but the lookup must be too, both for
+                    # multi-tenant isolation AND to hit the
+                    # (tenant_id, id) compound index instead of scanning by id.
                     async for g in db.guests.find(
-                        {'id': {'$in': list(missing_guest_ids)}},
+                        {'id': {'$in': list(missing_guest_ids)}, 'tenant_id': current_user.tenant_id},
                         {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
                     ):
                         nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
@@ -283,7 +288,7 @@ async def get_bookings(
                 room_map: dict[str, dict] = {}
                 if room_ids:
                     async for r in db.rooms.find(
-                        {'id': {'$in': list(room_ids)}},
+                        {'id': {'$in': list(room_ids)}, 'tenant_id': current_user.tenant_id},
                         {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
                     ):
                         room_map[r['id']] = r

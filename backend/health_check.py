@@ -14,6 +14,38 @@ logger = logging.getLogger(__name__)
 
 health_router = APIRouter(prefix="/api/health", tags=["health"])
 
+
+def _get_db(request: Request):
+    """Resolve MongoDB instance from app.state. Returns None if unavailable."""
+    app = getattr(request, "app", None)
+    if app is None:
+        return None
+    return getattr(app.state, "db", None)
+
+
+def _get_redis(request: Request):
+    """Resolve a Redis-like client and its backend tag from app.state.
+
+    Returns a tuple ``(client, backend)`` where ``client`` exposes a
+    synchronous ``ping``/``info`` (either a real ``redis.Redis`` or the
+    in-memory fallback from :mod:`cache_manager`) and ``backend`` is one
+    of ``"redis"`` / ``"memory"`` / ``None``. ``client`` is ``None`` only
+    when no cache layer was wired at startup.
+    """
+    app = getattr(request, "app", None)
+    if app is None:
+        return None, None
+    cm = getattr(app.state, "cache_manager", None)
+    if cm is not None:
+        # CacheManager exposes the underlying client as ``.client`` (real
+        # redis OR ``_InMemoryTTLStore``) and tags it via ``.backend``.
+        client = getattr(cm, "client", None)
+        if client is not None:
+            return client, getattr(cm, "backend", "unknown")
+    # Last-resort fallback for callers that attached a raw client directly.
+    raw = getattr(app.state, "redis_client", None)
+    return raw, ("redis" if raw is not None else None)
+
 async def check_mongodb(db) -> dict[str, Any]:
     """Check MongoDB connectivity and performance"""
     try:
@@ -125,7 +157,7 @@ async def liveness_probe():
     )
 
 @health_router.get("/readiness")
-async def readiness_probe(db=None, redis_client=None):
+async def readiness_probe(request: Request):
     """
     Kubernetes readiness probe
     Checks if application is ready to serve traffic
@@ -133,16 +165,20 @@ async def readiness_probe(db=None, redis_client=None):
     checks = {}
     all_healthy = True
 
+    db = _get_db(request)
+    redis_client, redis_backend = _get_redis(request)
+
     # Check MongoDB
-    if db:
+    if db is not None:
         mongo_health = await check_mongodb(db)
         checks["mongodb"] = mongo_health
         if mongo_health["status"] != "healthy":
             all_healthy = False
 
-    # Check Redis
-    if redis_client:
+    # Check Redis (or in-memory fallback)
+    if redis_client is not None:
         redis_health = await check_redis(redis_client)
+        redis_health["backend"] = redis_backend
         checks["redis"] = redis_health
         if redis_health["status"] != "healthy":
             all_healthy = False
@@ -162,15 +198,18 @@ async def readiness_probe(db=None, redis_client=None):
     )
 
 @health_router.get("/detailed")
-async def detailed_health_check(db=None, redis_client=None):
+async def detailed_health_check(request: Request):
     """
     Detailed health check with all components
     """
     checks = {}
     overall_status = "healthy"
 
+    db = _get_db(request)
+    redis_client, redis_backend = _get_redis(request)
+
     # MongoDB check
-    if db:
+    if db is not None:
         mongo_health = await check_mongodb(db)
         checks["mongodb"] = mongo_health
         if mongo_health["status"] != "healthy":
@@ -178,9 +217,10 @@ async def detailed_health_check(db=None, redis_client=None):
     else:
         checks["mongodb"] = {"status": "not_configured"}
 
-    # Redis check
-    if redis_client:
+    # Redis check (or in-memory fallback)
+    if redis_client is not None:
         redis_health = await check_redis(redis_client)
+        redis_health["backend"] = redis_backend
         checks["redis"] = redis_health
         if redis_health["status"] != "healthy":
             overall_status = "degraded"
@@ -205,11 +245,12 @@ async def detailed_health_check(db=None, redis_client=None):
 
     status_code = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
 
-    return Response(
-        content=str(response),
-        status_code=status_code,
-        media_type="application/json"
-    )
+    # Use ORJSONResponse so the body is real JSON (the previous
+    # ``str(dict)`` produced Python repr — single-quoted, ``True`` instead
+    # of ``true`` — which broke strict JSON clients and any downstream
+    # parser).
+    from fastapi.responses import ORJSONResponse
+    return ORJSONResponse(content=response, status_code=status_code)
 
 
 @health_router.get("/db", include_in_schema=False)

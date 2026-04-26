@@ -72,6 +72,19 @@ require_super_admin = require_super_admin_guard()
 # Expose db on app.state early
 app.state.db = db
 
+# Expose cache manager on app.state so health checks (and any other
+# read-only consumer) can resolve a Redis-or-fallback client without
+# importing module-level singletons. Defensive: cache_manager import is
+# wrapped because a misconfigured cache must NEVER prevent server boot.
+try:
+    # The module-level singleton is named ``cache`` (created at import
+    # time, see ``cache_manager.py``: ``cache = CacheManager()``).
+    from cache_manager import cache as _cache_manager_singleton
+    app.state.cache_manager = _cache_manager_singleton
+except Exception as _cm_err:
+    app.state.cache_manager = None
+    logger.warning("cache_manager not exposed on app.state: %s", _cm_err)
+
 # ── Middleware (via bootstrap) ──────────────────────────────────────
 from bootstrap.middleware_registry import register_middleware  # noqa: E402
 

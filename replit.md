@@ -49,7 +49,7 @@ Two workflows:
 
 Vite proxies `/api` requests to backend at `http://localhost:8000`.
 
-Demo login: `demo@hotel.com` / `demo123` (super_admin role)
+Demo login: `demo@syroce.com` / `demo123` (super_admin role)
 
 JWT_SECRET is set as a persistent environment variable (shared). Tokens survive backend restarts and last 7 days (168 hours). Users stay logged in until they explicitly log out or the token expires.
 
@@ -128,8 +128,9 @@ Reduced from 1309 lines via dialog extraction.
 - `AccountingDialogs.jsx` — ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog
 
 ## Authentication Overhaul (Apr 2026 — hotel_id + username)
+> **2026-04-26 simplification**: The hotel-staff login UI was reduced to **email + password only** (Hotel ID field removed) per user request. The backend continues to accept all three modes — `email+password`, `hotel_id+username+password`, and pure `username` — so existing API clients keep working. The historical multi-field design below is preserved for context.
 - **Login model**: Hotel staff now authenticate with `hotel_id` (6-digit unique numeric string) + `username` (unique within tenant) + `password`. Guests still use email + password (legacy path retained in `/api/auth/login`).
-- **Demo credentials**: `hotel_id=100001`, `username=demo`, `password=demo123` (tenant `57986e4f-7977-44c9-bed9-05aadf38853b`). Shown in an info banner on the login form with a "Demo bilgileri otomatik doldur" button.
+- **Demo credentials**: Use **`demo@syroce.com` / `demo123`** (super_admin role on tenant `57986e4f-7977-44c9-bed9-05aadf38853b`). The legacy hotel-id form (`hotel_id=100001`, `username=demo`, `password=demo123`) still works via direct API call but is no longer surfaced in the UI.
 - **Schemas** (`backend/models/schemas/identity.py`): `Tenant.hotel_id`, `User.username`, `UserLogin` (hotel_id|username|email + password), `ChangePasswordRequest`.
 - **Migration**: `backend/scripts/migrate_hotel_id_username.py` — idempotent backfill (assigns hotel_id and derives username from email local-part). Unique indexes: `tenants.hotel_id` (sparse), `users.(tenant_id, username)` partial.
 - **New endpoints**:

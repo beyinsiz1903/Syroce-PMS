@@ -229,6 +229,18 @@ class WebSocketRedisAdapter:
                     )
                 except asyncio.CancelledError:
                     return
+                except (TimeoutError, asyncio.TimeoutError) as e:
+                    # Pub/sub idle socket timeout (default redis socket_timeout
+                    # ~30s). No message arrived in the read window — this is
+                    # normal for low-traffic channels, NOT an error. Quiet
+                    # reconnect keeps the listener alive without log spam.
+                    self._metrics["last_listen_error"] = (
+                        f"IdleTimeout: {str(e)[:120]}"
+                    )
+                    self._metrics["last_listen_error_at"] = (
+                        datetime.now(UTC).isoformat()
+                    )
+                    logger.debug("WS pubsub idle timeout; reconnecting")
                 except Exception as e:
                     self._metrics["last_listen_error"] = (
                         f"{type(e).__name__}: {str(e)[:200]}"
@@ -236,6 +248,8 @@ class WebSocketRedisAdapter:
                     self._metrics["last_listen_error_at"] = (
                         datetime.now(UTC).isoformat()
                     )
+                    # Genuine connection failure (network blip, Redis restart)
+                    # — keep WARNING so operators still notice real outages.
                     logger.warning(
                         f"WS pubsub listener error: {e}; attempting reconnect"
                     )
@@ -284,7 +298,11 @@ class WebSocketRedisAdapter:
                     await new_pubsub.subscribe(channel)
                 self._pubsub = new_pubsub
                 self._metrics["reconnects"] += 1
-                logger.info(
+                # Idle-timeout reconnects are routine (every ~socket_timeout
+                # seconds for low-traffic channels). Surface them at DEBUG
+                # to avoid log spam; operators can still see them via
+                # ``get_metrics()['reconnects']``.
+                logger.debug(
                     "WS pubsub reconnected; re-subscribed to "
                     f"{len(channels)} channel(s)"
                 )
