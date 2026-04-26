@@ -259,6 +259,143 @@ async def normalized_alerts(current_user: User = Depends(get_current_user)):
         )
 
 
+@router.get("/normalized/ws-bridge")
+async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
+    """Multi-instance live chat bridge (ws_redis_adapter) health.
+
+    Surfaces the cumulative pub/sub counters and last error so an outage
+    of the cross-instance WebSocket fan-out is visible on the System
+    Health dashboard instead of silently breaking real-time delivery.
+    """
+    try:
+        from infra.ws_redis_adapter import ws_redis_adapter
+    except Exception as e:
+        return _health_response(
+            status="degraded", severity="warning",
+            scope_type="global", scope_id="ws-bridge",
+            detail={"active": False, "error": str(e)[:200]},
+            degraded_reason="ws_redis_adapter not importable",
+            evidence_summary="bridge module unavailable",
+        )
+
+    try:
+        from modules.observability.alerting_engine import (
+            DEFAULT_THRESHOLDS,
+            AlertType,
+        )
+        threshold = int(
+            DEFAULT_THRESHOLDS.get(AlertType.WS_BRIDGE_PUBLISH_ERRORS, {}).get("count", 10)
+        )
+    except Exception:
+        threshold = 10
+
+    try:
+        m = ws_redis_adapter.get_metrics()
+        active = bool(m.get("active"))
+        instance_id = m.get("instance_id") or ""
+        publish_errors = int(m.get("publish_errors") or 0)
+        published = int(m.get("messages_published") or 0)
+        received = int(m.get("messages_received") or 0)
+        forwarded = int(m.get("messages_forwarded") or 0)
+        channels = list(m.get("subscribed_channels") or [])
+        channels_active = int(m.get("channels_active") or len(channels))
+        last_publish_error = m.get("last_publish_error")
+        last_publish_error_at = m.get("last_publish_error_at")
+        last_listen_error = m.get("last_listen_error")
+        last_listen_error_at = m.get("last_listen_error_at")
+
+        # The single-instance fallback is intentional in dev / single-pod
+        # deployments; surface it as informational rather than degraded.
+        single_instance = (not active) and (
+            not instance_id or instance_id == "single-instance"
+        )
+
+        if single_instance:
+            status = "healthy"
+            severity = "info"
+            degraded_reason = None
+        elif not active:
+            status = "degraded"
+            severity = "warning"
+            degraded_reason = (
+                "Bridge inactive — Redis pub/sub unavailable; "
+                "cross-instance events will not be delivered."
+            )
+        elif publish_errors >= threshold * 5:
+            status = "critical"
+            severity = "critical"
+            degraded_reason = (
+                f"{publish_errors} publish errors observed "
+                f"(critical threshold {threshold * 5})"
+            )
+        elif publish_errors >= threshold:
+            status = "degraded"
+            severity = "warning"
+            degraded_reason = (
+                f"{publish_errors} publish errors observed "
+                f"(threshold {threshold})"
+            )
+        else:
+            status = "healthy"
+            severity = "info"
+            degraded_reason = None
+
+        critical_blockers: list[str] = []
+        if status == "critical":
+            critical_blockers.append(degraded_reason or "WS bridge in critical state")
+
+        suggested_action = None
+        if status == "critical":
+            suggested_action = "Investigate Redis pub/sub and ws_redis_adapter logs"
+        elif status == "degraded" and not active:
+            suggested_action = "Restore Redis connectivity for multi-instance delivery"
+        elif status == "degraded":
+            suggested_action = "Review last_publish_error and Redis health"
+
+        evidence = (
+            f"{published} pub / {received} recv / {forwarded} fwd, "
+            f"{publish_errors} errors, {channels_active} channels, "
+            f"mode={'redis' if active else ('single-instance' if single_instance else 'inactive')}"
+        )
+
+        return _health_response(
+            status=status,
+            severity=severity,
+            scope_type="global",
+            scope_id="ws-bridge",
+            detail={
+                "active": active,
+                "single_instance_mode": single_instance,
+                "instance_id": instance_id,
+                "messages_published": published,
+                "messages_received": received,
+                "messages_forwarded": forwarded,
+                "publish_errors": publish_errors,
+                "channels_active": channels_active,
+                "subscribed_channels": channels,
+                "last_publish_error": last_publish_error,
+                "last_publish_error_at": last_publish_error_at,
+                "last_listen_error": last_listen_error,
+                "last_listen_error_at": last_listen_error_at,
+                "publish_error_threshold": threshold,
+                "publish_error_critical_threshold": threshold * 5,
+            },
+            action_available=status != "healthy",
+            suggested_action=suggested_action,
+            degraded_reason=degraded_reason,
+            critical_blockers=critical_blockers,
+            evidence_summary=evidence,
+        )
+    except Exception as e:
+        return _health_response(
+            status="degraded", severity="warning",
+            scope_type="global", scope_id="ws-bridge",
+            detail={"active": False, "error": str(e)[:200]},
+            degraded_reason="Failed to read ws_redis_adapter metrics",
+            evidence_summary="metrics read failed",
+        )
+
+
 @router.get("/normalized/overview")
 async def normalized_overview(current_user: User = Depends(get_current_user)):
     """Aggregated normalized health overview across all subsystems."""
@@ -267,8 +404,9 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
     sec = await normalized_security(current_user)
     obs = await normalized_observability(current_user)
     al = await normalized_alerts(current_user)
+    wsb = await normalized_ws_bridge(current_user)
 
-    subsystems = [cm, wk, sec, obs, al]
+    subsystems = [cm, wk, sec, obs, al, wsb]
     overall_severity = "critical" if any(s["severity"] == "critical" for s in subsystems) else (
         "warning" if any(s["severity"] == "warning" for s in subsystems) else "info"
     )
@@ -288,5 +426,6 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
             "security": sec,
             "observability": obs,
             "alerts": al,
+            "ws_bridge": wsb,
         },
     }

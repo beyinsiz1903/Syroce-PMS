@@ -32,6 +32,8 @@ class AlertType:
     ABNORMAL_RETRY_BURST = "abnormal_retry_burst"
     HIGH_ERROR_RATE = "high_error_rate"
     DB_CONNECTION_ISSUE = "db_connection_issue"
+    WS_BRIDGE_PUBLISH_ERRORS = "ws_bridge_publish_errors"
+    WS_BRIDGE_INACTIVE = "ws_bridge_inactive"
 
 
 # Alert thresholds
@@ -45,6 +47,8 @@ DEFAULT_THRESHOLDS = {
     AlertType.EXPORT_QUEUE_BACKLOG: {"max_pending": 20},
     AlertType.ABNORMAL_RETRY_BURST: {"count": 50, "window_minutes": 10},
     AlertType.HIGH_ERROR_RATE: {"rate": 0.05, "min_requests": 100},
+    AlertType.WS_BRIDGE_PUBLISH_ERRORS: {"count": 10, "delta_count": 5, "window_minutes": 15},
+    AlertType.WS_BRIDGE_INACTIVE: {},
 }
 
 # Severity mapping per alert type
@@ -61,6 +65,8 @@ SEVERITY_MAP = {
     AlertType.ABNORMAL_RETRY_BURST: AlertSeverity.HIGH,
     AlertType.HIGH_ERROR_RATE: AlertSeverity.CRITICAL,
     AlertType.DB_CONNECTION_ISSUE: AlertSeverity.CRITICAL,
+    AlertType.WS_BRIDGE_PUBLISH_ERRORS: AlertSeverity.HIGH,
+    AlertType.WS_BRIDGE_INACTIVE: AlertSeverity.WARNING,
 }
 
 # Runbook hints
@@ -77,6 +83,16 @@ RUNBOOK_HINTS = {
     AlertType.ABNORMAL_RETRY_BURST: "Check messaging providers. Review retry policies. Investigate root cause.",
     AlertType.HIGH_ERROR_RATE: "Check application logs. Review recent deployments. Investigate error patterns.",
     AlertType.DB_CONNECTION_ISSUE: "Check MongoDB connection. Review connection pool settings. Check disk space.",
+    AlertType.WS_BRIDGE_PUBLISH_ERRORS: (
+        "Multi-instance live chat bridge is failing to publish to Redis. "
+        "Check REDIS_URL connectivity, Redis pub/sub health, and "
+        "ws_redis_adapter.get_metrics() for last_publish_error details."
+    ),
+    AlertType.WS_BRIDGE_INACTIVE: (
+        "Multi-instance live chat bridge is running in local-only mode. "
+        "Cross-instance WebSocket events will not be delivered. "
+        "Verify Redis is reachable on startup."
+    ),
 }
 
 
@@ -89,6 +105,11 @@ class ProductionAlertEngine:
         self._alert_counts: dict[str, int] = defaultdict(int)
         self._suppressed_count = 0
         self._active_alerts: list[dict] = []
+        # Baselines used to compute deltas between evaluations (e.g., for the
+        # WS Redis bridge, where only the cumulative `publish_errors` counter
+        # is exposed). Allows the alert to re-fire when new failures occur
+        # after the cooldown without spamming on a stale total.
+        self._baselines: dict[str, int] = {}
 
     async def evaluate_all(self) -> list[dict]:
         """Run all threshold checks and generate alerts."""
@@ -203,7 +224,88 @@ class ProductionAlertEngine:
         except Exception:
             logger.warning("alerting: abnormal_retry_burst check failed", exc_info=True)
 
-        # 7. DB connection check
+        # 7. Multi-instance live chat (WS Redis bridge) health
+        try:
+            from infra.ws_redis_adapter import ws_redis_adapter
+
+            ws_metrics = ws_redis_adapter.get_metrics()
+            instance_id = ws_metrics.get("instance_id") or ""
+            active = bool(ws_metrics.get("active"))
+            publish_errors = int(ws_metrics.get("publish_errors") or 0)
+
+            # Only treat "inactive" as alert-worthy when a multi-instance
+            # deployment was actually intended (instance_id is set and is
+            # not the single-instance fallback marker).
+            if not active and instance_id and instance_id != "single-instance":
+                alert = await self._fire_alert(
+                    AlertType.WS_BRIDGE_INACTIVE,
+                    "Multi-Instance Chat Bridge Inactive",
+                    "ws_redis_adapter is not active — cross-instance "
+                    "WebSocket events will not be delivered.",
+                    context={
+                        "instance_id": instance_id,
+                        "subscribed_channels": ws_metrics.get("subscribed_channels", []),
+                    },
+                )
+                if alert:
+                    alerts.append(alert)
+
+            cfg = DEFAULT_THRESHOLDS[AlertType.WS_BRIDGE_PUBLISH_ERRORS]
+            threshold = int(cfg["count"])
+            delta_threshold = int(cfg.get("delta_count", threshold))
+            baseline = int(self._baselines.get("ws_bridge_publish_errors", 0))
+
+            # Counter is in-memory in ws_redis_adapter, so a process restart
+            # (or reinitialise) drops it back toward zero. If the live counter
+            # is below our stored baseline, the adapter clearly reset — drop
+            # the baseline so we can detect the next threshold crossing
+            # immediately instead of waiting for it to climb past the old
+            # high-water mark.
+            if publish_errors < baseline:
+                baseline = 0
+                self._baselines["ws_bridge_publish_errors"] = 0
+
+            delta = publish_errors - baseline
+
+            # Fire when either the absolute counter crosses the threshold
+            # for the first time, or when new failures (delta) accumulate
+            # past the per-window threshold AFTER an earlier fire.
+            should_fire = (
+                publish_errors >= threshold and baseline == 0
+            ) or (
+                baseline > 0
+                and delta_threshold > 0
+                and delta >= delta_threshold
+            )
+
+            if should_fire:
+                alert = await self._fire_alert(
+                    AlertType.WS_BRIDGE_PUBLISH_ERRORS,
+                    "Multi-Instance Chat Bridge Publish Errors",
+                    f"WS Redis bridge has {publish_errors} publish errors "
+                    f"(+{delta} since last alert).",
+                    context={
+                        "publish_errors": publish_errors,
+                        "delta": delta,
+                        "messages_published": ws_metrics.get("messages_published", 0),
+                        "messages_received": ws_metrics.get("messages_received", 0),
+                        "messages_forwarded": ws_metrics.get("messages_forwarded", 0),
+                        "channels_active": ws_metrics.get("channels_active", 0),
+                        "active": active,
+                        "instance_id": instance_id,
+                        "last_publish_error": ws_metrics.get("last_publish_error"),
+                        "last_publish_error_at": ws_metrics.get("last_publish_error_at"),
+                        "threshold": threshold,
+                        "delta_threshold": delta_threshold,
+                    },
+                )
+                if alert:
+                    alerts.append(alert)
+                    self._baselines["ws_bridge_publish_errors"] = publish_errors
+        except Exception:
+            logger.warning("alerting: ws_bridge check failed", exc_info=True)
+
+        # 8. DB connection check
         try:
             await db.command("ping")
         except Exception as e:

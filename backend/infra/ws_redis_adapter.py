@@ -35,6 +35,10 @@ class WebSocketRedisAdapter:
             "messages_forwarded": 0,
             "publish_errors": 0,
             "channels_active": 0,
+            "last_publish_error": None,
+            "last_publish_error_at": None,
+            "last_listen_error": None,
+            "last_listen_error_at": None,
         }
 
     async def initialize(self, redis_client, instance_id: str, local_handler=None):
@@ -151,6 +155,8 @@ class WebSocketRedisAdapter:
                 self._metrics["messages_published"] += 1
             except Exception as e:
                 self._metrics["publish_errors"] += 1
+                self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
                 logger.error(f"WS publish error ({room}): {e}")
 
     async def _listen(self):
@@ -174,10 +180,14 @@ class WebSocketRedisAdapter:
                         )
                         self._metrics["messages_forwarded"] += 1
                 except Exception as e:
+                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     logger.error(f"WS message parse error: {e}")
         except asyncio.CancelledError:
             pass
         except Exception as e:
+            self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
             logger.error(f"WS listener error: {e}")
 
     async def close(self):

@@ -9,7 +9,7 @@ import Layout from "../components/Layout";
 import {
   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, ArrowLeft, Loader2,
-  Database, Radio, Zap, TrendingUp, Users, Building2, Layers
+  Database, Radio, Zap, TrendingUp, Users, Building2, Layers, Network
 } from "lucide-react";
 
 const API = "";
@@ -122,6 +122,60 @@ function DataRow({ label, value, valueClass }) {
   );
 }
 
+/* ── WS Bridge (Multi-Instance Live Chat) Panel ─────────── */
+function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
+  if (!wsBridge) return null;
+  const detail = wsBridge.detail || {};
+  const status = wsBridge.status || "unknown";
+  const errors = detail.publish_errors ?? 0;
+  const threshold = detail.publish_error_threshold ?? 10;
+  const errorsClass = errors >= threshold ? "text-red-400" : (errors > 0 ? "text-amber-400" : "text-gray-900");
+  const lastErrAt = detail.last_publish_error_at
+    ? new Date(detail.last_publish_error_at).toLocaleString()
+    : null;
+  const mode = detail.single_instance_mode
+    ? "Single instance (Redis disabled)"
+    : (detail.active ? "Active (Redis pub/sub)" : "Inactive");
+
+  return (
+    <PanelCard
+      testId={`${testIdPrefix}-panel`}
+      title="Multi-Instance Chat Bridge"
+      icon={Network}
+      status={status}
+    >
+      <div className="space-y-2 text-xs">
+        <DataRow label="Mode" value={mode} />
+        {detail.instance_id && <DataRow label="Instance" value={detail.instance_id} />}
+        <DataRow label="Active Channels" value={detail.channels_active ?? 0} />
+        <DataRow label="Messages Published" value={detail.messages_published ?? 0} />
+        <DataRow label="Messages Received" value={detail.messages_received ?? 0} />
+        <DataRow label="Messages Forwarded" value={detail.messages_forwarded ?? 0} />
+        <DataRow
+          label={`Publish Errors (≥${threshold} alerts)`}
+          value={errors}
+          valueClass={errorsClass}
+        />
+        {detail.last_publish_error && (
+          <div data-testid={`${testIdPrefix}-last-error`} className="mt-2 p-2 rounded bg-red-50 border border-red-200">
+            <p className="text-[11px] font-semibold text-red-700">Last publish error</p>
+            <p className="text-[11px] text-red-600 break-all">{detail.last_publish_error}</p>
+            {lastErrAt && <p className="text-[10px] text-red-500/80 mt-0.5">{lastErrAt}</p>}
+          </div>
+        )}
+        {wsBridge.degraded_reason && (
+          <p data-testid={`${testIdPrefix}-degraded`} className="text-[11px] text-amber-500/90">
+            {wsBridge.degraded_reason}
+          </p>
+        )}
+        {wsBridge.suggested_action && (
+          <p className="text-[11px] text-sky-500/80">{wsBridge.suggested_action}</p>
+        )}
+      </div>
+    </PanelCard>
+  );
+}
+
 /* ── GM Property Panel ──────────────────────────────────── */
 function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
   const alertCount = alerts?.count || 0;
@@ -172,7 +226,7 @@ function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
 }
 
 /* ── Admin Tenant Panel ─────────────────────────────────── */
-function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, wsBridge, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
 
@@ -259,6 +313,9 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
             <EmptyState icon={CheckCircle2} message="No active alerts" />
           )}
         </PanelCard>
+
+        {/* Multi-instance live chat bridge */}
+        <WSBridgePanel wsBridge={wsBridge} testIdPrefix="admin-ws-bridge" />
       </div>
 
       {/* Audit & Observability */}
@@ -282,7 +339,7 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
 }
 
 /* ── Superadmin Global Panel ────────────────────────────── */
-function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, wsBridge, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
 
@@ -376,6 +433,9 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
             <EmptyState icon={CheckCircle2} message="No active alerts globally" />
           )}
         </PanelCard>
+
+        {/* Multi-instance live chat bridge */}
+        <WSBridgePanel wsBridge={wsBridge} testIdPrefix="sa-ws-bridge" />
       </div>
 
       {/* Audit & Observability */}
@@ -583,6 +643,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
 
   const userRole = roleDashboard?.role || user?.role || "admin";
   const userScope = roleDashboard?.scope || "";
+  const wsBridge = normalizedOverview?.subsystems?.ws_bridge || null;
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="system-health">
@@ -657,6 +718,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
             cmStatus={cmStatus} queueHealth={queueHealth} secAudit={secAudit}
             rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
             alerts={alerts} stuckTasks={stuckTasks} auditMetrics={auditMetrics}
+            wsBridge={wsBridge}
             triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
             triggerRecon={triggerRecon} reconLoading={reconLoading}
           />
@@ -668,6 +730,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
             rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
             alerts={alerts} stuckTasks={stuckTasks} metrics={metrics}
             auditMetrics={auditMetrics} normalizedOverview={normalizedOverview}
+            wsBridge={wsBridge}
             triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
             triggerRecon={triggerRecon} reconLoading={reconLoading}
           />
