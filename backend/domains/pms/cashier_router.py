@@ -1,15 +1,56 @@
+import logging
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.database import db
+from core.folio_ledger_service import FolioLedgerService
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["PMS / Cashier"])
+
+_ledger = FolioLedgerService()
+
+
+async def _find_active_booking_by_room(tenant_id: str, room_number: str) -> dict | None:
+    """Odadaki aktif misafiri (checked_in / in_house) döner."""
+    if not room_number:
+        return None
+    try:
+        return await db.bookings.find_one({
+            "tenant_id": tenant_id,
+            "room_number": str(room_number),
+            "status": {"$in": ["checked_in", "in_house"]},
+        }, {"_id": 0})
+    except Exception as e:
+        logger.warning(f"active booking lookup failed: {e}")
+        return None
+
+
+async def _find_open_folio_for_booking(tenant_id: str, booking_id: str) -> dict | None:
+    """Booking'e bağlı açık (status=open) folio'yu bulur, yoksa herhangi bir folio'yu döner."""
+    if not booking_id:
+        return None
+    try:
+        f = await db.folios.find_one(
+            {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
+            {"_id": 0},
+        )
+        if not f:
+            f = await db.folios.find_one(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                {"_id": 0},
+            )
+        return f
+    except Exception as e:
+        logger.warning(f"folio lookup failed: {e}")
+        return None
 
 
 def _safe_float(val, default=0.0):
@@ -199,16 +240,24 @@ async def shift_history(skip: int = 0, limit: int = 20, current_user: User = Dep
     return {"shifts": shifts, "total": total}
 
 
+# Atlas 500 koleksiyon limitini aşmamak için laundry_orders'ı da
+# tenant_settings dokümanı içinde array olarak tutuyoruz.
+
+async def _get_laundry_orders_array(tenant_id: str) -> list[dict]:
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0, "laundry_orders": 1}
+    )
+    return ((settings or {}).get("laundry_orders") or [])
+
+
 @router.get("/laundry/orders")
 async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None, current_user: User = Depends(get_current_user)):
-    query = {"tenant_id": current_user.tenant_id}
+    orders = await _get_laundry_orders_array(current_user.tenant_id)
     if status:
-        query["status"] = status
-    cursor = db.laundry_orders.find(query).sort("created_at", -1).skip(skip).limit(limit)
-    orders = await cursor.to_list(limit)
-    for o in orders:
-        o["id"] = str(o.pop("_id"))
-    return {"orders": orders}
+        orders = [o for o in orders if o.get("status") == status]
+    # En yeni önce
+    orders.sort(key=lambda o: o.get("created_at") or "", reverse=True)
+    return {"orders": orders[skip:skip + limit]}
 
 
 @router.post("/laundry/orders")
@@ -221,22 +270,44 @@ async def create_laundry_order(body: dict = Body(...), current_user: User = Depe
         raise HTTPException(status_code=400, detail="En az bir urun gerekli")
     now = datetime.utcnow()
     total = sum(_safe_float(i.get("total", 0)) for i in body["items"])
+
+    # Aktif misafir/folio autofill (frontend göndermediyse de bağlamak için)
+    booking_id = body.get("booking_id") or ""
+    folio_id = body.get("folio_id") or ""
+    guest_name = body.get("guest_name") or ""
+    if not booking_id:
+        active = await _find_active_booking_by_room(current_user.tenant_id, body.get("room_number", ""))
+        if active:
+            booking_id = active.get("id") or active.get("booking_id") or ""
+            if not guest_name:
+                guest_name = active.get("guest_name") or active.get("primary_guest_name") or ""
+    if booking_id and not folio_id:
+        folio = await _find_open_folio_for_booking(current_user.tenant_id, booking_id)
+        if folio:
+            folio_id = folio.get("id") or ""
+
     doc = {
-        "_id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
+        "id": str(uuid.uuid4()),
         "room_number": body.get("room_number", ""),
-        "guest_name": body.get("guest_name", ""),
+        "guest_name": guest_name,
         "service_type": body.get("service_type", "wash_iron"),
         "items": body.get("items", []),
         "total": total,
         "notes": body.get("notes", ""),
         "priority": body.get("priority", "normal"),
         "status": "pending",
+        "booking_id": booking_id,
+        "folio_id": folio_id,
+        "folio_charged": False,
+        "folio_entry_id": None,
         "created_at": now.isoformat(),
         "created_by": current_user.email,
     }
-    await db.laundry_orders.insert_one(doc)
-    doc["id"] = doc.pop("_id")
+    await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$setOnInsert": {"tenant_id": current_user.tenant_id}, "$push": {"laundry_orders": doc}},
+        upsert=True,
+    )
     return doc
 
 
@@ -244,25 +315,293 @@ async def create_laundry_order(body: dict = Body(...), current_user: User = Depe
 async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
-    update_fields = {k: v for k, v in body.items() if k not in ("id", "_id", "tenant_id")}
+    update_fields = {k: v for k, v in body.items() if k not in ("id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
-    result = await db.laundry_orders.update_one(
-        {"_id": order_id, "tenant_id": current_user.tenant_id},
-        {"$set": update_fields}
+    set_doc = {f"laundry_orders.$.{k}": v for k, v in update_fields.items()}
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
+        {"$set": set_doc},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Siparis bulunamadi")
-    return {"id": order_id, "status": update_fields.get("status", "updated")}
+
+    # status=delivered → folio'ya LAUNDRY charge (idempotent)
+    folio_charge_result = None
+    if update_fields.get("status") == "delivered":
+        # Atomik claim: yalnızca folio_charged=false ise true'ya çevir.
+        # Concurrent isteklerden sadece biri ledger'a charge POST eder.
+        claim = await db.tenant_settings.update_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "laundry_orders": {"$elemMatch": {"id": order_id, "folio_charged": {"$ne": True}}},
+            },
+            {"$set": {"laundry_orders.$.folio_charged": True}},
+        )
+        # Ilgili siparisi tekrar oku
+        orders = await _get_laundry_orders_array(current_user.tenant_id)
+        order = next((o for o in orders if o.get("id") == order_id), None)
+        if order and claim.modified_count > 0:
+            booking_id = order.get("booking_id") or ""
+            folio_id = order.get("folio_id") or ""
+            # Eski siparişler için lookup
+            if not booking_id:
+                active = await _find_active_booking_by_room(
+                    current_user.tenant_id, order.get("room_number", "")
+                )
+                if active:
+                    booking_id = active.get("id") or active.get("booking_id") or ""
+            if booking_id and not folio_id:
+                folio = await _find_open_folio_for_booking(current_user.tenant_id, booking_id)
+                if folio:
+                    folio_id = folio.get("id") or ""
+
+            if folio_id and booking_id:
+                try:
+                    items_desc = ", ".join(
+                        f"{i.get('name', '?')} x{i.get('quantity', 1)}"
+                        for i in (order.get("items") or [])
+                    )
+                    desc = f"Çamaşırhane - Oda {order.get('room_number', '?')}"
+                    if items_desc:
+                        desc += f" ({items_desc})"
+                    posted = await _ledger.post_charge(
+                        tenant_id=current_user.tenant_id,
+                        folio_id=folio_id,
+                        booking_id=booking_id,
+                        amount=_safe_float(order.get("total", 0)),
+                        description=desc,
+                        charge_code="LAUNDRY",
+                        idempotency_key=f"laundry:{order_id}",
+                        posted_by=current_user.email,
+                        metadata={
+                            "laundry_order_id": order_id,
+                            "service_type": order.get("service_type"),
+                            "items": order.get("items", []),
+                        },
+                    )
+                    # folio_charged zaten claim aşamasında set edilmişti;
+                    # burada entry_id/folio_id/booking_id metadata'yı yansıt
+                    await db.tenant_settings.update_one(
+                        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
+                        {"$set": {
+                            "laundry_orders.$.folio_entry_id": posted.get("entry_id"),
+                            "laundry_orders.$.folio_id": folio_id,
+                            "laundry_orders.$.booking_id": booking_id,
+                        }},
+                    )
+                    folio_charge_result = {
+                        "charged": True,
+                        "amount": _safe_float(order.get("total", 0)),
+                        "entry_id": posted.get("entry_id"),
+                        "new_balance": posted.get("new_balance"),
+                    }
+                except Exception as e:
+                    # Charge başarısız → claim'i geri al ki yeniden denenebilsin
+                    logger.error(f"laundry folio charge failed for {order_id}: {e}")
+                    await db.tenant_settings.update_one(
+                        {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
+                        {"$set": {"laundry_orders.$.folio_charged": False}},
+                    )
+                    folio_charge_result = {"charged": False, "error": str(e)}
+            else:
+                # Booking/folio bulunamadı → claim'i geri al
+                await db.tenant_settings.update_one(
+                    {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
+                    {"$set": {"laundry_orders.$.folio_charged": False}},
+                )
+                folio_charge_result = {
+                    "charged": False,
+                    "reason": "no_active_booking_or_folio",
+                }
+
+    return {
+        "id": order_id,
+        "status": update_fields.get("status", "updated"),
+        "folio_charge": folio_charge_result,
+    }
 
 
 @router.delete("/laundry/orders/{order_id}")
 async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
-    result = await db.laundry_orders.delete_one(
-        {"_id": order_id, "tenant_id": current_user.tenant_id}
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$pull": {"laundry_orders": {"id": order_id}}},
     )
-    if result.deleted_count == 0:
+    if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Siparis bulunamadi")
     return {"id": order_id, "status": "deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# Çamaşırhane Fiyat Yönetimi (tenant_settings.laundry_items)
+# Atlas 500-koleksiyon limiti nedeniyle ayrı koleksiyon yerine
+# mevcut tenant_settings dokümanı içinde tutulur.
+# ═══════════════════════════════════════════════════════════════
+
+DEFAULT_LAUNDRY_ITEMS = [
+    {"code": "shirt", "name": "Gomlek", "price": 30.0},
+    {"code": "pants", "name": "Pantolon", "price": 40.0},
+    {"code": "suit", "name": "Takim Elbise", "price": 80.0},
+    {"code": "dress", "name": "Elbise", "price": 60.0},
+    {"code": "tshirt", "name": "Tisort", "price": 20.0},
+    {"code": "underwear", "name": "Ic Camasiri", "price": 15.0},
+    {"code": "socks", "name": "Corap (Cift)", "price": 10.0},
+    {"code": "coat", "name": "Mont/Kaban", "price": 100.0},
+    {"code": "skirt", "name": "Etek", "price": 35.0},
+    {"code": "scarf", "name": "Atki/Sal", "price": 25.0},
+]
+
+
+def _seed_default_items() -> list[dict]:
+    now = datetime.utcnow().isoformat()
+    return [
+        {
+            "id": str(uuid.uuid4()),
+            "code": it["code"],
+            "name": it["name"],
+            "price": it["price"],
+            "active": True,
+            "created_at": now,
+        }
+        for it in DEFAULT_LAUNDRY_ITEMS
+    ]
+
+
+async def _get_laundry_items_array(tenant_id: str) -> list[dict]:
+    """tenant_settings'ten laundry_items dizisini döner; yoksa default'ları seed eder."""
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1}
+    )
+    items = (settings or {}).get("laundry_items")
+    if items is None:
+        seeded = _seed_default_items()
+        try:
+            # Race-safe seed: yalnızca alan mevcut değilse ekle (concurrent
+            # $push ile veri kaybı olmasın diye filter'a $exists:false koyduk)
+            await db.tenant_settings.update_one(
+                {"tenant_id": tenant_id, "laundry_items": {"$exists": False}},
+                {"$setOnInsert": {"tenant_id": tenant_id}, "$set": {"laundry_items": seeded}},
+                upsert=True,
+            )
+            # Yeniden oku (başka bir istek seed etmiş olabilir)
+            settings2 = await db.tenant_settings.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1}
+            )
+            return ((settings2 or {}).get("laundry_items")) or seeded
+        except Exception as e:
+            logger.warning(f"laundry_items seed failed: {e}; returning defaults in-memory")
+            return seeded
+    return items
+
+
+@router.get("/laundry/items")
+async def get_laundry_items(current_user: User = Depends(get_current_user)):
+    """Tenant'a ait çamaşırhane fiyat listesi (tenant_settings.laundry_items)."""
+    items = await _get_laundry_items_array(current_user.tenant_id)
+    items_sorted = sorted(items, key=lambda x: (x.get("name") or "").lower())
+    return {"items": items_sorted}
+
+
+@router.post("/laundry/items")
+async def create_laundry_item(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
+    code = (body.get("code") or "").strip().lower()
+    name = (body.get("name") or "").strip()
+    price = _safe_float(body.get("price", 0))
+    if not code or not name:
+        raise HTTPException(status_code=400, detail="Kod ve ad zorunludur")
+    if price < 0:
+        raise HTTPException(status_code=400, detail="Fiyat negatif olamaz")
+
+    items = await _get_laundry_items_array(current_user.tenant_id)
+    if any((it.get("code") or "").lower() == code for it in items):
+        raise HTTPException(status_code=409, detail=f"'{code}' kodu zaten mevcut")
+
+    new_item = {
+        "id": str(uuid.uuid4()),
+        "code": code,
+        "name": name,
+        "price": price,
+        "active": bool(body.get("active", True)),
+        "created_at": datetime.utcnow().isoformat(),
+        "created_by": current_user.email,
+    }
+    await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$setOnInsert": {"tenant_id": current_user.tenant_id}, "$push": {"laundry_items": new_item}},
+        upsert=True,
+    )
+    return new_item
+
+
+@router.put("/laundry/items/{item_id}")
+async def update_laundry_item(item_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
+    set_fields = {}
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Ad bos olamaz")
+        set_fields["name"] = name
+    if "price" in body:
+        price = _safe_float(body.get("price", 0))
+        if price < 0:
+            raise HTTPException(status_code=400, detail="Fiyat negatif olamaz")
+        set_fields["price"] = price
+    if "active" in body:
+        set_fields["active"] = bool(body["active"])
+    if not set_fields:
+        raise HTTPException(status_code=400, detail="Guncellenecek alan yok")
+    set_fields["updated_at"] = datetime.utcnow().isoformat()
+
+    update_doc = {f"laundry_items.$.{k}": v for k, v in set_fields.items()}
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id, "laundry_items.id": item_id},
+        {"$set": update_doc},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Urun bulunamadi")
+    return {"id": item_id, **set_fields}
+
+
+@router.delete("/laundry/items/{item_id}")
+async def delete_laundry_item(item_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
+    result = await db.tenant_settings.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$pull": {"laundry_items": {"id": item_id}}},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Urun bulunamadi")
+    return {"id": item_id, "deleted": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# Aktif misafir lookup (oda no → guest_name + booking_id)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/bookings/active-by-room/{room_number}")
+async def get_active_booking_by_room(room_number: str, current_user: User = Depends(get_current_user)):
+    """Verilen oda no için checked_in/in_house misafiri döner."""
+    booking = await _find_active_booking_by_room(current_user.tenant_id, room_number)
+    if not booking:
+        return {"found": False}
+    folio = await _find_open_folio_for_booking(
+        current_user.tenant_id, booking.get("id") or booking.get("booking_id") or ""
+    )
+    return {
+        "found": True,
+        "booking_id": booking.get("id") or booking.get("booking_id") or "",
+        "guest_name": booking.get("guest_name") or booking.get("primary_guest_name") or "",
+        "room_number": booking.get("room_number") or room_number,
+        "check_in": booking.get("check_in"),
+        "check_out": booking.get("check_out"),
+        "status": booking.get("status"),
+        "folio_id": (folio or {}).get("id") or "",
+    }
 

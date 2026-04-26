@@ -84,7 +84,7 @@ Two URL patterns coexist in frontend code:
 - **Raporlar & Analiz** (`ReportsTab.jsx`) — 4 KPI cards (Doluluk/ADR/RevPAR/Toplam Gelir in TL), 4 sub-tabs: Günlük Özet (daily flash + summary + gelir dağılımı pie chart), Tahmin (7-gün bar+line, 30-gün area chart from forecast API), Pazar Segmenti (segment tablosu + fiyat tipi dağılımı), Kat Hizmetleri (görev KPIs + personel performans horizontal bar chart + detaylı tablo). Uses recharts (BarChart, LineChart, AreaChart, PieChart). All 9 backend report endpoints mapped correctly.
 - **Flash Rapor** (`FlashReportPanel.jsx`) — Günlük flash rapor: 4 KPI kartı (Doluluk/ADR/RevPAR/Toplam Gelir ₺), 7 operasyonel kart (Giriş/Çıkış/In-House/No-Show/Walk-In/İptal/Overstay), Departman Bazlı Gelir (renk kodlu bar + PieChart), Tahsilat Durumu (toplam/tahsil/açık bakiye + progress bar), yazdırma desteği. Backend `/reports/flash-report` endpoint düzeltildi (değişken atama + return eklendi). Fallback: API başarısız olursa props'tan hesaplar.
 - **Room Timeline** (`RoomTimelineView.jsx`) — Gantt/timeline view with rooms on Y-axis, booking bars colored by status
-- **Laundry Management** (`LaundryTab.jsx`) — order tracking, status updates, room-based laundry orders
+- **Laundry Management** (`LaundryTab.jsx`) — Siparişler/Ayarlar iç sekmeleri. Oda no `onBlur` → aktif misafir+booking+folio autofill. Ayarlar'da fiyat listesi CRUD (kod/ad/birim/fiyat/aktif). Sipariş `delivered` durumuna geçince folio'ya otomatik LAUNDRY charge yansır (idempotent, toast ile bildirilir).
 - **Meeting Room Booking** (`MeetingRoomTab.jsx`) — room inventory, reservations, setup types, equipment tracking
 - **Print Templates** (`PrintTemplates.jsx`) — registration card, folio print, proforma invoice with hotel header
 - **Room Features** (`RoomFeaturesPanel.jsx`) — DND toggle, connecting rooms, minibar quick entry, early/late checkout rules
@@ -210,7 +210,9 @@ Aynı path'i iki farklı router dosyası tanımlıyor (kısmi göç kalıntılar
 
 ## Backend Endpoints - New Modules
 - `GET/POST /api/cashier/current-shift|open-shift|close-shift|shift-history` — Cashier management
-- `GET/POST/PATCH /api/laundry/orders` — Laundry order management
+- `GET/POST/PATCH/DELETE /api/laundry/orders` — Laundry orders (tenant_settings.laundry_orders array; Atlas 500-koleksiyon limiti workaround). POST → aktif booking/folio autofill. PATCH `status=delivered` → folio'ya LAUNDRY charge (idempotent: `laundry:{order_id}`).
+- `GET/POST/PUT/DELETE /api/laundry/items` — Çamaşırhane fiyat listesi CRUD (tenant_settings.laundry_items array, 10 default seed). 
+- `GET /api/bookings/active-by-room/{room_number}` — Aktif booking lookup (status: checked_in/in_house) + folio_id ekli.
 - `GET /api/meeting-rooms` + `GET/POST /api/meeting-rooms/reservations` — Meeting room management
 - `GET/POST/PATCH /api/concierge/requests` — Concierge desk operations
 - `GET/POST /api/banquet/events` — Banquet event order management
