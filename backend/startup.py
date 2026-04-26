@@ -477,24 +477,58 @@ async def on_startup(app):
         logger.warning(f"Persistence indexes warning: {e}")
 
     # ── Infrastructure Hardening ────────────────────────────────────
+    # The WS Redis adapter must always have its `local_handler` wired —
+    # even when Redis is unavailable — so that read-receipt and typing
+    # events still reach clients in single-instance / Redis-down mode.
+    # We initialise the adapter unconditionally and only attach a Redis
+    # client + cross-instance subscriptions when the connection succeeds.
+    from infra.ws_redis_adapter import ws_redis_adapter
+    from websocket_server import local_broadcast as _ws_local_broadcast
+
     try:
         from infra.redis_cluster import redis_cluster
         connected = await redis_cluster.connect()
         if connected:
             from infra.distributed_lock import lock_manager
             lock_manager.set_redis(redis_cluster.get_lock_client())
-            from infra.ws_redis_adapter import ws_redis_adapter
             await ws_redis_adapter.initialize(
                 redis_cluster.get_pubsub_client(),
                 redis_cluster.instance_id if hasattr(redis_cluster, "instance_id") else "main",
+                local_handler=_ws_local_broadcast,
             )
+            # Subscribe to rooms whose events must traverse instances:
+            # 'pms' carries internal_message_read / internal_user_typing
+            # so live read receipts and typing indicators work under
+            # horizontal scaling.
+            try:
+                await ws_redis_adapter.subscribe("pms")
+            except Exception as e:
+                logger.warning(f"WS Redis subscribe('pms') warning: {e}")
             from infra.horizontal_scaling import scaling_manager
             await scaling_manager.initialize(redis_cluster.get_client())
             logger.info(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
         else:
-            logger.info("ℹ️ Infrastructure Hardening: Redis unavailable, using fallback modes")
+            # Redis unavailable: keep WS adapter in local-only mode so
+            # `ws_redis_adapter.publish(...)` still fans out to clients
+            # connected to this single instance.
+            await ws_redis_adapter.initialize(
+                None, "single-instance", local_handler=_ws_local_broadcast,
+            )
+            logger.info(
+                "ℹ️ Infrastructure Hardening: Redis unavailable, "
+                "WS adapter running in local-only mode"
+            )
     except Exception as e:
         logger.warning(f"Infrastructure Hardening init warning: {e}")
+        # Last-resort: even if redis_cluster import/connect threw, keep
+        # local WS broadcasts working so chat features don't silently die.
+        try:
+            if not ws_redis_adapter._local_handler:  # type: ignore[attr-defined]
+                await ws_redis_adapter.initialize(
+                    None, "single-instance", local_handler=_ws_local_broadcast,
+                )
+        except Exception as inner:
+            logger.error(f"WS adapter local-only fallback init failed: {inner}")
 
     # ── Cloud observability ─────────────────────────────────────────
     try:

@@ -307,3 +307,167 @@ class TestWSRedisAdapter:
         assert "messages_published" in metrics
         assert "messages_received" in metrics
         assert "active" in metrics
+
+    @pytest.mark.asyncio
+    async def test_publish_delivers_locally_when_redis_unavailable(self):
+        """Regression: when Redis is not connected (single-instance mode),
+        publish() must still fan out to local clients via the local
+        handler — otherwise `broadcast_internal_message_read` and the
+        `internal_typing` relay would silently no-op in fallback mode."""
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        adapter = WebSocketRedisAdapter()
+        # Mirror the startup path that hands the adapter no Redis client
+        # but always wires the local handler.
+        received = []
+
+        async def handler(room, event, data):
+            received.append((room, event, data))
+
+        await adapter.initialize(None, "single-instance", local_handler=handler)
+        assert adapter._active is False  # Redis disabled
+
+        await adapter.publish("pms", "internal_message_read", {"reader_id": "u1"})
+        await adapter.publish("pms", "internal_user_typing", {"from_user_id": "a"})
+
+        assert received == [
+            ("pms", "internal_message_read", {"reader_id": "u1"}),
+            ("pms", "internal_user_typing", {"from_user_id": "a"}),
+        ]
+        # No publish errors because we never attempted Redis.
+        assert adapter.get_metrics()["publish_errors"] == 0
+        assert adapter.get_metrics()["messages_published"] == 0
+
+    @pytest.mark.asyncio
+    async def test_publish_delivers_locally_when_redis_active(self):
+        """When Redis is active, the publishing instance must still
+        deliver to its own clients (Redis loopback is suppressed by
+        ``source_instance`` filtering on the listener side)."""
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        published = []
+
+        class _FakeRedis:
+            async def publish(self, channel, message):
+                published.append((channel, message))
+                return 1
+
+        adapter = WebSocketRedisAdapter()
+        adapter._redis = _FakeRedis()
+        adapter._active = True
+        adapter._instance_id = "inst-A"
+
+        received = []
+
+        async def handler(room, event, data):
+            received.append((room, event, data))
+
+        adapter._local_handler = handler
+
+        await adapter.publish("pms", "internal_user_typing", {"x": 1})
+
+        # Local clients on the publishing instance got the event.
+        assert received == [("pms", "internal_user_typing", {"x": 1})]
+        # And it was bridged to other instances via Redis.
+        assert len(published) == 1
+        assert published[0][0] == "ws:broadcast:pms"
+        assert adapter.get_metrics()["messages_published"] == 1
+
+    @pytest.mark.asyncio
+    async def test_cross_instance_bridge_via_listener(self):
+        """An event published on instance A must reach clients on
+        instance B once the pub/sub message is delivered to B's
+        listener — and must NOT be re-delivered on A (loopback guard).
+        """
+        import asyncio
+        from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+        # Shared in-memory bus mimicking Redis pub/sub between two instances.
+        queues: dict[str, list[asyncio.Queue]] = {}
+
+        class _FakePubSub:
+            def __init__(self):
+                self._queues: list[asyncio.Queue] = []
+
+            async def subscribe(self, channel):
+                q: asyncio.Queue = asyncio.Queue()
+                queues.setdefault(channel, []).append(q)
+                self._queues.append(q)
+
+            async def listen(self):
+                # Multiplex all subscribed queues.
+                while True:
+                    for q in list(self._queues):
+                        try:
+                            msg = q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            continue
+                        yield msg
+                    await asyncio.sleep(0.01)
+
+            async def unsubscribe(self):
+                pass
+
+            async def close(self):
+                pass
+
+        class _FakeRedis:
+            def __init__(self, pubsub):
+                self._pubsub = pubsub
+
+            def pubsub(self):
+                return self._pubsub
+
+            async def publish(self, channel, message):
+                # Deliver to every queue subscribed to that channel
+                # on every instance — emulates Redis fan-out.
+                for q in queues.get(channel, []):
+                    await q.put({"type": "message", "data": message})
+                return len(queues.get(channel, []))
+
+        # Instance A
+        ps_a = _FakePubSub()
+        redis_a = _FakeRedis(ps_a)
+        adapter_a = WebSocketRedisAdapter()
+        received_a: list[tuple] = []
+
+        async def handler_a(room, event, data):
+            received_a.append((room, event, data))
+
+        await adapter_a.initialize(redis_a, "inst-A", local_handler=handler_a)
+
+        # Instance B
+        ps_b = _FakePubSub()
+        redis_b = _FakeRedis(ps_b)
+        adapter_b = WebSocketRedisAdapter()
+        received_b: list[tuple] = []
+
+        async def handler_b(room, event, data):
+            received_b.append((room, event, data))
+
+        await adapter_b.initialize(redis_b, "inst-B", local_handler=handler_b)
+
+        # Both instances subscribe to the 'pms' room.
+        await adapter_a.subscribe("pms")
+        await adapter_b.subscribe("pms")
+
+        # Instance A publishes an event.
+        await adapter_a.publish("pms", "internal_message_read", {"reader_id": "u1"})
+
+        # Allow the listener tasks a few ticks to drain the queue.
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if received_b:
+                break
+
+        try:
+            # Local delivery on the publisher fired exactly once.
+            assert received_a == [("pms", "internal_message_read", {"reader_id": "u1"})]
+            # Cross-instance delivery on B fired exactly once
+            # (no double-delivery, source filter works).
+            assert received_b == [("pms", "internal_message_read", {"reader_id": "u1"})]
+            # Verify the loopback metric: B forwarded one message.
+            assert adapter_b.get_metrics()["messages_forwarded"] == 1
+        finally:
+            await adapter_a.close()
+            await adapter_b.close()

@@ -302,6 +302,20 @@ async def ping(sid):
 
 # ── Internal chat: live read receipts & typing indicators ──
 
+async def local_broadcast(room: str, event: str, data: dict[str, Any]) -> None:
+    """Fan-out helper used as the local handler for `ws_redis_adapter`.
+
+    Called both for events originated on this instance and for events
+    received from other instances via Redis pub/sub. Wrapping `sio.emit`
+    keeps the adapter agnostic of socket.io and lets startup wire the
+    bridge with a single function reference.
+    """
+    try:
+        await sio.emit(event, data, room=room)
+    except Exception as e:
+        logger.error(f"Failed local socket emit ({event} → {room}): {e}")
+
+
 async def broadcast_internal_message_read(
     reader_id: str,
     sender_id: str | None,
@@ -314,16 +328,21 @@ async def broadcast_internal_message_read(
     Frontend filters by `sender_id == currentUser.id` and
     `reader_id == selectedConvUserId` to update outgoing-message ✓✓ state
     without waiting for the next 15-sec poll.
+
+    Routed through `ws_redis_adapter` so that with horizontal scaling the
+    event reaches clients connected to other backend instances; if Redis
+    is unavailable the adapter falls back to local-only delivery.
     """
     try:
-        await sio.emit('internal_message_read', {
+        from infra.ws_redis_adapter import ws_redis_adapter
+        await ws_redis_adapter.publish('pms', 'internal_message_read', {
             'reader_id': reader_id,
             'sender_id': sender_id,
             'tenant_id': tenant_id,
             'message_ids': list(message_ids or []),
             'partner_id': partner_id,
             'timestamp': datetime.utcnow().isoformat(),
-        }, room='pms')
+        })
     except Exception as e:
         logger.error(f"Failed to broadcast internal_message_read: {e}")
 
@@ -336,6 +355,9 @@ async def internal_typing(sid, data):
     Emits `internal_user_typing` so the recipient's open thread can show
     a "yazıyor…" indicator. Best-effort, non-authenticated relay — typing
     state is non-sensitive and the worst case is a misleading indicator.
+
+    Routed through `ws_redis_adapter` so the indicator reaches recipients
+    connected to other backend instances under horizontal scaling.
     """
     try:
         if not isinstance(data, dict):
@@ -344,14 +366,15 @@ async def internal_typing(sid, data):
         to_user_id = data.get('to_user_id')
         if not from_user_id or not to_user_id:
             return
-        await sio.emit('internal_user_typing', {
+        from infra.ws_redis_adapter import ws_redis_adapter
+        await ws_redis_adapter.publish('pms', 'internal_user_typing', {
             'from_user_id': from_user_id,
             'from_user_name': data.get('from_user_name'),
             'to_user_id': to_user_id,
             'tenant_id': data.get('tenant_id'),
             'is_typing': bool(data.get('is_typing', True)),
             'timestamp': datetime.utcnow().isoformat(),
-        }, room='pms')
+        })
     except Exception as e:
         logger.error(f"Failed to relay internal_typing event: {e}")
 

@@ -66,30 +66,37 @@ class WebSocketRedisAdapter:
             logger.error(f"WS subscribe error ({room}): {e}")
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
-        """Publish event to all instances via Redis."""
-        message = json.dumps({
-            "room": room,
-            "event": event,
-            "data": data,
-            "source_instance": self._instance_id,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        """Publish event to all instances via Redis.
 
+        Always delivers to this instance's local clients first (so the
+        publishing instance never depends on Redis loopback), then bridges
+        the same event to other instances through Redis pub/sub. The
+        listener on the receiving side filters by ``source_instance`` to
+        avoid double-delivery on the publishing instance.
+        """
+        # 1) Local fan-out for clients connected to this instance.
+        if self._local_handler:
+            try:
+                await self._local_handler(room, event, data)
+            except Exception as e:
+                logger.error(f"WS local handler error ({room}): {e}")
+
+        # 2) Cross-instance fan-out via Redis pub/sub (best-effort).
         if self._active and self._redis:
             try:
                 channel = f"{self.CHANNEL_PREFIX}{room}"
+                message = json.dumps({
+                    "room": room,
+                    "event": event,
+                    "data": data,
+                    "source_instance": self._instance_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
                 await self._redis.publish(channel, message)
                 self._metrics["messages_published"] += 1
             except Exception as e:
                 self._metrics["publish_errors"] += 1
                 logger.error(f"WS publish error ({room}): {e}")
-                # Fallback to local
-                if self._local_handler:
-                    await self._local_handler(room, event, data)
-        else:
-            # Local-only mode
-            if self._local_handler:
-                await self._local_handler(room, event, data)
 
     async def _listen(self):
         """Listen for messages from other instances."""
