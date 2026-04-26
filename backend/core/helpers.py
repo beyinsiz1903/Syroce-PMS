@@ -263,14 +263,34 @@ def _tenant_doc_cache_set(tenant_id: str, doc: dict) -> None:
     _TENANT_DOC_CACHE[tenant_id] = (doc, _time.time() + _TENANT_DOC_CACHE_TTL)
 
 
-def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
-    """Force-evict cached tenant doc(s). Call after the admin toggles a
-    module flag so the change takes effect immediately instead of
-    waiting up to 60 s."""
+def _local_evict_tenant_doc(tenant_id: str | None = None) -> None:
+    """Drop entries from the local in-process cache *only*. Used by the
+    Redis pub/sub listener so receiving a remote eviction never
+    re-publishes (which would loop forever across workers)."""
     if tenant_id is None:
         _TENANT_DOC_CACHE.clear()
     else:
         _TENANT_DOC_CACHE.pop(tenant_id, None)
+
+
+def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
+    """Force-evict cached tenant doc(s) on this worker AND every other
+    worker via Redis pub/sub. Call after the admin toggles a module
+    flag so the change takes effect immediately instead of waiting up
+    to 60 s.
+
+    The local evict happens unconditionally so single-worker /
+    Redis-down deployments stay correct. Cross-worker broadcast is
+    best-effort — a publish failure never blocks the mutation."""
+    _local_evict_tenant_doc(tenant_id)
+    # Lazy import: infra.auth_cache_pubsub depends on this module's
+    # ``_local_evict_tenant_doc`` for its listener, so we must not
+    # import it at module-load time (circular).
+    try:
+        from infra.auth_cache_pubsub import auth_cache_pubsub
+        auth_cache_pubsub.schedule_publish_tenant(tenant_id)
+    except Exception:
+        pass
 
 
 def require_module(module_name: str):

@@ -539,6 +539,7 @@ async def on_startup(app):
     # We initialise the adapter unconditionally and only attach a Redis
     # client + cross-instance subscriptions when the connection succeeds.
     from infra.ws_redis_adapter import ws_redis_adapter
+    from infra.auth_cache_pubsub import auth_cache_pubsub
     from websocket_server import local_broadcast as _ws_local_broadcast
 
     try:
@@ -547,9 +548,26 @@ async def on_startup(app):
         if connected:
             from infra.distributed_lock import lock_manager
             lock_manager.set_redis(redis_cluster.get_lock_client())
+            # Build a per-worker unique instance id so pub/sub loopback
+            # guards (``source_instance`` checks in ws_redis_adapter and
+            # auth_cache_pubsub) actually distinguish workers. Without
+            # uniqueness, every worker would skip every broadcast as its
+            # "own" and cross-instance fan-out would silently break.
+            import os as _os
+            import socket as _socket
+            import uuid as _uuid
+            if hasattr(redis_cluster, "instance_id") and getattr(
+                redis_cluster, "instance_id", None
+            ):
+                instance_id = redis_cluster.instance_id
+            else:
+                instance_id = (
+                    f"{_socket.gethostname()}:{_os.getpid()}:"
+                    f"{_uuid.uuid4().hex[:8]}"
+                )
             await ws_redis_adapter.initialize(
                 redis_cluster.get_pubsub_client(),
-                redis_cluster.instance_id if hasattr(redis_cluster, "instance_id") else "main",
+                instance_id,
                 local_handler=_ws_local_broadcast,
             )
             # Subscribe to rooms whose events must traverse instances:
@@ -560,6 +578,17 @@ async def on_startup(app):
                 await ws_redis_adapter.subscribe("pms")
             except Exception as e:
                 logger.warning(f"WS Redis subscribe('pms') warning: {e}")
+            # Auth cache cross-instance invalidation. Without this, a
+            # role change or module-flag toggle is honoured only on the
+            # worker that processed it; other workers keep serving stale
+            # values for up to 30 s (user) / 60 s (tenant).
+            try:
+                await auth_cache_pubsub.initialize(
+                    redis_cluster.get_pubsub_client(),
+                    instance_id,
+                )
+            except Exception as e:
+                logger.warning(f"Auth cache pub/sub init warning: {e}")
             from infra.horizontal_scaling import scaling_manager
             await scaling_manager.initialize(redis_cluster.get_client())
             logger.info(f"✅ Infrastructure Hardening initialized (Redis: {redis_cluster.mode})")
@@ -740,6 +769,14 @@ async def on_shutdown(app):
         await scaling_manager.deregister()
         from infra.ws_redis_adapter import ws_redis_adapter
         await ws_redis_adapter.close()
+        # Close auth-cache pubsub before tearing down the Redis client so
+        # the listener task gets a clean cancel + UNSUBSCRIBE instead of
+        # noisy connection-error tracebacks during shutdown.
+        try:
+            from infra.auth_cache_pubsub import auth_cache_pubsub
+            await auth_cache_pubsub.close()
+        except Exception as e:
+            logger.warning(f"Auth cache pub/sub shutdown warning: {e}")
         from infra.redis_cluster import redis_cluster
         await redis_cluster.close()
     except Exception as e:

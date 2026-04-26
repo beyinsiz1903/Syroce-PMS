@@ -68,14 +68,35 @@ def _user_doc_cache_set(user_id: str, doc: dict) -> None:
     _USER_DOC_CACHE[user_id] = (doc, time.time() + _USER_DOC_CACHE_TTL)
 
 
-def invalidate_user_doc_cache(user_id: str | None = None) -> None:
-    """Force-evict cached user doc(s). Call after profile updates, password
-    changes, or role changes that must take effect immediately instead of
-    waiting up to 30 s for the cache to expire."""
+def _local_evict_user_doc(user_id: str | None = None) -> None:
+    """Drop entries from the local in-process cache *only*. Used by the
+    pub/sub listener so receiving an eviction event never re-publishes
+    (which would loop forever across workers)."""
     if user_id is None:
         _USER_DOC_CACHE.clear()
     else:
         _USER_DOC_CACHE.pop(user_id, None)
+
+
+def invalidate_user_doc_cache(user_id: str | None = None) -> None:
+    """Force-evict cached user doc(s) on this worker AND every other
+    worker via Redis pub/sub. Call after profile updates, password
+    changes, or role changes that must take effect immediately instead
+    of waiting up to 30 s for the cache to expire.
+
+    The local evict happens unconditionally so single-worker / Redis-down
+    deployments stay correct. Cross-worker broadcast is best-effort."""
+    _local_evict_user_doc(user_id)
+    # Lazy import: infra.auth_cache_pubsub depends on this module's
+    # ``_local_evict_user_doc`` for its listener, so we must not import
+    # it at module-load time (circular).
+    try:
+        from infra.auth_cache_pubsub import auth_cache_pubsub
+        auth_cache_pubsub.schedule_publish_user(user_id)
+    except Exception:
+        # Any failure here must not block the mutation result; local
+        # eviction has already happened so this worker is correct.
+        pass
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
