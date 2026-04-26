@@ -89,6 +89,7 @@ const InternalChatTab = ({ currentUser }) => {
   const [toDepartment, setToDepartment] = useState('Reception');
   const [toUserId, setToUserId] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [userDeptFilter, setUserDeptFilter] = useState('all');
   const [messageText, setMessageText] = useState('');
   const [priority, setPriority] = useState('normal');
   const [sending, setSending] = useState(false);
@@ -496,16 +497,24 @@ const InternalChatTab = ({ currentUser }) => {
   }, [currentUser?.id, selectedConvUserId]);
 
   const filteredUsers = useMemo(() => {
-    if (!userSearch.trim()) return users.slice(0, 50);
     const q = userSearch.trim().toLocaleLowerCase('tr');
-    return users
-      .filter(
-        (u) =>
-          (u.name || '').toLocaleLowerCase('tr').includes(q) ||
-          (u.email || '').toLocaleLowerCase('tr').includes(q),
-      )
-      .slice(0, 50);
-  }, [users, userSearch]);
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find(
+      (opt) => opt.value === userDeptFilter,
+    );
+    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
+
+    const matches = users.filter((u) => {
+      if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
+      if (q) {
+        const name = (u.name || '').toLocaleLowerCase('tr');
+        const email = (u.email || '').toLocaleLowerCase('tr');
+        if (!name.includes(q) && !email.includes(q)) return false;
+      }
+      return true;
+    });
+
+    return matches.slice(0, 50);
+  }, [users, userSearch, userDeptFilter]);
 
   const filteredConversations = useMemo(() => {
     const q = conversationSearch.trim().toLocaleLowerCase('tr');
@@ -835,19 +844,42 @@ const InternalChatTab = ({ currentUser }) => {
         {recipientType === 'user' && (
           <div className="space-y-2">
             <Label htmlFor="user-search" className="mb-1 block">Personel Ara</Label>
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="user-search"
-                value={userSearch}
-                onChange={(e) => {
-                  setUserSearch(e.target.value);
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="user-search"
+                  value={userSearch}
+                  onChange={(e) => {
+                    setUserSearch(e.target.value);
+                    setToUserId('');
+                  }}
+                  placeholder="İsim veya e-posta…"
+                  className="pl-8"
+                  data-testid="input-user-search"
+                />
+              </div>
+              <Select
+                value={userDeptFilter}
+                onValueChange={(v) => {
+                  setUserDeptFilter(v);
                   setToUserId('');
                 }}
-                placeholder="İsim veya e-posta…"
-                className="pl-8"
-                data-testid="input-user-search"
-              />
+              >
+                <SelectTrigger
+                  className="w-40 shrink-0"
+                  data-testid="select-user-department-filter"
+                >
+                  <SelectValue placeholder="Departman" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {!usersLoaded ? (
               <p className="text-xs text-muted-foreground">Personel listesi yükleniyor…</p>
