@@ -39,7 +39,14 @@ class WebSocketRedisAdapter:
             "last_publish_error_at": None,
             "last_listen_error": None,
             "last_listen_error_at": None,
+            "reconnects": 0,
+            "reconnect_failures": 0,
         }
+        # Backoff bounds (seconds) for pub/sub reconnect attempts. Kept as
+        # instance attributes so tests can shrink them and so an operator
+        # could tune them without touching the loop.
+        self._reconnect_min_backoff: float = 1.0
+        self._reconnect_max_backoff: float = 30.0
 
     async def initialize(self, redis_client, instance_id: str, local_handler=None):
         """Initialize with Redis client and local broadcast handler."""
@@ -78,9 +85,14 @@ class WebSocketRedisAdapter:
         :meth:`unsubscribe` calls have been made. This makes the API safe
         to call from per-connection enrolment for dynamic rooms like
         ``internal_chat:{tenant}:user:{id}``.
+
+        The channel is recorded in ``_subscribed_channels`` *before* the
+        Redis call so that a concurrent pub/sub reconnect (which briefly
+        clears ``self._pubsub``) cannot lose the new subscription — the
+        reconnect snapshot will simply include it on the next attempt.
         """
         channel = f"{self.CHANNEL_PREFIX}{room}"
-        if not self._active or not self._pubsub:
+        if not self._active:
             return
         async with self._get_lock():
             if channel in self._subscribed_channels:
@@ -88,24 +100,31 @@ class WebSocketRedisAdapter:
                     self._channel_refcounts.get(channel, 0) + 1
                 )
                 return
-            try:
-                await self._pubsub.subscribe(channel)
-                self._subscribed_channels.add(channel)
-                self._channel_refcounts[channel] = 1
-                self._metrics["channels_active"] = len(self._subscribed_channels)
-                if not self._listener_task or self._listener_task.done():
-                    self._listener_task = asyncio.create_task(self._listen())
-            except Exception as e:
-                logger.error(f"WS subscribe error ({room}): {e}")
+            # Record first; reconnect uses _subscribed_channels as the
+            # source of truth when rebuilding the pub/sub connection.
+            self._subscribed_channels.add(channel)
+            self._channel_refcounts[channel] = 1
+            self._metrics["channels_active"] = len(self._subscribed_channels)
+            if self._pubsub is not None:
+                try:
+                    await self._pubsub.subscribe(channel)
+                except Exception as e:
+                    # Connection probably dropping; leave the channel
+                    # tracked so the next successful reconnect picks it up.
+                    logger.error(f"WS subscribe error ({room}): {e}")
+            if not self._listener_task or self._listener_task.done():
+                self._listener_task = asyncio.create_task(self._listen())
 
     async def unsubscribe(self, room: str):
         """Decrement the local refcount for ``room`` and, when it reaches
         zero, issue ``UNSUBSCRIBE`` to Redis.
 
         No-op when Redis is not active or the room was never subscribed.
+        Local bookkeeping always runs under the lock so it stays
+        consistent with any concurrent pub/sub reconnect.
         """
         channel = f"{self.CHANNEL_PREFIX}{room}"
-        if not self._active or not self._pubsub:
+        if not self._active:
             return
         async with self._get_lock():
             count = self._channel_refcounts.get(channel, 0)
@@ -119,10 +138,11 @@ class WebSocketRedisAdapter:
             self._channel_refcounts.pop(channel, None)
             self._subscribed_channels.discard(channel)
             self._metrics["channels_active"] = len(self._subscribed_channels)
-            try:
-                await self._pubsub.unsubscribe(channel)
-            except Exception as e:
-                logger.error(f"WS unsubscribe error ({room}): {e}")
+            if self._pubsub is not None:
+                try:
+                    await self._pubsub.unsubscribe(channel)
+                except Exception as e:
+                    logger.error(f"WS unsubscribe error ({room}): {e}")
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis.
@@ -160,35 +180,118 @@ class WebSocketRedisAdapter:
                 logger.error(f"WS publish error ({room}): {e}")
 
     async def _listen(self):
-        """Listen for messages from other instances."""
-        if not self._pubsub:
-            return
-        try:
-            async for message in self._pubsub.listen():
-                if message["type"] != "message":
-                    continue
+        """Listen for messages from other instances.
+
+        Auto-reconnects: if the Redis pub/sub connection drops (network
+        blip, Redis restart, failover) the listener rebuilds ``pubsub``
+        from the underlying Redis client and re-issues ``SUBSCRIBE`` for
+        every channel still tracked in ``_subscribed_channels`` — local
+        refcounts are preserved so currently connected users stay
+        enrolled. Failed reconnect attempts use exponential backoff.
+
+        The same loopback guard (``source_instance`` check) applies to
+        messages received after reconnect, so a transient drop cannot
+        cause double-delivery.
+        """
+        backoff = self._reconnect_min_backoff
+        while self._active:
+            pubsub = self._pubsub
+            if pubsub is not None:
                 try:
-                    payload = json.loads(message["data"])
-                    # Skip own messages
-                    if payload.get("source_instance") == self._instance_id:
-                        continue
-                    self._metrics["messages_received"] += 1
-                    # Forward to local websocket clients
-                    if self._local_handler:
-                        await self._local_handler(
-                            payload["room"], payload["event"], payload["data"]
-                        )
-                        self._metrics["messages_forwarded"] += 1
+                    async for message in pubsub.listen():
+                        if message["type"] != "message":
+                            continue
+                        try:
+                            payload = json.loads(message["data"])
+                            # Skip own messages
+                            if payload.get("source_instance") == self._instance_id:
+                                continue
+                            self._metrics["messages_received"] += 1
+                            # Forward to local websocket clients
+                            if self._local_handler:
+                                await self._local_handler(
+                                    payload["room"], payload["event"], payload["data"]
+                                )
+                                self._metrics["messages_forwarded"] += 1
+                        except Exception as e:
+                            self._metrics["last_listen_error"] = (
+                                f"{type(e).__name__}: {str(e)[:200]}"
+                            )
+                            self._metrics["last_listen_error_at"] = (
+                                datetime.now(UTC).isoformat()
+                            )
+                            logger.error(f"WS message parse error: {e}")
+                    # listen() returned without raising → server closed
+                    # the subscription cleanly. Treat as a transient
+                    # drop and rebuild so bridged events keep flowing.
+                    logger.warning(
+                        "WS pubsub listener exited; attempting reconnect"
+                    )
+                except asyncio.CancelledError:
+                    return
                 except Exception as e:
-                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
-                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
-                    logger.error(f"WS message parse error: {e}")
-        except asyncio.CancelledError:
-            pass
+                    self._metrics["last_listen_error"] = (
+                        f"{type(e).__name__}: {str(e)[:200]}"
+                    )
+                    self._metrics["last_listen_error_at"] = (
+                        datetime.now(UTC).isoformat()
+                    )
+                    logger.warning(
+                        f"WS pubsub listener error: {e}; attempting reconnect"
+                    )
+            # else: previous reconnect attempt cleared _pubsub but
+            # failed to rebuild it — fall through and keep retrying so
+            # we don't permanently drop into local-only mode.
+
+            if not self._active or self._redis is None:
+                return
+
+            if await self._reconnect_pubsub():
+                backoff = self._reconnect_min_backoff
+            else:
+                self._metrics["reconnect_failures"] += 1
+                try:
+                    await asyncio.sleep(backoff)
+                except asyncio.CancelledError:
+                    return
+                backoff = min(backoff * 2, self._reconnect_max_backoff)
+
+    async def _reconnect_pubsub(self) -> bool:
+        """Rebuild the pub/sub connection and re-subscribe to every
+        channel currently tracked in ``_subscribed_channels``.
+
+        Local subscriber refcounts (``_channel_refcounts``) are
+        intentionally preserved — connected users never went away, only
+        the upstream Redis link did. Returns ``True`` on success.
+        """
+        if self._redis is None:
+            return False
+        try:
+            async with self._get_lock():
+                old = self._pubsub
+                self._pubsub = None
+                if old is not None:
+                    try:
+                        await old.close()
+                    except Exception:
+                        pass
+
+                new_pubsub = self._redis.pubsub()
+                # Snapshot channels under lock so concurrent
+                # subscribe/unsubscribe calls can't race the rebuild.
+                channels = list(self._subscribed_channels)
+                for channel in channels:
+                    await new_pubsub.subscribe(channel)
+                self._pubsub = new_pubsub
+                self._metrics["reconnects"] += 1
+                logger.info(
+                    "WS pubsub reconnected; re-subscribed to "
+                    f"{len(channels)} channel(s)"
+                )
+                return True
         except Exception as e:
-            self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
-            self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
-            logger.error(f"WS listener error: {e}")
+            logger.warning(f"WS pubsub reconnect failed: {e}")
+            return False
 
     async def close(self):
         """Close adapter and cleanup."""
