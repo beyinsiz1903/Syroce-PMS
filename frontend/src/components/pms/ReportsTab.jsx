@@ -92,11 +92,47 @@ const ReportsTab = () => {
     rez: f.bookings,
   }));
 
+  const REVENUE_TYPE_LABELS = {
+    room: 'Oda',
+    room_charge: 'Oda Geliri',
+    fb: 'Yiyecek-İçecek',
+    food: 'Yemek',
+    beverage: 'İçecek',
+    spa: 'Spa',
+    minibar: 'Minibar',
+    laundry: 'Çamaşırhane',
+    early_checkin: 'Erken Giriş',
+    late_checkout: 'Geç Çıkış',
+    airport_transfer: 'Havalimanı Transfer',
+    upsell: 'Upsell',
+    other: 'Diğer',
+    unknown: 'Belirsiz',
+  };
   const revenueByType = revenue?.revenue_by_type || {};
-  const revenueBreakdownData = Object.entries(revenueByType).map(([key, val]) => ({
-    name: key === 'room' ? 'Oda' : key === 'fb' ? 'F&B' : key === 'other' ? 'Diger' : key,
-    value: typeof val === 'number' ? val : 0,
-  })).filter(d => d.value > 0);
+  const revenueRaw = Object.entries(revenueByType)
+    .map(([key, val]) => ({
+      name: REVENUE_TYPE_LABELS[key] || key,
+      value: typeof val === 'number' ? val : 0,
+    }))
+    .filter((d) => d.value > 0);
+  const revenueTotal = revenueRaw.reduce((sum, d) => sum + d.value, 0);
+  // Toplamın %1'inden küçük dilimleri "Diğer" altında topla → etiket çakışmasını önler.
+  const revenueBreakdownData = (() => {
+    if (revenueTotal === 0) return [];
+    const significant = [];
+    let smallSum = 0;
+    revenueRaw.forEach((d) => {
+      if (d.value / revenueTotal >= 0.01) {
+        significant.push(d);
+      } else {
+        smallSum += d.value;
+      }
+    });
+    if (smallSum > 0) {
+      significant.push({ name: 'Diğer', value: smallSum });
+    }
+    return significant.sort((a, b) => b.value - a.value);
+  })();
 
   const marketSegments = marketSegment?.market_segments || {};
   const mktData = Object.entries(marketSegments).map(([key, val]) => ({
@@ -274,16 +310,46 @@ const ReportsTab = () => {
           {revenueBreakdownData.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Gelir Dagilimi</CardTitle>
-                <CardDescription>Gelir kaynagina gore dagilim</CardDescription>
+                <CardTitle className="text-base">Gelir Dağılımı</CardTitle>
+                <CardDescription>Gelir kaynağına göre dağılım</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie data={revenueBreakdownData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} %${(percent * 100).toFixed(0)}`}>
-                      {revenueBreakdownData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                <ResponsiveContainer width="100%" height={340}>
+                  <PieChart margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
+                    <Pie
+                      data={revenueBreakdownData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      labelLine={false}
+                      label={({ percent }) => {
+                        const pct = percent * 100;
+                        // Sadece %5+ dilimlerin üzerine yüzde yaz; küçükler Legend'da görünür.
+                        return pct >= 5 ? `%${pct.toFixed(0)}` : '';
+                      }}
+                    >
+                      {revenueBreakdownData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
                     </Pie>
-                    <Tooltip formatter={(v) => fmtCurrency(v)} />
+                    <Tooltip
+                      formatter={(v, name) => [fmtCurrency(v), name]}
+                      separator=": "
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={48}
+                      iconType="circle"
+                      formatter={(value) => (
+                        <span className="text-xs text-gray-700 dark:text-gray-300">
+                          {value}
+                        </span>
+                      )}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
