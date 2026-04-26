@@ -35,7 +35,6 @@ import UpsellTab from '@/components/pms/UpsellTab';
 import InternalChatTab from '@/components/pms/InternalChatTab';
 import ReportsTab from '@/components/pms/ReportsTab';
 import FlashReportPanel from '@/components/pms/FlashReportPanel';
-import RoomTimelineView from '@/components/pms/RoomTimelineView';
 import LaundryTab from '@/components/pms/LaundryTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
@@ -66,7 +65,7 @@ import {
   BedDouble, Users, Calendar, Plus, CheckCircle, DollarSign, 
   ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, 
   Star, Send, MessageSquare, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
-  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt, CalendarRange,
+  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt,
   MapPin, Shield, Lock, Heart
 } from 'lucide-react';
 import FloatingActionButton from '@/components/FloatingActionButton';
@@ -169,7 +168,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
     { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
     { key: 'laundry', labelText: 'Çamaşırhane', icon: Shirt, testId: 'tab-laundry' },
-    { key: 'timeline', labelText: 'Zaman Çizelgesi', icon: CalendarRange, testId: 'tab-timeline' },
     { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
     { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
     { key: 'manager_report', labelText: 'Müdür Raporu', icon: FileText, testId: 'tab-manager-report' },
@@ -777,7 +775,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>
           <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>
           <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>
-          <TabsContent value="timeline" className="space-y-4"><RoomTimelineView rooms={rooms} bookings={bookings} onBookingClick={(booking) => setReservationDetailId(booking.id)} /></TabsContent>
           <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>
           <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>
           <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
