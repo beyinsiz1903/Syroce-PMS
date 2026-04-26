@@ -1215,6 +1215,60 @@ async def recall_internal_message(
         )
         alarm_cleared = (alarm_res.modified_count or 0) > 0
 
+    # Audit trail: every recall is logged so tenant admins can later see who
+    # deleted which message, when, and what the original content looked like.
+    # The audit_logs collection is only exposed via tenant-admin scoped
+    # endpoints (see domains/admin/router.py:get_security_audit_logs), so
+    # regular users cannot read these entries back.
+    original_message = msg.get('message') or ''
+    message_preview = original_message[:200]
+    recipient_label = (
+        msg.get('to_user_name')
+        or msg.get('to_user_id')
+        or msg.get('to_department')
+        or 'all_departments'
+    )
+    try:
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="recall_internal_message",
+            entity_type="internal_message",
+            entity_id=message_id,
+            details=(
+                f"Mesaj geri alındı: {current_user.name} → {recipient_label} | "
+                f"{message_preview}"
+            ),
+            before_value={
+                "message_id": message_id,
+                "from_user_id": msg.get('from_user_id'),
+                "from_user_name": msg.get('from_user_name'),
+                "from_department": msg.get('from_department'),
+                "to_user_id": msg.get('to_user_id'),
+                "to_user_name": msg.get('to_user_name'),
+                "to_department": msg.get('to_department'),
+                "priority": msg.get('priority'),
+                "message_type": msg.get('message_type'),
+                "created_at": msg.get('created_at'),
+                "message_preview": message_preview,
+                "message_length": len(original_message),
+            },
+            after_value={
+                "deleted": True,
+                "deleted_at": now_iso,
+                "deleted_by": current_user.id,
+                "deleted_by_name": current_user.name,
+                "alarm_cleared": alarm_cleared,
+            },
+            db=db,
+        )
+    except Exception:
+        # Audit failure must never block the recall response itself; the
+        # soft-delete is already committed and is the source of truth.
+        logger.exception(
+            "Failed to write recall audit entry for message %s", message_id
+        )
+
     return {
         'success': True,
         'message_id': message_id,

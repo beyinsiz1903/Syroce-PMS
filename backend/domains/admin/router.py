@@ -2236,9 +2236,25 @@ async def get_security_audit_logs(
     days: int = 7,
     action: str | None = None,
     user_id: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
-    """Get security audit logs"""
+    """Get security audit logs.
+
+    Audit trail entries (kullanıcı aksiyonları, geri alınan mesajlar,
+    acil mesaj kayıtları, vb.) sadece tenant yöneticilerine açıktır;
+    olağan kullanıcılar 403 alır. Bu kısıt hem `view_system_diagnostics`
+    izniyle hem de açık rol kontrolüyle çift kapı olarak doğrulanır.
+    """
+    if not _is_super_admin(current_user) and current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Denetim kayıtlarını sadece yöneticiler görüntüleyebilir.",
+        )
+
     start_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     query = {
