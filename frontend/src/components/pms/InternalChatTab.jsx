@@ -8,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import * as SelectPrimitive from '@radix-ui/react-select';
+import { Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -567,6 +569,28 @@ const InternalChatTab = ({ currentUser }) => {
     [conversations],
   );
 
+  // Per-department unread totals keyed by the filter `value`. Counts are derived
+  // from the same `conversations` state used by the list, so they refresh
+  // automatically whenever polling pulls in new data.
+  const conversationUnreadByDept = useMemo(() => {
+    const counts = {};
+    for (const opt of CONVERSATION_DEPARTMENT_FILTERS) {
+      if (opt.value === 'all') {
+        counts[opt.value] = conversations.reduce(
+          (sum, c) => sum + (c.unread_count || 0),
+          0,
+        );
+        continue;
+      }
+      const allowed = opt.roles ? new Set(opt.roles) : null;
+      counts[opt.value] = conversations.reduce((sum, c) => {
+        if (allowed && !allowed.has(c.user_role || '')) return sum;
+        return sum + (c.unread_count || 0);
+      }, 0);
+    }
+    return counts;
+  }, [conversations]);
+
   const markAsRead = useCallback(
     async (messageId) => {
       // Find current read state so we don't double-decrement the bell when
@@ -1088,11 +1112,37 @@ const InternalChatTab = ({ currentUser }) => {
               <SelectValue placeholder="Departman" />
             </SelectTrigger>
             <SelectContent>
-              {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
+              {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => {
+                const count = conversationUnreadByDept[opt.value] || 0;
+                // Use the Radix primitive directly so the unread badge can sit
+                // outside of `ItemText` — that keeps the trigger label clean
+                // (no badge in the trigger) while still showing the count in
+                // the dropdown row.
+                return (
+                  <SelectPrimitive.Item
+                    key={opt.value}
+                    value={opt.value}
+                    className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+                  >
+                    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+                      <SelectPrimitive.ItemIndicator>
+                        <Check className="h-4 w-4" />
+                      </SelectPrimitive.ItemIndicator>
+                    </span>
+                    <span className="flex items-center justify-between gap-2 w-full pr-4">
+                      <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
+                      {count > 0 ? (
+                        <span
+                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px]"
+                          data-testid={`badge-dept-unread-${opt.value}`}
+                        >
+                          {count}
+                        </span>
+                      ) : null}
+                    </span>
+                  </SelectPrimitive.Item>
+                );
+              })}
             </SelectContent>
           </Select>
           <label
