@@ -49,6 +49,11 @@ def _time_ago(ts: Any) -> str:
 
 router = APIRouter(prefix="/api", tags=["Guest / Messaging"])
 
+# Time window (in seconds) during which a sender can still recall their own
+# internal message. Outside of this window the message is locked in for audit
+# integrity and recall is rejected with HTTP 400.
+RECALL_WINDOW_SECONDS = 5 * 60  # 5 minutes
+
 
 # ── Inline Models ──
 
@@ -601,6 +606,7 @@ async def get_internal_messages_inbox(
         if not is_read and msg.get('to_user_id') == current_user.id and msg.get('read'):
             is_read = True
 
+        is_deleted = bool(msg.get('deleted'))
         messages.append({
             'id': msg.get('id'),
             'from_user_id': msg.get('from_user_id'),
@@ -609,10 +615,14 @@ async def get_internal_messages_inbox(
             'to_user_id': msg.get('to_user_id'),
             'to_user_name': msg.get('to_user_name'),
             'to_department': msg.get('to_department') or 'All',
-            'message': msg.get('message'),
+            # Mask content for recalled messages — neither sender nor recipient
+            # should see the original wording after a recall.
+            'message': '' if is_deleted else msg.get('message'),
             'priority': msg.get('priority'),
             'message_type': msg.get('message_type'),
             'read': is_read,
+            'deleted': is_deleted,
+            'deleted_at': msg.get('deleted_at'),
             'created_at': msg.get('created_at'),
             'time_ago': _time_ago(msg.get('created_at'))
         })
@@ -744,6 +754,9 @@ async def list_dm_conversations(
                 'last_message_at': {'$first': '$created_at'},
                 'last_from_me': {'$first': '$_from_me'},
                 'last_priority': {'$first': '$priority'},
+                # Track whether the most recent message was recalled so we can
+                # show the right preview text in the conversations list.
+                'last_deleted': {'$first': {'$ifNull': ['$deleted', False]}},
                 'unread_count': {
                     '$sum': {'$cond': ['$_is_unread_for_me', 1, 0]}
                 },
@@ -760,13 +773,16 @@ async def list_dm_conversations(
         if not partner_id:
             continue
         partner_ids.append(partner_id)
+        last_deleted = bool(doc.get('last_deleted'))
         rows.append({
             'user_id': partner_id,
             'user_name': doc.get('partner_name') or 'Bilinmeyen',
-            'last_message': doc.get('last_message') or '',
+            # Show a tombstone preview when the most recent message was recalled.
+            'last_message': 'Bu mesaj kaldırıldı' if last_deleted else (doc.get('last_message') or ''),
             'last_message_at': doc.get('last_message_at'),
             'last_from_me': bool(doc.get('last_from_me')),
             'last_priority': doc.get('last_priority') or 'normal',
+            'last_deleted': last_deleted,
             'unread_count': int(doc.get('unread_count') or 0),
             'time_ago': _time_ago(doc.get('last_message_at')),
         })
@@ -816,18 +832,23 @@ async def get_conversation_thread(
             is_read = user_id in read_by or bool(msg.get('read'))
         else:
             is_read = current_user.id in read_by or bool(msg.get('read'))
+        is_deleted = bool(msg.get('deleted'))
         messages.append({
             'id': msg.get('id'),
             'from_user_id': msg.get('from_user_id'),
             'from_user_name': msg.get('from_user_name'),
             'to_user_id': msg.get('to_user_id'),
             'to_user_name': msg.get('to_user_name'),
-            'message': msg.get('message'),
+            # Recalled messages are masked — the original text is no longer
+            # surfaced to either party (they only see the tombstone).
+            'message': '' if is_deleted else msg.get('message'),
             'priority': msg.get('priority'),
             'created_at': msg.get('created_at'),
             'time_ago': _time_ago(msg.get('created_at')),
             'is_from_me': is_from_me,
             'read': is_read,
+            'deleted': is_deleted,
+            'deleted_at': msg.get('deleted_at'),
         })
 
     return {
@@ -864,6 +885,105 @@ async def mark_conversation_read(
     return {
         'success': True,
         'updated_count': result.modified_count,
+    }
+
+
+@router.delete("/messaging/internal/{message_id}")
+async def recall_internal_message(
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Recall (soft-delete) an internal message previously sent by the current user.
+
+    - Only the original sender may recall their own message.
+    - Recall is allowed within RECALL_WINDOW_SECONDS of the original send time;
+      after that the message is locked in for audit integrity.
+    - The message body is masked to a placeholder for everyone (sender included),
+      and the `deleted` flag is set so clients render the tombstone uniformly.
+    - Any urgent-priority alarm raised when the message was sent is automatically
+      dismissed so the recipient is not left chasing a phantom alert.
+    """
+    msg = await db.internal_messages.find_one({
+        'id': message_id,
+        'tenant_id': current_user.tenant_id,
+    })
+    if not msg:
+        raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+    if msg.get('from_user_id') != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Sadece kendi gönderdiğiniz mesajları geri alabilirsiniz",
+        )
+    if msg.get('deleted'):
+        return {
+            'success': True,
+            'message_id': message_id,
+            'already_deleted': True,
+            'alarm_cleared': False,
+        }
+
+    # Time-window check: only the most recent messages may be recalled.
+    created_at_raw = msg.get('created_at')
+    created_dt = None
+    try:
+        if isinstance(created_at_raw, str):
+            created_dt = datetime.fromisoformat(created_at_raw.replace('Z', '+00:00'))
+        elif isinstance(created_at_raw, datetime):
+            created_dt = created_at_raw
+        if created_dt is not None and created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=UTC)
+    except Exception:
+        created_dt = None
+
+    if created_dt is not None:
+        elapsed = (datetime.now(UTC) - created_dt).total_seconds()
+        if elapsed > RECALL_WINDOW_SECONDS:
+            minutes = RECALL_WINDOW_SECONDS // 60
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Bu mesaj {minutes} dakikadan eski olduğu için geri alınamaz."
+                ),
+            )
+
+    now_iso = datetime.now(UTC).isoformat()
+    await db.internal_messages.update_one(
+        {'id': message_id, 'tenant_id': current_user.tenant_id},
+        {
+            '$set': {
+                'deleted': True,
+                'deleted_at': now_iso,
+                'deleted_by': current_user.id,
+            }
+        },
+    )
+
+    # Dismiss any urgent alarm raised when this message was originally sent so
+    # the alarm stack stays consistent with the (now-empty) message thread.
+    alarm_cleared = False
+    if msg.get('priority') == 'urgent':
+        alarm_res = await db.alerts.update_many(
+            {
+                'tenant_id': current_user.tenant_id,
+                'source_module': 'messaging',
+                'source_id': message_id,
+                'status': {'$ne': 'dismissed'},
+            },
+            {
+                '$set': {
+                    'status': 'dismissed',
+                    'dismissed_at': now_iso,
+                    'dismiss_reason': 'message_recalled',
+                }
+            },
+        )
+        alarm_cleared = (alarm_res.modified_count or 0) > 0
+
+    return {
+        'success': True,
+        'message_id': message_id,
+        'deleted_at': now_iso,
+        'alarm_cleared': alarm_cleared,
     }
 
 

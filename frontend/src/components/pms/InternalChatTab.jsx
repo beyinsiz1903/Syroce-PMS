@@ -22,13 +22,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { websocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
 import { hasRole } from '@/utils/authRoles';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
-  Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck
+  Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck,
+  MoreVertical, Trash2,
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -71,6 +78,12 @@ const CONVERSATION_DEPARTMENT_FILTERS = [
 // Real-time delivery happens via Socket.IO; this poll is now just a safety
 // net for missed events / cross-tab sync, so we can run it much less often.
 const POLL_INTERVAL_MS = 60000;
+
+// Mirror of the backend RECALL_WINDOW_SECONDS — keeps the recall menu hidden
+// once the message is past the window so we don't pretend the action is still
+// available. The backend remains the source of truth and will reject late
+// recalls with HTTP 400.
+const RECALL_WINDOW_MS = 5 * 60 * 1000;
 
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
@@ -364,6 +377,56 @@ const InternalChatTab = ({ currentUser }) => {
     setUrgentConfirmOpen(false);
     performSendThreadReply();
   }, [performSendThreadReply]);
+
+  const handleRecallMessage = useCallback(
+    async (messageId) => {
+      if (!messageId) return;
+      // Plain confirm() keeps the surface area small and avoids dragging a
+      // dialog primitive into the per-message hot path. The action is
+      // destructive but reversible only by sending a new message.
+      const ok = window.confirm(
+        'Bu mesajı geri almak istediğinize emin misiniz? Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.',
+      );
+      if (!ok) return;
+      try {
+        const res = await axios.delete(
+          `/messaging/internal/${encodeURIComponent(messageId)}`,
+        );
+        // Optimistically mark the bubble as deleted so the UI reflects the
+        // change before the silent refresh lands.
+        setThreadMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, deleted: true, message: '' }
+              : m,
+          ),
+        );
+        toast({
+          title: 'Mesaj geri alındı',
+          description: res.data?.alarm_cleared
+            ? 'Acil alarmı da otomatik kapatıldı.'
+            : 'Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.',
+        });
+        // Refresh thread + conversations preview so the tombstone is canonical.
+        if (selectedConvUserId) {
+          loadThread(selectedConvUserId, { silent: true });
+        }
+        loadConversations(true);
+      } catch (err) {
+        const status = err.response?.status;
+        let description = err.response?.data?.detail || err.message;
+        if (status === 403) {
+          description = 'Sadece kendi gönderdiğiniz mesajları geri alabilirsiniz.';
+        }
+        toast({
+          title: 'Mesaj geri alınamadı',
+          description,
+          variant: 'destructive',
+        });
+      }
+    },
+    [selectedConvUserId, loadThread, loadConversations, toast],
+  );
 
   const handleStartConversationFromUser = useCallback(
     (user) => {
@@ -800,7 +863,7 @@ const InternalChatTab = ({ currentUser }) => {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {!msg.read && (
+                      {!msg.read && !msg.deleted && (
                         <Button
                           type="button"
                           variant="ghost"
@@ -812,19 +875,30 @@ const InternalChatTab = ({ currentUser }) => {
                           <CheckCircle className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleReply(msg)}
-                        data-testid={`button-reply-${msg.id}`}
-                        title="Yanıtla"
-                      >
-                        <Reply className="h-4 w-4" />
-                      </Button>
+                      {!msg.deleted && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleReply(msg)}
+                          data-testid={`button-reply-${msg.id}`}
+                          title="Yanıtla"
+                        >
+                          <Reply className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                  {msg.deleted ? (
+                    <p
+                      className="text-sm italic text-muted-foreground"
+                      data-testid={`text-inbox-recalled-${msg.id}`}
+                    >
+                      Bu mesaj kaldırıldı
+                    </p>
+                  ) : (
+                    <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1364,34 +1438,98 @@ const InternalChatTab = ({ currentUser }) => {
           ) : (
             threadMessages.map((m) => {
               const fromMe = m.is_from_me;
+              const isDeleted = !!m.deleted;
+              // Recall is only offered for the sender's own, non-deleted
+              // messages still inside the recall window. Parsing failures
+              // fall through as "not recallable" — better safe than sorry.
+              let withinRecallWindow = false;
+              if (fromMe && !isDeleted && m.created_at) {
+                const sentAt = Date.parse(m.created_at);
+                if (!Number.isNaN(sentAt)) {
+                  withinRecallWindow = Date.now() - sentAt < RECALL_WINDOW_MS;
+                }
+              }
               return (
                 <div
                   key={m.id}
                   data-testid={`thread-message-${m.id}`}
-                  className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}
+                  className={`group flex ${fromMe ? 'justify-end' : 'justify-start'}`}
                 >
+                  {/* Recall menu sits outside the bubble for own messages so it
+                      doesn't affect the bubble width and stays clickable. */}
+                  {fromMe && withinRecallWindow && (
+                    <div className="self-center mr-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            data-testid={`button-message-menu-${m.id}`}
+                            title="Mesaj seçenekleri"
+                            aria-label="Mesaj seçenekleri"
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              handleRecallMessage(m.id);
+                            }}
+                            className="text-destructive focus:text-destructive"
+                            data-testid={`button-recall-message-${m.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                            Geri al
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                   <div
                     className={`max-w-[78%] rounded-lg px-3 py-1.5 shadow-sm ${
-                      fromMe
-                        ? 'bg-primary text-primary-foreground rounded-br-sm'
-                        : 'bg-muted rounded-bl-sm'
-                    } ${m.priority === 'urgent' ? 'ring-2 ring-destructive' : ''}`}
+                      isDeleted
+                        ? 'bg-muted/60 text-muted-foreground italic border border-dashed'
+                        : fromMe
+                          ? 'bg-primary text-primary-foreground rounded-br-sm'
+                          : 'bg-muted rounded-bl-sm'
+                    } ${
+                      !isDeleted && m.priority === 'urgent'
+                        ? 'ring-2 ring-destructive'
+                        : ''
+                    }`}
                   >
-                    {m.priority === 'urgent' && (
+                    {!isDeleted && m.priority === 'urgent' && (
                       <div className="flex items-center gap-1 text-[10px] font-semibold mb-0.5 opacity-90">
                         <AlertCircle className="h-3 w-3" /> Acil
                       </div>
                     )}
-                    <p className="text-sm whitespace-pre-wrap break-words">
-                      {m.message}
-                    </p>
+                    {isDeleted ? (
+                      <p
+                        className="text-sm break-words"
+                        data-testid={`text-message-recalled-${m.id}`}
+                      >
+                        Bu mesaj kaldırıldı
+                      </p>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap break-words">
+                        {m.message}
+                      </p>
+                    )}
                     <div
                       className={`flex items-center gap-1 mt-0.5 text-[10px] ${
-                        fromMe ? 'opacity-80 justify-end' : 'text-muted-foreground'
+                        isDeleted
+                          ? 'text-muted-foreground'
+                          : fromMe
+                            ? 'opacity-80 justify-end'
+                            : 'text-muted-foreground'
                       }`}
                     >
                       <span>{m.time_ago || ''}</span>
-                      {fromMe && (
+                      {fromMe && !isDeleted && (
                         <CheckCheck
                           className={`h-3 w-3 ${
                             m.read ? 'opacity-100' : 'opacity-40'
