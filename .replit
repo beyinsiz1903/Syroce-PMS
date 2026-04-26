@@ -94,3 +94,7 @@ AFSADAKAT_ADMIN_TOKEN = "42b91b913f623686d32828696918781893e53a9bf9b49a754709248
 CM_KEY_VERSION = "v1"
 CORS_ORIGINS = "https://4ea80cc3-9968-43ee-8874-a90d4da6e55f-00-fh9lwt15azcz.sisko.replit.dev,http://localhost:5000,http://localhost:5173"
 CM_MASTER_KEY_CURRENT = "Xoi4yK/y2NX/sAASn/6I8/mHuLFRSU/56XeiWRm7tvo="
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
