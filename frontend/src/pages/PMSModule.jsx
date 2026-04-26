@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, Suspense, lazy, memo } from 
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -124,6 +125,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     type: 'out_of_order', reason: '', details: '', start_date: '', end_date: '', allow_sell: false
   });
 
+  const navigate = useNavigate();
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [quickFilters, setQuickFilters] = useState({
     roomType: '', bookingStatus: '', paymentStatus: '', roomView: '', amenity: ''
@@ -698,6 +700,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
           <div className="w-96">
             <GlobalSearch onSelectResult={(result) => {
+              if (result.type === 'page' && result.data?.path) {
+                navigate(result.data.path);
+                toast.info(result.data.label || result.data.path);
+                return;
+              }
               const typeTabMap = { guest: 'frontdesk', booking: 'frontdesk', room: 'rooms', company: 'frontdesk', housekeeping: 'housekeeping' };
               const tab = typeTabMap[result.type] || 'frontdesk';
               setActiveTab(tab); window.location.hash = tab;

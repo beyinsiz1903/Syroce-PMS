@@ -1,20 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Search, User, Calendar, Home, X } from 'lucide-react';
+import { Search, User, Calendar, Home, X, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { NAV_ITEMS } from '@/config/navItems';
+
+const trLower = (s) => (s || '').toLocaleLowerCase('tr');
 
 const GlobalSearch = ({ onSelectResult }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ guests: [], bookings: [], rooms: [] });
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const searchablePages = useMemo(
+    () =>
+      (NAV_ITEMS || [])
+        .filter((item) => item && item.path && item.label)
+        .map((item) => ({
+          key: item.key,
+          path: item.path,
+          label: t(`navKeys.${item.key}`, item.label),
+          rawLabel: item.label,
+        })),
+    [t]
+  );
+
+  const pageMatches = useMemo(() => {
+    if (!query || query.length < 2) return [];
+    const needle = trLower(query);
+    return searchablePages
+      .filter(
+        (p) =>
+          trLower(p.label).includes(needle) ||
+          trLower(p.rawLabel).includes(needle) ||
+          trLower(p.key).includes(needle)
+      )
+      .slice(0, 5);
+  }, [query, searchablePages]);
 
   useEffect(() => {
     if (query.length < 2) {
       setResults({ guests: [], bookings: [], rooms: [] });
       return;
     }
+
+    // Clear stale remote results immediately so a new query never shows
+    // entities matched by the previous query while the fetch is in flight.
+    setResults({ guests: [], bookings: [], rooms: [] });
 
     const searchTimeout = setTimeout(async () => {
       setLoading(true);
@@ -26,9 +61,9 @@ const GlobalSearch = ({ onSelectResult }) => {
         ]);
 
         setResults({
-          guests: guestsRes.data.slice(0, 3),
-          bookings: bookingsRes.data.slice(0, 3),
-          rooms: roomsRes.data.slice(0, 3)
+          guests: (guestsRes.data || []).slice(0, 3),
+          bookings: (bookingsRes.data || []).slice(0, 3),
+          rooms: (roomsRes.data || []).slice(0, 3)
         });
       } catch (error) {
         console.error('Search error:', error);
@@ -40,7 +75,8 @@ const GlobalSearch = ({ onSelectResult }) => {
     return () => clearTimeout(searchTimeout);
   }, [query]);
 
-  const totalResults = results.guests.length + results.bookings.length + results.rooms.length;
+  const totalResults =
+    results.guests.length + results.bookings.length + results.rooms.length + pageMatches.length;
 
   return (
     <div className="relative">
@@ -48,7 +84,7 @@ const GlobalSearch = ({ onSelectResult }) => {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
         <Input
           type="text"
-          placeholder="Search guests, bookings, rooms..."
+          placeholder={t('globalSearch.placeholder', 'Misafir, rezervasyon, oda, sayfa ara...')}
           className="pl-10 pr-10"
           value={query}
           onChange={(e) => {
@@ -74,16 +110,48 @@ const GlobalSearch = ({ onSelectResult }) => {
       {isOpen && query.length >= 2 && (
         <Card className="absolute z-50 w-full mt-2 max-h-96 overflow-y-auto shadow-lg">
           <CardContent className="p-2">
-            {loading ? (
-              <div className="text-center py-4 text-gray-500">Searching...</div>
+            {loading && totalResults === 0 ? (
+              <div className="text-center py-4 text-gray-500">
+                {t('globalSearch.searching', 'Aranıyor...')}
+              </div>
             ) : totalResults === 0 ? (
-              <div className="text-center py-4 text-gray-500">No results found</div>
+              <div className="text-center py-4 text-gray-500">
+                {t('globalSearch.noResults', 'Sonuç bulunamadı')}
+              </div>
             ) : (
               <div className="space-y-2">
+                {/* Pages */}
+                {pageMatches.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">
+                      {t('globalSearch.pages', 'SAYFALAR')}
+                    </div>
+                    {pageMatches.map((page) => (
+                      <button
+                        key={page.key}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded flex items-center gap-2"
+                        onClick={() => {
+                          onSelectResult?.({ type: 'page', data: page });
+                          setIsOpen(false);
+                          setQuery('');
+                        }}
+                      >
+                        <FileText className="w-4 h-4 text-amber-500" />
+                        <div>
+                          <div className="font-medium">{page.label}</div>
+                          <div className="text-xs text-gray-500">{page.path}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Guests */}
                 {results.guests.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">GUESTS</div>
+                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">
+                      {t('globalSearch.guests', 'MİSAFİRLER')}
+                    </div>
                     {results.guests.map((guest) => (
                       <button
                         key={guest.id}
@@ -107,7 +175,9 @@ const GlobalSearch = ({ onSelectResult }) => {
                 {/* Bookings */}
                 {results.bookings.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">BOOKINGS</div>
+                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">
+                      {t('globalSearch.bookings', 'REZERVASYONLAR')}
+                    </div>
                     {results.bookings.map((booking) => (
                       <button
                         key={booking.id}
@@ -120,9 +190,10 @@ const GlobalSearch = ({ onSelectResult }) => {
                       >
                         <Calendar className="w-4 h-4 text-green-500" />
                         <div>
-                          <div className="font-medium">Booking #{booking.id.slice(0, 8)}</div>
+                          <div className="font-medium">Booking #{String(booking.id).slice(0, 8)}</div>
                           <div className="text-xs text-gray-500">
-                            {new Date(booking.check_in).toLocaleDateString()} - {new Date(booking.check_out).toLocaleDateString()}
+                            {booking.check_in ? new Date(booking.check_in).toLocaleDateString() : ''}
+                            {booking.check_out ? ` - ${new Date(booking.check_out).toLocaleDateString()}` : ''}
                           </div>
                         </div>
                       </button>
@@ -133,7 +204,9 @@ const GlobalSearch = ({ onSelectResult }) => {
                 {/* Rooms */}
                 {results.rooms.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">ROOMS</div>
+                    <div className="text-xs font-semibold text-gray-500 px-2 py-1">
+                      {t('globalSearch.rooms', 'ODALAR')}
+                    </div>
                     {results.rooms.map((room) => (
                       <button
                         key={room.id}
