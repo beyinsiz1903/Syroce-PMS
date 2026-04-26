@@ -100,9 +100,14 @@ const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
-  const { decrementInternalUnread, refreshInternalUnread } = useNotifications();
+  const {
+    decrementInternalUnread,
+    refreshInternalUnread,
+    markAllInternalRead,
+  } = useNotifications();
   const { on: wsOn, socketEmit: wsSocketEmit } = useWebSocket('pms');
   const [activeSubTab, setActiveSubTab] = useState('inbox');
+  const [markingAllRead, setMarkingAllRead] = useState(false);
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
   // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
@@ -911,6 +916,55 @@ const InternalChatTab = ({ currentUser }) => {
     return counts;
   }, [conversations]);
 
+  const handleMarkAllRead = useCallback(async () => {
+    if (markingAllRead || unreadCount === 0) return;
+    setMarkingAllRead(true);
+    // Optimistically clear local state so the badge / inbox flip read
+    // immediately — the global bell counter is reset inside the context
+    // helper, the conversations panel below picks the new state up via
+    // its existing refresh.
+    setInbox((prev) => prev.map((m) => ({ ...m, read: true })));
+    setUnreadCount(0);
+    setConversations((prev) => prev.map((c) => ({ ...c, unread_count: 0 })));
+    try {
+      const result = await markAllInternalRead();
+      if (!result?.success) {
+        // Roll back to server truth on failure.
+        await loadInbox(true);
+        await loadConversations(true);
+        toast({
+          title: 'İşaretleme başarısız',
+          description:
+            result?.error?.response?.data?.detail ||
+            result?.error?.message ||
+            'Mesajlar işaretlenirken bir sorun oluştu.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({
+        title: 'Tüm mesajlar okundu olarak işaretlendi',
+        description:
+          result.updated_count > 0
+            ? `${result.updated_count} mesaj güncellendi.`
+            : 'Okunmamış mesaj kalmamıştı.',
+      });
+      // Pull a fresh inbox so any messages that arrived during the request
+      // (and so were not part of the bulk update) are reflected accurately.
+      loadInbox(true);
+      loadConversations(true);
+    } finally {
+      setMarkingAllRead(false);
+    }
+  }, [
+    markingAllRead,
+    unreadCount,
+    markAllInternalRead,
+    loadInbox,
+    loadConversations,
+    toast,
+  ]);
+
   const markAsRead = useCallback(
     async (messageId) => {
       // Find current read state so we don't double-decrement the bell when
@@ -1046,6 +1100,20 @@ const InternalChatTab = ({ currentUser }) => {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleMarkAllRead}
+              disabled={markingAllRead || unreadCount === 0}
+              data-testid="button-mark-all-read"
+              title="Gelen kutusundaki tüm okunmamış mesajları işaretle"
+            >
+              <CheckCheck
+                className={`h-4 w-4 mr-1 ${markingAllRead ? 'animate-pulse' : ''}`}
+              />
+              {markingAllRead ? 'İşaretleniyor…' : 'Tümünü okundu'}
+            </Button>
             <Button
               type="button"
               variant={showUnreadOnly ? 'default' : 'outline'}

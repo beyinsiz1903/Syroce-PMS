@@ -22,6 +22,7 @@ const NotificationContext = createContext({
   resetInternalUnread: () => {},
   decrementInternalUnread: () => {},
   refreshInternalUnread: async () => {},
+  markAllInternalRead: async () => ({ success: false, updated_count: 0 }),
   permission: 'default',
   requestPermission: async () => 'default',
 });
@@ -258,6 +259,35 @@ export const NotificationProvider = ({ children }) => {
     setInternalUnreadCount((c) => Math.max(0, c - n));
   }, []);
 
+  // ── Bulk action: mark every unread internal message addressed to me as read.
+  // Used by the "Tümünü okundu" buttons in the notification bell and the
+  // InternalChatTab inbox header. Optimistically resets local state so the
+  // counter zeroes out instantly even before the network round-trip
+  // completes; then reconciles with the server response.
+  const markAllInternalRead = useCallback(async () => {
+    if (!isClient || !isStaffUser(authUser)) {
+      return { success: false, updated_count: 0 };
+    }
+    setInternalMessages((prev) => prev.map((m) => ({ ...m, read: true })));
+    setInternalUnreadCount(0);
+    try {
+      const axios = (await import('axios')).default;
+      const res = await axios.post('/messaging/internal/mark-all-read');
+      // Refresh from the server so we converge on the truth — covers the
+      // case where new messages arrived between the optimistic update and
+      // the server processing the request.
+      await refreshInternalUnread();
+      return {
+        success: true,
+        updated_count: res.data?.updated_count || 0,
+      };
+    } catch (err) {
+      // Roll back the counter to the server's value on failure.
+      await refreshInternalUnread();
+      return { success: false, updated_count: 0, error: err };
+    }
+  }, [authUser, refreshInternalUnread]);
+
   const requestPermission = useCallback(async () => {
     if (!isClient || !('Notification' in window)) return 'denied';
     if (Notification.permission === 'granted' || Notification.permission === 'denied') {
@@ -284,6 +314,7 @@ export const NotificationProvider = ({ children }) => {
       resetInternalUnread,
       decrementInternalUnread,
       refreshInternalUnread,
+      markAllInternalRead,
       permission,
       requestPermission,
     }),
@@ -298,6 +329,7 @@ export const NotificationProvider = ({ children }) => {
       resetInternalUnread,
       decrementInternalUnread,
       refreshInternalUnread,
+      markAllInternalRead,
       permission,
       requestPermission,
     ]

@@ -728,6 +728,56 @@ async def mark_internal_message_read(
 
 
 
+@router.post("/messaging/internal/mark-all-read")
+async def mark_all_internal_messages_read(
+    current_user: User = Depends(get_current_user),
+):
+    """Mark every internal message addressed to the current user as read.
+
+    Scoped to the caller's tenant AND the messages they are a legitimate
+    recipient of — direct DMs to me, messages to my department, or
+    broadcasts. Idempotent: running it twice in a row is a no-op the
+    second time. Returns the number of newly-marked messages so the UI
+    can confirm the operation succeeded.
+    """
+    department_mapping = {
+        'front_desk': 'Reception',
+        'housekeeping': 'Housekeeping',
+        'maintenance': 'Maintenance',
+        'finance': 'Finance',
+        'supervisor': 'Management',
+        'admin': 'Management',
+    }
+    role_value = (
+        current_user.role.value
+        if hasattr(current_user.role, 'value')
+        else current_user.role
+    )
+    my_department = department_mapping.get(role_value, 'General')
+
+    now_iso = datetime.now(UTC).isoformat()
+    result = await db.internal_messages.update_many(
+        {
+            'tenant_id': current_user.tenant_id,
+            'read_by': {'$ne': current_user.id},
+            '$or': [
+                {'to_user_id': current_user.id},  # direct DM to me
+                {'to_department': my_department},  # to my department
+                {'to_department': None},  # broadcast
+            ],
+        },
+        {
+            '$addToSet': {'read_by': current_user.id},
+            '$set': {'last_read_at': now_iso},
+        },
+    )
+
+    return {
+        'success': True,
+        'updated_count': result.modified_count,
+    }
+
+
 @router.get("/messaging/internal/conversations")
 async def list_dm_conversations(
     current_user: User = Depends(get_current_user),
