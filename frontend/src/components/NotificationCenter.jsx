@@ -1,14 +1,25 @@
 import React, { useState } from 'react';
-import { Bell, CheckCircle2, X, Trash2 } from 'lucide-react';
+import { Bell, CheckCircle2, X, Trash2, MessageSquare } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const NotificationCenter = () => {
-  const { notifications, unreadCount, markRead, clearAll, loading } = useNotifications();
+  const {
+    notifications,
+    internalMessages,
+    internalUnreadCount,
+    totalUnreadCount,
+    markRead,
+    clearAll,
+    loading,
+    permission,
+    requestPermission,
+  } = useNotifications();
   const [open, setOpen] = useState(false);
 
   const handleToggle = () => setOpen((prev) => !prev);
+  const unreadCount = totalUnreadCount;
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
@@ -50,10 +61,50 @@ const NotificationCenter = () => {
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            {permission === 'default' && (
+              <button
+                type="button"
+                onClick={requestPermission}
+                className="w-full text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 py-2 border-b"
+              >
+                Masaüstü bildirimlerini etkinleştir
+              </button>
+            )}
             <div className="max-h-[60vh] overflow-y-auto">
+              {internalMessages.length > 0 && (
+                <div className="border-b bg-amber-50/40">
+                  <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700 flex items-center gap-2">
+                    <MessageSquare className="w-3 h-3" />
+                    Personel mesajları
+                    {internalUnreadCount > 0 && (
+                      <span className="ml-auto bg-amber-200 text-amber-900 rounded-full px-2 py-0.5">
+                        {internalUnreadCount}
+                      </span>
+                    )}
+                  </div>
+                  {internalMessages.slice(0, 5).map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`px-4 py-2 border-t text-sm ${
+                        msg.priority === 'urgent' ? 'bg-red-50' : 'bg-white'
+                      }`}
+                    >
+                      <p className="font-semibold text-gray-800 text-xs">
+                        {msg.from_user_name || 'Personel'}
+                        {msg.priority === 'urgent' && (
+                          <span className="ml-2 text-red-600 text-[10px] uppercase font-bold">
+                            Acil
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-gray-700 text-xs mt-0.5 line-clamp-2">{msg.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
               {loading ? (
                 <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
-              ) : notifications.length === 0 ? (
+              ) : notifications.length === 0 && internalMessages.length === 0 ? (
                 <div className="py-8 text-center text-gray-500 text-sm">Bildirim yok</div>
               ) : (
                 notifications.map((notification) => (

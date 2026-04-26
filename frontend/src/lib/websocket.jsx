@@ -6,6 +6,10 @@ import React from 'react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 const WEBSOCKET_URL = BACKEND_URL ? BACKEND_URL.replace('/api', '').replace(/\/+$/, '') : '';
+// Backend mounts socket.io at app.mount("/ws", socket_app) with socketio_path="socket.io"
+// → full URL is `${origin}/ws/socket.io/`. We must tell the client to use that path,
+// otherwise it would default to `/socket.io/` and 404 against our reverse proxy.
+const WEBSOCKET_PATH = '/ws/socket.io';
 
 let ioModule = null;
 
@@ -16,6 +20,19 @@ class WebSocketManager {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 2; // Reduced from 5 to avoid console spam
     this.disabled = false;
+    this._lastAuth = null;
+  }
+
+  _readAuthFromStorage() {
+    try {
+      const token = typeof localStorage !== 'undefined'
+        ? localStorage.getItem('token')
+        : null;
+      if (!token) return {};
+      return { token };
+    } catch {
+      return {};
+    }
   }
 
   async connect() {
@@ -31,15 +48,20 @@ class WebSocketManager {
     try {
       // Lazy import socket.io-client to avoid blocking initial load
       const { io } = await import('socket.io-client');
-      
+
+      const auth = this._readAuthFromStorage();
+      this._lastAuth = auth;
+
       this.socket = io(WEBSOCKET_URL, {
-        transports: ['websocket'],
+        path: WEBSOCKET_PATH,
+        transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 3000,
         reconnectionDelayMax: 10000,
         reconnectionAttempts: this.maxReconnectAttempts,
         timeout: 5000,
         autoConnect: true,
+        auth,
       });
 
       this.setupEventHandlers();
@@ -108,7 +130,25 @@ class WebSocketManager {
       this.emit('notification', data);
     });
 
+    // Internal chat — new staff message arrived for me / my dept / broadcast
+    this.socket.on('internal_message', (data) => {
+      this.emit('internal_message', data);
+    });
+
     this.socket.on('pong', () => {});
+  }
+
+  /** Force-reconnect with the freshest token from localStorage. Call this
+   * after login so the server can authenticate the socket and enrol it in
+   * tenant-scoped rooms. */
+  reconnectWithFreshAuth() {
+    if (this.disabled) return;
+    if (this.socket) {
+      try { this.socket.disconnect(); } catch { /* noop */ }
+      this.socket = null;
+    }
+    this.reconnectAttempts = 0;
+    return this.connect();
   }
 
   joinRoom(room) {

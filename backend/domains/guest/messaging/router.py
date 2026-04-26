@@ -362,6 +362,61 @@ async def send_internal_message(
             'created_at': datetime.now(UTC).isoformat()
         })
 
+    # ── Real-time delivery: WebSocket push to recipients ──
+    # `delivered_to` is what the inbox endpoint returns to clients, so we
+    # mirror its shape here so the frontend can drop it straight into state
+    # without round-tripping through the inbox endpoint.
+    realtime_payload = {
+        'id': message_obj.id,
+        'from_user_id': message_obj.from_user_id,
+        'from_user_name': message_obj.from_user_name,
+        'from_department': message_obj.from_department,
+        'to_user_id': message_obj.to_user_id,
+        'to_user_name': message_obj.to_user_name,
+        'to_department': message_obj.to_department or 'All',
+        'message': message_obj.message,
+        'priority': message_obj.priority,
+        'message_type': message_obj.message_type,
+        'read': False,
+        'created_at': msg_dict['created_at'],
+        'time_ago': '0s ago',
+    }
+    try:
+        from websocket_server import broadcast_internal_message
+        await broadcast_internal_message(
+            current_user.tenant_id,
+            realtime_payload,
+            to_user_id=to_user_id,
+            to_department=to_department,
+        )
+    except Exception as ws_err:
+        logger.warning("internal_message live push failed: %s", ws_err)
+
+    # Web Push (PWA / OS-level) for urgent messages — delivered even when
+    # the recipient has no tab open. Best-effort: silent failure if VAPID
+    # is not configured or pywebpush is missing.
+    if priority == 'urgent':
+        try:
+            from domains.guest.messaging.web_push import dispatch_internal_message_push
+            await dispatch_internal_message_push(
+                tenant_id=current_user.tenant_id,
+                payload={
+                    'title': f'Acil mesaj — {message_obj.from_user_name}',
+                    'body': message[:140],
+                    'tag': f'internal-msg-{message_obj.id}',
+                    'data': {
+                        'kind': 'internal_message',
+                        'message_id': message_obj.id,
+                        'priority': 'urgent',
+                        'url': '/app/dashboard?tab=communication',
+                    },
+                },
+                to_user_id=to_user_id,
+                to_department=to_department,
+            )
+        except Exception as push_err:
+            logger.warning("urgent web-push dispatch failed: %s", push_err)
+
     return {
         'success': True,
         'message_id': message_obj.id,
@@ -369,6 +424,74 @@ async def send_internal_message(
     }
 
 
+
+
+# ── Web Push (PWA) subscription endpoints for the internal chat ──
+
+@router.get("/messaging/internal/push/vapid-public-key")
+async def get_internal_chat_vapid_key(current_user: User = Depends(get_current_user)):
+    """Return the active VAPID public key so the browser can subscribe."""
+    from domains.guest.messaging.web_push import get_vapid_keys
+    keys = await get_vapid_keys()
+    return {'public_key': keys['public_key']}
+
+
+class _PushSubscribeBody(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    endpoint: str
+    keys: dict[str, str]
+    user_agent: str | None = None
+
+
+@router.post("/messaging/internal/push/subscribe")
+async def subscribe_internal_chat_push(
+    body: _PushSubscribeBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Persist a browser PushSubscription so urgent internal messages can be
+    delivered as OS-level notifications even when no tab is open."""
+    from domains.guest.messaging.web_push import store_subscription
+
+    department_mapping = {
+        'front_desk': 'Reception',
+        'housekeeping': 'Housekeeping',
+        'maintenance': 'Maintenance',
+        'finance': 'Finance',
+        'supervisor': 'Management',
+        'admin': 'Management',
+        'super_admin': 'Management',
+        'owner': 'Management',
+        'sales': 'Reception',
+    }
+    role_value = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
+    department = department_mapping.get(role_value, 'General')
+
+    try:
+        await store_subscription(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            department=department,
+            subscription={'endpoint': body.endpoint, 'keys': body.keys},
+            user_agent=body.user_agent,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {'success': True, 'department': department}
+
+
+@router.delete("/messaging/internal/push/subscribe")
+async def unsubscribe_internal_chat_push(
+    endpoint: str,
+    current_user: User = Depends(get_current_user),
+):
+    from domains.guest.messaging.web_push import remove_subscription
+    deleted = await remove_subscription(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        endpoint=endpoint,
+    )
+    return {'success': True, 'deleted': deleted}
 
 
 @router.get("/messaging/internal/inbox")

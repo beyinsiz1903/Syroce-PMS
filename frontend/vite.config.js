@@ -124,6 +124,14 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // Socket.IO mounts at /ws on the backend (see backend/server.py).
+      // ws: true makes Vite tunnel the websocket upgrade through to the
+      // backend so internal-chat real-time delivery works in dev too.
+      '/ws': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   oxc: {

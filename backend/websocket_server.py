@@ -26,14 +26,119 @@ connected_clients: dict[str, set[str]] = {
     'kitchen': set(),
     'system-health': set(),
     'cockpit': set(),
+    'internal-chat': set(),
 }
+
+# Map sid → authenticated identity (used for tenant-scoped internal-chat rooms)
+sid_identity: dict[str, dict[str, Any]] = {}
+
+# Department canonical names — keep in sync with messaging/router.py
+_DEPARTMENT_BY_ROLE = {
+    'front_desk': 'Reception',
+    'housekeeping': 'Housekeeping',
+    'maintenance': 'Maintenance',
+    'finance': 'Finance',
+    'supervisor': 'Management',
+    'admin': 'Management',
+    'super_admin': 'Management',
+    'owner': 'Management',
+    'sales': 'Reception',
+}
+
+
+async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
+    """Async variant of _decode_socket_auth that fetches the user document
+    for department resolution.
+    """
+    if not isinstance(auth, dict):
+        return None
+    token = auth.get('token') or auth.get('Authorization')
+    if not token:
+        return None
+    if isinstance(token, str) and token.lower().startswith('bearer '):
+        token = token[7:]
+
+    try:
+        from jose import jwt
+
+        from core.security import JWT_ALGORITHM, JWT_SECRET
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except Exception as e:
+        logger.debug(f"Socket auth decode failed: {e}")
+        return None
+
+    user_id = payload.get('user_id')
+    tenant_id = payload.get('tenant_id')
+    if not user_id:
+        return None
+
+    department = None
+    role = None
+    try:
+        from core.database import db
+        user_doc = await db.users.find_one(
+            {'$or': [{'id': user_id}, {'user_id': user_id}]},
+            {'_id': 0, 'role': 1, 'tenant_id': 1, 'id': 1},
+        )
+        if user_doc:
+            role = user_doc.get('role')
+            department = _DEPARTMENT_BY_ROLE.get(role, 'General')
+            # Reject token whose tenant_id doesn't match the user record
+            doc_tenant = user_doc.get('tenant_id')
+            if tenant_id and doc_tenant and tenant_id != doc_tenant:
+                logger.warning(
+                    f"Socket auth tenant mismatch: user={user_id} jwt={tenant_id} doc={doc_tenant}"
+                )
+                return None
+            tenant_id = tenant_id or doc_tenant
+    except Exception as e:
+        logger.debug(f"Socket identity user lookup failed: {e}")
+
+    return {
+        'user_id': user_id,
+        'tenant_id': tenant_id,
+        'role': role,
+        'department': department,
+    }
+
+
+def _internal_chat_rooms(tenant_id: str, user_id: str, department: str | None) -> list[str]:
+    """Compute the tenant-scoped internal chat rooms a user belongs to."""
+    rooms = [
+        f"internal_chat:{tenant_id}:user:{user_id}",
+        f"internal_chat:{tenant_id}:broadcast",
+    ]
+    if department:
+        rooms.append(f"internal_chat:{tenant_id}:dept:{department}")
+    return rooms
+
 
 @sio.event
 async def connect(sid, environ, auth):
-    """Handle client connection"""
+    """Handle client connection.
+
+    If the client provided a valid JWT in the auth payload, we enrol them
+    in their tenant-scoped internal_chat rooms (DM, department, broadcast)
+    so messages pushed by /messaging/internal/send arrive in real time.
+    """
     logger.info(f"Client connected: {sid}")
+    identity = await _resolve_user_identity(auth)
+    if identity and identity.get('tenant_id'):
+        sid_identity[sid] = identity
+        rooms = _internal_chat_rooms(
+            identity['tenant_id'], identity['user_id'], identity.get('department')
+        )
+        for room in rooms:
+            await sio.enter_room(sid, room)
+        connected_clients['internal-chat'].add(sid)
+        logger.info(
+            f"Socket {sid} authenticated user={identity['user_id']} "
+            f"tenant={identity['tenant_id']} dept={identity.get('department')} "
+            f"→ joined {len(rooms)} internal_chat rooms"
+        )
     await sio.emit('connection_established', {
         'sid': sid,
+        'authenticated': bool(identity),
         'timestamp': datetime.utcnow().isoformat()
     }, to=sid)
 
@@ -46,6 +151,7 @@ async def disconnect(sid):
         if sid in clients:
             clients.remove(sid)
             logger.info(f"Removed {sid} from room: {room}")
+    sid_identity.pop(sid, None)
 
 @sio.event
 async def join_room(sid, data):
@@ -221,8 +327,59 @@ async def broadcast_cockpit_snapshot(snapshot: dict[str, Any], tenant_id: str = 
     except Exception as e:
         logger.error(f"Failed to broadcast cockpit snapshot: {e}")
 
-# Create ASGI app
+# ── Internal Chat Live Events ──
+
+async def broadcast_internal_message(
+    tenant_id: str,
+    message_payload: dict[str, Any],
+    *,
+    to_user_id: str | None = None,
+    to_department: str | None = None,
+) -> None:
+    """Broadcast an internal chat message to the appropriate tenant-scoped rooms.
+
+    Routing rules mirror the inbox query in messaging/router.py:
+      - to_user_id provided → DM, deliver only to that user's room
+      - to_department provided → deliver to that department's room
+      - neither → broadcast to all users in the tenant
+    """
+    if not tenant_id:
+        return
+
+    targets: list[str] = []
+    if to_user_id:
+        targets.append(f"internal_chat:{tenant_id}:user:{to_user_id}")
+    elif to_department:
+        targets.append(f"internal_chat:{tenant_id}:dept:{to_department}")
+    else:
+        targets.append(f"internal_chat:{tenant_id}:broadcast")
+
+    envelope = {
+        'message': message_payload,
+        'tenant_id': tenant_id,
+        'to_user_id': to_user_id,
+        'to_department': to_department,
+        'timestamp': datetime.utcnow().isoformat(),
+    }
+
+    for room in targets:
+        try:
+            await sio.emit('internal_message', envelope, room=room)
+            logger.debug(f"Internal message broadcasted to room={room}")
+        except Exception as e:
+            logger.error(f"Failed to broadcast internal_message to {room}: {e}")
+
+
+# Create ASGI app.
+#
+# NOTE on the path:
+#   The app is mounted at `/ws` in server.py via `app.mount("/ws", socket_app)`.
+#   Starlette's `Mount` only sets `scope['root_path']` and does NOT strip the
+#   prefix from `scope['path']`, so the inner ASGI app still sees the full
+#   request path (e.g. `/ws/socket.io/...`). For engineio's path comparison
+#   to succeed, `socketio_path` must therefore include the mount prefix.
+#   The frontend sets `path: '/ws/socket.io'` accordingly.
 socket_app = socketio.ASGIApp(
     sio,
-    socketio_path='socket.io'
+    socketio_path='ws/socket.io'
 )

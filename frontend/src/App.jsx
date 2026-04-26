@@ -7,7 +7,7 @@ import PlanRouteGuard from "@/components/PlanRouteGuard";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
-import { NotificationProvider } from "@/context/NotificationContext";
+import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -107,6 +107,19 @@ function App() {
     setIsAuthenticated(true);
     fetchModules();
 
+    // Reconnect the realtime socket so the new JWT is sent during the
+    // socket.io handshake and the user joins their tenant-scoped rooms
+    // (internal_chat:{tenant}:user:{uid}, :dept:{dept}, :broadcast).
+    try {
+      const { websocket } = await import('@/lib/websocket');
+      websocket.reconnectWithFreshAuth?.();
+    } catch { /* non-fatal */ }
+
+    // Tell the NotificationProvider (which is mounted across login/logout
+    // and would otherwise hold a stale snapshot of the user) to re-read
+    // the cached identity and rewire its socket subscription + unread fetch.
+    notifyAuthChanged();
+
     // ── Auto-redirect to Onboarding Wizard ───────────────────────
     // For tenant admins on a fresh setup (not dismissed, fewer than
     // 3 steps complete), land them on the wizard instead of the
@@ -142,6 +155,13 @@ function App() {
     setTenant(null);
     setModules(null);
     setIsAuthenticated(false);
+    // Drop the realtime socket and tell the notification provider so it can
+    // clear stale internal-chat state immediately (it would otherwise wait
+    // for the page reload below).
+    notifyAuthChanged();
+    import('@/lib/websocket').then(({ websocket }) => {
+      try { websocket.disconnect?.(); } catch { /* noop */ }
+    }).catch(() => { /* non-fatal */ });
     window.location.replace("/auth");
   };
 

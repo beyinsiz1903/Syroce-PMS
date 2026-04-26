@@ -21,6 +21,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { websocket } from '@/lib/websocket';
+import { useNotifications } from '@/context/NotificationContext';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
   Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck
@@ -63,10 +65,14 @@ const CONVERSATION_DEPARTMENT_FILTERS = [
   { value: 'management', label: 'Yönetim', roles: ['super_admin', 'admin', 'supervisor'] },
 ];
 
-const POLL_INTERVAL_MS = 15000;
+// Real-time delivery happens via Socket.IO; this poll is now just a safety
+// net for missed events / cross-tab sync, so we can run it much less often.
+const POLL_INTERVAL_MS = 60000;
 
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
+  // Keep the global bell counter in sync when this tab mutates read state.
+  const { decrementInternalUnread, refreshInternalUnread } = useNotifications();
   const [activeSubTab, setActiveSubTab] = useState('inbox');
 
   const [inbox, setInbox] = useState([]);
@@ -410,8 +416,9 @@ const InternalChatTab = ({ currentUser }) => {
     };
   }, [loadConversations]);
 
-  // Poll the open thread every 15s so incoming messages from the partner
+  // Poll the open thread every 60s so incoming messages from the partner
   // appear without a manual refresh. Only runs while a thread is selected.
+  // (Socket.IO is the primary delivery mechanism — this is a safety net.)
   useEffect(() => {
     if (threadPollTimerRef.current) clearInterval(threadPollTimerRef.current);
     if (!selectedConvUserId) return;
@@ -432,6 +439,61 @@ const InternalChatTab = ({ currentUser }) => {
       node.scrollTop = node.scrollHeight;
     });
   }, [threadMessages]);
+
+  // ── Live updates: subscribe to Socket.IO so new messages appear instantly. ──
+  // The server-side `internal_message` event already filters by tenant + room
+  // (user / department / broadcast), so anything that lands here is for us.
+  // Updates the inbox AND, if a thread for the same partner is open, appends
+  // the message to the thread view so partner replies stream in live too.
+  useEffect(() => {
+    let teardown = null;
+    let cancelled = false;
+
+    const onMessage = (envelope) => {
+      const msg = envelope?.message;
+      if (!msg) return;
+
+      const fromMe = msg.from_user_id && currentUser?.id && msg.from_user_id === currentUser.id;
+
+      setInbox((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        const merged = [{ ...msg, time_ago: msg.time_ago || 'şimdi' }, ...prev];
+        return merged.slice(0, 200);
+      });
+
+      if (!fromMe && !msg.read) {
+        setUnreadCount((c) => c + 1);
+      }
+
+      // If the open thread is with the sender (or recipient, for echo of
+      // our own messages from another tab), append it live so the user
+      // doesn't have to wait for the 60s safety-net poll.
+      if (selectedConvUserId) {
+        const partnerId = fromMe ? msg.to_user_id : msg.from_user_id;
+        if (partnerId && partnerId === selectedConvUserId) {
+          setThreadMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, { ...msg, time_ago: msg.time_ago || 'şimdi' }];
+          });
+        }
+      }
+    };
+
+    (async () => {
+      try {
+        await websocket.connect();
+        if (cancelled) return;
+        teardown = websocket.on('internal_message', onMessage);
+      } catch {
+        /* noop — falls back to polling */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (teardown) teardown();
+    };
+  }, [currentUser?.id, selectedConvUserId]);
 
   const filteredUsers = useMemo(() => {
     if (!userSearch.trim()) return users.slice(0, 50);
@@ -478,12 +540,18 @@ const InternalChatTab = ({ currentUser }) => {
 
   const markAsRead = useCallback(
     async (messageId) => {
+      // Find current read state so we don't double-decrement the bell when
+      // the same message is clicked twice.
+      const wasUnread = inbox.find((m) => m.id === messageId)?.read === false;
       try {
         await axios.put(`/messaging/internal/${messageId}/mark-read`);
         setInbox((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, read: true } : m)),
         );
-        setUnreadCount((c) => Math.max(0, c - 1));
+        if (wasUnread) {
+          setUnreadCount((c) => Math.max(0, c - 1));
+          decrementInternalUnread(1);
+        }
       } catch (err) {
         toast({
           title: 'İşaretleme başarısız',
@@ -492,7 +560,7 @@ const InternalChatTab = ({ currentUser }) => {
         });
       }
     },
-    [toast],
+    [inbox, toast, decrementInternalUnread],
   );
 
   const handleReply = useCallback(
@@ -591,7 +659,7 @@ const InternalChatTab = ({ currentUser }) => {
                   {' · '}
                 </>
               )}
-              Otomatik yenileme: 15 sn
+              Canlı bildirim açık · Yedek yenileme: 60 sn
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
