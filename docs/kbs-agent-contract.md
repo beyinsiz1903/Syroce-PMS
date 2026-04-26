@@ -53,13 +53,28 @@ gerektirmeden çalışır.
 ## 2. Authentication
 
 ### `POST /api/auth/login`
+
+İki giriş modu var:
+
+**Mod A — Otel personeli (önerilen, KBS bot için):** `hotel_id + username`
 ```jsonc
-// Request — `username` ve `email` ikisi de kabul edilir (backwards compat)
 {
   "hotel_id": "100001",
-  "username": "kbs-bot@otel.com",
+  "username": "kbs-bot",         // user.username (e-posta DEĞİL)
   "password": "<güçlü şifre>"
 }
+```
+
+**Mod B — Legacy (e-posta ile global):** sadece `email + password` (hotel_id yok)
+```jsonc
+{
+  "email": "kbs-bot@otel.com",
+  "password": "<güçlü şifre>"
+}
+```
+
+Cevap (her iki mod):
+```jsonc
 // Response 200
 {
   "access_token": "eyJhbGc...",
@@ -492,8 +507,19 @@ yazılır — sertifika gelmeden ajanı end-to-end test etmek için kullanılır
 ### Alarmlar
 - `GET /api/kbs/alerts?acknowledged=false` — okunmamış alarmlar (GM rozet)
 - `POST /api/kbs/alerts/{id}/ack` — alarm görüldü işaretle
-- Alarm tipleri: `dead_letter` (max retry), `missing_data` (auto-enqueue blocked),
-  `max_attempts` (claim sırasında attempt sayısı aşıldı)
+- Alarm tipleri:
+  - `dead_letter` — iş `dead` durumuna düştü (fail retry yok, veya claim sırasında
+    `attempts > max_attempts` aşımı tespit edildi). Operatör manuel müdahale eder.
+  - `missing_data` — auto-enqueue eksik veriden bloke oldu (TC misafir →
+    `id_number` 11 hane yok, yabancı → `passport`/`birth_date` yok). Operatör
+    rezervasyondaki misafir kartını tamamlar, sonra manuel "Kuyruğa Ekle" basabilir.
+
+### Atomik tekillik garantisi
+PMS server tarafında MongoDB partial unique index (`_open_lock`) ile aynı
+`(tenant_id, booking_id, action)` üçlüsü için **aynı anda en fazla 1 açık iş**
+(pending|in_progress) garanti edilir. Eşzamanlı (race) enqueue çağrısı
+DuplicateKeyError yakalanır, mevcut açık iş döner — agent için fark yaratmaz,
+hep tek job kuyruğa girer.
 
 ### Setup-info endpoint
 `GET /api/kbs/setup-info` ajan kurulumu için merkezi bilgi paketi döner

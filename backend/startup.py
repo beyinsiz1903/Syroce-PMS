@@ -365,6 +365,62 @@ async def on_startup(app):
         await _raw_db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
         await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
+        # KBS v2: atomik tekillik kilidi — aynı (tenant, booking, action) için
+        # aynı anda en fazla 1 açık iş (pending|in_progress) garanti.
+        # Closed (done|dead) state'lere geçildiğinde _open_lock unset edilir →
+        # ileride yeni iş açılabilir. Partial filter: sadece açık işler indexlenir.
+        try:
+            # KBS v2 migration (idempotent):
+            # 1) Closed (done|dead) state'lerdeki tüm jobs'tan _open_lock kaldır
+            #    — closed bir job lock tutamaz; aksi halde gelecekteki enqueue
+            #    kalıcı olarak bloke olur.
+            r1 = await _raw_db.kbs_reports.update_many(
+                {"_kind": "queue_job",
+                 "_open_lock": {"$exists": True},
+                 "status": {"$in": ["done", "dead"]}},
+                {"$unset": {"_open_lock": ""}},
+            )
+            # 2) Aynı _open_lock değerine sahip birden fazla AÇIK job varsa
+            #    en yenisini (created_at desc) tut, kalanlarda lock'ı kaldır
+            #    (orphan iş olarak kuyrukta kalır ama lock'ı bloke etmez).
+            agg = _raw_db.kbs_reports.aggregate([
+                {"$match": {"_kind": "queue_job",
+                            "_open_lock": {"$exists": True},
+                            "status": {"$in": ["pending", "in_progress"]}}},
+                {"$sort": {"created_at": -1}},
+                {"$group": {"_id": "$_open_lock", "ids": {"$push": "$id"}, "cnt": {"$sum": 1}}},
+                {"$match": {"cnt": {"$gt": 1}}},
+            ])
+            cleaned = 0
+            async for grp in agg:
+                drop_ids = grp["ids"][1:]  # en yeniyi tut, eskileri unlock
+                if drop_ids:
+                    r = await _raw_db.kbs_reports.update_many(
+                        {"_kind": "queue_job", "id": {"$in": drop_ids}},
+                        {"$unset": {"_open_lock": ""}},
+                    )
+                    cleaned += r.modified_count
+            if r1.modified_count or cleaned:
+                logger.info(
+                    f"KBS migration: closed-state lock cleared from {r1.modified_count}, "
+                    f"open-state duplicate lock cleared from {cleaned}"
+                )
+            await _raw_db.kbs_reports.create_index(
+                [("_open_lock", 1)],
+                unique=True,
+                partialFilterExpression={"_open_lock": {"$exists": True}},
+                name="uniq_kbs_open_lock",
+            )
+            # 3) Index'in gerçekten oluştuğunu doğrula — yoksa atomik tekillik yok.
+            existing = await _raw_db.kbs_reports.index_information()
+            if "uniq_kbs_open_lock" not in existing:
+                raise RuntimeError("uniq_kbs_open_lock index not present after create_index")
+            logger.info("✅ KBS atomik tekillik index hazır (uniq_kbs_open_lock)")
+        except Exception as ix_err:
+            # Atomik tekillik garantisi olmadan KBS kuyruğu güvenli değil → loud failure.
+            logger.error(f"❌ KBS open_lock index FAILED: {ix_err}")
+            if os.getenv("KBS_STRICT_INDEX", "1") != "0":
+                raise
         logger.info("✅ Performance indexes created successfully!")
     except Exception as e:
         from pymongo.errors import OperationFailure

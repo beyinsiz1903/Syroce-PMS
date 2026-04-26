@@ -147,6 +147,11 @@ async def auto_enqueue_kbs(
             "guest_id": (booking or {}).get("guest_id"),
             "action": action,
             "status": "pending",
+            # Atomik tekillik kilidi (partial unique index ile birlikte):
+            # open jobs (pending/in_progress) için set; closed (done/dead)
+            # geçişlerinde unset edilir → aynı booking+action için aynı anda
+            # en fazla 1 açık iş garanti.
+            "_open_lock": f"{tenant_id}:{booking_id}:{action}",
             "attempts": 0,
             "max_attempts": DEFAULT_MAX_ATTEMPTS,
             "worker_id": None,
@@ -164,7 +169,39 @@ async def auto_enqueue_kbs(
             "completed_at": None,
             "failed_at": None,
         }
-        await db.kbs_reports.insert_one(job)
+        try:
+            await db.kbs_reports.insert_one(job)
+        except Exception as ins_err:
+            # DuplicateKeyError → eşzamanlı bir başka enqueue zaten açtı; idempotent dön.
+            if "duplicate key" in str(ins_err).lower() or "E11000" in str(ins_err):
+                existing2 = await db.kbs_reports.find_one(
+                    {
+                        "_kind": QUEUE_KIND,
+                        "tenant_id": tenant_id,
+                        "_open_lock": f"{tenant_id}:{booking_id}:{action}",
+                    },
+                    {"_id": 0},
+                )
+                # Edge case: rakip transaction lock'u zaten unset etmiş (hızlı complete/dead).
+                # (booking, action, open) ile ek arama → transient false-failure önler.
+                if not existing2:
+                    existing2 = await db.kbs_reports.find_one(
+                        {
+                            "_kind": QUEUE_KIND,
+                            "tenant_id": tenant_id,
+                            "booking_id": booking_id,
+                            "action": action,
+                            "status": {"$in": ["pending", "in_progress"]},
+                        },
+                        {"_id": 0},
+                    )
+                if existing2:
+                    logger.info(
+                        "KBS auto-enqueue race resolved (existing job): booking=%s action=%s",
+                        booking_id, action,
+                    )
+                    return existing2
+            raise
         logger.info(
             "KBS auto-enqueue ok: booking=%s action=%s job=%s",
             booking_id, action, job["id"],

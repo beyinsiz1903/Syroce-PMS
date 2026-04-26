@@ -477,6 +477,11 @@ async def kbs_queue_enqueue(
                 "guest_id": booking.get("guest_id"),
                 "action": data.action,
                 "status": "pending",
+                # Atomik tekillik kilidi (partial unique index ile birlikte):
+                # open jobs (pending/in_progress) için set; closed (done/dead)
+                # geçişlerinde unset edilir → aynı booking+action için aynı anda
+                # en fazla 1 açık iş garanti.
+                "_open_lock": f"{tenant_id}:{data.booking_id}:{data.action}",
                 "attempts": 0,
                 "max_attempts": data.max_attempts,
                 "worker_id": None,
@@ -494,7 +499,43 @@ async def kbs_queue_enqueue(
                 "completed_at": None,
                 "failed_at": None,
             }
-            await db.kbs_reports.insert_one(job)
+            try:
+                await db.kbs_reports.insert_one(job)
+            except Exception as ins_err:
+                # Race: eşzamanlı başka enqueue açık iş yarattı → idempotent dön
+                if (
+                    "duplicate key" in str(ins_err).lower()
+                    or "E11000" in str(ins_err)
+                ):
+                    existing2 = await db.kbs_reports.find_one(
+                        {
+                            "_kind": QUEUE_KIND,
+                            "tenant_id": tenant_id,
+                            "_open_lock": f"{tenant_id}:{data.booking_id}:{data.action}",
+                        },
+                        {"_id": 0},
+                    )
+                    # Edge case: rakip transaction _open_lock'u unset etmiş olabilir
+                    # (çok hızlı complete/dead). Ek olarak (booking, action, open) ile ara.
+                    if not existing2:
+                        existing2 = await db.kbs_reports.find_one(
+                            {
+                                "_kind": QUEUE_KIND,
+                                "tenant_id": tenant_id,
+                                "booking_id": data.booking_id,
+                                "action": data.action,
+                                "status": {"$in": ["pending", "in_progress"]},
+                            },
+                            {"_id": 0},
+                        )
+                    if existing2:
+                        response = {"job": existing2, "created": False}
+                        if idem_lock_id:
+                            await complete_idempotency(
+                                db, lock_id=idem_lock_id, response_body=response,
+                            )
+                        return response
+                raise
             job.pop("_id", None)
         response = {"job": job, "created": True}
         if idem_lock_id:
@@ -678,12 +719,16 @@ async def kbs_queue_claim(
         ):
             await db.kbs_reports.update_one(
                 {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
-                {"$set": {
-                    "status": "dead",
-                    "failed_at": _iso(now),
-                    "updated_at": _iso(now),
-                    "last_error": "max_attempts exceeded on claim",
-                }},
+                {
+                    "$set": {
+                        "status": "dead",
+                        "failed_at": _iso(now),
+                        "updated_at": _iso(now),
+                        "last_error": "max_attempts exceeded on claim",
+                    },
+                    # Closed state: _open_lock'u kaldır → yeni iş açılabilsin
+                    "$unset": {"_open_lock": ""},
+                },
             )
             # Madde 6: dead-letter alarm
             await _raise_kbs_alert(
@@ -780,16 +825,21 @@ async def kbs_queue_complete(
                     "status": "in_progress",
                     "worker_id": data.worker_id,
                 },
-                {"$set": {
-                    "status": "done",
-                    "kbs_reference": data.kbs_reference,
-                    "completed_at": _iso(now),
-                    "updated_at": _iso(now),
-                    "kbs_test": is_test_ref,
-                    "notes": (job.get("notes") or "") + (
-                        ("\n" + data.notes) if data.notes else ""
-                    ),
-                }},
+                {
+                    "$set": {
+                        "status": "done",
+                        "kbs_reference": data.kbs_reference,
+                        "completed_at": _iso(now),
+                        "updated_at": _iso(now),
+                        "kbs_test": is_test_ref,
+                        "notes": (job.get("notes") or "") + (
+                            ("\n" + data.notes) if data.notes else ""
+                        ),
+                    },
+                    # Closed state: _open_lock'u kaldır → aynı booking+action için
+                    # tekrar enqueue açılabilsin (örn. checkout sonrası farklı action).
+                    "$unset": {"_open_lock": ""},
+                },
             )
             if cas_result.modified_count == 0:
                 # İş aralıkta değişti (lease expired + başka worker claim etti vs.)
@@ -936,6 +986,10 @@ async def kbs_queue_fail(
                 }
 
             # CAS: idempotent. İş aralıkta başka bir transition geçirdiyse no-op
+            update_op: dict = {"$set": update}
+            # Closed state (dead): _open_lock'u kaldır → yeni iş açılabilsin
+            if not will_retry:
+                update_op["$unset"] = {"_open_lock": ""}
             cas_result = await db.kbs_reports.update_one(
                 {
                     "_kind": QUEUE_KIND,
@@ -944,7 +998,7 @@ async def kbs_queue_fail(
                     "status": "in_progress",
                     "worker_id": data.worker_id,
                 },
-                {"$set": update},
+                update_op,
             )
             if cas_result.modified_count == 0:
                 raise HTTPException(
@@ -1059,17 +1113,19 @@ async def kbs_setup_info(current_user: User = Depends(get_current_user)):
         "auth_endpoint": "/api/auth/login",
         "auth_payload_format": {
             "hotel_id": "<otelin numerik ID'si, ör: 100001>",
-            "username": "kbs-bot@hotel.example",
+            "username": "kbs-bot",
             "password": "<güçlü parola>",
+            "_note": "username = user.username (e-posta DEĞİL). Legacy mod: sadece email+password.",
         },
         "recommended_bot_user": {
+            "username_format": "kbs-bot",
             "email_format": "kbs-bot@<oteldomain>.com",
             "role": "frontdesk",
             "required_permissions": ["view_reports"],
             "rotation_policy": "90 gün",
             "creation_steps": [
                 "1) Yönetim → Kullanıcılar → Yeni kullanıcı",
-                "2) E-posta: kbs-bot@<oteldomain>",
+                "2) Kullanıcı adı: kbs-bot, E-posta: kbs-bot@<oteldomain>",
                 "3) Rol: frontdesk (KBS bildirim izni içerir)",
                 "4) Güçlü parola üret, ajan kurulum dosyasında sakla",
                 "5) İlk login sonrası /api/kbs/me 200 dönmeli",
