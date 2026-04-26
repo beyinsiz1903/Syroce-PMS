@@ -71,6 +71,7 @@ const InternalChatTab = ({ currentUser }) => {
   const [threadMessages, setThreadMessages] = useState([]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [threadReply, setThreadReply] = useState('');
+  const [threadPriority, setThreadPriority] = useState('normal');
   const [sendingThreadReply, setSendingThreadReply] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
 
@@ -252,6 +253,7 @@ const InternalChatTab = ({ currentUser }) => {
       setSelectedConvUserId(conv.user_id);
       setSelectedConvUserName(conv.user_name);
       setThreadReply('');
+      setThreadPriority('normal');
       setThreadMessages([]);
       loadThread(conv.user_id, { markRead: true });
     },
@@ -267,10 +269,13 @@ const InternalChatTab = ({ currentUser }) => {
         params: {
           message: trimmed,
           to_user_id: selectedConvUserId,
-          priority: 'normal',
+          priority: threadPriority,
         },
       });
       setThreadReply('');
+      // Reset to normal so the next message doesn't accidentally inherit
+      // an "urgent" flag from a previous one-off alert.
+      setThreadPriority('normal');
       // Refresh thread + conversation list
       await loadThread(selectedConvUserId, { silent: true });
       loadConversations(true);
@@ -284,7 +289,7 @@ const InternalChatTab = ({ currentUser }) => {
     } finally {
       setSendingThreadReply(false);
     }
-  }, [threadReply, selectedConvUserId, loadThread, loadConversations, toast]);
+  }, [threadReply, threadPriority, selectedConvUserId, loadThread, loadConversations, toast]);
 
   const handleStartConversationFromUser = useCallback(
     (user) => {
@@ -1076,32 +1081,99 @@ const InternalChatTab = ({ currentUser }) => {
         </div>
 
         {/* Reply input */}
-        <div className="border-t p-2 flex items-end gap-2 bg-background">
-          <Textarea
-            value={threadReply}
-            onChange={(e) => setThreadReply(e.target.value)}
-            placeholder="Mesajınızı yazın… (Enter göndermek için, Shift+Enter yeni satır)"
-            rows={1}
-            maxLength={2000}
-            className="resize-none min-h-[40px] max-h-32"
-            data-testid="textarea-thread-reply"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (threadReply.trim() && !sendingThreadReply) {
-                  handleSendThreadReply();
-                }
-              }
-            }}
-          />
-          <Button
-            type="button"
-            onClick={handleSendThreadReply}
-            disabled={sendingThreadReply || !threadReply.trim()}
-            data-testid="button-send-thread-reply"
+        <div className="border-t p-2 flex flex-col gap-2 bg-background">
+          {/* Priority selector — defaults to "normal", resets after each send.
+              "Acil" gets a strong red treatment so users know it triggers an alarm. */}
+          <div
+            className="flex items-center gap-1.5 flex-wrap"
+            role="radiogroup"
+            aria-label="Mesaj önceliği"
           >
-            <Send className="h-4 w-4" />
-          </Button>
+            <span className="text-xs text-muted-foreground mr-1">Öncelik:</span>
+            <Button
+              type="button"
+              size="sm"
+              variant={threadPriority === 'normal' ? 'default' : 'outline'}
+              className="h-7 px-2 text-xs"
+              onClick={() => setThreadPriority('normal')}
+              role="radio"
+              aria-checked={threadPriority === 'normal'}
+              data-testid="button-thread-priority-normal"
+            >
+              Normal
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={threadPriority === 'high' ? 'default' : 'outline'}
+              className="h-7 px-2 text-xs"
+              onClick={() => setThreadPriority('high')}
+              role="radio"
+              aria-checked={threadPriority === 'high'}
+              data-testid="button-thread-priority-high"
+            >
+              Yüksek
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={threadPriority === 'urgent' ? 'destructive' : 'outline'}
+              className={`h-7 px-2 text-xs ${
+                threadPriority === 'urgent'
+                  ? 'ring-2 ring-destructive ring-offset-1'
+                  : 'border-destructive/40 text-destructive hover:bg-destructive/10'
+              }`}
+              onClick={() => setThreadPriority('urgent')}
+              role="radio"
+              aria-checked={threadPriority === 'urgent'}
+              data-testid="button-thread-priority-urgent"
+              title="Acil — alıcıya alarm oluşturur"
+            >
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Acil
+            </Button>
+            {threadPriority === 'urgent' && (
+              <span
+                className="text-[11px] text-destructive font-medium"
+                data-testid="text-thread-priority-urgent-hint"
+              >
+                Alarm oluşturulacak
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-end gap-2">
+            <Textarea
+              value={threadReply}
+              onChange={(e) => setThreadReply(e.target.value)}
+              placeholder="Mesajınızı yazın… (Enter göndermek için, Shift+Enter yeni satır)"
+              rows={1}
+              maxLength={2000}
+              className={`resize-none min-h-[40px] max-h-32 ${
+                threadPriority === 'urgent'
+                  ? 'border-destructive focus-visible:ring-destructive'
+                  : ''
+              }`}
+              data-testid="textarea-thread-reply"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (threadReply.trim() && !sendingThreadReply) {
+                    handleSendThreadReply();
+                  }
+                }
+              }}
+            />
+            <Button
+              type="button"
+              onClick={handleSendThreadReply}
+              disabled={sendingThreadReply || !threadReply.trim()}
+              variant={threadPriority === 'urgent' ? 'destructive' : 'default'}
+              data-testid="button-send-thread-reply"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     );
