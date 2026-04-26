@@ -6,8 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -106,7 +112,7 @@ const InternalChatTab = ({ currentUser }) => {
     markAllInternalRead,
   } = useNotifications();
   const { on: wsOn, socketEmit: wsSocketEmit } = useWebSocket('pms');
-  const [activeSubTab, setActiveSubTab] = useState('inbox');
+  const [composeOpen, setComposeOpen] = useState(false);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
@@ -1001,7 +1007,7 @@ const InternalChatTab = ({ currentUser }) => {
           user_id: msg.from_user_id,
           user_name: msg.from_user_name || 'Kullanıcı',
         };
-        setActiveSubTab('conversations');
+        setComposeOpen(false);
         handleSelectConversation(partner);
         return;
       }
@@ -1014,7 +1020,7 @@ const InternalChatTab = ({ currentUser }) => {
         setToDepartment(msg.from_department);
       }
       setMessageText('');
-      setActiveSubTab('compose');
+      setComposeOpen(true);
     },
     [handleSelectConversation],
   );
@@ -1076,79 +1082,33 @@ const InternalChatTab = ({ currentUser }) => {
     }
   };
 
-  const renderInbox = () => (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Inbox className="h-5 w-5" /> Gelen Kutusu
-              {unreadCount > 0 && (
-                <Badge variant="destructive" data-testid="badge-unread-count">
-                  {unreadCount} okunmamış
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              {myDepartment && (
-                <>
-                  Departmanım: <span className="font-medium">{myDepartment}</span>
-                  {' · '}
-                </>
-              )}
-              Canlı bildirim açık · Yedek yenileme: 60 sn
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleMarkAllRead}
-              disabled={markingAllRead || unreadCount === 0}
-              data-testid="button-mark-all-read"
-              title="Gelen kutusundaki tüm okunmamış mesajları işaretle"
-            >
-              <CheckCheck
-                className={`h-4 w-4 mr-1 ${markingAllRead ? 'animate-pulse' : ''}`}
-              />
-              {markingAllRead ? 'İşaretleniyor…' : 'Tümünü okundu'}
-            </Button>
-            <Button
-              type="button"
-              variant={showUnreadOnly ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setShowUnreadOnly((v) => !v)}
-              data-testid="button-toggle-unread"
-            >
-              {showUnreadOnly ? 'Tümü' : 'Sadece okunmamış'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => loadInbox()}
-              disabled={loadingInbox}
-              data-testid="button-refresh-inbox"
-            >
-              <RefreshCw className={`h-4 w-4 mr-1 ${loadingInbox ? 'animate-spin' : ''}`} />
-              Yenile
-            </Button>
-          </div>
+  const renderInboxList = () => (
+    <div className="flex flex-col h-full border rounded-md bg-background overflow-hidden">
+      <div className="px-3 py-2 border-b flex items-center justify-between gap-2 bg-muted/20">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Inbox className="h-4 w-4" /> Gelen Kutusu
+          {unreadCount > 0 && (
+            <Badge variant="destructive" className="px-1.5 py-0 text-[10px] h-4" data-testid="badge-unread-count">
+              {unreadCount}
+            </Badge>
+          )}
         </div>
-      </CardHeader>
-      <CardContent>
+        <div className="text-[11px] text-muted-foreground">
+          {showUnreadOnly ? 'Sadece okunmamış' : 'Tümü'}
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden">
         {loadingInbox && inbox.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">Yükleniyor…</div>
         ) : inbox.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
+          <div className="text-center py-12 text-muted-foreground px-4">
             <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
             <p>Henüz mesaj yok.</p>
-            <p className="text-sm mt-1">Yeni Mesaj sekmesinden departmanlara veya kişilere mesaj gönderebilirsiniz.</p>
+            <p className="text-sm mt-1">"Yeni Mesaj" düğmesinden departmanlara veya kişilere mesaj gönderebilirsiniz.</p>
           </div>
         ) : (
-          <ScrollArea className="h-[500px] pr-2">
-            <div className="space-y-2">
+          <ScrollArea className="h-full">
+            <div className="space-y-2 p-3">
               {inbox.map((msg) => (
                 <div
                   key={msg.id}
@@ -1240,21 +1200,12 @@ const InternalChatTab = ({ currentUser }) => {
             </div>
           </ScrollArea>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 
   const renderCompose = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Send className="h-5 w-5" /> Yeni Mesaj
-        </CardTitle>
-        <CardDescription>
-          Bir departmana, belirli bir personele veya tüm otele mesaj gönderin.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <div>
           <Label className="mb-2 block">Alıcı Tipi</Label>
           <div className="grid grid-cols-3 gap-2">
@@ -1467,8 +1418,7 @@ const InternalChatTab = ({ currentUser }) => {
             {sending ? 'Gönderiliyor…' : 'Gönder'}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 
   const renderConversationsList = () => (
@@ -2150,47 +2100,102 @@ const InternalChatTab = ({ currentUser }) => {
     </div>
   );
 
+  const totalUnread = (unreadCount || 0) + (totalConversationUnread || 0);
+
   return (
-    <div className="space-y-4">
-      <Tabs value={activeSubTab} onValueChange={setActiveSubTab}>
-        <TabsList>
-          <TabsTrigger value="inbox" data-testid="subtab-inbox">
-            <Inbox className="h-4 w-4 mr-1" />
-            Gelen Kutusu
-            {unreadCount > 0 && (
-              <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-xs">
-                {unreadCount}
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <MessagesSquare className="h-5 w-5" /> Personel Mesajlaşması
+            {totalUnread > 0 && (
+              <Badge variant="destructive" data-testid="badge-total-unread">
+                {totalUnread}
               </Badge>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="conversations" data-testid="subtab-conversations">
-            <MessagesSquare className="h-4 w-4 mr-1" />
-            Konuşmalar
-            {totalConversationUnread > 0 && (
-              <Badge
-                variant="destructive"
-                className="ml-2 px-1.5 py-0 text-xs"
-                data-testid="badge-subtab-conversations-unread"
-              >
-                {totalConversationUnread}
-              </Badge>
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {myDepartment && (
+              <>
+                Departmanım: <span className="font-medium">{myDepartment}</span>
+                {' · '}
+              </>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="compose" data-testid="subtab-compose">
-            <Send className="h-4 w-4 mr-1" />
-            Yeni Mesaj
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="inbox" className="mt-4">
-          {renderInbox()}
-        </TabsContent>
-        <TabsContent value="conversations" className="mt-4">
-          {renderConversations()}
-        </TabsContent>
-        <TabsContent value="compose" className="mt-4">
+            Canlı bildirim açık · Yedek yenileme: 60 sn
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleMarkAllRead}
+            disabled={markingAllRead || unreadCount === 0}
+            data-testid="button-mark-all-read"
+            title="Gelen kutusundaki tüm okunmamış mesajları işaretle"
+          >
+            <CheckCheck className={`h-4 w-4 mr-1 ${markingAllRead ? 'animate-pulse' : ''}`} />
+            {markingAllRead ? 'İşaretleniyor…' : 'Tümünü okundu'}
+          </Button>
+          <Button
+            type="button"
+            variant={showUnreadOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowUnreadOnly((v) => !v)}
+            data-testid="button-toggle-unread"
+          >
+            {showUnreadOnly ? 'Tümü' : 'Sadece okunmamış'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => loadInbox()}
+            disabled={loadingInbox}
+            data-testid="button-refresh-inbox"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${loadingInbox ? 'animate-spin' : ''}`} />
+            Yenile
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setComposeOpen(true)}
+            data-testid="button-open-compose"
+          >
+            <Send className="h-4 w-4 mr-1" /> Yeni Mesaj
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] gap-3 md:h-[640px]">
+        <div
+          className={`${selectedConvUserId ? 'hidden md:block' : 'block'} h-[280px] md:h-full overflow-hidden`}
+          data-testid="pane-conversations-list"
+        >
+          {renderConversationsList()}
+        </div>
+        <div
+          className="block h-[440px] md:h-full overflow-hidden"
+          data-testid="pane-detail"
+        >
+          {selectedConvUserId ? renderThread() : renderInboxList()}
+        </div>
+      </div>
+
+      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-compose">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" /> Yeni Mesaj
+            </DialogTitle>
+            <DialogDescription>
+              Bir departmana, belirli bir personele veya tüm otele mesaj gönderin.
+            </DialogDescription>
+          </DialogHeader>
           {renderCompose()}
-        </TabsContent>
-      </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

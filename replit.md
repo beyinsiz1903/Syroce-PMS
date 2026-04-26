@@ -4760,3 +4760,37 @@ Files touched in the fix pass:
 - `frontend/src/locales/{tr,en,de,fr,es,it,pt,ru,ar,zh}.json` (added `opsCenter.errorPartial` + `opsCenter.retry`)
 
 Lint clean on both pages. Vite HMR picked up locale + page updates without errors.
+
+### v? — Birleşik Geri Bildirim paneli + InternalChatTab tek-panel
+
+**FeedbackSystem.jsx (T001/T004 doğrulandı, mevcut yapı korundu):**
+- 5 alt-sekme ("Tümü / Otel İçi / Dış Platformlar / Anket / Departman") tek panelde.
+- `loadAll` paralel `safe()` çağrıları: `/crm/reviews`, `/feedback/external-reviews`, `/feedback/department`, `/feedback/surveys` + her anketin yanıtı.
+- Birleşik istatistik kartları (ortalama puan, toplam değerlendirme, %memnuniyet, kaynak kırılımı).
+- Kaynak rozetleri (Otel İçi / Dış Platform / Anket / Departman) + platform alt-rozetleri (Booking/Google/TripAdvisor).
+- "Yanıtla" yalnızca `internal` ve `external` kaynaklarda; her biri kendi `/respond` endpoint'ine.
+- "Değerlendirme İste" düğmesi: rezervasyon listesini açar, e-postası olan misafirler için tek-tıkla davet.
+
+**Backend `/feedback/review-invite` ailesi (T002, mevcut):**
+- `POST /feedback/review-invite` (auth) — booking_id alır, 32-hex token üretir, `db.review_invites`'e kaydeder, Resend ile e-posta gönderir.
+- `GET /feedback/public/invite/{token}` (auth YOK) — token doğrular, otel/misafir/oda bilgilerini döner; süresi dolmuş veya tüketilmiş → 410.
+- `POST /feedback/public/invite/{token}` (auth YOK) — atomik `pending → submitting → submitted` geçişiyle tek-kullanımlık; `db.guest_reviews`'a `source: direct_invite` olarak yazar.
+- Token: 32-char hex; süre 30 gün; benzersiz indeks.
+
+**PublicReviewPage.jsx + route (T003, mevcut):**
+- `/review/:token` route'u `routeDefinitions.jsx`'te `type: "public"` olarak kayıtlı; auth gerektirmiyor.
+- 1-5 yıldız + yorum + opsiyonel ad alanı; gönderim sonrası teşekkür ekranı.
+- `publicAxios` örneği `/api` base URL ile çalışıyor; oturum cookie'si göndermiyor.
+
+**InternalChatTab.jsx — tek panel birleştirme (önceki istek tamamlandı):**
+- 3 alt-sekme (Gelen Kutusu / Konuşmalar / Yeni Mesaj) kaldırıldı.
+- Tek `Tabs` sarımı yerine: üst aksiyon çubuğu (Tümünü okundu / Sadece okunmamış / Yenile / + Yeni Mesaj) + 2-pane grid (sol: konuşma listesi, sağ: thread veya inbox listesi).
+- Compose `<Dialog>` içinde açılıyor (eski Card sarımı kaldırıldı, başlık DialogTitle ile aktif).
+- Mobil regresyon düzeltildi: `md:` altında konuşma listesi + inbox dikey yığılı (280px + 440px); konuşma seçilince sol pane gizleniyor, sadece thread tam ekran.
+- `data-testid`: `pane-conversations-list`, `pane-detail`, `dialog-compose`, `button-open-compose`, `button-mark-all-read`, `button-toggle-unread`, `button-refresh-inbox`, `badge-total-unread`.
+
+**Doğrulama (T005):**
+- ESLint 0 hata: `FeedbackSystem.jsx`, `PublicReviewPage.jsx`, `InternalChatTab.jsx`, `routeDefinitions.jsx`.
+- Backend `experience_router` import OK; üç review-invite endpoint mount edildi.
+- Curl: `GET /api/feedback/public/invite/<bilinmeyen-token>` → 404 `{detail: "Davet bulunamadı"}` (auth bypass çalışıyor).
+- Frontend Vite HMR temiz; preview yeniden başlatıldı.
