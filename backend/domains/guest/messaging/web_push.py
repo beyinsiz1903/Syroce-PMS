@@ -7,10 +7,20 @@ messages to the OS notification centre even when the recipient has no tab open.
 
 Design notes
 ------------
-* VAPID keys are read from `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` env vars.
-  If unset, we generate a fresh keypair on first use and persist it to
-  `db.web_push_keys` so subsequent restarts keep using the same identifier
-  (otherwise every browser subscription would silently break on restart).
+* VAPID keys MUST be supplied via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`
+  environment variables (Replit Secrets in production). The optional
+  `VAPID_SUBJECT` env var sets the `sub` claim required by the VAPID spec
+  (defaults to `mailto:noreply@syroce.com`).
+* In production (`is_production_env()` true) the env vars are *required* —
+  if they are missing we raise at first use instead of silently generating a
+  per-instance keypair. This prevents two backend instances from issuing
+  different keys (which would silently invalidate every browser subscription
+  pinned to the other key) and stops VAPID private material from being
+  written to MongoDB in plain text.
+* In non-production environments (developer machines) we keep the historical
+  fallback: if no env vars are configured we generate a keypair on first use
+  and persist it to `db.web_push_keys` so subsequent restarts reuse the same
+  identifier. A warning is logged to make the fallback discoverable.
 * Subscriptions are stored in `db.web_push_subscriptions`, keyed by
   (tenant_id, user_id, endpoint). The endpoint is the unique browser handle.
 * `pywebpush` is an *optional* dependency. If it is not installed, dispatch
@@ -80,10 +90,29 @@ async def _generate_and_store_vapid_keys() -> dict[str, str]:
     return record
 
 
-async def get_vapid_keys() -> dict[str, str]:
-    """Return the active VAPID keypair, generating one on first use if needed.
+class VapidKeysMissingError(RuntimeError):
+    """Raised in production when VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are unset.
 
-    Caches the result in-process so the hot path doesn't hit Mongo every time.
+    We deliberately fail loud instead of silently auto-generating a keypair
+    in production: a per-instance keypair would invalidate every browser
+    PushSubscription pinned to the previous public key, and writing the
+    private key to MongoDB in plain text is unacceptable for production
+    secret-handling.
+    """
+
+
+async def get_vapid_keys() -> dict[str, str]:
+    """Return the active VAPID keypair.
+
+    Resolution order:
+      1. `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` env vars (preferred — and
+         REQUIRED in production).
+      2. Non-production fallback: read a previously-generated keypair from
+         `db.web_push_keys`, generating one on first use. A warning is logged
+         so the developer knows their setup is using the local fallback.
+
+    The result is cached in-process so the hot path doesn't hit Mongo each
+    time. To rotate keys, restart the backend (and update the env vars).
     """
     global _VAPID_CACHE
     if _VAPID_CACHE:
@@ -95,12 +124,35 @@ async def get_vapid_keys() -> dict[str, str]:
         _VAPID_CACHE = {'public_key': env_pub, 'private_key': env_priv}
         return _VAPID_CACHE
 
+    # Env vars missing — production must fail hard, dev may fall back.
+    # NB: we deliberately let an ImportError surface instead of swallowing it.
+    # `infra.production_config` is a first-party module that ships with the
+    # backend; if it cannot be imported, something is structurally wrong with
+    # the deployment and we MUST NOT silently degrade to the dev fallback
+    # (which would write a fresh private key to Mongo in plain text).
+    from infra.production_config import is_production_env
+
+    if is_production_env():
+        raise VapidKeysMissingError(
+            "VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY must be set in production. "
+            "Configure them as Replit Secrets (or your secret manager) so all "
+            "backend instances share a stable keypair and the private key is "
+            "never written to MongoDB."
+        )
+
     record = await db.web_push_keys.find_one({'_id': 'singleton'})
     if not record:
         record = await _generate_and_store_vapid_keys()
         logger.warning(
-            "web_push: generated and persisted a new VAPID keypair (no env vars provided). "
-            "Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY for stable, multi-process deployments."
+            "web_push: generated and persisted a development-only VAPID keypair "
+            "(no env vars provided). Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY for "
+            "stable, multi-process deployments — production deployments will "
+            "refuse to start without them."
+        )
+    else:
+        logger.warning(
+            "web_push: using development-only VAPID keypair from db.web_push_keys. "
+            "Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY env vars before deploying."
         )
 
     _VAPID_CACHE = {
@@ -111,8 +163,19 @@ async def get_vapid_keys() -> dict[str, str]:
 
 
 def _vapid_subject() -> str:
-    """`sub` claim required by the VAPID spec — usually a mailto: URL."""
-    return os.environ.get('VAPID_SUBJECT', 'mailto:noreply@syroce.local')
+    """`sub` claim required by the VAPID spec.
+
+    Per RFC 8292 the value must be a URL — typically a `mailto:` or
+    `https://` URL. Operators sometimes set the env var to a bare email
+    address (e.g. `noreply@syroce.com`); we transparently prepend the
+    `mailto:` scheme so push services don't reject the JWT.
+    """
+    raw = (os.environ.get('VAPID_SUBJECT') or 'mailto:noreply@syroce.com').strip()
+    if raw.startswith(('mailto:', 'http://', 'https://')):
+        return raw
+    if '@' in raw and '/' not in raw:
+        return f'mailto:{raw}'
+    return raw
 
 
 async def store_subscription(
