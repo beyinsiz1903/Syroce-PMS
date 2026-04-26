@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Shield, Send, CheckCircle, AlertTriangle, Clock,
-  Download, Search, UserCog
+  Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus
 } from 'lucide-react';
 
 const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -27,6 +27,66 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
   const [sending, setSending] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
   const [editForm, setEditForm] = useState({ id_number: '', birth_date: '' });
+
+  // Faz 1 kuyruk altyapısı entegrasyonu
+  const [queueJobs, setQueueJobs] = useState([]);
+  const [queueStats, setQueueStats] = useState({
+    pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0,
+  });
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [enqueuingId, setEnqueuingId] = useState(null);
+
+  const fetchQueue = useCallback(async () => {
+    setQueueLoading(true);
+    try {
+      const res = await axios.get('/kbs/queue', { params: { limit: 200 } });
+      setQueueJobs(res.data?.jobs || []);
+      setQueueStats(res.data?.stats || {
+        pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0,
+      });
+    } catch {
+      // Sessiz: ilk yüklemede backend kuyruk dolmamış olabilir
+    } finally {
+      setQueueLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchQueue();
+    const id = setInterval(fetchQueue, 30000);
+    return () => clearInterval(id);
+  }, [fetchQueue]);
+
+  const enqueueBooking = async (bookingId, action = 'checkin') => {
+    if (!bookingId) return;
+    setEnqueuingId(bookingId);
+    try {
+      const res = await axios.post('/kbs/queue', {
+        booking_id: bookingId, action,
+      });
+      toast.success(res.data?.created ? tk('addedToQueue') : tk('alreadyQueued'));
+      fetchQueue();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || tk('addToQueueError'));
+    } finally {
+      setEnqueuingId(null);
+    }
+  };
+
+  const retryDeadJob = async (job) => {
+    // dead ya da legacy başarısız iş için: aynı booking + action ile force=true
+    try {
+      await axios.post('/kbs/queue', {
+        booking_id: job.booking_id,
+        action: job.action || 'checkin',
+        force: true,
+      });
+      toast.success(tk('retryQueued'));
+      fetchQueue();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || tk('retryError'));
+    }
+  };
 
   useEffect(() => {
     const checkedIn = bookings.filter(b => b.status === 'checked_in');
@@ -201,6 +261,47 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
         </Card>
       </div>
 
+      {/* Faz 3: Agent Kuyruğu Durum Çubuğu */}
+      <div className="rounded-lg border bg-gray-50 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+            <ListPlus className="w-4 h-4 text-gray-500" />
+            {tk('queueStatusBar')}
+          </div>
+          <Button variant="ghost" size="sm" onClick={fetchQueue} disabled={queueLoading}
+            className="h-7 px-2 text-xs">
+            <RefreshCw className={`w-3 h-3 mr-1 ${queueLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          <div className="text-center bg-white rounded border-yellow-200 border p-2">
+            <Clock className="w-4 h-4 mx-auto text-yellow-600" />
+            <p className="text-lg font-bold text-yellow-700">{queueStats.pending || 0}</p>
+            <p className="text-[10px] text-yellow-700">{tk('qPending')}</p>
+          </div>
+          <div className="text-center bg-white rounded border-blue-200 border p-2">
+            <Loader2 className="w-4 h-4 mx-auto text-blue-600" />
+            <p className="text-lg font-bold text-blue-700">{queueStats.in_progress || 0}</p>
+            <p className="text-[10px] text-blue-700">{tk('qInProgress')}</p>
+          </div>
+          <div className="text-center bg-white rounded border-green-200 border p-2">
+            <CheckCircle className="w-4 h-4 mx-auto text-green-600" />
+            <p className="text-lg font-bold text-green-700">{queueStats.done || 0}</p>
+            <p className="text-[10px] text-green-700">{tk('qDone')}</p>
+          </div>
+          <div className="text-center bg-white rounded border-orange-200 border p-2">
+            <AlertTriangle className="w-4 h-4 mx-auto text-orange-600" />
+            <p className="text-lg font-bold text-orange-700">{queueStats.failed || 0}</p>
+            <p className="text-[10px] text-orange-700">{tk('qFailed')}</p>
+          </div>
+          <div className="text-center bg-white rounded border-red-200 border p-2">
+            <Skull className="w-4 h-4 mx-auto text-red-600" />
+            <p className="text-lg font-bold text-red-700">{queueStats.dead || 0}</p>
+            <p className="text-[10px] text-red-700">{tk('qDead')}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input className="pl-9" placeholder={tk('searchPlaceholder')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -211,6 +312,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
           <TabsTrigger value="pending">{tk('pendingTab')} ({pendingGuests.length})</TabsTrigger>
           <TabsTrigger value="sent">{tk('sentTab')} ({sentHistory.length})</TabsTrigger>
           <TabsTrigger value="missing">{tk('missingTab')} ({missingData.length})</TabsTrigger>
+          <TabsTrigger value="queue">{tk('queueTab')} ({queueJobs.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-2">
@@ -234,9 +336,16 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     {tk('checkoutDate')} {guest.check_out ? new Date(guest.check_out).toLocaleDateString() : '-'}
                   </div>
                 </div>
-                <Button size="sm" onClick={() => sendToKBS(guest)} disabled={!guest.id_number || sending}>
-                  <Send className="h-3 w-3 mr-1" /> {tk('send')}
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline"
+                    onClick={() => enqueueBooking(guest.id, 'checkin')}
+                    disabled={enqueuingId === guest.id}>
+                    <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
+                  </Button>
+                  <Button size="sm" onClick={() => sendToKBS(guest)} disabled={!guest.id_number || sending}>
+                    <Send className="h-3 w-3 mr-1" /> {tk('send')}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -293,6 +402,80 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
               </CardContent>
             </Card>
           ))}
+        </TabsContent>
+
+        {/* Faz 3: Kuyruk sekmesi — agent app'in çalıştığı işler */}
+        <TabsContent value="queue" className="space-y-2">
+          {queueJobs.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              <ListPlus className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              <p>{tk('noQueueJobs')}</p>
+            </div>
+          ) : queueJobs.map(job => {
+            const statusColors = {
+              pending: 'bg-yellow-100 text-yellow-800',
+              in_progress: 'bg-blue-100 text-blue-800',
+              done: 'bg-green-100 text-green-800',
+              failed: 'bg-orange-100 text-orange-800',
+              dead: 'bg-red-100 text-red-800',
+            };
+            const statusLabel = {
+              pending: tk('qPending'), in_progress: tk('qInProgress'),
+              done: tk('qDone'), failed: tk('qFailed'), dead: tk('qDead'),
+            }[job.status] || job.status;
+            const guestName = job.payload?.guest_name || tk('unknown');
+            const room = job.payload?.room_number || '-';
+            const isRetryable = job.status === 'dead' || job.status === 'failed';
+            return (
+              <Card key={job.id}>
+                <CardContent className="p-3 flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{guestName}</span>
+                      <Badge variant="outline">{tk('room')} {room}</Badge>
+                      <Badge className={statusColors[job.status] || ''}>
+                        {statusLabel}
+                      </Badge>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {tk('qAttempts')}: {job.attempts || 0}/{job.max_attempts || 5}
+                      </Badge>
+                      {job.action && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {job.action}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                      {job.kbs_reference && (
+                        <div className="text-green-600">
+                          {tk('qKbsRef')}: <span className="font-mono">{job.kbs_reference}</span>
+                        </div>
+                      )}
+                      {job.worker_id && (
+                        <div>{tk('qWorker')}: <span className="font-mono">{job.worker_id}</span></div>
+                      )}
+                      {job.last_error && (
+                        <div className="text-red-600 truncate" title={job.last_error}>
+                          {tk('qLastError')}: {job.last_error}
+                        </div>
+                      )}
+                      {job.next_retry_at && job.status === 'pending' && (
+                        <div>{tk('qNextRetry')}: {new Date(job.next_retry_at).toLocaleString()}</div>
+                      )}
+                      <div className="text-gray-400">
+                        {tk('qCreatedAt')}: {job.created_at ? new Date(job.created_at).toLocaleString() : '-'}
+                      </div>
+                    </div>
+                  </div>
+                  {isRetryable && (
+                    <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
+                      <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </TabsContent>
       </Tabs>
 

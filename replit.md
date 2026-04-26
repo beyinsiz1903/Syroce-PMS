@@ -106,7 +106,7 @@ Two URL patterns coexist in frontend code:
 - **Routing Instructions** (`RoutingInstructions.jsx`) — otomatik masraf yönlendirme kuralları (oda→şirket, ekstra→misafir), percentage-based split validation
 - **Manager Daily Report** (`ManagerDailyReport.jsx`) — yazdırılabilir günlük rapor, milliyet dağılımı, konaklama süresi analizi
 - **Revenue Controls** (`RevenueControls.jsx`) — engel fiyat (BAR), gün bazlı fiyatlandırma matrisi, overbooking yönetimi, walk-out tazminat
-- **KBS/GIKS** (`KBSNotification.jsx`) — emniyet/jandarma misafir bildirimi, toplu gönderim, eksik bilgi takibi
+- **KBS/GIKS** (`KBSNotification.jsx`) — emniyet/jandarma misafir bildirimi, toplu gönderim, eksik bilgi takibi. **Faz 1 (kuyruk altyapısı)** + **Faz 3 (PMS UI)** tamamlandı: 5 yeni endpoint (`POST /api/kbs/queue`, `GET /api/kbs/queue`, `POST /queue/{id}/claim|complete|fail`) atomik claim + exponential backoff retry/dead. Atlas 500-collection limit'i nedeniyle `kbs_reports` koleksiyonu `_kind` discriminator ile paylaşıldı (`queue_job` vs `report`). UI'de yeni "Kuyruk" sekmesi + 5'li durum çubuğu (pending/in_progress/done/failed/dead, 30s auto-refresh). Pending guest'lerde "Kuyruğa Ekle", failed/dead job'larda "Yeniden Dene" butonu. Agent app contract: `docs/kbs-agent-contract.md` (login → claim → complete/fail döngüsü, pseudo-code, error sınıflandırma).
 - **KVKK/GDPR** (`KVKKManager.jsx`) — saklama politikaları, veri talepleri (erişim/silme/düzeltme), rıza yönetimi, denetim izi
 
 ## PMS Module (PMSModule.jsx — 800 lines)
