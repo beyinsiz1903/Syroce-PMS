@@ -115,6 +115,13 @@ async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
     # also pick a deterministic window per key (prefer 1h breach over 24h)
     # so that running both checks does not yield two candidates for the same
     # key with non-deterministic ordering.
+    #
+    # ⚠️ DOWNSTREAM CONSUMERS: only for AlertType.CATCHUP_DEDUP_SPIKE the
+    # `provider` field carries this composite "<provider>/<tenant_id>" value
+    # (e.g. "hotelrunner/5bad4a34-..."). All other alert types continue to
+    # use the bare provider name. UI filters/grouping that split on "/" or
+    # use this for per-tenant routing should branch on alert_type. The
+    # tenant id is also recoverable as the string after the first "/".
     by_1h = ingest.get("catchup_dedup_by_tenant_1h", {}) or {}
     by_24h = ingest.get("catchup_dedup_by_tenant_24h", {}) or {}
     thr_1h = THRESHOLDS["catchup_dedup_per_tenant_1h"]
