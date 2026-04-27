@@ -2,13 +2,101 @@
 WebSocket Server for Real-time Updates
 Provides live dashboard metrics, booking updates, and notifications
 """
+import asyncio
 import logging
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
 import socketio
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Presence tracking (task #25)
+# ─────────────────────────────────────────────────────────────────────
+# Tenant-scoped "who is currently connected via WebSocket" map. Used by
+# the "Sadece çevrimiçi" (online-only) filter on the internal chat
+# compose dialog so operators can quickly see which colleagues will
+# receive their DM in real time vs land in their inbox for later.
+#
+# Shape: tenant_id → user_id → active sid count.
+# A user is considered "online" while their sid count > 0. Counting
+# sids (instead of just storing a set of user_ids) is what makes
+# multi-tab and multi-device sessions work correctly: closing one tab
+# does not flip the user offline if another tab is still open.
+#
+# Process-local. In a multi-instance backend, each pod tracks the
+# users connected to *that* pod; the union is computed by aggregating
+# across pods if/when we add a Redis-backed presence store. Today the
+# deployment runs a single backend instance so this is exact.
+_user_presence: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+_presence_lock: asyncio.Lock = asyncio.Lock()
+
+
+async def _record_user_connect(tenant_id: str, user_id: str) -> None:
+    """Increment the active-sid counter for (tenant, user). Best-effort:
+    presence tracking failures must NEVER prevent a real WS connection
+    from being accepted."""
+    if not tenant_id or not user_id:
+        return
+    try:
+        async with _presence_lock:
+            _user_presence[tenant_id][user_id] += 1
+    except Exception as e:
+        logger.warning(f"presence connect failed for {tenant_id}/{user_id}: {e}")
+
+
+async def _record_user_disconnect(tenant_id: str, user_id: str) -> None:
+    """Decrement the active-sid counter and prune the entry when it
+    reaches zero. Same best-effort guarantee as the connect side."""
+    if not tenant_id or not user_id:
+        return
+    try:
+        async with _presence_lock:
+            tenant_bucket = _user_presence.get(tenant_id)
+            if not tenant_bucket:
+                return
+            current = tenant_bucket.get(user_id, 0)
+            if current <= 1:
+                # Guard against double-disconnects underflowing the
+                # counter — drop the key entirely once we hit 0.
+                tenant_bucket.pop(user_id, None)
+                if not tenant_bucket:
+                    _user_presence.pop(tenant_id, None)
+            else:
+                tenant_bucket[user_id] = current - 1
+    except Exception as e:
+        logger.warning(f"presence disconnect failed for {tenant_id}/{user_id}: {e}")
+
+
+def get_online_user_ids(tenant_id: str) -> list[str]:
+    """Snapshot of online user_ids for the given tenant.
+
+    Returns a fresh list each call so callers can mutate freely.
+    Unknown tenant → empty list (NOT an error).
+    """
+    if not tenant_id:
+        return []
+    bucket = _user_presence.get(tenant_id)
+    if not bucket:
+        return []
+    # Snapshot under no lock: a list() of dict keys is atomic in CPython.
+    # Worst case the caller sees a user that just connected/disconnected
+    # — acceptable for a presence indicator.
+    return [uid for uid, count in list(bucket.items()) if count > 0]
+
+
+def is_user_online(tenant_id: str, user_id: str) -> bool:
+    """True iff the user has at least one active WS connection on this
+    backend instance."""
+    if not tenant_id or not user_id:
+        return False
+    bucket = _user_presence.get(tenant_id)
+    if not bucket:
+        return False
+    return bucket.get(user_id, 0) > 0
 
 # Create Socket.IO server
 sio = socketio.AsyncServer(
@@ -161,6 +249,10 @@ async def connect(sid, environ, auth):
                         f"({sid} → {room}): {e}"
                     )
         connected_clients['internal-chat'].add(sid)
+        # Mark this user as online for the "Sadece çevrimiçi" filter on
+        # the compose dialog. Done after room enrolment so a presence
+        # hit implies the user can actually receive a DM right now.
+        await _record_user_connect(identity['tenant_id'], identity['user_id'])
         logger.info(
             f"Socket {sid} authenticated user={identity['user_id']} "
             f"tenant={identity['tenant_id']} dept={identity.get('department')} "
@@ -186,6 +278,13 @@ async def disconnect(sid):
     # any other client on this instance is still using them).
     identity = sid_identity.pop(sid, None)
     if identity and identity.get('tenant_id'):
+        # Drop this sid's contribution to the user's online status. Done
+        # before the Redis-adapter unsubscribe loop so a presence read
+        # immediately after disconnect reflects the right state even
+        # if the adapter teardown is still in flight.
+        await _record_user_disconnect(
+            identity['tenant_id'], identity['user_id']
+        )
         rooms = _internal_chat_rooms(
             identity['tenant_id'], identity['user_id'], identity.get('department')
         )

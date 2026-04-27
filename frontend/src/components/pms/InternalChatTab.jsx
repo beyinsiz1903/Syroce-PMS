@@ -138,6 +138,13 @@ const InternalChatTab = ({ currentUser }) => {
   const [toUserId, setToUserId] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [userDeptFilter, setUserDeptFilter] = useState('all');
+  // Task #25: "Sadece çevrimiçi personeli göster" filtresi.
+  // `onlineUsers` bir Set<string> tutar; presence endpoint'i her dialog
+  // açıldığında ve toggle her açılıp kapatıldığında yeniden çekilir.
+  // Endpoint patlarsa boş set'le degrade ederiz — toggle hâlâ çalışır
+  // ama "Eşleşen kullanıcı yok" gösterir, sessiz hata UX'i bozmaz.
+  const [onlineOnly, setOnlineOnly] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(() => new Set());
   const [messageText, setMessageText] = useState('');
   const [priority, setPriority] = useState('normal');
   const [sending, setSending] = useState(false);
@@ -616,6 +623,25 @@ const InternalChatTab = ({ currentUser }) => {
     }
   }, [currentUser?.id]);
 
+  // Task #25: tenant kapsamlı çevrimiçi kullanıcı listesi.
+  // Hata durumunda sessiz: presence bir UX ipucu, güvenlik sınırı değil.
+  const loadOnlinePresence = useCallback(async () => {
+    try {
+      // axios.defaults.baseURL zaten `/api` ile bitiyor — diğer
+      // mesajlaşma çağrılarıyla aynı şekilde göreli yol kullan,
+      // aksi halde `/api/api/...` çift prefix'i 404'e yol açar.
+      const res = await axios.get('/messaging/internal/presence/online');
+      if (!isMountedRef.current) return;
+      const ids = Array.isArray(res.data?.user_ids) ? res.data.user_ids : [];
+      setOnlineUsers(new Set(ids));
+    } catch {
+      if (!isMountedRef.current) return;
+      // Endpoint'e ulaşılamıyorsa boş set'e düşür ki toggle yanıltıcı
+      // şekilde "herkes online" göstermesin.
+      setOnlineUsers(new Set());
+    }
+  }, []);
+
   useEffect(() => {
     isMountedRef.current = true;
     loadInbox();
@@ -858,6 +884,9 @@ const InternalChatTab = ({ currentUser }) => {
 
     const matches = users.filter((u) => {
       if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
+      // Task #25: çevrimiçi-yalnızca filtresi. Online listesi tenant
+      // kapsamlı geldiği için ekstra tenant kontrolüne gerek yok.
+      if (onlineOnly && !onlineUsers.has(u.id)) return false;
       if (q) {
         const name = (u.name || '').toLocaleLowerCase('tr');
         const email = (u.email || '').toLocaleLowerCase('tr');
@@ -867,7 +896,7 @@ const InternalChatTab = ({ currentUser }) => {
     });
 
     return matches.slice(0, 50);
-  }, [users, userSearch, userDeptFilter]);
+  }, [users, userSearch, userDeptFilter, onlineOnly, onlineUsers]);
 
   const filteredConversations = useMemo(() => {
     const q = conversationSearch.trim().toLocaleLowerCase('tr');
@@ -1296,6 +1325,36 @@ const InternalChatTab = ({ currentUser }) => {
                 </SelectContent>
               </Select>
             </div>
+            {/* Task #25: Sadece çevrimiçi personeli göster filtresi.
+                Toggle her açıldığında presence listesini tazeleriz —
+                kullanıcı toggle'ı tıkladığında "az önce oturum kapatmış"
+                bir kişiyi yine de görmesinler. */}
+            <div className="flex items-center justify-between rounded-md border px-3 py-1.5">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="online-only-toggle"
+                  checked={onlineOnly}
+                  onCheckedChange={(checked) => {
+                    setOnlineOnly(checked);
+                    setToUserId('');
+                    if (checked) loadOnlinePresence();
+                  }}
+                  data-testid="switch-online-only"
+                />
+                <Label
+                  htmlFor="online-only-toggle"
+                  className="text-xs font-normal cursor-pointer"
+                >
+                  Sadece çevrimiçi personeli göster
+                </Label>
+              </div>
+              <span
+                className="text-[10px] text-muted-foreground"
+                data-testid="text-online-count"
+              >
+                {onlineUsers.size} çevrimiçi
+              </span>
+            </div>
             {!usersLoaded ? (
               <p className="text-xs text-muted-foreground">Personel listesi yükleniyor…</p>
             ) : users.length === 0 ? (
@@ -1317,6 +1376,16 @@ const InternalChatTab = ({ currentUser }) => {
                       }`}
                     >
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Task #25: küçük yeşil nokta = bu kullanıcı şu
+                            an WS'e bağlı. Sessiz, ekstra label yok —
+                            yardımcı bir işaret, dikkat dağıtıcı değil. */}
+                        {onlineUsers.has(u.id) && (
+                          <span
+                            className="inline-block h-2 w-2 rounded-full bg-green-500 shrink-0"
+                            title="Çevrimiçi"
+                            data-testid={`dot-online-${u.id}`}
+                          />
+                        )}
                         <span className="font-medium">{u.name}</span>
                         {u.role && ROLE_LABELS[u.role] && (
                           <Badge
@@ -2187,7 +2256,11 @@ const InternalChatTab = ({ currentUser }) => {
         open={composeOpen}
         onOpenChange={(open) => {
           setComposeOpen(open);
-          if (open) loadUsers();
+          if (open) {
+            loadUsers();
+            // Task #25: dialog her açıldığında presence taze olsun.
+            loadOnlinePresence();
+          }
         }}
       >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-compose">

@@ -500,6 +500,35 @@ async def send_internal_message(
 
 
 
+# ── Presence (task #25): "who is online right now in my tenant?" ──
+
+@router.get("/messaging/internal/presence/online")
+async def get_internal_presence_online(
+    current_user: User = Depends(get_current_user),
+):
+    """Return user_ids currently connected via WebSocket in the caller's
+    tenant. Used by the compose dialog's "Sadece çevrimiçi" filter so
+    operators can quickly see which colleagues will receive a DM in real
+    time vs. land in their inbox for later.
+
+    Always tenant-scoped — never leaks presence across tenants. The
+    current user's own id is intentionally INCLUDED so the frontend
+    does not have to special-case it (the picker already filters self
+    out before rendering).
+    """
+    try:
+        from websocket_server import get_online_user_ids
+        user_ids = get_online_user_ids(current_user.tenant_id)
+    except Exception as e:
+        # Presence is a UX hint, not a security boundary. If the
+        # in-memory map can't be read for some reason, return an empty
+        # list rather than 500 — the picker degrades gracefully (the
+        # toggle just shows "Eşleşen kullanıcı yok").
+        logger.warning(f"presence read failed for tenant {current_user.tenant_id}: {e}")
+        user_ids = []
+    return {"user_ids": user_ids, "count": len(user_ids)}
+
+
 # ── Web Push (PWA) subscription endpoints for the internal chat ──
 
 @router.get("/messaging/internal/push/vapid-public-key")
