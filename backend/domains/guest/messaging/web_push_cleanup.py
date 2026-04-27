@@ -108,6 +108,14 @@ async def prune_inactive_subscriptions(
             "web_push_cleanup: pruned %d stale subscriptions (older than %d days)",
             deleted, max_age_days,
         )
+        # Task #32: Yaş tabanlı silmeyi sayaç olarak rollup'a yaz.
+        try:
+            from domains.guest.messaging.web_push_metrics import (
+                record_scheduled_prune,
+            )
+            await record_scheduled_prune(db, count=deleted)
+        except Exception:
+            logger.exception("web_push_cleanup: scheduled-prune metric write failed")
     return deleted
 
 

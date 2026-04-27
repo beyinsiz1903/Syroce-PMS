@@ -475,7 +475,7 @@ async def send_internal_message(
     if priority == 'urgent':
         try:
             from domains.guest.messaging.web_push import dispatch_internal_message_push
-            await dispatch_internal_message_push(
+            push_result = await dispatch_internal_message_push(
                 tenant_id=current_user.tenant_id,
                 payload={
                     'title': f'Acil mesaj — {message_obj.from_user_name}',
@@ -491,6 +491,20 @@ async def send_internal_message(
                 to_user_id=to_user_id,
                 to_department=to_department,
             )
+            # Task #32: günlük rollup'a yaz (best-effort).
+            try:
+                from domains.guest.messaging.web_push_metrics import record_dispatch
+                from core.database import db as _metrics_db
+                await record_dispatch(
+                    _metrics_db,
+                    tenant_id=current_user.tenant_id,
+                    attempted=int(push_result.get('attempted', 0) or 0),
+                    sent=int(push_result.get('sent', 0) or 0),
+                    failed=int(push_result.get('failed', 0) or 0),
+                    pruned=int(push_result.get('pruned', 0) or 0),
+                )
+            except Exception as metric_err:
+                logger.warning("urgent web-push metric record failed: %s", metric_err)
         except Exception as push_err:
             logger.warning("urgent web-push dispatch failed: %s", push_err)
 

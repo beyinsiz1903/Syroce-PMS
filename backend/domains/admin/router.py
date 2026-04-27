@@ -612,6 +612,45 @@ async def update_user_granted_permissions(
     }
 
 
+# ── Task #32: Web push gönderim metrikleri ────────────────────────────
+@router.get("/admin/web-push/metrics")
+async def get_web_push_metrics(
+    days: int = 30,
+    tenant_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Web push gönderim sayaçlarının günlük rollup özeti.
+
+    - ADMIN: kendi tenant'ı (tenant_id parametresi yok sayılır).
+    - SUPER_ADMIN: `tenant_id` query parametresi zorunlu (cross-tenant).
+    Diğer roller 403.
+
+    Sistem-genelinde çalışan otomatik temizlik worker'ının silmesi
+    `system_scheduled_pruned` alanında ayrıca döner.
+    """
+    if _is_super_admin(current_user):
+        if not tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="SUPER_ADMIN için tenant_id zorunlu.",
+            )
+        target_tenant = tenant_id
+    else:
+        role_value = getattr(current_user.role, "value", str(current_user.role))
+        if role_value != UserRole.ADMIN.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Yalnızca yöneticiler push metriklerini görebilir.",
+            )
+        if not current_user.tenant_id:
+            raise HTTPException(status_code=400, detail="Tenant tanımsız.")
+        target_tenant = current_user.tenant_id
+
+    from domains.guest.messaging.web_push_metrics import get_metrics_summary
+    summary = await get_metrics_summary(db, tenant_id=target_tenant, days=days)
+    return summary
+
+
 @router.patch("/admin/tenants/{tenant_id}/modules")
 async def update_tenant_modules(
     tenant_id: str,

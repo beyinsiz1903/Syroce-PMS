@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useToast } from "../hooks/use-toast";
-import { AlertTriangle, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
+import { AlertTriangle, BellRing, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
 
 const ROLE_LABELS = {
   super_admin: "Süper Admin",
@@ -34,6 +34,22 @@ function roleLabel(role) {
   return ROLE_LABELS[role] || role || "—";
 }
 
+function MetricNumber({ label, value, tone = "default" }) {
+  const toneCls = {
+    default: "text-gray-900",
+    good: "text-emerald-700",
+    bad: "text-rose-700",
+    info: "text-indigo-700",
+    muted: "text-gray-600",
+  }[tone] || "text-gray-900";
+  return (
+    <div className="flex flex-col">
+      <span className="text-xs uppercase tracking-wide text-gray-500">{label}</span>
+      <span className={`text-2xl font-semibold tabular-nums ${toneCls}`}>{value}</span>
+    </div>
+  );
+}
+
 export default function UrgentPermissionAdminPage() {
   const { toast } = useToast();
   const [users, setUsers] = useState([]);
@@ -42,6 +58,30 @@ export default function UrgentPermissionAdminPage() {
   const [filter, setFilter] = useState("");
   // user_id → bool (backend yazımı sürerken).
   const [savingMap, setSavingMap] = useState({});
+  // Task #32: Push gönderim metrikleri.
+  const [metrics, setMetrics] = useState(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+
+  const loadMetrics = useCallback(async () => {
+    setMetricsLoading(true);
+    try {
+      const res = await axios.get("/admin/web-push/metrics", {
+        params: { days: 30 },
+      });
+      setMetrics(res.data || null);
+    } catch (err) {
+      // Sessiz: panel kullanılamaz duruma düşmesin, ana liste çalışsın.
+      // eslint-disable-next-line no-console
+      console.warn("web-push metrics fetch failed", err?.message);
+      setMetrics(null);
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,12 +167,80 @@ export default function UrgentPermissionAdminPage() {
               <ShieldCheck className="w-5 h-5 text-indigo-600" />
               <h1 className="text-xl font-bold text-gray-900">Acil Mesaj İzni Yönetimi</h1>
             </div>
-            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { load(); loadMetrics(); }}
+              disabled={loading}
+            >
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                        : <RefreshCw className="w-4 h-4 mr-2" />}
               Yenile
             </Button>
           </div>
+
+          {/* Task #32: Push gönderim sayaçları */}
+          <Card data-testid="urgent-permission-metrics-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-indigo-600" />
+                Acil Mesaj — Push Gönderim İstatistikleri
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {metricsLoading ? (
+                <div className="py-3 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  Yükleniyor...
+                </div>
+              ) : !metrics ? (
+                <div className="py-3 text-sm text-gray-500">
+                  İstatistik alınamadı.
+                </div>
+              ) : (metrics.totals?.attempted || 0) === 0 ? (
+                <div className="py-3 text-sm text-gray-500">
+                  Son {metrics.range_days} günde acil push bildirimi
+                  gönderilmemiş.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                      Bugün
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <MetricNumber label="Denenen" value={metrics.today?.attempted || 0} tone="info" />
+                      <MetricNumber label="Gönderilen" value={metrics.today?.sent || 0} tone="good" />
+                      <MetricNumber label="Başarısız" value={metrics.today?.failed || 0} tone="bad" />
+                      <MetricNumber label="Anlık temizlenen" value={metrics.today?.pruned || 0} tone="muted" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                      Son {metrics.range_days} gün
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <MetricNumber label="Denenen" value={metrics.totals?.attempted || 0} tone="info" />
+                      <MetricNumber label="Gönderilen" value={metrics.totals?.sent || 0} tone="good" />
+                      <MetricNumber label="Başarısız" value={metrics.totals?.failed || 0} tone="bad" />
+                      <MetricNumber label="Anlık temizlenen" value={metrics.totals?.pruned || 0} tone="muted" />
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-gray-500 space-y-1">
+                    <div>
+                      "Anlık temizlenen": gönderim sırasında geçersiz bulunup
+                      silinen abonelik sayısıdır.
+                    </div>
+                    <div>
+                      Sistem geneli otomatik temizlik (tüm tenant'lar) —
+                      bugün: <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned_today || 0}</span>,
+                      son {metrics.range_days} gün: <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="py-3 text-sm text-amber-900 flex items-start gap-2">
