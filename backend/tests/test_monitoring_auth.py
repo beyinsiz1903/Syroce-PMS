@@ -23,6 +23,37 @@ import requests
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8000").rstrip("/")
 PREFIX = f"{BASE_URL}/api/channel-manager/monitoring"
 
+
+# Skip the entire module cleanly if the backend isn't reachable, instead of
+# letting individual tests fail with ConnectionError. We treat any 2xx/3xx/4xx
+# response as "backend is up" — only network-level failures trigger skip.
+def _backend_reachable() -> bool:
+    try:
+        requests.get(f"{BASE_URL}/api/health", timeout=2)
+        return True
+    except requests.RequestException:
+        try:
+            requests.get(BASE_URL, timeout=2)
+            return True
+        except requests.RequestException:
+            return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_reachable(),
+    reason=f"Backend not reachable at {BASE_URL}",
+)
+
+
+# Auth-gate matrix (for future maintainers):
+#   cross-tenant endpoints (super_admin only, 403 for any other role):
+#     GET  /overview, /alerts, /metrics, /providers, /catchup-dedup, /trends
+#     POST /alerts/{id}/ack, /alerts/{id}/resolve
+#   tenant-scoped endpoints (require_op view_system_diagnostics → tenant admin
+#   or super_admin), data filtered by current_user.tenant_id:
+#     GET  /dispatch-config
+#     POST /dispatch-config/slack, /dispatch-config/slack/test
+
 CROSS_TENANT_GET = [
     "/overview",
     "/alerts",
