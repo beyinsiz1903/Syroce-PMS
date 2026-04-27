@@ -80,16 +80,37 @@ async def _ensure_tenant_admin_seeded(db):
     added still get it without manual re-seed. Tests in
     `backend/tests/test_monitoring_auth.py` rely on this account to verify
     the tenant-admin positive path on `/dispatch-config*`.
+
+    User emails in this codebase are field-encrypted with a search hash
+    (`_hash_email`); a plaintext-only `find_one({"email": ...})` misses
+    encrypted records and would re-insert a duplicate admin on every
+    startup. We use `build_user_email_query` (dual-read: hash OR plaintext)
+    for both the existence check and the anchor-tenant lookup so the
+    helper is truly idempotent across encrypted and unmigrated documents.
+
+    Anchored strictly on the demo super_admin's tenant (NO fall-through to
+    arbitrary users): in shared multi-tenant dev/Atlas databases a generic
+    fallback would attach a deterministic-credential admin account to a
+    random tenant — i.e. accidental privilege grant.
     """
+    try:
+        from security.encrypted_lookup import build_user_email_query
+    except Exception:  # pragma: no cover — defensive: never fall back to a
+        # plaintext probe that could miss an encrypted doc and re-insert.
+        logger.warning(
+            "tenant_admin seed: encrypted_lookup unavailable — skipping idempotency check"
+        )
+        return
+
     email = "tenantadmin@hotel.com"
-    existing = await db.users.find_one({"email": email})
+    existing = await db.users.find_one(build_user_email_query(email))
     if existing:
         return
     # Anchor strictly on the demo super_admin's tenant. We deliberately do
     # NOT fall back to the first user found, because in shared multi-tenant
     # dev/Atlas databases that would attach a deterministic-credential admin
     # account to an arbitrary tenant — i.e. accidental privilege grant.
-    anchor = await db.users.find_one({"email": "demo@hotel.com"})
+    anchor = await db.users.find_one(build_user_email_query("demo@hotel.com"))
     if not anchor:
         return
     tid = anchor.get("tenant_id")
@@ -324,6 +345,7 @@ async def auto_seed_if_empty(db):
     if user_count > 0:
         logger.info("ℹ️  Database already has users — skipping auto-seed.")
         await _ensure_hr_legacy_connection(db)
+        await _ensure_tenant_admin_seeded(db)
         await _ensure_complaints_seeded(db)
         await _ensure_agencies_seeded(db)
         await _ensure_tenant_admin_seeded(db)
@@ -423,7 +445,12 @@ async def auto_seed_if_empty(db):
     await db.users.insert_one(legacy_admin)
 
     # Extra staff users
+    # NOTE: `tenantadmin@hotel.com` (role=admin) covers the tenant-scoped admin
+    # path — distinct from `super_admin`. Used by monitoring auth tests
+    # (task #57) to verify `require_op("view_system_diagnostics")` admits a
+    # plain tenant admin while still rejecting cross-tenant endpoints.
     staff_users = [
+        {"name": "Tenant Admin", "email": "tenantadmin@hotel.com", "role": "admin"},
         {"name": "Front Desk Agent", "email": "frontdesk@hotel.com", "role": "front_desk"},
         {"name": "Housekeeping Mgr", "email": "housekeeping@hotel.com", "role": "housekeeping"},
         {"name": "Finance Manager", "email": "finance@hotel.com", "role": "finance"},

@@ -1,5 +1,8 @@
 """
 Task #54 — Channel monitoring endpoints auth guards.
+Task #57 — Adds an explicit tenant-admin (role=admin) positive path so the
+`require_op("view_system_diagnostics")` gate is exercised on its own
+instead of being implicitly covered by super_admin's bypass.
 
 Verifies the role gates added to `/api/channel-manager/monitoring/*`:
 
@@ -8,6 +11,9 @@ Verifies the role gates added to `/api/channel-manager/monitoring/*`:
   endpoint, including the tenant-scoped dispatch-config ones.
 - A super_admin (demo user) can call all endpoints (200/4xx-by-payload,
   but never an auth-related rejection).
+- A tenant admin (role=admin) can call the tenant-scoped dispatch-config
+  endpoints (clears auth) AND is rejected with 403 on the cross-tenant
+  monitoring endpoints (which require super_admin).
 
 Cross-tenant endpoints (overview, alerts list, metrics, providers,
 catchup-dedup, trends, alert ack/resolve) are super_admin-only.
@@ -224,11 +230,11 @@ def test_super_admin_can_call_alert_resolve_404(super_admin_headers):
 
 
 # ── 4. Tenant-scoped dispatch-config write endpoints clear auth gate ───
-# The current seed data only includes super_admin and non-admin staff users
-# (no plain `admin` role user), so we cover the auth gate via super_admin
-# (which bypasses the operation guard) — this still proves the endpoint
-# is reachable for an authorized caller and that the unauth/front_desk
-# rejections above are real, not collateral from a broken handler.
+# Both super_admin (which bypasses the operation guard) and a plain tenant
+# admin (which clears `require_op("view_system_diagnostics")` via the
+# SYSTEM_SETTINGS permission) must reach the handler. Task #57 added the
+# tenant_admin path to ensure the gate works for the role real customers
+# log in with — not just the super_admin bypass.
 
 def test_super_admin_can_update_slack_config(super_admin_headers):
     r = requests.post(
@@ -289,7 +295,8 @@ def test_tenant_admin_can_update_slack_config(tenant_admin_headers):
     storage-constrained environments (e.g. Atlas free tier with a 500-
     collection cap), in which case the handler bubbles up a non-auth 5xx.
     The point of this test is the role gate, mirroring the same pattern
-    used for `test_super_admin_can_update_slack_config`.
+    used for `test_super_admin_can_update_slack_config`. When the call
+    does succeed (200), we additionally pin the success-body shape.
     """
     r = requests.post(
         f"{PREFIX}/dispatch-config/slack",
@@ -305,6 +312,9 @@ def test_tenant_admin_can_update_slack_config(tenant_admin_headers):
     assert r.status_code not in (401, 403), (
         f"tenant_admin slack config update must clear auth gate, got {r.status_code}: {r.text[:200]}"
     )
+    if r.status_code == 200:
+        body = r.json()
+        assert body.get("success") is True
 
 
 @pytest.mark.parametrize("path", CROSS_TENANT_GET)
