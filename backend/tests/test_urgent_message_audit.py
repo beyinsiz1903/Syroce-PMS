@@ -25,13 +25,18 @@ from models.schemas import User
 
 
 def _make_user() -> User:
+    # Task #18: urgent priority artık ayrı bir izinle (`send_urgent_message`)
+    # korunuyor — sadece SUPERVISOR/ADMIN/SUPER_ADMIN bu kanalı kullanabilir.
+    # Audit testlerinin spec'i "urgent gönderildiğinde audit yazılır" üzerine
+    # kurulu, dolayısıyla fixture user'ı urgent gönderebilen bir role
+    # (SUPERVISOR -> "Management" departmanı) yükseltildi.
     return User(
         id="user-sender-1",
         tenant_id="tenant-abc",
-        email="reception@example.com",
-        username="reception1",
-        name="Recep Reception",
-        role=UserRole.FRONT_DESK,
+        email="supervisor@example.com",
+        username="sup1",
+        name="Sup Ervisor",
+        role=UserRole.SUPERVISOR,
     )
 
 
@@ -92,7 +97,7 @@ async def test_urgent_message_creates_audit_log_entry():
     assert after["message_id"] == message_id
     assert after["from_user_id"] == user.id
     assert after["from_user_name"] == user.name
-    assert after["from_department"] == "Reception"
+    assert after["from_department"] == "Management"
     assert after["to_department"] == "Housekeeping"
     assert after["priority"] == "urgent"
     assert "Yangın alarmı" in after["message_preview"]
