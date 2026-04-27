@@ -141,7 +141,9 @@ async def collect_ingest_health() -> dict[str, Any]:
     failed = status_counts.get("failed", 0)
 
     # Pre-insert dedup guard counter — catchup short-circuits.
-    # See `monitoring/dedup_counter.py`. In-memory; per backend process.
+    # See `monitoring/dedup_counter.py`. Redis-backed sliding window
+    # (shared across instances + restart-safe) with per-process
+    # in-memory fallback when Redis is unavailable.
     from .dedup_counter import get_counts as _dedup_get_counts
     try:
         dedup = await _dedup_get_counts()

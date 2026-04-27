@@ -45,9 +45,10 @@ def _col(provider: str, key: str):
 async def store_raw_event(
     provider: str, tenant_id: str, event_type: str,
     external_id: str, channel: str, payload: dict[str, Any], source: str = "webhook",
+    provider_event_id: str | None = None,
 ) -> str:
     event_id = str(uuid.uuid4())
-    await _col(provider, "raw_events").insert_one({
+    doc: dict[str, Any] = {
         "id": event_id,
         "tenant_id": tenant_id,
         "provider": provider,
@@ -62,8 +63,61 @@ async def store_raw_event(
         "status": "pending",
         "error_message": None,
         "retry_count": 0,
-    })
+    }
+    # Optional deterministic dedup key. Used by `ingest_reservation` to
+    # short-circuit catchup re-fetches of the same provider event.
+    if provider_event_id:
+        doc["provider_event_id"] = provider_event_id
+    await _col(provider, "raw_events").insert_one(doc)
     return event_id
+
+
+def _build_provider_event_id(
+    raw_payload: dict[str, Any], external_id: str, event_type: str,
+    payload_hash: str,
+) -> str:
+    """Deterministic ID for the pre-insert catchup dedup guard.
+
+    Format mirrors HotelRunner's ``{external_id}_{event_type}_{version}``
+    where ``version`` is the provider's last-modified timestamp when
+    available. When the payload carries no timestamp (rare but possible
+    for ad-hoc replay tools) we fall back to the payload hash so the
+    same byte-identical payload still dedupes.
+    """
+    last_modified = (
+        raw_payload.get("last_modify")
+        or raw_payload.get("updated_at")
+        or raw_payload.get("modified_at")
+        or raw_payload.get("LastModifyDateTime")
+        or ""
+    )
+    version_key = str(last_modified) if last_modified else f"hash:{payload_hash}"
+    return f"{external_id}_{event_type}_{version_key}"
+
+
+async def _check_provider_event_recorded(
+    provider: str, tenant_id: str, provider_event_id: str,
+) -> dict | None:
+    """Provider-scoped pre-insert guard.
+
+    Mirrors `unified_repository.check_provider_event_recorded` but
+    targets the per-provider ``{provider}_raw_events`` collection used
+    by the common ingest pipeline (Exely today, future providers
+    tomorrow). HotelRunner has its own equivalent in
+    ``hotelrunner_shared._persist_and_process``.
+
+    Returns the existing event document (or None) regardless of
+    processing status — failed events also have to short-circuit, since
+    that is exactly the catchup re-ingest case the guard exists to
+    prevent.
+    """
+    return await _col(provider, "raw_events").find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider_event_id": provider_event_id,
+        },
+        {"_id": 0, "id": 1, "status": 1},
+    )
 
 
 async def mark_event_processed(provider: str, event_id: str, status: str = "processed", error: str | None = None):
@@ -246,12 +300,68 @@ async def ingest_reservation(
     """
     Full pipeline entry point. Provider passes its own normalizer function.
     normalizer(raw_payload, source) -> canonical dict
+
+    Pre-insert dedup guard
+    ----------------------
+    Catchup loops (e.g. ``ExelyPullScheduler`` with its 5-minute safety
+    window) re-fetch the same provider events at every cycle boundary.
+    Without a guard, ``store_raw_event`` would create a fresh document
+    in ``{provider}_raw_events`` for every re-fetched event, bloating
+    the collection and tripping monitoring alerts. We compute a
+    deterministic ``provider_event_id`` and short-circuit before the
+    insert when an event with that ID already exists for the tenant.
+    A skip is reported to the catchup dedup counter so the
+    ``/monitoring/catchup-dedup`` endpoint surfaces it.
     """
     external_id = raw_payload.get("external_id") or raw_payload.get("hr_number") or raw_payload.get("reservation_id", "unknown")
     channel = raw_payload.get("channel", "direct")
     payload_hash = _compute_payload_hash(raw_payload)
+    provider_event_id = _build_provider_event_id(
+        raw_payload, external_id, event_type, payload_hash,
+    )
 
-    event_id = await store_raw_event(provider, tenant_id, event_type, external_id, channel, raw_payload, source)
+    # Pre-insert dedup guard: short-circuit re-fetched catchup events.
+    try:
+        existing = await _check_provider_event_recorded(
+            provider, tenant_id, provider_event_id,
+        )
+    except Exception as e:
+        # The check is a best-effort optimisation. If it fails we fall
+        # through to the normal insert + downstream idempotency path,
+        # which still protects correctness via `check_idempotency`.
+        logger.warning(
+            f"[{provider.upper()}] pre-insert dedup check failed for "
+            f"{provider_event_id}: {e}"
+        )
+        existing = None
+    if existing is not None:
+        try:
+            from domains.channel_manager.monitoring.dedup_counter import (
+                record_skip,
+            )
+            await record_skip(tenant_id, provider)
+        except Exception as e:
+            logger.warning(
+                f"[{provider.upper()}] dedup_counter.record_skip failed: {e}"
+            )
+        logger.info(
+            f"[CATCHUP-DEDUP] [{provider.upper()}] skipping already-recorded "
+            f"event provider_event_id={provider_event_id} "
+            f"existing_event_id={existing.get('id')!r} "
+            f"existing_status={existing.get('status')!r}"
+        )
+        return {
+            "success": True,
+            "event_id": existing.get("id"),
+            "action": "duplicate",
+            "reason": "already_recorded",
+            "provider_event_id": provider_event_id,
+        }
+
+    event_id = await store_raw_event(
+        provider, tenant_id, event_type, external_id, channel, raw_payload,
+        source, provider_event_id=provider_event_id,
+    )
     try:
         canonical = normalizer(raw_payload, source)
         result = await process_reservation(provider, tenant_id, canonical, event_type, event_id, payload_hash)
