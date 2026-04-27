@@ -16,7 +16,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.database import db
+from core.tenant_db import get_system_db
 from domains.channel_manager.data_model import (
     COLL_ARI_CHANGE_SETS,
     COLL_ARI_DRIFT_STATE,
@@ -27,6 +27,15 @@ from domains.channel_manager.data_model import (
 )
 
 logger = logging.getLogger("monitoring.aggregator")
+
+# Operational monitoring is system-level: it must read across ALL tenants
+# (zero-fill counts, cross-tenant rollup). Using the tenant-aware proxy here
+# would silently inject a tenant_id filter inherited from any background task
+# that ran with set_tenant_context() (e.g. cache_warmer at startup), which
+# was producing false-positive "critical" rollups when the active tenant had
+# no recent ingest/recon activity. get_system_db() returns the raw, unscoped
+# database — exactly what aggregate-style observability needs.
+db = get_system_db()
 
 _NO_ID = {"_id": 0}
 
@@ -181,6 +190,22 @@ async def collect_ari_health() -> dict[str, Any]:
 
     success_rate = round(success_count / max(total_pushes, 1) * 100, 2)
 
+    # No activity in the last 24h (fresh tenant or quiet period) is NOT a
+    # failure signal. Without this guard, success_rate=0 from zero-fill
+    # would always trip "<80 → critical" and the rollup would stay red
+    # forever on any otel that hasn't pushed yet. Mirrors how
+    # collect_ingest_health treats total_events=0. drift_count is included
+    # so that an ARI that is silent BUT carrying drift still surfaces as
+    # degraded — silence alone is not a clean bill of health.
+    if total_pushes == 0 and pending_changesets == 0 and drift_count == 0:
+        status = "healthy"
+    elif success_rate >= 95 and pending_changesets < 50:
+        status = "healthy"
+    elif success_rate < 80 or pending_changesets > 200:
+        status = "critical"
+    else:
+        status = "degraded"
+
     return {
         "total_pushes_24h": total_pushes,
         "success_count": success_count,
@@ -192,9 +217,7 @@ async def collect_ari_health() -> dict[str, Any]:
         "latency_p99": p99,
         "pending_changesets": pending_changesets,
         "drift_count": drift_count,
-        "status": "healthy" if success_rate >= 95 and pending_changesets < 50 else (
-            "critical" if success_rate < 80 or pending_changesets > 200 else "degraded"
-        ),
+        "status": status,
     }
 
 
