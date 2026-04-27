@@ -48,6 +48,8 @@ class AlertType(str, Enum):
     # Queue & Worker
     WORKER_STALLED = "worker_stalled"
     QUEUE_OVERFLOW = "queue_overflow"
+    # Catchup loop self-correction
+    CATCHUP_DEDUP_SPIKE = "catchup_dedup_spike"
 
 
 ALERT_SEVERITY_MAP = {
@@ -65,6 +67,7 @@ ALERT_SEVERITY_MAP = {
     AlertType.MISSING_RESERVATION_SPIKE: AlertSeverity.HIGH,
     AlertType.WORKER_STALLED: AlertSeverity.CRITICAL,
     AlertType.QUEUE_OVERFLOW: AlertSeverity.CRITICAL,
+    AlertType.CATCHUP_DEDUP_SPIKE: AlertSeverity.HIGH,
 }
 
 

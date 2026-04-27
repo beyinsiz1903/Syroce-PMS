@@ -48,22 +48,29 @@ def get_last_metrics() -> dict[str, Any]:
 async def _store_metrics_snapshot(metrics: dict[str, Any]):
     """Store a compact metrics snapshot for trend analysis."""
     try:
-        ingest = metrics.get("ingest_pipeline", {})
-        ari = metrics.get("ari_push", {})
-        recon = metrics.get("reconciliation", {})
+        # NOTE: aggregator returns keys `ingest_health`, `ari_health`,
+        # `reconciliation_health`, `queue_health`. Older code here referenced
+        # legacy keys (`ingest_pipeline`, `ari_push`, `reconciliation`); keep a
+        # fallback so existing trend rows do not regress while the canonical
+        # keys feed the new fields.
+        ingest = metrics.get("ingest_health") or metrics.get("ingest_pipeline", {})
+        ari = metrics.get("ari_health") or metrics.get("ari_push", {})
+        recon = metrics.get("reconciliation_health") or metrics.get("reconciliation", {})
         queue = metrics.get("queue_health", {})
 
         snapshot = {
             "ts": datetime.now(UTC).isoformat(),
             "health": metrics.get("system_health", "unknown"),
-            "ingest_events_1h": ingest.get("events_last_1h", 0),
-            "ingest_failed": ingest.get("failed_events", 0),
-            "ingest_duplicates": ingest.get("duplicates_caught", 0),
+            "ingest_events_1h": ingest.get("recent_events_1h", ingest.get("events_last_1h", 0)),
+            "ingest_failed": ingest.get("failed", ingest.get("failed_events", 0)),
+            "ingest_duplicates": ingest.get("duplicates", ingest.get("duplicates_caught", 0)),
+            "catchup_dedup_1h": ingest.get("catchup_dedup_skips_1h", 0),
+            "catchup_dedup_24h": ingest.get("catchup_dedup_skips_24h", 0),
             "ari_success_rate": ari.get("success_rate", 0),
-            "ari_p95_latency": ari.get("p95_latency_ms", 0),
+            "ari_p95_latency": ari.get("latency_p95", ari.get("p95_latency_ms", 0)),
             "ari_retry_count": ari.get("retry_count", 0),
             "recon_open": recon.get("open_cases", 0),
-            "recon_critical": recon.get("critical_cases", 0),
+            "recon_critical": recon.get("critical_count", recon.get("critical_cases", 0)),
             "queue_depth": queue.get("queue_depth", 0),
             "retry_backlog": queue.get("retry_backlog", 0),
         }

@@ -279,6 +279,39 @@ async def test_slack(
 
 
 
+# ── Catchup Pre-Insert Dedup Counter ─────────────────────────────────
+
+@router.get("/catchup-dedup")
+async def get_catchup_dedup_stats(
+    current_user: User = Depends(get_current_user),
+):
+    """Show how often the catchup pre-insert duplicate guard fired.
+
+    Backed by an in-memory sliding window counter (last 24h, prunes older).
+    Helps detect hidden re-ingest storms early — the same root cause that
+    previously produced 8000+ failed raw_channel_events rows.
+    """
+    from .alert_engine import THRESHOLDS
+    from .dedup_counter import get_counts
+
+    stats = await get_counts()
+    return {
+        "last_1h_total": stats["last_1h_total"],
+        "last_24h_total": stats["last_24h_total"],
+        "last_1h_by_tenant_provider": stats["last_1h_by_tenant_provider"],
+        "last_24h_by_tenant_provider": stats["last_24h_by_tenant_provider"],
+        "thresholds": {
+            "per_tenant_1h": THRESHOLDS.get("catchup_dedup_per_tenant_1h"),
+            "per_tenant_24h": THRESHOLDS.get("catchup_dedup_per_tenant_24h"),
+        },
+        "note": (
+            "Counts the number of times the pre-insert duplicate guard "
+            "short-circuited a re-insert (`[CATCHUP-DEDUP]` log tag). "
+            "In-memory; resets on backend restart."
+        ),
+    }
+
+
 # ── Trend Metrics (24h Time Series) ──────────────────────────────────
 
 @router.get("/trends")

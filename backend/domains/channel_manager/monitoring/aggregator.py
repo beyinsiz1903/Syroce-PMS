@@ -140,6 +140,18 @@ async def collect_ingest_health() -> dict[str, Any]:
     processed = status_counts.get("processed", 0)
     failed = status_counts.get("failed", 0)
 
+    # Pre-insert dedup guard counter — catchup short-circuits.
+    # See `monitoring/dedup_counter.py`. In-memory; per backend process.
+    from .dedup_counter import get_counts as _dedup_get_counts
+    try:
+        dedup = await _dedup_get_counts()
+    except Exception as e:
+        logger.warning(f"dedup counter read failed: {e}")
+        dedup = {
+            "last_1h_total": 0, "last_24h_total": 0,
+            "last_1h_by_tenant_provider": {}, "last_24h_by_tenant_provider": {},
+        }
+
     return {
         "total_events": total,
         "pending": pending,
@@ -151,6 +163,10 @@ async def collect_ingest_health() -> dict[str, Any]:
         "failed_recent_24h": failed_recent,
         "duplicate_rate": duplicate_rate,
         "stale_rate": stale_rate,
+        "catchup_dedup_skips_1h": dedup["last_1h_total"],
+        "catchup_dedup_skips_24h": dedup["last_24h_total"],
+        "catchup_dedup_by_tenant_1h": dedup["last_1h_by_tenant_provider"],
+        "catchup_dedup_by_tenant_24h": dedup["last_24h_by_tenant_provider"],
         "status": "healthy" if failed_recent < 5 and pending < 100 else (
             "critical" if failed_recent > 20 or pending > 500 else "degraded"
         ),

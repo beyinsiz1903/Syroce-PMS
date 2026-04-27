@@ -197,6 +197,11 @@ async def _persist_and_process(
                 f"(status={existing.get('processing_status')}, "
                 f"decision={existing.get('decision_result')})"
             )
+            try:
+                from domains.channel_manager.monitoring.dedup_counter import record_skip
+                await record_skip(tenant_id, "hotelrunner")
+            except Exception as e:
+                logger.warning(f"[CATCHUP-DEDUP] counter record failed (non-blocking): {e}")
             from domains.channel_manager.ingest.pipeline import PipelineResult, IngestDecision
             result = PipelineResult(existing.get("id", ""))
             result.decision = IngestDecision.SKIP

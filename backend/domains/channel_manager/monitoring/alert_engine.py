@@ -46,6 +46,9 @@ THRESHOLDS = {
     # Queue & Worker
     "queue_depth_max": 300,
     "worker_stalled_count": 1,
+    # Catchup pre-insert dedup guard (per tenant+provider, sliding window)
+    "catchup_dedup_per_tenant_1h": 50,
+    "catchup_dedup_per_tenant_24h": 500,
 }
 
 
@@ -101,6 +104,39 @@ async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
             details=f"Bekleyen event sayisi: {pending}",
             metric_value=pending,
             threshold=THRESHOLDS["ingest_pending_queue"],
+        ))
+
+    # Catchup pre-insert dedup guard spike — per tenant+provider.
+    # The breakdown key is "<provider>/<tenant_id>". We must surface one
+    # alert *per* breaching (provider, tenant) pair because the alert
+    # deduplicator in `process_alerts` keys on (alert_type, provider). To
+    # avoid collapsing multiple tenants into a single alert, we use the full
+    # "<provider>/<tenant_id>" string as the alert's `provider` field. We
+    # also pick a deterministic window per key (prefer 1h breach over 24h)
+    # so that running both checks does not yield two candidates for the same
+    # key with non-deterministic ordering.
+    by_1h = ingest.get("catchup_dedup_by_tenant_1h", {}) or {}
+    by_24h = ingest.get("catchup_dedup_by_tenant_24h", {}) or {}
+    thr_1h = THRESHOLDS["catchup_dedup_per_tenant_1h"]
+    thr_24h = THRESHOLDS["catchup_dedup_per_tenant_24h"]
+    breaches: dict[str, tuple[str, int, int]] = {}  # key -> (window, count, threshold)
+    for key, count in by_1h.items():
+        if count >= thr_1h:
+            breaches[key] = ("1h", count, thr_1h)
+    for key, count in by_24h.items():
+        if key in breaches:
+            continue  # 1h breach already wins
+        if count >= thr_24h:
+            breaches[key] = ("24h", count, thr_24h)
+    for key in sorted(breaches):  # deterministic emission order
+        window, count, thr = breaches[key]
+        new_alerts.append(_build_alert(
+            AlertType.CATCHUP_DEDUP_SPIKE,
+            provider=key,  # full "<provider>/<tenant_id>" so dedupe is per-tenant
+            title=f"Catchup yinelenen yazma korumasi cok sik tetikleniyor ({window})",
+            details=f"{key}: {count} skip ({window}). Esik: {thr}.",
+            metric_value=count,
+            threshold=thr,
         ))
 
     # 3. ARI Push Alerts
