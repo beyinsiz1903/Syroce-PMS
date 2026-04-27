@@ -98,6 +98,21 @@ def front_desk_headers():
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.fixture(scope="module")
+def tenant_admin_headers():
+    """Tenant-scoped admin user (role=admin, NOT super_admin).
+
+    Seeded by `auto_seed._ensure_tenant_admin_seeded` on every backend
+    startup so this fixture works on existing databases too. Used to
+    prove tenant admins still reach the tenant-scoped dispatch-config
+    endpoints, while remaining 403 on cross-tenant ones.
+    """
+    token = _login("tenantadmin@hotel.com", "staff123")
+    if not token:
+        pytest.skip("tenant_admin login (tenantadmin@hotel.com) unavailable")
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ── 1. Unauthenticated requests are rejected ────────────────────────
 
 @pytest.mark.parametrize("path", CROSS_TENANT_GET + TENANT_SCOPED_GET)
@@ -245,3 +260,95 @@ def test_front_desk_blocked_on_slack_test(front_desk_headers):
 def test_unauthenticated_slack_test_is_rejected():
     r = requests.post(f"{PREFIX}/dispatch-config/slack/test", json={}, timeout=10)
     assert r.status_code in (401, 403)
+
+
+# ── 5. Tenant admin: positive on tenant-scoped, 403 on cross-tenant ─────
+# Closes the gap noted in the task #54 review: prior coverage inferred the
+# tenant-admin contract via super_admin (which bypasses every guard). These
+# tests use a real role=admin (not super_admin) account seeded by
+# `auto_seed._ensure_tenant_admin_seeded` so a regression that breaks the
+# `view_system_diagnostics` permission mapping (or accidentally upgrades a
+# tenant-scoped endpoint to super-admin-only) is caught immediately.
+
+def test_tenant_admin_can_get_dispatch_config(tenant_admin_headers):
+    r = requests.get(
+        f"{PREFIX}/dispatch-config", headers=tenant_admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, (
+        f"tenant_admin GET /dispatch-config must be 200, got {r.status_code}: {r.text[:200]}"
+    )
+    body = r.json()
+    assert isinstance(body, dict)
+
+
+def test_tenant_admin_can_update_slack_config(tenant_admin_headers):
+    """Auth gate clears for tenant admin on the slack-config write endpoint.
+
+    We assert "not auth-rejected" rather than strict 200 because the
+    underlying dispatch_config Mongo collection may not yet exist on
+    storage-constrained environments (e.g. Atlas free tier with a 500-
+    collection cap), in which case the handler bubbles up a non-auth 5xx.
+    The point of this test is the role gate, mirroring the same pattern
+    used for `test_super_admin_can_update_slack_config`.
+    """
+    r = requests.post(
+        f"{PREFIX}/dispatch-config/slack",
+        json={
+            "enabled": False,
+            "webhook_url": "",
+            "severities": ["critical"],
+            "channel_name": "",
+        },
+        headers=tenant_admin_headers,
+        timeout=10,
+    )
+    assert r.status_code not in (401, 403), (
+        f"tenant_admin slack config update must clear auth gate, got {r.status_code}: {r.text[:200]}"
+    )
+
+
+@pytest.mark.parametrize("path", CROSS_TENANT_GET)
+def test_tenant_admin_blocked_on_cross_tenant_get(path, tenant_admin_headers):
+    r = requests.get(f"{PREFIX}{path}", headers=tenant_admin_headers, timeout=10)
+    assert r.status_code == 403, (
+        f"tenant_admin GET {path} must be 403 (cross-tenant), got {r.status_code}: {r.text[:200]}"
+    )
+
+
+def test_tenant_admin_blocked_on_alert_ack(tenant_admin_headers):
+    r = requests.post(
+        f"{PREFIX}/alerts/nonexistent-id/ack",
+        json={},
+        headers=tenant_admin_headers,
+        timeout=10,
+    )
+    assert r.status_code == 403
+
+
+def test_tenant_admin_blocked_on_alert_resolve(tenant_admin_headers):
+    r = requests.post(
+        f"{PREFIX}/alerts/nonexistent-id/resolve",
+        json={},
+        headers=tenant_admin_headers,
+        timeout=10,
+    )
+    assert r.status_code == 403
+
+
+def test_tenant_admin_can_call_slack_test(tenant_admin_headers):
+    """Auth gate clears for tenant admin on /dispatch-config/slack/test.
+
+    With no Slack webhook configured, the handler returns 400 ('No Slack
+    webhook URL configured'). What this test pins is that the role gate
+    accepted the tenant admin — the handler-level 400 is a separate
+    contract that lives in the slack-config tests.
+    """
+    r = requests.post(
+        f"{PREFIX}/dispatch-config/slack/test",
+        json={},
+        headers=tenant_admin_headers,
+        timeout=10,
+    )
+    assert r.status_code not in (401, 403), (
+        f"tenant_admin slack test must clear auth gate, got {r.status_code}: {r.text[:200]}"
+    )

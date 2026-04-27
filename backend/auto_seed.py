@@ -72,6 +72,48 @@ async def _ensure_hr_legacy_connection(db):
     logger.info("✅ hotelrunner_connections legacy doc created from provider_connections")
 
 
+async def _ensure_tenant_admin_seeded(db):
+    """Ensure a tenant-scoped `admin` user (not super_admin) exists.
+
+    Idempotent — re-runs every startup; only inserts when missing. Used so
+    pre-existing dev/Atlas databases that were seeded before this user was
+    added still get it without manual re-seed. Tests in
+    `backend/tests/test_monitoring_auth.py` rely on this account to verify
+    the tenant-admin positive path on `/dispatch-config*`.
+    """
+    email = "tenantadmin@hotel.com"
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        return
+    # Anchor strictly on the demo super_admin's tenant. We deliberately do
+    # NOT fall back to the first user found, because in shared multi-tenant
+    # dev/Atlas databases that would attach a deterministic-credential admin
+    # account to an arbitrary tenant — i.e. accidental privilege grant.
+    anchor = await db.users.find_one({"email": "demo@hotel.com"})
+    if not anchor:
+        return
+    tid = anchor.get("tenant_id")
+    if not tid:
+        return
+    user_doc = {
+        "id": _uuid(),
+        "tenant_id": tid,
+        "agency_id": None,
+        "email": email,
+        "name": "Tenant Admin",
+        "role": "admin",
+        "phone": "+905550000000",
+        "is_active": True,
+        "email_verified": True,
+        "email_verified_at": _now().isoformat(),
+        "hashed_password": pwd_context.hash("staff123"),
+        "created_at": _now().isoformat(),
+    }
+    user_doc = _encrypt_doc(user_doc, "users")
+    await db.users.insert_one(user_doc)
+    logger.info("✅ tenantadmin@hotel.com (role=admin) seeded for monitoring auth tests")
+
+
 async def _ensure_complaints_seeded(db):
     """Ensure service_complaints exist even when full seed is skipped."""
     count = await db.service_complaints.count_documents({})
@@ -284,6 +326,7 @@ async def auto_seed_if_empty(db):
         await _ensure_hr_legacy_connection(db)
         await _ensure_complaints_seeded(db)
         await _ensure_agencies_seeded(db)
+        await _ensure_tenant_admin_seeded(db)
         return False
 
     logger.info("🌱 Empty database detected — seeding demo data...")
@@ -385,6 +428,10 @@ async def auto_seed_if_empty(db):
         {"name": "Housekeeping Mgr", "email": "housekeeping@hotel.com", "role": "housekeeping"},
         {"name": "Finance Manager", "email": "finance@hotel.com", "role": "finance"},
         {"name": "Sales Manager", "email": "sales@hotel.com", "role": "sales"},
+        # Tenant-scoped admin (role=admin, NOT super_admin) — used by
+        # tests/test_monitoring_auth.py to verify the require_op gate on
+        # /api/channel-manager/monitoring/dispatch-config*.
+        {"name": "Tenant Admin", "email": "tenantadmin@hotel.com", "role": "admin"},
     ]
     for su in staff_users:
         staff_doc = {
