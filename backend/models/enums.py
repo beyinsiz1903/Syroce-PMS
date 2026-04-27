@@ -61,6 +61,10 @@ class Permission(str, Enum):
     # Internal messaging permissions
     SEND_URGENT_MESSAGE = "send_urgent_message"
 
+    # Audit / compliance permissions
+    # Manager-only access to audit-derived reports (e.g. urgent message report).
+    VIEW_AUDIT_LOG = "view_audit_log"
+
 class RoomStatus(str, Enum):
     AVAILABLE = "available"
     OCCUPIED = "occupied"
@@ -392,6 +396,7 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_HK_BOARD, Permission.UPDATE_ROOM_STATUS, Permission.ASSIGN_TASK,
         Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS,
         Permission.SEND_URGENT_MESSAGE,
+        Permission.VIEW_AUDIT_LOG,
     ],
     UserRole.FRONT_DESK: [
         Permission.VIEW_BOOKINGS, Permission.CREATE_BOOKING, Permission.EDIT_BOOKING,

@@ -78,6 +78,8 @@ OPERATION_PERMISSIONS = {
     # generates a system alert on the recipient. Default messaging access alone
     # must NOT be enough to trigger it.
     "send_urgent_message": [Permission.SEND_URGENT_MESSAGE],
+    # Manager-only audit-derived reports (Task #26 acil mesaj raporu vs.).
+    "view_audit_log": [Permission.VIEW_AUDIT_LOG],
 }
 
 # v89: module → roles mapping for require_module() helper

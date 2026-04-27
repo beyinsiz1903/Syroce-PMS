@@ -12,6 +12,7 @@ from common.context import OperationContext
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,158 @@ async def get_audit_summary(
         "by_operation": {d["_id"]: d["count"] for d in data.get("by_operation", []) if d["_id"]},
         "by_actor": {d["_id"]: d["count"] for d in data.get("by_actor", []) if d["_id"]},
         "by_result": {d["_id"]: d["count"] for d in data.get("by_result", []) if d["_id"]},
+    }
+
+
+@router.get("/urgent-message-report")
+async def get_urgent_message_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sender_id: str | None = None,
+    recipient_department: str | None = None,
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    # Task #26 — yönetici sınırı. Acil mesaj denetim kayıtları
+    # `message_preview` içerebileceği için sıradan personelin erişimine
+    # kapalı. SUPERVISOR/ADMIN/SUPER_ADMIN dışındaki roller 403 alır.
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """
+    Task #26 — Acil Mesaj Raporu.
+
+    `audit_logs` koleksiyonundaki `send_urgent_internal_message`
+    olaylarını yöneticilere özet + liste şeklinde sunar.
+
+    Filtreler (hepsi opsiyonel):
+      - start_date / end_date  : ISO timestamp string (`>=` / `<=`).
+      - sender_id              : `actor_id` tam eşleşmesi.
+      - recipient_department   : `after_snapshot.to_department` tam eşleşmesi.
+
+    Yanıt:
+      {
+        "events":  [...],            # paginated liste (timestamp DESC)
+        "total":   N,
+        "summary": {
+          "by_sender":               [{sender_id, sender_name, sender_department, count}],
+          "by_recipient_department": [{department, count}],
+          "by_hour_of_day":          [{hour, count}],   # "00".."23"
+        },
+        "filters": {start_date, end_date, sender_id, recipient_department},
+      }
+
+    Multi-tenant: yalnızca çağıranın tenant'ına ait kayıtlar döner.
+    """
+    ctx = OperationContext.from_user(current_user)
+    match_stage: dict = {
+        "tenant_id": ctx.tenant_id,
+        "operation_name": "send_urgent_internal_message",
+    }
+    if start_date:
+        match_stage.setdefault("timestamp", {})["$gte"] = start_date
+    if end_date:
+        match_stage.setdefault("timestamp", {})["$lte"] = end_date
+    if sender_id:
+        match_stage["actor_id"] = sender_id
+    if recipient_department:
+        match_stage["after_snapshot.to_department"] = recipient_department
+
+    pipeline = [
+        {"$match": match_stage},
+        {"$facet": {
+            "events": [
+                {"$sort": {"timestamp": -1}},
+                {"$skip": int(offset)},
+                {"$limit": int(limit)},
+                {"$project": {
+                    "_id": 0,
+                    "id": 1,
+                    "timestamp": 1,
+                    "actor_id": 1,
+                    "actor_role": 1,
+                    "after_snapshot": 1,
+                }},
+            ],
+            "by_sender": [
+                {"$group": {
+                    "_id": {
+                        "sender_id": "$actor_id",
+                        "sender_name": "$after_snapshot.from_user_name",
+                        "sender_department": "$after_snapshot.from_department",
+                    },
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"count": -1}},
+                {"$limit": 10},
+            ],
+            "by_recipient_department": [
+                {"$group": {
+                    "_id": "$after_snapshot.to_department",
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"count": -1}},
+            ],
+            "by_hour_of_day": [
+                # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
+                # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
+                # UTC olduğu için bucket'lar tutarlı.
+                {"$group": {
+                    "_id": {"$substr": ["$timestamp", 11, 2]},
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ],
+            "total": [{"$count": "count"}],
+        }},
+    ]
+
+    try:
+        result = await db.audit_logs.aggregate(pipeline).to_list(1)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("urgent-message-report aggregation failed")
+        result = []
+
+    data = result[0] if result else {}
+    total = (data.get("total") or [{}])[0].get("count", 0) if data.get("total") else 0
+
+    by_sender = [
+        {
+            "sender_id": (d.get("_id") or {}).get("sender_id"),
+            "sender_name": (d.get("_id") or {}).get("sender_name"),
+            "sender_department": (d.get("_id") or {}).get("sender_department"),
+            "count": d.get("count", 0),
+        }
+        for d in (data.get("by_sender") or [])
+        if (d.get("_id") or {}).get("sender_id")
+    ]
+
+    by_recipient_department = [
+        {"department": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_recipient_department") or [])
+        if d.get("_id")
+    ]
+
+    by_hour_of_day = [
+        {"hour": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_hour_of_day") or [])
+        if d.get("_id")
+    ]
+
+    return {
+        "events": data.get("events", []),
+        "total": total,
+        "summary": {
+            "by_sender": by_sender,
+            "by_recipient_department": by_recipient_department,
+            "by_hour_of_day": by_hour_of_day,
+        },
+        "filters": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "sender_id": sender_id,
+            "recipient_department": recipient_department,
+        },
+        "pagination": {"limit": limit, "offset": offset},
     }
 
 
