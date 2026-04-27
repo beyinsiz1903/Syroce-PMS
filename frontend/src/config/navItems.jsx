@@ -107,6 +107,15 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    // Task #35: geri alınan iç mesajlar için adanmış denetim raporu.
+    key: "recalled_messages_report",
+    label: "Geri Alınan Mesajlar",
+    path: "/recalled-messages-report",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
     key: "urgent_permission_admin",
     label: "Acil Mesaj İzinleri",

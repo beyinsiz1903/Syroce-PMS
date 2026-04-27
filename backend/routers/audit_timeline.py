@@ -341,6 +341,176 @@ async def get_urgent_message_report(
     }
 
 
+_ALLOWED_RECALL_PRIORITIES = ("urgent", "normal")
+
+
+@router.get("/recalled-messages")
+async def get_recalled_messages_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sender_id: str | None = None,
+    priority: str | None = None,
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    # Task #35 — yönetici sınırı. Geri alma denetim kayıtları
+    # `message_preview` içerebileceği için sıradan personelin erişimine
+    # kapalı. SUPERVISOR/ADMIN/SUPER_ADMIN dışındaki roller 403 alır.
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """
+    Task #35 — Geri Alınan Mesajlar Raporu.
+
+    `audit_logs` koleksiyonundaki `recall_internal_message` olaylarını
+    yöneticilere özet + liste şeklinde sunar.
+
+    Filtreler (hepsi opsiyonel):
+      - start_date / end_date  : ISO timestamp string (`>=` / `<=`).
+      - sender_id              : `actor_id` tam eşleşmesi (mesajı geri
+                                 alan kullanıcı = orijinal gönderen).
+      - priority               : "urgent" | "normal" — orijinal mesajın
+                                 önceliği (`before_snapshot.priority`).
+
+    Yanıt:
+      {
+        "events":  [...],            # paginated liste (timestamp DESC)
+        "total":   N,
+        "summary": {
+          "by_sender":      [{sender_id, sender_name, sender_department, count}],
+          "by_priority":    [{priority, count}],
+          "by_hour_of_day": [{hour, count}],   # "00".."23"
+        },
+        "filters": {start_date, end_date, sender_id, priority},
+        "pagination": {limit, offset},
+      }
+
+    Multi-tenant: yalnızca çağıranın tenant'ına ait kayıtlar döner.
+
+    Geçersiz `priority` değeri için 422 atılır — aksi halde admin filtre
+    uygulandı sanıp filtresiz sonuçları görür ve yanlış değerlendirir.
+    """
+    # Strict whitelist: invalid → 422 (FastAPI HTTPException). Boş
+    # string ya da None ise filtre uygulanmaz.
+    if priority not in (None, "") and priority not in _ALLOWED_RECALL_PRIORITIES:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Geçersiz priority değeri: {priority!r}. "
+                f"İzin verilen değerler: {list(_ALLOWED_RECALL_PRIORITIES)}."
+            ),
+        )
+
+    ctx = OperationContext.from_user(current_user)
+    match_stage: dict = {
+        "tenant_id": ctx.tenant_id,
+        "operation_name": "recall_internal_message",
+    }
+    if start_date:
+        match_stage.setdefault("timestamp", {})["$gte"] = start_date
+    if end_date:
+        match_stage.setdefault("timestamp", {})["$lte"] = end_date
+    if sender_id:
+        match_stage["actor_id"] = sender_id
+    if priority:
+        match_stage["before_snapshot.priority"] = priority
+
+    pipeline = [
+        {"$match": match_stage},
+        {"$facet": {
+            "events": [
+                {"$sort": {"timestamp": -1}},
+                {"$skip": int(offset)},
+                {"$limit": int(limit)},
+                {"$project": {
+                    "_id": 0,
+                    "id": 1,
+                    "timestamp": 1,
+                    "actor_id": 1,
+                    "actor_role": 1,
+                    "before_snapshot": 1,
+                    "after_snapshot": 1,
+                }},
+            ],
+            "by_sender": [
+                {"$group": {
+                    "_id": {
+                        "sender_id": "$actor_id",
+                        "sender_name": "$before_snapshot.from_user_name",
+                        "sender_department": "$before_snapshot.from_department",
+                    },
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"count": -1}},
+                {"$limit": 10},
+            ],
+            "by_priority": [
+                {"$group": {
+                    "_id": "$before_snapshot.priority",
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"count": -1}},
+            ],
+            "by_hour_of_day": [
+                {"$group": {
+                    "_id": {"$substr": ["$timestamp", 11, 2]},
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ],
+            "total": [{"$count": "count"}],
+        }},
+    ]
+
+    try:
+        result = await db.audit_logs.aggregate(pipeline).to_list(1)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("recalled-messages report aggregation failed")
+        result = []
+
+    data = result[0] if result else {}
+    total = (data.get("total") or [{}])[0].get("count", 0) if data.get("total") else 0
+
+    by_sender = [
+        {
+            "sender_id": (d.get("_id") or {}).get("sender_id"),
+            "sender_name": (d.get("_id") or {}).get("sender_name"),
+            "sender_department": (d.get("_id") or {}).get("sender_department"),
+            "count": d.get("count", 0),
+        }
+        for d in (data.get("by_sender") or [])
+        if (d.get("_id") or {}).get("sender_id")
+    ]
+
+    by_priority = [
+        {"priority": d.get("_id") or "unknown", "count": d.get("count", 0)}
+        for d in (data.get("by_priority") or [])
+    ]
+
+    by_hour_of_day = [
+        {"hour": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_hour_of_day") or [])
+        if d.get("_id")
+    ]
+
+    return {
+        "events": data.get("events", []),
+        "total": total,
+        "summary": {
+            "by_sender": by_sender,
+            "by_priority": by_priority,
+            "by_hour_of_day": by_hour_of_day,
+        },
+        "filters": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "sender_id": sender_id,
+            "priority": priority,
+        },
+        "pagination": {"limit": limit, "offset": offset},
+    }
+
+
 def _group_by_time(logs: list) -> list:
     """Group audit events by hour for timeline visualization."""
     buckets = {}
