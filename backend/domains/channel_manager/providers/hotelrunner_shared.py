@@ -179,6 +179,31 @@ async def _persist_and_process(
     last_mod = identity.get("provider_last_modified_at", "")
     identity["provider_event_id"] = f"{hr_number}_{event_type}_{last_mod}"
 
+    # ── Pre-insert idempotency guard ─────────────────────────────────
+    # provider_event_id is deterministic ({hr_number}_{event_type}_{last_modified}).
+    # If a raw_channel_events row already exists for it (in any status —
+    # including failed/pending_mapping), do NOT create a second row. The
+    # downstream pipeline's `check_provider_event_exists` only catches
+    # processed/duplicate, so without this guard catchup loops re-insert the
+    # same failed event on every cycle and the collection grows unbounded.
+    if hr_number and last_mod:
+        existing = await repo.check_provider_event_recorded(
+            tenant_id, "hotelrunner", identity["provider_event_id"],
+        )
+        if existing:
+            logger.info(
+                f"[CATCHUP-DEDUP] skip insert: provider_event_id="
+                f"{identity['provider_event_id']} already recorded "
+                f"(status={existing.get('processing_status')}, "
+                f"decision={existing.get('decision_result')})"
+            )
+            from domains.channel_manager.ingest.pipeline import PipelineResult, IngestDecision
+            result = PipelineResult(existing.get("id", ""))
+            result.decision = IngestDecision.SKIP
+            result.reason = "Pre-insert duplicate (provider_event_id already recorded)"
+            result.status = "duplicate"
+            return result
+
     # Store raw payload
     raw_payload_id = await _store_raw_payload(
         tenant_id=tenant_id,

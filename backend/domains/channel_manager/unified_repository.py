@@ -274,6 +274,28 @@ async def check_provider_event_exists(
     return existing is not None
 
 
+async def check_provider_event_recorded(
+    tenant_id: str, provider: str, provider_event_id: str,
+) -> dict | None:
+    """Pre-insert guard: return the existing raw event for this provider_event_id
+    in ANY processing status (processed/duplicate/failed/pending/stale), or None.
+
+    Used by sync/catchup paths to avoid re-creating raw_channel_events for
+    deterministic provider_event_ids that have already been recorded.
+    Without this guard, events that finalize with status='failed' (e.g.
+    pending_mapping) bypass `check_provider_event_exists` and pile up on
+    every catchup cycle.
+    """
+    return await db[COLL_RAW_CHANNEL_EVENTS].find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "provider_event_id": provider_event_id,
+        },
+        {"_id": 0, "id": 1, "processing_status": 1, "decision_result": 1},
+    )
+
+
 async def check_payload_hash_exists(
     tenant_id: str, provider: str, external_reservation_id: str, payload_hash: str,
 ) -> bool:
