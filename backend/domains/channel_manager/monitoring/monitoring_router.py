@@ -20,9 +20,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.database import db
+from core.helpers import require_super_admin_guard  # v102 — task #54: lock cross-tenant monitoring to super_admin
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v100 DW
+
+# Cross-tenant monitoring endpoints expose data aggregated across all tenants
+# (alerts, metrics, dedup counters, time-series). They must only be reachable
+# by system (super) admins. Tenant-scoped endpoints (dispatch-config) keep the
+# admin-level `view_system_diagnostics` operation guard so a tenant admin can
+# still manage their own tenant's Slack settings.
+# `not_found=False` returns HTTP 403 for authenticated-but-not-super-admin
+# callers (instead of the default 404), matching the contract in task #54.
+_REQUIRE_SUPER_ADMIN = require_super_admin_guard(not_found=False)
 
 from .aggregator import (
     collect_all_metrics,
@@ -56,7 +66,7 @@ class ResolveAlertRequest(BaseModel):
 
 @router.get("/overview")
 async def get_monitoring_overview(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """System health overview with key metrics."""
     cached = get_last_metrics()
@@ -104,7 +114,7 @@ async def list_alerts(
     severity: str | None = None,
     provider: str | None = None,
     limit: int = Query(100, le=500),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """List monitoring alerts with filters."""
     q: dict[str, Any] = {}
@@ -130,7 +140,7 @@ async def list_alerts(
 
 @router.get("/metrics")
 async def get_detailed_metrics(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """Detailed metrics for all health domains."""
     metrics = await collect_all_metrics()
@@ -141,7 +151,7 @@ async def get_detailed_metrics(
 
 @router.get("/providers")
 async def get_provider_health(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """Detailed provider health breakdown."""
     health = await collect_provider_health()
@@ -166,8 +176,7 @@ async def get_provider_health(
 async def acknowledge_alert(
     alert_id: str,
     req: AckAlertRequest,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54 (cross-tenant action)
 ):
     """Acknowledge a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
@@ -194,8 +203,7 @@ async def acknowledge_alert(
 async def resolve_alert(
     alert_id: str,
     req: ResolveAlertRequest,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54 (cross-tenant action)
 ):
     """Resolve a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
@@ -229,6 +237,7 @@ class SlackConfigRequest(BaseModel):
 @router.get("/dispatch-config")
 async def get_dispatch_config_endpoint(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v102 task #54 — tenant admin gate
 ):
     """Get alert dispatch configuration (Slack, Email, etc.)."""
     from .alert_dispatch import get_dispatch_config
@@ -283,7 +292,7 @@ async def test_slack(
 
 @router.get("/catchup-dedup")
 async def get_catchup_dedup_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """Show how often the catchup pre-insert duplicate guard fired.
 
@@ -317,7 +326,7 @@ async def get_catchup_dedup_stats(
 @router.get("/trends")
 async def get_metrics_trends(
     hours: int = Query(24, ge=1, le=168),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
 ):
     """Get time-series metrics for trend charts (last N hours)."""
     from datetime import timedelta
