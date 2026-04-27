@@ -420,6 +420,9 @@ async def send_internal_message(
                 f"{recipient_label} | {message[:120]}"
             ),
             before_value=None,
+            # Task #27: acil mesaj kayıtları audit timeline'da severity
+            # filtresi ile öne çıksın diye "warning" olarak işaretlenir.
+            severity="warning",
             after_value={
                 "message_id": message_obj.id,
                 "from_user_id": current_user.id,

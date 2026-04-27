@@ -91,6 +91,8 @@ async def test_urgent_message_creates_audit_log_entry():
     assert audit_entry["target_type"] == "internal_message"
     assert audit_entry["entity_id"] == message_id
     assert audit_entry["target_id"] == message_id
+    # Task #27: acil mesaj kayıtları yüksek öncelikli işaretlenir.
+    assert audit_entry["severity"] == "warning"
     assert "timestamp" in audit_entry and audit_entry["timestamp"]
 
     after = audit_entry["after_snapshot"]
@@ -101,6 +103,30 @@ async def test_urgent_message_creates_audit_log_entry():
     assert after["to_department"] == "Housekeeping"
     assert after["priority"] == "urgent"
     assert "Yangın alarmı" in after["message_preview"]
+
+
+@pytest.mark.asyncio
+async def test_log_audit_event_default_severity_unchanged():
+    """Geriye dönük uyum: severity argümanı verilmezse varsayılan
+    "info" olmalı; mevcut çağıranlar etkilenmemeli."""
+    from core import audit as audit_module
+
+    mock_db = MagicMock()
+    mock_db.audit_logs = MagicMock()
+    mock_db.audit_logs.insert_one = AsyncMock()
+
+    await audit_module.log_audit_event(
+        tenant_id="t1",
+        user_id="u1",
+        action="some.action",
+        entity_type="thing",
+        entity_id="e1",
+        details="ne olduğu önemli değil",
+        db=mock_db,
+    )
+
+    entry = mock_db.audit_logs.insert_one.call_args[0][0]
+    assert entry["severity"] == "info"
 
 
 @pytest.mark.asyncio

@@ -17,8 +17,16 @@ async def log_audit_event(
     before_value: dict = None,
     after_value: dict = None,
     db=None,
+    severity: str = "info",
 ):
-    """Helper function to log audit events."""
+    """Helper function to log audit events.
+
+    `severity` opsiyoneldir, varsayılan "info". Audit zaman çizelgesi UI'sı
+    severity'ye göre filtreleme yaptığı için, "warning"/"error"/"critical"
+    seviyelerini geçmek bu kayıtların ön plana çıkmasını sağlar (örn. acil
+    mesaj kötüye kullanımının izlenmesi). Mevcut çağıranlar için davranış
+    değişmez.
+    """
     timestamp = datetime.now(UTC).isoformat()
     audit_log = {
         "id": str(uuid.uuid4()),
@@ -41,7 +49,7 @@ async def log_audit_event(
         "before_snapshot": before_value,
         "after_snapshot": after_value,
         "result_status": "success",
-        "severity": "info",
+        "severity": severity,
         "duration_ms": None,
         "override_reason": None,
         "ip_address": None,
