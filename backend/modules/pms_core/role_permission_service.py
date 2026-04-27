@@ -100,6 +100,10 @@ def require_op(operation: str):
     `@cached`-dekoratorlu endpoint'lerde gövde içindeki `_enforce` cache hit'te
     atlanır. Bu helper bir Depends üretir: dependency injection cache wrapper'ından
     önce çalışır, dolayısıyla cache poisoning üzerinden RBAC bypass mümkün olmaz.
+
+    Task #28: kullanıcı-özel `granted_permissions` listesi, rol-bazlı izinlere
+    ek olarak değerlendirilir; admin panelinden tek tek verilen izinler bu yolla
+    operasyon-seviyesinde kabul edilir.
     """
     from fastapi import Depends as _Depends
 
@@ -111,7 +115,11 @@ def require_op(operation: str):
         from core.security import _is_super_admin as _is_sa
         if _is_sa(current_user):
             return
-        RolePermissionService().enforce_permission(current_user.role, operation)
+        RolePermissionService().enforce_permission(
+            current_user.role,
+            operation,
+            granted_permissions=getattr(current_user, "granted_permissions", None),
+        )
     return _dep
 
 
@@ -172,8 +180,19 @@ def require_role(*allowed_roles):
 class RolePermissionService:
     """Enforces role-based access control for PMS operations."""
 
-    def check_permission(self, user_role: str, operation: str) -> bool:
-        """Check if a user role has permission for an operation."""
+    def check_permission(
+        self,
+        user_role: str,
+        operation: str,
+        granted_permissions: list[str] | None = None,
+    ) -> bool:
+        """Check if a user has permission for an operation.
+
+        Task #28: `granted_permissions` opsiyoneldir; verilirse rol-bazlı
+        kontrolün ÜSTÜNE eklenir — kullanıcı, role'üne tanınmamış olsa bile
+        operasyon için gerekli izne adı yazılı olarak sahipse erişimi açılır.
+        Geriye dönük uyum: parametre verilmezse davranış değişmez.
+        """
         try:
             role_enum = UserRole(user_role)
         except ValueError:
@@ -191,12 +210,21 @@ class RolePermissionService:
             return True
 
         user_perms = ROLE_PERMISSIONS.get(role_enum, [])
+        owned_values = {p.value if isinstance(p, Permission) else p for p in user_perms}
+        # Task #28: kullanıcı-özel olarak verilen izinleri de havuza ekle.
+        if granted_permissions:
+            owned_values.update(str(g) for g in granted_permissions if g)
         # User needs ALL required permissions
-        return all(perm.value in [p.value if isinstance(p, Permission) else p for p in user_perms] for perm in required_perms)
+        return all(perm.value in owned_values for perm in required_perms)
 
-    def enforce_permission(self, user_role: str, operation: str):
+    def enforce_permission(
+        self,
+        user_role: str,
+        operation: str,
+        granted_permissions: list[str] | None = None,
+    ):
         """Raise 403 if user doesn't have permission."""
-        if not self.check_permission(user_role, operation):
+        if not self.check_permission(user_role, operation, granted_permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions for operation: {operation}. Required role/permissions not met.",

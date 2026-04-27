@@ -76,9 +76,11 @@ from domains.admin.schemas import (  # noqa: E402
     SLAConfig,
     SubscriptionUpdateRequest,
     TenantModulesUpdate,
+    UpdateGrantedPermissionsRequest,
     UpdateHotelInfoRequest,
     UpdateTeamMemberRoleRequest,
 )
+from core.audit import log_audit_event  # Task #28
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 
@@ -431,6 +433,183 @@ async def update_user_role(
     }
 
 
+# ── Task #28: Kullanıcı bazlı operasyon izinleri ──────────────────────
+#
+# Rol-bazlı RBAC dışında bazı operasyonlar (şu an yalnız acil mesaj
+# gönderme) tek tek kullanıcılara verilip alınabilsin diye User modelinde
+# `granted_permissions: list[str]` alanı tutuluyor. Endpoint'ler ADMIN ve
+# SUPER_ADMIN'e açık. ADMIN sadece kendi tenant'ı içindeki kullanıcılara
+# yazabilir; SUPER_ADMIN her tenant'a yazabilir.
+
+# Whitelist: kötü niyetli/yanlış izin atamalarını önlemek için kabul
+# edilen izinler dar tutulur.
+GRANTABLE_PERMISSIONS: set[str] = {"send_urgent_message"}
+
+
+def _require_admin_for_target_user(
+    current_user: User, target_tenant_id: str | None,
+):
+    """ADMIN ve SUPER_ADMIN'e izin ver; ADMIN'in başka tenant'a yazmasını
+    engelle. Diğer roller 403 alır."""
+    if _is_super_admin(current_user):
+        return
+    role_value = getattr(current_user.role, "value", str(current_user.role))
+    if role_value != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yalnızca yöneticiler kullanıcı izinlerini düzenleyebilir.",
+        )
+    # ADMIN'in tenant_id'si target ile eşleşmeli.
+    if not current_user.tenant_id or current_user.tenant_id != target_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+
+@router.get("/admin/tenant-users")
+async def list_tenant_users(
+    tenant_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """ADMIN/SUPER_ADMIN için tenant kullanıcı listesi.
+
+    - ADMIN: kendi tenant'ındaki kullanıcılar (tenant_id parametresi yok
+      sayılır).
+    - SUPER_ADMIN: `tenant_id` query parametresi zorunlu.
+
+    UrgentPermissionAdminPage gibi izin yönetim ekranlarının kullandığı
+    hafif endpoint — tek tek `granted_permissions` da döner.
+    """
+    if _is_super_admin(current_user):
+        if not tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="SUPER_ADMIN için tenant_id zorunlu.",
+            )
+        target_tenant = tenant_id
+    else:
+        role_value = getattr(current_user.role, "value", str(current_user.role))
+        if role_value != UserRole.ADMIN.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Yalnızca yöneticiler kullanıcı listesini görebilir.",
+            )
+        if not current_user.tenant_id:
+            raise HTTPException(status_code=400, detail="Tenant tanımsız.")
+        target_tenant = current_user.tenant_id
+
+    cursor = db.users.find({"tenant_id": target_tenant})
+    items: list[dict] = []
+    async for u in cursor:
+        items.append({
+            "id": u.get("id"),
+            "email": u.get("email"),
+            "name": u.get("name"),
+            "username": u.get("username"),
+            "role": u.get("role"),
+            "tenant_id": u.get("tenant_id"),
+            "granted_permissions": u.get("granted_permissions") or [],
+        })
+    items.sort(key=lambda x: ((x.get("name") or x.get("email") or "")).lower())
+    return {
+        "tenant_id": target_tenant,
+        "users": items,
+        "grantable": sorted(GRANTABLE_PERMISSIONS),
+    }
+
+
+@router.get("/admin/users/{user_id}/granted-permissions")
+async def get_user_granted_permissions(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Kullanıcıya tek tek verilmiş operasyon izinlerini döner.
+
+    Yetki: ADMIN (kendi tenant'ı), SUPER_ADMIN (her tenant).
+    """
+    target_user = await db.users.find_one({"id": user_id})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    _require_admin_for_target_user(current_user, target_user.get("tenant_id"))
+    raw = target_user.get("granted_permissions") or []
+    # Whitelist gerçekten uygulanır: legacy/unknown permission değerleri
+    # frontend'e sızdırılmaz. Aksi halde UI toggle'ı bu değerleri payload'a
+    # taşır ve PATCH whitelist kontrolü 400 verir → admin için fiili kilit.
+    perms = [
+        p for p in raw
+        if isinstance(p, str) and p in GRANTABLE_PERMISSIONS
+    ]
+    return {
+        "user_id": user_id,
+        "permissions": perms,
+        "grantable": sorted(GRANTABLE_PERMISSIONS),
+    }
+
+
+@router.patch("/admin/users/{user_id}/granted-permissions")
+async def update_user_granted_permissions(
+    user_id: str,
+    payload: UpdateGrantedPermissionsRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Kullanıcının operasyon-seviyesi izin listesini değiştirir.
+
+    Yetki: ADMIN (kendi tenant'ı), SUPER_ADMIN (her tenant).
+    Whitelist dışı bir izin gönderilirse 400 döner; mevcut izinler
+    payload ile YERİ DEĞİŞTİRİLİR (idempotent set semantics).
+    """
+    target_user = await db.users.find_one({"id": user_id})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    _require_admin_for_target_user(current_user, target_user.get("tenant_id"))
+
+    # Whitelist + tekilleştirme.
+    requested = []
+    for p in payload.permissions or []:
+        if not isinstance(p, str):
+            continue
+        if p not in GRANTABLE_PERMISSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Permission '{p}' atanabilir izinler arasında değil. "
+                    f"İzinler: {sorted(GRANTABLE_PERMISSIONS)}"
+                ),
+            )
+        if p not in requested:
+            requested.append(p)
+
+    before = list(target_user.get("granted_permissions") or [])
+
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"granted_permissions": requested}},
+    )
+
+    # Audit: izin değişiklikleri yöneticiler tarafından izlenebilsin diye
+    # warning seviyesinde yazılır (Task #27 desenine paralel).
+    await log_audit_event(
+        tenant_id=target_user.get("tenant_id") or "",
+        user_id=current_user.id,
+        action="update_user_granted_permissions",
+        entity_type="user",
+        entity_id=user_id,
+        details=(
+            f"{current_user.name} kullanıcı {user_id} izinlerini güncelledi: "
+            f"{before} -> {requested}"
+        ),
+        before_value={"granted_permissions": before},
+        after_value={"granted_permissions": requested},
+        severity="warning",
+        db=db,
+    )
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "permissions": requested,
+    }
 
 
 @router.patch("/admin/tenants/{tenant_id}/modules")

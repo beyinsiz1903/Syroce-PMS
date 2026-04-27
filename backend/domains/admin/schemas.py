@@ -86,6 +86,16 @@ class AdminUpdateTenantInfoRequest(BaseModel):
     total_rooms: int | None = None
 
 
+class UpdateGrantedPermissionsRequest(BaseModel):
+    """Task #28: Kullanıcıya tek tek verilen operasyon-seviyesi izinler.
+
+    Şu an yalnızca `send_urgent_message` yönetiliyor; ileride başka
+    operasyonlar bu listeye eklenebilir. Whitelist dışı bir izin
+    gönderilirse endpoint 400 ile reddeder.
+    """
+    permissions: list[str] = Field(default_factory=list)
+
+
 class AdminCreateTeamMemberRequest(BaseModel):
     email: EmailStr
     name: str

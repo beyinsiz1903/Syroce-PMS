@@ -106,6 +106,15 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "admin",
   },
+  {
+    // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
+    key: "urgent_permission_admin",
+    label: "Acil Mesaj İzinleri",
+    path: "/admin/urgent-permissions",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
 
   // ──── OPERATIONS GROUP ─────────────────────────────
   {

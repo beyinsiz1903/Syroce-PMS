@@ -183,6 +183,7 @@ const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboa
 const ProductionGoLiveDashboard = lazy(() => import("@/pages/ProductionGoLiveDashboard"));
 const AuditTimelinePage = lazy(() => import("@/pages/AuditTimelinePage"));
 const UrgentMessageReportPage = lazy(() => import("@/pages/UrgentMessageReportPage"));
+const UrgentPermissionAdminPage = lazy(() => import("@/pages/UrgentPermissionAdminPage"));
 const PilotReadinessPage = lazy(() => import("@/pages/PilotReadinessPage"));
 const IncidentDashboardPage = lazy(() => import("@/pages/IncidentDashboardPage"));
 const GoLiveDashboardPage = lazy(() => import("@/pages/GoLiveDashboardPage"));
@@ -454,6 +455,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Ops & Phases ───────────────────────────────────
     { path: "/audit-timeline", ...p(AuditTimelinePage, {}) },
     { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}) },
+    { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) },
     { path: "/pilot-readiness", ...p(PilotReadinessPage, {}) },
     { path: "/incident-dashboard", ...p(IncidentDashboardPage, {}) },
     { path: "/golive-dashboard", ...p(GoLiveDashboardPage, {}) },

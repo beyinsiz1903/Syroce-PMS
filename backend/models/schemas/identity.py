@@ -54,6 +54,10 @@ class User(BaseModel):
     email_verified_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     password: str | None = Field(None, exclude=True)  # Exclude password from responses
+    # Task #28: rol-bazlı izinlere ek olarak kullanıcıya tek tek verilen
+    # operasyon-seviyesi izinler (ör. "send_urgent_message"). Boş liste
+    # default — geriye dönük uyumlu, yalnız adminler doldurur.
+    granted_permissions: list[str] = Field(default_factory=list)
 
 # Helper function (defined after User class)
 def _ensure_hotel_context(user: User):

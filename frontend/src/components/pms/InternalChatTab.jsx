@@ -37,7 +37,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { websocket, useWebSocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
-import { hasRole } from '@/utils/authRoles';
+import { canSendUrgentMessage, hasRole } from '@/utils/authRoles';
 import {
   Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
   Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck,
@@ -118,8 +118,10 @@ const InternalChatTab = ({ currentUser }) => {
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
   // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
   // hiç görmesin — backend de aynı kontrolü yapıyor (defense-in-depth).
+  // Task #28: rol-bazlı yetki yoksa kullanıcıya tek tek verilen
+  // `granted_permissions: ["send_urgent_message"]` izni de kabul edilir.
   const canSendUrgent = useMemo(
-    () => hasRole(currentUser, 'admin', 'supervisor'),
+    () => canSendUrgentMessage(currentUser),
     [currentUser],
   );
 
