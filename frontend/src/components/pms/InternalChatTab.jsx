@@ -170,6 +170,9 @@ const InternalChatTab = ({ currentUser }) => {
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
+  // Task #30: badge tıklayınca dropdown'ı programmatik olarak kapatabilmek
+  // için Select'i controlled yapıyoruz.
+  const [conversationDeptOpen, setConversationDeptOpen] = useState(false);
 
   // Live "yazıyor…" indicator — partner_id of the user currently typing
   // to me in the open thread. Auto-clears after TYPING_INDICATOR_TTL_MS.
@@ -380,6 +383,29 @@ const InternalChatTab = ({ currentUser }) => {
       loadThread(conv.user_id, { markRead: true });
     },
     [loadThread],
+  );
+
+  // Task #30: Departman dropdown badge'i tıklanınca dropdown'ı kapat,
+  // o departmana filtre koy ve listede ilk okunmamış mesajı olan
+  // konuşmayı aç. Geleneksel Item.onSelect davranışı badge dışında
+  // (label/whitespace) kalır, dolayısıyla normal seçim yapısı bozulmaz.
+  const jumpToFirstUnreadInDepartment = useCallback(
+    (deptValue) => {
+      setConversationDeptFilter(deptValue);
+      setConversationDeptOpen(false);
+      const opt = CONVERSATION_DEPARTMENT_FILTERS.find(
+        (o) => o.value === deptValue,
+      );
+      const allowed = opt?.roles ? new Set(opt.roles) : null;
+      const target = conversations.find((c) => {
+        if (allowed && !allowed.has(c.user_role || '')) return false;
+        return (c.unread_count || 0) > 0;
+      });
+      if (target) {
+        handleSelectConversation(target);
+      }
+    },
+    [conversations, handleSelectConversation],
   );
 
   const performSendThreadReply = useCallback(async () => {
@@ -1535,12 +1561,42 @@ const InternalChatTab = ({ currentUser }) => {
           <Select
             value={conversationDeptFilter}
             onValueChange={setConversationDeptFilter}
+            open={conversationDeptOpen}
+            onOpenChange={setConversationDeptOpen}
           >
             <SelectTrigger
               className="h-9 flex-1"
               data-testid="select-conversation-department"
             >
-              <SelectValue placeholder="Departman" />
+              {/*
+                Task #29: Seçili departmanın okunmamış sayısını trigger
+                üzerinde göster. Dropdown açık değilken bile kullanıcı
+                hangi filtrenin kaç okunmamışı olduğunu görsün. SelectValue
+                children olarak veriliyor, böylece Radix kendi değerini
+                yazmak yerine bizim gösterdiğimizi yansıtır.
+              */}
+              <SelectValue placeholder="Departman">
+                {(() => {
+                  const opt = CONVERSATION_DEPARTMENT_FILTERS.find(
+                    (o) => o.value === conversationDeptFilter,
+                  );
+                  const label = opt?.label || 'Departman';
+                  const count = conversationUnreadByDept[conversationDeptFilter] || 0;
+                  return (
+                    <span className="flex items-center justify-between gap-2 w-full pr-1">
+                      <span className="truncate">{label}</span>
+                      {count > 0 && (
+                        <span
+                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px]"
+                          data-testid="badge-dept-unread-trigger"
+                        >
+                          {count > 99 ? '99+' : count}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })()}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => {
@@ -1563,12 +1619,28 @@ const InternalChatTab = ({ currentUser }) => {
                     <span className="flex items-center justify-between gap-2 w-full pr-4">
                       <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
                       {count > 0 ? (
-                        <span
-                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px]"
+                        // Task #30: Badge'i tıklanabilir yap. onPointerDown
+                        // ile Radix Item'in select handler'ını engelliyoruz
+                        // (onClick'te kullanırsak Item zaten seçilmiş oluyor).
+                        // Sonra kendi handler'ımızla filtre + ilk okunmamış
+                        // konuşmayı tek hamlede açıyoruz.
+                        <button
+                          type="button"
+                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px] cursor-pointer transition-colors"
                           data-testid={`badge-dept-unread-${opt.value}`}
+                          aria-label={`${opt.label} departmanındaki ilk okunmamış mesaja git (${count})`}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            jumpToFirstUnreadInDepartment(opt.value);
+                          }}
                         >
-                          {count}
-                        </span>
+                          {count > 99 ? '99+' : count}
+                        </button>
                       ) : null}
                     </span>
                   </SelectPrimitive.Item>

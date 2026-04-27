@@ -754,6 +754,16 @@ async def on_startup(app):
     except Exception as e:
         logger.warning(f"Night Audit Scheduler init warning: {e}")
 
+    # ── Task #31: Web Push abonelik temizlik worker'ı ─────────────────
+    try:
+        from domains.guest.messaging.web_push_cleanup import (
+            start_web_push_cleanup_worker,
+        )
+        start_web_push_cleanup_worker()
+        logger.info("✅ Web Push cleanup worker started")
+    except Exception as e:
+        logger.warning(f"Web Push cleanup worker init warning: {e}")
+
     # ── Availability Reconciliation Worker ──────────────────────────────
     try:
         has_channels = await _raw_db.exely_connections.find_one(
@@ -895,6 +905,15 @@ async def on_shutdown(app):
         stop_scheduler()
     except Exception as e:
         logger.warning(f"Night Audit Scheduler shutdown warning: {e}")
+
+    # Task #31: Web Push cleanup worker
+    try:
+        from domains.guest.messaging.web_push_cleanup import (
+            stop_web_push_cleanup_worker,
+        )
+        await stop_web_push_cleanup_worker()
+    except Exception as e:
+        logger.warning(f"Web Push cleanup worker shutdown warning: {e}")
 
     # Availability Reconciliation Worker
     recon_worker = getattr(app.state, "availability_reconciliation_worker", None)
