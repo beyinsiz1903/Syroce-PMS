@@ -435,6 +435,7 @@ const AuthPage = ({ onLogin }) => {
                                 value={forgotEmail}
                                 onChange={(e) => setForgotEmail(e.target.value)}
                                 required
+                                autoComplete="email"
                                 placeholder={t('auth.emailPlaceholder')}
                               />
                               <p className="text-xs text-gray-500 mt-1">
@@ -552,6 +553,7 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.email}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, email: e.target.value})}
                             required
+                            autoComplete="email"
                             placeholder={t('auth.emailPlaceholder')}
                           />
                           <p className="text-xs text-gray-500 mt-1">{t('auth.passwordResetEmailNote')}</p>
@@ -566,6 +568,7 @@ const AuthPage = ({ onLogin }) => {
                             maxLength={32}
                             autoCapitalize="none"
                             autoCorrect="off"
+                            autoComplete="username"
                             pattern="[a-z0-9_.\-]{3,32}"
                             placeholder={t('auth.usernamePlaceholder')}
                           />
@@ -577,6 +580,7 @@ const AuthPage = ({ onLogin }) => {
                             value={hotelRegisterData.phone}
                             onChange={(e) => setHotelRegisterData({...hotelRegisterData, phone: e.target.value})}
                             required
+                            autoComplete="tel"
                             placeholder={t('auth.phonePlaceholder')}
                           />
                         </div>
@@ -668,6 +672,9 @@ const AuthPage = ({ onLogin }) => {
                           required
                           data-testid="guest-login-email"
                           placeholder={t('auth.emailPlaceholder')}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          autoComplete="email"
                           style={isMobile ? { fontSize: '16px' } : {}}
                         />
                       </div>
@@ -713,6 +720,7 @@ const AuthPage = ({ onLogin }) => {
                           value={guestRegisterData.name}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, name: e.target.value})}
                           required
+                          autoComplete="name"
                           data-testid="guest-register-name"
                         />
                       </div>
@@ -723,6 +731,9 @@ const AuthPage = ({ onLogin }) => {
                           value={guestRegisterData.email}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, email: e.target.value})}
                           required
+                          autoComplete="email"
+                          autoCapitalize="none"
+                          autoCorrect="off"
                           data-testid="guest-register-email"
                         />
                       </div>
@@ -732,6 +743,7 @@ const AuthPage = ({ onLogin }) => {
                           value={guestRegisterData.phone}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, phone: e.target.value})}
                           required
+                          autoComplete="tel"
                           data-testid="guest-register-phone"
                         />
                       </div>
@@ -742,6 +754,8 @@ const AuthPage = ({ onLogin }) => {
                           value={guestRegisterData.password}
                           onChange={(e) => setGuestRegisterData({...guestRegisterData, password: e.target.value})}
                           required
+                          autoComplete="new-password"
+                          minLength={6}
                           data-testid="guest-register-password"
                         />
                       </div>

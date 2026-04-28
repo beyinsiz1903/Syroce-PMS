@@ -460,13 +460,46 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
 
 @router.get("/normalized/overview")
 async def normalized_overview(current_user: User = Depends(get_current_user)):
-    """Aggregated normalized health overview across all subsystems."""
-    cm = await normalized_channel_manager(current_user)
-    wk = await normalized_workers(current_user)
-    sec = await normalized_security(current_user)
-    obs = await normalized_observability(current_user)
-    al = await normalized_alerts(current_user)
-    wsb = await normalized_ws_bridge(current_user)
+    """Aggregated normalized health overview across all subsystems.
+
+    Subsystem checks are awaited concurrently with asyncio.gather so total
+    latency tracks the slowest subsystem instead of the sum. Per-subsystem
+    failures are isolated via return_exceptions=True and surfaced as a
+    degraded subsystem entry rather than failing the whole overview.
+    """
+    import asyncio
+
+    results = await asyncio.gather(
+        normalized_channel_manager(current_user),
+        normalized_workers(current_user),
+        normalized_security(current_user),
+        normalized_observability(current_user),
+        normalized_alerts(current_user),
+        normalized_ws_bridge(current_user),
+        return_exceptions=True,
+    )
+
+    scope_ids = ("channel-manager", "workers", "security", "observability", "alerts", "ws-bridge")
+    fallback_scope_id = getattr(current_user, "tenant_id", None) or "global"
+
+    def _coerce(scope_id: str, value):
+        # Re-raise non-Exception BaseException (CancelledError, SystemExit,
+        # KeyboardInterrupt) so cooperative cancellation and shutdown signals
+        # are not swallowed by overview aggregation.
+        if isinstance(value, BaseException) and not isinstance(value, Exception):
+            raise value
+        if isinstance(value, Exception):
+            return _health_response(
+                status="degraded", severity="warning",
+                scope_type="tenant" if fallback_scope_id != "global" else "global",
+                scope_id=fallback_scope_id,
+                detail={"error": str(value)[:200], "subsystem": scope_id},
+                degraded_reason=f"subsystem check raised {type(value).__name__}",
+                evidence_summary="overview aggregation error",
+            )
+        return value
+
+    cm, wk, sec, obs, al, wsb = (_coerce(sid, v) for sid, v in zip(scope_ids, results))
 
     subsystems = [cm, wk, sec, obs, al, wsb]
     overall_severity = "critical" if any(s["severity"] == "critical" for s in subsystems) else (
