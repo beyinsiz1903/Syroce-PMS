@@ -350,6 +350,7 @@ async def get_recalled_messages_report(
     end_date: str | None = None,
     sender_id: str | None = None,
     priority: str | None = None,
+    include_denied: bool = False,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -402,9 +403,18 @@ async def get_recalled_messages_report(
         )
 
     ctx = OperationContext.from_user(current_user)
+    # Task #36: when `include_denied=true`, the report also returns rows for
+    # window-expired recall attempts (action ``recall_internal_message_denied``)
+    # so admins can spot users who repeatedly bump into the 5-minute limit.
+    # Default stays narrow (successful recalls only) for backward compatibility.
+    operation_filter = (
+        {"$in": ["recall_internal_message", "recall_internal_message_denied"]}
+        if include_denied
+        else "recall_internal_message"
+    )
     match_stage: dict = {
         "tenant_id": ctx.tenant_id,
-        "operation_name": "recall_internal_message",
+        "operation_name": operation_filter,
     }
     if start_date:
         match_stage.setdefault("timestamp", {})["$gte"] = start_date
@@ -428,6 +438,7 @@ async def get_recalled_messages_report(
                     "timestamp": 1,
                     "actor_id": 1,
                     "actor_role": 1,
+                    "operation_name": 1,  # Task #36: distinguishes successful recall vs denial
                     "before_snapshot": 1,
                     "after_snapshot": 1,
                 }},

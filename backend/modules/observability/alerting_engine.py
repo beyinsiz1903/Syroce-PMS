@@ -359,6 +359,21 @@ class ProductionAlertEngine:
 
         logger.warning(f"ALERT [{severity.upper()}] {title}: {message}")
 
+        # Best-effort fan-out to configured notification channels
+        # (Slack/email). Failures here must never break alert evaluation —
+        # the dashboard record is already persisted above and remains the
+        # source of truth.
+        try:
+            from domains.channel_manager.monitoring.alert_dispatch import (
+                dispatch_alert,
+            )
+            await dispatch_alert(alert_doc)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "alerting: notification dispatch failed for %s: %s",
+                alert_type, exc,
+            )
+
         return {k: v for k, v in alert_doc.items() if k != "_id"}
 
     async def get_alert_candidates(self) -> list[dict]:

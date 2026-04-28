@@ -184,6 +184,70 @@ async def test_pipeline_omits_optional_filters_when_unset():
     assert set(match.keys()) == {"tenant_id", "operation_name"}
 
 
+# ── Task #36: include_denied flag ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_include_denied_false_keeps_narrow_recall_filter():
+    """Default behavior (Task #35): only successful recalls are returned.
+    Backward compatibility — existing callers must be unaffected."""
+    from routers import audit_timeline as router_mod
+
+    mock_db, mock_aggregate = _make_mock_db()
+    user = _make_user()
+
+    with patch.object(router_mod, "db", mock_db):
+        await router_mod.get_recalled_messages_report(
+            include_denied=False, limit=50, offset=0, current_user=user
+        )
+
+    match = _capture_match(mock_aggregate)
+    assert match["operation_name"] == "recall_internal_message"
+
+
+@pytest.mark.asyncio
+async def test_include_denied_true_widens_filter_to_both_actions():
+    """When include_denied=True the report covers both successful and
+    window-expired recall attempts (Task #36)."""
+    from routers import audit_timeline as router_mod
+
+    mock_db, mock_aggregate = _make_mock_db()
+    user = _make_user()
+
+    with patch.object(router_mod, "db", mock_db):
+        await router_mod.get_recalled_messages_report(
+            include_denied=True, limit=50, offset=0, current_user=user
+        )
+
+    match = _capture_match(mock_aggregate)
+    op = match["operation_name"]
+    assert isinstance(op, dict) and "$in" in op
+    assert "recall_internal_message" in op["$in"]
+    assert "recall_internal_message_denied" in op["$in"]
+
+
+@pytest.mark.asyncio
+async def test_events_project_includes_operation_name_for_denial_distinction():
+    """Frontend must be able to tell a successful recall from a denied
+    attempt — pipeline projection must preserve `operation_name`."""
+    from routers import audit_timeline as router_mod
+
+    mock_db, mock_aggregate = _make_mock_db()
+    user = _make_user()
+
+    with patch.object(router_mod, "db", mock_db):
+        await router_mod.get_recalled_messages_report(
+            include_denied=True, limit=50, offset=0, current_user=user
+        )
+
+    pipeline = mock_aggregate.call_args[0][0]
+    facet = pipeline[1]["$facet"]
+    events_stages = facet["events"]
+    # Find the $project stage and assert operation_name is kept.
+    project_stage = next(s for s in events_stages if "$project" in s)["$project"]
+    assert project_stage.get("operation_name") == 1
+
+
 # ── Response shape ──────────────────────────────────────────────────
 
 

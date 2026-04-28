@@ -260,3 +260,68 @@ async def test_mark_only_dry_run_neither_stamps_nor_deletes(fake_collection):
 
     assert rc == 0
     assert fake_collection.all() == [_operator_inserted_doc()]
+
+
+# ── Task #51: --force regression coverage ─────────────────────────────────
+#
+# `--force` is the only mode that deletes records WITHOUT the
+# `auto_generated: true` marker (i.e. rows the operator inserted by hand).
+# A mistaken refactor that flipped the filter — or that wired `--force`
+# into the default branch — would silently delete the production VAPID
+# private key without `--force` ever being passed. The next two tests pin
+# both halves of that contract:
+#   1) `--force` MUST delete unmarked rows when explicitly requested.
+#   2) `--force --dry-run` MUST be a true preview (zero writes), so
+#      operators can confirm the blast radius before opting in.
+
+async def test_force_mode_deletes_unmarked_records(fake_collection):
+    """`--force` deletes EVERY row, including the operator-inserted one."""
+    fake_collection.insert(_auto_generated_doc())
+    fake_collection.insert(_operator_inserted_doc())
+
+    rc = await cleanup._run(cleanup._parse_args(["--force"]))
+
+    assert rc == 0
+    assert fake_collection.all() == [], (
+        "`--force` must delete every web_push_keys row regardless of "
+        "the auto_generated marker — that is the whole point of the "
+        "mode and the only way to remove an operator-inserted row."
+    )
+
+
+async def test_force_dry_run_writes_nothing(fake_collection):
+    """`--force --dry-run` is a preview: no row is deleted, even unmarked ones.
+
+    This is the safety net operators rely on when checking whether
+    `--force` would sweep away a row they care about. If `--dry-run`
+    were ignored under `--force`, that audit step would itself destroy
+    the row it was meant to inspect.
+    """
+    auto = _auto_generated_doc()
+    operator = _operator_inserted_doc()
+    fake_collection.insert(auto)
+    fake_collection.insert(operator)
+
+    rc = await cleanup._run(cleanup._parse_args(["--force", "--dry-run"]))
+
+    assert rc == 0
+    remaining = sorted(fake_collection.all(), key=lambda d: d["_id"])
+    assert remaining == sorted([auto, operator], key=lambda d: d["_id"]), (
+        "`--force --dry-run` must be a strict no-op so operators can "
+        "preview the destructive blast radius without triggering it."
+    )
+
+
+def test_force_and_mark_only_are_mutually_exclusive():
+    """argparse must reject `--force --mark-only` so the two modes can't combine.
+
+    Allowing the combination would let a re-stamp inflate the count
+    of `auto_generated: true` rows that the destructive sweep then
+    deletes — turning a metadata-only call into an unbounded delete.
+    The mutually-exclusive group in `_parse_args` is the structural
+    guard that prevents that escalation; this test pins it.
+    """
+    with pytest.raises(SystemExit) as exc:
+        cleanup._parse_args(["--force", "--mark-only"])
+    # argparse exits with code 2 on argument-parsing errors.
+    assert exc.value.code == 2

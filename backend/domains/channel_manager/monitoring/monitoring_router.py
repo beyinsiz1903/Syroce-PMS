@@ -296,9 +296,12 @@ async def get_catchup_dedup_stats(
 ):
     """Show how often the catchup pre-insert duplicate guard fired.
 
-    Backed by an in-memory sliding window counter (last 24h, prunes older).
-    Helps detect hidden re-ingest storms early — the same root cause that
-    previously produced 8000+ failed raw_channel_events rows.
+    Backed by a Redis sorted set (``cm:catchup_dedup:events``) with a 24h
+    sliding window — counts now survive backend restarts and aggregate
+    across multiple instances. An in-memory deque acts as a fallback
+    when Redis is unreachable so single-instance dev setups still work.
+    Helps detect hidden re-ingest storms early — the same root cause
+    that previously produced 8000+ failed raw_channel_events rows.
     """
     from .alert_engine import THRESHOLDS
     from .dedup_counter import get_counts
@@ -316,7 +319,10 @@ async def get_catchup_dedup_stats(
         "note": (
             "Counts the number of times the pre-insert duplicate guard "
             "short-circuited a re-insert (`[CATCHUP-DEDUP]` log tag). "
-            "In-memory; resets on backend restart."
+            "Redis-backed (cm:catchup_dedup:events ZSET, 24h sliding "
+            "window); survives restarts and aggregates across instances. "
+            "Falls back to a per-process in-memory deque when Redis is "
+            "unreachable."
         ),
     }
 

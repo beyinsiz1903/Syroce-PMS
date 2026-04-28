@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bell, CheckCircle2, X, Trash2, MessageSquare, CheckCheck } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+
+// Task #38: when the internal-message backlog crosses this threshold the
+// bell starts pulsing and a tooltip nudges the operator to clear the
+// queue. Tuned to match the badge's "9+" cap so the pulse kicks in right
+// when the user can no longer read the exact count.
+const INTERNAL_UNREAD_PULSE_THRESHOLD = 10;
+
+// Task #38: keyboard shortcut for "mark every internal message read"
+// without opening the bell. Shift+R chosen because plain R is commonly
+// captured by inputs (and by browsers as "reload" with Ctrl/Cmd) — the
+// Shift modifier keeps it accessible while avoiding accidental triggers.
+const MARK_ALL_SHORTCUT = { key: 'R', shiftKey: true };
 
 const NotificationCenter = () => {
   const {
@@ -19,31 +32,127 @@ const NotificationCenter = () => {
   } = useNotifications();
   const [open, setOpen] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const { toast } = useToast();
+  // Guards against the shortcut firing twice for a single keypress when
+  // multiple panes mount the NotificationCenter (defensive — only one is
+  // expected, but a hot-reload race could briefly mount two).
+  const shortcutBusyRef = useRef(false);
 
   const handleToggle = () => setOpen((prev) => !prev);
   const unreadCount = totalUnreadCount;
+  const shouldPulse = internalUnreadCount >= INTERNAL_UNREAD_PULSE_THRESHOLD;
 
-  const handleMarkAllInternal = async () => {
-    if (markingAll || internalUnreadCount === 0) return;
-    setMarkingAll(true);
-    try {
-      await markAllInternalRead();
-    } finally {
-      setMarkingAll(false);
-    }
-  };
+  const handleMarkAllInternal = useCallback(
+    async ({ silent = false } = {}) => {
+      if (markingAll || internalUnreadCount === 0) {
+        // Surface a gentle toast when the shortcut fires with nothing to
+        // clear — otherwise the user has no feedback that the keypress
+        // was received.
+        if (!silent && internalUnreadCount === 0) {
+          toast({
+            title: 'Okunmamış mesaj yok',
+            description: 'Tüm personel mesajları zaten okundu.',
+          });
+        }
+        return;
+      }
+      setMarkingAll(true);
+      try {
+        const res = await markAllInternalRead();
+        const updated = res?.updated_count ?? 0;
+        if (!silent) {
+          if (res?.success !== false && updated > 0) {
+            toast({
+              title: 'Tümü okundu olarak işaretlendi',
+              description: `${updated} personel mesajı temizlendi.`,
+            });
+          } else if (res?.success === false) {
+            toast({
+              title: 'İşaretleme başarısız',
+              description: 'Mesajlar okundu olarak işaretlenemedi.',
+              variant: 'destructive',
+            });
+          }
+        }
+      } catch (err) {
+        // Network/server failure — markAllInternalRead rejected. The
+        // shortcut and the in-panel button both rely on this catch to
+        // surface the error; without it the user would just see the
+        // bell stay full with no explanation.
+        if (!silent) {
+          toast({
+            title: 'İşaretleme başarısız',
+            description:
+              err?.response?.data?.detail ||
+              err?.message ||
+              'Mesajlar okundu olarak işaretlenemedi.',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        setMarkingAll(false);
+      }
+    },
+    [markingAll, internalUnreadCount, markAllInternalRead, toast],
+  );
+
+  // Task #38: global Shift+R shortcut. Skipped while typing in an
+  // input/textarea/contentEditable so we don't hijack message composition.
+  useEffect(() => {
+    const handler = async (event) => {
+      // Layout-tolerant key compare: AZERTY/QWERTZ etc. report the same
+      // physical key as 'r'/'R'; lowercase normalises both shifted and
+      // unshifted reports without affecting the modifier check below.
+      if ((event.key || '').toLowerCase() !== MARK_ALL_SHORTCUT.key.toLowerCase()) return;
+      if (event.shiftKey !== MARK_ALL_SHORTCUT.shiftKey) return;
+      // Don't fire when modifier-stacked with Ctrl/Meta/Alt — those are
+      // reserved for browser/OS shortcuts.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      const tag = (target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) {
+        return;
+      }
+      if (shortcutBusyRef.current) return;
+      shortcutBusyRef.current = true;
+      try {
+        event.preventDefault();
+        await handleMarkAllInternal();
+      } finally {
+        shortcutBusyRef.current = false;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleMarkAllInternal]);
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
       <Button
         variant="outline"
         size="icon"
-        className="relative rounded-full w-12 h-12 shadow-lg bg-white"
+        className={`relative rounded-full w-12 h-12 shadow-lg bg-white ${
+          shouldPulse ? 'ring-2 ring-red-400 ring-offset-2 animate-pulse' : ''
+        }`}
         onClick={handleToggle}
+        data-testid="button-notification-bell"
+        aria-label={
+          shouldPulse
+            ? `Bildirimler — ${internalUnreadCount} okunmamış personel mesajı (Shift+R ile tümünü okundu işaretle)`
+            : 'Bildirimler'
+        }
+        title={
+          shouldPulse
+            ? `${internalUnreadCount} okunmamış personel mesajı — Shift+R ile tümünü okundu işaretle`
+            : 'Bildirimler'
+        }
       >
-        <Bell className="w-5 h-5" />
+        <Bell className={`w-5 h-5 ${shouldPulse ? 'text-red-600' : ''}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-semibold rounded-full px-1.5 py-0.5">
+          <span
+            className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-semibold rounded-full px-1.5 py-0.5"
+            data-testid="badge-notification-count"
+          >
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

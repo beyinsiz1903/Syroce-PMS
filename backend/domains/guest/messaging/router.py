@@ -62,6 +62,39 @@ RECALL_WINDOW_SECONDS = 5 * 60  # 5 minutes
 EDIT_WINDOW_SECONDS = 5 * 60  # 5 minutes
 
 
+# Single source of truth for "which department a user belongs to". The
+# canonical `User` model does not carry a `department` field — the value
+# is derived from `role`. Both the send path (Task #?) and the history
+# visibility check (Task #39) need this mapping, so it lives here as a
+# reusable helper instead of being duplicated inline.
+_ROLE_DEPARTMENT_MAPPING: dict[str, str] = {
+    'front_desk': 'Reception',
+    'housekeeping': 'Housekeeping',
+    'maintenance': 'Maintenance',
+    'finance': 'Finance',
+    'supervisor': 'Management',
+    'admin': 'Management',
+}
+
+
+def _department_for_user(user) -> str:
+    """Return the department label used to address internal messages.
+
+    Falls back to an explicit `user.department` attribute if the deployment
+    has been customised to set one (some tenants store a per-user override
+    on the user document); otherwise derives it from the role mapping the
+    send-message endpoint uses.
+    """
+    explicit = getattr(user, 'department', None)
+    if explicit:
+        return explicit
+    role = getattr(user, 'role', None)
+    role_value = getattr(role, 'value', role) if role is not None else None
+    if role_value is None:
+        return 'General'
+    return _ROLE_DEPARTMENT_MAPPING.get(str(role_value), 'General')
+
+
 # ── Inline Models ──
 
 class MessageType(str, Enum):
@@ -359,15 +392,7 @@ async def send_internal_message(
         to_user_name = to_user.get('name')
 
     # Determine from_department based on user role
-    department_mapping = {
-        'front_desk': 'Reception',
-        'housekeeping': 'Housekeeping',
-        'maintenance': 'Maintenance',
-        'finance': 'Finance',
-        'supervisor': 'Management',
-        'admin': 'Management'
-    }
-    from_department = department_mapping.get(current_user.role.value, 'General')
+    from_department = _department_for_user(current_user)
 
     message_obj = InternalMessage(
         tenant_id=current_user.tenant_id,
@@ -1211,12 +1236,144 @@ async def edit_internal_message(
     except Exception as ws_err:
         logger.warning("internal_message edit live push failed: %s", ws_err)
 
+    # Task #40: every successful edit gets its own row in `audit_logs` so the
+    # change is visible alongside `recall_internal_message` events in the
+    # operator audit/report screens. The `edit_history` array on the message
+    # itself is the live source for the "düzenlendi" popover (Task #39); the
+    # audit row is the immutable cross-conversation record for compliance and
+    # dispute resolution. Failure to write the audit row must NOT break the
+    # edit response — the message itself is already mutated.
+    try:
+        recipient_label = (
+            msg.get('to_user_name')
+            or msg.get('to_user_id')
+            or msg.get('to_department')
+            or 'all_departments'
+        )
+        prev_preview = (current_text or '')[:200]
+        new_preview = (new_text or '')[:200]
+        # `edit_history` already had `len(...)+1` entries appended above;
+        # re-read the count off the in-memory message + the entry we just
+        # built so we don't pay an extra DB round-trip.
+        prior_history = msg.get('edit_history') or []
+        edit_count = len(prior_history) + 1
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="edit_internal_message",
+            entity_type="internal_message",
+            entity_id=message_id,
+            details=(
+                f"Mesaj düzenlendi: {current_user.name} → {recipient_label} | "
+                f"önceki={prev_preview!r} → yeni={new_preview!r}"
+            ),
+            before_value={
+                "message_id": message_id,
+                "from_user_id": msg.get('from_user_id'),
+                "from_user_name": msg.get('from_user_name'),
+                "from_department": msg.get('from_department'),
+                "to_user_id": msg.get('to_user_id'),
+                "to_user_name": msg.get('to_user_name'),
+                "to_department": msg.get('to_department'),
+                "priority": msg.get('priority'),
+                "message_type": msg.get('message_type'),
+                "created_at": msg.get('created_at'),
+                "message_preview": prev_preview,
+                "message_length": len(current_text or ''),
+            },
+            after_value={
+                "edited": True,
+                "edited_at": now_iso,
+                "edited_by": current_user.id,
+                "edited_by_name": current_user.name,
+                "message_preview_new": new_preview,
+                "message_length_new": len(new_text or ''),
+                "edit_count": edit_count,
+            },
+            db=db,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to write edit audit entry for message %s", message_id
+        )
+
     return {
         'success': True,
         'message_id': message_id,
         'edited': True,
         'edited_at': now_iso,
         'message': new_text,
+    }
+
+
+@router.get("/messaging/internal/{message_id}/history")
+async def get_internal_message_history(
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the chronological edit history for an internal message
+    (Task #39).
+
+    The current `message` field plus the `edit_history` array together
+    describe the full lifeline of the message text — the array stores
+    every previous version (oldest entry first) and the current text is
+    the latest version. The UI uses this to render a "düzenlendi"
+    popover so an operator can see exactly what was originally written.
+
+    Authorization mirrors the conversation visibility used elsewhere in
+    this router: only the sender, the explicit recipient, or — if the
+    message was sent to a department — a member of that department may
+    view the history. We deliberately do not expose the history to
+    unrelated users in the same tenant.
+    """
+    msg = await db.internal_messages.find_one({
+        'id': message_id,
+        'tenant_id': current_user.tenant_id,
+    })
+    if not msg:
+        raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+
+    # Visibility check: sender, explicit recipient, or department member.
+    # The user's department is derived from their role (not stored on the
+    # User model) — we use the same `_department_for_user` helper that the
+    # send path uses so authorization stays consistent across the router.
+    is_sender = msg.get('from_user_id') == current_user.id
+    is_recipient = msg.get('to_user_id') == current_user.id
+    user_dept = _department_for_user(current_user)
+    is_dept_recipient = (
+        bool(msg.get('to_department'))
+        and msg.get('to_department') == user_dept
+    )
+    if not (is_sender or is_recipient or is_dept_recipient):
+        raise HTTPException(
+            status_code=403,
+            detail="Bu mesajın geçmişini görme yetkiniz yok",
+        )
+
+    history_raw = msg.get('edit_history') or []
+    # Defensive copy + projection — we never want to leak internal Mongo
+    # ids or unrelated keys into the API surface.
+    versions: list[dict] = []
+    for entry in history_raw:
+        if not isinstance(entry, dict):
+            continue
+        versions.append({
+            'message': entry.get('message') or '',
+            'edited_at': entry.get('edited_at'),
+            'edited_by': entry.get('edited_by'),
+            'edited_by_name': entry.get('edited_by_name'),
+        })
+
+    return {
+        'success': True,
+        'message_id': message_id,
+        'created_at': msg.get('created_at'),
+        'edited': bool(msg.get('edited')),
+        'edited_at': msg.get('edited_at'),
+        'current_message': msg.get('message') or '',
+        # Oldest first; the most-recent entry in the list is the version
+        # that was *replaced* by the current `message`.
+        'history': versions,
     }
 
 
@@ -1271,6 +1428,54 @@ async def recall_internal_message(
         elapsed = (datetime.now(UTC) - created_dt).total_seconds()
         if elapsed > RECALL_WINDOW_SECONDS:
             minutes = RECALL_WINDOW_SECONDS // 60
+            # Task #36: window-expired recall attempts are audited so a
+            # tenant admin can later see "user X tried to recall a 12-min
+            # old message at HH:MM and was refused". Without this row the
+            # successful-recall report (Task #35) silently undercounts how
+            # often staff are bumping into the 5-minute limit. We log
+            # *before* raising so the audit row is committed even though
+            # the response is a 400.
+            try:
+                preview = (msg.get('message') or '')[:200]
+                recipient_label = (
+                    msg.get('to_user_name')
+                    or msg.get('to_user_id')
+                    or msg.get('to_department')
+                    or 'all_departments'
+                )
+                await log_audit_event(
+                    tenant_id=current_user.tenant_id,
+                    user_id=current_user.id,
+                    action="recall_internal_message_denied",
+                    entity_type="internal_message",
+                    entity_id=message_id,
+                    details=(
+                        f"Geri alma reddedildi (süre doldu): {current_user.name} "
+                        f"→ {recipient_label} | yaş={int(elapsed)}s, "
+                        f"limit={RECALL_WINDOW_SECONDS}s"
+                    ),
+                    before_value={
+                        "message_id": message_id,
+                        "from_user_id": msg.get('from_user_id'),
+                        "to_user_id": msg.get('to_user_id'),
+                        "to_department": msg.get('to_department'),
+                        "priority": msg.get('priority'),
+                        "created_at": created_at_raw if isinstance(created_at_raw, str) else (created_dt.isoformat() if created_dt else None),
+                        "message_preview": preview,
+                    },
+                    after_value={
+                        "denial_reason": "recall_window_expired",
+                        "elapsed_seconds": int(elapsed),
+                        "window_seconds": RECALL_WINDOW_SECONDS,
+                    },
+                    db=db,
+                )
+            except Exception as audit_exc:  # pragma: no cover — audit must never break the user response
+                logger.warning(
+                    "Failed to audit recall denial for %s: %s",
+                    message_id,
+                    audit_exc,
+                )
             raise HTTPException(
                 status_code=400,
                 detail=(

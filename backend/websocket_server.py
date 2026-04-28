@@ -201,9 +201,38 @@ def _internal_chat_rooms(tenant_id: str, user_id: str, department: str | None) -
     return rooms
 
 
+def _pms_tenant_room(tenant_id: str) -> str:
+    """Tenant-scoped PMS room used by booking_update / room_status_update.
+
+    Task #43: replaces the previous global ``'pms'`` room which would have
+    leaked another tenant's reservation/room-status changes to every logged-in
+    client. Same routing pattern as ``internal_chat:{tenant_id}:broadcast``.
+    """
+    return f"pms:{tenant_id}"
+
+
 def _is_internal_chat_room(room: str) -> bool:
     """Whether a room name belongs to the protected internal chat namespace."""
     return isinstance(room, str) and room.startswith('internal_chat:')
+
+
+def _is_protected_room(room: str) -> bool:
+    """Whether a room name belongs to a tenant-scoped protected namespace.
+
+    Tenant-scoped rooms (``internal_chat:{tenant_id}:*``,
+    ``pms:{tenant_id}``) MUST never be joined manually by the client — the
+    server enrols the socket at ``connect`` time based on the authenticated
+    JWT identity. The legacy global ``'pms'`` room is also blocked so an
+    unauthenticated or cross-tenant client cannot eavesdrop on the
+    backwards-compat fallback.
+    """
+    if not isinstance(room, str):
+        return False
+    return (
+        room.startswith('internal_chat:')
+        or room.startswith('pms:')
+        or room == 'pms'
+    )
 
 
 @sio.event
@@ -228,6 +257,13 @@ async def connect(sid, environ, auth):
         rooms = _internal_chat_rooms(
             identity['tenant_id'], identity['user_id'], identity.get('department')
         )
+        # Task #43: every authenticated socket also auto-joins its tenant's
+        # PMS broadcast room so the (currently dead-code, future-live)
+        # broadcast_booking_update / broadcast_room_status_update helpers
+        # can fan out tenant-isolated reservation & room-status changes
+        # without leaking to other tenants.
+        pms_room = _pms_tenant_room(identity['tenant_id'])
+        rooms.append(pms_room)
         for room in rooms:
             await sio.enter_room(sid, room)
         # Bridge each tenant-scoped room to Redis pub/sub. No-op when the
@@ -288,6 +324,9 @@ async def disconnect(sid):
         rooms = _internal_chat_rooms(
             identity['tenant_id'], identity['user_id'], identity.get('department')
         )
+        # Mirror the connect-time PMS auto-join so the refcount the
+        # adapter keeps for the tenant PMS room balances out (see #43).
+        rooms.append(_pms_tenant_room(identity['tenant_id']))
         try:
             from infra.ws_redis_adapter import ws_redis_adapter
         except Exception as e:
@@ -306,10 +345,6 @@ async def disconnect(sid):
                         f"({sid} → {room}): {e}"
                     )
 
-def _is_internal_chat_room(room: str) -> bool:
-    return isinstance(room, str) and room.startswith('internal_chat:')
-
-
 @sio.event
 async def join_room(sid, data):
     """Join a specific room for targeted updates.
@@ -320,13 +355,19 @@ async def join_room(sid, data):
     a logged-in user cannot eavesdrop on another user's, department's, or
     tenant's chat events by guessing a room name.
 
-    Other shared rooms (dashboard, pms, notifications, kitchen,
-    system-health, cockpit) remain freely joinable for backward
-    compatibility — those streams are not user-private.
+    Tenant-scoped PMS rooms (``pms:{tenant_id}``) and the legacy global
+    ``'pms'`` room are also rejected here — clients are auto-enrolled in
+    their own tenant's PMS room at connect time, and the legacy global
+    room is treated as off-limits to prevent cross-tenant leakage of
+    reservation / room-status updates (Task #43).
+
+    Other shared rooms (dashboard, notifications, kitchen, system-health,
+    cockpit) remain freely joinable for backward compatibility — those
+    streams are not user-private.
     """
     room = (data or {}).get('room', 'general') if isinstance(data, dict) else 'general'
 
-    if _is_internal_chat_room(room):
+    if _is_protected_room(room):
         identity = sid_identity.get(sid)
         allowed = False
         if identity:
@@ -335,10 +376,16 @@ async def join_room(sid, data):
                 identity.get('user_id'),
                 identity.get('department'),
             ))
+            # The tenant PMS room is auto-joined at connect; explicit
+            # join requests for it from the right tenant are still
+            # tolerated so reconnect logic on the client stays simple.
+            tenant_id = identity.get('tenant_id')
+            if tenant_id:
+                allowed_rooms.add(_pms_tenant_room(tenant_id))
             allowed = room in allowed_rooms
         if not allowed:
             logger.warning(
-                f"Client {sid} denied join to internal_chat room {room!r} "
+                f"Client {sid} denied join to protected room {room!r} "
                 f"(authenticated={bool(identity)})"
             )
             await sio.emit('room_join_denied', {
@@ -370,7 +417,7 @@ async def leave_room(sid, data):
     """
     room = (data or {}).get('room', 'general') if isinstance(data, dict) else 'general'
 
-    if _is_internal_chat_room(room):
+    if _is_protected_room(room):
         logger.debug(f"Client {sid} attempted to leave protected room {room!r}; ignored")
         return
 
@@ -393,21 +440,48 @@ async def broadcast_dashboard_update(metrics: dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to broadcast dashboard update: {e}")
 
-async def broadcast_booking_update(booking_data: dict[str, Any], event_type: str = 'update'):
-    """
-    Broadcast booking update
+async def broadcast_booking_update(
+    booking_data: dict[str, Any],
+    event_type: str = 'update',
+    *,
+    tenant_id: str | None = None,
+):
+    """Broadcast a booking change to a single tenant's PMS room.
 
     Args:
         booking_data: Booking information
         event_type: 'create', 'update', 'checkin', 'checkout', 'cancel'
+        tenant_id: Owning tenant. **Required** — without it the broadcast
+            is silently dropped, because the only safe alternative would
+            be to fan the event out to every connected socket and that
+            would leak Hotel A's reservation activity to Hotel B
+            (the cross-tenant leak Task #43 closes).
+
+    Routed via ``ws_redis_adapter.publish`` so the change reaches sockets
+    pinned to a different backend instance under horizontal scaling. If
+    Redis is unavailable the adapter falls back to local-only fan-out.
     """
+    if not tenant_id:
+        # No tenant context → drop. Logging at WARNING so a misconfigured
+        # caller is visible in the logs instead of silently broadcasting.
+        logger.warning(
+            "broadcast_booking_update called without tenant_id; dropping "
+            f"event_type={event_type!r} to avoid cross-tenant leak."
+        )
+        return
+    target_room = _pms_tenant_room(tenant_id)
+    envelope = {
+        'event_type': event_type,
+        'booking': booking_data,
+        'tenant_id': tenant_id,
+        'timestamp': datetime.utcnow().isoformat()
+    }
     try:
-        await sio.emit('booking_update', {
-            'event_type': event_type,
-            'booking': booking_data,
-            'timestamp': datetime.utcnow().isoformat()
-        }, room='pms')
-        logger.debug(f"Booking {event_type} broadcasted")
+        from infra.ws_redis_adapter import ws_redis_adapter
+        await ws_redis_adapter.publish(target_room, 'booking_update', envelope)
+        logger.debug(
+            f"Booking {event_type} broadcasted to {target_room}"
+        )
     except Exception as e:
         logger.error(f"Failed to broadcast booking update: {e}")
 
@@ -423,15 +497,39 @@ async def broadcast_notification(user_id: str, notification: dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
 
-async def broadcast_room_status_update(room_id: str, status: str):
-    """Broadcast room status change"""
+async def broadcast_room_status_update(
+    room_id: str,
+    status: str,
+    *,
+    tenant_id: str | None = None,
+):
+    """Broadcast a room-status change to a single tenant's PMS room.
+
+    ``tenant_id`` is **required** for the same cross-tenant safety reason
+    as ``broadcast_booking_update`` — without it the call is dropped.
+    Routed through ``ws_redis_adapter.publish`` for multi-instance reach.
+    """
+    if not tenant_id:
+        logger.warning(
+            "broadcast_room_status_update called without tenant_id; "
+            f"dropping room_id={room_id!r} status={status!r} to avoid "
+            "cross-tenant leak."
+        )
+        return
+    target_room = _pms_tenant_room(tenant_id)
+    envelope = {
+        'room_id': room_id,
+        'status': status,
+        'tenant_id': tenant_id,
+        'timestamp': datetime.utcnow().isoformat()
+    }
     try:
-        await sio.emit('room_status_update', {
-            'room_id': room_id,
-            'status': status,
-            'timestamp': datetime.utcnow().isoformat()
-        }, room='pms')
-        logger.debug(f"Room status update broadcasted: {room_id} -> {status}")
+        from infra.ws_redis_adapter import ws_redis_adapter
+        await ws_redis_adapter.publish(target_room, 'room_status_update', envelope)
+        logger.debug(
+            f"Room status update broadcasted to {target_room}: "
+            f"{room_id} -> {status}"
+        )
     except Exception as e:
         logger.error(f"Failed to broadcast room status update: {e}")
 

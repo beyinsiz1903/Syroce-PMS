@@ -7,13 +7,18 @@ Validates that:
      özeti, alarm temizlendi mi) so admins can review who deleted what.
   2. The corresponding read endpoint (`GET /api/security/audit-logs`) is
      restricted to tenant admins — regular users get 403.
+  3. Task #36: window-expired recall attempts (HTTP 400) ALSO produce an
+     audit row (action=recall_internal_message_denied) so admins can spot
+     users who repeatedly bump into the 5-minute limit.
 """
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from fastapi import HTTPException as _HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -210,6 +215,87 @@ def test_security_audit_logs_rejects_non_admin_user():
 
     assert resp.status_code == 403, resp.text
     mock_db.audit_logs.find.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 3) Task #36 — denial audit when the 5-minute window has expired
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_window_expired_writes_denial_audit_and_raises_400():
+    """An attempt to recall a message older than the 5-min window must:
+      - raise HTTPException(400) with the Turkish window-expired message;
+      - still produce an audit_logs row with action=recall_internal_message_denied
+        so a tenant admin can see who tried, when, and how late they were.
+    """
+    from domains.guest.messaging import router as messaging_router
+
+    # Build a message whose created_at is well outside the 5-min window.
+    old_ts = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    msg = _make_existing_message()
+    msg["created_at"] = old_ts
+
+    mock_db = _make_mock_db(msg)
+    user = _make_user()
+
+    with patch.object(messaging_router, "db", mock_db), \
+         patch("core.audit.db", mock_db, create=True):
+        with pytest.raises(_HTTPException) as exc:
+            await messaging_router.recall_internal_message(
+                message_id="msg-123",
+                current_user=user,
+            )
+
+    assert exc.value.status_code == 400
+    assert "geri alınamaz" in str(exc.value.detail)
+
+    # The original soft-delete must NOT have happened.
+    mock_db.internal_messages.update_one.assert_not_awaited()
+
+    # The denial audit row must exist.
+    mock_db.audit_logs.insert_one.assert_awaited_once()
+    audit_entry = mock_db.audit_logs.insert_one.call_args[0][0]
+    assert audit_entry["action"] == "recall_internal_message_denied"
+    assert audit_entry["operation_name"] == "recall_internal_message_denied"
+    assert audit_entry["actor_id"] == user.id
+    assert audit_entry["entity_id"] == "msg-123"
+
+    before = audit_entry["before_snapshot"]
+    assert before["message_id"] == "msg-123"
+    assert before["from_user_id"] == user.id
+    assert "message_preview" in before  # original wording preserved for context
+
+    after = audit_entry["after_snapshot"]
+    assert after["denial_reason"] == "recall_window_expired"
+    assert after["elapsed_seconds"] >= 60  # well above zero
+    assert after["window_seconds"] > 0
+
+
+@pytest.mark.asyncio
+async def test_recall_within_window_does_not_write_denial_audit():
+    """Sanity: a message inside the window proceeds to the success path
+    (action=recall_internal_message) — denial audit is NOT written."""
+    from domains.guest.messaging import router as messaging_router
+
+    fresh_ts = (datetime.now(UTC) - timedelta(seconds=30)).isoformat()
+    msg = _make_existing_message()
+    msg["created_at"] = fresh_ts
+
+    mock_db = _make_mock_db(msg)
+    user = _make_user()
+
+    with patch.object(messaging_router, "db", mock_db), \
+         patch("core.audit.db", mock_db, create=True):
+        result = await messaging_router.recall_internal_message(
+            message_id="msg-123",
+            current_user=user,
+        )
+
+    assert result["success"] is True
+    mock_db.audit_logs.insert_one.assert_awaited_once()
+    audit_entry = mock_db.audit_logs.insert_one.call_args[0][0]
+    assert audit_entry["action"] == "recall_internal_message"  # success, not denial
 
 
 def test_security_audit_logs_allows_admin_user():

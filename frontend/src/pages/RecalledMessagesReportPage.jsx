@@ -61,6 +61,9 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
     end_date: "",
     sender_id: "",
     priority: "",
+    // Task #36: include window-expired recall denials in the same report.
+    // Default off → existing report stays narrow (successful recalls only).
+    include_denied: false,
   });
   const PAGE_SIZE = 50;
   const [offset, setOffset] = useState(0);
@@ -80,6 +83,7 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
       if (filters.end_date) params.end_date = `${filters.end_date}T23:59:59`;
       if (filters.sender_id) params.sender_id = filters.sender_id;
       if (filters.priority) params.priority = filters.priority;
+      if (filters.include_denied) params.include_denied = true;
       params.limit = PAGE_SIZE;
       params.offset = offset;
       const res = await axios.get("/audit/recalled-messages", { params });
@@ -107,7 +111,23 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
   // sıkıştırırsa eski offset boş sayfa gösterirdi.
   useEffect(() => {
     setOffset(0);
-  }, [filters.start_date, filters.end_date, filters.sender_id, filters.priority]);
+  }, [
+    filters.start_date,
+    filters.end_date,
+    filters.sender_id,
+    filters.priority,
+    filters.include_denied,
+  ]);
+
+  // Task #36: total denial count surfaced as a small summary metric so the
+  // operator sees "X attempts hit the 5-min limit" without expanding rows.
+  const deniedCount = useMemo(
+    () =>
+      events.filter(
+        (e) => e.operation_name === "recall_internal_message_denied"
+      ).length,
+    [events]
+  );
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + events.length, total);
@@ -258,6 +278,24 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
                   </Button>
                 </div>
               </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  data-testid="filter-include-denied"
+                  id="filter-include-denied"
+                  type="checkbox"
+                  checked={filters.include_denied}
+                  onChange={(e) =>
+                    setFilters((p) => ({ ...p, include_denied: e.target.checked }))
+                  }
+                  className="h-3 w-3"
+                />
+                <label
+                  htmlFor="filter-include-denied"
+                  className="text-[11px] text-gray-700 cursor-pointer"
+                >
+                  Süre dolduğu için reddedilen geri alma denemelerini de göster
+                </label>
+              </div>
             </CardContent>
           </Card>
 
@@ -335,6 +373,18 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
             </Card>
           </div>
 
+          {filters.include_denied && (
+            <div
+              data-testid="denied-summary-banner"
+              className="mb-4 text-xs bg-red-50 border border-red-200 text-red-800 rounded p-2"
+            >
+              Bu sayfadaki kayıtların{" "}
+              <strong data-testid="denied-count-inline">{deniedCount}</strong>{" "}
+              tanesi süre dolduğu için reddedilen geri alma denemesidir
+              (5 dakikalık pencere aşıldı).
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Olay tablosu */}
             <div className="lg:col-span-2 space-y-4">
@@ -375,6 +425,8 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
                           before.to_department ||
                           "—";
                         const isUrgent = before.priority === "urgent";
+                        const isDenied =
+                          ev.operation_name === "recall_internal_message_denied";
                         return (
                           <li
                             key={id}
@@ -419,10 +471,23 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
                                       Acil
                                     </span>
                                   )}
-                                  {after.alarm_cleared && (
-                                    <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5">
-                                      Alarm temizlendi
+                                  {isDenied ? (
+                                    <span
+                                      data-testid={`badge-denied-${id}`}
+                                      className="text-[10px] bg-red-50 text-red-700 border border-red-200 rounded px-1.5"
+                                    >
+                                      Reddedildi (süre doldu
+                                      {typeof after.elapsed_seconds === "number"
+                                        ? ` · ${Math.round(after.elapsed_seconds / 60)} dk`
+                                        : ""}
+                                      )
                                     </span>
+                                  ) : (
+                                    after.alarm_cleared && (
+                                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5">
+                                        Alarm temizlendi
+                                      </span>
+                                    )
                                   )}
                                 </div>
                                 {before.message_preview && (

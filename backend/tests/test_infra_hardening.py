@@ -584,10 +584,15 @@ class TestWSRedisAdapter:
                  side_effect=fake_unsubscribe,
              ):
             await ws.connect("sid-test", {}, {"token": "x"})
+            # Task #43 added the tenant-scoped PMS room to the connect-time
+            # subscription set so booking_update / room_status_update
+            # broadcasts published on another instance still reach this
+            # client without leaking to other tenants.
             assert sorted(sub_calls) == sorted([
                 "internal_chat:t1:user:u1",
                 "internal_chat:t1:broadcast",
                 "internal_chat:t1:dept:Reception",
+                "pms:t1",
             ])
             assert unsub_calls == []
 

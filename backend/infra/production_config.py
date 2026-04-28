@@ -5,6 +5,7 @@ missing secrets detection, and masked configuration audit.
 Validates all required production environment variables at startup and
 provides a masked inspection endpoint for debugging without exposing secrets.
 """
+import base64
 import logging
 import os
 import re
@@ -12,6 +13,108 @@ from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger("infra.production_config")
+
+
+# ── VAPID format validation (Task #50) ─────────────────────────────────
+# Web Push VAPID keys have a strict on-the-wire shape. A typo or
+# misconfigured value (e.g. PEM blob, hex string, or a key from another
+# library) silently survives the boot-time "is_set" check and only fails
+# weeks later when the first urgent message tries to dispatch. We
+# therefore decode + length-check both keys at startup.
+#
+# Spec:
+#   - VAPID_PUBLIC_KEY:  uncompressed P-256 point (1 + 32 + 32 = 65 bytes
+#                        starting with 0x04), base64url-encoded WITHOUT
+#                        padding (≈ 87-88 chars). Generator code in
+#                        web_push.py mirrors this exactly.
+#   - VAPID_PRIVATE_KEY: raw 32-byte P-256 scalar, base64url-encoded
+#                        WITHOUT padding (≈ 43 chars).
+VAPID_PUBLIC_KEY_BYTES = 65
+VAPID_PRIVATE_KEY_BYTES = 32
+
+
+_VAPID_BASE64URL_ALPHABET = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _b64url_decode(value: str) -> bytes:
+    """Decode base64url **strictly** — any character outside the URL-safe
+    base64 alphabet (``A-Z a-z 0-9 _ -``) raises ``ValueError``. We
+    intentionally do *not* delegate this rejection to the stdlib decoder:
+    ``base64.urlsafe_b64decode`` accepts inputs that contain non-alphabet
+    bytes when the byte alignment happens to absorb them, which would
+    silently let a corrupted VAPID key pass the boot-time format gate
+    (architect 1st-pass code review finding for Task #50).
+
+    We strip newline/CR whitespace first (operators frequently paste
+    multi-line keys) and accept either padded or unpadded forms — anything
+    else is rejected up front before any decoding is attempted.
+    """
+    s = value.strip().replace("\n", "").replace("\r", "")
+    # Remove any trailing padding before alphabet validation; the padding
+    # character '=' is allowed at the end of a base64url string but is not
+    # part of the data alphabet.
+    core = s.rstrip("=")
+    if not core or not _VAPID_BASE64URL_ALPHABET.match(core):
+        raise ValueError("contains characters outside the base64url alphabet")
+    # Pad to a multiple of 4 — urlsafe_b64decode requires it.
+    padding_needed = (-len(core)) % 4
+    s_padded = core + ("=" * padding_needed)
+    # validate=True forces the decoder to also reject any non-alphabet
+    # byte that slipped past our regex (defense in depth).
+    return base64.urlsafe_b64decode(s_padded.encode("ascii"))
+
+
+def validate_vapid_key_format(
+    *, public_key: str | None, private_key: str | None
+) -> list[str]:
+    """Return a list of human-readable error messages for VAPID format
+    violations. Empty list ⇒ both keys are well-formed (or both unset —
+    "missing" is a separate gate handled in startup_check).
+
+    Validation only runs when a key value is present. The "set / unset"
+    enforcement lives in ``startup_check`` so the two concerns stay
+    independently testable.
+    """
+    errors: list[str] = []
+
+    if public_key:
+        try:
+            raw = _b64url_decode(public_key)
+        except Exception as exc:
+            errors.append(
+                f"VAPID_PUBLIC_KEY: base64url decode failed ({exc.__class__.__name__})."
+            )
+        else:
+            if len(raw) != VAPID_PUBLIC_KEY_BYTES:
+                errors.append(
+                    f"VAPID_PUBLIC_KEY: expected {VAPID_PUBLIC_KEY_BYTES}-byte "
+                    f"uncompressed P-256 point (0x04 || X || Y), got "
+                    f"{len(raw)} bytes after base64url decode."
+                )
+            elif raw[0] != 0x04:
+                errors.append(
+                    "VAPID_PUBLIC_KEY: first byte must be 0x04 (uncompressed "
+                    f"point marker), got 0x{raw[0]:02x}. The key was likely "
+                    "exported in compressed or hex form by another tool."
+                )
+
+    if private_key:
+        try:
+            raw = _b64url_decode(private_key)
+        except Exception as exc:
+            errors.append(
+                f"VAPID_PRIVATE_KEY: base64url decode failed ({exc.__class__.__name__})."
+            )
+        else:
+            if len(raw) != VAPID_PRIVATE_KEY_BYTES:
+                errors.append(
+                    f"VAPID_PRIVATE_KEY: expected {VAPID_PRIVATE_KEY_BYTES}-byte "
+                    f"raw P-256 scalar, got {len(raw)} bytes after base64url "
+                    "decode. PEM blobs and hex strings are not accepted — "
+                    "see scripts/cleanup_legacy_web_push_keys.py."
+                )
+
+    return errors
 
 
 def is_production_env() -> bool:
@@ -249,7 +352,19 @@ class ProductionConfigValidator:
         ]
         vapid_violation = is_prod and bool(vapid_missing)
 
-        status = "pass" if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation else "fail"
+        # Task #50: format validation. Even when both keys are present
+        # the operator may have pasted a PEM blob, hex string, or a key
+        # from another library. The "set" check above misses that — so
+        # decode + length-check the bytes here. In production any format
+        # error aborts the boot (mirrors the missing-key behavior). In
+        # dev we only warn so local debugging is unaffected.
+        vapid_format_errors = validate_vapid_key_format(
+            public_key=os.environ.get("VAPID_PUBLIC_KEY"),
+            private_key=os.environ.get("VAPID_PRIVATE_KEY"),
+        )
+        vapid_format_violation = is_prod and bool(vapid_format_errors)
+
+        status = "pass" if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation and not vapid_format_violation else "fail"
         if missing:
             level = logging.WARNING if not is_prod else logging.ERROR
             logger.log(level, "Startup check — missing critical vars: %s", missing)
@@ -296,7 +411,29 @@ class ProductionConfigValidator:
                 "deploys will refuse to start without these env vars.",
                 vapid_missing,
             )
-        if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation:
+        # Task #50: format violations are reported regardless of env so a
+        # dev sees them before pushing to production.
+        if vapid_format_errors:
+            if vapid_format_violation:
+                logger.error(
+                    "Startup check FAILED — VAPID key format errors:\n%s",
+                    "\n".join(f"  - {e}" for e in vapid_format_errors),
+                )
+                raise RuntimeError(
+                    "Production refused to boot: malformed VAPID keys. "
+                    + " | ".join(vapid_format_errors)
+                )
+            logger.warning(
+                "Startup check — VAPID key format issues detected (dev only): %s",
+                vapid_format_errors,
+            )
+        if (
+            not missing
+            and not tenant_guard_violation
+            and not forbidden_present
+            and not vapid_violation
+            and not vapid_format_violation
+        ):
             logger.info("Startup check passed — all critical variables present")
 
         return {
@@ -305,6 +442,7 @@ class ProductionConfigValidator:
             "strict_tenant_mode": strict_ok,
             "forbidden_dev_secrets_present": forbidden_present,
             "vapid_keys_missing": vapid_missing,
+            "vapid_format_errors": vapid_format_errors,
             "checked_at": datetime.now(UTC).isoformat(),
             "startup_time": self._startup_time,
         }

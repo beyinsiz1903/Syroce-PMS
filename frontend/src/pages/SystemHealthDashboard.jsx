@@ -9,7 +9,7 @@ import Layout from "../components/Layout";
 import {
   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, ArrowLeft, Loader2,
-  Database, Radio, Zap, TrendingUp, Users, Building2, Layers, Network
+  Database, Radio, Zap, TrendingUp, TrendingDown, Minus, Users, Building2, Layers, Network
 } from "lucide-react";
 
 const API = "";
@@ -122,6 +122,62 @@ function DataRow({ label, value, valueClass }) {
   );
 }
 
+/* ── WS Bridge — Mini sparkline for the rolling 1h error trend ─ */
+function ErrorSparkline({ points, testId }) {
+  // Renders ``publish_errors_delta`` (errors per snapshot interval)
+  // as a tiny SVG polyline. We use a simple linear scale so a single
+  // tall spike is still clearly visible. When all values are zero the
+  // line collapses onto the baseline, which is exactly what we want
+  // (operators read "flat at zero" as healthy).
+  const series = Array.isArray(points) ? points : [];
+  if (series.length < 2) {
+    return (
+      <div
+        data-testid={`${testId}-empty`}
+        className="text-[11px] text-gray-400 italic"
+      >
+        Trend için yeterli veri yok (≥2 örnek gerekli)
+      </div>
+    );
+  }
+  const W = 220;
+  const H = 36;
+  const PAD = 2;
+  const values = series.map((p) => Math.max(0, Number(p.publish_errors_delta) || 0));
+  const max = Math.max(1, ...values); // avoid /0; floor at 1 so empty series sits flat at the bottom
+  const stepX = (W - PAD * 2) / Math.max(1, values.length - 1);
+  const coords = values.map((v, i) => {
+    const x = PAD + i * stepX;
+    const y = H - PAD - (v / max) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const linePath = coords.join(" ");
+  // Translucent fill under the line for readability
+  const areaPath = `${PAD},${H - PAD} ${linePath} ${(W - PAD).toFixed(1)},${H - PAD}`;
+  const peakValue = max;
+  return (
+    <svg
+      data-testid={testId}
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      height={H}
+      role="img"
+      aria-label={`Son ${series.length} örnekte zirve hata sayısı ${peakValue}`}
+      className="block"
+    >
+      <polyline points={areaPath} fill="rgba(239,68,68,0.12)" stroke="none" />
+      <polyline
+        points={linePath}
+        fill="none"
+        stroke="rgb(220,38,38)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /* ── WS Bridge (Multi-Instance Live Chat) Panel ─────────── */
 function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
   if (!wsBridge) return null;
@@ -136,6 +192,30 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
   const mode = detail.single_instance_mode
     ? "Single instance (Redis disabled)"
     : (detail.active ? "Active (Redis pub/sub)" : "Inactive");
+
+  // Task #47 — rolling history for the sparkline + trend chip.
+  const history = detail.metrics_history || {};
+  const points = Array.isArray(history.points) ? history.points : [];
+  const trend = history.error_trend || "flat";
+  const errorsInWindow = history.errors_in_window ?? 0;
+  const intervalMin = Math.max(
+    1,
+    Math.round((history.interval_seconds ?? 60) / 60),
+  );
+  const windowMin = points.length * intervalMin;
+  const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
+  const trendClass =
+    trend === "up"
+      ? "text-red-600"
+      : trend === "down"
+        ? "text-emerald-600"
+        : "text-gray-500";
+  const trendLabel =
+    trend === "up"
+      ? "Hata oranı yükseliyor"
+      : trend === "down"
+        ? "Hata oranı düşüyor"
+        : "Hata oranı sabit";
 
   return (
     <PanelCard
@@ -156,6 +236,33 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
           value={errors}
           valueClass={errorsClass}
         />
+
+        {/* Sparkline / trend block */}
+        <div
+          data-testid={`${testIdPrefix}-trend`}
+          className="mt-2 p-2 rounded border border-gray-200 bg-gray-50/60"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-semibold text-gray-700">
+              Son {windowMin || 0} dk hata trendi
+            </span>
+            <span
+              data-testid={`${testIdPrefix}-trend-chip`}
+              className={`inline-flex items-center gap-1 text-[11px] font-medium ${trendClass}`}
+              title={trendLabel}
+              aria-label={trendLabel}
+            >
+              <TrendIcon className="w-3.5 h-3.5" />
+              {trend === "up" ? "Artıyor" : trend === "down" ? "Azalıyor" : "Sabit"}
+            </span>
+          </div>
+          <ErrorSparkline points={points} testId={`${testIdPrefix}-sparkline`} />
+          <div className="mt-1 flex items-center justify-between text-[10px] text-gray-500">
+            <span>{points.length} örnek</span>
+            <span>Pencerede {errorsInWindow} hata</span>
+          </div>
+        </div>
+
         {detail.last_publish_error && (
           <div data-testid={`${testIdPrefix}-last-error`} className="mt-2 p-2 rounded bg-red-50 border border-red-200">
             <p className="text-[11px] font-semibold text-red-700">Last publish error</p>

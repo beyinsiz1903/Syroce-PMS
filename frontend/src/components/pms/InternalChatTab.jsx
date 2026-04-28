@@ -29,6 +29,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -167,6 +172,13 @@ const InternalChatTab = ({ currentUser }) => {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  // Task #39: per-message edit-history cache. The popover is opened on
+  // demand so we don't prefetch history for every "(düzenlendi)" badge in
+  // a long thread; once loaded for a message we keep the result so
+  // re-opening the popover is instant.
+  // Shape: { [messageId]: { loading: boolean, error: string|null,
+  //                          history: Array, current_message: string } }
+  const [editHistoryByMsg, setEditHistoryByMsg] = useState({});
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
@@ -484,6 +496,44 @@ const InternalChatTab = ({ currentUser }) => {
     setEditingDraft('');
     setSavingEdit(false);
   }, []);
+
+  // Task #39: lazy-load the edit history for the "(düzenlendi)" popover.
+  // Called when the user opens the popover for a message; subsequent opens
+  // for the same message reuse the cached payload. We do not retry on
+  // error — the popover surfaces the failure and the user can re-open it
+  // (which clears the entry) to retry.
+  const fetchEditHistory = useCallback(
+    async (messageId) => {
+      if (!messageId) return;
+      setEditHistoryByMsg((prev) => ({
+        ...prev,
+        [messageId]: { loading: true, error: null, history: [], current_message: '' },
+      }));
+      try {
+        const res = await axios.get(`/messaging/internal/${messageId}/history`);
+        const data = res?.data || {};
+        setEditHistoryByMsg((prev) => ({
+          ...prev,
+          [messageId]: {
+            loading: false,
+            error: null,
+            history: Array.isArray(data.history) ? data.history : [],
+            current_message: data.current_message || '',
+          },
+        }));
+      } catch (err) {
+        const detail =
+          err?.response?.data?.detail ||
+          err?.message ||
+          'Geçmiş yüklenemedi';
+        setEditHistoryByMsg((prev) => ({
+          ...prev,
+          [messageId]: { loading: false, error: detail, history: [], current_message: '' },
+        }));
+      }
+    },
+    [],
+  );
 
   const handleSubmitEditMessage = useCallback(
     async (messageId) => {
@@ -2038,15 +2088,110 @@ const InternalChatTab = ({ currentUser }) => {
                       <span>{m.time_ago || ''}</span>
                       {/* "düzenlendi" rozeti — recall edilmiş mesajlarda
                           gösterilmez (mezar taşı tek sinyal kalmalı) ve
-                          edit modunda da gizlenir (textarea zaten görünüyor). */}
+                          edit modunda da gizlenir (textarea zaten görünüyor).
+                          Task #39: rozet bir Popover trigger'ı; tıklayınca
+                          tüm önceki sürümleri kronolojik sırada gösterir. */}
                       {!isDeleted && !isEditing && m.edited && (
-                        <span
-                          className="italic"
-                          data-testid={`text-thread-edited-${m.id}`}
-                          title={m.edited_at ? `Son düzenleme: ${m.edited_at}` : undefined}
+                        <Popover
+                          onOpenChange={(open) => {
+                            // Lazy-fetch on first open. Refetch on reopen
+                            // if the previous attempt errored OR if the
+                            // message has been edited since the cache was
+                            // populated (compare cached current_message).
+                            if (!open) return;
+                            const cached = editHistoryByMsg[m.id];
+                            const isStale =
+                              cached &&
+                              !cached.loading &&
+                              !cached.error &&
+                              cached.current_message !== (m.message || '');
+                            if (!cached || cached.error || isStale) {
+                              fetchEditHistory(m.id);
+                            }
+                          }}
                         >
-                          (düzenlendi)
-                        </span>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="italic underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                              data-testid={`text-thread-edited-${m.id}`}
+                              aria-label="Düzenleme geçmişini göster"
+                              title={m.edited_at ? `Son düzenleme: ${m.edited_at}` : 'Düzenleme geçmişini göster'}
+                            >
+                              (düzenlendi)
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align={fromMe ? 'end' : 'start'}
+                            className="w-80 max-w-[90vw] p-0"
+                            data-testid={`popover-thread-edit-history-${m.id}`}
+                          >
+                            <div className="px-3 py-2 border-b text-xs font-medium">
+                              Düzenleme geçmişi
+                            </div>
+                            <div className="max-h-72 overflow-y-auto p-3 space-y-2 text-xs">
+                              {(() => {
+                                const entry = editHistoryByMsg[m.id];
+                                if (!entry || entry.loading) {
+                                  return (
+                                    <div className="text-muted-foreground italic">
+                                      Yükleniyor…
+                                    </div>
+                                  );
+                                }
+                                if (entry.error) {
+                                  return (
+                                    <div className="text-destructive">
+                                      {entry.error}
+                                    </div>
+                                  );
+                                }
+                                const versions = entry.history || [];
+                                if (versions.length === 0) {
+                                  return (
+                                    <div className="text-muted-foreground italic">
+                                      Önceki sürüm bulunamadı.
+                                    </div>
+                                  );
+                                }
+                                // Render oldest → newest, then the current
+                                // (live) text last so the user sees the
+                                // full timeline of "what was written when".
+                                return (
+                                  <>
+                                    {versions.map((v, i) => (
+                                      <div
+                                        key={`${m.id}-v-${i}`}
+                                        className="border-l-2 border-muted pl-2"
+                                        data-testid={`row-thread-edit-history-${m.id}-${i}`}
+                                      >
+                                        <div className="text-muted-foreground text-[10px]">
+                                          {(v.edited_by_name || 'Bilinmeyen')}
+                                          {v.edited_at ? ` · ${v.edited_at}` : ''}
+                                        </div>
+                                        <div className="whitespace-pre-wrap break-words">
+                                          {v.message || ''}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <div
+                                      className="border-l-2 border-primary pl-2"
+                                      data-testid={`row-thread-edit-current-${m.id}`}
+                                    >
+                                      <div className="text-muted-foreground text-[10px]">
+                                        Şu anki sürüm
+                                        {m.edited_at ? ` · ${m.edited_at}` : ''}
+                                      </div>
+                                      <div className="whitespace-pre-wrap break-words">
+                                        {entry.current_message || m.message || ''}
+                                      </div>
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       )}
                       {fromMe && !isDeleted && (
                         <CheckCheck

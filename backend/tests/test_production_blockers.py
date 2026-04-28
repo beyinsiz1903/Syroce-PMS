@@ -65,14 +65,24 @@ def clean_env(monkeypatch):
     return monkeypatch
 
 
-def _set_vapid(env, value: str = "test-only") -> None:
-    """Helper: set both VAPID env vars so the VAPID gate is satisfied.
+def _set_vapid(env, value: str | None = None) -> None:
+    """Helper: set both VAPID env vars so BOTH gates (set + format) pass.
 
     Used by tests that target *other* startup_check gates and need a clean
-    baseline where the VAPID check passes.
+    baseline where the VAPID checks (missing-key + Task #50 format) succeed.
+    The default values are real, well-formed encodings of the spec shape so
+    the format validator added in Task #50 does not interfere.
     """
-    env.setenv("VAPID_PUBLIC_KEY", value)
-    env.setenv("VAPID_PRIVATE_KEY", value)
+    import base64
+    if value is None:
+        pub = base64.urlsafe_b64encode(
+            b"\x04" + (b"\x00" * 32) + (b"\x00" * 32)
+        ).decode("ascii").rstrip("=")
+        priv = base64.urlsafe_b64encode(b"\x00" * 32).decode("ascii").rstrip("=")
+    else:
+        pub = priv = value
+    env.setenv("VAPID_PUBLIC_KEY", pub)
+    env.setenv("VAPID_PRIVATE_KEY", priv)
 
 
 # ─── Production-mode detection (unified APP_ENV/ENVIRONMENT/NODE_ENV) ───────
@@ -217,10 +227,11 @@ def test_production_passes_vapid_gate_when_keys_present(clean_env):
     """
     clean_env.setenv("APP_ENV", "production")
     clean_env.setenv("STRICT_TENANT_MODE", "true")
-    _set_vapid(clean_env, "real-rotated-key-2026")
+    _set_vapid(clean_env)  # default = well-formed P-256 encoding
 
     result = production_config.startup_check()
     assert result["vapid_keys_missing"] == []
+    assert result["vapid_format_errors"] == []
 
 
 def test_dev_warns_but_does_not_raise_when_vapid_missing(clean_env, caplog):
@@ -236,6 +247,167 @@ def test_dev_warns_but_does_not_raise_when_vapid_missing(clean_env, caplog):
     assert result["vapid_keys_missing"] == ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"]
     # Warning was emitted so a developer notices the missing config.
     assert any("VAPID" in rec.message for rec in caplog.records)
+
+
+# ─── Task #50: VAPID format validation ─────────────────────────────────
+
+def _valid_vapid_pub() -> str:
+    """Generate a real, well-formed VAPID public key for tests.
+
+    Produces a 65-byte uncompressed P-256 point (0x04 || X || Y),
+    base64url-encoded without padding — exactly the shape the spec
+    (and ``web_push.py``'s generator) emit.
+    """
+    import base64
+    raw = b"\x04" + (b"\x00" * 32) + (b"\x00" * 32)
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _valid_vapid_priv() -> str:
+    """Generate a 32-byte raw private key, base64url-encoded."""
+    import base64
+    return base64.urlsafe_b64encode(b"\x00" * 32).decode("ascii").rstrip("=")
+
+
+def test_vapid_format_validator_accepts_well_formed_keys():
+    from infra.production_config import validate_vapid_key_format
+    errors = validate_vapid_key_format(
+        public_key=_valid_vapid_pub(),
+        private_key=_valid_vapid_priv(),
+    )
+    assert errors == []
+
+
+def test_vapid_format_validator_rejects_pem_blob():
+    """PEM/DER copy-paste is the most common misconfiguration."""
+    from infra.production_config import validate_vapid_key_format
+    pem = (
+        "-----BEGIN PRIVATE KEY-----"
+        "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg"
+        "-----END PRIVATE KEY-----"
+    )
+    errors = validate_vapid_key_format(public_key=None, private_key=pem)
+    assert errors, "PEM private key must be flagged"
+    assert any("VAPID_PRIVATE_KEY" in e for e in errors)
+
+
+def test_vapid_format_validator_rejects_wrong_public_length():
+    """Length mismatch ⇒ explicit byte-count error."""
+    import base64
+    from infra.production_config import validate_vapid_key_format
+    too_short = base64.urlsafe_b64encode(b"\x04" + (b"\x00" * 30)).decode("ascii").rstrip("=")
+    errors = validate_vapid_key_format(public_key=too_short, private_key=None)
+    assert errors
+    assert any("65-byte" in e for e in errors)
+
+
+def test_vapid_format_validator_rejects_compressed_public_marker():
+    """Compressed point (0x02 / 0x03) is also 33 bytes — but if someone
+    pads it to 65 we still want to flag the leading byte."""
+    import base64
+    from infra.production_config import validate_vapid_key_format
+    bad_marker = b"\x02" + (b"\x00" * 32) + (b"\x00" * 32)
+    encoded = base64.urlsafe_b64encode(bad_marker).decode("ascii").rstrip("=")
+    errors = validate_vapid_key_format(public_key=encoded, private_key=None)
+    assert errors
+    assert any("0x04" in e for e in errors)
+
+
+def test_vapid_format_validator_rejects_garbage_base64():
+    from infra.production_config import validate_vapid_key_format
+    errors = validate_vapid_key_format(
+        public_key="not!valid@base64",
+        private_key=None,
+    )
+    assert errors
+    assert any("decode failed" in e for e in errors)
+
+
+def test_vapid_format_validator_rejects_invalid_chars_inside_valid_key():
+    """Architect-flagged regression: injecting a stray '!!' (or any other
+    non-base64url char) into an otherwise valid encoding must be rejected,
+    not silently absorbed by a permissive decoder."""
+    from infra.production_config import validate_vapid_key_format
+
+    valid_pub = _valid_vapid_pub()
+    valid_priv = _valid_vapid_priv()
+
+    # Inject '!!' in the middle of each — the strict decoder must reject.
+    poisoned_pub = valid_pub[:10] + "!!" + valid_pub[10:]
+    poisoned_priv = valid_priv[:5] + "!!" + valid_priv[5:]
+
+    errors = validate_vapid_key_format(public_key=poisoned_pub, private_key=None)
+    assert errors, "Public key with embedded '!!' must be flagged"
+    assert any("VAPID_PUBLIC_KEY" in e for e in errors)
+
+    errors = validate_vapid_key_format(public_key=None, private_key=poisoned_priv)
+    assert errors, "Private key with embedded '!!' must be flagged"
+    assert any("VAPID_PRIVATE_KEY" in e for e in errors)
+
+
+def test_vapid_format_validator_rejects_other_non_alphabet_chars():
+    """Coverage for additional non-alphabet bytes: '+' and '/' belong to
+    standard base64 (NOT base64url) and must therefore be rejected — VAPID
+    keys are always emitted in URL-safe form."""
+    from infra.production_config import validate_vapid_key_format
+    valid_priv = _valid_vapid_priv()
+    poisoned = valid_priv[:5] + "+/" + valid_priv[5:]
+    errors = validate_vapid_key_format(public_key=None, private_key=poisoned)
+    assert errors
+    assert any("VAPID_PRIVATE_KEY" in e for e in errors)
+
+
+def test_vapid_format_validator_accepts_padded_form():
+    """An operator pasting the trailing '=' from another tool should still
+    be accepted — padding is removed before alphabet validation."""
+    import base64
+    from infra.production_config import validate_vapid_key_format
+    raw = b"\x04" + (b"\x00" * 32) + (b"\x00" * 32)
+    padded_pub = base64.urlsafe_b64encode(raw).decode("ascii")  # keeps '='
+    assert padded_pub.endswith("=")  # sanity
+    priv_padded = base64.urlsafe_b64encode(b"\x00" * 32).decode("ascii")
+    errors = validate_vapid_key_format(public_key=padded_pub, private_key=priv_padded)
+    assert errors == []
+
+
+def test_vapid_format_validator_skips_empty_keys():
+    """None / empty string → no errors (the missing-key gate handles it)."""
+    from infra.production_config import validate_vapid_key_format
+    assert validate_vapid_key_format(public_key=None, private_key=None) == []
+    assert validate_vapid_key_format(public_key="", private_key="") == []
+
+
+def test_production_refuses_boot_when_vapid_format_invalid(clean_env):
+    """Production + malformed VAPID → startup_check raises RuntimeError."""
+    clean_env.setenv("APP_ENV", "production")
+    clean_env.setenv("STRICT_TENANT_MODE", "true")
+    # Set values so the missing-key gate doesn't fire first.
+    clean_env.setenv("VAPID_PUBLIC_KEY", "garbage-not-base64!!")
+    clean_env.setenv("VAPID_PRIVATE_KEY", _valid_vapid_priv())
+    with pytest.raises(RuntimeError) as exc:
+        production_config.startup_check()
+    assert "malformed VAPID keys" in str(exc.value).lower() or "VAPID" in str(exc.value)
+
+
+def test_dev_warns_but_does_not_raise_on_vapid_format_error(clean_env, caplog):
+    """Non-production: malformed VAPID logs a warning, no raise."""
+    import logging as _logging
+    clean_env.setenv("VAPID_PUBLIC_KEY", "garbage-not-base64!!")
+    clean_env.setenv("VAPID_PRIVATE_KEY", _valid_vapid_priv())
+    with caplog.at_level(_logging.WARNING, logger="infra.production_config"):
+        result = production_config.startup_check()
+    assert result["vapid_format_errors"]
+    assert any("VAPID" in rec.message for rec in caplog.records)
+
+
+def test_production_passes_when_vapid_format_is_valid(clean_env):
+    """Production + well-formed keys → no format violation, no raise."""
+    clean_env.setenv("APP_ENV", "production")
+    clean_env.setenv("STRICT_TENANT_MODE", "true")
+    clean_env.setenv("VAPID_PUBLIC_KEY", _valid_vapid_pub())
+    clean_env.setenv("VAPID_PRIVATE_KEY", _valid_vapid_priv())
+    result = production_config.startup_check()
+    assert result["vapid_format_errors"] == []
 
 
 def test_vapid_keys_listed_in_production_variables():

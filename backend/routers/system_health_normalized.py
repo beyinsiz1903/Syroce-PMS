@@ -291,6 +291,14 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
 
     try:
         m = ws_redis_adapter.get_metrics()
+        # Task #47: rolling 1-hour snapshot history for the trend chart.
+        # ``get_metrics_history`` is best-effort — adapters that have not
+        # been migrated yet (or unit-test stubs) simply won't expose it,
+        # in which case we degrade to an empty series rather than fail.
+        try:
+            raw_history = list(ws_redis_adapter.get_metrics_history() or [])
+        except Exception:
+            raw_history = []
         active = bool(m.get("active"))
         instance_id = m.get("instance_id") or ""
         publish_errors = int(m.get("publish_errors") or 0)
@@ -358,6 +366,59 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
             f"mode={'redis' if active else ('single-instance' if single_instance else 'inactive')}"
         )
 
+        # Task #47: convert cumulative snapshots to per-interval deltas
+        # so the dashboard can chart "errors per minute" instead of an
+        # ever-growing total. Trend direction compares the second half
+        # of the window with the first; >25% growth → "up", <-25% →
+        # "down", otherwise "flat". Empty/single-sample series stay
+        # "flat" (we don't yet have enough data to make a call).
+        history_points: list[dict[str, Any]] = []
+        prev: dict[str, Any] | None = None
+        for snap in raw_history:
+            point = {
+                "at": snap.get("at"),
+                "publish_errors": int(snap.get("publish_errors") or 0),
+                "messages_published": int(snap.get("messages_published") or 0),
+                "messages_received": int(snap.get("messages_received") or 0),
+                "messages_forwarded": int(snap.get("messages_forwarded") or 0),
+            }
+            if prev is None:
+                point["publish_errors_delta"] = 0
+                point["messages_published_delta"] = 0
+            else:
+                point["publish_errors_delta"] = max(
+                    0, point["publish_errors"] - int(prev.get("publish_errors") or 0)
+                )
+                point["messages_published_delta"] = max(
+                    0, point["messages_published"] - int(prev.get("messages_published") or 0)
+                )
+            history_points.append(point)
+            prev = point
+
+        error_deltas = [p["publish_errors_delta"] for p in history_points]
+        if len(error_deltas) >= 4:
+            mid = len(error_deltas) // 2
+            first_half = sum(error_deltas[:mid])
+            second_half = sum(error_deltas[mid:])
+            # Use a small absolute floor so a one-error blip doesn't
+            # register as a 100% spike when the first half was zero.
+            if second_half >= first_half + 3 and second_half >= first_half * 1.25:
+                error_trend = "up"
+            elif first_half >= second_half + 3 and first_half >= second_half * 1.25:
+                error_trend = "down"
+            else:
+                error_trend = "flat"
+        else:
+            error_trend = "flat"
+
+        history_summary = {
+            "interval_seconds": int(getattr(ws_redis_adapter, "_snapshot_interval_s", 60) or 60),
+            "max_points": int(getattr(ws_redis_adapter, "_snapshot_max", 60) or 60),
+            "points": history_points,
+            "error_trend": error_trend,
+            "errors_in_window": int(sum(error_deltas)),
+        }
+
         return _health_response(
             status=status,
             severity=severity,
@@ -379,6 +440,7 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
                 "last_listen_error_at": last_listen_error_at,
                 "publish_error_threshold": threshold,
                 "publish_error_critical_threshold": threshold * 5,
+                "metrics_history": history_summary,
             },
             action_available=status != "healthy",
             suggested_action=suggested_action,

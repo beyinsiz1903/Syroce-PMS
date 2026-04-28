@@ -5,6 +5,7 @@ Enables multi-instance WebSocket support. Falls back to local broadcast.
 import asyncio
 import json
 import logging
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -59,6 +60,19 @@ class WebSocketRedisAdapter:
         # could tune them without touching the loop.
         self._reconnect_min_backoff: float = 1.0
         self._reconnect_max_backoff: float = 30.0
+        # ── Task #47: rolling per-minute snapshots so the System Health
+        # dashboard can render a 1-hour trend / sparkline for the bridge.
+        # We keep the last ``_snapshot_max`` samples (default 60 → ~1h at
+        # 60s cadence) and only record a new sample when at least
+        # ``_snapshot_interval_s`` have elapsed since the previous one.
+        # The bookkeeping is lazy: every read of ``get_metrics()`` calls
+        # ``_record_snapshot_if_due()`` so we don't need a background
+        # task. This keeps the adapter dependency-free and makes the
+        # behavior trivially testable by patching ``_now``.
+        self._snapshot_interval_s: float = 60.0
+        self._snapshot_max: int = 60
+        self._snapshots: deque[dict[str, Any]] = deque(maxlen=self._snapshot_max)
+        self._last_snapshot_at: float | None = None
 
     async def initialize(self, redis_client, instance_id: str, local_handler=None):
         """Initialize with Redis client and local broadcast handler."""
@@ -338,7 +352,53 @@ class WebSocketRedisAdapter:
         self._metrics["channels_active"] = 0
         self._active = False
 
+    def _now(self) -> datetime:
+        """Indirection seam so tests can freeze time deterministically."""
+        return datetime.now(UTC)
+
+    def _record_snapshot_if_due(self) -> None:
+        """Append a new rolling snapshot when the cadence has elapsed.
+
+        Called lazily from ``get_metrics``/``get_metrics_history`` so we
+        don't need a background task. Callers that read metrics very
+        rarely will simply have a sparser series — that's an acceptable
+        trade-off because the dashboard endpoint polls these values on a
+        regular interval anyway.
+        """
+        now = self._now()
+        now_ts = now.timestamp()
+        if (
+            self._last_snapshot_at is not None
+            and (now_ts - self._last_snapshot_at) < self._snapshot_interval_s
+        ):
+            return
+        self._last_snapshot_at = now_ts
+        self._snapshots.append(
+            {
+                "at": now.isoformat(),
+                "publish_errors": int(self._metrics.get("publish_errors") or 0),
+                "messages_published": int(self._metrics.get("messages_published") or 0),
+                "messages_received": int(self._metrics.get("messages_received") or 0),
+                "messages_forwarded": int(self._metrics.get("messages_forwarded") or 0),
+                "reconnects": int(self._metrics.get("reconnects") or 0),
+            }
+        )
+
+    def get_metrics_history(self) -> list[dict[str, Any]]:
+        """Return a copy of the rolling snapshot buffer (oldest → newest).
+
+        Each entry contains the cumulative counter values at the sample
+        time. The dashboard converts adjacent samples to per-interval
+        deltas to render the trend.
+        """
+        self._record_snapshot_if_due()
+        return list(self._snapshots)
+
     def get_metrics(self) -> dict[str, Any]:
+        # Always advance the rolling buffer on read so the dashboard sees
+        # an up-to-date series even before the first dedicated history
+        # call lands.
+        self._record_snapshot_if_due()
         return {
             **self._metrics,
             "active": self._active,
