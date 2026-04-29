@@ -834,8 +834,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <MaintenanceDialog
           open={maintenanceDialogOpen}
           onClose={() => setMaintenanceDialogOpen(false)}
-          form={maintenanceForm}
-          setForm={setMaintenanceForm}
+          maintenanceForm={maintenanceForm}
+          setMaintenanceForm={setMaintenanceForm}
           onSuccess={() => { loadHousekeepingData(); loadData(); }}
         />
 

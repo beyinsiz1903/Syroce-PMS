@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
-const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenanceForm }) => {
+const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenanceForm, onSuccess }) => {
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,6 +32,7 @@ const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenance
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
       });
       toast.success(`Maintenance work order created for room ${res.data.room_number || maintenanceForm.room_number}`);
+      if (onSuccess) onSuccess();
       onClose();
     } catch (error) {
       console.error('Failed to create maintenance work order', error);
