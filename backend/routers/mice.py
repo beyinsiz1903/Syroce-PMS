@@ -324,14 +324,36 @@ async def list_accounts(
 ) -> dict:
     await _ensure_indexes()
     db = get_system_db()
-    flt: dict[str, Any] = {"tenant_id": current_user.tenant_id}
+    # Exclude alternate account_type rows (e.g. banquet_competitor records
+    # piggybacking on this collection) so the CRM client list stays clean.
+    flt: dict[str, Any] = {
+        "tenant_id": current_user.tenant_id,
+        "$or": [{"account_type": {"$exists": False}},
+                {"account_type": "client"}],
+    }
     if q:
         from security.query_safety import safe_search_term
         if (_s := safe_search_term(q)):
             rx = {"$regex": _s, "$options": "i"}
-            flt["$or"] = [{"name": rx}, {"legal_name": rx}, {"tax_no": rx}]
+            # Compose with the existing $or above using $and so both filters
+            # are honoured.
+            flt = {
+                "tenant_id": current_user.tenant_id,
+                "$and": [
+                    {"$or": [{"account_type": {"$exists": False}},
+                             {"account_type": "client"}]},
+                    {"$or": [{"name": rx}, {"legal_name": rx},
+                             {"tax_no": rx}]},
+                ],
+            }
     cur = db.mice_accounts.find(flt, {"_id": 0}).sort("name", 1).limit(500)
     return {"accounts": [d async for d in cur]}
+
+
+_CLIENT_ACCT_FILTER = {
+    "$or": [{"account_type": {"$exists": False}},
+             {"account_type": "client"}],
+}
 
 
 @router.post("/accounts")
@@ -343,6 +365,7 @@ async def create_account(body: AccountIn,
     db = get_system_db()
     doc = {"id": str(uuid.uuid4()),
            "tenant_id": current_user.tenant_id,
+           "account_type": "client",  # discriminator; isolates piggybacked rows
            **body.model_dump(),
            "created_at": datetime.now(UTC).isoformat(),
            "created_by": current_user.username}
@@ -358,9 +381,13 @@ async def update_account(account_id: str, body: AccountIn,
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
+    # Discriminator guard: never mutate non-client docs (e.g. banquet
+    # competitors stored in the same collection) via the CRM endpoint.
     res = await db.mice_accounts.update_one(
-        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"id": account_id, "tenant_id": current_user.tenant_id,
+         **_CLIENT_ACCT_FILTER},
         {"$set": {**body.model_dump(),
+                  "account_type": "client",
                   "updated_at": datetime.now(UTC).isoformat()}})
     if not res.matched_count:
         raise HTTPException(404, "Hesap bulunamadı")
@@ -382,8 +409,12 @@ async def delete_account(account_id: str,
     })
     if in_use:
         raise HTTPException(409, "Bu hesap aktif etkinliklere bağlı, silinemez.")
-    await db.mice_accounts.delete_one(
-        {"id": account_id, "tenant_id": current_user.tenant_id})
+    # Discriminator guard mirrors update_account above.
+    res = await db.mice_accounts.delete_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id,
+         **_CLIENT_ACCT_FILTER})
+    if not res.deleted_count:
+        raise HTTPException(404, "Hesap bulunamadı")
     await db.mice_contacts.delete_many(
         {"tenant_id": current_user.tenant_id, "account_id": account_id})
     return {"ok": True}
@@ -566,6 +597,47 @@ class PaymentScheduleItemIn(BaseModel):
     reference: str | None = None  # bank ref / invoice no
 
 
+class TechnicalRequirementsIn(BaseModel):
+    """Structured technical/AV checklist for a banquet event.
+
+    Free-text notes still live on the event itself; this struct lets the
+    banquet ops team plan setup, hand-overs and printable BEO/ops sheets
+    without parsing prose.
+    """
+    projector: bool = False
+    screen: bool = False
+    microphone_wired: int = Field(0, ge=0)
+    microphone_wireless: int = Field(0, ge=0)
+    sound_system: bool = False
+    stage: bool = False
+    lighting: bool = False
+    livestream: bool = False
+    internet_mbps: int = Field(0, ge=0)
+    translation_booths: int = Field(0, ge=0)
+    notes: str | None = None
+
+
+class StaffAssignmentIn(BaseModel):
+    """A single staff member assigned to an event."""
+    role: str  # chef / server / technician / host / security / other
+    name: str
+    user_id: str | None = None  # link to internal user when known
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    notes: str | None = None
+
+
+class EntertainmentIn(BaseModel):
+    """Music / entertainment booking attached to an event."""
+    type: str = "none"  # dj / live_band / solo_artist / show / none
+    name: str | None = None
+    contact: str | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    requirements: str | None = None  # rider / technical asks
+    fee: float = Field(0, ge=0)
+
+
 class EventIn(BaseModel):
     name: str
     client_name: str
@@ -586,6 +658,10 @@ class EventIn(BaseModel):
     notes: str | None = None
     reservation_id: str | None = None  # link to room block / master folio
     lost_reason: str | None = None  # populated when status=lost/cancelled
+    # Banquet ops enrichment (all optional → backwards compatible)
+    technical_requirements: TechnicalRequirementsIn | None = None
+    staff_assignments: list[StaffAssignmentIn] = Field(default_factory=list)
+    entertainment: EntertainmentIn | None = None
 
 
 def _line_total(r: dict) -> float:
@@ -1154,6 +1230,11 @@ async def beo(event_id: str,
         "resources": event.get("resources", []),
         "agenda": event.get("agenda", []),
         "payment_schedule": event.get("payment_schedule", []),
+        # Banquet ops enrichment — included only when populated so legacy
+        # consumers see the same shape as before for older events.
+        "technical_requirements": event.get("technical_requirements") or None,
+        "staff_assignments": event.get("staff_assignments") or [],
+        "entertainment": event.get("entertainment") or None,
     }
 
 

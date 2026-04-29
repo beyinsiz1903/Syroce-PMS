@@ -82,6 +82,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.spa", "router", ["spa"], None, None),
     ("routers.mice", "router", ["mice"], None, None),
     ("routers.sales_catering", "router", ["sales-catering"], None, None),
+    ("routers.banquet_competitor", "router", ["banquet-competitor"], None, None),
     ("routers.cross_property", "router", ["cross-property"], None, None),
     ("routers.procurement", "router", ["procurement"], None, None),
     # Domain routers (Phase B extraction)
