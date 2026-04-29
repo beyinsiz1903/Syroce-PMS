@@ -165,14 +165,14 @@ async def list_rates(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     db = get_system_db()
+    # Server-side slice → fewer bytes over wire when array is near cap.
     doc = await db.mice_accounts.find_one(
         {"id": competitor_id, "tenant_id": current_user.tenant_id,
          "account_type": ACCOUNT_TYPE},
-        {"_id": 0, "competitor_rates": 1})
+        {"_id": 0, "competitor_rates": {"$slice": limit}})
     if not doc:
         raise HTTPException(404, "Rakip bulunamadı")
-    rates = (doc.get("competitor_rates") or [])[:limit]
-    return {"rates": rates}
+    return {"rates": doc.get("competitor_rates") or []}
 
 
 @router.delete("/competitors/{competitor_id}/rates/{rate_id}")

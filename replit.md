@@ -3694,6 +3694,24 @@ Opera/Protel'in en güçlü alanlarından biri (banquet management)."*
 
 ## Sprint 23 Hardening + Af-sadakat Doğrulama (19 Apr 2026)
 
+### MICE/Banket extras + rakip analizi entegrasyon testleri — DONE (29 Apr 2026)
+- `backend/tests/test_mice_event_extras.py` (5 test): EventIn üzerine
+  eklenen `technical_requirements` / `staff_assignments` / `entertainment`
+  opsiyonel alanlarının create/update round-trip ettiğini, BEO çıktısında
+  göründüğünü ve geriye uyumluluğun (alanlar yokken event normal yaratılır)
+  korunduğunu doğrular.
+- `backend/tests/test_banquet_competitor.py` (6 test): rakip CRUD,
+  embedded `competitor_rates` snapshot CRUD (newest-first $position:0 +
+  $slice:200 kapağı), `/api/banquet/competitor-positioning` aggregate
+  doğruluğu (event tipi bazında min/max/avg + position label),
+  unauth 401/403.
+- Architect bulgusu fix: `routers/banquet_competitor.py::list_rates`
+  artık `competitor_rates: {"$slice": limit}` projection ile DB-tarafında
+  kesiyor (200'lik in-memory slice yerine). `mice_accounts` koleksiyonunda
+  `account_type="banquet_competitor"` discriminator'ı sayesinde Atlas
+  500 koleksiyon limitine ek collection yaratmadan tüm rakip + fiyat
+  geçmişi tek doc'a embedded yazılıyor.
+
 ### Spa & MICE UAT-grade hardening — DONE
 - **Atomik çakışma garantisi**: `backend/core/booking_atomicity.py` →
   `with_resource_locks()` Mongo transaction + per-resource lock dokümanı
