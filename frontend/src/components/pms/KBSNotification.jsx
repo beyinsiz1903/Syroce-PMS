@@ -53,8 +53,31 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
 
   useEffect(() => {
     fetchQueue();
-    const id = setInterval(fetchQueue, 30000);
-    return () => clearInterval(id);
+    let id = null;
+    const start = () => {
+      if (id !== null) return;
+      id = setInterval(fetchQueue, 30000);
+    };
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        fetchQueue();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchQueue]);
 
   const enqueueBooking = async (bookingId, action = 'checkin') => {

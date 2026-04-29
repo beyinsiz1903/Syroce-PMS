@@ -190,6 +190,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     return 'frontdesk';
   });
 
+  // Sticky-lazy mount: yalnızca ziyaret edilmiş PMS sekmelerinin içeriği
+  // mount edilir. Globaldeki TabsContent forceMount yapıyor; bu yüzden
+  // 20 sekmenin hepsi başlangıçta mount oluyor ve onlarca gereksiz
+  // endpoint + polling timer + Socket.IO bağlantısı tetikleniyordu.
+  // Bir sekme bir kez ziyaret edilince mount kalır → state ve abone-
+  // likler korunur, geri dönünce yeniden fetch yok.
+  const [visitedTabs, setVisitedTabs] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    const initial = (hash && validTabKeys.has(hash)) ? hash : 'frontdesk';
+    return new Set([initial]);
+  });
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])));
+  }, [activeTab]);
+
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '');
@@ -747,39 +762,49 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             })}
           </TabsList>
 
-          <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
-          <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
-            let booking = bookings.find(b => b.id === bookingId);
-            if (!booking) {
-              try {
-                const res = await axios.get(`/pms/bookings/${bookingId}`);
-                booking = res.data;
-              } catch { toast.error('Rezervasyon yüklenemedi'); return; }
-            }
-            setSelectedBookingDetail(booking);
-            setOpenDialog('bookingDetail');
-          }} toast={toast} loading={hkLoading} />
-          <TabsContent value="rooms" className="space-y-4">
-            <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null); setOpenDialog('bookingDetail'); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
-            {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
-          </TabsContent>
-          <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
-          <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
-          <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>
-          <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>
-          <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>
-          <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>
-          <TabsContent value="flash" className="space-y-4"><FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
-          <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>
-          <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>
-          <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>
-          <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>
-          <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>
-          <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>
-          <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>
-          <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>
-          <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>
-          <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>
+          {visitedTabs.has('frontdesk') && (
+            <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
+          )}
+          {visitedTabs.has('housekeeping') && (
+            <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
+              let booking = bookings.find(b => b.id === bookingId);
+              if (!booking) {
+                try {
+                  const res = await axios.get(`/pms/bookings/${bookingId}`);
+                  booking = res.data;
+                } catch { toast.error('Rezervasyon yüklenemedi'); return; }
+              }
+              setSelectedBookingDetail(booking);
+              setOpenDialog('bookingDetail');
+            }} toast={toast} loading={hkLoading} />
+          )}
+          {visitedTabs.has('rooms') && (
+            <TabsContent value="rooms" className="space-y-4">
+              <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null); setOpenDialog('bookingDetail'); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
+              {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
+            </TabsContent>
+          )}
+          {visitedTabs.has('guests') && (
+            <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
+          )}
+          {visitedTabs.has('bookings') && (
+            <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
+          )}
+          {visitedTabs.has('cashier') && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
+          {visitedTabs.has('upsell') && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
+          {visitedTabs.has('internal_chat') && <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>}
+          {visitedTabs.has('reports') && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
+          {visitedTabs.has('flash') && <TabsContent value="flash" className="space-y-4"><FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {visitedTabs.has('tasks') && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
+          {visitedTabs.has('feedback') && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
+          {visitedTabs.has('allotment') && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
+          {visitedTabs.has('pos') && <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>}
+          {visitedTabs.has('laundry') && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
+          {visitedTabs.has('concierge') && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
+          {visitedTabs.has('revenue') && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
+          {visitedTabs.has('manager_report') && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {visitedTabs.has('kbs') && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
+          {visitedTabs.has('kvkk') && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
         </Tabs>
 
         <FolioDialog open={openDialog === 'folio'} onClose={() => setOpenDialog(null)} folio={folio} bookingId={selectedBooking} onFolioUpdated={() => loadFolio(selectedBooking)} />

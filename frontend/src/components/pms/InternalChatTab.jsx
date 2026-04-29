@@ -736,22 +736,60 @@ const InternalChatTab = ({ currentUser }) => {
     };
   }, [loadInbox, loadUsers, loadConversations]);
 
+  // Polling timers — Socket.IO ana iletim, polling güvenlik ağı.
+  // Tarayıcı sekmesi arka plana geçince timer'lar duraklatılır,
+  // tekrar öne gelince hem hemen bir tetikleme yapılır hem timer
+  // yeniden başlatılır (boşta sekmelerden gereksiz yük olmasın).
   useEffect(() => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollTimerRef.current = setInterval(() => loadInbox(true), POLL_INTERVAL_MS);
+    pollTimerRef.current = null;
+    const start = () => {
+      if (pollTimerRef.current !== null || document.hidden) return;
+      pollTimerRef.current = setInterval(() => loadInbox(true), POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (pollTimerRef.current !== null) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { loadInbox(true); start(); }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [loadInbox]);
 
   useEffect(() => {
     if (conversationPollTimerRef.current) clearInterval(conversationPollTimerRef.current);
-    conversationPollTimerRef.current = setInterval(
-      () => loadConversations(true),
-      POLL_INTERVAL_MS,
-    );
+    conversationPollTimerRef.current = null;
+    const start = () => {
+      if (conversationPollTimerRef.current !== null || document.hidden) return;
+      conversationPollTimerRef.current = setInterval(
+        () => loadConversations(true),
+        POLL_INTERVAL_MS,
+      );
+    };
+    const stop = () => {
+      if (conversationPollTimerRef.current !== null) {
+        clearInterval(conversationPollTimerRef.current);
+        conversationPollTimerRef.current = null;
+      }
+    };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { loadConversations(true); start(); }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
-      if (conversationPollTimerRef.current) clearInterval(conversationPollTimerRef.current);
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [loadConversations]);
 
@@ -760,12 +798,28 @@ const InternalChatTab = ({ currentUser }) => {
   // (Socket.IO is the primary delivery mechanism — this is a safety net.)
   useEffect(() => {
     if (threadPollTimerRef.current) clearInterval(threadPollTimerRef.current);
+    threadPollTimerRef.current = null;
     if (!selectedConvUserId) return;
-    threadPollTimerRef.current = setInterval(() => {
-      loadThread(selectedConvUserId, { silent: true, markRead: true });
-    }, POLL_INTERVAL_MS);
+    const tick = () => loadThread(selectedConvUserId, { silent: true, markRead: true });
+    const start = () => {
+      if (threadPollTimerRef.current !== null || document.hidden) return;
+      threadPollTimerRef.current = setInterval(tick, POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (threadPollTimerRef.current !== null) {
+        clearInterval(threadPollTimerRef.current);
+        threadPollTimerRef.current = null;
+      }
+    };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { tick(); start(); }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
-      if (threadPollTimerRef.current) clearInterval(threadPollTimerRef.current);
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [selectedConvUserId, loadThread]);
 
