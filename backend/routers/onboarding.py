@@ -78,7 +78,7 @@ def _now_iso() -> str:
 # ── Read progress ───────────────────────────────────────────────
 # v81 DQ defense-in-depth: `_tenant_dep=Depends(_require_tenant_dep)` cache lookup'tan ÖNCE
 # tenant kontrolü yapar; body'deki `_require_tenant` cache HIT'te atlanırdı (DP-2 sınıfı).
-# noqa: cache-rbac — tenant kendi onboarding ilerlemesini görür (self-service, cross-role within tenant)
+# rbac-allow: cache-rbac — tenant kendi onboarding ilerlemesini görür (self-service, cross-role within tenant)
 @router.get("/progress")
 @cached(ttl=60, key_prefix="onboarding_progress")
 async def progress(

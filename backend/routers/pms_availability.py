@@ -176,7 +176,7 @@ async def cancel_room_block(
 # Availability (read path — queries blocks + bookings)
 # ═══════════════════════════════════════════════════════════════════
 
-# noqa: cache-rbac — operasyonel oda müsaitliği tüm rolelere açık (sat-bil + servis koordinasyon)
+# rbac-allow: cache-rbac — operasyonel oda müsaitliği tüm rolelere açık (sat-bil + servis koordinasyon)
 @router.get("/pms/rooms/availability")
 @cached(ttl=120, key_prefix="rooms_availability")  # Cache for 2 min
 async def check_room_availability(

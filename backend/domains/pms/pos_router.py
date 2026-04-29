@@ -581,7 +581,7 @@ async def get_monthly_forecast(
 # Front Office - Enhanced Features
 # --------------------------------------------------------------------------
 
-# noqa: cache-rbac — FO rooms filter operasyonel
+# rbac-allow: cache-rbac — FO rooms filter operasyonel
 @router.get("/frontdesk/rooms-with-filters")
 @cached(ttl=180, key_prefix="frontdesk_rooms_filtered")  # Cache for 3 min
 async def get_rooms_with_filters(
@@ -629,7 +629,7 @@ async def get_rooms_with_filters(
 # Front Office Mobile - Check-in, ID Scan, Guest Requests, Folio Operations
 # --------------------------------------------------------------------------
 
-# noqa: cache-rbac — FO available rooms operasyonel
+# rbac-allow: cache-rbac — FO available rooms operasyonel
 @router.get("/frontoffice/mobile/available-rooms")
 @cached(ttl=120, key_prefix="mobile_available_rooms")  # Cache for 2 min
 async def get_available_rooms_mobile(

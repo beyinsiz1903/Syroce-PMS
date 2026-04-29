@@ -64,6 +64,7 @@ def is_role_allowed_for_tier(role: str, tier: str) -> bool:
     return role in allowed
 
 
+from core.audit import log_audit_event  # Task #28
 from core.security import hash_password
 from domains.admin.schemas import (  # noqa: E402
     AdminCreateTeamMemberRequest,
@@ -81,7 +82,6 @@ from domains.admin.schemas import (  # noqa: E402
     UpdateHotelInfoRequest,
     UpdateTeamMemberRoleRequest,
 )
-from core.audit import log_audit_event  # Task #28
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 
@@ -512,7 +512,7 @@ async def list_tenant_users(
             "tenant_id": u.get("tenant_id"),
             "granted_permissions": u.get("granted_permissions") or [],
         })
-    items.sort(key=lambda x: ((x.get("name") or x.get("email") or "")).lower())
+    items.sort(key=lambda x: (x.get("name") or x.get("email") or "").lower())
     return {
         "tenant_id": target_tenant,
         "users": items,

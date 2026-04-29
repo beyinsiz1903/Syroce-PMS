@@ -173,7 +173,7 @@ async def pull_reservations_from_booking(current_user: User = Depends(get_curren
 # /rms/apply-recommendations are handled by domains.revenue.rms_router (enhanced versions with real DB queries)
 
 # 3. Housekeeping Mobile
-# noqa: cache-rbac — HK rooms operasyonel (HK/FO/manager)
+# rbac-allow: cache-rbac — HK rooms operasyonel (HK/FO/manager)
 @router.get("/housekeeping/rooms")
 @cached(ttl=120, key_prefix="housekeeping_rooms_list")
 async def get_housekeeping_rooms(
@@ -440,7 +440,7 @@ async def get_my_tasks(
 
     return {'tasks': tasks, 'count': len(tasks)}
 
-# noqa: cache-rbac — tasks dashboard operasyonel cross-role
+# rbac-allow: cache-rbac — tasks dashboard operasyonel cross-role
 @router.get("/tasks/dashboard")
 @cached(ttl=300, key_prefix="tasks_dashboard")  # Cache for 5 min
 async def get_tasks_dashboard(current_user: User = Depends(get_current_user)):

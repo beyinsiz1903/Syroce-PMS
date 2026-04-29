@@ -53,7 +53,7 @@ security = HTTPBearer()
 
 # ==================== DEPARTMENT-SPECIFIC ENDPOINTS ====================
 
-# noqa: cache-rbac — FO dashboard operasyonel, hotel staff geneli görür (FO/HK/manager/admin)
+# rbac-allow: cache-rbac — FO dashboard operasyonel, hotel staff geneli görür (FO/HK/manager/admin)
 @router.get("/department/front-office/dashboard")
 @cached(ttl=180, key_prefix="front_office_dashboard")  # Cache for 3 minutes
 async def get_front_office_dashboard(current_user: User = Depends(get_current_user)):
@@ -129,7 +129,7 @@ async def get_front_office_dashboard(current_user: User = Depends(get_current_us
         }
     }
 
-# noqa: cache-rbac — HK dashboard operasyonel, FO/HK/manager/admin görür
+# rbac-allow: cache-rbac — HK dashboard operasyonel, FO/HK/manager/admin görür
 @router.get("/department/housekeeping/dashboard")
 @cached(ttl=120, key_prefix="housekeeping_dashboard")  # Cache for 2 minutes
 async def get_housekeeping_dashboard(current_user: User = Depends(get_current_user)):
@@ -873,7 +873,7 @@ async def assign_room_to_booking(
         'assigned_at': datetime.now(UTC).isoformat()
     }
 
-# noqa: cache-rbac — booking için müsait odalar operasyonel (FO/HK/manager)
+# rbac-allow: cache-rbac — booking için müsait odalar operasyonel (FO/HK/manager)
 @router.get("/bookings/{booking_id}/available-rooms")
 @cached(ttl=120, key_prefix="booking_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_booking(
@@ -1062,7 +1062,7 @@ async def complete_cleaning_timer(
         'completed_at': completed_at.isoformat()
     }
 
-# noqa: cache-rbac — HK aktif temizlik timer'ları operasyonel (HK/FO/manager)
+# rbac-allow: cache-rbac — HK aktif temizlik timer'ları operasyonel (HK/FO/manager)
 @router.get("/housekeeping/active-timers")
 @cached(ttl=60, key_prefix="hk_active_timers")  # Cache for 1 min
 async def get_active_cleaning_timers(current_user: User = Depends(get_current_user)):
@@ -2614,7 +2614,7 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
     return {'booking_id': booking_id, 'room_number': available_room['room_number']}
 
 
-# noqa: cache-rbac — task kanban operasyonel cross-role (FO/HK/maintenance/manager)
+# rbac-allow: cache-rbac — task kanban operasyonel cross-role (FO/HK/maintenance/manager)
 @router.get("/tasks/kanban")
 @cached(ttl=180, key_prefix="tasks_kanban")  # Cache for 3 min
 async def get_tasks_kanban(current_user: User = Depends(get_current_user)):

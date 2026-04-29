@@ -48,7 +48,7 @@ release_room_block_service = ReleaseRoomBlockService()
 
 # ============= HOUSEKEEPING =============
 
-# noqa: cache-rbac — operasyonel oda görevleri tüm rolelere açık (FO koordinasyon, sales availability)
+# rbac-allow: cache-rbac — operasyonel oda görevleri tüm rolelere açık (FO koordinasyon, sales availability)
 @router.get("/housekeeping/tasks")
 @cached(ttl=120, key_prefix="housekeeping_tasks")  # Cache for 2 minutes
 async def get_housekeeping_tasks(status: str | None = None, current_user: User = Depends(get_current_user)):
@@ -206,7 +206,7 @@ async def update_housekeeping_task(task_id: str, status: str | None = None, assi
     )
     return task
 
-# noqa: cache-rbac — oda durumu tablosu tüm rolelere açık (cross-departman koordinasyon)
+# rbac-allow: cache-rbac — oda durumu tablosu tüm rolelere açık (cross-departman koordinasyon)
 @router.get("/housekeeping/room-status")
 @cached(ttl=60, key_prefix="housekeeping_room_status")  # Cache for 1 minute (real-time data)
 async def get_room_status_board(current_user: User = Depends(get_current_user)):
@@ -217,7 +217,7 @@ async def get_room_status_board(current_user: User = Depends(get_current_user)):
         status_counts[room['status']] += 1
     return {'rooms': rooms, 'status_counts': status_counts, 'total_rooms': len(rooms)}
 
-# noqa: cache-rbac — due-out listesi tüm rolelere açık (FO check-out koordinasyon)
+# rbac-allow: cache-rbac — due-out listesi tüm rolelere açık (FO check-out koordinasyon)
 @router.get("/housekeeping/due-out")
 @cached(ttl=120, key_prefix="hk_due_out")  # Cache for 2 min
 async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
@@ -277,7 +277,7 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
         'count': len(due_out_rooms)
     }
 
-# noqa: cache-rbac — stayovers listesi tüm rolelere açık (operasyonel oda durumu)
+# rbac-allow: cache-rbac — stayovers listesi tüm rolelere açık (operasyonel oda durumu)
 @router.get("/housekeeping/stayovers")
 @cached(ttl=120, key_prefix="hk_stayovers")  # Cache for 2 min
 async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
@@ -335,7 +335,7 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
     }
 
 
-# noqa: cache-rbac — oda durumu raporu tüm rolelere açık (operasyonel)
+# rbac-allow: cache-rbac — oda durumu raporu tüm rolelere açık (operasyonel)
 @router.get("/housekeeping/room-status-report")
 @cached(ttl=120, key_prefix="hk_room_status_report")
 async def get_room_status_report(current_user: User = Depends(get_current_user)):
@@ -500,7 +500,7 @@ async def get_staff_performance_detailed(
     }
 
 
-# noqa: cache-rbac — arrival rooms listesi tüm rolelere açık (FO check-in koordinasyon)
+# rbac-allow: cache-rbac — arrival rooms listesi tüm rolelere açık (FO check-in koordinasyon)
 @router.get("/housekeeping/arrivals")
 @cached(ttl=120, key_prefix="hk_arrivals")  # Cache for 2 min
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
@@ -640,7 +640,7 @@ async def assign_housekeeping_task(
 
 # ============= ROOM BLOCKS (OUT OF ORDER / OUT OF SERVICE) =============
 
-# noqa: cache-rbac — room blocks operasyonel listesi tüm rolelere açık (maintenance/group koordinasyon)
+# rbac-allow: cache-rbac — room blocks operasyonel listesi tüm rolelere açık (maintenance/group koordinasyon)
 @router.get("/pms/room-blocks")
 @cached(ttl=300, key_prefix="pms_room_blocks")  # Cache for 5 min
 async def get_room_blocks(

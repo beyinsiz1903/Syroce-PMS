@@ -83,7 +83,7 @@ def _invalidate_spa_services_cache(tenant_id: str) -> None:
     _cache.safe_invalidate(tenant_id, "spa_services")
 
 
-# noqa: cache-rbac — operasyonel servis listesi tüm rolelere açık (HK temizlik, FO upsell)
+# rbac-allow: cache-rbac — operasyonel servis listesi tüm rolelere açık (HK temizlik, FO upsell)
 @router.get("/services")
 @_cached(ttl=30, key_prefix="spa_services")
 async def list_services(current_user: User = Depends(get_current_user)) -> dict:

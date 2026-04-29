@@ -240,7 +240,7 @@ async def create_order(order_data: OrderCreate, current_user: User = Depends(get
 
 
 
-# noqa: cache-rbac — POS F&B orders operasyonel
+# rbac-allow: cache-rbac — POS F&B orders operasyonel
 @router.get("/marketplace/orders", response_model=list[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
 @cached(ttl=300, key_prefix="marketplace_orders")  # Cache for 5 min
 async def get_orders(current_user: User = Depends(get_current_user)):

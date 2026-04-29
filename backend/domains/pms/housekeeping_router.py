@@ -254,7 +254,7 @@ async def get_housekeeping_photo_feed(
 # Helper functions for push notification delivery
 
 
-# noqa: cache-rbac — kullanıcı kendi tasks (require_module + staff-scoped)
+# rbac-allow: cache-rbac — kullanıcı kendi tasks (require_module + staff-scoped)
 @router.get("/housekeeping/mobile/my-tasks")
 @cached(ttl=60, key_prefix="mobile_hk_my_tasks")  # Cache for 1 min
 async def get_my_housekeeping_tasks(

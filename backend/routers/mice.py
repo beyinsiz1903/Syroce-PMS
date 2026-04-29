@@ -99,7 +99,7 @@ def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
     _cache.safe_invalidate(tenant_id, "mice_spaces")
 
 
-# noqa: cache-rbac — toplantı salonları operasyonel listesi tüm rolelere açık
+# rbac-allow: cache-rbac — toplantı salonları operasyonel listesi tüm rolelere açık
 @router.get("/spaces")
 @_cached(ttl=30, key_prefix="mice_spaces")
 async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:

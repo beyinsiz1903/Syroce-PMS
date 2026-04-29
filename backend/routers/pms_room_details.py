@@ -64,7 +64,7 @@ class MiniBarUpdate(BaseModel):
 
 # ── Routes ───────────────────────────────────────────────────────────
 
-# noqa: cache-rbac — oda detayları (notes/mini-bar/maintenance) tüm operasyonel rolelere açık (FO/HK/manager/admin)
+# rbac-allow: cache-rbac — oda detayları (notes/mini-bar/maintenance) tüm operasyonel rolelere açık (FO/HK/manager/admin)
 @router.get("/rooms/{room_id}/details-enhanced")
 @cached(ttl=180, key_prefix="room_details_enhanced")  # Cache for 3 min
 async def get_room_details_enhanced(

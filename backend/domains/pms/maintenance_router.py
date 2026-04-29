@@ -494,7 +494,7 @@ async def create_or_update_part(
     return part
 
 
-# noqa: cache-rbac — maintenance tasks operasyonel cross-role
+# rbac-allow: cache-rbac — maintenance tasks operasyonel cross-role
 @router.get("/maintenance/tasks")
 @cached(ttl=180, key_prefix="maintenance_tasks")  # Cache for 3 min
 async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):

@@ -42,7 +42,7 @@ router = APIRouter(prefix="/api", tags=["pms-services"])
 # Room Services
 # ═══════════════════════════════════════════════════════════════════
 
-# noqa: cache-rbac — oda servis kayıtları operasyonel (FO/HK/restoran/manager/admin)
+# rbac-allow: cache-rbac — oda servis kayıtları operasyonel (FO/HK/restoran/manager/admin)
 @router.get("/pms/room-services")
 @cached(ttl=300, key_prefix="pms_room_services")  # Cache for 5 min
 async def get_hotel_room_services(current_user: User = Depends(get_current_user)):

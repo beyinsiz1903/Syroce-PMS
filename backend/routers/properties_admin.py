@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -34,7 +33,7 @@ from pydantic import BaseModel, EmailStr, Field
 from core.audit import log_audit_event
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db
-from models.schemas import User, UserRole
+from models.schemas import User
 
 router = APIRouter(prefix="/api/properties", tags=["properties-admin"])
 
@@ -288,7 +287,7 @@ async def update_property(
     if tenant_id not in chain_ids:
         raise HTTPException(status_code=403, detail="Bu otel sizin grup zincirinizde değil")
 
-    updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    updates = payload.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
 

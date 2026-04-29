@@ -382,7 +382,7 @@ async def assign_room_to_booking(
         'room_number': room['room_number']
     }
 
-# noqa: cache-rbac — FO booking search operasyonel
+# rbac-allow: cache-rbac — FO booking search operasyonel
 @router.get("/frontdesk/search-bookings", dependencies=[_FD_READ])
 @cached(ttl=180, key_prefix="frontdesk_search_bookings")  # Cache for 3 min
 async def search_bookings(
@@ -432,7 +432,7 @@ async def search_bookings(
         'count': len(bookings)
     }
 
-# noqa: cache-rbac — FO available rooms operasyonel
+# rbac-allow: cache-rbac — FO available rooms operasyonel
 @router.get("/frontdesk/available-rooms", dependencies=[_FD_READ])
 @cached(ttl=120, key_prefix="frontdesk_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_assignment(

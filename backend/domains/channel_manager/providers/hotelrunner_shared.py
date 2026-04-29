@@ -202,7 +202,7 @@ async def _persist_and_process(
                 await record_skip(tenant_id, "hotelrunner")
             except Exception as e:
                 logger.warning(f"[CATCHUP-DEDUP] counter record failed (non-blocking): {e}")
-            from domains.channel_manager.ingest.pipeline import PipelineResult, IngestDecision
+            from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
             result = PipelineResult(existing.get("id", ""))
             result.decision = IngestDecision.SKIP
             result.reason = "Pre-insert duplicate (provider_event_id already recorded)"

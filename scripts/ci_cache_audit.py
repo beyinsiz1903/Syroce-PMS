@@ -13,10 +13,14 @@ Catches three regression classes:
 Alias-aware: detects `cached`, `_cached`, or any local alias of the decorator.
 Allow-list: explicit global/admin endpoints (super_admin guarded).
 
-v78 DN: per-endpoint inline allowlist via `# noqa: cache-rbac` marker on the
-line directly above the first decorator. Use when cross-role read access is
+v78 DN: per-endpoint inline allowlist via `# rbac-allow: cache-rbac` marker on
+the line directly above the first decorator. Use when cross-role read access is
 intentionally operational (e.g. spa/services, mice/spaces, housekeeping ops).
 NOTE: marker SADECE intentional cross-role içindir, "manuel guard var" gerekçesiyle DEĞİL.
+
+Legacy `# noqa: cache-rbac` form is also accepted for backward compatibility,
+but new code should use `# rbac-allow: cache-rbac` (avoids ruff "invalid noqa"
+warnings since `cache-rbac` is not a real lint code).
 
 Exit 0 on clean, 1 on tenant findings, manual-guard anti-pattern, or (--strict) any RBAC.
 """
@@ -24,7 +28,8 @@ import ast
 import pathlib
 import sys
 
-NOQA_MARKER = "noqa: cache-rbac"
+# Both forms accepted — new code uses `rbac-allow:` to avoid ruff noqa-parser warnings.
+NOQA_MARKERS = ("rbac-allow: cache-rbac", "noqa: cache-rbac")
 
 REPO = pathlib.Path(__file__).resolve().parents[1] / "backend"
 TENANT_PARAMS = {"current_user", "user", "tenant", "tenant_id"}
@@ -131,14 +136,15 @@ def _has_manual_role_guard(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str 
 
 
 def _has_noqa_marker(source_lines: list[str], node) -> bool:
-    """Check line directly above first decorator for `# noqa: cache-rbac`."""
+    """Check line directly above first decorator for an RBAC-allow marker."""
     if not node.decorator_list:
         return False
     first_dec_line = min(d.lineno for d in node.decorator_list)
     idx = first_dec_line - 2  # 0-indexed line above first decorator
     if idx < 0 or idx >= len(source_lines):
         return False
-    return NOQA_MARKER in source_lines[idx]
+    line = source_lines[idx]
+    return any(m in line for m in NOQA_MARKERS)
 
 
 def main() -> int:
@@ -147,6 +153,8 @@ def main() -> int:
     rbac_findings: list[tuple[str, int, str]] = []
     anti_pattern_findings: list[tuple[str, int, str, str]] = []  # v81 DQ
     suppressed = 0
+    marker_count = 0
+    legacy_marker_count = 0
 
     for py in REPO.rglob("*.py"):
         rel = str(py.relative_to(REPO))
@@ -156,6 +164,8 @@ def main() -> int:
         except SyntaxError:
             continue
         source_lines = source.splitlines()
+        marker_count += source.count("rbac-allow: cache-rbac")
+        legacy_marker_count += source.count("noqa: cache-rbac")
 
         cached_aliases = _collect_cached_aliases(tree)
 
@@ -207,7 +217,10 @@ def main() -> int:
             print(f"  {f[0]}:{f[1]} {f[2]} — manual `{f[3]}()` in body, missing Depends(require_op/role)")
 
     if suppressed:
-        print(f"\nINFO: {suppressed} RBAC finding(s) suppressed via `# noqa: cache-rbac` (intentional cross-role).")
+        print(f"\nINFO: {suppressed} RBAC finding(s) suppressed via `# rbac-allow: cache-rbac` (intentional cross-role).")
+        print(f"INFO: {marker_count} marker(s) present in source ({suppressed} suppressed; rest are on endpoints with RBAC dep or in ALLOWLIST_TENANT — safe).")
+    if legacy_marker_count:
+        print(f"\nWARN: {legacy_marker_count} legacy `# noqa: cache-rbac` marker(s) found — please migrate to `# rbac-allow: cache-rbac` to avoid ruff noqa-parser warnings.")
 
     if not tenant_findings and not rbac_findings and not anti_pattern_findings:
         print("OK: 0 @cached endpoints with cache leak, RBAC gap, or manual-guard anti-pattern.")

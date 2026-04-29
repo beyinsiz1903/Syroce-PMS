@@ -61,7 +61,7 @@ class ImportActionResponse(BaseModel):
 
 # NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter
 # in the queries below). Cache key intentionally resolves to 'global' namespace.
-# noqa: cache-rbac — global ops admin endpoint (router-level admin guard)
+# rbac-allow: cache-rbac — global ops admin endpoint (router-level admin guard)
 @import_admin_router.get("/status", response_model=ImportStatusResponse)
 @cached(ttl=60, key_prefix="imports_status_global")
 async def import_status():

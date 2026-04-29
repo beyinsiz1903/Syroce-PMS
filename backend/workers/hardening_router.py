@@ -21,7 +21,7 @@ def _ctx(user: User) -> OperationContext:
     return OperationContext.from_user(user)
 
 
-# noqa: cache-rbac — ops/devops queue health (admin/manager)
+# rbac-allow: cache-rbac — ops/devops queue health (admin/manager)
 @router.get("/queues/health", summary="Queue health summary")
 @cached(ttl=30, key_prefix="workers_queues_health")
 async def get_queue_health(current_user: User = Depends(get_current_user)):

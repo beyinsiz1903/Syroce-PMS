@@ -610,7 +610,7 @@ async def create_room_service_request(request: RoomServiceCreate, current_user: 
 
 
 
-# noqa: cache-rbac — GUEST portal — oda servis isteği
+# rbac-allow: cache-rbac — GUEST portal — oda servis isteği
 @router.get("/guest/room-service/{booking_id}")
 @cached(ttl=300, key_prefix="guest_room_service")  # Cache for 5 min
 async def get_room_service_requests(booking_id: str, current_user: User = Depends(get_current_user)):
@@ -619,7 +619,7 @@ async def get_room_service_requests(booking_id: str, current_user: User = Depend
 
 
 
-# noqa: cache-rbac — GUEST portal — otel listesi
+# rbac-allow: cache-rbac — GUEST portal — otel listesi
 @router.get("/guest/hotels")
 @cached(ttl=600, key_prefix="guest_hotels")  # Cache for 10 min
 async def browse_hotels(current_user: User = Depends(get_current_user)):
@@ -647,7 +647,7 @@ async def create_loyalty_program(program_data: LoyaltyProgramCreate, current_use
 
 
 
-# noqa: cache-rbac — GUEST portal — loyalty programları
+# rbac-allow: cache-rbac — GUEST portal — loyalty programları
 @router.get("/loyalty/programs")
 @cached(ttl=600, key_prefix="loyalty_programs")  # Cache for 10 min
 async def get_loyalty_programs(current_user: User = Depends(get_current_user)):
@@ -676,7 +676,7 @@ async def create_loyalty_transaction(transaction_data: LoyaltyTransactionCreate,
 
 
 
-# noqa: cache-rbac — GUEST portal — guest loyalty
+# rbac-allow: cache-rbac — GUEST portal — guest loyalty
 @router.get("/loyalty/guest/{guest_id}")
 @cached(ttl=600, key_prefix="loyalty_guest")  # Cache for 10 min
 async def get_guest_loyalty_by_id(guest_id: str, current_user: User = Depends(get_current_user)):
@@ -936,7 +936,7 @@ async def get_purchased_upsells(
     return {'items': items}
 
 
-# noqa: cache-rbac — GUEST portal — guest profili
+# rbac-allow: cache-rbac — GUEST portal — guest profili
 @router.get("/guests/{guest_id}/profile-enhanced")
 @cached(ttl=300, key_prefix="guest_profile_enhanced")  # Cache for 5 min
 async def get_guest_profile_enhanced(

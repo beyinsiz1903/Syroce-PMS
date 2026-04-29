@@ -234,7 +234,7 @@ async def delete_room_mapping(
 
 
 
-# noqa: cache-rbac — OTA rezervasyonları operasyonel (FO/manager)
+# rbac-allow: cache-rbac — OTA rezervasyonları operasyonel (FO/manager)
 @router.get("/channel-manager/ota-reservations", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="cm_ota_reservations")  # Cache for 3 min
 async def get_ota_reservations(
@@ -388,7 +388,7 @@ async def import_ota_reservation(
 
 
 
-# noqa: cache-rbac — exception queue operasyonel (FO/manager)
+# rbac-allow: cache-rbac — exception queue operasyonel (FO/manager)
 @router.get("/channel-manager/exceptions", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="cm_exceptions")  # Cache for 3 min
 async def get_exception_queue(
@@ -494,7 +494,7 @@ async def check_rate_parity(
 
 
 
-# noqa: cache-rbac — channel health operasyonel cross-role
+# rbac-allow: cache-rbac — channel health operasyonel cross-role
 @router.get("/channel/status", dependencies=[_CM_READ_OPERATIONAL])
 @cached(ttl=180, key_prefix="channel_status")  # Cache for 3 min
 async def get_channel_status(current_user: User = Depends(get_current_user)):

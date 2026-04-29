@@ -21,7 +21,7 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["pms"])
 
 
-# noqa: cache-rbac — operasyonel KPI (occupancy/check-in/guest count) tüm rolelere açık
+# rbac-allow: cache-rbac — operasyonel KPI (occupancy/check-in/guest count) tüm rolelere açık
 @router.get("/pms/dashboard")
 @cached(ttl=30, key_prefix="pms_dashboard")  # Cache for 30 seconds - very fast refresh
 async def get_pms_dashboard(current_user: User = Depends(get_current_user)):

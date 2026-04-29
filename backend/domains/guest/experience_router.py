@@ -1624,7 +1624,7 @@ async def get_department_satisfaction_summary(
 
 # ============= GUEST MOBILE APP ENDPOINTS =============
 
-# noqa: cache-rbac — GUEST portal — kendi rezervasyonları
+# rbac-allow: cache-rbac — GUEST portal — kendi rezervasyonları
 @router.get("/guest/bookings")
 @cached(ttl=300, key_prefix="guest_bookings_history")  # Cache for 5 min
 async def get_guest_bookings(
