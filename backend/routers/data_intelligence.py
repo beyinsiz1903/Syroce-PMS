@@ -71,7 +71,7 @@ async def run_revenue_pipeline(req: RunPipelineReq,
 
 
 @router.get("/revenue/forecast-dashboard")
-@cached(ttl=120, key_prefix="forecast_dashboard")  # Sprint 33: heavy ML aggregate
+@cached(ttl=600, key_prefix="forecast_dashboard")  # heavy ML aggregate (10min cache)
 async def get_revenue_forecast_dashboard(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: stratejik ML/forecast

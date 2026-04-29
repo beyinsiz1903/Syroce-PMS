@@ -71,45 +71,93 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
         {**match, "status": {"$ne": "deleted"}},
     ).to_list(500)
 
+    if not agencies:
+        return []
+
+    # ── Perf: server-side aggregation (limit-siz, finans doğruluğu için kritik)
+    # Eski sürüm N+1: agency başına 3 ardışık query → 26s/100 agency.
+    # Yeni sürüm 3 paralel $group aggregation; hesap MongoDB'de yapılır,
+    # Python'a sadece per-agency özet gelir → ölçekten bağımsız doğruluk.
+    aids = [a["id"] for a in agencies]
+    import asyncio as _asyncio
+
+    bookings_pipe = [
+        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids},
+                    "status": {"$nin": ["cancelled"]}}},
+        {"$group": {
+            "_id": "$agency_id",
+            "total_revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
+            "count": {"$sum": 1},
+            # Oldest unpaid: bekleyen status'lardaki en eski created_at
+            "oldest_pending_created_at": {"$min": {
+                "$cond": [
+                    {"$in": ["$status", ["confirmed", "guaranteed", "checked_out"]]},
+                    "$created_at", None,
+                ]
+            }},
+        }},
+    ]
+    txns_pipe = [
+        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}}},
+        {"$group": {
+            "_id": "$agency_id",
+            "total_paid": {"$sum": {"$cond": [
+                {"$eq": ["$type", "payment"]},
+                {"$ifNull": ["$amount", 0]}, 0]}},
+            "total_adjustments": {"$sum": {"$cond": [
+                {"$eq": ["$type", "adjustment"]},
+                {"$ifNull": ["$amount", 0]}, 0]}},
+            "last_payment_date": {"$max": {"$cond": [
+                {"$eq": ["$type", "payment"]}, "$created_at", None]}},
+        }},
+    ]
+    plans_pipe = [
+        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids},
+                    "status": "active"}},
+        {"$group": {"_id": "$agency_id", "active_plans": {"$sum": 1}}},
+    ]
+
+    bookings_agg, txns_agg, plans_agg = await _asyncio.gather(
+        db.bookings.aggregate(bookings_pipe).to_list(len(aids) + 10),
+        db.agency_transactions.aggregate(txns_pipe).to_list(len(aids) + 10),
+        db.agency_payment_plans.aggregate(plans_pipe).to_list(len(aids) + 10),
+    )
+
+    book_by = {row["_id"]: row for row in bookings_agg}
+    txn_by = {row["_id"]: row for row in txns_agg}
+    plan_by = {row["_id"]: row for row in plans_agg}
+
     results = []
+    now = datetime.now(UTC)
     for agency in agencies:
         aid = agency["id"]
+        bk = book_by.get(aid, {})
+        tx = txn_by.get(aid, {})
+        pl = plan_by.get(aid, {})
 
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "agency_id": aid, "status": {"$nin": ["cancelled"]}},
-            {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1, "status": 1, "created_at": 1},
-        ).to_list(1000)
-
-        total_bookings_revenue = sum(b.get("total_amount", 0) for b in bookings)
+        total_bookings_revenue = bk.get("total_revenue", 0) or 0
         commission_rate = agency.get("commission_rate", 10) / 100
         total_commission_owed = round(total_bookings_revenue * commission_rate, 2)
 
-        txns = await db.agency_transactions.find(
-            {"tenant_id": tenant_id, "agency_id": aid},
-        ).to_list(1000)
-
-        total_paid = sum(t.get("amount", 0) for t in txns if t.get("type") == "payment")
-        total_adjustments = sum(t.get("amount", 0) for t in txns if t.get("type") == "adjustment")
-
+        total_paid = tx.get("total_paid", 0) or 0
+        total_adjustments = tx.get("total_adjustments", 0) or 0
         balance = round(total_commission_owed - total_paid + total_adjustments, 2)
 
-        oldest_unpaid = None
+        oldest_unpaid = bk.get("oldest_pending_created_at")
         days_outstanding = 0
-        for b in sorted(bookings, key=lambda x: x.get("created_at", "")):
-            if b.get("status") in ("confirmed", "guaranteed", "checked_out"):
-                oldest_unpaid = b.get("created_at", "")
-                if oldest_unpaid:
-                    try:
-                        od = datetime.fromisoformat(oldest_unpaid.replace("Z", "+00:00"))
-                        days_outstanding = (datetime.now(UTC) - od).days
-                    except (ValueError, TypeError):
-                        pass
-                break
+        if oldest_unpaid:
+            try:
+                if isinstance(oldest_unpaid, str):
+                    od = datetime.fromisoformat(oldest_unpaid.replace("Z", "+00:00"))
+                else:
+                    od = oldest_unpaid
+                if od.tzinfo is None:
+                    od = od.replace(tzinfo=UTC)
+                days_outstanding = (now - od).days
+            except (ValueError, TypeError, AttributeError):
+                pass
 
-        plans = await db.agency_payment_plans.find(
-            {"tenant_id": tenant_id, "agency_id": aid, "status": {"$ne": "cancelled"}},
-        ).to_list(100)
-        active_plans = [p for p in plans if p.get("status") == "active"]
+        active_plans_count = pl.get("active_plans", 0) or 0
 
         results.append({
             "agency_id": aid,
@@ -119,7 +167,7 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
             "contact_phone": agency.get("contact_phone", ""),
             "commission_rate": agency.get("commission_rate", 10),
             "status": agency.get("status", "active"),
-            "total_bookings": len(bookings),
+            "total_bookings": bk.get("count", 0) or 0,
             "total_bookings_revenue": total_bookings_revenue,
             "total_commission_owed": total_commission_owed,
             "total_paid": round(total_paid, 2),
@@ -127,11 +175,13 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
             "balance": balance,
             "balance_type": "receivable" if balance >= 0 else "payable",
             "days_outstanding": days_outstanding,
-            "oldest_unpaid_date": oldest_unpaid,
-            "active_payment_plans": len(active_plans),
-            "last_payment_date": max(
-                (t.get("created_at", "") for t in txns if t.get("type") == "payment"),
-                default=None,
+            "oldest_unpaid_date": oldest_unpaid if isinstance(oldest_unpaid, str)
+                else (oldest_unpaid.isoformat() if oldest_unpaid else None),
+            "active_payment_plans": active_plans_count,
+            "last_payment_date": (
+                tx.get("last_payment_date").isoformat()
+                if hasattr(tx.get("last_payment_date"), "isoformat")
+                else tx.get("last_payment_date")
             ),
         })
 
@@ -139,7 +189,7 @@ async def _get_agency_ledger(tenant_id: str, agency_id: str | None = None) -> li
 
 
 @router.get("/summary")
-@cached(ttl=120, key_prefix="agent_arap_summary")  # Sprint 33: heavy ledger aggregate
+@cached(ttl=600, key_prefix="agent_arap_summary")  # heavy ledger aggregate (bulk-fetch + 10min cache)
 async def get_summary(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v80 Bug DP: agency A/R aging

@@ -248,7 +248,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.outbox_admin", "outbox_admin_router", ["Outbox Admin"], "/api", None),
     ("routers.import_admin", "import_admin_router", ["Import Admin"], "/api", None),
     # Room QR Requests — Per-room QR codes for guest service requests
-    ("routers.room_qr_requests", "router", ["Room QR Requests"], "/api", None),
+    # NOTE: route paths inside the router already start with /api, so no extra prefix
+    ("routers.room_qr_requests", "router", ["Room QR Requests"], None, None),
 ]
 
 # Optional routers with special import paths
