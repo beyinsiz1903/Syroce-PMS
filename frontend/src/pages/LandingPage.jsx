@@ -129,6 +129,14 @@ const LandingPage = () => {
               Otel Girişi
             </Button>
           </div>
+          {/* Mobil: kompakt giriş butonu — md altı ekranlarda nav menüsü gizli olduğundan
+              kullanıcının hemen göz seviyesinde "Giriş" butonuna ulaşabilmesi gerekiyor. */}
+          <Button
+            onClick={() => navigate('/auth')}
+            className="md:hidden bg-white text-blue-700 hover:bg-blue-50 shadow-md font-semibold px-4 h-9 text-sm"
+          >
+            Giriş
+          </Button>
         </div>
       </nav>
 
