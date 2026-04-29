@@ -14,7 +14,7 @@ import PackagesTab from '@/components/mice/PackagesTab';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
   Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
-  History as HistoryIcon,
+  History as HistoryIcon, Pencil,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import Layout from '@/components/Layout';
@@ -74,6 +74,17 @@ const MicePage = ({ user, tenant, onLogout }) => {
     entertainment: { ...blankEntertainment },
   };
   const [form, setForm] = useState(blankEvent);
+
+  const blankMenu = {
+    name: '', type: 'fb', price_per_person: 0, flat_price: 0,
+    currency: 'TRY', description: '', active: true,
+    dietary_tags: [], allergens: [], min_guests: 0, prep_lead_minutes: 30,
+    // courses are preserved on edit (no UI yet); kept here so PUT does not wipe them.
+    courses: [],
+  };
+  const [showMenuForm, setShowMenuForm] = useState(false);
+  const [editingMenu, setEditingMenu] = useState(null);
+  const [menuForm, setMenuForm] = useState(blankMenu);
 
   const load = async () => {
     setLoading(true);
@@ -187,6 +198,79 @@ const MicePage = ({ user, tenant, onLogout }) => {
     if (!confirm('Etkinlik silinsin mi?')) return;
     try { await axios.delete(`/mice/events/${id}`); await load(); }
     catch { toast.error('Silinemedi'); }
+  };
+
+  // ── Menu CRUD ──
+  const openNewMenu = () => {
+    setEditingMenu(null);
+    setMenuForm(blankMenu);
+    setShowMenuForm(true);
+  };
+  const openEditMenu = (m) => {
+    setEditingMenu(m.id);
+    setMenuForm({
+      name: m.name || '',
+      type: m.type || 'fb',
+      price_per_person: m.price_per_person || 0,
+      flat_price: m.flat_price || 0,
+      currency: m.currency || 'TRY',
+      description: m.description || '',
+      active: m.active !== false,
+      dietary_tags: m.dietary_tags || [],
+      allergens: m.allergens || [],
+      min_guests: m.min_guests || 0,
+      prep_lead_minutes: m.prep_lead_minutes ?? 30,
+      // Preserve courses across edit — backend uses $set: model_dump() so
+      // omitting this field would silently wipe existing kitchen course data.
+      courses: m.courses || [],
+    });
+    setShowMenuForm(true);
+  };
+  const submitMenu = async (e) => {
+    e.preventDefault();
+    if (!menuForm.name.trim()) { toast.error('Ad zorunludur'); return; }
+    if (menuForm.price_per_person <= 0 && menuForm.flat_price <= 0) {
+      toast.error('Kişi başı veya sabit fiyatlardan biri girilmelidir');
+      return;
+    }
+    try {
+      const payload = {
+        ...menuForm,
+        price_per_person: Number(menuForm.price_per_person) || 0,
+        flat_price: Number(menuForm.flat_price) || 0,
+        min_guests: Number(menuForm.min_guests) || 0,
+        prep_lead_minutes: Number(menuForm.prep_lead_minutes) || 0,
+        description: menuForm.description?.trim() || null,
+      };
+      if (editingMenu) {
+        await axios.put(`/mice/menus/${editingMenu}`, payload);
+        toast.success('Menü güncellendi');
+      } else {
+        await axios.post('/mice/menus', payload);
+        toast.success('Menü oluşturuldu');
+      }
+      setShowMenuForm(false);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    }
+  };
+  const removeMenu = async (id, name) => {
+    if (!confirm(`"${name}" silinsin mi?`)) return;
+    try {
+      await axios.delete(`/mice/menus/${id}`);
+      toast.success('Silindi');
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Silinemedi');
+    }
+  };
+  const toggleTag = (field, val) => {
+    const list = menuForm[field] || [];
+    setMenuForm({
+      ...menuForm,
+      [field]: list.includes(val) ? list.filter((x) => x !== val) : [...list, val],
+    });
   };
 
   const showBeo = async (id) => {
@@ -445,18 +529,46 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="menus">
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-sm text-gray-500">
+              F&B menüleri, AV ve dekorasyon paketleri. Etkinlik kaynaklarına eklenir.
+            </p>
+            <Button size="sm" onClick={openNewMenu}>
+              <Plus className="w-4 h-4 mr-1" /> Yeni Menü / Paket
+            </Button>
+          </div>
+          {menus.length === 0 && (
+            <div className="text-center py-12 text-gray-500 text-sm">
+              Henüz menü eklenmemiş. "Yeni Menü / Paket" butonuyla ekleyin.
+            </div>
+          )}
           <div className="grid md:grid-cols-3 gap-3">
             {menus.map((m) => (
               <Card key={m.id}>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    {m.type === 'fb' ? <UtensilsCrossed className="w-4 h-4 text-amber-600" /> :
-                     m.type === 'av' ? <Sparkles className="w-4 h-4 text-sky-600" /> :
-                     <Sparkles className="w-4 h-4 text-pink-600" />}
-                    {m.name}
-                  </CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      {m.type === 'fb' ? <UtensilsCrossed className="w-4 h-4 text-amber-600" /> :
+                       m.type === 'av' ? <Sparkles className="w-4 h-4 text-sky-600" /> :
+                       <Sparkles className="w-4 h-4 text-pink-600" />}
+                      {m.name}
+                    </CardTitle>
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                              onClick={() => openEditMenu(m)} title="Düzenle">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
+                              onClick={() => removeMenu(m.id, m.name)} title="Sil">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
                   <CardDescription>
                     <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                    {m.active === false && (
+                      <Badge variant="outline" className="text-xs ml-1 text-gray-500">pasif</Badge>
+                    )}
                     {m.dietary_tags?.length > 0 && m.dietary_tags.map((d) =>
                       <Badge key={d} variant="outline" className="text-xs ml-1">{d}</Badge>
                     )}
@@ -470,6 +582,9 @@ const MicePage = ({ user, tenant, onLogout }) => {
                     <div className="text-xl font-bold">₺{m.flat_price.toLocaleString('tr-TR')}
                       <span className="text-xs text-gray-500"> sabit</span></div>
                   )}
+                  {m.description && (
+                    <div className="text-xs text-gray-600 mt-1">{m.description}</div>
+                  )}
                   {m.courses?.length > 0 && (
                     <div className="text-xs text-gray-600 mt-2">
                       {m.courses.length} kurs: {m.courses.map((c) => c.name).join(', ')}
@@ -478,6 +593,13 @@ const MicePage = ({ user, tenant, onLogout }) => {
                   {m.allergens?.length > 0 && (
                     <div className="text-xs text-red-600 mt-1">
                       Alerjenler: {m.allergens.join(', ')}
+                    </div>
+                  )}
+                  {(m.min_guests > 0 || m.prep_lead_minutes > 0) && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      {m.min_guests > 0 && <>Min. {m.min_guests} kişi</>}
+                      {m.min_guests > 0 && m.prep_lead_minutes > 0 && ' • '}
+                      {m.prep_lead_minutes > 0 && <>{m.prep_lead_minutes} dk hazırlık</>}
                     </div>
                   )}
                 </CardContent>
@@ -737,6 +859,102 @@ const MicePage = ({ user, tenant, onLogout }) => {
             <div className="flex justify-end gap-2 pt-2 border-t">
               <Button type="button" variant="ghost" onClick={() => setShowEventForm(false)}>İptal</Button>
               <Button type="submit">{editing ? 'Güncelle' : 'Oluştur'}</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Menu / Package create-edit */}
+      {showMenuForm && (
+        <Modal title={editingMenu ? 'Menü / Paket Düzenle' : 'Yeni Menü / Paket'}
+               onClose={() => setShowMenuForm(false)}>
+          <form onSubmit={submitMenu} className="space-y-3">
+            <Field label="Ad">
+              <Input required value={menuForm.name}
+                onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })} />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Tip">
+                <select className="w-full border rounded px-2 py-1.5"
+                        value={menuForm.type}
+                        onChange={(e) => setMenuForm({ ...menuForm, type: e.target.value })}>
+                  <option value="fb">F&B (yiyecek-içecek)</option>
+                  <option value="av">AV (görsel-işitsel)</option>
+                  <option value="decor">Dekorasyon</option>
+                  <option value="ddr">DDR (Daily Delegate Rate)</option>
+                </select>
+              </Field>
+              <Field label="Para Birimi">
+                <Input value={menuForm.currency}
+                  onChange={(e) => setMenuForm({ ...menuForm, currency: e.target.value.toUpperCase() })} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Kişi Başı Fiyat (₺)">
+                <Input type="number" min="0" step="0.01"
+                  value={menuForm.price_per_person}
+                  onChange={(e) => setMenuForm({ ...menuForm, price_per_person: e.target.value })} />
+              </Field>
+              <Field label="Sabit Fiyat (₺)">
+                <Input type="number" min="0" step="0.01"
+                  value={menuForm.flat_price}
+                  onChange={(e) => setMenuForm({ ...menuForm, flat_price: e.target.value })} />
+              </Field>
+            </div>
+            <p className="text-xs text-gray-500 -mt-1">
+              Sadece birini doldurun. Kişi başı dolu ise pax ile çarpılır; sabit ise toplam tek seferdir.
+            </p>
+            <Field label="Açıklama (opsiyonel)">
+              <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]"
+                value={menuForm.description}
+                onChange={(e) => setMenuForm({ ...menuForm, description: e.target.value })} />
+            </Field>
+            <Field label="Diyet Etiketleri">
+              <div className="flex flex-wrap gap-1.5">
+                {['vegan', 'vegetarian', 'halal', 'kosher', 'gluten_free'].map((t) => (
+                  <button type="button" key={t}
+                    onClick={() => toggleTag('dietary_tags', t)}
+                    className={`px-2 py-1 text-xs rounded border ${
+                      menuForm.dietary_tags.includes(t)
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                        : 'bg-white border-gray-300 text-gray-600'
+                    }`}>{t}</button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Alerjenler">
+              <div className="flex flex-wrap gap-1.5">
+                {['nuts', 'gluten', 'dairy', 'egg', 'soy', 'fish', 'shellfish', 'sesame'].map((t) => (
+                  <button type="button" key={t}
+                    onClick={() => toggleTag('allergens', t)}
+                    className={`px-2 py-1 text-xs rounded border ${
+                      menuForm.allergens.includes(t)
+                        ? 'bg-red-100 border-red-400 text-red-800'
+                        : 'bg-white border-gray-300 text-gray-600'
+                    }`}>{t}</button>
+                ))}
+              </div>
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Min. Kişi Sayısı">
+                <Input type="number" min="0" value={menuForm.min_guests}
+                  onChange={(e) => setMenuForm({ ...menuForm, min_guests: e.target.value })} />
+              </Field>
+              <Field label="Mutfak Hazırlık (dk)">
+                <Input type="number" min="0" value={menuForm.prep_lead_minutes}
+                  onChange={(e) => setMenuForm({ ...menuForm, prep_lead_minutes: e.target.value })} />
+              </Field>
+            </div>
+            <Field label="Durum">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={menuForm.active}
+                  onChange={(e) => setMenuForm({ ...menuForm, active: e.target.checked })} />
+                Aktif (etkinliklerde seçilebilir)
+              </label>
+            </Field>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setShowMenuForm(false)}>İptal</Button>
+              <Button type="submit">{editingMenu ? 'Güncelle' : 'Oluştur'}</Button>
             </div>
           </form>
         </Modal>
