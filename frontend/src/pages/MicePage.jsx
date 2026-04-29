@@ -86,22 +86,39 @@ const MicePage = ({ user, tenant, onLogout }) => {
   const [editingMenu, setEditingMenu] = useState(null);
   const [menuForm, setMenuForm] = useState(blankMenu);
 
+  // Targeted refreshers used by CRUD handlers below so a single mutation
+  // doesn't refetch all five collections.
+  const loadEvents = async () => {
+    const e = await axios.get('/mice/events');
+    setEvents(e.data.events);
+    setSummary(e.data.summary || {});
+  };
+  const loadSpaces = async () => {
+    const s = await axios.get('/mice/spaces');
+    setSpaces(s.data.spaces);
+  };
+  const loadMenus = async () => {
+    const m = await axios.get('/mice/menus');
+    setMenus(m.data.menus);
+  };
+  const loadAccountsList = async () => {
+    const a = await axios.get('/mice/accounts');
+    setAccounts(a.data.accounts || []);
+  };
+  const loadResourcesList = async () => {
+    const r = await axios.get('/mice/resources');
+    setResources(r.data.resources || []);
+  };
+
+  // Initial mount: all five collections are needed because tab labels
+  // show counts (e.g. "Müşteriler ({accounts.length})") in the header.
   const load = async () => {
     setLoading(true);
     try {
-      const [e, s, m, a, r] = await Promise.all([
-        axios.get('/mice/events'),
-        axios.get('/mice/spaces'),
-        axios.get('/mice/menus'),
-        axios.get('/mice/accounts'),
-        axios.get('/mice/resources'),
+      await Promise.all([
+        loadEvents(), loadSpaces(), loadMenus(),
+        loadAccountsList(), loadResourcesList(),
       ]);
-      setEvents(e.data.events);
-      setSummary(e.data.summary || {});
-      setSpaces(s.data.spaces);
-      setMenus(m.data.menus);
-      setAccounts(a.data.accounts || []);
-      setResources(r.data.resources || []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
     } finally { setLoading(false); }
@@ -170,7 +187,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
       await axios[method](url, payload);
       toast.success(editing ? 'Etkinlik güncellendi' : 'Etkinlik oluşturuldu');
       setShowEventForm(false);
-      await load();
+      await loadEvents();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     }
@@ -190,13 +207,13 @@ const MicePage = ({ user, tenant, onLogout }) => {
     try {
       await axios.post(`/mice/events/${id}/status`, body);
       toast.success('Durum güncellendi');
-      await load();
+      await loadEvents();
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
   };
 
   const remove = async (id) => {
     if (!confirm('Etkinlik silinsin mi?')) return;
-    try { await axios.delete(`/mice/events/${id}`); await load(); }
+    try { await axios.delete(`/mice/events/${id}`); await loadEvents(); }
     catch { toast.error('Silinemedi'); }
   };
 
@@ -250,7 +267,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
         toast.success('Menü oluşturuldu');
       }
       setShowMenuForm(false);
-      await load();
+      await loadMenus();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     }
@@ -260,7 +277,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
     try {
       await axios.delete(`/mice/menus/${id}`);
       toast.success('Silindi');
-      await load();
+      await loadMenus();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Silinemedi');
     }
@@ -292,7 +309,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
       await axios.post(`/mice/events/${eventId}/payment-schedule/${idx}/mark-paid`,
         null, { params: ref ? { reference: ref } : {} });
       toast.success('Ödeme işaretlendi');
-      await load();
+      await loadEvents();
       // refresh BEO if open
       if (beoData?.event?.id === eventId) showBeo(eventId);
     } catch (err) { toast.error(err.response?.data?.detail || 'İşaretlenemedi'); }

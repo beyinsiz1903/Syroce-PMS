@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -75,26 +75,81 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const prLabel = (code) => t(`procurement.prStatuses.${code || 'draft'}`);
   const poLabel = (code) => t(`procurement.poStatuses.${code || 'draft'}`);
 
+  // Tab-aware lazy loading. Only the data needed for the initial view is
+  // fetched on mount; POs and inventory load on demand. `refresh()` (used by
+  // every CRUD success path below) keeps the original "reload everything"
+  // behavior so post-write screens stay consistent.
+  const [posLoaded, setPosLoaded] = useState(false);
+  const [invLoaded, setInvLoaded] = useState(false);
+  // In-flight guard prevents duplicate inventory fetches when the gating
+  // form object changes on every keystroke before the first response lands.
+  const invLoadingRef = useRef(false);
+
+  const loadSummary = async () => {
+    const r = await axios.get('/procurement/summary');
+    setSummary(r.data || {});
+  };
+  const loadSuppliers = async () => {
+    const r = await axios.get('/procurement/suppliers?active_only=false');
+    setSuppliers(r.data?.items || []);
+  };
+  const loadPRs = async () => {
+    const r = await axios.get('/procurement/purchase-requests');
+    setPrs(r.data?.items || []);
+  };
+  const loadPOs = async () => {
+    const r = await axios.get('/procurement/purchase-orders');
+    setPos(r.data?.items || []);
+    setPosLoaded(true);
+  };
+  const loadInventory = async () => {
+    if (invLoadingRef.current) return;
+    invLoadingRef.current = true;
+    try {
+      const r = await axios.get('/accounting/inventory');
+      setInventoryItems(r.data?.items || []);
+      setInvLoaded(true);
+    } catch {
+      setInventoryItems([]);
+      // leave invLoaded=false so a later trigger can retry
+    } finally {
+      invLoadingRef.current = false;
+    }
+  };
+
   const refresh = async () => {
     setLoading(true);
     try {
-      const [s, sup, pr, po, inv] = await Promise.all([
-        axios.get('/procurement/summary'),
-        axios.get('/procurement/suppliers?active_only=false'),
-        axios.get('/procurement/purchase-requests'),
-        axios.get('/procurement/purchase-orders'),
-        axios.get('/accounting/inventory').catch(() => ({ data: { items: [] } })),
+      await Promise.all([
+        loadSummary(), loadSuppliers(), loadPRs(),
+        loadPOs(), loadInventory(),
       ]);
-      setSummary(s.data || {});
-      setSuppliers(sup.data?.items || []);
-      setPrs(pr.data?.items || []);
-      setPos(po.data?.items || []);
-      setInventoryItems(inv.data?.items || []);
     } catch (e) {
       toast.error(t('procurement.errors.loadFailed'));
     } finally { setLoading(false); }
   };
-  useEffect(() => { refresh(); }, []);
+
+  // Mount: 3 endpoints instead of 5. Suppliers stays eager because PR/PO
+  // forms reference the supplier dropdown immediately when opened.
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([loadSummary(), loadSuppliers(), loadPRs()])
+      .catch(() => toast.error(t('procurement.errors.loadFailed')))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Lazy: POs only when the user opens that tab.
+  useEffect(() => {
+    if (tab === 'pos' && !posLoaded) loadPOs().catch(() => {});
+  }, [tab, posLoaded]);
+
+  // Lazy: inventory list needed by both PR and PO form autocompletes.
+  // Boolean dependency prevents per-keystroke re-runs while the form object
+  // mutates; the in-flight ref blocks duplicate concurrent fetches.
+  const formOpen = !!prForm || !!poForm;
+  useEffect(() => {
+    if (formOpen && !invLoaded) loadInventory();
+  }, [formOpen, invLoaded]);
 
   // Stok ekranından "Talep Oluştur" ile gelindiğinde formu otomatik aç +
   // Operasyon Komuta Merkezi'nden gelen `initialTab` ile sekme ön-seçimi.
