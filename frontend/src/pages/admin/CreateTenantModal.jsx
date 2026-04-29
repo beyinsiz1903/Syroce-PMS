@@ -15,6 +15,7 @@ const ICON_MAP = {
 };
 
 const TIER_LABELS = {
+  mini: { label: 'Mini', color: 'bg-teal-50 text-teal-700 border-teal-200' },
   basic: { label: 'Basic', color: 'bg-slate-100 text-slate-700 border-slate-200' },
   professional: { label: 'Professional', color: 'bg-blue-50 text-blue-700 border-blue-200' },
   enterprise: { label: 'Enterprise', color: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -284,6 +285,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 <div>
                   <Label>Plan</Label>
                   <select data-testid="create-tenant-tier" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.subscription_tier} onChange={(e) => handleChange('subscription_tier', e.target.value)}>
+                    <option value="mini">Mini</option>
                     <option value="basic">Basic</option>
                     <option value="professional">Professional</option>
                     <option value="enterprise">Enterprise</option>

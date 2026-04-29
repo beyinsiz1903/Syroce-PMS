@@ -1,6 +1,23 @@
-import { Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles } from 'lucide-react';
+import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles } from 'lucide-react';
 
 export const PLANS = {
+  // Mini — Elektraweb Mini muadili: pansiyon, butik otel, apart için
+  // minimum çalışır PMS. Rezervasyon, folyo, basit fatura, gün sonu,
+  // KBS polis bildirimi, sanal POS + ödeme linki ve 3 kanala kadar
+  // OTA bağlantısı dahildir. Üst paketler bu özelliklerin tümünü +
+  // ek modülleri kapsar.
+  mini: {
+    key: 'mini',
+    label: 'Mini',
+    color: 'teal',
+    badgeClass: 'bg-teal-100 text-teal-800 border-teal-200',
+    iconBg: 'bg-teal-100',
+    icon: Home,
+    description: '1-15 oda · pansiyon / butik',
+    maxRooms: 15,
+    maxUsers: 2,
+    price: '35€/ay',
+  },
   basic: {
     key: 'basic',
     label: 'Basic',
@@ -8,9 +25,9 @@ export const PLANS = {
     badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     iconBg: 'bg-emerald-100',
     icon: Building2,
-    description: '1-15 oda',
-    maxRooms: 15,
-    maxUsers: 3,
+    description: '16-30 oda · küçük şehir oteli',
+    maxRooms: 30,
+    maxUsers: 4,
     price: '79€/ay',
   },
   professional: {
@@ -20,7 +37,7 @@ export const PLANS = {
     badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
     iconBg: 'bg-blue-100',
     icon: Zap,
-    description: '15-80 oda',
+    description: '31-80 oda · orta ölçekli otel',
     maxRooms: 80,
     maxUsers: 15,
     price: '299€/ay',
@@ -32,7 +49,7 @@ export const PLANS = {
     badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
     iconBg: 'bg-purple-100',
     icon: Crown,
-    description: '80+ oda',
+    description: '80+ oda · resort / zincir',
     maxRooms: null,
     maxUsers: null,
     price: '799€/ay',
@@ -41,38 +58,57 @@ export const PLANS = {
 
 export const MODULE_GROUPS = [
   {
-    id: 'core',
-    title: 'Core Modüller',
-    icon: Settings2,
-    color: 'gray',
+    id: 'mini',
+    title: 'Mini — Çekirdek PMS (Pansiyon / Butik)',
+    icon: Home,
+    color: 'teal',
+    description: 'Elektraweb Mini muadili: az odalı tesis için minimum çalışır PMS seti.',
     items: [
-      { key: 'pms', label: 'PMS Core', hint: 'Rezervasyon, check-in/out, oda yönetimi', tier: 'basic' },
-      { key: 'reservation_calendar', label: 'Rezervasyon Takvimi', hint: 'Drag & drop takvim görünümü', tier: 'basic' },
-      { key: 'dashboard', label: 'Dashboard', hint: 'Ana kontrol paneli', tier: 'basic' },
-      { key: 'guests', label: 'Misafir Yönetimi', hint: 'Temel misafir profilleri', tier: 'basic' },
-      { key: 'housekeeping', label: 'Housekeeping', hint: 'Temel oda durumu takibi', tier: 'basic' },
-      { key: 'basic_reporting', label: 'Temel Raporlar', hint: 'Günlük doluluk ve gelir', tier: 'basic' },
-      { key: 'settings', label: 'Ayarlar', hint: 'Otel ayarları', tier: 'basic' },
-      { key: 'pms_mobile', label: 'Mobil PMS', hint: 'Mobil erişim', tier: 'basic' },
-      { key: 'invoices_basic', label: 'Basit Fatura', hint: 'PDF fatura oluşturma', tier: 'basic' },
+      { key: 'pms', label: 'PMS Çekirdek', hint: 'Rezervasyon, check-in/out, konaklama, oda blokajı', tier: 'mini' },
+      { key: 'reservation_calendar', label: 'Rezervasyon Takvimi', hint: 'Drag & drop takvim görünümü', tier: 'mini' },
+      { key: 'dashboard', label: 'Dashboard', hint: 'Doluluk, gelir, hareket grafikleri', tier: 'mini' },
+      { key: 'guests', label: 'Misafir Yönetimi', hint: 'Temel misafir profilleri', tier: 'mini' },
+      { key: 'housekeeping', label: 'Housekeeping (Temel)', hint: 'Temel oda durumu takibi', tier: 'mini' },
+      { key: 'basic_reporting', label: 'Doluluk & Gelir Raporları', hint: 'Maliye uyumlu günlük raporlar', tier: 'mini' },
+      { key: 'settings', label: 'Ayarlar', hint: 'Otel ayarları', tier: 'mini' },
+      { key: 'pms_mobile', label: 'Mobil PMS', hint: 'Mobil erişim', tier: 'mini' },
+      { key: 'folio_basic', label: 'Folyo (Basit)', hint: 'Konaklama folyosu, ödeme/şarj satırları', tier: 'mini' },
+      { key: 'invoices_basic', label: 'Fatura (Basit)', hint: 'PDF fatura + e-arşiv', tier: 'mini' },
+      { key: 'night_audit_basic', label: 'Gün Sonu (Basit)', hint: 'Tek-tıkla gün sonu (night audit lite)', tier: 'mini' },
+      { key: 'channel_manager_lite', label: 'Channel Manager (Lite)', hint: 'Booking, Expedia, Hotels.com vb. — 3 kanal limiti', tier: 'mini' },
+      { key: 'payments_link', label: 'Sanal POS & Ödeme Linki', hint: 'Kredi kartı çekimi + misafire güvenli ödeme linki', tier: 'mini' },
+      { key: 'kbs_notify', label: 'KBS Polis Bildirimi', hint: 'Konaklama bildirim sistemi (Quick-ID destekli)', tier: 'mini' },
+    ],
+  },
+  {
+    id: 'basic',
+    title: 'Basic — Küçük Şehir Oteli',
+    icon: Building2,
+    color: 'emerald',
+    description: 'Mini\'nin tümü + günlük operasyonu büyüten ek modüller.',
+    items: [
+      { key: 'mailing', label: 'Mailing & Kampanya', hint: 'E-posta şablonları, kampanyalar, otomasyon', tier: 'basic' },
+      { key: 'guest_advanced', label: 'Gelişmiş Misafir Profili', hint: 'VIP, tercihler, LTV', tier: 'basic' },
+      { key: 'housekeeping_advanced', label: 'Housekeeping (Gelişmiş)', hint: 'Atama, görev kuyruğu, performans', tier: 'basic' },
+      { key: 'cost_management', label: 'Maliyet Yönetimi', hint: 'Maliyet takibi', tier: 'basic' },
+      { key: 'reports', label: 'Gelişmiş Raporlar', hint: 'Detaylı analitik raporlar', tier: 'basic' },
+      { key: 'channel_manager', label: 'Channel Manager (Tam)', hint: 'Sınırsız kanal, derin OTA entegrasyonu', tier: 'basic' },
     ],
   },
   {
     id: 'professional',
-    title: 'Professional Modüller',
+    title: 'Professional — Orta Ölçekli Otel',
     icon: BarChart3,
     color: 'blue',
+    description: 'Basic\'in tümü + gelir-yönetimi ve operasyonel derinlik.',
     items: [
-      { key: 'channel_manager', label: 'Channel Manager', hint: 'OTA senkronizasyonu', tier: 'professional' },
-      { key: 'folio_management', label: 'Folio Yönetimi', hint: 'Split, routing, posting', tier: 'professional' },
-      { key: 'night_audit', label: 'Gece Denetimi', hint: 'End-of-day otomasyonu', tier: 'professional' },
+      { key: 'folio_management', label: 'Folio Yönetimi (Tam)', hint: 'Split, routing, posting', tier: 'professional' },
+      { key: 'night_audit', label: 'Gece Denetimi (Tam)', hint: 'End-of-day otomasyonu, audit izleri', tier: 'professional' },
       { key: 'invoices', label: 'Gelişmiş Fatura & Finans', hint: 'E-fatura, AR/AP', tier: 'professional' },
-      { key: 'cost_management', label: 'Maliyet Yönetimi', hint: 'Maliyet takibi', tier: 'professional' },
-      { key: 'reports', label: 'Gelişmiş Raporlar', hint: 'Detaylı analitik raporlar', tier: 'professional' },
       { key: 'rate_management', label: 'Rate Management', hint: 'Fiyat planı yönetimi', tier: 'professional' },
       { key: 'booking_engine', label: 'Booking Engine', hint: 'Direkt rezervasyon motoru', tier: 'professional' },
-      { key: 'guest_advanced', label: 'Gelişmiş Misafir Profili', hint: 'VIP, tercihler, LTV', tier: 'professional' },
-      { key: 'mailing', label: 'Mailing & Kampanya', hint: 'E-posta şablonları, kampanyalar, otomasyon', tier: 'professional' },
+      { key: 'pos_basic', label: 'POS (Temel)', hint: 'Restoran/bar adisyon, folyo aktarımı', tier: 'professional' },
+      { key: 'maintenance', label: 'Bakım / Maintenance', hint: 'Arıza takibi, planlı bakım', tier: 'professional' },
     ],
   },
   {
@@ -143,12 +179,14 @@ export const ROLE_LABELS = {
   sales: 'Satış',
 };
 
-export const tierRank = { basic: 0, professional: 1, enterprise: 2 };
+export const tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 };
 
 export const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
   // Add-on modules are never "included" in any plan — they're always
   // upsell items that super_admin enables per-tenant.
   if (moduleItem.addon || moduleItem.tier === 'addon') return false;
   const moduleTier = moduleItem.tier || 'enterprise';
+  // Higher tier always includes lower-tier modules; Mini (rank 0) is the
+  // minimum baseline matching Elektraweb Mini's feature set.
   return tierRank[tenantTier] >= tierRank[moduleTier];
 };

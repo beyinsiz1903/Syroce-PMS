@@ -40,7 +40,7 @@ PROPERTY_PROFILES: dict[str, dict] = {
         "description_en": "Small family-run accommodation with basic needs. Quick reservations, simple management.",
         "description_tr": "Küçük aile işletmesi konaklama. Hızlı rezervasyon, kolay yönetim.",
         "room_range": {"min": 1, "max": 15},
-        "recommended_tier": "basic",
+        "recommended_tier": "mini",
         "dashboard_layout": DashboardLayout.SIMPLE,
         "typical_staff": 2,
         "modules": {
@@ -111,7 +111,7 @@ PROPERTY_PROFILES: dict[str, dict] = {
         "description_en": "Individual holiday rental properties. Calendar-focused, minimal operations.",
         "description_tr": "Bireysel tatil kiralama mülkleri. Takvim odaklı, minimal operasyon.",
         "room_range": {"min": 1, "max": 10},
-        "recommended_tier": "basic",
+        "recommended_tier": "mini",
         "dashboard_layout": DashboardLayout.SIMPLE,
         "typical_staff": 1,
         "modules": {

@@ -14,12 +14,41 @@ from models.schemas import AuditLog, User
 # ================== PLAN & FEATURES ==================
 
 FEATURES_BY_PLAN: dict[str, dict[str, bool]] = {
-    "core_small_hotel": {
+    # Mini — Elektraweb Mini muadili. 1-15 oda, butik/pansiyon hedefli;
+    # rezervasyon + check-in/out + folyo + basit fatura + gün sonu + KBS
+    # polis bildirimi + sanal POS + sınırlı channel manager (3 kanal)
+    # paketinin "minimum çalışır PMS" sürümü. Bu plan, eski
+    # `pms_lite`'den FARKLI: daha geniş — gün sonu, ödeme alma,
+    # KBS bildirimi ve kanal entegrasyonu küçük tesis için kritik
+    # operasyonel temeli oluşturuyor.
+    "mini_pension": {
         "core_dashboard": True, "core_pms": True, "core_rooms": True,
         "core_rates_availability": True, "core_bookings_frontdesk": True,
         "core_calendar": True, "core_guests_basic": True,
         "core_housekeeping_basic": True, "core_basic_reporting": True,
         "core_mobile_view": True,
+        # Elektraweb Mini eşdeğeri ek modüller:
+        "mini_folio_basic": True,        # basit folyo (split/route yok)
+        "mini_invoices_basic": True,     # PDF + e-arşiv
+        "mini_night_audit_basic": True,  # tek-tıkla gün sonu
+        "mini_channel_manager_lite": True,  # 3 kanal limiti
+        "mini_payments_link": True,      # sanal POS + ödeme linki
+        "mini_kbs_notify": True,         # polis kimlik bildirimi (KBS)
+    },
+    "core_small_hotel": {
+        # Tüm Mini özellikleri + küçük-orta tesis için ek üst-katman.
+        "core_dashboard": True, "core_pms": True, "core_rooms": True,
+        "core_rates_availability": True, "core_bookings_frontdesk": True,
+        "core_calendar": True, "core_guests_basic": True,
+        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_mobile_view": True,
+        "mini_folio_basic": True, "mini_invoices_basic": True,
+        "mini_night_audit_basic": True, "mini_channel_manager_lite": True,
+        "mini_payments_link": True, "mini_kbs_notify": True,
+        # Basic-only ek değerler:
+        "basic_mailing": True, "basic_guest_advanced": True,
+        "basic_housekeeping_advanced": True, "basic_cost_management": True,
+        "basic_advanced_reporting": True,
     },
     "professional_city_hotel": {
         "core_dashboard": True, "core_pms": True, "core_rooms": True,

@@ -3694,6 +3694,69 @@ Opera/Protel'in en güçlü alanlarından biri (banquet management)."*
 
 ## Sprint 23 Hardening + Af-sadakat Doğrulama (19 Apr 2026)
 
+### Paket yapısı 4-tier'a genişletildi — Mini eklendi (29 Apr 2026)
+
+Elektraweb Mini'nin (30 €/ay, 1-15 oda) küçük tesislere sunduğu özellik
+seti referans alınarak paket yapısı yeniden hizalandı. **Mini** kademesi
+basic'in altına eklendi; basic 16-30 oda olarak revize edildi.
+
+**Yeni paket karşılaştırması:**
+
+| Paket | Hedef | Fiyat | Oda | Kullanıcı | Mini'ye eklenen ek modüller |
+|-------|-------|-------|-----|-----------|----------------------------|
+| **Mini** | Pansiyon / butik | 35 €/ay | 15 | 2 | (taban) |
+| **Basic** | Küçük şehir oteli | 79 €/ay | 30 | 4 | mailing, gelişmiş misafir, gelişmiş HK, maliyet, raporlar, channel_manager (tam) |
+| **Professional** | Orta otel | 299 €/ay | 80 | 15 | folio_management (tam), night_audit (tam), invoices (e-fatura), rate_management, booking_engine, pos_basic, maintenance |
+| **Enterprise** | Resort / zincir | 799 €/ay | ∞ | ∞ | revenue_management, multi_property, sales_crm, MICE/Spa add-on, loyalty, AI, API, audit_trail |
+
+**Mini içeriği (Elektraweb Mini muadili):**
+PMS çekirdek (rezervasyon, check-in/out, konaklama, blokaj, oda
+yönetimi), takvim, dashboard, misafir (temel), housekeeping (temel),
+doluluk + gelir raporları, mobil PMS, basit folyo (`folio_basic`),
+basit fatura (`invoices_basic`), basit gün sonu (`night_audit_basic`),
+Channel Manager Lite (`channel_manager_lite`, 3 kanal limiti), sanal
+POS + ödeme linki (`payments_link`), KBS polis bildirimi (`kbs_notify`,
+Quick-ID destekli).
+
+**Backend değişiklikleri:**
+- `backend/domains/admin/subscription_models.py`:
+  - `SubscriptionTier` Enum: `MINI = "mini"` eklendi (4-tier sistem).
+  - `FeatureFlag` Enum: 9 yeni flag (folio_basic, night_audit_basic,
+    channel_manager_lite, payments_link, kbs_notify, mailing,
+    housekeeping_advanced, pos_basic, maintenance).
+  - `PLAN_MODULE_DEFAULTS["mini"]` eklendi; basic/professional/enterprise
+    tier'ları yeni mini & basic anahtarlarını de True olarak içerecek
+    şekilde genişletildi (üst tier alt tier'ı kapsar).
+  - `SUBSCRIPTION_PLANS[SubscriptionTier.MINI]` eklendi: 35 €/ay,
+    15 oda, 2 kullanıcı, 16 feature.
+- `backend/domains/admin/router.py` 3 noktada validasyon güncellendi:
+  - `tier not in ("basic", "professional", "enterprise")` →
+    `("mini", "basic", "professional", "enterprise")` (3 yer).
+  - `tier_order` dict: `{"mini": 0, "basic": 1, "professional": 2,
+    "enterprise": 3}`.
+- `backend/core/helpers.py`: `FEATURES_BY_PLAN["mini_pension"]` eklendi
+  (legacy plan key ailesinde Mini eşdeğeri); `core_small_hotel`
+  genişletildi.
+
+**Frontend değişiklikleri:**
+- `frontend/src/pages/admin/tenantConstants.jsx`:
+  - `PLANS.mini` (Home ikonu, teal renk, 35 €/ay) eklendi; basic
+    16-30 oda olarak revize edildi.
+  - `MODULE_GROUPS` tier-bazlı 4 gruba yeniden bölündü (Mini / Basic /
+    Professional / Enterprise) — eski "core + professional" karması
+    yerine her grup paket adıyla eşleşiyor; Mini grubu 14 modül
+    (PMS, takvim, folyo, fatura, gün sonu, channel_manager_lite,
+    payments_link, kbs_notify vb.) içeriyor.
+  - `tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 }`.
+- `frontend/src/pages/AdminTenants.jsx`: tier-not-included badge artık
+  4 tier için (`MINI / BASIC / PRO / ENT`) doğru etiket gösteriyor;
+  `Object.entries(PLANS)` döngüleri Mini'yi otomatik gösteriyor.
+
+**Test durumu:** 11/11 MICE/Banket testi PASS, regresyon yok
+(`test_mice_event_extras.py` + `test_banquet_competitor.py`). Mevcut
+tenant'lar (örn. Syroce Demo Hotel — enterprise) etkilenmedi; Mini
+yeni oluşturulan veya plan değiştirilen tenant'larda kullanılabilir.
+
 ### MICE/Banket extras + rakip analizi entegrasyon testleri — DONE (29 Apr 2026)
 - `backend/tests/test_mice_event_extras.py` (5 test): EventIn üzerine
   eklenen `technical_requirements` / `staff_assignments` / `entertainment`

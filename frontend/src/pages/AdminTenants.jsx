@@ -374,7 +374,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                                               <span className={`text-xs ${on ? 'text-gray-700' : 'text-gray-400'}`}>{label}</span>
                                               {!included && (
                                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 border border-orange-200 font-medium">
-                                                  {modTier === 'professional' ? 'PRO' : 'ENT'}
+                                                  {modTier === 'mini' ? 'MINI' : modTier === 'basic' ? 'BASIC' : modTier === 'professional' ? 'PRO' : 'ENT'}
                                                 </span>
                                               )}
                                             </div>

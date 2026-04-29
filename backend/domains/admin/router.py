@@ -52,6 +52,7 @@ def _svc_enc():
         return None
 
 ROLES_BY_TIER = {
+    "mini": ["admin", "front_desk", "housekeeping"],
     "basic": ["admin", "front_desk", "housekeeping"],
     "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit"],
     "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin"],
@@ -261,7 +262,7 @@ async def create_tenant(
     normalized_plan = payload.subscription_plan or "core_small_hotel"
 
     tier = (payload.subscription_tier or "basic").lower()
-    if tier not in ("basic", "professional", "enterprise"):
+    if tier not in ("mini", "basic", "professional", "enterprise"):
         tier = "basic"
 
     property_type = payload.property_type or "city_hotel"
@@ -827,15 +828,15 @@ async def update_tenant_tier(
 
     Body:
     {
-        "tier": "basic" | "professional" | "enterprise",
+        "tier": "mini" | "basic" | "professional" | "enterprise",
         "reset_modules": true  // optional, default true
     }
     """
     new_tier = (payload.get("tier") or "basic").lower()
     reset_modules = payload.get("reset_modules", True)
 
-    if new_tier not in ("basic", "professional", "enterprise"):
-        raise HTTPException(status_code=400, detail="Invalid plan. Valid options: basic, professional, enterprise")
+    if new_tier not in ("mini", "basic", "professional", "enterprise"):
+        raise HTTPException(status_code=400, detail="Invalid plan. Valid options: mini, basic, professional, enterprise")
 
     tenant = await db.tenants.find_one({"id": tenant_id})
     if not tenant:
@@ -1188,7 +1189,7 @@ async def change_subscription_plan(
     if new_tier == "pro": new_tier = "professional"
     if new_tier == "ultra": new_tier = "enterprise"
 
-    if new_tier not in ("basic", "professional", "enterprise"):
+    if new_tier not in ("mini", "basic", "professional", "enterprise"):
         raise HTTPException(status_code=400, detail="Invalid plan")
 
     current_tier = (tenant.get('subscription_tier', 'basic')).lower()
@@ -1198,7 +1199,7 @@ async def change_subscription_plan(
     if current_tier == new_tier:
         raise HTTPException(status_code=400, detail="You are already on this plan")
 
-    tier_order = {"basic": 0, "professional": 1, "enterprise": 2}
+    tier_order = {"mini": 0, "basic": 1, "professional": 2, "enterprise": 3}
     is_downgrade = tier_order.get(new_tier, 0) < tier_order.get(current_tier, 0)
 
     try:
