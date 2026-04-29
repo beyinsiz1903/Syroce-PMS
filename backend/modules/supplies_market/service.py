@@ -48,8 +48,86 @@ def public_product(doc: dict) -> dict:
         "moq": int(doc.get("moq", 1)),
         "stock": int(doc.get("stock", 0)),
         "is_active": bool(doc.get("is_active", True)),
+        "price_tiers": list(doc.get("price_tiers", []) or []),
+        "promotions": list(doc.get("promotions", []) or []),
+        "lead_time_days": int(doc.get("lead_time_days", 0) or 0),
+        "payment_terms_days": int(doc.get("payment_terms_days", 0) or 0),
         "created_at": doc.get("created_at", ""),
         "updated_at": doc.get("updated_at", ""),
+    }
+
+
+def _promotion_active(promo: dict) -> bool:
+    """Promo süre kontrolü.
+
+    - `valid_until` yoksa daima aktif.
+    - YYYY-MM-DD formatı verilirse o günün sonu (23:59:59 UTC) bitiş kabul edilir.
+    - Tam ISO datetime de kabul edilir.
+    - Geçersiz/parse edilemeyen değer → promosyon DEVRE DIŞI (güvenli taraf).
+    """
+    valid_until = promo.get("valid_until")
+    if not valid_until:
+        return True
+    from datetime import UTC, datetime, time
+    raw = str(valid_until).strip()
+    try:
+        if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+            d = datetime.strptime(raw, "%Y-%m-%d").date()
+            dt = datetime.combine(d, time(23, 59, 59), tzinfo=UTC)
+        else:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+    except (ValueError, TypeError):
+        # Geçersiz tarih → promosyonu uygulama (yanlış indirimi önle)
+        logger.warning("supplies_market: invalid promotion valid_until=%r — discarded", raw)
+        return False
+    return dt >= datetime.now(UTC)
+
+
+def resolve_effective_price(product: dict, qty: int) -> dict:
+    """Verilen miktar için en avantajlı tier + promosyon kombinasyonunu döner.
+
+    Returns:
+        dict with keys: unit_price, base_price, applied_tier, applied_promotion,
+        savings_pct.
+    """
+    base_price = float(product.get("price_try", 0))
+    qty = max(1, int(qty or 1))
+
+    # En yüksek min_qty <= qty olan tier (en derin indirim)
+    tiers = sorted(
+        [t for t in (product.get("price_tiers") or []) if int(t.get("min_qty", 0)) <= qty],
+        key=lambda t: int(t.get("min_qty", 0)),
+        reverse=True,
+    )
+    applied_tier = tiers[0] if tiers else None
+    tier_price = float(applied_tier["price_try"]) if applied_tier else base_price
+
+    # En iyi promosyon: aktif + min_qty karşılanır + en yüksek discount_pct
+    candidate_promos = [
+        p for p in (product.get("promotions") or [])
+        if (p.get("min_qty") is None or qty >= int(p.get("min_qty") or 0))
+        and _promotion_active(p)
+    ]
+    applied_promo = None
+    if candidate_promos:
+        applied_promo = max(candidate_promos, key=lambda p: float(p.get("discount_pct", 0)))
+
+    final = tier_price
+    if applied_promo:
+        final = round(final * (1 - float(applied_promo["discount_pct"]) / 100.0), 2)
+
+    savings_pct = 0.0
+    if base_price > 0 and final < base_price:
+        savings_pct = round((1 - final / base_price) * 100.0, 2)
+
+    return {
+        "unit_price": round(final, 2),
+        "base_price": base_price,
+        "applied_tier": applied_tier,
+        "applied_promotion": applied_promo,
+        "savings_pct": savings_pct,
     }
 
 
@@ -88,7 +166,7 @@ async def place_order(
     if not vendor or vendor.get("status") != "approved":
         raise HTTPException(400, "Vendor is not approved")
 
-    # Build lines + totals
+    # Build lines + totals (kademeli fiyat + promosyon uygulanır)
     lines_out: list[OrderLineOut] = []
     subtotal = 0.0
     for line in payload.lines:
@@ -99,8 +177,9 @@ async def place_order(
             raise HTTPException(400, f"Product '{p['name']}' min order is {p.get('moq')}")
         if int(p.get("stock", 0)) < line.quantity:
             raise HTTPException(400, f"Product '{p['name']}' has insufficient stock")
-        unit_price = float(p["price_try"])
-        line_total = unit_price * line.quantity
+        priced = resolve_effective_price(p, line.quantity)
+        unit_price = priced["unit_price"]
+        line_total = round(unit_price * line.quantity, 2)
         subtotal += line_total
         lines_out.append(
             OrderLineOut(
@@ -156,7 +235,7 @@ async def place_order(
                         {"id": pid},
                         {"$inc": {"stock": qty}},
                     )
-                p = p_map.get(line.product_id, {})
+                p = products_by_id.get(line.product_id, {})
                 raise HTTPException(
                     409,
                     f"Stock unavailable for '{p.get('name', line.product_id)}' (concurrent order)",

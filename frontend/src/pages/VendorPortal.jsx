@@ -447,6 +447,10 @@ function VendorDashboard({ vendor, onLogout }) {
                     moq: 1,
                     stock: 0,
                     is_active: true,
+                    price_tiers: [],
+                    promotions: [],
+                    lead_time_days: 0,
+                    payment_terms_days: 0,
                   })
                 }
                 className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
@@ -808,18 +812,80 @@ function EarningsPanel({ data, loading, commissionPct }) {
 }
 
 function ProductModal({ product, onClose, onSave }) {
-  const [form, setForm] = useState({ ...product, images: product.images || [] });
+  const [form, setForm] = useState({
+    ...product,
+    images: product.images || [],
+    price_tiers: product.price_tiers || [],
+    promotions: product.promotions || [],
+    lead_time_days: product.lead_time_days ?? 0,
+    payment_terms_days: product.payment_terms_days ?? 0,
+  });
   const [uploading, setUploading] = useState(false);
   const submit = (e) => {
     e.preventDefault();
+    const cleanTiers = (form.price_tiers || [])
+      .map((t) => ({
+        min_qty: parseInt(t.min_qty) || 1,
+        price_try: parseFloat(t.price_try) || 0,
+      }))
+      .filter((t) => t.min_qty >= 1 && t.price_try > 0);
+    const cleanPromos = (form.promotions || [])
+      .map((p) => ({
+        title: (p.title || "").trim(),
+        discount_pct: parseFloat(p.discount_pct) || 0,
+        min_qty: p.min_qty ? parseInt(p.min_qty) : null,
+        valid_until: p.valid_until || null,
+      }))
+      .filter((p) => p.title && p.discount_pct > 0 && p.discount_pct <= 90);
     onSave({
       ...form,
       price_try: parseFloat(form.price_try) || 0,
       pack_size: parseInt(form.pack_size) || 1,
       moq: parseInt(form.moq) || 1,
       stock: parseInt(form.stock) || 0,
+      lead_time_days: parseInt(form.lead_time_days) || 0,
+      payment_terms_days: parseInt(form.payment_terms_days) || 0,
+      price_tiers: cleanTiers,
+      promotions: cleanPromos,
     });
   };
+
+  const addTier = () =>
+    setForm((p) => ({
+      ...p,
+      price_tiers: [...(p.price_tiers || []), { min_qty: "", price_try: "" }],
+    }));
+  const updateTier = (i, k, v) =>
+    setForm((p) => {
+      const tiers = [...(p.price_tiers || [])];
+      tiers[i] = { ...tiers[i], [k]: v };
+      return { ...p, price_tiers: tiers };
+    });
+  const removeTier = (i) =>
+    setForm((p) => ({
+      ...p,
+      price_tiers: (p.price_tiers || []).filter((_, idx) => idx !== i),
+    }));
+
+  const addPromo = () =>
+    setForm((p) => ({
+      ...p,
+      promotions: [
+        ...(p.promotions || []),
+        { title: "", discount_pct: "", min_qty: "", valid_until: "" },
+      ],
+    }));
+  const updatePromo = (i, k, v) =>
+    setForm((p) => {
+      const promos = [...(p.promotions || [])];
+      promos[i] = { ...promos[i], [k]: v };
+      return { ...p, promotions: promos };
+    });
+  const removePromo = (i) =>
+    setForm((p) => ({
+      ...p,
+      promotions: (p.promotions || []).filter((_, idx) => idx !== i),
+    }));
 
   const handleFiles = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -934,6 +1000,139 @@ function ProductModal({ product, onClose, onSave }) {
               className="w-full border rounded p-2 text-sm"
             />
           </label>
+          <label className="text-xs">
+            Teslim Süresi (gün)
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={form.lead_time_days}
+              onChange={(e) => setForm({ ...form, lead_time_days: e.target.value })}
+              className="w-full border rounded p-2 text-sm"
+            />
+          </label>
+          <label className="text-xs">
+            Vade (gün, 0=peşin)
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={form.payment_terms_days}
+              onChange={(e) => setForm({ ...form, payment_terms_days: e.target.value })}
+              className="w-full border rounded p-2 text-sm"
+            />
+          </label>
+        </div>
+
+        {/* Kademeli Fiyat */}
+        <div className="border rounded p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">
+              Kademeli Fiyat (miktara göre indirim)
+            </span>
+            <button
+              type="button"
+              onClick={addTier}
+              className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200"
+            >
+              + Kademe Ekle
+            </button>
+          </div>
+          {(form.price_tiers || []).length === 0 && (
+            <p className="text-xs text-gray-400">
+              Örn: 50 adet → 90 TL · 100 adet → 80 TL. Boş bırakılırsa tek fiyat uygulanır.
+            </p>
+          )}
+          {(form.price_tiers || []).map((t, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+              <input
+                type="number"
+                min={1}
+                placeholder="Min adet"
+                value={t.min_qty}
+                onChange={(e) => updateTier(i, "min_qty", e.target.value)}
+                className="border rounded p-1.5 text-sm"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="Birim fiyat (TRY)"
+                value={t.price_try}
+                onChange={(e) => updateTier(i, "price_try", e.target.value)}
+                className="border rounded p-1.5 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => removeTier(i)}
+                className="text-red-600 hover:text-red-700 text-xs px-2"
+              >
+                Sil
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Promosyonlar */}
+        <div className="border rounded p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Promosyon / Kampanya</span>
+            <button
+              type="button"
+              onClick={addPromo}
+              className="text-xs px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-200"
+            >
+              + Promosyon Ekle
+            </button>
+          </div>
+          {(form.promotions || []).length === 0 && (
+            <p className="text-xs text-gray-400">
+              Örn: "Ay sonu kampanyası" %10 indirim, min 30 adet, 30/06 tarihine kadar.
+            </p>
+          )}
+          {(form.promotions || []).map((p, i) => (
+            <div key={i} className="space-y-1.5 border-b pb-2 last:border-0">
+              <input
+                placeholder="Kampanya başlığı"
+                value={p.title}
+                onChange={(e) => updatePromo(i, "title", e.target.value)}
+                className="w-full border rounded p-1.5 text-sm"
+              />
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  min={1}
+                  max={90}
+                  placeholder="İndirim %"
+                  value={p.discount_pct}
+                  onChange={(e) => updatePromo(i, "discount_pct", e.target.value)}
+                  className="border rounded p-1.5 text-sm"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Min adet (ops.)"
+                  value={p.min_qty || ""}
+                  onChange={(e) => updatePromo(i, "min_qty", e.target.value)}
+                  className="border rounded p-1.5 text-sm"
+                />
+                <input
+                  type="date"
+                  value={p.valid_until || ""}
+                  onChange={(e) => updatePromo(i, "valid_until", e.target.value)}
+                  className="border rounded p-1.5 text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removePromo(i)}
+                className="text-red-600 hover:text-red-700 text-xs"
+              >
+                Promosyonu Sil
+              </button>
+            </div>
+          ))}
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">

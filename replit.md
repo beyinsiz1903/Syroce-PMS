@@ -59,6 +59,19 @@ Configured as a static deployment:
 - Build: `cd frontend && yarn install && yarn build`
 - Public dir: `frontend/build`
 
+## Sprint Log – Tedarik Portalı Genişlemesi (2026-04-29)
+
+Elektraweb Tedarik Portalı muadili olarak `supplies_market` modülü çoklu tedarikçi karşılaştırma + kademeli fiyat + promosyon + akıllı seçim ile genişletildi.
+
+- **Backend models** (`backend/modules/supplies_market/models.py`): `PriceTier(min_qty, price_try)`, `Promotion(title, discount_pct, min_qty?, valid_until?)`, `CompareOption`, `CompareResponse` modelleri eklendi. `ProductIn`'e `price_tiers[]`, `promotions[]`, `lead_time_days`, `payment_terms_days` alanları eklendi.
+- **Backend service** (`service.py`): `_promotion_active()` ve `resolve_effective_price(product, qty)` helper'ları (en derin tier + en yüksek aktif promo). `place_order` artık tier-aware fiyat hesabı kullanır. `public_product` yeni alanları döner.
+- **Backend router** (`router_hotel.py`): `GET /products/compare?category=&q=&qty=&limit=` endpoint'i. Vendor `approved` kontrolü, en ucuz birim fiyatına göre sıralı sonuç. `best_pick_id` skoru: 60% effective_price + 25% lead_time + 15% payment_terms (normalize). Path order düzeltildi (`/compare` öncesi `{product_id}` sonrası).
+- **Frontend VendorPortal** (`VendorPortal.jsx`): `ProductModal`'a Teslim Süresi (gün), Vade (gün), Kademeli Fiyat (min_qty + birim fiyat satırları) ve Promosyon (başlık, %indirim, min_qty, valid_until) bölümleri. `addTier/updateTier/removeTier`, `addPromo/updatePromo/removePromo` helper'ları. Submit'te clean validation (boş/geçersiz tier/promo elenir).
+- **Frontend SuppliesMarket** (`SuppliesMarket.jsx`): Yeni "Karşılaştır" sekmesi (kategori + ürün adı + adet filtreleri). Sonuç tablosu: Birim/Toplam fiyat, Teslim, Vade, Avantaj rozetleri (kademe + promo), "EN UCUZ" ve "AKILLI SEÇİM" rozetleri, "Sepete Ekle" tek tık ile katalog sepetine ekler.
+- **Atlas 500-collection limiti** nedeniyle yeni koleksiyon AÇILMADI; `price_tiers`/`promotions` mevcut `supplies_market_products` doc içinde embedded array olarak tutulur.
+- **Smoke**: `GET /products/compare` 200, path ordering doğru (compare !== product_id eaten).
+- **Kapsam dışı (sonraki sprint)**: RFQ akışı, gerçek ML smart-pick, kredili cari hesap entegrasyonu.
+
 ## API Call Conventions
 
 Two URL patterns coexist in frontend code:

@@ -14,6 +14,11 @@ import {
   CreditCard,
   Banknote,
   Store,
+  BarChart3,
+  Sparkles,
+  Tag,
+  Clock,
+  Wallet,
 } from "lucide-react";
 import Layout from "@/components/Layout";
 
@@ -42,6 +47,12 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState({}); // { product_id: { product, qty } }
   const [loading, setLoading] = useState(false);
+  // Karşılaştır sekmesi state
+  const [compareCategory, setCompareCategory] = useState("");
+  const [compareQ, setCompareQ] = useState("");
+  const [compareQty, setCompareQty] = useState(10);
+  const [compareData, setCompareData] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkout, setCheckout] = useState({
     payment_method: "cash_on_delivery",
@@ -96,15 +107,43 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
     if (tab === "orders") loadOrders();
   }, [tab]);
 
+  const runCompare = async () => {
+    if (!compareCategory && !compareQ) {
+      toast.error("Kategori veya arama metni girin");
+      return;
+    }
+    setCompareLoading(true);
+    try {
+      const params = { qty: compareQty || 1, limit: 20 };
+      if (compareCategory) params.category = compareCategory;
+      if (compareQ) params.q = compareQ;
+      const { data } = await axios.get("/supplies-market/products/compare", { params });
+      setCompareData(data);
+      if (!data.options?.length) {
+        toast("Bu kriterlerde uygun tedarikçi bulunamadı", { icon: "ℹ" });
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Karşılaştırma yapılamadı");
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
   const onCategory = (key) => {
     setActiveCategory(key);
     loadProducts(key);
   };
 
-  const addToCart = (product) => {
+  const addToCart = (product, desiredQty = null) => {
     setCart((prev) => {
       const existing = prev[product.id];
-      const qty = existing ? existing.qty + 1 : Math.max(1, product.moq || 1);
+      let qty;
+      if (desiredQty != null) {
+        // Karşılaştır'dan gelen sabit miktar — varsa üzerine yazar
+        qty = Math.max(Math.max(1, product.moq || 1), parseInt(desiredQty) || 1);
+      } else {
+        qty = existing ? existing.qty + 1 : Math.max(1, product.moq || 1);
+      }
       if (qty > (product.stock ?? 0)) {
         toast.error("Stok yetersiz");
         return prev;
@@ -221,6 +260,14 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
             }`}
           >
             <Package className="w-4 h-4 inline mr-1" /> Katalog
+          </button>
+          <button
+            onClick={() => setTab("compare")}
+            className={`px-4 py-2 rounded-md text-sm font-medium ${
+              tab === "compare" ? "bg-blue-600 text-white" : "bg-gray-100 hover:bg-gray-200"
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 inline mr-1" /> Karşılaştır
           </button>
           <button
             onClick={() => setTab("orders")}
@@ -373,6 +420,176 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {tab === "compare" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-blue-600" />
+              Tedarikçi Fiyat Karşılaştırma
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Aynı ürün/kategoride birden fazla tedarikçinin fiyatını, teslim süresini ve
+              vadesini yan yana görün. Sistem en avantajlı seçeneği önerir.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <select
+                value={compareCategory}
+                onChange={(e) => setCompareCategory(e.target.value)}
+                className="border rounded p-2 text-sm"
+              >
+                <option value="">Tüm Kategoriler</option>
+                {categories.map((c) => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+              <input
+                placeholder="Ürün adı (ops.)"
+                value={compareQ}
+                onChange={(e) => setCompareQ(e.target.value)}
+                className="border rounded p-2 text-sm"
+              />
+              <input
+                type="number"
+                min={1}
+                placeholder="Adet"
+                value={compareQty}
+                onChange={(e) => setCompareQty(parseInt(e.target.value) || 1)}
+                className="border rounded p-2 text-sm"
+              />
+              <button
+                onClick={runCompare}
+                disabled={compareLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-2 text-sm font-medium disabled:bg-gray-300"
+              >
+                {compareLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : "Karşılaştır"}
+              </button>
+            </div>
+          </div>
+
+          {compareData && compareData.options?.length > 0 && (
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <div className="p-3 bg-gray-50 border-b text-xs text-gray-600">
+                {compareData.options.length} tedarikçi seçeneği · Adet: <b>{compareData.qty}</b>
+                {compareData.best_pick_id && (
+                  <span className="ml-3 inline-flex items-center gap-1 text-emerald-700 font-medium">
+                    <Sparkles className="w-3.5 h-3.5" /> Akıllı seçim işaretlendi
+                  </span>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="text-left p-3">Ürün / Tedarikçi</th>
+                      <th className="text-right p-3">Birim Fiyat</th>
+                      <th className="text-right p-3">Toplam ({compareData.qty})</th>
+                      <th className="text-center p-3">Teslim</th>
+                      <th className="text-center p-3">Vade</th>
+                      <th className="text-left p-3">Avantaj</th>
+                      <th className="p-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compareData.options.map((o, idx) => {
+                      const isBest = o.product_id === compareData.best_pick_id;
+                      const isCheapest = idx === 0;
+                      return (
+                        <tr
+                          key={o.product_id}
+                          className={`border-t ${isBest ? "bg-emerald-50" : ""}`}
+                        >
+                          <td className="p-3">
+                            <div className="font-medium">{o.product_name}</div>
+                            <div className="text-xs text-gray-500">{o.vendor_name}</div>
+                            {isBest && (
+                              <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded">
+                                <Sparkles className="w-3 h-3" /> AKILLI SEÇİM
+                              </span>
+                            )}
+                            {isCheapest && !isBest && (
+                              <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 bg-blue-600 text-white rounded">
+                                EN UCUZ
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="font-bold">{fmt(o.effective_price_try)}</div>
+                            {o.savings_pct > 0 && (
+                              <div className="text-[10px] text-emerald-600">
+                                −%{o.savings_pct} (liste {fmt(o.base_price_try)})
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-semibold">{fmt(o.line_total_try)}</td>
+                          <td className="p-3 text-center">
+                            <span className="inline-flex items-center gap-1 text-xs">
+                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                              {o.lead_time_days > 0 ? `${o.lead_time_days} gün` : "—"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="inline-flex items-center gap-1 text-xs">
+                              <Wallet className="w-3.5 h-3.5 text-gray-400" />
+                              {o.payment_terms_days > 0 ? `${o.payment_terms_days} gün` : "Peşin"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-xs space-y-1">
+                            {o.applied_tier && (
+                              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded">
+                                Kademe ≥{o.applied_tier.min_qty}
+                              </div>
+                            )}
+                            {o.applied_promotion && (
+                              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">
+                                <Tag className="w-3 h-3" />
+                                {o.applied_promotion.title} (−%{o.applied_promotion.discount_pct})
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => {
+                                addToCart(
+                                  {
+                                    id: o.product_id,
+                                    name: o.product_name,
+                                    vendor_id: o.vendor_id,
+                                    vendor_name: o.vendor_name,
+                                    price_try: o.effective_price_try,
+                                    stock: o.stock,
+                                    moq: o.moq,
+                                    unit: o.unit,
+                                  },
+                                  compareData.qty,
+                                );
+                                toast.success(
+                                  `${o.product_name} × ${compareData.qty} sepete eklendi`,
+                                );
+                                setTab("catalog");
+                              }}
+                              className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                            >
+                              Sepete Ekle
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {compareData && (compareData.options?.length || 0) === 0 && !compareLoading && (
+            <div className="bg-white rounded-lg border text-center py-10 text-gray-500 text-sm">
+              Bu kriterlerde uygun tedarikçi bulunamadı. Adedi azaltmayı veya kategoriyi
+              değiştirmeyi deneyin.
+            </div>
+          )}
         </div>
       )}
 
