@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -113,7 +113,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [availableRooms, setAvailableRooms] = useState([]);
 
   // Conflicts
-  const [conflicts, setConflicts] = useState([]);
+  // conflicts: derived from bookings/rooms via useMemo (no state, no extra render).
   const [showConflictsModal, setShowConflictsModal] = useState(false);
 
   const dateRange = getDateRange(currentDate, daysToShow);
@@ -292,31 +292,46 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Conflict Detection ────────────────────────────────────
-  const detectConflicts = () => {
-    const detectedConflicts = [];
-    rooms.forEach(room => {
-      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+  // Bookings group is bucketed by room_id once (O(N)); the per-room O(k²)
+  // overlap check then runs only on each room's small subset, instead of
+  // the previous O(rooms × bookings²) double scan that re-ran on every
+  // booking change. Result memoized so no setState/re-render churn.
+  const conflicts = useMemo(() => {
+    if (!bookings.length || !rooms.length) return [];
+    const SKIPPED = new Set(['cancelled', 'checked_out', 'no_show']);
+    const byRoom = new Map();
+    for (const b of bookings) {
+      if (SKIPPED.has(b.status) || !b.room_id) continue;
+      let arr = byRoom.get(b.room_id);
+      if (!arr) { arr = []; byRoom.set(b.room_id, arr); }
+      arr.push(b);
+    }
+    const out = [];
+    for (const room of rooms) {
+      const roomBookings = byRoom.get(room.id);
+      if (!roomBookings || roomBookings.length < 2) continue;
       for (let i = 0; i < roomBookings.length; i++) {
+        const b1 = roomBookings[i];
+        const s1 = new Date(b1.check_in).getTime();
+        const e1 = new Date(b1.check_out).getTime();
         for (let j = i + 1; j < roomBookings.length; j++) {
-          const b1 = roomBookings[i], b2 = roomBookings[j];
-          const s1 = new Date(b1.check_in), e1 = new Date(b1.check_out);
-          const s2 = new Date(b2.check_in), e2 = new Date(b2.check_out);
+          const b2 = roomBookings[j];
+          const s2 = new Date(b2.check_in).getTime();
+          const e2 = new Date(b2.check_out).getTime();
           if (s1 < e2 && s2 < e1) {
-            detectedConflicts.push({
+            out.push({
               type: 'overbooking', room_id: room.id, room_number: room.room_number,
               booking1_id: b1.id, booking2_id: b2.id,
               guest1: b1.guest_name, guest2: b2.guest_name,
-              overlap_start: s1 > s2 ? s1 : s2, overlap_end: e1 < e2 ? e1 : e2
+              overlap_start: new Date(s1 > s2 ? s1 : s2),
+              overlap_end: new Date(e1 < e2 ? e1 : e2)
             });
           }
         }
       }
-    });
-    setConflicts(detectedConflicts);
-    return detectedConflicts;
-  };
-
-  useEffect(() => { detectConflicts(); }, [bookings]);
+    }
+    return out;
+  }, [bookings, rooms]);
 
   // ─── Occupancy ─────────────────────────────────────────────
   const getOccupancyForDate = (date) => {

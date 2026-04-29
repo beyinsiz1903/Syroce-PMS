@@ -169,11 +169,18 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
 
   useEffect(() => { loadCalls(); }, [loadCalls]);
 
-  // 30 sn'de bir poll — sadece bugün filtreliyken çalsın (mantıklı)
+  // 60 sn'de bir poll — sadece bugün filtreliyken VE sekme önplandayken çalsın.
+  // Sekme önplana döndüğünde anında bir tazeleme tetiklenir.
   useEffect(() => {
     if (filterDate !== today) return;
-    const interval = setInterval(() => { loadCalls(); }, 30000);
-    return () => clearInterval(interval);
+    const tick = () => { if (!document.hidden) loadCalls(); };
+    const interval = setInterval(tick, 60000);
+    const onVis = () => { if (!document.hidden) loadCalls(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [loadCalls, filterDate, today]);
 
   // Alarm sistemini etkinleştir: izin iste + AudioContext'i kullanıcı
