@@ -66,6 +66,36 @@ router = APIRouter(tags=["Room QR Requests"])
 
 COLL = "room_qr_requests"
 
+
+_INDEXES_READY = False
+
+
+async def _ensure_indexes() -> None:
+    """Idempotent index creation. Cheap on subsequent calls; mongo no-ops if
+    the index already exists. Indexed fields match every staff query path
+    (tenant scoping + status/department filters + created_at sort)."""
+    global _INDEXES_READY
+    if _INDEXES_READY:
+        return
+    try:
+        await raw_db[COLL].create_index(
+            [("tenant_id", 1), ("created_at", -1)],
+            name="rqr_tenant_created")
+        await raw_db[COLL].create_index(
+            [("tenant_id", 1), ("status", 1), ("created_at", -1)],
+            name="rqr_tenant_status_created")
+        await raw_db[COLL].create_index(
+            [("tenant_id", 1), ("department", 1), ("status", 1)],
+            name="rqr_tenant_dept_status")
+        await raw_db[COLL].create_index(
+            [("tenant_id", 1), ("room_id", 1)],
+            name="rqr_tenant_room")
+        _INDEXES_READY = True
+    except Exception as e:
+        # Atlas may reject new collections (cluster limit reached); we skip
+        # silently — query still works on tenant_id full scan for empty data.
+        logger.debug(f"room_qr_requests index setup skipped: {e}")
+
 # Kategori → Departman eşlemesi (DepartmentType enum değerleriyle uyumlu)
 CATEGORY_CATALOG = [
     {"id": "cleaning",     "department": "rooms",         "icon": "sparkles",  "default_priority": "normal"},
@@ -327,6 +357,7 @@ async def list_requests(
     limit: int = 200,
     current_user=Depends(get_current_user),
 ):
+    await _ensure_indexes()
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if status:
@@ -346,6 +377,7 @@ async def list_requests(
 
 @router.get("/api/room-requests/stats/summary")
 async def stats_summary(current_user=Depends(get_current_user)):
+    await _ensure_indexes()
     tenant_id = _tenant_of(current_user)
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},

@@ -88,41 +88,54 @@ function RequestCard({ item, onOpen }) {
 export default function RoomRequests({ user, tenant, onLogout }) {
   const { t } = useTranslation();
   const [items, setItems] = useState([]);
-  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState(ALL_DEPTS);
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Single request fetches all tenant requests; filtering and stat aggregation
+  // happen client-side. Eliminates the second `/stats/summary` round-trip and
+  // halves background polling cost (typical hotel has <50 active requests).
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [l, s] = await Promise.all([
-        axios.get("/room-requests", { params: department && department !== ALL_DEPTS ? { department } : {} }),
-        axios.get("/room-requests/stats/summary"),
-      ]);
-      setItems(l.data.items || []);
-      setStats(s.data);
+      const r = await axios.get("/room-requests");
+      setItems(r.data.items || []);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Yüklenemedi");
     } finally {
       setLoading(false);
     }
-  }, [department]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // 30 saniyede bir tazele
+  // 60 sn'de bir tazele; sekme arka planda iken sessiz kal (gereksiz yük yok).
   useEffect(() => {
-    const i = setInterval(load, 30000);
-    return () => clearInterval(i);
+    const tick = () => { if (!document.hidden) load(); };
+    const i = setInterval(tick, 60000);
+    const onVis = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(i); document.removeEventListener("visibilitychange", onVis); };
   }, [load]);
+
+  // Department filter is applied client-side so the top stat cards always
+  // show full-tenant totals while the kanban reflects the active filter.
+  const filteredItems = useMemo(() => (
+    department === ALL_DEPTS ? items : items.filter((it) => it.department === department)
+  ), [items, department]);
 
   const grouped = useMemo(() => {
     const g = { new: [], assigned: [], in_progress: [], completed: [] };
-    items.forEach((it) => { (g[it.status] || (g[it.status] = [])).push(it); });
+    filteredItems.forEach((it) => { (g[it.status] || (g[it.status] = [])).push(it); });
     return g;
+  }, [filteredItems]);
+
+  const stats = useMemo(() => {
+    const by_status = {};
+    items.forEach((it) => { by_status[it.status] = (by_status[it.status] || 0) + 1; });
+    return { total: items.length, by_status };
   }, [items]);
 
   const updateStatus = async (id, patch, noteText) => {
