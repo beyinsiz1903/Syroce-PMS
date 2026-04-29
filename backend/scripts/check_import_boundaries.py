@@ -36,8 +36,16 @@ BOUNDARY_RULES = [
     ),
 ]
 
-# Known exceptions: existing cross-boundary imports tracked for future cleanup
-KNOWN_EXCEPTIONS = frozenset()
+# Known exceptions: existing cross-boundary imports tracked for future cleanup.
+# Entry format: (relative_path_from_backend_root, line_number).
+# When you suppress an entry here, please also create a follow-up to migrate the
+# shared module to `common/` or `shared_kernel/` so the exception can be removed.
+KNOWN_EXCEPTIONS = frozenset({
+    # Admin tenant push-metrics dashboard reads guest-domain rollup helper.
+    # Proper fix: move `web_push_metrics` into `shared_kernel/` (domain-agnostic
+    # Mongo upsert/aggregation helper used by both guest router and admin UI).
+    ("domains/admin/router.py", 650),
+})
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
 
