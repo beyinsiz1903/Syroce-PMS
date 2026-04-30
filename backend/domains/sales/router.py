@@ -143,7 +143,7 @@ async def create_complaint(
     complaint_data: dict, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
-    """Sikayet kaydi olustur"""
+    """Şikayet kaydı oluştur"""
     allowed_fields = {
         "booking_id", "guest_id", "guest_name", "room_id", "room_number",
         "room_type", "category", "severity", "subject", "description",
@@ -151,6 +151,7 @@ async def create_complaint(
     }
     safe_data = {k: v for k, v in complaint_data.items() if k in allowed_fields}
     now = datetime.now(UTC).isoformat()
+    actor_name = getattr(current_user, "full_name", None) or getattr(current_user, "username", None) or current_user.email
     complaint = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -159,9 +160,15 @@ async def create_complaint(
         "created_by": current_user.id,
         "created_at": now,
         "updated_at": now,
+        "history": [{
+            "action": "created",
+            "actor_id": current_user.id,
+            "actor_name": actor_name,
+            "at": now,
+        }],
     }
     await db.service_complaints.insert_one(complaint)
-    return {"success": True, "message": "Sikayet kaydedildi", "complaint_id": complaint["id"]}
+    return {"success": True, "message": "Şikayet kaydedildi", "complaint_id": complaint["id"]}
 
 
 # ── Spa & Wellness ──────────────────────────────────────────────────
