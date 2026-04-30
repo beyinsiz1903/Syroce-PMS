@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useCurrency } from '@/context/CurrencyContext';
 
 export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   const { t } = useTranslation();
+  const { amount: fmtMoney } = useCurrency();
   const [form, setForm] = useState({
     category: 'supplies', description: '', amount: 0, vat_rate: 18,
     date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: ''
@@ -19,12 +21,22 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/expenses', null, { params: form });
-      toast.success('Expense recorded');
+      const payload = {
+        category: form.category,
+        description: form.description,
+        amount: Number.isFinite(form.amount) ? form.amount : 0,
+        vat_rate: Number.isFinite(form.vat_rate) ? form.vat_rate : 0,
+        date: form.date,
+        supplier_id: form.supplier_id && form.supplier_id !== 'none' ? form.supplier_id : null,
+        payment_method: form.payment_method || null,
+        notes: form.notes || null,
+      };
+      await axios.post('/accounting/expenses', payload);
+      toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
       setForm({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create expense');
+      toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
   };
 
@@ -104,7 +116,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
           <div className="pt-4 border-t">
             <div className="flex justify-between text-lg font-bold">
               <span>{t('invoice.totalInclVAT', 'Total (incl. VAT)')}:</span>
-              <span>₺{(form.amount * (1 + form.vat_rate / 100)).toFixed(2)}</span>
+              <span>{fmtMoney((form.amount || 0) * (1 + (form.vat_rate || 0) / 100), { decimals: 2 })}</span>
             </div>
           </div>
           <Button type="submit" className="w-full">{t('invoice.recordExpense', 'Record Expense')}</Button>
@@ -123,12 +135,20 @@ export const SupplierDialog = ({ open, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/suppliers', null, { params: form });
-      toast.success('Supplier added');
+      await axios.post('/accounting/suppliers', {
+        name: form.name,
+        tax_office: form.tax_office || null,
+        tax_number: form.tax_number || null,
+        email: form.email || null,
+        phone: form.phone || null,
+        address: form.address || null,
+        category: form.category || 'general',
+      });
+      toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
       setForm({ name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to add supplier');
+      toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
   };
 
@@ -183,12 +203,19 @@ export const BankAccountDialog = ({ open, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/bank-accounts', null, { params: form });
-      toast.success('Bank account added');
+      await axios.post('/accounting/bank-accounts', {
+        name: form.name,
+        bank_name: form.bank_name,
+        account_number: form.account_number,
+        iban: form.iban || null,
+        currency: form.currency || 'TRY',
+        balance: Number.isFinite(form.balance) ? form.balance : 0,
+      });
+      toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
       setForm({ name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0 });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to add bank account');
+      toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
   };
 
@@ -248,12 +275,20 @@ export const InventoryDialog = ({ open, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/inventory', null, { params: form });
-      toast.success('Inventory item added');
+      await axios.post('/accounting/inventory', {
+        name: form.name,
+        category: form.category,
+        unit: form.unit,
+        quantity: Number.isFinite(form.quantity) ? form.quantity : 0,
+        unit_cost: Number.isFinite(form.unit_cost) ? form.unit_cost : 0,
+        reorder_level: Number.isFinite(form.reorder_level) ? form.reorder_level : 0,
+        sku: form.sku || null,
+      });
+      toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
       setForm({ name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to add inventory item');
+      toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
   };
 

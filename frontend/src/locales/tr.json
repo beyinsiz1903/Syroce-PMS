@@ -654,11 +654,87 @@
     "status": "Durum",
     "pending": "Beklemede",
     "paid": "Ödendi",
+    "partial": "Kısmi",
     "overdue": "Gecikmiş",
     "invoiceNumber": "Fatura Numarası",
     "invoiceDate": "Fatura Tarihi",
     "paymentMethod": "Ödeme Yöntemi",
-    "generateEInvoice": "E-Fatura Oluştur"
+    "generateEInvoice": "E-Fatura Oluştur",
+    "tabs": {
+      "invoices": "Faturalar",
+      "expenses": "Giderler",
+      "suppliers": "Tedarikçiler",
+      "banks": "Bankalar",
+      "inventory": "Stok",
+      "reports": "Raporlar"
+    },
+    "actions": {
+      "addExpense": "Gider Ekle",
+      "addSupplier": "Tedarikçi Ekle",
+      "addAccount": "Hesap Ekle",
+      "addItem": "Kalem Ekle"
+    },
+    "headers": {
+      "invoices": "Faturalar ({{count}})",
+      "expenses": "Giderler ({{count}})",
+      "suppliers": "Tedarikçiler ({{count}})",
+      "banks": "Banka Hesapları ({{count}})",
+      "inventory": "Stok ({{count}})"
+    },
+    "info": {
+      "noEInvoiceTitle": "Faturalar referans amaçlıdır",
+      "noEInvoiceBody": "Sistem GİB e-Fatura entegrasyonu ile bağlı değildir. Aşağıdaki faturalar konaklama check-out'larından otomatik üretilir; muhasebeci bu listeden kontrol ederek resmi faturaları kullandığı muhasebe yazılımı üzerinden keser."
+    },
+    "labels": {
+      "issue": "Düzenleme",
+      "due": "Vade",
+      "type": "Tür",
+      "vat": "KDV",
+      "taxNo": "VKN",
+      "email": "E-posta",
+      "phone": "Telefon",
+      "balance": "Bakiye",
+      "accountNo": "Hesap No",
+      "iban": "IBAN",
+      "sku": "SKU",
+      "qty": "Adet",
+      "unitPrice": "Birim Fiyat",
+      "totalValue": "Toplam Değer",
+      "lowStock": "Stok azaldı - sipariş gerekli",
+      "date": "Tarih",
+      "payment": "Ödeme"
+    },
+    "kpi": {
+      "collected": "Tahsil Edilen",
+      "accrued": "Tahakkuk Eden",
+      "pendingAmount": "Bekleyen Tutar",
+      "overdueAmount": "Vadesi Geçen Tutar"
+    },
+    "reports": {
+      "title": "Finansal Raporlar",
+      "thisMonth": "Bu Ay",
+      "profitLoss": "Kar-Zarar Tablosu",
+      "totalRevenue": "Toplam Gelir",
+      "totalExpenses": "Toplam Gider",
+      "grossProfit": "Brüt Kar",
+      "profitMargin": "Kar Marjı",
+      "expenseBreakdown": "Gider Dağılımı",
+      "vat": "KDV Raporu",
+      "vatCollected": "Tahsil Edilen KDV",
+      "vatPaid": "Ödenen KDV",
+      "vatPayable": "Ödenecek KDV",
+      "balanceSheet": "Bilanço",
+      "assets": "Varlıklar",
+      "liabilities": "Yükümlülükler",
+      "equity": "Özkaynak",
+      "cash": "Nakit",
+      "inventory": "Envanter",
+      "receivables": "Alacaklar",
+      "payables": "Borçlar",
+      "totalAssets": "Toplam Varlık",
+      "totalLiabilities": "Toplam Yükümlülük",
+      "totalEquity": "Toplam Özkaynak"
+    }
   },
   "dashboard": {
     "monthlyIncome": "Aylık Gelir",

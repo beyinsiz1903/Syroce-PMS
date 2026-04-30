@@ -157,19 +157,16 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
     }
     setSaving(true);
     try {
-      await axios.post('/accounting/inventory', null, {
-        params: {
-          name: newItem.name.trim(),
-          category: newItem.category,
-          unit: newItem.unit,
-          quantity: Number(newItem.quantity) || 0,
-          unit_cost: Number(newItem.unit_cost) || 0,
-          reorder_level: Number(newItem.reorder_level) || 0,
-          sku: newItem.sku || undefined,
-          location: newItem.location || undefined,
-          notes: newItem.notes || undefined,
-          is_consumable: newItem.is_consumable !== false,
-        },
+      await axios.post('/accounting/inventory', {
+        name: newItem.name.trim(),
+        category: newItem.category,
+        unit: newItem.unit,
+        quantity: Number(newItem.quantity) || 0,
+        unit_cost: Number(newItem.unit_cost) || 0,
+        reorder_level: Number(newItem.reorder_level) || 0,
+        sku: newItem.sku || null,
+        location: newItem.location || null,
+        notes: newItem.notes || null,
       });
       toast.success(`${newItem.name} eklendi`);
       setNewItem(null);

@@ -17,6 +17,7 @@ except ImportError:
     Workbook = None
 
 from core.database import db
+from core.sanitize import sanitize_plaintext
 from core.security import get_current_user
 from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from models.enums import PaymentStatus
@@ -148,28 +149,74 @@ class StockMovement(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class SupplierCreateRequest(BaseModel):
+    name: str
+    tax_office: str | None = None
+    tax_number: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    category: str = "general"
+
+
+class BankAccountCreateRequest(BaseModel):
+    name: str
+    bank_name: str
+    account_number: str
+    iban: str | None = None
+    currency: str = "USD"
+    balance: float = 0.0
+
+
+class ExpenseCreateRequest(BaseModel):
+    category: str
+    description: str
+    amount: float
+    vat_rate: float
+    date: str
+    supplier_id: str | None = None
+    payment_method: str | None = None
+    receipt_url: str | None = None
+    notes: str | None = None
+
+
+class InventoryItemCreateRequest(BaseModel):
+    name: str
+    category: str
+    unit: str
+    quantity: float = 0.0
+    unit_cost: float = 0.0
+    reorder_level: float = 0.0
+    sku: str | None = None
+    supplier_id: str | None = None
+    location: str | None = None
+    notes: str | None = None
+
+
+def _norm(v):
+    """Treat empty / 'none' sentinels coming from select inputs as null."""
+    if v is None:
+        return None
+    if isinstance(v, str) and v.strip().lower() in ('', 'none'):
+        return None
+    return v
+
+
 @router.post("/accounting/suppliers")
 async def create_supplier(
-    name: str,
-    tax_office: str | None = None,
-    tax_number: str | None = None,
-    email: str | None = None,
-    phone: str | None = None,
-    address: str | None = None,
-    category: str = "general",
+    payload: SupplierCreateRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # Supplier model imported at top
     supplier = Supplier(
         tenant_id=current_user.tenant_id,
-        name=name,
-        tax_office=tax_office,
-        tax_number=tax_number,
-        email=email,
-        phone=phone,
-        address=address,
-        category=category
+        name=sanitize_plaintext(payload.name, max_length=200),
+        tax_office=sanitize_plaintext(payload.tax_office, max_length=200) if payload.tax_office else None,
+        tax_number=sanitize_plaintext(payload.tax_number, max_length=50) if payload.tax_number else None,
+        email=payload.email,
+        phone=payload.phone,
+        address=sanitize_plaintext(payload.address, max_length=500) if payload.address else None,
+        category=payload.category or "general",
     )
     supplier_dict = supplier.model_dump()
     supplier_dict['created_at'] = supplier_dict['created_at'].isoformat()
@@ -190,30 +237,24 @@ async def update_supplier(supplier_id: str, updates: dict[str, Any], current_use
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    supplier = await db.suppliers.find_one({'id': supplier_id}, {'_id': 0})
+    supplier = await db.suppliers.find_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
     return supplier
 
 
 @router.post("/accounting/bank-accounts")
 async def create_bank_account(
-    name: str,
-    bank_name: str,
-    account_number: str,
-    iban: str | None = None,
-    currency: str = "USD",
-    balance: float = 0.0,
+    payload: BankAccountCreateRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # BankAccount model imported at top
     bank_account = BankAccount(
         tenant_id=current_user.tenant_id,
-        name=name,
-        bank_name=bank_name,
-        account_number=account_number,
-        iban=iban,
-        currency=currency,
-        balance=balance
+        name=sanitize_plaintext(payload.name, max_length=200),
+        bank_name=sanitize_plaintext(payload.bank_name, max_length=200),
+        account_number=sanitize_plaintext(payload.account_number, max_length=80),
+        iban=sanitize_plaintext(payload.iban, max_length=50) if payload.iban else None,
+        currency=(payload.currency or "USD").upper(),
+        balance=payload.balance,
     )
     account_dict = bank_account.model_dump()
     account_dict['created_at'] = account_dict['created_at'].isoformat()
@@ -234,47 +275,39 @@ async def update_bank_account(account_id: str, updates: dict[str, Any], current_
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    account = await db.bank_accounts.find_one({'id': account_id}, {'_id': 0})
+    account = await db.bank_accounts.find_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
     return account
 
 
 @router.post("/accounting/expenses")
 async def create_expense(
-    category: str,
-    description: str,
-    amount: float,
-    vat_rate: float,
-    date: str,
-    supplier_id: str | None = None,
-    payment_method: str | None = None,
-    receipt_url: str | None = None,
-    notes: str | None = None,
+    payload: ExpenseCreateRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # Expense model imported at top
-
     count = await db.expenses.count_documents({'tenant_id': current_user.tenant_id})
     expense_number = f"EXP-{count + 1:05d}"
 
-    vat_amount = amount * (vat_rate / 100)
-    total_amount = amount + vat_amount
+    vat_amount = payload.amount * (payload.vat_rate / 100)
+    total_amount = payload.amount + vat_amount
+
+    supplier_id = _norm(payload.supplier_id)
 
     expense = Expense(
         tenant_id=current_user.tenant_id,
         expense_number=expense_number,
         supplier_id=supplier_id,
-        category=category,
-        description=description,
-        amount=amount,
-        vat_rate=vat_rate,
+        category=payload.category,
+        description=sanitize_plaintext(payload.description, max_length=500),
+        amount=payload.amount,
+        vat_rate=payload.vat_rate,
         vat_amount=vat_amount,
         total_amount=total_amount,
-        date=datetime.fromisoformat(date),
-        payment_method=payment_method,
-        receipt_url=receipt_url,
-        notes=notes,
-        created_by=current_user.name
+        date=datetime.fromisoformat(payload.date),
+        payment_method=_norm(payload.payment_method),
+        receipt_url=_norm(payload.receipt_url),
+        notes=sanitize_plaintext(payload.notes, max_length=1000) if payload.notes else None,
+        created_by=current_user.name,
     )
 
     expense_dict = expense.model_dump()
@@ -282,25 +315,22 @@ async def create_expense(
     expense_dict['created_at'] = expense_dict['created_at'].isoformat()
     await db.expenses.insert_one(expense_dict)
 
-    # Update supplier balance if applicable
     if supplier_id:
         await db.suppliers.update_one(
-            {'id': supplier_id},
-            {'$inc': {'account_balance': total_amount}}
+            {'id': supplier_id, 'tenant_id': current_user.tenant_id},
+            {'$inc': {'account_balance': total_amount}},
         )
 
-    # Create cash flow entry
-    # CashFlow model imported at top
     cash_flow = CashFlow(
         tenant_id=current_user.tenant_id,
         transaction_type='expense',
-        category=category,
+        category=payload.category,
         amount=total_amount,
-        description=description,
+        description=expense.description,
         reference_id=expense.id,
         reference_type='expense',
-        date=datetime.fromisoformat(date),
-        created_by=current_user.name
+        date=datetime.fromisoformat(payload.date),
+        created_by=current_user.name,
     )
     cf_dict = cash_flow.model_dump()
     cf_dict['date'] = cf_dict['date'].isoformat()
@@ -334,38 +364,28 @@ async def update_expense(expense_id: str, updates: dict[str, Any], current_user:
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
     await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    expense = await db.expenses.find_one({'id': expense_id}, {'_id': 0})
+    expense = await db.expenses.find_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
     return expense
 
 
 @router.post("/accounting/inventory")
 async def create_inventory_item(
-    name: str,
-    category: str,
-    unit: str,
-    quantity: float = 0.0,
-    unit_cost: float = 0.0,
-    reorder_level: float = 0.0,
-    sku: str | None = None,
-    supplier_id: str | None = None,
-    location: str | None = None,
-    notes: str | None = None,
+    payload: InventoryItemCreateRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # InventoryItem model imported at top
     item = InventoryItem(
         tenant_id=current_user.tenant_id,
-        name=name,
-        sku=sku,
-        category=category,
-        unit=unit,
-        quantity=quantity,
-        unit_cost=unit_cost,
-        reorder_level=reorder_level,
-        supplier_id=supplier_id,
-        location=location,
-        notes=notes
+        name=sanitize_plaintext(payload.name, max_length=200),
+        sku=sanitize_plaintext(payload.sku, max_length=80) if payload.sku else None,
+        category=payload.category,
+        unit=payload.unit,
+        quantity=payload.quantity,
+        unit_cost=payload.unit_cost,
+        reorder_level=payload.reorder_level,
+        supplier_id=_norm(payload.supplier_id),
+        location=sanitize_plaintext(payload.location, max_length=200) if payload.location else None,
+        notes=sanitize_plaintext(payload.notes, max_length=1000) if payload.notes else None,
     )
     item_dict = item.model_dump()
     item_dict['created_at'] = item_dict['created_at'].isoformat()
@@ -400,7 +420,14 @@ async def create_stock_movement(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # StockMovement model imported at top
+    # Verify the inventory item belongs to the caller's tenant before mutating
+    # stock; prevents cross-tenant IDOR via guessed/leaked item_id.
+    owned = await db.inventory_items.find_one(
+        {'id': item_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'id': 1},
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
 
     movement = StockMovement(
         tenant_id=current_user.tenant_id,
@@ -417,22 +444,14 @@ async def create_stock_movement(
     movement_dict['created_at'] = movement_dict['created_at'].isoformat()
     await db.stock_movements.insert_one(movement_dict)
 
-    # Update inventory quantity
+    # Update inventory quantity (tenant-scoped filter)
+    tenant_filter = {'id': item_id, 'tenant_id': current_user.tenant_id}
     if movement_type == 'in':
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$inc': {'quantity': quantity}}
-        )
+        await db.inventory_items.update_one(tenant_filter, {'$inc': {'quantity': quantity}})
     elif movement_type == 'out':
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$inc': {'quantity': -quantity}}
-        )
+        await db.inventory_items.update_one(tenant_filter, {'$inc': {'quantity': -quantity}})
     else:  # adjustment
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$set': {'quantity': quantity}}
-        )
+        await db.inventory_items.update_one(tenant_filter, {'$set': {'quantity': quantity}})
 
     return movement
 
@@ -538,11 +557,11 @@ async def create_accounting_invoice(
         tenant_id=current_user.tenant_id,
         invoice_number=invoice_number,
         invoice_type=request.invoice_type,
-        customer_name=request.customer_name,
+        customer_name=sanitize_plaintext(request.customer_name, max_length=200),
         customer_email=request.customer_email,
-        customer_tax_office=request.customer_tax_office,
-        customer_tax_number=request.customer_tax_number,
-        customer_address=request.customer_address,
+        customer_tax_office=sanitize_plaintext(request.customer_tax_office, max_length=120),
+        customer_tax_number=sanitize_plaintext(request.customer_tax_number, max_length=20),
+        customer_address=sanitize_plaintext(request.customer_address, max_length=500),
         items=invoice_items,
         subtotal=subtotal,
         total_vat=total_vat,
@@ -600,6 +619,12 @@ async def get_accounting_invoices(
         query['status'] = status
 
     invoices = await db.accounting_invoices.find(query, {'_id': 0}).sort('issue_date', -1).to_list(1000)
+    # Render-time scrub for legacy rows that contain XML/HTML fragments
+    # (e.g. test seeds from earlier security probes). Persisted on next write.
+    for inv in invoices:
+        for f in ('customer_name', 'customer_tax_office', 'customer_address'):
+            if f in inv and isinstance(inv[f], str):
+                inv[f] = sanitize_plaintext(inv[f], max_length=500)
     return invoices
 
 
@@ -611,8 +636,27 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
         updates['payment_date'] = datetime.now(UTC).isoformat()
 
+    for f in ('customer_name', 'customer_tax_office', 'customer_address', 'customer_tax_number'):
+        if f in updates and isinstance(updates[f], str):
+            updates[f] = sanitize_plaintext(updates[f], max_length=500)
+
     await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    invoice = await db.accounting_invoices.find_one({'id': invoice_id}, {'_id': 0})
+    invoice = await db.accounting_invoices.find_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+
+    # Drop the dashboard cache so KPI cards reflect the new status immediately.
+    # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
+    try:
+        from cache_manager import cache as _cache
+        _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
+    except Exception:
+        pass
+
+    # Render-time scrub for legacy XML/HTML residues from old test seeds.
+    if invoice:
+        for f in ('customer_name', 'customer_tax_office', 'customer_address'):
+            if f in invoice and isinstance(invoice[f], str):
+                invoice[f] = sanitize_plaintext(invoice[f], max_length=500)
+
     return invoice
 
 
@@ -831,7 +875,10 @@ async def get_accounting_dashboard(
         'date': {'$gte': month_start, '$lte': month_end}
     }, {'_id': 0}).to_list(1000)
 
-    total_income = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'paid')
+    collected_income = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'paid')
+    accrued_revenue = sum(inv.get('total', 0) for inv in invoices)
+    pending_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') in ('pending', 'partial'))
+    overdue_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'overdue')
     total_expenses = sum(exp.get('amount', 0) for exp in expenses)
     pending_invoices = len([inv for inv in invoices if inv.get('status') == 'pending'])
     overdue_invoices = len([inv for inv in invoices if inv.get('status') == 'overdue'])
@@ -840,13 +887,25 @@ async def get_accounting_dashboard(
     bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     total_bank_balance = sum(acc['balance'] for acc in bank_accounts)
 
+    # Tenant currency for display.
+    from core.tenant_currency import get_tenant_currency
+    cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
+
     return {
-        'monthly_income': round(total_income, 2),
+        # Backward-compat field (paid invoices only).
+        'monthly_income': round(collected_income, 2),
+        # New explicit fields:
+        'collected_income': round(collected_income, 2),
+        'accrued_revenue': round(accrued_revenue, 2),
+        'pending_amount': round(pending_amount, 2),
+        'overdue_amount': round(overdue_amount, 2),
         'monthly_expenses': round(total_expenses, 2),
-        'net_income': round(total_income - total_expenses, 2),
+        'net_income': round(collected_income - total_expenses, 2),
         'pending_invoices': pending_invoices,
         'overdue_invoices': overdue_invoices,
-        'total_bank_balance': round(total_bank_balance, 2)
+        'total_bank_balance': round(total_bank_balance, 2),
+        'currency': cur_code,
+        'currency_symbol': cur_symbol,
     }
 
 
@@ -1375,14 +1434,16 @@ async def send_efatura(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
-    # Update invoice status
-    await db.invoices.update_one(
-        {'id': invoice_id},
+    # Tenant-scoped update; prevents cross-tenant IDOR via guessed invoice_id.
+    result = await db.invoices.update_one(
+        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'efatura_status': 'sent',
             'efatura_sent_at': datetime.now(UTC).isoformat()
         }}
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail='Invoice not found')
     return {'message': 'E-Fatura sent successfully'}
 
 

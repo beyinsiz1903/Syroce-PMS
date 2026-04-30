@@ -1,21 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
-import InvoiceFormDialog from '@/components/invoice/InvoiceFormDialog';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatAmount } from '@/lib/currency';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  FileText, Plus, Building2, 
-  Wallet, Package, AlertCircle, Receipt, BarChart3 
+import {
+  FileText, Plus, Building2, Info,
+  Wallet, Package, AlertCircle, Receipt, BarChart3,
 } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const { amount: fmtMoney } = useCurrency();
   const [fatal, setFatal] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -28,44 +30,46 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(null);
 
+  const loadData = useCallback(async () => {
+    try {
+      const [invoicesRes, expensesRes, suppliersRes, bankRes, inventoryRes, dashRes] = await Promise.all([
+        axios.get('/accounting/invoices'),
+        axios.get('/accounting/expenses'),
+        axios.get('/accounting/suppliers'),
+        axios.get('/accounting/bank-accounts'),
+        axios.get('/accounting/inventory'),
+        axios.get('/accounting/dashboard'),
+      ]);
+      setInvoices(invoicesRes.data || []);
+      setExpenses(expensesRes.data || []);
+      setSuppliers(suppliersRes.data || []);
+      setBankAccounts(bankRes.data || []);
+      setInventory(inventoryRes.data?.items || []);
+      setDashboard(dashRes.data || null);
+    } catch (error) {
+      console.error('InvoiceModule loadData error:', error);
+      setFatal(error?.message || 'Failed to load accounting data');
+      toast.error(t('common.loadFailed') || 'Veri yüklenemedi');
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     let mounted = true;
-    const loadData = async () => {
-      try {
-        const [invoicesRes, expensesRes, suppliersRes, bankRes, inventoryRes, dashRes] = await Promise.all([
-          axios.get('/accounting/invoices'),
-          axios.get('/accounting/expenses'),
-          axios.get('/accounting/suppliers'),
-          axios.get('/accounting/bank-accounts'),
-          axios.get('/accounting/inventory'),
-          axios.get('/accounting/dashboard')
-        ]);
-        if (!mounted) return;
-        setInvoices(invoicesRes.data || []);
-        setExpenses(expensesRes.data || []);
-        setSuppliers(suppliersRes.data || []);
-        setBankAccounts(bankRes.data || []);
-        setInventory(inventoryRes.data?.items || []);
-        setDashboard(dashRes.data || null);
-      } catch (error) {
-        if (!mounted) return;
-        console.error('InvoiceModule loadData error:', error);
-        setFatal(error?.message || 'Failed to load accounting data');
-        toast.error('Failed to load accounting data');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    loadData();
+    (async () => {
+      await loadData();
+      if (!mounted) return;
+    })();
     return () => { mounted = false; };
-  }, []);
+  }, [loadData]);
 
   const loadCashFlow = async () => {
     try {
       const response = await axios.get('/accounting/cash-flow');
       setCashFlow(response.data);
     } catch (error) {
-      toast.error('Failed to load cash flow');
+      toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
   };
 
@@ -77,27 +81,34 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
       const [plRes, vatRes, bsRes] = await Promise.all([
         axios.get(`/accounting/reports/profit-loss?start_date=${monthStart}&end_date=${monthEnd}`),
         axios.get(`/accounting/reports/vat-report?start_date=${monthStart}&end_date=${monthEnd}`),
-        axios.get('/accounting/reports/balance-sheet')
+        axios.get('/accounting/reports/balance-sheet'),
       ]);
       setReports({ profitLoss: plRes.data, vat: vatRes.data, balanceSheet: bsRes.data });
     } catch (error) {
-      toast.error('Failed to load reports');
+      toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
   };
 
   const updateInvoiceStatus = async (invoiceId, newStatus) => {
+    const previous = invoices;
+    setInvoices(prev => prev.map(inv => (inv.id === invoiceId ? { ...inv, status: newStatus } : inv)));
     try {
       await axios.put(`/accounting/invoices/${invoiceId}`, { status: newStatus });
-      toast.success('Invoice status updated');
+      toast.success(t('messages.success.saved') || 'Kaydedildi');
+      try {
+        const dashRes = await axios.get('/accounting/dashboard');
+        setDashboard(dashRes.data || null);
+      } catch { /* non-fatal */ }
     } catch (error) {
-      toast.error('Update failed');
+      setInvoices(previous);
+      toast.error(t('messages.error.saveFailed') || 'Güncellenemedi');
     }
   };
 
   if (!user || !tenant) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
-        <div className="p-6 text-sm text-slate-600">{t("common.loading")}</div>
+        <div className="p-6 text-sm text-slate-600">{t('common.loading')}</div>
       </Layout>
     );
   }
@@ -107,7 +118,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   if (!_isAllowed) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
-        <div className="p-6 text-sm text-slate-600">You do not have access to this module.</div>
+        <div className="p-6 text-sm text-slate-600">{t('common.noAccess') || 'Bu modüle erişim izniniz yok.'}</div>
       </Layout>
     );
   }
@@ -115,7 +126,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
-        <div className="p-6 text-center">{t("common.loading")}</div>
+        <div className="p-6 text-center">{t('common.loading')}</div>
       </Layout>
     );
   }
@@ -124,12 +135,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
         <div className="p-6 space-y-2">
-          <div className="text-sm font-medium text-red-600">Error loading invoice module</div>
+          <div className="text-sm font-medium text-red-600">{t('common.error') || 'Hata'}</div>
           <pre className="text-xs bg-slate-950/80 text-slate-200 p-3 rounded-md overflow-auto">{String(fatal)}</pre>
         </div>
       </Layout>
     );
   }
+
+  const money = (v) => fmtMoney(v || 0, { decimals: 2 });
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
@@ -142,28 +155,33 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         {dashboard && (
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.monthlyIncome')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-green-600">${dashboard.monthly_income}</div></CardContent>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.collected')}</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold text-green-600">{money(dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.accrued')}</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold text-blue-600">{money(dashboard.accrued_revenue ?? 0)}</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.pendingAmount')}</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold text-yellow-600">{money(dashboard.pending_amount ?? 0)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.monthlyExpenses')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-red-600">${dashboard.monthly_expenses}</div></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.netIncome')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-blue-600">${dashboard.net_income}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-red-600">{money(dashboard.monthly_expenses)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.bankBalance')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold">${dashboard.total_bank_balance}</div></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.pending')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-yellow-600">{dashboard.pending_invoices}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold">{money(dashboard.total_bank_balance)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.overdue')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-red-600">{dashboard.overdue_invoices}</div></CardContent>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{dashboard.overdue_invoices ?? 0}</div>
+                {(dashboard.overdue_amount ?? 0) > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">{money(dashboard.overdue_amount)}</div>
+                )}
+              </CardContent>
             </Card>
           </div>
         )}
@@ -173,21 +191,25 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           if (v === 'reports') loadReports();
         }}>
           <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />Invoices</TabsTrigger>
-            <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />Expenses</TabsTrigger>
-            <TabsTrigger value="suppliers" data-testid="tab-suppliers"><Building2 className="w-4 h-4 mr-2" />Suppliers</TabsTrigger>
-            <TabsTrigger value="banks" data-testid="tab-banks"><Wallet className="w-4 h-4 mr-2" />Banks</TabsTrigger>
-            <TabsTrigger value="inventory" data-testid="tab-inventory"><Package className="w-4 h-4 mr-2" />Inventory</TabsTrigger>
-            <TabsTrigger value="reports" data-testid="tab-reports"><BarChart3 className="w-4 h-4 mr-2" />Reports</TabsTrigger>
+            <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />{t('invoice.tabs.invoices')}</TabsTrigger>
+            <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />{t('invoice.tabs.expenses')}</TabsTrigger>
+            <TabsTrigger value="suppliers" data-testid="tab-suppliers"><Building2 className="w-4 h-4 mr-2" />{t('invoice.tabs.suppliers')}</TabsTrigger>
+            <TabsTrigger value="banks" data-testid="tab-banks"><Wallet className="w-4 h-4 mr-2" />{t('invoice.tabs.banks')}</TabsTrigger>
+            <TabsTrigger value="inventory" data-testid="tab-inventory"><Package className="w-4 h-4 mr-2" />{t('invoice.tabs.inventory')}</TabsTrigger>
+            <TabsTrigger value="reports" data-testid="tab-reports"><BarChart3 className="w-4 h-4 mr-2" />{t('invoice.tabs.reports')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="invoices" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Invoices ({invoices.length})</h2>
-              <Button onClick={() => setOpenDialog('invoice')} data-testid="create-invoice-btn">
-                <Plus className="w-4 h-4 mr-2" />New Invoice
-              </Button>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <div className="font-medium text-blue-900">{t('invoice.info.noEInvoiceTitle')}</div>
+                <div className="text-blue-800 mt-1">{t('invoice.info.noEInvoiceBody')}</div>
+              </div>
             </div>
+
+            <h2 className="text-2xl font-semibold">{t('invoice.headers.invoices', { count: invoices.length })}</h2>
+
             <div className="space-y-4">
               {invoices.map((invoice) => (
                 <Card key={invoice.id} data-testid={`invoice-card-${invoice.invoice_number}`}>
@@ -195,24 +217,26 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-bold text-lg">{invoice.invoice_number}</div>
-                        <div className="text-sm text-gray-600">{invoice.customer_name}</div>
-                        {invoice.customer_tax_number && <div className="text-xs text-gray-500">Tax No: {invoice.customer_tax_number}</div>}
+                        <div className="text-sm text-gray-600">{invoice.customer_name || '-'}</div>
+                        {invoice.customer_tax_number && (
+                          <div className="text-xs text-gray-500">{t('invoice.labels.taxNo')}: {invoice.customer_tax_number}</div>
+                        )}
                         <div className="text-sm text-gray-500 mt-1">
-                          Issue: {new Date(invoice.issue_date).toLocaleDateString()} | Due: {new Date(invoice.due_date).toLocaleDateString()}
+                          {t('invoice.labels.issue')}: {new Date(invoice.issue_date).toLocaleDateString()} | {t('invoice.labels.due')}: {new Date(invoice.due_date).toLocaleDateString()}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 capitalize">Type: {invoice.invoice_type}</div>
+                        <div className="text-xs text-gray-400 mt-1 capitalize">{t('invoice.labels.type')}: {invoice.invoice_type}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold text-blue-600">${invoice.total.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">VAT: ${invoice.total_vat.toFixed(2)}</div>
+                        <div className="text-2xl font-bold text-blue-600">{money(invoice.total)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(invoice.total_vat)}</div>
                         <div className="mt-2">
                           <Select value={invoice.status} onValueChange={(v) => updateInvoiceStatus(invoice.id, v)}>
                             <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="paid">Paid</SelectItem>
-                              <SelectItem value="partial">Partial</SelectItem>
-                              <SelectItem value="overdue">Overdue</SelectItem>
+                              <SelectItem value="pending">{t('invoice.pending')}</SelectItem>
+                              <SelectItem value="paid">{t('invoice.paid')}</SelectItem>
+                              <SelectItem value="partial">{t('invoice.partial')}</SelectItem>
+                              <SelectItem value="overdue">{t('invoice.overdue')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -226,9 +250,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
           <TabsContent value="expenses" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Expenses ({expenses.length})</h2>
+              <h2 className="text-2xl font-semibold">{t('invoice.headers.expenses', { count: expenses.length })}</h2>
               <Button onClick={() => setOpenDialog('expense')} data-testid="create-expense-btn">
-                <Plus className="w-4 h-4 mr-2" />Add Expense
+                <Plus className="w-4 h-4 mr-2" />{t('invoice.actions.addExpense')}
               </Button>
             </div>
             <div className="space-y-4">
@@ -239,14 +263,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       <div>
                         <div className="font-bold">{expense.expense_number}</div>
                         <div className="text-sm text-gray-600 capitalize">{expense.category} - {expense.description}</div>
-                        <div className="text-sm text-gray-500">Date: {new Date(expense.date).toLocaleDateString()}</div>
-                        {expense.payment_method && <div className="text-xs text-gray-400 capitalize mt-1">Payment: {expense.payment_method}</div>}
+                        <div className="text-sm text-gray-500">{t('invoice.labels.date')}: {new Date(expense.date).toLocaleDateString()}</div>
+                        {expense.payment_method && <div className="text-xs text-gray-400 capitalize mt-1">{t('invoice.labels.payment')}: {expense.payment_method}</div>}
                       </div>
                       <div className="text-right">
-                        <div className="text-xl font-bold text-red-600">${expense.total_amount.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">VAT: ${expense.vat_amount.toFixed(2)}</div>
+                        <div className="text-xl font-bold text-red-600">{money(expense.total_amount)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(expense.vat_amount)}</div>
                         <span className={`mt-2 inline-block px-2 py-1 rounded text-xs ${expense.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {expense.payment_status}
+                          {expense.payment_status === 'paid' ? t('invoice.paid') : t('invoice.pending')}
                         </span>
                       </div>
                     </div>
@@ -258,18 +282,18 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
           <TabsContent value="suppliers" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Suppliers ({suppliers.length})</h2>
-              <Button onClick={() => setOpenDialog('supplier')}><Plus className="w-4 h-4 mr-2" />Add Supplier</Button>
+              <h2 className="text-2xl font-semibold">{t('invoice.headers.suppliers', { count: suppliers.length })}</h2>
+              <Button onClick={() => setOpenDialog('supplier')}><Plus className="w-4 h-4 mr-2" />{t('invoice.actions.addSupplier')}</Button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {suppliers.map((supplier) => (
                 <Card key={supplier.id}>
                   <CardHeader><CardTitle className="text-lg">{supplier.name}</CardTitle></CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    {supplier.tax_number && <div className="flex justify-between"><span className="text-gray-600">Tax No:</span><span className="font-medium">{supplier.tax_number}</span></div>}
-                    {supplier.email && <div className="flex justify-between"><span className="text-gray-600">Email:</span><span className="font-medium">{supplier.email}</span></div>}
-                    {supplier.phone && <div className="flex justify-between"><span className="text-gray-600">Phone:</span><span className="font-medium">{supplier.phone}</span></div>}
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">Balance:</span><span className="font-bold text-red-600">${supplier.account_balance.toFixed(2)}</span></div>
+                    {supplier.tax_number && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.taxNo')}:</span><span className="font-medium">{supplier.tax_number}</span></div>}
+                    {supplier.email && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.email')}:</span><span className="font-medium">{supplier.email}</span></div>}
+                    {supplier.phone && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.phone')}:</span><span className="font-medium">{supplier.phone}</span></div>}
+                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.balance')}:</span><span className="font-bold text-red-600">{money(supplier.account_balance)}</span></div>
                   </CardContent>
                 </Card>
               ))}
@@ -278,31 +302,37 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
           <TabsContent value="banks" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Bank Accounts ({bankAccounts.length})</h2>
-              <Button onClick={() => setOpenDialog('bank')}><Plus className="w-4 h-4 mr-2" />Add Account</Button>
+              <h2 className="text-2xl font-semibold">{t('invoice.headers.banks', { count: bankAccounts.length })}</h2>
+              <Button onClick={() => setOpenDialog('bank')}><Plus className="w-4 h-4 mr-2" />{t('invoice.actions.addAccount')}</Button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {bankAccounts.map((account) => (
-                <Card key={account.id}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{account.name}</CardTitle>
-                    <div className="text-sm text-gray-600">{account.bank_name}</div>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-gray-600">Account No:</span><span className="font-medium">{account.account_number}</span></div>
-                    {account.iban && <div className="flex justify-between"><span className="text-gray-600">IBAN:</span><span className="font-medium text-xs">{account.iban}</span></div>}
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">Balance:</span><span className="text-xl font-bold text-green-600">${account.balance.toFixed(2)}</span></div>
-                    <div className="text-xs text-gray-500">{account.currency}</div>
-                  </CardContent>
-                </Card>
-              ))}
+              {bankAccounts.map((account) => {
+                const code = (account.currency || 'TRY').toUpperCase();
+                return (
+                  <Card key={account.id}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{account.name}</CardTitle>
+                      <div className="text-sm text-gray-600">{account.bank_name}</div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.accountNo')}:</span><span className="font-medium">{account.account_number}</span></div>
+                      {account.iban && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.iban')}:</span><span className="font-medium text-xs">{account.iban}</span></div>}
+                      <div className="flex justify-between pt-2 border-t">
+                        <span className="text-gray-600">{t('invoice.labels.balance')}:</span>
+                        <span className="text-xl font-bold text-green-600">{formatAmount(account.balance || 0, code, { decimals: 2 })}</span>
+                      </div>
+                      <div className="text-xs text-gray-500">{code}</div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </TabsContent>
 
           <TabsContent value="inventory" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">Inventory ({inventory.length})</h2>
-              <Button onClick={() => setOpenDialog('inventory')}><Plus className="w-4 h-4 mr-2" />Add Item</Button>
+              <h2 className="text-2xl font-semibold">{t('invoice.headers.inventory', { count: inventory.length })}</h2>
+              <Button onClick={() => setOpenDialog('inventory')}><Plus className="w-4 h-4 mr-2" />{t('invoice.actions.addItem')}</Button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {inventory.map((item) => (
@@ -317,11 +347,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
-                    {item.sku && <div className="flex justify-between"><span className="text-gray-600">SKU:</span><span className="font-medium">{item.sku}</span></div>}
-                    <div className="flex justify-between"><span className="text-gray-600">Qty:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-600">Unit Price:</span><span className="font-medium">${item.unit_cost}</span></div>
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">Total Value:</span><span className="font-bold text-blue-600">${(item.quantity * item.unit_cost).toFixed(2)}</span></div>
-                    {item.quantity <= item.reorder_level && <div className="text-xs text-orange-600 font-medium">Low stock - Reorder needed</div>}
+                    {item.sku && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.sku')}:</span><span className="font-medium">{item.sku}</span></div>}
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost)}</span></div>
+                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0))}</span></div>
+                    {item.quantity <= item.reorder_level && <div className="text-xs text-orange-600 font-medium">{t('invoice.labels.lowStock')}</div>}
                   </CardContent>
                 </Card>
               ))}
@@ -329,33 +359,33 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-6">
-            <h2 className="text-2xl font-bold">Financial Reports</h2>
+            <h2 className="text-2xl font-bold">{t('invoice.reports.title')}</h2>
 
             {reports.profitLoss && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Profit & Loss Statement</CardTitle>
-                  <div className="text-sm text-gray-500">This Month</div>
+                  <CardTitle>{t('invoice.reports.profitLoss')}</CardTitle>
+                  <div className="text-sm text-gray-500">{t('invoice.reports.thisMonth')}</div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
-                      <div><div className="text-sm text-gray-600">Total Revenue</div><div className="text-3xl font-bold text-green-600">${reports.profitLoss.total_revenue}</div></div>
-                      <div><div className="text-sm text-gray-600">Total Expenses</div><div className="text-3xl font-bold text-red-600">${reports.profitLoss.total_expenses}</div></div>
-                      <div><div className="text-sm text-gray-600">Gross Profit</div><div className="text-3xl font-bold text-blue-600">${reports.profitLoss.gross_profit}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{money(reports.profitLoss.total_revenue)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{money(reports.profitLoss.total_expenses)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{money(reports.profitLoss.gross_profit)}</div></div>
                     </div>
                     <div className="pt-4 border-t">
-                      <div className="text-sm font-medium mb-2">Profit Margin</div>
+                      <div className="text-sm font-medium mb-2">{t('invoice.reports.profitMargin')}</div>
                       <div className="text-2xl font-bold">{reports.profitLoss.profit_margin}%</div>
                     </div>
                     {reports.profitLoss.expense_breakdown && Object.keys(reports.profitLoss.expense_breakdown).length > 0 && (
                       <div className="pt-4 border-t">
-                        <div className="text-sm font-medium mb-3">Expense Breakdown</div>
+                        <div className="text-sm font-medium mb-3">{t('invoice.reports.expenseBreakdown')}</div>
                         <div className="space-y-2">
-                          {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amount]) => (
+                          {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between text-sm">
                               <span className="capitalize text-gray-600">{cat.replace('_', ' ')}:</span>
-                              <span className="font-medium">${amount.toFixed(2)}</span>
+                              <span className="font-medium">{money(amt)}</span>
                             </div>
                           ))}
                         </div>
@@ -369,14 +399,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             {reports.vat && (
               <Card>
                 <CardHeader>
-                  <CardTitle>VAT Report</CardTitle>
-                  <div className="text-sm text-gray-500">This Month</div>
+                  <CardTitle>{t('invoice.reports.vat')}</CardTitle>
+                  <div className="text-sm text-gray-500">{t('invoice.reports.thisMonth')}</div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><div className="text-sm text-gray-600">Sales VAT (Collected)</div><div className="text-2xl font-bold text-green-600">${reports.vat.sales_vat}</div></div>
-                    <div><div className="text-sm text-gray-600">Purchase VAT (Paid)</div><div className="text-2xl font-bold text-blue-600">${reports.vat.purchase_vat}</div></div>
-                    <div><div className="text-sm text-gray-600">VAT Payable</div><div className="text-2xl font-bold text-red-600">${reports.vat.vat_payable}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{money(reports.vat.sales_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{money(reports.vat.purchase_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{money(reports.vat.vat_payable)}</div></div>
                   </div>
                 </CardContent>
               </Card>
@@ -384,29 +414,29 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
             {reports.balanceSheet && (
               <Card>
-                <CardHeader><CardTitle>Balance Sheet</CardTitle></CardHeader>
+                <CardHeader><CardTitle>{t('invoice.reports.balanceSheet')}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                      <div className="font-semibold mb-3">Assets</div>
+                      <div className="font-semibold mb-3">{t('invoice.reports.assets')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">Cash:</span><span className="font-medium">${reports.balanceSheet.assets.cash}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">Inventory:</span><span className="font-medium">${reports.balanceSheet.assets.inventory}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">Receivables:</span><span className="font-medium">${reports.balanceSheet.assets.receivables}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>Total Assets:</span><span className="text-blue-600">${reports.balanceSheet.assets.total}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.cash')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.cash)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.inventory')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.inventory)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.receivables')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.receivables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalAssets')}:</span><span className="text-blue-600">{money(reports.balanceSheet.assets.total)}</span></div>
                       </div>
                     </div>
                     <div>
-                      <div className="font-semibold mb-3">Liabilities</div>
+                      <div className="font-semibold mb-3">{t('invoice.reports.liabilities')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">Payables:</span><span className="font-medium">${reports.balanceSheet.liabilities.payables}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>Total Liabilities:</span><span className="text-red-600">${reports.balanceSheet.liabilities.total}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.payables')}:</span><span className="font-medium">{money(reports.balanceSheet.liabilities.payables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalLiabilities')}:</span><span className="text-red-600">{money(reports.balanceSheet.liabilities.total)}</span></div>
                       </div>
                     </div>
                     <div>
-                      <div className="font-semibold mb-3">Equity</div>
+                      <div className="font-semibold mb-3">{t('invoice.reports.equity')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>Total Equity:</span><span className="text-green-600">${reports.balanceSheet.equity.total}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600">{money(reports.balanceSheet.equity.total)}</span></div>
                       </div>
                     </div>
                   </div>
@@ -416,11 +446,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
 
-        <InvoiceFormDialog open={openDialog === 'invoice'} onClose={() => setOpenDialog(null)} />
-        <ExpenseDialog open={openDialog === 'expense'} onClose={() => setOpenDialog(null)} suppliers={suppliers} />
-        <SupplierDialog open={openDialog === 'supplier'} onClose={() => setOpenDialog(null)} />
-        <BankAccountDialog open={openDialog === 'bank'} onClose={() => setOpenDialog(null)} />
-        <InventoryDialog open={openDialog === 'inventory'} onClose={() => setOpenDialog(null)} />
+        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadData(); }} suppliers={suppliers} />
+        <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadData(); }} />
+        <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadData(); }} />
+        <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadData(); }} />
       </div>
     </Layout>
   );

@@ -35,6 +35,29 @@ def sanitize_string(value: str, max_length: int = 10000) -> str:
     return value.strip()
 
 
+# Strip-only sanitizer for fields that will be embedded in XML/UBL documents
+# (e.g. e-Fatura customer_name). HTML escape is not enough — leftover </Name>
+# or <Party> fragments still corrupt UBL signature scope.
+_TAG_STRIP_RE = re.compile(r'<[^>]*>')
+_CTRL_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def sanitize_plaintext(value: Any, max_length: int = 500) -> Any:
+    """
+    Strip ALL XML/HTML tags and control chars; keep readable plain text.
+    Safe for invoice customer fields, supplier names, addresses — anything
+    that may end up in a UBL XML envelope or a PDF / on-screen label.
+    """
+    if value is None:
+        return value
+    if not isinstance(value, str):
+        return value
+    cleaned = _TAG_STRIP_RE.sub('', value)
+    cleaned = _CTRL_RE.sub('', cleaned)
+    cleaned = cleaned.strip()
+    return cleaned[:max_length]
+
+
 def check_nosql_injection(value: Any) -> bool:
     """Check if value contains NoSQL injection patterns. Returns True if suspicious."""
     if isinstance(value, str):
