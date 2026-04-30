@@ -75,6 +75,26 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const prLabel = (code) => t(`procurement.prStatuses.${code || 'draft'}`);
   const poLabel = (code) => t(`procurement.poStatuses.${code || 'draft'}`);
 
+  // ── PR yetkilendirmesi ───────────────────────────────────
+  // Backend zaten 403 döner (require_finance), frontend sadece UI'yı
+  // sadeleştirir: talebi açan kişiye onay/red butonlarını göstermez,
+  // yalnızca yetkili roller görsün. "Genel müdür" admin/owner, "satınalma"
+  // şu an finance rolüyle temsil ediliyor (ayrı procurement rolü yok).
+  const APPROVER_ROLES = useMemo(
+    () => new Set(['super_admin', 'admin', 'owner', 'finance']), []);
+  const canApprovePR = useMemo(() => {
+    const roles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])]
+      .filter(Boolean);
+    return roles.some((r) => APPROVER_ROLES.has(r));
+  }, [user, APPROVER_ROLES]);
+  // Kendi açtığı talep mi? created_by backend tarafından atanır,
+  // requester serbest text (boş bırakılabilir) → öncelikle created_by'a bak.
+  const isOwnPR = (pr) => {
+    const me = user?.username || user?.name;
+    if (!me) return false;
+    return pr.created_by === me || pr.requester === me;
+  };
+
   // Tab-aware lazy loading. Only the data needed for the initial view is
   // fetched on mount; POs and inventory load on demand. `refresh()` (used by
   // every CRUD success path below) keeps the original "reload everything"
@@ -470,17 +490,22 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                             <Button size="sm" variant="ghost"
                               onClick={() => changePRStatus(pr.id, 'submitted')}>{t('procurement.prList.actions.send')}</Button>}
                           {pr.status === 'submitted' && <>
-                            <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'approved')}>{t('procurement.prList.actions.approve')}</Button>
-                            <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'rejected')}>{t('procurement.prList.actions.reject')}</Button>
-                            <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>
+                            {canApprovePR && !isOwnPR(pr) && <>
+                              <Button size="sm" variant="ghost"
+                                onClick={() => changePRStatus(pr.id, 'approved')}>{t('procurement.prList.actions.approve')}</Button>
+                              <Button size="sm" variant="ghost"
+                                onClick={() => changePRStatus(pr.id, 'rejected')}>{t('procurement.prList.actions.reject')}</Button>
+                            </>}
+                            {(canApprovePR || isOwnPR(pr)) &&
+                              <Button size="sm" variant="ghost"
+                                onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>}
                           </>}
                           {pr.status === 'approved' && <>
-                            <Button size="sm" onClick={() => convertPRtoPO(pr)}>{t('procurement.prList.actions.convertToPo')}</Button>
-                            <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>
+                            {canApprovePR &&
+                              <Button size="sm" onClick={() => convertPRtoPO(pr)}>{t('procurement.prList.actions.convertToPo')}</Button>}
+                            {canApprovePR &&
+                              <Button size="sm" variant="ghost"
+                                onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>}
                           </>}
                           <Button size="sm" variant="ghost" title={t('procurement.prList.actions.history')}
                             onClick={() => setHistory({ type: 'proc_pr', id: pr.id, title: pr.pr_no })}>
