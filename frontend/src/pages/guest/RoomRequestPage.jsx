@@ -10,12 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Sparkles, Wrench, Wifi, Tv, Thermometer, Utensils, Wine, Beer, Shirt,
   Car, Bell, Heart, Package, MessageSquare, CheckCircle2, Loader2, Hotel,
+  AlertTriangle,
 } from "lucide-react";
 
 const ICONS = {
   sparkles: Sparkles, wrench: Wrench, wifi: Wifi, tv: Tv, thermometer: Thermometer,
   utensils: Utensils, wine: Wine, beer: Beer, shirt: Shirt, car: Car, bell: Bell,
-  heart: Heart, package: Package, message: MessageSquare,
+  heart: Heart, package: Package, message: MessageSquare, alert: AlertTriangle,
 };
 
 const LANGS = [

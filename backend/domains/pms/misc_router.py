@@ -221,6 +221,109 @@ async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: 
         logger.warning("[complaints] guest resolution email failed: %s", exc)
 
 
+# Tazminat tipi → folio ledger charge_code haritası.
+# Negatif "adjustment" entry'si yazıldığı için misafir lehine kredit/indirim olur.
+_COMPENSATION_CODE_MAP = {
+    "discount": "MISC",
+    "free_night": "ROOM",
+    "fnb_credit": "FB",
+    "spa_voucher": "SPA",
+    "room_upgrade": "ROOM",
+    "other": "MISC",
+    "none": "MISC",
+}
+
+
+async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
+    """
+    Şikayet çözümünde verilen tazminatı misafirin aktif folyosuna kredit
+    olarak işler. Best-effort — folio bulunamazsa sessizce skip eder.
+
+    Returns: {folio_adjusted, folio_id?, entry_id?, new_balance?, reason?}
+    """
+    booking_id = complaint.get("booking_id")
+    raw_amount = complaint.get("compensation_amount") or 0
+    try:
+        amount = float(raw_amount)
+    except (TypeError, ValueError):
+        amount = 0.0
+    comp_type = (complaint.get("compensation_offered") or "").strip()
+
+    if not booking_id:
+        return {"folio_adjusted": False, "reason": "Rezervasyon bağlantısı yok"}
+    if amount <= 0:
+        return {"folio_adjusted": False, "reason": "Tazminat tutarı sıfır"}
+    if not comp_type or comp_type == "none":
+        return {"folio_adjusted": False, "reason": "Tazminat tipi seçilmedi"}
+
+    try:
+        folio = await db.folios.find_one(
+            {
+                "tenant_id": actor.tenant_id,
+                "booking_id": booking_id,
+                "status": "open",
+            },
+            {"_id": 0, "id": 1, "folio_number": 1, "balance": 1},
+        )
+    except Exception as exc:
+        logger.warning("[complaints] folio lookup failed: %s", exc)
+        return {"folio_adjusted": False, "reason": "Folyo sorgusu hata verdi"}
+
+    if not folio:
+        return {"folio_adjusted": False, "reason": "Açık folyo bulunamadı"}
+
+    folio_id = folio["id"]
+    charge_code = _COMPENSATION_CODE_MAP.get(comp_type, "MISC")
+    comp_label = COMPENSATION_LABELS.get(comp_type, comp_type)
+    short_id = (complaint.get("id") or "")[:8]
+    description = f"Şikayet tazminatı: {comp_label} (Şikayet #{short_id})"
+
+    try:
+        from core.folio_ledger_service import FolioLedgerService
+        svc = FolioLedgerService()
+        # Tenant-scope idempotency key: aynı şikayet 2 kez resolve edilirse
+        # ledger'da ikinci entry oluşmaz; cross-tenant çakışma riski yok.
+        idem_key = f"complaint-comp:{actor.tenant_id}:{complaint.get('id')}"
+        result = await svc.post_adjustment(
+            tenant_id=actor.tenant_id,
+            folio_id=folio_id,
+            booking_id=booking_id,
+            amount=-round(amount, 2),  # negatif → misafir lehine kredit
+            description=description,
+            charge_code=charge_code,
+            reference_id=complaint.get("id"),
+            idempotency_key=idem_key,
+            posted_by=actor.id,
+            metadata={
+                "source": "complaint_compensation",
+                "complaint_id": complaint.get("id"),
+                "compensation_type": comp_type,
+            },
+        )
+        new_balance = result["new_balance"]
+
+        # folios.balance snapshot'ını da senkron tut (raporlama için).
+        try:
+            await db.folios.update_one(
+                {"id": folio_id, "tenant_id": actor.tenant_id},
+                {"$set": {"balance": new_balance, "updated_at": _now_iso()}},
+            )
+        except Exception as exc:
+            logger.warning("[complaints] folio balance snapshot failed: %s", exc)
+
+        return {
+            "folio_adjusted": True,
+            "folio_id": folio_id,
+            "folio_number": folio.get("folio_number"),
+            "entry_id": result.get("entry_id"),
+            "amount_credited": round(amount, 2),
+            "new_balance": new_balance,
+        }
+    except Exception as exc:
+        logger.exception("[complaints] folio adjustment failed: %s", exc)
+        return {"folio_adjusted": False, "reason": f"Folyo işleme hatası: {exc}"}
+
+
 def _enrich_with_sla(complaint: dict) -> dict:
     """Add SLA fields (age_hours, sla_hours, is_overdue) for active complaints."""
     if complaint.get("status") in ("resolved",):
@@ -408,6 +511,7 @@ async def resolve_complaint(
         {"id": complaint_id, "tenant_id": current_user.tenant_id},
         {"$set": update}
     )
+    merged = {**existing, **update, "id": complaint_id}
     await _push_history(
         complaint_id, current_user.tenant_id,
         _history_entry(
@@ -417,8 +521,36 @@ async def resolve_complaint(
             amount=resolve_data.get("compensation_amount", 0),
         ),
     )
-    await _notify_guest_resolved({**existing, **update}, resolution_notes, current_user)
-    return {"success": True, "message": "Şikayet çözüldü"}
+
+    # Tazminatı misafirin folyosuna kredit olarak işle (best-effort)
+    folio_result = await _post_compensation_to_folio(merged, current_user)
+    if folio_result.get("folio_adjusted"):
+        await _push_history(
+            complaint_id, current_user.tenant_id,
+            _history_entry(
+                "folio_credited", current_user,
+                folio_id=folio_result.get("folio_id"),
+                folio_number=folio_result.get("folio_number"),
+                amount=folio_result.get("amount_credited"),
+                entry_id=folio_result.get("entry_id"),
+            ),
+        )
+    elif resolve_data.get("compensation_offered") and resolve_data.get("compensation_amount", 0) > 0:
+        # Tazminat seçilmiş ama folyoya işlenememiş — operasyonel iz bırak
+        await _push_history(
+            complaint_id, current_user.tenant_id,
+            _history_entry(
+                "folio_credit_failed", current_user,
+                reason=folio_result.get("reason"),
+            ),
+        )
+
+    await _notify_guest_resolved(merged, resolution_notes, current_user)
+    return {
+        "success": True,
+        "message": "Şikayet çözüldü",
+        "folio": folio_result,
+    }
 
 
 @router.post("/service/complaints/{complaint_id}/escalate")

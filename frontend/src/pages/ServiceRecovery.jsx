@@ -23,6 +23,7 @@ const CATEGORIES = [
   { value: 'fnb', label: 'F&B', color: 'bg-orange-100 text-orange-800' },
   { value: 'noise', label: 'Gürültü', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'maintenance', label: 'Bakım', color: 'bg-gray-100 text-gray-800' },
+  { value: 'service_recovery', label: 'Geri Bildirim', color: 'bg-pink-100 text-pink-800' },
 ];
 
 const SEVERITIES = [
@@ -246,8 +247,17 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         ...resolveData,
         compensation_offered: resolveData.compensation_offered === 'none' ? null : resolveData.compensation_offered,
       };
-      await axios.post(`/service/complaints/${selectedComplaint.id}/resolve`, payload);
+      const res = await axios.post(`/service/complaints/${selectedComplaint.id}/resolve`, payload);
       toast.success('Şikayet çözüldü, misafire bilgilendirme e-postası gönderildi');
+      const folio = res?.data?.folio;
+      if (folio?.folio_adjusted) {
+        toast.success(
+          `Misafirin folyosuna ${Number(folio.amount_credited).toLocaleString('tr-TR')} TL kredi işlendi (yeni bakiye: ${Number(folio.new_balance).toLocaleString('tr-TR')} TL)`,
+          { duration: 6000 }
+        );
+      } else if (folio?.reason && payload.compensation_offered && payload.compensation_amount > 0) {
+        toast(`Folyoya işlenmedi: ${folio.reason}`, { icon: 'i', duration: 5000 });
+      }
       setShowResolveDialog(false);
       setShowDetailDialog(false);
       setResolveData({ resolution_notes: '', compensation_offered: 'none', compensation_amount: 0 });
@@ -555,6 +565,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                           <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${statusBadge.color}`}>
                             {statusBadge.label}
                           </span>
+                          {complaint.source === 'guest_qr' && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-100 text-purple-700">
+                              Misafir QR
+                            </span>
+                          )}
                           <SlaBadge complaint={complaint} />
                         </div>
                         <p className="text-sm text-gray-600 line-clamp-1 mb-2">{complaint.description}</p>
@@ -718,6 +733,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   <span className={`px-2 py-1 rounded text-xs font-medium ${getBadge(CATEGORIES, selectedComplaint.category).color}`}>
                     {getBadge(CATEGORIES, selectedComplaint.category).label}
                   </span>
+                  {selectedComplaint.source === 'guest_qr' && (
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                      Misafir QR ile geldi
+                    </span>
+                  )}
                   <SlaBadge complaint={selectedComplaint} />
                 </div>
 

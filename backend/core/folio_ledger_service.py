@@ -191,6 +191,57 @@ class FolioLedgerService:
         result = await self._insert_entry(entry)
         return {"entry_id": result["id"], "new_balance": await self.compute_balance(tenant_id, folio_id)}
 
+    async def post_adjustment(
+        self,
+        tenant_id: str,
+        folio_id: str,
+        booking_id: str,
+        amount: float,
+        description: str,
+        charge_code: str = "MISC",
+        currency: str = "TRY",
+        reference_id: str | None = None,
+        idempotency_key: str | None = None,
+        posted_by: str = "system",
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        """
+        Append-only adjustment entry. Pozitif tutar bakiyeyi artırır,
+        negatif tutar misafir lehine kredit/indirim olarak düşer.
+        """
+        now = datetime.now(UTC).isoformat()
+        seq = await self._next_sequence(tenant_id, folio_id)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "folio_id": folio_id,
+            "booking_id": booking_id,
+            "sequence_number": seq,
+            "entry_type": "adjustment",
+            "amount": round(amount, 2),
+            "currency": currency,
+            "description": description,
+            "charge_code": charge_code,
+            "tax_amount": 0.0,
+            "tax_breakdown": [],
+            "payment_method": None,
+            "reference_id": reference_id,
+            "is_voided": False,
+            "voided_by_entry_id": None,
+            "voided_at": None,
+            "voided_reason": None,
+            "correlation_id": str(uuid.uuid4()),
+            "idempotency_key": idempotency_key or str(uuid.uuid4()),
+            "posted_by": posted_by,
+            "posted_at": now,
+            "business_date": now[:10],
+            "night_audit_run_id": None,
+            "metadata": metadata or {},
+        }
+        result = await self._insert_entry(entry)
+        new_balance = await self.compute_balance(tenant_id, folio_id)
+        return {"entry_id": result["id"], "new_balance": new_balance}
+
     async def void_entry(
         self,
         tenant_id: str,

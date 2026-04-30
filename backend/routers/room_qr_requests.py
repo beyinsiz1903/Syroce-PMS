@@ -112,6 +112,7 @@ CATEGORY_CATALOG = [
     {"id": "transport",    "department": "transportation","icon": "car",       "default_priority": "normal"},
     {"id": "reception",    "department": "other",         "icon": "bell",      "default_priority": "normal"},
     {"id": "spa",          "department": "spa",           "icon": "heart",     "default_priority": "low"},
+    {"id": "complaint",    "department": "other",         "icon": "alert",     "default_priority": "high"},
     {"id": "other",        "department": "other",         "icon": "message",   "default_priority": "normal"},
 ]
 
@@ -135,6 +136,7 @@ CATEGORY_LABELS = {
     "transport":   {"tr": "Transfer / Ulaşım",   "en": "Transport",         "de": "Transport",          "ru": "Транспорт",         "ar": "نقل"},
     "reception":   {"tr": "Resepsiyon",          "en": "Reception",         "de": "Rezeption",          "ru": "Стойка",            "ar": "استقبال"},
     "spa":         {"tr": "SPA / Wellness",      "en": "SPA / Wellness",    "de": "SPA",                "ru": "СПА",               "ar": "سبا"},
+    "complaint":   {"tr": "Şikayet / Geri Bildirim","en": "Complaint / Feedback","de": "Beschwerde",      "ru": "Жалоба",            "ar": "شكوى"},
     "other":       {"tr": "Diğer",               "en": "Other",             "de": "Andere",             "ru": "Другое",            "ar": "أخرى"},
 }
 
@@ -300,6 +302,49 @@ async def public_submit_request(
         ],
     }
     await raw_db[COLL].insert_one(doc)
+
+    # Şikayet kategorisi → service_complaints koleksiyonuna mirror et.
+    # Bu sayede misafirden gelen şikayetler "Şikayet Yönetimi" sayfasında
+    # SLA, eskalasyon, tazminat ve audit history ile birlikte yönetilebilir.
+    if payload.category == "complaint":
+        try:
+            desc = payload.description.strip()
+            subject = desc[:80] + ("..." if len(desc) > 80 else "")
+            severity_map = {
+                "urgent": "critical", "high": "high",
+                "normal": "medium", "low": "low",
+            }
+            complaint_doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "source": "guest_qr",
+                "qr_request_id": doc["_id"],
+                "category": "service_recovery",
+                "severity": severity_map.get(payload.priority, "medium"),
+                "subject": subject,
+                "description": desc,
+                "guest_name": doc.get("guest_name"),
+                "guest_phone": doc.get("guest_phone"),
+                "room_id": room_id,
+                "room_number": doc.get("room_number"),
+                "booking_id": doc.get("booking_id"),
+                "assigned_department": "front_office",
+                "status": "open",
+                "created_by": None,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "history": [{
+                    "action": "created",
+                    "actor_id": None,
+                    "actor_name": doc.get("guest_name") or "Misafir",
+                    "at": now.isoformat(),
+                    "notes": "Misafir tarafından oda QR üzerinden iletildi",
+                }],
+            }
+            await raw_db["service_complaints"].insert_one(complaint_doc)
+            logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']}")
+        except Exception as exc:
+            logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
     # WebSocket yayını (opsiyonel — varsa)
     try:
