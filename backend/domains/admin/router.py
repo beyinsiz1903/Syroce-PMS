@@ -54,8 +54,8 @@ def _svc_enc():
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
     "basic": ["admin", "front_desk", "housekeeping"],
-    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit"],
-    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin"],
+    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "finance", "procurement"],
+    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
 }
 
 

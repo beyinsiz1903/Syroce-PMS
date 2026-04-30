@@ -15,6 +15,7 @@ class UserRole(str, Enum):
     HOUSEKEEPING = "housekeeping"  # Room status, tasks
     SALES = "sales"  # Corporate accounts, contracts
     FINANCE = "finance"  # Accounting, invoices, AR
+    PROCUREMENT = "procurement"  # Suppliers, purchase orders, goods receipt
     STAFF = "staff"  # Limited access
     GUEST = "guest"  # Guest portal
     AGENCY_ADMIN = "agency_admin"  # Agency admin - can manage agency
@@ -421,6 +422,10 @@ ROLE_PERMISSIONS = {
         Permission.VOID_CHARGE, Permission.CLOSE_FOLIO,
         Permission.VIEW_COMPANIES,
         Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS, Permission.EXPORT_DATA
+    ],
+    UserRole.PROCUREMENT: [
+        Permission.VIEW_COMPANIES, Permission.CREATE_COMPANY, Permission.EDIT_COMPANY,
+        Permission.VIEW_REPORTS, Permission.EXPORT_DATA,
     ],
     UserRole.STAFF: [
         Permission.VIEW_BOOKINGS,

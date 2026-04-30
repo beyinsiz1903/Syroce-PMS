@@ -13,6 +13,7 @@ export const ROLES_BY_TIER = {
     { value: "front_desk", label: "Resepsiyon", description: "Rezervasyon, check-in/out, misafir işlemleri" },
     { value: "housekeeping", label: "Kat Hizmetleri", description: "Oda durumları, temizlik görevleri" },
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, finansal raporlar" },
+    { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
   ],
   enterprise: [
     { value: "admin", label: "Yönetici", description: "Tam yetki - genel müdür" },
@@ -20,6 +21,7 @@ export const ROLES_BY_TIER = {
     { value: "front_desk", label: "Resepsiyon", description: "Rezervasyon, check-in/out" },
     { value: "housekeeping", label: "Kat Hizmetleri", description: "Oda durumları, temizlik" },
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, raporlar" },
+    { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
     { value: "sales", label: "Satış", description: "Kurumsal satış, grup rezervasyon" },
     { value: "revenue", label: "Revenue Manager", description: "Fiyatlandırma, gelir yönetimi" },
     { value: "maintenance", label: "Teknik", description: "Bakım, onarım işleri" },

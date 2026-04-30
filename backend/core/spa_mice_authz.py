@@ -25,8 +25,18 @@ SPA_OPS_ROLES = CATALOG_ROLES | {UserRole.FRONT_DESK, UserRole.STAFF}
 MICE_OPS_ROLES = CATALOG_ROLES | {UserRole.SALES}
 
 # Finance-impacting state changes (folio postings on completion etc.) —
-# requires explicit cashier-grade authority.
-FINANCE_ROLES = CATALOG_ROLES | {UserRole.FRONT_DESK, UserRole.FINANCE}
+# requires explicit cashier-grade authority. Procurement is intentionally
+# NOT here: a satınalma user must not post spa/mice folios.
+FINANCE_ROLES = CATALOG_ROLES | {
+    UserRole.FRONT_DESK, UserRole.FINANCE,
+}
+
+# Procurement-pipeline state changes (PR/PO approve/reject, GRN, supplier
+# CRUD). Finance can also approve to keep small hotels operational where
+# muhasebe doubles as satınalma.
+PROCUREMENT_ROLES = CATALOG_ROLES | {
+    UserRole.FINANCE, UserRole.PROCUREMENT,
+}
 
 
 def _user_role(user: User) -> UserRole | None:
@@ -70,3 +80,7 @@ def require_mice_ops(user: User) -> None:
 
 def require_finance(user: User) -> None:
     require_roles(user, FINANCE_ROLES)
+
+
+def require_procurement(user: User) -> None:
+    require_roles(user, PROCUREMENT_ROLES)

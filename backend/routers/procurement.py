@@ -26,7 +26,7 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
 )
 from core.security import get_current_user
-from core.spa_mice_authz import require_finance
+from core.spa_mice_authz import require_procurement
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v76 Bug DL
@@ -120,7 +120,7 @@ async def create_supplier(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     await _ensure_indexes()
     db = get_system_db()
     doc = body.model_dump()
@@ -176,7 +176,7 @@ async def update_supplier(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     db = get_system_db()
     before = await db.proc_suppliers.find_one(
         {"id": supplier_id, "tenant_id": current_user.tenant_id})
@@ -206,7 +206,7 @@ async def delete_supplier(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     db = get_system_db()
     in_use = await db.proc_purchase_orders.find_one(
         {"tenant_id": current_user.tenant_id, "supplier_id": supplier_id,
@@ -335,7 +335,7 @@ async def change_pr_status(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     db = get_system_db()
     before = await db.proc_purchase_requests.find_one(
         {"id": pr_id, "tenant_id": current_user.tenant_id})
@@ -414,7 +414,7 @@ async def create_purchase_order(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     await _ensure_indexes()
     db = get_system_db()
     sup = await db.proc_suppliers.find_one(
@@ -526,7 +526,7 @@ async def change_po_status(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     db = get_system_db()
     before = await db.proc_purchase_orders.find_one(
         {"id": po_id, "tenant_id": current_user.tenant_id})
@@ -672,7 +672,7 @@ async def create_grn(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    require_finance(current_user)
+    require_procurement(current_user)
     await _ensure_indexes()
     db = get_system_db()
     tenant_id = current_user.tenant_id

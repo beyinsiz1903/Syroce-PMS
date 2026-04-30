@@ -78,10 +78,10 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   // ── PR yetkilendirmesi ───────────────────────────────────
   // Backend zaten 403 döner (require_finance), frontend sadece UI'yı
   // sadeleştirir: talebi açan kişiye onay/red butonlarını göstermez,
-  // yalnızca yetkili roller görsün. "Genel müdür" admin/owner, "satınalma"
-  // şu an finance rolüyle temsil ediliyor (ayrı procurement rolü yok).
+  // yalnızca yetkili roller görsün. "Genel müdür" admin/owner,
+  // "Satınalma" procurement rolü, finance da fatura tarafı için yetkili.
   const APPROVER_ROLES = useMemo(
-    () => new Set(['super_admin', 'admin', 'owner', 'finance']), []);
+    () => new Set(['super_admin', 'admin', 'owner', 'finance', 'procurement']), []);
   const canApprovePR = useMemo(() => {
     const roles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])]
       .filter(Boolean);

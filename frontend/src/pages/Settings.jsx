@@ -47,6 +47,7 @@ const ROLE_COLORS = {
   front_desk: 'bg-yellow-100 text-yellow-800',
   housekeeping: 'bg-orange-100 text-orange-800',
   finance: 'bg-pink-100 text-pink-800',
+  procurement: 'bg-amber-100 text-amber-800',
   sales: 'bg-indigo-100 text-indigo-800',
   revenue: 'bg-teal-100 text-teal-800',
   maintenance: 'bg-gray-100 text-gray-800',
