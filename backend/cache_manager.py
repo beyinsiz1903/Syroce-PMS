@@ -107,6 +107,33 @@ class _InMemoryTTLStore:
     def ping(self):
         return True
 
+    def incr(self, key: str) -> int:
+        """Atomic-ish in-memory counter (INCR-like). Preserves existing TTL."""
+        with self._lock:
+            entry = self._data.get(key)
+            now = time.time()
+            if entry and entry[0] >= now:
+                expires_at, value = entry
+                try:
+                    new_val = int(value) + 1
+                except (TypeError, ValueError):
+                    new_val = 1
+            else:
+                # No entry or expired → start at 1 with default 24h TTL
+                new_val = 1
+                expires_at = now + 86400
+            self._data[key] = (expires_at, str(new_val))
+            return new_val
+
+    def expire(self, key: str, ttl: int) -> bool:
+        with self._lock:
+            entry = self._data.get(key)
+            if not entry:
+                return False
+            _, value = entry
+            self._data[key] = (time.time() + ttl, value)
+            return True
+
 
 def _json_serializer(obj):
     """Custom JSON serializer that handles Pydantic models, datetime, etc."""
@@ -208,6 +235,35 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Cache delete error for key {key}: {e}")
             return False
+
+    def incr_with_ttl(self, key: str, ttl: int) -> int:
+        """Atomic counter increment with TTL on first hit.
+        Returns the new counter value (>=1). Returns 0 on backend failure
+        — callers can treat 0 as 'rate-limit decision unavailable, fail open'.
+        Useful for distributed rate limiting and per-window quotas.
+        Redis path uses pipeline (INCR + EXPIRE NX) for true atomicity;
+        in-memory fallback approximates the same semantics."""
+        if not self.enabled:
+            return 0
+        try:
+            if self.backend == "redis":
+                pipe = self.client.pipeline()
+                pipe.incr(key)
+                # EXPIRE only sets TTL if no TTL exists yet (NX), so the
+                # window starts on the first hit and is not extended on
+                # subsequent calls — true sliding-block semantics.
+                pipe.expire(key, ttl, nx=True)
+                results = pipe.execute()
+                return int(results[0]) if results else 0
+            # In-memory: counter starts with a 24h TTL by default; if the
+            # caller's ttl is shorter we honor it on first hit.
+            new_val = self.client.incr(key)
+            if new_val == 1:
+                self.client.expire(key, ttl)
+            return new_val
+        except Exception as e:
+            logger.error(f"Cache incr_with_ttl error for key {key}: {e}")
+            return 0
 
     # Strict shape for tenant-scoped invalidation patterns:
     #   cache:<tenant_id>(:<segment>){1..8}

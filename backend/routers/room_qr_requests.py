@@ -16,16 +16,16 @@ QR token: HMAC-SHA256(tenant_id|room_id, JWT_SECRET) — DB'de ekstra state yok.
 """
 import hashlib
 import hmac
+import ipaddress
 import logging
 import os
-import time
 import uuid
-from collections import defaultdict, deque
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
 from core.security import JWT_SECRET, generate_qr_code, get_current_user
 
@@ -35,22 +35,95 @@ logger = logging.getLogger("room_qr_requests")
 # Üretim güvenliği için ikisi de yoksa fail-closed davranır.
 _QR_SECRET = os.environ.get("ROOM_QR_SECRET") or JWT_SECRET
 
-# Basit IP-bazlı rate limit (submit endpoint'i için)
+# IP-bazlı rate limit (Redis-backed → multi-instance dağıtık koruma)
 _RL_WINDOW_SEC = 600   # 10 dakika
 _RL_MAX_HITS = 20      # 10 dakikada 20 submit / IP+oda
-_rl_hits: dict = defaultdict(deque)
+
+# Per-room/day complaint mirror kotası (DoS / spam guard'ı için)
+# Aşıldığında room_qr_requests kaydı YİNE oluşur (talep iletilir) ama
+# service_complaints'a mirror yapılmaz — sahte misafir DoS'u şikayet
+# yönetimini boğamasın.
+_COMPLAINT_QUOTA_PER_ROOM_DAY = 10
+
+# Trusted proxy IP listesi: TRUSTED_PROXIES env var virgülle ayrılmış
+# IP veya CIDR (örn: "10.0.0.0/8,127.0.0.1"). request.client.host bu
+# listede DEĞİLSE x-forwarded-for header'ına güvenilmez (spoofing'i
+# engellemek için). Boşsa varsayılan loopback + private RFC1918.
+_DEFAULT_TRUSTED_CIDRS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+
+def _parse_trusted_proxies() -> list:
+    raw = os.environ.get("TRUSTED_PROXIES", _DEFAULT_TRUSTED_CIDRS)
+    networks = []
+    for token in (raw or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            logger.warning("[room_qr] invalid TRUSTED_PROXIES entry: %r", token)
+    return networks
+
+
+_TRUSTED_PROXIES = _parse_trusted_proxies()
+
+
+def _is_trusted_proxy(ip_str: str) -> bool:
+    if not ip_str or not _TRUSTED_PROXIES:
+        return False
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    return any(ip in net for net in _TRUSTED_PROXIES)
+
+
+def _client_ip(request: Request) -> str:
+    """Misafir IP'sini döndürür. x-forwarded-for'a SADECE direct connection
+    güvenilir bir proxy'den geliyorsa güvenir; aksi halde header spoof
+    edilebilir. Bu fonksiyon hem rate-limit hem audit için kullanılır."""
+    direct_ip = request.client.host if request.client else ""
+    if _is_trusted_proxy(direct_ip):
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            # En soldaki IP gerçek client'tır (RFC 7239)
+            candidate = xff.split(",")[0].strip()
+            if candidate:
+                return candidate
+    return direct_ip or "unknown"
 
 
 def _rl_check(key: str) -> bool:
-    """True = izin, False = limit aşıldı."""
-    now = time.time()
-    dq = _rl_hits[key]
-    while dq and dq[0] < now - _RL_WINDOW_SEC:
-        dq.popleft()
-    if len(dq) >= _RL_MAX_HITS:
-        return False
-    dq.append(now)
-    return True
+    """True = izin, False = limit aşıldı.
+    Redis-backed counter: tüm backend instance'ları aynı limiti paylaşır.
+    Cache erişilemezse fail-open (loglanır, talep işlenir)."""
+    full_key = f"qr:rl:{key}"
+    count = _cache.incr_with_ttl(full_key, _RL_WINDOW_SEC)
+    if count == 0:
+        # Backend hata verdi (Redis down + in-memory yok) — fail-open
+        logger.warning("[room_qr] rate-limit counter unavailable, allowing %s", key)
+        return True
+    return count <= _RL_MAX_HITS
+
+
+def _complaint_quota_check(tenant_id: str, room_id: str) -> tuple:
+    """Şikayet mirror kotası: gün+oda başına max N.
+    Tuple: (allowed, count).
+    Fail-CLOSED: Redis erişilemezse mirror'a izin verilmez (DoS bypass'ı
+    önlemek için). Talep kaydı (room_qr_requests) yine oluşur — sadece
+    ServiceRecovery'ye otomatik düşmez."""
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    full_key = f"qr:complaint_quota:{tenant_id}:{room_id}:{today}"
+    # 24 saat TTL (gün sonu otomatik sıfırlanır)
+    count = _cache.incr_with_ttl(full_key, 86400)
+    if count == 0:
+        # Cache fail → fail-CLOSED (mirror'ı engelle, warn + denied flag)
+        logger.warning(
+            "[room_qr] complaint quota counter unavailable — mirror DENIED "
+            "(fail-closed) for %s/%s", tenant_id, room_id)
+        return False, 0
+    return count <= _COMPLAINT_QUOTA_PER_ROOM_DAY, count
 
 
 def _mask_name(name: str | None) -> str | None:
@@ -254,11 +327,9 @@ async def public_submit_request(
     if not _verify_token(tenant_id, room_id, t):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
-    # Rate limit: 10 dk içinde aynı oda+IP için 20 submit
-    client_ip = (
-        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (request.client.host if request.client else "unknown")
-    )
+    # Rate limit: 10 dk içinde aynı oda+IP için 20 submit (Redis-backed,
+    # çoklu instance arasında paylaşımlı). IP'yi trusted-proxy ile al.
+    client_ip = _client_ip(request)
     if not _rl_check(f"{room_id}:{client_ip}"):
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
 
@@ -306,45 +377,58 @@ async def public_submit_request(
     # Şikayet kategorisi → service_complaints koleksiyonuna mirror et.
     # Bu sayede misafirden gelen şikayetler "Şikayet Yönetimi" sayfasında
     # SLA, eskalasyon, tazminat ve audit history ile birlikte yönetilebilir.
+    # Per-room/day kotası: aynı odadan aynı günde max N mirror; aşılırsa
+    # talep kaydı korunur ama şikayet boğulmaz.
     if payload.category == "complaint":
-        try:
-            desc = payload.description.strip()
-            subject = desc[:80] + ("..." if len(desc) > 80 else "")
-            severity_map = {
-                "urgent": "critical", "high": "high",
-                "normal": "medium", "low": "low",
-            }
-            complaint_doc = {
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "source": "guest_qr",
-                "qr_request_id": doc["_id"],
-                "category": "service_recovery",
-                "severity": severity_map.get(payload.priority, "medium"),
-                "subject": subject,
-                "description": desc,
-                "guest_name": doc.get("guest_name"),
-                "guest_phone": doc.get("guest_phone"),
-                "room_id": room_id,
-                "room_number": doc.get("room_number"),
-                "booking_id": doc.get("booking_id"),
-                "assigned_department": "front_office",
-                "status": "open",
-                "created_by": None,
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat(),
-                "history": [{
-                    "action": "created",
-                    "actor_id": None,
-                    "actor_name": doc.get("guest_name") or "Misafir",
-                    "at": now.isoformat(),
-                    "notes": "Misafir tarafından oda QR üzerinden iletildi",
-                }],
-            }
-            await raw_db["service_complaints"].insert_one(complaint_doc)
-            logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']}")
-        except Exception as exc:
-            logger.warning(f"[room_qr] complaint mirror failed: {exc}")
+        quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
+        if not quota_ok:
+            logger.warning(
+                "[room_qr] complaint mirror quota exceeded for room=%s "
+                "(today=%d, limit=%d)",
+                room_id, quota_count, _COMPLAINT_QUOTA_PER_ROOM_DAY,
+            )
+        else:
+            try:
+                desc = payload.description.strip()
+                subject = desc[:80] + ("..." if len(desc) > 80 else "")
+                severity_map = {
+                    "urgent": "critical", "high": "high",
+                    "normal": "medium", "low": "low",
+                }
+                complaint_doc = {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "source": "guest_qr",
+                    "qr_request_id": doc["_id"],
+                    "category": "service_recovery",
+                    "severity": severity_map.get(payload.priority, "medium"),
+                    "subject": subject,
+                    "description": desc,
+                    "guest_name": doc.get("guest_name"),
+                    "guest_phone": doc.get("guest_phone"),
+                    "room_id": room_id,
+                    "room_number": doc.get("room_number"),
+                    "booking_id": doc.get("booking_id"),
+                    "assigned_department": "front_office",
+                    "status": "open",
+                    "created_by": None,
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                    "history": [{
+                        "action": "created",
+                        "actor_id": None,
+                        "actor_name": doc.get("guest_name") or "Misafir",
+                        "at": now.isoformat(),
+                        "notes": "Misafir tarafından oda QR üzerinden iletildi",
+                    }],
+                }
+                await raw_db["service_complaints"].insert_one(complaint_doc)
+                logger.info(
+                    f"[room_qr] guest complaint mirrored: {complaint_doc['id']} "
+                    f"(quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})"
+                )
+            except Exception as exc:
+                logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
     # WebSocket yayını (opsiyonel — varsa)
     try:
