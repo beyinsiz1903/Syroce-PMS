@@ -8,6 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
+import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -199,6 +200,7 @@ function App() {
   if (isAuthenticated && user?.role === "guest") {
     return (
       <NotificationProvider>
+        <CurrencyProvider isAuthenticated={isAuthenticated}>
         <QueryClientProvider client={queryClient}>
           <div className="App">
             <Toaster position="top-right" />
@@ -213,6 +215,7 @@ function App() {
             </BrowserRouter>
           </div>
         </QueryClientProvider>
+        </CurrencyProvider>
       </NotificationProvider>
     );
   }
@@ -225,6 +228,7 @@ function App() {
 
   return (
     <NotificationProvider>
+      <CurrencyProvider isAuthenticated={isAuthenticated}>
       <QueryClientProvider client={queryClient}>
         <div className="App">
           <Toaster position="top-right" />
@@ -295,6 +299,7 @@ function App() {
           </BrowserRouter>
         </div>
       </QueryClientProvider>
+      </CurrencyProvider>
     </NotificationProvider>
   );
 }

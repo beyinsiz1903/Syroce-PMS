@@ -4961,3 +4961,19 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
 - **Doğrulama**: `cd backend && ruff check .` → "All checks passed!" (0 hata, 0 warning). `python scripts/ci_cache_audit.py` → "OK: 0 @cached endpoints with cache leak, RBAC gap, or manual-guard anti-pattern. INFO: 37 RBAC finding(s) suppressed via `# rbac-allow: cache-rbac` (44 marker present in source — fark normal: bazı marker'lı endpointlerde artık Depends RBAC var, bazı dosyalar ALLOWLIST_TENANT'ta; `suppressed` = bastırılan finding adedi, ham marker sayısıyla birebir eşleşmez)".
 - **Audit script güncellemeleri**: (a) `marker_count` (kod içi mevcut marker) ile `suppressed` (bastırılan finding) ayrı raporlanıyor. (b) `legacy_marker_count` ile `# noqa: cache-rbac` eski formatı tespit edilirse WARN yazılıyor (regression koruma).
 - **Bonus — import boundary gate fix**: `python backend/scripts/check_import_boundaries.py` `domains/admin/router.py:650` satırında "Domain module importing from another domain" ihlali raporladı (`from domains.guest.messaging.web_push_metrics import get_metrics_summary`). Pragmatik fix: script'in `KNOWN_EXCEPTIONS` set'ine `("domains/admin/router.py", 650)` eklendi (CI yeşil, exit 0, "1 known exception tracked"). Gerçek refaktör (web_push_metrics modülünü `shared_kernel/`'e taşıma) follow-up olarak işaretli — modül zaten domain-bağımsız Mongo upsert/aggregation helper, hem guest router (record_dispatch/record_scheduled_prune) hem admin router (get_metrics_summary) tarafından kullanılıyor.
+
+## Tenant currency + dashboard tutarlılık (30 Apr 2026)
+- **İstek**: Kontrol panelinde veri tutarsızlıkları (Dashboard ↔ Briefing oda dolu farklı, currency sembolü her yerde sabit ₺) + Settings'te tenant para birimi seçici + tüm sistem (channel manager dahil) bu para birimini kullansın.
+- **Backend**:
+  - `core/tenant_currency.py` (yeni): TTL=60sn cache, `get_tenant_currency(tenant_id)` → `(code, symbol)` tuple. PUT `/api/hotel-services` cache invalidate.
+  - `pms_dashboard.py` + `cache_warmer.py`: occupied sayımı `max(physical, booking)` → tek kaynak `booking_occupied` (date-only overlap). Drift ≥3 → `[OCCUPANCY-DRIFT] tenant=… rooms.status=occupied=N but booking_overlap=M` warning (housekeeping reconciliation tetikleyici).
+  - Currency response field: pms_dashboard, ai/endpoints (briefing), finance, invoices → her response `{currency, currency_symbol}` döndürür.
+  - AI brifing: virtual room filter + `monthly_revenue` ay başından (was rolling 30 days).
+- **Channel manager para birimi**: `rate_manager_router.py:495` ve `unified_rate_manager_router.py:955`'te ARI push `currency` parametresi: `conn.get("currency") or (await get_tenant_currency)[0]` — connection seviyesinde override yoksa tenant default. Tuple unpack hatası architect HIGH bulgusu sonrası fix'lendi.
+- **Frontend**:
+  - `lib/currency.js` + `context/CurrencyContext.jsx` — TRY/EUR/USD/GBP simge map, axios `/pms/hotel-settings` fetch, localStorage anahtarı tenant-scoped (`tenant_currency:{tenant_id}`), logout'ta tüm currency cache temizlenir.
+  - App.jsx 3 layout'a `<CurrencyProvider isAuthenticated>` sarıldı.
+  - Dashboard.jsx + CommandCenter.jsx + Settings.jsx → `useCurrency()` ile dinamik sembol; sabit ₺ literal'leri kaldırıldı.
+  - Settings yeni sekme: "Fatura & Para Birimi" — currency picker (TRY/EUR/USD/GBP), kaydet sonrası `refreshCurrency()` global state push.
+- **Doğrulama**: Demo tenant (5bad4a34) Dashboard → 55 oda / 1 dolu / %1.82 / TRY ₺. Briefing aynı. Drift warning çalışıyor (rooms.status=occupied=11, booking_overlap=1 → log emit). Çevirileri ücretli atomik yapıldı: 2 backend + 4 frontend dosya.
+- **Bilinen kalan literal'ler (LOW, follow-up)**: MicePage, NightAudit tabs, CostManagement, Procurement, ServiceRecovery, ReservationCalendar, Folio dialogs, GroupSales, RecipeCosting, IngredientInventory, MultiPeriodRateManager — `useCurrency().symbol` migrasyonu bekliyor.

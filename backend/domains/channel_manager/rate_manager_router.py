@@ -13,6 +13,7 @@ from pymongo import UpdateOne
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.channel_manager.credential_vault import get_decrypted_credentials
 from domains.channel_manager.rate_utils import (
     BulkGridUpdateRequest,
@@ -488,8 +489,10 @@ async def bulk_grid_update(
             push_avail = v_avail if "availability" in update_fields else None
             push_stop = v_stop if "stop_sell" in update_fields else None
             push_min = v_min if "min_stay" in update_fields else None
+            _cur_code, _ = await get_tenant_currency(tenant_id)
+            push_currency = conn.get("currency") or _cur_code
 
-            async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min):
+            async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, cur=push_currency):
                 try:
                     result = await provider.push_ari(
                         room_type_code=rt,
@@ -498,7 +501,7 @@ async def bulk_grid_update(
                         end_date=request.end_date,
                         availability=avail,
                         rate_amount=rate,
-                        currency=conn.get("currency", "TRY"),
+                        currency=cur,
                         stop_sell=stop,
                         min_stay=minstay,
                     )

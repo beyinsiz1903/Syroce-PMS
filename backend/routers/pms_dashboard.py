@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 
 try:
@@ -60,32 +61,40 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
     total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
     physically_occupied = room_stats[0]['occupied_rooms'] if room_stats else 0
 
-    # Count bookings overlapping today (confirmed + checked_in + guaranteed)
+    # Count bookings overlapping today using date-only comparison (matches AI briefing).
+    # This avoids tz/format inconsistencies and uses the same logic everywhere.
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    booking_occupied = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$lte': today + 'T23:59:59'},
-        'check_out': {'$gt': today}
-    })
+    bookings_today = await db.bookings.find(
+        {
+            'tenant_id': current_user.tenant_id,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        },
+        {'_id': 0, 'check_in': 1, 'check_out': 1, 'status': 1}
+    ).to_list(5000)
 
-    # Use the higher of physical room status or booking count
-    occupied_rooms = max(physically_occupied, booking_occupied)
+    booking_occupied = 0
+    today_checkins = 0
+    for b in bookings_today:
+        ci = str(b.get('check_in', ''))[:10]
+        co = str(b.get('check_out', ''))[:10]
+        if ci <= today and co > today:
+            booking_occupied += 1
+        if ci == today:
+            today_checkins += 1
 
-    # Today's check-ins
-    today_checkins = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$gte': today, '$lt': f'{today}\uffff'}
-    })
+    # Single source of truth: active bookings overlapping today (date-only).
+    # rooms.status='occupied' may drift if housekeeping flow misses an event,
+    # so we trust the booking ledger for KPI cards (matches AI briefing & front desk).
+    occupied_rooms = booking_occupied
+    total_guests = booking_occupied
+    if abs(physically_occupied - booking_occupied) >= 3:
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "[OCCUPANCY-DRIFT] tenant=%s rooms.status=occupied=%d but booking_overlap=%d (>=3 fark)",
+            current_user.tenant_id, physically_occupied, booking_occupied,
+        )
 
-    # Total active guests
-    total_guests = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$lte': today + 'T23:59:59'},
-        'check_out': {'$gte': today}
-    })
+    currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
     # Ultra-fast response
     result = {
@@ -94,7 +103,9 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         'available_rooms': max(0, total_rooms - occupied_rooms),
         'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
         'today_checkins': today_checkins,
-        'total_guests': total_guests
+        'total_guests': total_guests,
+        'currency': currency_code,
+        'currency_symbol': currency_symbol,
     }
 
     # Cache in Redis for 5 seconds
@@ -266,6 +277,8 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1}
     ).to_list(50)
 
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
+
     return {
         "alerts": alerts,
         "summary": {
@@ -277,6 +290,8 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "vip_arrivals": len(vip_arrivals),
             "total_outstanding": round(total_outstanding, 2)
         },
+        "currency": currency_code,
+        "currency_symbol": currency_symbol,
         "available_clean_rooms": available_clean[:20]
     }
 

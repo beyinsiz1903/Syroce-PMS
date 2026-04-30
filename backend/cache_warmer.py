@@ -262,30 +262,41 @@ class CacheWarmer:
             total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
             physically_occupied = room_stats[0]['occupied_rooms'] if room_stats else 0
 
-            # Count bookings overlapping today (confirmed + checked_in + guaranteed)
+            # Date-only overlap (matches AI briefing) — single source of truth.
             today = datetime.now(UTC).strftime("%Y-%m-%d")
-            booking_occupied = await self.db.bookings.count_documents({
-                'tenant_id': tenant_id,
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$lte': today + 'T23:59:59'},
-                'check_out': {'$gt': today}
-            })
-            occupied_rooms = max(physically_occupied, booking_occupied)
+            bookings_today = await self.db.bookings.find(
+                {
+                    'tenant_id': tenant_id,
+                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                },
+                {'_id': 0, 'check_in': 1, 'check_out': 1}
+            ).to_list(5000)
 
-            # Today's check-ins (exclude cancelled/no_show)
-            today_checkins = await self.db.bookings.count_documents({
-                'tenant_id': tenant_id,
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$regex': f'^{today}'}
-            })
+            booking_occupied = 0
+            today_checkins = 0
+            for b in bookings_today:
+                ci = str(b.get('check_in', ''))[:10]
+                co = str(b.get('check_out', ''))[:10]
+                if ci <= today and co > today:
+                    booking_occupied += 1
+                if ci == today:
+                    today_checkins += 1
 
-            # Total active guests today
-            total_guests = await self.db.bookings.count_documents({
-                'tenant_id': tenant_id,
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$lte': today + 'T23:59:59'},
-                'check_out': {'$gte': today}
-            })
+            # Single source of truth: bookings overlapping today (date-only).
+            occupied_rooms = booking_occupied
+            total_guests = booking_occupied
+            if abs(physically_occupied - booking_occupied) >= 3:
+                logger.warning(
+                    "[OCCUPANCY-DRIFT] tenant=%s rooms.status=occupied=%d but booking_overlap=%d",
+                    tenant_id, physically_occupied, booking_occupied,
+                )
+
+            # Tenant currency for unified display.
+            try:
+                from core.tenant_currency import get_tenant_currency
+                cur_code, cur_sym = await get_tenant_currency(tenant_id)
+            except Exception:
+                cur_code, cur_sym = 'TRY', '\u20ba'
 
             dashboard_data = {
                 'total_rooms': total_rooms,
@@ -293,7 +304,9 @@ class CacheWarmer:
                 'available_rooms': max(0, total_rooms - occupied_rooms),
                 'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
                 'today_checkins': today_checkins,
-                'total_guests': total_guests
+                'total_guests': total_guests,
+                'currency': cur_code,
+                'currency_symbol': cur_sym,
             }
 
             cache_key = f"dashboard:{tenant_id}"

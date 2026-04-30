@@ -18,6 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
+import { useCurrency } from '@/context/CurrencyContext';
 
 // ─── Plan Config ──────────────────────────────────
 const PLAN_CONFIG = {
@@ -61,6 +62,7 @@ const ROLE_COLORS = {
 
 const Settings = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const { refresh: refreshCurrency } = useCurrency();
 
   const getRoleLabel = (role) => ({
     label: t(`settings.roles.${role}`) || role,
@@ -292,6 +294,7 @@ const Settings = ({ user, tenant, onLogout }) => {
       const res = await axios.put(`/pms/hotel-settings`, invoiceSettings);
       toast.success('Fatura ayarları kaydedildi');
       setInvoiceSettings(res.data?.settings || invoiceSettings);
+      try { await refreshCurrency(); } catch (_) {}
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally { setInvoiceSaving(false); }
@@ -388,7 +391,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               <Building2 className="w-4 h-4" /> Otel
             </TabsTrigger>
             <TabsTrigger value="invoice" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="invoice-settings-tab">
-              <FileText className="w-4 h-4" /> Fatura Ayarları
+              <FileText className="w-4 h-4" /> Fatura & Para Birimi
             </TabsTrigger>
             {isSuperAdmin && (
               <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
@@ -824,20 +827,26 @@ const Settings = ({ user, tenant, onLogout }) => {
                     </div>
 
                     {/* Currency */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Para Birimi</Label>
-                        <select value={invoiceSettings.currency || 'TRY'} onChange={e => setInvoiceSettings(prev => ({ ...prev, currency: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm">
-                          <option value="TRY">Türk Lirası (TRY)</option>
-                          <option value="EUR">Euro (EUR)</option>
-                          <option value="USD">Amerikan Doları (USD)</option>
-                          <option value="GBP">İngiliz Sterlini (GBP)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label>Para Birimi Simgesi</Label>
-                        <Input value={invoiceSettings.currency_symbol || '₺'} onChange={e => setInvoiceSettings(prev => ({ ...prev, currency_symbol: e.target.value }))} placeholder="₺" />
-                      </div>
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+                      <Label className="text-amber-900 font-semibold">Para Birimi (Tüm Sistem)</Label>
+                      <p className="text-xs text-amber-700 mt-1 mb-3">
+                        Bu seçim panel, faturalar, channel manager ve raporlar dahil tüm tutarları etkiler.
+                      </p>
+                      <select
+                        value={invoiceSettings.currency || 'TRY'}
+                        onChange={e => {
+                          const code = e.target.value;
+                          const sym = { TRY: '₺', EUR: '€', USD: '$', GBP: '£' }[code] || code;
+                          setInvoiceSettings(prev => ({ ...prev, currency: code, currency_symbol: sym }));
+                        }}
+                        className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+                        data-testid="currency-select"
+                      >
+                        <option value="TRY">Türk Lirası (₺)</option>
+                        <option value="EUR">Euro (€)</option>
+                        <option value="USD">Amerikan Doları ($)</option>
+                        <option value="GBP">İngiliz Sterlini (£)</option>
+                      </select>
                     </div>
 
                     {/* Invoice Header/Footer */}

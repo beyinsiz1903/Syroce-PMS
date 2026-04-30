@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useCurrency } from '@/context/CurrencyContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ const ALERT_ICONS = {
 export const CommandCenter = ({ className = '' }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { format: fmtMoney } = useCurrency();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -72,8 +74,12 @@ export const CommandCenter = ({ className = '' }) => {
 
   const getAlertDescription = (alert) => {
     const key = `commandCenter.alerts.${alert.type}.description`;
-    const translated = t(key, { amount: alert.total_amount ? alert.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '' });
-    return translated !== key ? translated : alert.description;
+    const translated = t(key, { amount: alert.total_amount ? fmtMoney(alert.total_amount) : '' });
+    if (translated !== key) return translated;
+    if (alert.type === 'pending_payments' && alert.total_amount) {
+      return `Toplam ${fmtMoney(alert.total_amount)} tahsil edilmedi`;
+    }
+    return alert.description;
   };
 
   const getAlertActionLabel = (alert) => {
@@ -176,7 +182,7 @@ export const CommandCenter = ({ className = '' }) => {
                                 <span key={j} className="inline-flex items-center text-[11px] bg-white/70 border border-slate-200 rounded-md px-2 py-0.5 text-slate-600">
                                   {item.room_number && <span className="font-semibold mr-1">{t('commandCenter.room')} {item.room_number}</span>}
                                   {item.guest_name}
-                                  {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{item.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</span>}
+                                  {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{fmtMoney(item.balance)}</span>}
                                 </span>
                               ))}
                               {alert.items.length > 3 && <span className="text-[11px] text-slate-400">+{alert.items.length - 3} {t('commandCenter.more')}</span>}

@@ -9,6 +9,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import Layout from '@/components/Layout';
 import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, Globe, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
+import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 // Memory cache for dashboard data (faster than IndexedDB)
@@ -22,6 +23,7 @@ const dashboardCache = {
 const Dashboard = ({ user, tenant, modules, onLogout }) => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const { format: fmtMoney } = useCurrency();
   const [stats, setStats] = useState(dashboardCache.stats);
   const [loading, setLoading] = useState(!dashboardCache.stats);
   const [aiBriefing, setAiBriefing] = useState(dashboardCache.aiBriefing);
@@ -638,7 +640,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                     </div>
                     <div>
                       <div className="opacity-75 text-xs">{t('dashboard.monthlyTurnover')}</div>
-                      <div className="text-lg font-bold">${typeof aiBriefing.metrics?.monthly_revenue === 'number' ? aiBriefing.metrics.monthly_revenue.toFixed(0) : '0'}</div>
+                      <div className="text-lg font-bold">{fmtMoney(aiBriefing.metrics?.monthly_revenue || 0, { decimals: 0 })}</div>
                     </div>
                   </div>
                   <div className="text-xs opacity-75 mt-2 text-right">

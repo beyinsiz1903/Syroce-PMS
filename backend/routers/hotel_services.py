@@ -715,6 +715,13 @@ async def update_hotel_settings(
         upsert=True,
     )
 
+    # Invalidate cached tenant currency so the next dashboard request reflects the new selection.
+    try:
+        from core.tenant_currency import invalidate_tenant_currency
+        invalidate_tenant_currency(tid)
+    except Exception:
+        pass
+
     settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
     return {"success": True, "settings": settings}
 

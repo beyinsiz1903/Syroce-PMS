@@ -15,6 +15,7 @@ except ImportError:
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import (
     Invoice,
     InvoiceCreate,
@@ -88,6 +89,14 @@ async def get_invoice_stats(
     total_revenue = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'paid')
     pending_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') in ['draft', 'sent'])
     overdue_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'overdue')
-    return {'total_invoices': len(invoices), 'total_revenue': total_revenue, 'pending_amount': pending_amount, 'overdue_amount': overdue_amount}
+    currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    return {
+        'total_invoices': len(invoices),
+        'total_revenue': total_revenue,
+        'pending_amount': pending_amount,
+        'overdue_amount': overdue_amount,
+        'currency': currency_code,
+        'currency_symbol': currency_symbol,
+    }
 
 

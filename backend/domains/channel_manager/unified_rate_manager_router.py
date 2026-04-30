@@ -33,6 +33,7 @@ from pymongo import UpdateOne
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
@@ -948,6 +949,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         seen_exely_for_rt[rt_code] = exely_codes
 
     push_tasks = []
+    _cur_code, _ = await get_tenant_currency(tenant_id)
+    push_currency = conn.get("currency") or _cur_code
     for rt_code, _rp_code_ignored in pairs:
         exely_codes = seen_exely_for_rt.get(rt_code)
         if not exely_codes:
@@ -961,14 +964,14 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
         for ex_code in exely_codes:
             for rp in exely_rate_plans:
-                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, src=rt_code):
+                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, src=rt_code, cur=push_currency):
                     try:
                         logger.info("[UNIFIED] Exely push: src=%s rt=%s rp=%s rate=%s avail=%s", src, rt, rp, rate, avail)
                         result = await provider.push_ari(
                             room_type_code=rt, rate_plan_code=rp,
                             start_date=request.start_date, end_date=request.end_date,
                             availability=avail, rate_amount=rate,
-                            currency=conn.get("currency", "TRY"),
+                            currency=cur,
                             stop_sell=stop, min_stay=minstay,
                         )
                         logger.info("[UNIFIED] Exely push result rt=%s rp=%s: %s", rt, rp, result)

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.ai.service import get_ai_service
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -31,8 +32,12 @@ async def get_daily_briefing(
     """
     try:
         # Get data from database — all 4 collections in parallel (1 RTT).
+        # Exclude virtual rooms so the briefing matches the dashboard KPI cards.
         rooms, all_bookings, invoices, tenant = await _asyncio.gather(
-            db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None),
+            db.rooms.find({
+                "tenant_id": current_user.tenant_id,
+                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+            }).to_list(None),
             db.bookings.find({"tenant_id": current_user.tenant_id}).to_list(None),
             db.accounting_invoices.find({"tenant_id": current_user.tenant_id}).to_list(None),
             db.tenants.find_one({"id": current_user.tenant_id}),
@@ -43,6 +48,7 @@ async def get_daily_briefing(
         # Count today's date for overlap checks
         today = datetime.now().date()
         today_str = str(today)
+        month_start_str = today.replace(day=1).isoformat()
 
         # Active statuses (exclude cancelled, checked_out, no_show)
         active_statuses = {'confirmed', 'guaranteed', 'checked_in'}
@@ -73,16 +79,25 @@ async def get_daily_briefing(
                 today_checkouts += 1
 
         pending_invoices = len([i for i in invoices if i.get('status') == 'pending'])
-        monthly_revenue = sum(i.get('total', 0) for i in invoices)
 
-        # Fallback: if no invoice revenue, calculate from active bookings this month
+        # Monthly revenue: sum of invoices issued this month only
+        # (uses invoice_date / created_at, not all-time totals).
+        def _inv_month(i):
+            d = i.get('invoice_date') or i.get('created_at') or ''
+            return str(d)[:10]
+        monthly_revenue = sum(
+            (i.get('total') or 0)
+            for i in invoices
+            if _inv_month(i) >= month_start_str
+        )
+
+        # Fallback: if no invoice revenue this month, calculate from active bookings checking in this month.
         if monthly_revenue == 0:
-            month_start = today.replace(day=1).isoformat()
             for b in all_bookings:
                 if b.get('status') in ('cancelled', 'no_show'):
                     continue
                 ci = str(b.get('check_in', ''))[:10]
-                if ci >= month_start:
+                if ci >= month_start_str:
                     monthly_revenue += float(b.get('total_amount', 0) or 0)
 
         # Hotel name from tenant (already fetched above).
@@ -151,6 +166,8 @@ async def get_daily_briefing(
             if confirmed_bookings > 0:
                 insights.append(f"{confirmed_bookings} confirmed bookings active.")
 
+        currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+
         return {
             "summary": briefing_text,
             "text": briefing_text,
@@ -165,7 +182,9 @@ async def get_daily_briefing(
                 "today_checkouts": today_checkouts,
                 "pending_invoices": pending_invoices,
                 "monthly_revenue": monthly_revenue,
-                "confirmed_bookings": confirmed_bookings
+                "confirmed_bookings": confirmed_bookings,
+                "currency": currency_code,
+                "currency_symbol": currency_symbol,
             }
         }
     except Exception:
