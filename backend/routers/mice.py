@@ -99,6 +99,22 @@ def _invalidate_mice_spaces_cache(tenant_id: str) -> None:
     _cache.safe_invalidate(tenant_id, "mice_spaces")
 
 
+def _invalidate_mice_menus_cache(tenant_id: str) -> None:
+    _cache.safe_invalidate(tenant_id, "mice_menus")
+
+
+def _invalidate_mice_accounts_cache(tenant_id: str) -> None:
+    _cache.safe_invalidate(tenant_id, "mice_accounts")
+
+
+def _invalidate_mice_resources_cache(tenant_id: str) -> None:
+    _cache.safe_invalidate(tenant_id, "mice_resources")
+
+
+def _invalidate_mice_events_cache(tenant_id: str) -> None:
+    _cache.safe_invalidate(tenant_id, "mice_events")
+
+
 # rbac-allow: cache-rbac — toplantı salonları operasyonel listesi tüm rolelere açık
 @router.get("/spaces")
 @_cached(ttl=30, key_prefix="mice_spaces")
@@ -217,19 +233,32 @@ class MenuPackageIn(BaseModel):
     prep_lead_minutes: int = Field(30, ge=0)  # kitchen lead-time
 
 
-@router.get("/menus")
-async def list_menus(current_user: User = Depends(get_current_user)) -> dict:
+@_cached(ttl=30, key_prefix="mice_menus")
+async def _list_menus_cached(current_user: User) -> dict:
+    """Pure DB read (tenant-scoped). Wrapped by `list_menus` so that the
+    seed-on-empty branch (role-dependent) stays OUT of the cache —
+    otherwise a non-catalog user could pin an empty payload that a catalog
+    user would later see (would block the seed bootstrap for TTL window)."""
     db = get_system_db()
     cur = db.mice_menus.find(
         {"tenant_id": current_user.tenant_id}, {"_id": 0}
     ).sort("type", 1)
-    items = [doc async for doc in cur]
-    if not items:
-        try:
-            require_catalog(current_user)
-        except HTTPException:
-            return {"menus": []}
-        items = await _seed_menus(current_user.tenant_id)
+    return {"menus": [doc async for doc in cur]}
+
+
+@router.get("/menus")
+async def list_menus(current_user: User = Depends(get_current_user)) -> dict:
+    result = await _list_menus_cached(current_user=current_user)
+    if result["menus"]:
+        return result
+    # Empty: only catalog admins may bootstrap the seed; everyone else
+    # gets the empty list (NOT cached, see helper above).
+    try:
+        require_catalog(current_user)
+    except HTTPException:
+        return {"menus": []}
+    items = await _seed_menus(current_user.tenant_id)
+    _invalidate_mice_menus_cache(current_user.tenant_id)
     return {"menus": items}
 
 
@@ -271,6 +300,7 @@ async def create_menu(body: MenuPackageIn,
            "created_at": datetime.now(UTC).isoformat()}
     await db.mice_menus.insert_one(doc)
     doc.pop("_id", None)
+    _invalidate_mice_menus_cache(current_user.tenant_id)
     return doc
 
 
@@ -287,6 +317,7 @@ async def update_menu(menu_id: str, body: MenuPackageIn,
     )
     if not res.matched_count:
         raise HTTPException(404, "Menü bulunamadı")
+    _invalidate_mice_menus_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -299,6 +330,7 @@ async def delete_menu(menu_id: str,
     db = get_system_db()
     await db.mice_menus.delete_one(
         {"id": menu_id, "tenant_id": current_user.tenant_id})
+    _invalidate_mice_menus_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -318,6 +350,7 @@ class AccountIn(BaseModel):
 
 
 @router.get("/accounts")
+@_cached(ttl=30, key_prefix="mice_accounts")
 async def list_accounts(
     q: str | None = Query(None, description="Free-text search on name/tax_no"),
     current_user: User = Depends(get_current_user),
@@ -371,6 +404,7 @@ async def create_account(body: AccountIn,
            "created_by": current_user.username}
     await db.mice_accounts.insert_one(doc)
     doc.pop("_id", None)
+    _invalidate_mice_accounts_cache(current_user.tenant_id)
     return doc
 
 
@@ -391,6 +425,7 @@ async def update_account(account_id: str, body: AccountIn,
                   "updated_at": datetime.now(UTC).isoformat()}})
     if not res.matched_count:
         raise HTTPException(404, "Hesap bulunamadı")
+    _invalidate_mice_accounts_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -417,6 +452,7 @@ async def delete_account(account_id: str,
         raise HTTPException(404, "Hesap bulunamadı")
     await db.mice_contacts.delete_many(
         {"tenant_id": current_user.tenant_id, "account_id": account_id})
+    _invalidate_mice_accounts_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -500,6 +536,7 @@ class ResourceInventoryIn(BaseModel):
 
 
 @router.get("/resources")
+@_cached(ttl=30, key_prefix="mice_resources")
 async def list_resources(current_user: User = Depends(get_current_user)) -> dict:
     await _ensure_indexes()
     db = get_system_db()
@@ -522,6 +559,7 @@ async def create_resource(body: ResourceInventoryIn,
            "created_at": datetime.now(UTC).isoformat()}
     await db.mice_resources.insert_one(doc)
     doc.pop("_id", None)
+    _invalidate_mice_resources_cache(current_user.tenant_id)
     return doc
 
 
@@ -537,6 +575,7 @@ async def update_resource(resource_id: str, body: ResourceInventoryIn,
         {"$set": body.model_dump()})
     if not res.matched_count:
         raise HTTPException(404, "Kaynak bulunamadı")
+    _invalidate_mice_resources_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -549,6 +588,7 @@ async def delete_resource(resource_id: str,
     db = get_system_db()
     await db.mice_resources.delete_one(
         {"id": resource_id, "tenant_id": current_user.tenant_id})
+    _invalidate_mice_resources_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -828,6 +868,7 @@ async def _check_space_conflict(tenant_id: str, bookings: list[dict],
 
 
 @router.get("/events")
+@_cached(ttl=30, key_prefix="mice_events")
 async def list_events(
     status: str | None = Query(None),
     date_from: str | None = Query(None),
@@ -975,6 +1016,7 @@ async def create_event(body: EventIn,
         details=f"Etkinlik oluşturuldu: {event_doc.get('name')} "
                 f"({event_doc.get('start_date')})",
         before_value=None, after_value=event_doc, db=db)
+    _invalidate_mice_events_cache(tenant_id)
     return event_doc
 
 
@@ -1039,6 +1081,7 @@ async def update_event(event_id: str, body: EventIn,
         action="update", entity_type="mice_event", entity_id=event_id,
         details=f"Etkinlik güncellendi: {after.get('name')}",
         before_value=before, after_value=after, db=db)
+    _invalidate_mice_events_cache(tenant_id)
     return {"ok": True, "totals": update["totals"]}
 
 
@@ -1102,6 +1145,7 @@ async def change_status(event_id: str, body: StatusUpdate,
         details=(f"{event.get('name')}: {cur_status} → {body.status}"
                  + (f" — {body.reason}" if body.reason else "")),
         before_value=before_clean, after_value=after, db=db)
+    _invalidate_mice_events_cache(tenant_id)
     return {"ok": True, "status": body.status}
 
 
@@ -1178,6 +1222,7 @@ async def delete_event(event_id: str,
         action="delete", entity_type="mice_event", entity_id=event_id,
         details=f"Etkinlik silindi: {(before or {}).get('name')}",
         before_value=before, after_value=None, db=db)
+    _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True}
 
 
@@ -1264,6 +1309,7 @@ async def replace_payment_schedule(
                   "updated_at": datetime.now(UTC).isoformat()}})
     if not res.matched_count:
         raise HTTPException(404, "Etkinlik bulunamadı")
+    _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True, "count": len(items)}
 
 
@@ -1303,6 +1349,7 @@ async def mark_payment_paid(
     fresh = await db.mice_events.find_one(
         {"id": event_id, "tenant_id": current_user.tenant_id},
         {"payment_schedule": 1})
+    _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True, "item": (fresh.get("payment_schedule") or [None])[idx]}
 
 
