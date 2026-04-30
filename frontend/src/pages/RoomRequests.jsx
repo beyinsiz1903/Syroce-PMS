@@ -11,8 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from "sonner";
 import {
   RefreshCw, Clock, CheckCircle2, PlayCircle, XCircle, AlertTriangle,
-  User, Phone, MessageSquare, Building, Loader2,
+  User, Phone, MessageSquare, Building, Loader2, QrCode, Sparkles,
 } from "lucide-react";
+import RoomQRPrintAction from "@/components/RoomQRPrintAction";
 
 const STATUS_COLUMNS = [
   { key: "new",         label: "Yeni",        color: "bg-blue-50 border-blue-300",     badge: "bg-blue-600" },
@@ -161,13 +162,17 @@ export default function RoomRequests({ user, tenant, onLogout }) {
             <h1 className="text-3xl font-bold">Oda QR Talepleri</h1>
             <p className="text-gray-500 text-sm mt-1">Misafirlerden gelen talepleri departman bazında takip edin</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Select value={department} onValueChange={setDepartment}>
               <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {DEPARTMENTS.map((d) => <SelectItem key={d.id || "all"} value={d.id}>{d.label}</SelectItem>)}
               </SelectContent>
             </Select>
+            <RoomQRPrintAction
+              hotelName={tenant?.property_name}
+              variant="outline"
+            />
             <Button variant="outline" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Yenile
             </Button>
@@ -185,25 +190,32 @@ export default function RoomRequests({ user, tenant, onLogout }) {
           </div>
         )}
 
-        {/* Kanban */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {STATUS_COLUMNS.map((col) => (
-            <div key={col.key} className={`${col.color} border-2 rounded-xl p-3 min-h-[400px]`}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-slate-700">{col.label}</h3>
-                <Badge className={`${col.badge} text-white`}>{(grouped[col.key] || []).length}</Badge>
+        {/* Tenant'ta hiç talep yoksa Kanban yerine açıklayıcı bir
+            empty state göster. Tek talep gelir gelmez kanban'a
+            otomatik geçer. İlk yükleme sırasında titreşim olmasın
+            diye loading state'inde de hero gösteriyoruz. */}
+        {items.length === 0 ? (
+          <EmptyState hotelName={tenant?.property_name} />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {STATUS_COLUMNS.map((col) => (
+              <div key={col.key} className={`${col.color} border-2 rounded-xl p-3 min-h-[400px]`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-slate-700">{col.label}</h3>
+                  <Badge className={`${col.badge} text-white`}>{(grouped[col.key] || []).length}</Badge>
+                </div>
+                <div className="space-y-2">
+                  {(grouped[col.key] || []).map((it) => (
+                    <RequestCard key={it.id} item={it} onOpen={setSelected} />
+                  ))}
+                  {(grouped[col.key] || []).length === 0 && (
+                    <div className="text-xs text-gray-400 text-center py-6">Talep yok</div>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                {(grouped[col.key] || []).map((it) => (
-                  <RequestCard key={it.id} item={it} onOpen={setSelected} />
-                ))}
-                {(grouped[col.key] || []).length === 0 && (
-                  <div className="text-xs text-gray-400 text-center py-6">Talep yok</div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Detay dialogu */}
@@ -310,6 +322,86 @@ export default function RoomRequests({ user, tenant, onLogout }) {
         </DialogContent>
       </Dialog>
     </Layout>
+  );
+}
+
+function EmptyState({ hotelName }) {
+  const steps = [
+    {
+      n: 1,
+      title: "QR kodlarını yazdırın",
+      text: "Sağ üstteki butonla tüm odaların QR kartlarını A4 sayfada toplu yazdırabilirsiniz.",
+    },
+    {
+      n: 2,
+      title: "Odalara yerleştirin",
+      text: "Kartı oda kapısının arkasına, masaya veya banyo aynasına yapıştırın.",
+    },
+    {
+      n: 3,
+      title: "Talepler buraya düşer",
+      text: "Misafir QR'ı okutup talebini yazdığında departman bazında otomatik dağılır.",
+    },
+  ];
+  const categories = DEPARTMENTS.filter((d) => d.id !== ALL_DEPTS);
+
+  return (
+    <Card className="border-dashed border-2 border-slate-200 bg-gradient-to-br from-white to-slate-50">
+      <CardContent className="p-8 md:p-12">
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mb-4">
+            <QrCode className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">
+            Henüz misafir talebi yok
+          </h2>
+          <p className="text-slate-500 mb-8">
+            {hotelName ? `${hotelName} için ` : ""}misafirler odadaki QR
+            kodunu okutarak havlu, oda servisi, teknik arıza gibi talepleri
+            buraya gönderebilir. Başlamak için QR kartlarını basıp odalara
+            yerleştirmeniz yeterli.
+          </p>
+
+          <div className="grid md:grid-cols-3 gap-4 text-left mb-8">
+            {steps.map((s) => (
+              <div key={s.n} className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center mb-3">
+                  {s.n}
+                </div>
+                <div className="font-semibold text-sm text-slate-800 mb-1">{s.title}</div>
+                <div className="text-xs text-slate-500 leading-relaxed">{s.text}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-center mb-8">
+            <RoomQRPrintAction
+              hotelName={hotelName}
+              size="lg"
+              className="bg-blue-600 hover:bg-blue-700"
+            />
+          </div>
+
+          <div className="text-left bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              Misafirlerin seçebileceği kategoriler
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.map((c) => (
+                <Badge
+                  key={c.id}
+                  variant="outline"
+                  className="bg-white text-slate-600 font-normal"
+                >
+                  {c.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
