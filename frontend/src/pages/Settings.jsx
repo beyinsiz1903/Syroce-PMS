@@ -294,7 +294,7 @@ const Settings = ({ user, tenant, onLogout }) => {
       const res = await axios.put(`/pms/hotel-settings`, invoiceSettings);
       toast.success('Fatura ayarları kaydedildi');
       setInvoiceSettings(res.data?.settings || invoiceSettings);
-      try { await refreshCurrency(); } catch (_) {}
+      try { await refreshCurrency(); } catch { /* ignore */ }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally { setInvoiceSaving(false); }

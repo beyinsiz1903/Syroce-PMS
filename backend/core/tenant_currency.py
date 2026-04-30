@@ -8,11 +8,10 @@ hammering Mongo on every dashboard request.
 from __future__ import annotations
 
 import time
-from typing import Tuple
 
 from core.database import db
 
-_CACHE: dict[str, Tuple[float, str, str]] = {}
+_CACHE: dict[str, tuple[float, str, str]] = {}
 _TTL = 60.0
 
 _DEFAULT_SYMBOLS = {
@@ -27,7 +26,7 @@ def _symbol_for(code: str) -> str:
     return _DEFAULT_SYMBOLS.get((code or "TRY").upper(), code or "")
 
 
-async def get_tenant_currency(tenant_id: str) -> Tuple[str, str]:
+async def get_tenant_currency(tenant_id: str) -> tuple[str, str]:
     """Return (currency_code, currency_symbol) for the tenant."""
     if not tenant_id:
         return "TRY", _symbol_for("TRY")
