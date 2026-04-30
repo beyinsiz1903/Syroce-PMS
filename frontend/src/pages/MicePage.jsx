@@ -35,11 +35,19 @@ const AGENDA_KINDS = ['session', 'meal', 'break', 'av', 'logistics', 'other'];
 const MicePage = ({ user, tenant, onLogout }) => {
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
+  // tab badge counts come from /mice/events response; survives lazy-loaded
+  // collections so tab labels stay accurate before the user opens that tab.
+  const [counts, setCounts] = useState({});
   const [spaces, setSpaces] = useState([]);
   const [menus, setMenus] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [resources, setResources] = useState([]);
+  // Tracks which tab payloads have been fetched so we don't refetch on
+  // every tab change. Mount populates events/spaces/accounts (needed by
+  // the default Etkinlikler tab listing); menus/resources are lazy.
+  const [loadedTabs, setLoadedTabs] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('events');
   const [showEventForm, setShowEventForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [beoData, setBeoData] = useState(null);
@@ -88,36 +96,50 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
   // Targeted refreshers used by CRUD handlers below so a single mutation
   // doesn't refetch all five collections.
+  const markLoaded = (key) => setLoadedTabs((prev) => {
+    if (prev.has(key)) return prev;
+    const next = new Set(prev);
+    next.add(key);
+    return next;
+  });
   const loadEvents = async () => {
     const e = await axios.get('/mice/events');
     setEvents(e.data.events);
     setSummary(e.data.summary || {});
+    setCounts(e.data.counts || {});
+    markLoaded('events');
   };
   const loadSpaces = async () => {
     const s = await axios.get('/mice/spaces');
     setSpaces(s.data.spaces);
+    markLoaded('spaces');
   };
   const loadMenus = async () => {
     const m = await axios.get('/mice/menus');
     setMenus(m.data.menus);
+    markLoaded('menus');
   };
   const loadAccountsList = async () => {
     const a = await axios.get('/mice/accounts');
     setAccounts(a.data.accounts || []);
+    markLoaded('accounts');
   };
   const loadResourcesList = async () => {
     const r = await axios.get('/mice/resources');
     setResources(r.data.resources || []);
+    markLoaded('resources');
   };
 
-  // Initial mount: all five collections are needed because tab labels
-  // show counts (e.g. "Müşteriler ({accounts.length})") in the header.
+  // Initial mount: events + spaces + accounts only.
+  // The default "Etkinlikler" tab renders space and customer names per
+  // event row, so those two sibling collections are required up-front.
+  // menus and resources are deferred until the user opens those tabs
+  // or starts the event form (which needs them for selection).
   const load = async () => {
     setLoading(true);
     try {
       await Promise.all([
-        loadEvents(), loadSpaces(), loadMenus(),
-        loadAccountsList(), loadResourcesList(),
+        loadEvents(), loadSpaces(), loadAccountsList(),
       ]);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
@@ -125,11 +147,37 @@ const MicePage = ({ user, tenant, onLogout }) => {
   };
   useEffect(() => { load(); }, []);
 
+  // Tab open → fetch on first reveal only. Mutation handlers call the
+  // direct loadX helpers so they always refetch, even before that tab
+  // was opened (keeps cached badge counts in sync).
+  const ensureTabLoaded = (tab) => {
+    if (loadedTabs.has(tab)) return;
+    if (tab === 'menus') loadMenus().catch((e) =>
+      toast.error(e.response?.data?.detail || 'Menüler yüklenemedi'));
+    else if (tab === 'resources') loadResourcesList().catch((e) =>
+      toast.error(e.response?.data?.detail || 'Envanter yüklenemedi'));
+  };
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    ensureTabLoaded(tab);
+  };
+
+  // Event form needs menus + resources for the selection dropdowns; load
+  // them on demand the first time the form opens.
+  const ensureFormCollections = () => {
+    if (!loadedTabs.has('menus')) loadMenus().catch(() => {});
+    if (!loadedTabs.has('resources')) loadResourcesList().catch(() => {});
+  };
+
   const spaceById = useMemo(() => Object.fromEntries(spaces.map((s) => [s.id, s])), [spaces]);
   const accountById = useMemo(() => Object.fromEntries(accounts.map((a) => [a.id, a])), [accounts]);
 
-  const openNew = () => { setEditing(null); setForm(blankEvent); setEventTab('basics'); setShowEventForm(true); };
+  const openNew = () => {
+    ensureFormCollections();
+    setEditing(null); setForm(blankEvent); setEventTab('basics'); setShowEventForm(true);
+  };
   const openEdit = (ev) => {
+    ensureFormCollections();
     setEditing(ev.id);
     setForm({
       name: ev.name, client_name: ev.client_name, client_email: ev.client_email || '',
@@ -413,14 +461,14 @@ const MicePage = ({ user, tenant, onLogout }) => {
               value={`₺${totalPipeline.toLocaleString('tr-TR')}`} cls="text-emerald-600" />
       </div>
 
-      <Tabs defaultValue="events">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="events">Etkinlikler</TabsTrigger>
           <TabsTrigger value="diary">Function Diary</TabsTrigger>
-          <TabsTrigger value="accounts">Müşteriler ({accounts.length})</TabsTrigger>
-          <TabsTrigger value="spaces">Mekanlar ({spaces.length})</TabsTrigger>
-          <TabsTrigger value="menus">Menüler & Paketler ({menus.length})</TabsTrigger>
-          <TabsTrigger value="resources">Envanter ({resources.length})</TabsTrigger>
+          <TabsTrigger value="accounts">Müşteriler ({loadedTabs.has('accounts') ? accounts.length : (counts.accounts ?? '…')})</TabsTrigger>
+          <TabsTrigger value="spaces">Mekanlar ({loadedTabs.has('spaces') ? spaces.length : (counts.spaces ?? '…')})</TabsTrigger>
+          <TabsTrigger value="menus">Menüler & Paketler ({loadedTabs.has('menus') ? menus.length : (counts.menus ?? '…')})</TabsTrigger>
+          <TabsTrigger value="resources">Envanter ({loadedTabs.has('resources') ? resources.length : (counts.resources ?? '…')})</TabsTrigger>
           <TabsTrigger value="pipeline">Satış Pipeline</TabsTrigger>
           <TabsTrigger value="packages">Paketler</TabsTrigger>
           <TabsTrigger value="competitors">Rakip Analizi</TabsTrigger>
@@ -509,7 +557,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="accounts">
-          <AccountsView accounts={accounts} reload={load} />
+          <AccountsView accounts={accounts} reload={loadAccountsList} />
         </TabsContent>
 
         <TabsContent value="spaces">
@@ -626,7 +674,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="resources">
-          <ResourcesView resources={resources} reload={load} />
+          <ResourcesView resources={resources} reload={loadResourcesList} />
         </TabsContent>
 
         <TabsContent value="pipeline">

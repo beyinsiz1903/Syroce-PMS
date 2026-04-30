@@ -895,7 +895,19 @@ async def list_events(
     async for r in db.mice_events.aggregate(pipe):
         summary[r["_id"]] = {"count": r["n"],
                              "total_value": round(r.get("total", 0) or 0, 2)}
-    return {"events": items, "summary": summary}
+    # Counts for sibling collections — used by frontend tab badges so the
+    # MicePage can lazy-load tab payloads without losing the count display.
+    counts = {
+        "accounts": await db.mice_accounts.count_documents(
+            {"tenant_id": current_user.tenant_id, **_CLIENT_ACCT_FILTER}),
+        "spaces": await db.mice_spaces.count_documents(
+            {"tenant_id": current_user.tenant_id}),
+        "menus": await db.mice_menus.count_documents(
+            {"tenant_id": current_user.tenant_id}),
+        "resources": await db.mice_resources.count_documents(
+            {"tenant_id": current_user.tenant_id}),
+    }
+    return {"events": items, "summary": summary, "counts": counts}
 
 
 async def _expand_resource_prices(tenant_id: str, resources: list[dict],
