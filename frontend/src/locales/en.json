@@ -3445,5 +3445,52 @@
     "apply_success": "Recommendations applied",
     "apply_failed": "Could not apply recommendations",
     "load_failed": "Could not load RMS data"
+  },
+  "costAnalytics": {
+    "tabLabel": "Expenses",
+    "title": "Cost Analytics",
+    "subtitle": "Track and analyze operational expenses by date range",
+    "startDate": "Start",
+    "endDate": "End",
+    "refresh": "Refresh",
+    "exportCsv": "Export CSV",
+    "exportSuccess": "CSV downloaded",
+    "loadError": "Failed to load expense data",
+    "byCategory": "Expenses by Category",
+    "distribution": "Expense Distribution",
+    "detailsTitle": "Category Details",
+    "empty": "No expenses in this date range",
+    "entriesShort": "{{count}} entries",
+    "summaryTitle": "Cost Analysis",
+    "summaryBody": "Top expense: {{top}} ({{topAmount}}). Daily average: {{daily}} ({{currency}}).",
+    "kpi": {
+      "total": "Total Expenses",
+      "categories": "Categories",
+      "categoriesHint": "Number of categories",
+      "entries": "Entries",
+      "entriesHint": "Total transactions",
+      "dailyAvg": "Daily Average",
+      "dailyAvgHint": "Divided by {{days}} days",
+      "periodDays": "{{days}}-day period"
+    },
+    "headers": {
+      "category": "Category",
+      "count": "Count",
+      "total": "Total",
+      "avg": "Average",
+      "share": "Share",
+      "totalRow": "TOTAL"
+    },
+    "categories": {
+      "salaries": "Salaries",
+      "utilities": "Utilities",
+      "supplies": "Supplies",
+      "maintenance": "Maintenance",
+      "marketing": "Marketing",
+      "rent": "Rent",
+      "insurance": "Insurance",
+      "taxes": "Taxes",
+      "other": "Other"
+    }
   }
 }

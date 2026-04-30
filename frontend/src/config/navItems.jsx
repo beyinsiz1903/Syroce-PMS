@@ -277,15 +277,6 @@ export const NAV_ITEMS = [
     navGroup: "finance",
   },
   {
-    key: "cost_management",
-    label: "Maliyet",
-    path: "/app/cost-management",
-    moduleKey: "cost_management",
-    tier: "professional",
-    group: "professional",
-    navGroup: "finance",
-  },
-  {
     key: "konaklama_vergisi",
     label: "Konaklama Vergisi",
     path: "/app/konaklama-vergisi",

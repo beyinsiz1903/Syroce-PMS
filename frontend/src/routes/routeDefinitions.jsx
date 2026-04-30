@@ -94,7 +94,6 @@ const LogViewer = lazy(() => import("@/pages/LogViewer"));
 const MobileLogViewer = lazy(() => import("@/pages/MobileLogViewer"));
 const NetworkTestTools = lazy(() => import("@/pages/NetworkTestTools"));
 const MaintenancePriorityVisual = lazy(() => import("@/pages/MaintenancePriorityVisual"));
-const CostManagement = lazy(() => import("@/pages/CostManagement"));
 const FeaturesShowcase = lazy(() => import("@/pages/FeaturesShowcase"));
 const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDashboard"));
 const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
@@ -520,13 +519,13 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/housekeeping", ...pa(HousekeepingDashboard) },
     { path: "/admin/pos", ...pa(POSDashboard) },
     { path: "/admin/features", ...pa(FeaturesShowcase) },
-    { path: "/admin/cost", ...pa(CostManagement) },
     { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin) },
     { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) },
     { path: "/admin/module-discovery", ...pa(ModuleDiscovery) },
     { path: "/admin/integration-credentials", ...pa(IntegrationCredentials) },
-    { path: "/app/cost-management", ...p(CostManagement) },
-    { path: "/cost-management", ...p(CostManagement) },
+    { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
+    { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
+    { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/admin/gm-enhanced", type: "redirect", to: "/executive" },
   ];
 }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
+import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,6 +54,7 @@ const REPORT_MENU = [
   { id: 'sources', label: 'Kaynak Analizi', icon: BarChart3, desc: 'Rezervasyon kaynakları' },
   { type: 'header', label: 'FİNANS & MUHASEBE' },
   { id: 'payments', label: 'Ödemeler', icon: CreditCard, desc: 'Ödeme yöntemleri' },
+  { id: 'expenses', label: 'Gider Analitiği', icon: TrendingUp, desc: 'Kategoriye göre gider analizi' },
   { type: 'header', label: 'RESMİ RAPORLAR' },
   { id: 'official', label: 'Maliye Listesi', icon: FileText, desc: 'Resmi müşteri listesi' },
   { id: 'police', label: 'Polis Bildirimi', icon: Shield, desc: 'Emniyet bildirimi' },
@@ -66,7 +69,21 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeSection, setActiveSection] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSection = searchParams.get('section') || 'overview';
+  const [activeSection, setActiveSectionState] = useState(urlSection);
+  // Keep tab state in sync with the URL so browser back/forward and external
+  // navigations land on the right section (e.g. /app/cost-management redirect).
+  useEffect(() => {
+    if (urlSection !== activeSection) setActiveSectionState(urlSection);
+  }, [urlSection, activeSection]);
+  const setActiveSection = useCallback((section) => {
+    setActiveSectionState(section);
+    const next = new URLSearchParams(searchParams);
+    if (section === 'overview') next.delete('section');
+    else next.set('section', section);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [searchGuest, setSearchGuest] = useState('');
 
   const [officialDate, setOfficialDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -246,6 +263,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       case 'police': return <PoliceSection filteredGuests={filteredGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />;
       case 'departments': return <DepartmentsSection s={s} hk={hk} maint={maint} finance={finance} />;
       case 'fnb': return <FnBSection s={s} />;
+      case 'expenses': return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default: return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} />;
     }
   };

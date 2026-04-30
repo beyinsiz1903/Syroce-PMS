@@ -3521,5 +3521,52 @@
     "apply_success": "Öneriler uygulandı",
     "apply_failed": "Öneriler uygulanamadı",
     "load_failed": "RMS verileri yüklenemedi"
+  },
+  "costAnalytics": {
+    "tabLabel": "Giderler",
+    "title": "Gider Analitiği",
+    "subtitle": "Operasyonel giderlerinizi tarih aralığına göre takip edin ve analiz edin",
+    "startDate": "Başlangıç",
+    "endDate": "Bitiş",
+    "refresh": "Yenile",
+    "exportCsv": "CSV İndir",
+    "exportSuccess": "CSV indirildi",
+    "loadError": "Gider verileri yüklenemedi",
+    "byCategory": "Kategoriye Göre Giderler",
+    "distribution": "Gider Dağılımı",
+    "detailsTitle": "Kategori Detayları",
+    "empty": "Bu tarih aralığında gider kaydı yok",
+    "entriesShort": "{{count}} işlem",
+    "summaryTitle": "Maliyet Analizi",
+    "summaryBody": "En büyük gider kalemi: {{top}} ({{topAmount}}). Günlük ortalama: {{daily}} ({{currency}}).",
+    "kpi": {
+      "total": "Toplam Giderler",
+      "categories": "Kategoriler",
+      "categoriesHint": "Gider kategorisi sayısı",
+      "entries": "Kayıtlar",
+      "entriesHint": "Toplam işlem",
+      "dailyAvg": "Günlük Ortalama",
+      "dailyAvgHint": "{{days}} güne bölündü",
+      "periodDays": "{{days}} günlük dönem"
+    },
+    "headers": {
+      "category": "Kategori",
+      "count": "Adet",
+      "total": "Toplam",
+      "avg": "Ortalama",
+      "share": "Pay",
+      "totalRow": "TOPLAM"
+    },
+    "categories": {
+      "salaries": "Maaşlar",
+      "utilities": "Faturalar",
+      "supplies": "Malzemeler",
+      "maintenance": "Bakım",
+      "marketing": "Pazarlama",
+      "rent": "Kira",
+      "insurance": "Sigorta",
+      "taxes": "Vergiler",
+      "other": "Diğer"
+    }
   }
 }
