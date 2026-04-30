@@ -982,6 +982,8 @@
   },
   "ai": {
     "dailyBriefing": "Tägliches Briefing",
+    "dailySummary": "Tageszusammenfassung",
+    "autoSummary": "Automatische Zusammenfassung",
     "aiInsights": "KI-Einblicke",
     "predictions": "Vorhersagen",
     "recommendations": "Empfehlungen",

@@ -598,8 +598,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <CardHeader className="p-4">
                   <CardTitle className="flex items-center justify-between text-base md:text-lg">
                     <span className="flex items-center">
-                      <span className="text-xl mr-2">🤖</span>
-                      {t('ai.dailyBriefing')}
+                      <span className="text-xl mr-2">{aiBriefing.ai_powered ? '🤖' : '📊'}</span>
+                      {aiBriefing.ai_powered ? t('ai.dailyBriefing') : t('ai.dailySummary')}
                     </span>
                     <Button 
                       variant="ghost" 
@@ -644,7 +644,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                     </div>
                   </div>
                   <div className="text-xs opacity-75 mt-2 text-right">
-                    {t('ai.poweredBy')} • Generated: {new Date(aiBriefing.generated_at).toLocaleTimeString()}
+                    {aiBriefing.ai_powered ? t('ai.poweredBy') : t('ai.autoSummary')} • {new Date(aiBriefing.generated_at).toLocaleTimeString()}
                   </div>
                 </CardContent>
               </Card>

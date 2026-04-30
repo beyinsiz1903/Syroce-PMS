@@ -982,6 +982,8 @@
   },
   "ai": {
     "dailyBriefing": "Günlük Brifing",
+    "dailySummary": "Günlük Özet",
+    "autoSummary": "Otomatik Özet",
     "aiInsights": "Yapay Zeka Öngörüleri",
     "predictions": "Tahminler",
     "recommendations": "Öneriler",

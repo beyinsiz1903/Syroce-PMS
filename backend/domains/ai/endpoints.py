@@ -107,6 +107,7 @@ async def get_daily_briefing(
 
         # Try to generate AI briefing, fallback to heuristic
         briefing_text = None
+        ai_powered = False
         try:
             ai_svc = get_ai_service()
             if ai_svc.llm_enabled:
@@ -121,8 +122,11 @@ async def get_daily_briefing(
                     weather="clear",
                     lang=lang
                 )
+                if briefing_text:
+                    ai_powered = True
         except Exception as ai_err:
             logger.info(f"AI briefing generation failed: {ai_err}")
+            ai_powered = False
 
         # Fallback briefing
         if not briefing_text:
@@ -172,6 +176,7 @@ async def get_daily_briefing(
             "summary": briefing_text,
             "text": briefing_text,
             "briefing": briefing_text,
+            "ai_powered": ai_powered,
             "generated_at": datetime.now().isoformat(),
             "insights": insights,
             "metrics": {
@@ -194,6 +199,7 @@ async def get_daily_briefing(
             "summary": err_msg,
             "text": err_msg,
             "briefing": err_msg,
+            "ai_powered": False,
             "generated_at": datetime.now().isoformat(),
             "insights": [],
             "metrics": {}

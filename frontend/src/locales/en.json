@@ -982,6 +982,8 @@
   },
   "ai": {
     "dailyBriefing": "Daily Briefing",
+    "dailySummary": "Daily Summary",
+    "autoSummary": "Auto Summary",
     "aiInsights": "AI Insights",
     "predictions": "Predictions",
     "recommendations": "Recommendations",
