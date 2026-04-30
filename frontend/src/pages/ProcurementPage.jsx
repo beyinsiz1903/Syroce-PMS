@@ -161,6 +161,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       setPrForm({
         department: seed.department || '',
         requester: '',
+        urgency: 'normal',
         notes: t('procurement.prModalForm.seedNote', { name: seed.name }),
         lines: [{
           item_name: seed.name || '',
@@ -235,12 +236,32 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   };
 
   // ── PR ops ─────────────────────────────────────────────
+  // "Aciliyet" seçimini backend'in beklediği `needed_by` tarihine çevirir.
+  // Departman fiyat/tarih düşünmek zorunda kalmasın diye kullanıcıya
+  // sadece basit bir aciliyet etiketi gösteriyoruz.
+  const urgencyToNeededBy = (urgency) => {
+    const days = { urgent: 1, week: 7, month: 30 }[urgency];
+    if (!days) return null; // 'normal' / tanımsız → tarih gönderme
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    // toISOString UTC'ye çevirip gece yarısı civarı bir gün kaydırabilir;
+    // backend `date` beklediği için yerel takvim gününü manuel formatla.
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
   const savePR = async () => {
     try {
       if (!prForm.department || !prForm.lines?.length) {
         toast.error(t('procurement.errors.departmentLineRequired')); return;
       }
-      await axios.post('/procurement/purchase-requests', prForm);
+      const payload = {
+        ...prForm,
+        needed_by: urgencyToNeededBy(prForm.urgency),
+      };
+      delete payload.urgency;
+      await axios.post('/procurement/purchase-requests', payload);
       toast.success(t('procurement.toasts.prCreated'));
       setPrForm(null); refresh();
     } catch (e) {
@@ -416,7 +437,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 <CardDescription>{t('procurement.prList.description')}</CardDescription>
               </div>
               <Button onClick={() => setPrForm({
-                department: '', requester: '', notes: '',
+                department: '', requester: '', urgency: 'normal', notes: '',
                 lines: [{ item_name: '', quantity: 1, unit: 'adet', est_unit_cost: 0 }],
               })}>
                 <Plus className="w-4 h-4 mr-1" /> {t('procurement.prList.newPR')}
@@ -672,9 +693,18 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             <div><Label>{t('procurement.prModalForm.requester')}</Label>
               <Input value={prForm.requester || ''}
                 onChange={(e) => setPrForm({ ...prForm, requester: e.target.value })} /></div>
-            <div><Label>{t('procurement.prModalForm.neededBy')}</Label>
-              <Input type="date" value={prForm.needed_by || ''}
-                onChange={(e) => setPrForm({ ...prForm, needed_by: e.target.value || null })} /></div>
+            <div><Label>{t('procurement.prModalForm.urgency')}</Label>
+              <select
+                value={prForm.urgency || 'normal'}
+                onChange={(e) => setPrForm({ ...prForm, urgency: e.target.value })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="normal">{t('procurement.prModalForm.urgencyNormal')}</option>
+                <option value="month">{t('procurement.prModalForm.urgencyMonth')}</option>
+                <option value="week">{t('procurement.prModalForm.urgencyWeek')}</option>
+                <option value="urgent">{t('procurement.prModalForm.urgencyUrgent')}</option>
+              </select>
+            </div>
             <div className="col-span-2"><Label>{t('procurement.prModalForm.notes')}</Label>
               <Input value={prForm.notes || ''}
                 onChange={(e) => setPrForm({ ...prForm, notes: e.target.value })} /></div>
