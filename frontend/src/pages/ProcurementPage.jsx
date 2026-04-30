@@ -693,7 +693,6 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 <th className="p-1">{t('procurement.prModalForm.skuHeader')}</th>
                 <th className="p-1 w-20">{t('procurement.prModalForm.qtyHeader')}</th>
                 <th className="p-1 w-20">{t('procurement.prModalForm.unitHeader')}</th>
-                <th className="p-1 w-24">{t('procurement.prModalForm.estUnitHeader')}</th>
                 <th className="p-1"></th>
               </tr></thead>
               <tbody>
@@ -720,11 +719,6 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                     <td className="p-1"><Input value={l.unit}
                       onChange={(e) => {
                         const lines = [...prForm.lines]; lines[i].unit = e.target.value;
-                        setPrForm({ ...prForm, lines });
-                      }} /></td>
-                    <td className="p-1"><Input type="number" value={l.est_unit_cost}
-                      onChange={(e) => {
-                        const lines = [...prForm.lines]; lines[i].est_unit_cost = Number(e.target.value);
                         setPrForm({ ...prForm, lines });
                       }} /></td>
                     <td className="p-1"><Button size="sm" variant="ghost"
