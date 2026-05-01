@@ -210,6 +210,76 @@ async def create_quick_booking(
     return result
 
 
+@router.get("/pms/arrivals")
+async def get_arrivals(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 200,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Arrivals by check-in date.
+
+    Filters bookings whose `check_in` falls between `start_date` and `end_date`
+    (inclusive, ISO date strings). Defaults to today if no range is given.
+    Status is restricted to confirmed / guaranteed / checked_in.
+    """
+    from datetime import date, timedelta
+
+    today_str = datetime.now(UTC).date().isoformat()
+    start = start_date or today_str
+    end = end_date or start
+
+    # `check_in` may be stored as date-only ("YYYY-MM-DD") or datetime
+    # ("YYYY-MM-DDTHH:MM:SS"). Use a date-only lower bound and an
+    # exclusive next-day upper bound so both formats are matched
+    # correctly via lexicographic comparison.
+    try:
+        end_date_obj = date.fromisoformat(end)
+    except ValueError:
+        end_date_obj = date.fromisoformat(today_str)
+    upper_exclusive = (end_date_obj + timedelta(days=1)).isoformat()
+
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "check_in": {"$gte": start, "$lt": upper_exclusive},
+        "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+    }
+
+    safe_limit = max(1, min(int(limit or 200), 500))
+    bookings = await db.bookings.find(query, {"_id": 0}).sort("check_in", 1).limit(safe_limit).to_list(length=safe_limit)
+
+    # Enrich missing guest_name / room_number (same pattern as get_bookings).
+    missing_guest_ids = {b["guest_id"] for b in bookings if not b.get("guest_name") and b.get("guest_id")}
+    missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
+
+    if missing_guest_ids:
+        guest_name_map: dict[str, str] = {}
+        async for g in db.guests.find(
+            {"id": {"$in": list(missing_guest_ids)}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
+        ):
+            nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+            if nm:
+                guest_name_map[g["id"]] = nm
+        for b in bookings:
+            if not b.get("guest_name") and b.get("guest_id"):
+                b["guest_name"] = guest_name_map.get(b["guest_id"], "")
+
+    if missing_room_ids:
+        room_num_map: dict[str, str] = {}
+        async for r in db.rooms.find(
+            {"id": {"$in": list(missing_room_ids)}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "room_number": 1},
+        ):
+            room_num_map[r["id"]] = r.get("room_number", "")
+        for b in bookings:
+            if b.get("room_id") and not b.get("room_number"):
+                b["room_number"] = room_num_map.get(b["room_id"], "")
+
+    return {"bookings": bookings, "total": len(bookings), "start_date": start, "end_date": end}
+
+
 @router.get("/pms/bookings")
 async def get_bookings(
     p: PaginationParams = Depends(paginate(default_limit=30, max_limit=500)),

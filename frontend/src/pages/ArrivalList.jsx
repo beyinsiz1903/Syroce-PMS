@@ -1,37 +1,94 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle } from 'lucide-react';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
-const ArrivalList = () => {
+const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [arrivals, setArrivals] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadTodayArrivals();
   }, []);
 
+  const localISODate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const loadTodayArrivals = async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const response = await axios.get(`/pms/bookings?start_date=${today}&end_date=${today}&status=confirmed,guaranteed`);
-      
-      // Get bookings arriving today
-      const bookingsData = Array.isArray(response.data) ? response.data : response.data.bookings || [];
+      const today = localISODate(new Date());
+      const response = await axios.get(`/pms/arrivals?start_date=${today}&end_date=${today}`);
+
+      const bookingsData = response.data?.bookings || [];
       setArrivals(bookingsData);
+
+      if (bookingsData.length === 0) {
+        loadUpcomingArrivals();
+      } else {
+        setUpcoming([]);
+      }
     } catch (error) {
       toast.error('Varış listesi yüklenemedi');
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadUpcomingArrivals = async () => {
+    try {
+      const start = new Date();
+      start.setDate(start.getDate() + 1);
+      const end = new Date();
+      end.setDate(end.getDate() + 7);
+      const startStr = localISODate(start);
+      const endStr = localISODate(end);
+      const response = await axios.get(`/pms/arrivals?start_date=${startStr}&end_date=${endStr}&limit=300`);
+
+      const bookingsData = response.data?.bookings || [];
+
+      const grouped = {};
+      bookingsData.forEach(b => {
+        const day = (b.check_in || '').slice(0, 10);
+        if (!day) return;
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push(b);
+      });
+
+      const days = Object.keys(grouped).sort().slice(0, 7).map(day => ({
+        date: day,
+        count: grouped[day].length,
+        vip_count: grouped[day].filter(b => b.vip_status || b.tags?.includes('vip')).length,
+        group_count: grouped[day].filter(b => b.group_block_id).length,
+      }));
+      setUpcoming(days);
+    } catch (error) {
+      setUpcoming([]);
+    }
+  };
+
+  const formatDay = (iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - today) / (1000 * 60 * 60 * 24));
+    const labels = ['Bugün', 'Yarın'];
+    const dayName = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'][d.getDay()];
+    if (diff >= 0 && diff < labels.length) return labels[diff];
+    return `${dayName} ${d.getDate()}/${d.getMonth() + 1}`;
   };
 
   const getVIPBadge = (booking) => {
@@ -68,13 +125,14 @@ const ArrivalList = () => {
   };
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
     <div className="p-6">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="icon"
               onClick={() => navigate('/')}
               className="hover:bg-green-50"
@@ -83,15 +141,15 @@ const ArrivalList = () => {
             </Button>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                📋 Bugünün Varışları ({t('dashboard.arrivalList')})
+                Bugünün Varışları
               </h1>
               <p className="text-gray-600">
-                Bugün check-in yapacak misafirler - VIP, grup ve özel istekler
+                Bugün check-in yapacak misafirler — VIP, grup ve özel istekler
               </p>
             </div>
           </div>
           <Button onClick={loadTodayArrivals} disabled={loading}>
-            🔄 Yenile
+            Yenile
           </Button>
         </div>
       </div>
@@ -144,7 +202,39 @@ const ArrivalList = () => {
           <Card>
             <CardContent className="pt-12 pb-12 text-center">
               <UserCheck className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Bugün varış yok</p>
+              <p className="text-gray-600 text-lg font-medium mb-2">Bugün varış yok</p>
+              {upcoming.length > 0 ? (
+                <>
+                  <p className="text-sm text-gray-500 mb-6">Önümüzdeki 7 gün:</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 max-w-4xl mx-auto">
+                    {upcoming.map((d) => (
+                      <div
+                        key={d.date}
+                        className="p-3 rounded-lg border bg-white text-left hover:border-blue-400 hover:shadow-sm transition"
+                      >
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                          <Calendar className="w-3 h-3" />
+                          {formatDay(d.date)}
+                        </div>
+                        <p className="text-2xl font-bold text-blue-600">{d.count}</p>
+                        <p className="text-xs text-gray-500">varış</p>
+                        {(d.vip_count > 0 || d.group_count > 0) && (
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {d.vip_count > 0 && (
+                              <Badge className="bg-purple-600 text-xs px-1.5 py-0">VIP {d.vip_count}</Badge>
+                            )}
+                            {d.group_count > 0 && (
+                              <Badge className="bg-green-600 text-xs px-1.5 py-0">Grup {d.group_count}</Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">Önümüzdeki 7 günde de varış yok</p>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -225,6 +315,7 @@ const ArrivalList = () => {
         )}
       </div>
     </div>
+    </Layout>
   );
 };
 
