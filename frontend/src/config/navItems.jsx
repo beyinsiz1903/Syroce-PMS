@@ -548,6 +548,16 @@ export const NAV_ITEMS = [
     hidden: true,
   },
   {
+    key: "admin_hub",
+    label: "Yönetim Merkezi",
+    path: "/app/admin-hub",
+    moduleKey: "admin_panel",
+    tier: "professional",
+    group: "professional",
+    navGroup: "admin",
+    requireSuperAdmin: true,
+  },
+  {
     key: "admin_control_panel",
     label: "Yönetim Kontrol Paneli",
     path: "/app/admin-control-panel",
@@ -590,6 +600,15 @@ export const NAV_ITEMS = [
 
   // ──── ADVANCED GROUP ───────────────────────────────
   {
+    key: "revenue_hub",
+    label: "Gelir Merkezi",
+    path: "/app/revenue-hub",
+    moduleKey: "revenue_management",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "advanced",
+  },
+  {
     key: "gelir_yonetimi",
     label: "Gelir Yönetimi",
     path: "/app/gelir-yonetimi",
@@ -597,6 +616,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "advanced",
+    hidden: true, // T007: Gelir Merkezi (revenue-hub) içine taşındı
   },
   {
     key: "displacement_analysis",
@@ -606,6 +626,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "advanced",
+    hidden: true, // T007: Gelir Merkezi (revenue-hub) içine taşındı
   },
   {
     key: "ai_zeka",

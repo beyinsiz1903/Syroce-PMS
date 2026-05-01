@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+import MaybeLayout from '@/components/MaybeLayout';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,7 +20,7 @@ import { StopSalePanel } from './rate-manager/StopSalePanel';
 
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
-const UnifiedRateManager = ({ user, tenant, onLogout }) => {
+const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
@@ -387,18 +387,18 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
 
   if (detecting) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
+      <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex items-center justify-center min-h-[400px]" data-testid="unified-rate-loading">
           <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
           <span className="ml-3 text-zinc-500">Kanal saglayici tespit ediliyor...</span>
         </div>
-      </Layout>
+      </MaybeLayout>
     );
   }
 
   if (!provider) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
+      <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4" data-testid="unified-rate-no-provider">
           <Building2 className="w-16 h-16 text-zinc-300" />
           <h2 className="text-xl font-semibold text-zinc-600">Aktif Kanal Saglayici Bulunamadi</h2>
@@ -406,12 +406,12 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
             Fiyat ve musaitlik yönetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
           </p>
         </div>
-      </Layout>
+      </MaybeLayout>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
+    <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
       <div className="p-4 md:p-6 space-y-4" data-testid="unified-rate-manager-page">
         {/* Header */}
         <div className="flex justify-between items-start">
@@ -635,7 +635,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
           </div>
         </div>
       </div>
-    </Layout>
+    </MaybeLayout>
   );
 };
 

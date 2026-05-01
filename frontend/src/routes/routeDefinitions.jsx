@@ -207,6 +207,8 @@ const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
 const SecurityHub = lazy(() => import("@/pages/SecurityHub"));
 const ChannelHub = lazy(() => import("@/pages/ChannelHub"));
+const RevenueHub = lazy(() => import("@/pages/RevenueHub"));
+const AdminHub = lazy(() => import("@/pages/AdminHub"));
 const HRHub = lazy(() => import("@/pages/HRHub"));
 const GoLiveReadinessCockpit = lazy(() => import("@/pages/GoLiveReadinessCockpit"));
 const EncryptionManagementPage = lazy(() => import("@/pages/EncryptionManagementPage"));
@@ -324,6 +326,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/channel-ops", type: "redirect", to: "/channels?tab=ops" },
     { path: "/channels", ...p(ChannelHub) },
     { path: "/app/channels", ...p(ChannelHub) },
+    { path: "/app/revenue-hub", ...p(RevenueHub) },
+    { path: "/app/admin-hub", ...pa(AdminHub) },
     { path: "/mapping-manager", ...p(MappingManager) },
     { path: "/room-mapping-wizard", ...p(RoomMappingWizard) },
     { path: "/hotelrunner", ...pa(HotelRunnerIntegration) },

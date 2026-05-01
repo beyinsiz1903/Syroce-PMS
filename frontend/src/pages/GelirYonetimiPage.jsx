@@ -1,5 +1,5 @@
 import React, { useState, lazy, Suspense } from 'react';
-import Layout from '@/components/Layout';
+import MaybeLayout from '@/components/MaybeLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3, Shield, CalendarRange, Rocket, Loader2 } from 'lucide-react';
 
@@ -17,11 +17,11 @@ function TabLoading() {
   );
 }
 
-export default function GelirYonetimiPage({ user, tenant, onLogout }) {
+export default function GelirYonetimiPage({ user, tenant, onLogout, embedded = false }) {
   const [tab, setTab] = useState('dashboard');
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
+    <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
       <div className="p-4 lg:p-6 space-y-4" data-testid="gelir-yonetimi-page">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Gelir Yönetimi</h1>
@@ -69,6 +69,6 @@ export default function GelirYonetimiPage({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </MaybeLayout>
   );
 }

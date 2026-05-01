@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+import MaybeLayout from '@/components/MaybeLayout';
 import { Target, GitCompare, History, LayoutDashboard } from 'lucide-react';
 import MarketOverviewTab from './displacement/MarketOverviewTab';
 import AnalysisTab from './displacement/AnalysisTab';
@@ -14,13 +14,13 @@ const TABS = [
   { id: 'history', icon: History, labelKey: 'displacement.tabHistory', fallback: 'History', Component: HistoryTab },
 ];
 
-const DisplacementAnalysis = ({ user, tenant, onLogout }) => {
+const DisplacementAnalysis = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
   const Active = (TABS.find(t => t.id === activeTab) || TABS[0]).Component;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="displacement_analysis">
+    <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="displacement_analysis">
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -48,7 +48,7 @@ const DisplacementAnalysis = ({ user, tenant, onLogout }) => {
 
         <Active user={user} tenant={tenant} onLogout={onLogout} />
       </div>
-    </Layout>
+    </MaybeLayout>
   );
 };
 

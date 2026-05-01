@@ -4,13 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
+import MaybeLayout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 const BACKEND = "";
 
-export default function CentralPricingManager({ user, tenant, onLogout }) {
+export default function CentralPricingManager({ user, tenant, onLogout, embedded = false }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('rates');
   const [rates, setRates] = useState(null);
@@ -52,7 +52,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -181,6 +181,6 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </MaybeLayout>
   );
 }

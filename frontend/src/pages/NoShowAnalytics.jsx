@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -838,12 +838,12 @@ const TABS = [
   { id: 'prediction', label: 'Tahmin', icon: Brain, color: 'text-purple-600' },
 ];
 
-const NoShowAnalytics = ({ user, tenant, onLogout }) => {
+const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
   const [activeTab, setActiveTab] = useState('channel');
   const [period, setPeriod] = useState('30');
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="no-show-analytics">
+    <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="no-show-analytics">
       <div className="p-6 space-y-5 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3" data-testid="noshow-analytics-header">
@@ -900,7 +900,7 @@ const NoShowAnalytics = ({ user, tenant, onLogout }) => {
         {activeTab === 'rules' && <RuleEngineTab />}
         {activeTab === 'prediction' && <PredictionTab />}
       </div>
-    </Layout>
+    </MaybeLayout>
   );
 };
 
