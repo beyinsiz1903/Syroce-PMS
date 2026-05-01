@@ -110,7 +110,6 @@ const AIModule = lazy(() => import("@/pages/AIModule"));
 const OnlineCheckin = lazy(() => import("@/pages/OnlineCheckin"));
 const FlashReport = lazy(() => import("@/pages/FlashReport"));
 const GroupSales = lazy(() => import("@/pages/GroupSales"));
-const VIPManagement = lazy(() => import("@/pages/VIPManagement"));
 const SalesCRM = lazy(() => import("@/pages/SalesCRM"));
 const ServiceRecovery = lazy(() => import("@/pages/ServiceRecovery"));
 const SpaWellness = lazy(() => import("@/pages/SpaWellness"));
@@ -473,7 +472,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/online-checkin", ...p(OnlineCheckin) },
     { path: "/flash-report", ...p(FlashReport) },
     { path: "/group-sales", ...p(GroupSales) },
-    { path: "/vip-management", ...p(VIPManagement) },
     { path: "/sales-crm", ...p(SalesCRM) },
     { path: "/service-recovery", ...p(ServiceRecovery) },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
