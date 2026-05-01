@@ -398,15 +398,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'financial'
     },
     {
-      title: t('dashboard.advancedLoyalty'),
-      description: t('dashboard.advancedLoyaltyDesc'),
-      icon: Gift,
-      path: '/advanced-loyalty',
-      color: '#f59e0b',
-      badge: 'NEW',
-      category: 'guest'
-    },
-    {
       title: t('dashboard.gdsIntegration'),
       description: t('dashboard.gdsIntegrationDesc'),
       icon: Globe,
