@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -30,24 +30,19 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(null);
 
-  const loadData = useCallback(async () => {
+  const loadedRef = useRef({ expenses: false, suppliers: false, banks: false, inventory: false });
+  const inFlightRef = useRef({});
+
+  const loadInitial = useCallback(async () => {
     try {
-      const [invoicesRes, expensesRes, suppliersRes, bankRes, inventoryRes, dashRes] = await Promise.all([
+      const [invoicesRes, dashRes] = await Promise.all([
         axios.get('/accounting/invoices'),
-        axios.get('/accounting/expenses'),
-        axios.get('/accounting/suppliers'),
-        axios.get('/accounting/bank-accounts'),
-        axios.get('/accounting/inventory'),
         axios.get('/accounting/dashboard'),
       ]);
       setInvoices(invoicesRes.data || []);
-      setExpenses(expensesRes.data || []);
-      setSuppliers(suppliersRes.data || []);
-      setBankAccounts(bankRes.data || []);
-      setInventory(inventoryRes.data?.items || []);
       setDashboard(dashRes.data || null);
     } catch (error) {
-      console.error('InvoiceModule loadData error:', error);
+      console.error('InvoiceModule loadInitial error:', error);
       setFatal(error?.message || 'Failed to load accounting data');
       toast.error(t('common.loadFailed') || 'Veri yüklenemedi');
     } finally {
@@ -55,14 +50,84 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     }
   }, [t]);
 
+  const refreshDashboard = useCallback(async () => {
+    try {
+      const r = await axios.get('/accounting/dashboard');
+      setDashboard(r.data || null);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  const fetchOnce = useCallback(async (key, url, apply) => {
+    if (loadedRef.current[key]) return;
+    if (inFlightRef.current[key]) return inFlightRef.current[key];
+    const p = (async () => {
+      try {
+        const r = await axios.get(url);
+        apply(r);
+        loadedRef.current[key] = true;
+      } catch {
+        toast.error(t('common.loadFailed') || 'Yüklenemedi');
+      } finally {
+        delete inFlightRef.current[key];
+      }
+    })();
+    inFlightRef.current[key] = p;
+    return p;
+  }, [t]);
+
+  const refetch = useCallback(async (key, url, apply) => {
+    if (inFlightRef.current[key]) return inFlightRef.current[key];
+    const p = (async () => {
+      try {
+        const r = await axios.get(url);
+        apply(r);
+        loadedRef.current[key] = true;
+      } catch {
+        toast.error(t('common.loadFailed') || 'Yüklenemedi');
+      } finally {
+        delete inFlightRef.current[key];
+      }
+    })();
+    inFlightRef.current[key] = p;
+    return p;
+  }, [t]);
+
+  const loadExpenses = useCallback((force = false) => {
+    const apply = (r) => setExpenses(r.data || []);
+    return force
+      ? refetch('expenses', '/accounting/expenses', apply)
+      : fetchOnce('expenses', '/accounting/expenses', apply);
+  }, [fetchOnce, refetch]);
+
+  const loadSuppliers = useCallback((force = false) => {
+    const apply = (r) => setSuppliers(r.data || []);
+    return force
+      ? refetch('suppliers', '/accounting/suppliers', apply)
+      : fetchOnce('suppliers', '/accounting/suppliers', apply);
+  }, [fetchOnce, refetch]);
+
+  const loadBanks = useCallback((force = false) => {
+    const apply = (r) => setBankAccounts(r.data || []);
+    return force
+      ? refetch('banks', '/accounting/bank-accounts', apply)
+      : fetchOnce('banks', '/accounting/bank-accounts', apply);
+  }, [fetchOnce, refetch]);
+
+  const loadInventory = useCallback((force = false) => {
+    const apply = (r) => setInventory(r.data?.items || []);
+    return force
+      ? refetch('inventory', '/accounting/inventory', apply)
+      : fetchOnce('inventory', '/accounting/inventory', apply);
+  }, [fetchOnce, refetch]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
-      await loadData();
+      await loadInitial();
       if (!mounted) return;
     })();
     return () => { mounted = false; };
-  }, [loadData]);
+  }, [loadInitial]);
 
   const loadCashFlow = async () => {
     try {
@@ -187,6 +252,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         )}
 
         <Tabs defaultValue="invoices" onValueChange={(v) => {
+          if (v === 'expenses') { loadExpenses(); loadSuppliers(); }
+          if (v === 'suppliers') loadSuppliers();
+          if (v === 'banks') loadBanks();
+          if (v === 'inventory') loadInventory();
           if (v === 'cashflow') loadCashFlow();
           if (v === 'reports') loadReports();
         }}>
@@ -446,10 +515,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
 
-        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadData(); }} suppliers={suppliers} />
-        <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadData(); }} />
-        <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadData(); }} />
-        <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadData(); }} />
+        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); refreshDashboard(); }} suppliers={suppliers} />
+        <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadSuppliers(true); }} />
+        <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
+        <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
       </div>
     </Layout>
   );
