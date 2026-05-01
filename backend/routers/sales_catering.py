@@ -31,6 +31,12 @@ STAGES = ("lead", "qualified", "proposal", "contract", "won", "lost")
 ACTIVITY_TYPES = ("call", "email", "meeting", "site_visit", "note", "task")
 PACKAGE_TYPES = ("wedding", "conference", "corporate", "social", "incentive")
 
+# mice_opportunities/mice_opportunity_activities koleksiyonları, Atlas
+# 500 limiti dolduğu için Sales CRM (domains/sales/router.py) ile
+# paylaşılır. Onlar _kind="lead" ile yazar; biz "opportunity" yazıp
+# sorgularda lead'leri hariç tutarız.
+_NOT_LEAD = {"$ne": "lead"}
+
 
 _indexes_ready = False
 
@@ -125,7 +131,7 @@ async def list_opportunities(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_indexes()
-    q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
+    q: dict[str, Any] = {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}
     if stage:
         if stage not in STAGES:
             raise HTTPException(400, "Invalid stage")
@@ -147,6 +153,7 @@ async def create_opportunity(
     await _ensure_indexes()
     now = datetime.now(UTC).isoformat()
     doc = {
+        "_kind": "opportunity",
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "stage": "lead",
@@ -164,12 +171,12 @@ async def create_opportunity(
 @router.get("/opportunities/{opp_id}")
 async def get_opportunity(opp_id: str, current_user: User = Depends(get_current_user)):
     o = await db.mice_opportunities.find_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
     if not o:
         raise HTTPException(404, "Opportunity not found")
     acts = await db.mice_opportunity_activities.find(
-        {"opportunity_id": opp_id, "tenant_id": current_user.tenant_id},
+        {"_kind": _NOT_LEAD, "opportunity_id": opp_id, "tenant_id": current_user.tenant_id},
         {"_id": 0},
     ).sort("created_at", -1).to_list(200)
     o["activities"] = acts
@@ -185,7 +192,7 @@ async def update_opportunity(
 ):
     require_mice_ops(current_user)
     res = await db.mice_opportunities.update_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id},
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
         {"$set": {**payload.model_dump(),
                   "updated_at": datetime.now(UTC).isoformat()}},
     )
@@ -200,7 +207,7 @@ async def delete_opportunity(opp_id: str, current_user: User = Depends(get_curre
 ):
     require_mice_ops(current_user)
     res = await db.mice_opportunities.delete_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id}
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}
     )
     if res.deleted_count == 0:
         raise HTTPException(404, "Opportunity not found")
@@ -218,7 +225,7 @@ async def transition_stage(
     if payload.to_stage not in STAGES:
         raise HTTPException(400, f"Invalid stage. One of: {STAGES}")
     o = await db.mice_opportunities.find_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
     if not o:
         raise HTTPException(404, "Opportunity not found")
@@ -240,7 +247,7 @@ async def transition_stage(
         update["close_reason"] = payload.reason
 
     await db.mice_opportunities.update_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id},
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
         {"$set": update,
          "$push": {"stage_history": {
              "stage": payload.to_stage, "at": now,
@@ -284,13 +291,14 @@ async def add_activity(
     if payload.type not in ACTIVITY_TYPES:
         raise HTTPException(400, f"Invalid activity type. One of: {ACTIVITY_TYPES}")
     o = await db.mice_opportunities.find_one(
-        {"id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
     )
     if not o:
         raise HTTPException(404, "Opportunity not found")
 
     now = datetime.now(UTC).isoformat()
     doc = {
+        "_kind": "opportunity_activity",
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "opportunity_id": opp_id,
@@ -308,7 +316,7 @@ async def add_activity(
 @router.get("/pipeline")
 async def pipeline_summary(current_user: User = Depends(get_current_user)):
     pipeline = [
-        {"$match": {"tenant_id": current_user.tenant_id}},
+        {"$match": {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}},
         {"$group": {
             "_id": "$stage",
             "count": {"$sum": 1},
