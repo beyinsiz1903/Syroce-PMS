@@ -658,7 +658,83 @@
     "invoiceNumber": "发票号",
     "invoiceDate": "发票日期",
     "paymentMethod": "支付方式",
-    "generateEInvoice": "生成电子发票"
+    "generateEInvoice": "生成电子发票",
+    "actions": {
+      "addAccount": "Add Account",
+      "addExpense": "Add Expense",
+      "addItem": "Add Item",
+      "addSupplier": "Add Supplier"
+    },
+    "headers": {
+      "banks": "Bank Accounts ({{count}})",
+      "expenses": "Expenses ({{count}})",
+      "inventory": "Inventory ({{count}})",
+      "invoices": "Invoices ({{count}})",
+      "suppliers": "Suppliers ({{count}})"
+    },
+    "info": {
+      "noEInvoiceBody": "The system is not connected to GIB e-Invoice integration. The invoices below are for reference only.",
+      "noEInvoiceTitle": "Invoices are for reference"
+    },
+    "kpi": {
+      "accrued": "Accrued",
+      "collected": "Collected",
+      "overdueAmount": "Overdue Amount",
+      "pendingAmount": "Pending Amount"
+    },
+    "labels": {
+      "accountNo": "Account No",
+      "balance": "Balance",
+      "date": "Date",
+      "due": "Due",
+      "email": "Email",
+      "iban": "IBAN",
+      "issue": "Issue Date",
+      "lowStock": "Low stock - reorder needed",
+      "payment": "Payment",
+      "phone": "Phone",
+      "qty": "Qty",
+      "sku": "SKU",
+      "taxNo": "Tax ID",
+      "totalValue": "Total Value",
+      "type": "Type",
+      "unitPrice": "Unit Price",
+      "vat": "VAT"
+    },
+    "partial": "Partial",
+    "reports": {
+      "assets": "Assets",
+      "balanceSheet": "Balance Sheet",
+      "cash": "Cash",
+      "equity": "Equity",
+      "expenseBreakdown": "Expense Breakdown",
+      "grossProfit": "Gross Profit",
+      "inventory": "Inventory",
+      "liabilities": "Liabilities",
+      "payables": "Payables",
+      "profitLoss": "Profit & Loss Statement",
+      "profitMargin": "Profit Margin",
+      "receivables": "Receivables",
+      "thisMonth": "This Month",
+      "title": "Financial Reports",
+      "totalAssets": "Total Assets",
+      "totalEquity": "Total Equity",
+      "totalExpenses": "Total Expenses",
+      "totalLiabilities": "Total Liabilities",
+      "totalRevenue": "Total Revenue",
+      "vat": "VAT Report",
+      "vatCollected": "VAT Collected",
+      "vatPaid": "VAT Paid",
+      "vatPayable": "VAT Payable"
+    },
+    "tabs": {
+      "banks": "Banks",
+      "expenses": "Expenses",
+      "inventory": "Inventory",
+      "invoices": "Invoices",
+      "reports": "Reports",
+      "suppliers": "Suppliers"
+    }
   },
   "dashboard": {
     "monthlyIncome": "月收入",
@@ -988,7 +1064,9 @@
     "viewInsights": "查看洞察",
     "loading": "正在生成AI洞察...",
     "refreshInsights": "刷新洞察",
-    "poweredBy": "AI驱动"
+    "poweredBy": "AI驱动",
+    "autoSummary": "Auto Summary",
+    "dailySummary": "Daily Summary"
   },
   "messages": {
     "success": {
@@ -1468,7 +1546,17 @@
     "comingSoon": "POS报告即将推出...",
     "comingSoonDesc": "此部分将包括每日销售、热门菜品、收入细分等。",
     "todaysOrders": "今日订单",
-    "revenue": "收入"
+    "revenue": "收入",
+    "activeOutlet": "Active Outlet",
+    "allOutlets": "All (total)",
+    "createOutletFirst": "Create an outlet first",
+    "menuCount": "Menu Items",
+    "noOutletsHint": "No outlets yet — add one from the \"Outlets\" tab",
+    "outletCount": "Outlets",
+    "outlets": "Outlets",
+    "todaysRevenue": "Today's Revenue",
+    "transactions": "transactions",
+    "voids": "Voids"
   },
   "mobileDashboard": {
     "title": "移动管理",
@@ -2181,7 +2269,17 @@
       "taskStarted": "任务已开始",
       "updateError": "无法更新",
       "taskDeleted": "任务已删除",
-      "deleteError": "无法删除"
+      "deleteError": "无法删除",
+      "cleanupDone": "{{count}} empty tasks deleted",
+      "cleanupEmpty": "Delete Empty",
+      "cleanupError": "Failed to delete empty tasks",
+      "descLabel": "Description:",
+      "descriptionField": "Description (Optional)",
+      "roomFieldRequired": "Room *",
+      "roomRequired": "Room number is required",
+      "titleField": "Title *",
+      "titlePlaceholder": "Task title (e.g. AC malfunction)",
+      "titleRequired": "Title must be at least 3 characters"
     },
     "feedback": {
       "title": "宾客反馈",
@@ -2305,7 +2403,29 @@
       "updateSuccess": "信息已更新",
       "updateError": "无法更新",
       "guestsSent": "已发送{{count}}条通知",
-      "guestSent": "{{name}} - KBS通知已发送（参考号：{{ref}}）"
+      "guestSent": "{{name}} - KBS通知已发送（参考号：{{ref}}）",
+      "addToQueue": "Add to queue",
+      "addToQueueError": "Could not enqueue",
+      "addedToQueue": "Added to queue",
+      "alreadyQueued": "This booking is already queued",
+      "noQueueJobs": "No jobs in queue",
+      "qAttempts": "Attempts",
+      "qCreatedAt": "Created",
+      "qDead": "Dead",
+      "qDone": "Done",
+      "qFailed": "Failed",
+      "qInProgress": "In progress",
+      "qKbsRef": "KBS ref",
+      "qLastError": "Last error",
+      "qNextRetry": "Next retry",
+      "qNoBookings": "No bookings yet",
+      "qPending": "Pending",
+      "qWorker": "Worker",
+      "queueStatusBar": "Queue Status",
+      "queueTab": "Queue",
+      "retry": "Retry",
+      "retryError": "Could not retry",
+      "retryQueued": "Re-queued for retry"
     },
     "kvkk": {
       "title": "GDPR数据管理",
@@ -2863,8 +2983,7 @@
       "loadFailed": "加载库存失败",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock",
-      "saveFailed": "保存失败"
+      "updateFailed": "Failed to update stock"
     },
     "success": {
       "adjusted": "Stock updated successfully"
@@ -2873,8 +2992,7 @@
       "total": "总计",
       "good": "Good",
       "low": "偏低",
-      "outOfStock": "Out",
-      "value": "价值"
+      "outOfStock": "Out"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
@@ -2889,22 +3007,13 @@
       "urgency": {
         "critical": "CRITICAL",
         "high": "高",
-        "medium": "中",
-        "low": "低"
+        "medium": "中"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order",
-      "empty": "暂无预警",
-      "current": "当前",
-      "needed": "所需",
-      "createPR": "创建请购单"
+      "recommendedOrder": "Recommended order"
     },
     "movementsModal": {
-      "title": "出入库",
-      "empty": "暂无记录",
-      "in": "入库",
-      "out": "出库",
-      "by": "操作人"
+      "title": "出入库"
     },
     "adjustModal": {
       "title": "调整库存",
@@ -2923,43 +3032,12 @@
         "waste": "Waste",
         "return": "退货",
         "count": "实盘",
-        "other": "其他",
-        "purchase": "采购",
-        "consumption": "消耗",
-        "damage": "损坏",
-        "theft": "失窃",
-        "expired": "过期"
+        "other": "其他"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
       "cancel": "取消",
-      "save": "保存",
-      "types": {
-        "in": "入库",
-        "out": "出库",
-        "count": "盘点"
-      },
-      "amount": "数量",
-      "note": "备注",
-      "saved": "调整已保存"
-    },
-    "search": "搜索…",
-    "filters": {
-      "all": "全部",
-      "low": "低库存",
-      "out": "缺货"
-    },
-    "lowStockBanner": "{{count}} 项库存偏低",
-    "alertsBtn": "预警",
-    "movementsBtn": "出入库",
-    "adjustBtn": "调整",
-    "qty": "数量",
-    "unit": "单位",
-    "reorderLevel": "再订货点",
-    "actions": {
-      "adjust": "调整",
-      "alerts": "预警",
-      "movements": "出入库"
+      "save": "保存"
     }
   },
   "mobileApprovals": {
@@ -2970,8 +3048,7 @@
       "loadFailed": "加载失败",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "原因必填",
-      "actionFailed": "操作失败"
+      "reasonRequired": "原因必填"
     },
     "success": {
       "approved": "Request approved",
@@ -2983,18 +3060,12 @@
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
       "refund": "退款",
-      "compRoom": "Complimentary Room",
-      "pr": "采购申请",
-      "po": "采购订单",
-      "expense": "费用",
-      "leave": "休假",
-      "other": "其他"
+      "compRoom": "Complimentary Room"
     },
     "statuses": {
       "pending": "待审",
       "approved": "已批准",
-      "rejected": "已拒绝",
-      "cancelled": "已取消"
+      "rejected": "已拒绝"
     },
     "priority": {
       "urgent": "URGENT",
@@ -3002,10 +3073,7 @@
     },
     "tabs": {
       "pending": "待审",
-      "myRequests": "My Requests",
-      "approved": "已批准",
-      "rejected": "已拒绝",
-      "all": "全部"
+      "myRequests": "My Requests"
     },
     "urgentBanner": "{{count}} 项紧急",
     "empty": {
@@ -3017,18 +3085,12 @@
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:",
-      "requester": "申请人",
-      "department": "部门",
-      "submitted": "提交时间",
-      "type": "类型",
-      "priority": "优先级"
+      "reason": "Reason:"
     },
     "actions": {
       "reject": "拒绝",
       "approve": "批准",
-      "cancel": "Cancel",
-      "viewDetails": "详情"
+      "cancel": "Cancel"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -3041,23 +3103,7 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes...",
-      "title": "审批申请",
-      "comment": "备注（可选）",
-      "rejectReason": "拒绝原因（必填）",
-      "cancel": "取消",
-      "approve": "批准",
-      "reject": "拒绝"
-    },
-    "priorities": {
-      "low": "低",
-      "medium": "中",
-      "high": "高",
-      "urgent": "紧急"
-    },
-    "toasts": {
-      "approved": "已批准",
-      "rejected": "已拒绝"
+      "notesPlaceholder": "Additional notes..."
     }
   },
   "frontDeskEnhanced": {
@@ -3091,41 +3137,7 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed",
-      "created": "已创建到访: {{folio}}",
-      "alertCreated": "提醒已创建",
-      "scanStarted": "扫描开始",
-      "actionFailed": "操作失败"
-    },
-    "subtitle": "自助模式与到访登记",
-    "scanBtn": "扫描证件",
-    "walkInBtn": "到访登记",
-    "noArrivals": "今日无到达",
-    "guestAlerts": {
-      "title": "客人提醒",
-      "vip": "VIP 客人",
-      "blacklist": "黑名单",
-      "frequent": "常客",
-      "noShow": "曾经未到",
-      "complaint": "历史投诉"
-    },
-    "walkIn": {
-      "title": "到访登记",
-      "guestName": "客人姓名",
-      "phone": "电话",
-      "email": "邮箱",
-      "adults": "成人",
-      "children": "儿童",
-      "nights": "晚数",
-      "roomType": "房型",
-      "rate": "价格",
-      "notes": "备注",
-      "cancel": "取消",
-      "create": "创建"
-    },
-    "errors": {
-      "loadFailed": "加载失败",
-      "guestNameRequired": "请填写客人姓名"
+      "checkinFailed": "Guest check-in failed"
     }
   },
   "procurement": {
@@ -3501,5 +3513,52 @@
     "apply_success": "建议已应用",
     "apply_failed": "无法应用建议",
     "load_failed": "无法加载 RMS 数据"
+  },
+  "costAnalytics": {
+    "byCategory": "Expenses by Category",
+    "categories": {
+      "insurance": "Insurance",
+      "maintenance": "Maintenance",
+      "marketing": "Marketing",
+      "other": "Other",
+      "rent": "Rent",
+      "salaries": "Salaries",
+      "supplies": "Supplies",
+      "taxes": "Taxes",
+      "utilities": "Utilities"
+    },
+    "detailsTitle": "Category Details",
+    "distribution": "Expense Distribution",
+    "empty": "No expenses in this date range",
+    "endDate": "End",
+    "entriesShort": "{{count}} entries",
+    "exportCsv": "Export CSV",
+    "exportSuccess": "CSV downloaded",
+    "headers": {
+      "avg": "Average",
+      "category": "Category",
+      "count": "Count",
+      "share": "Share",
+      "total": "Total",
+      "totalRow": "TOTAL"
+    },
+    "kpi": {
+      "categories": "Categories",
+      "categoriesHint": "Number of categories",
+      "dailyAvg": "Daily Average",
+      "dailyAvgHint": "Divided by {{days}} days",
+      "entries": "Entries",
+      "entriesHint": "Total transactions",
+      "periodDays": "{{days}}-day period",
+      "total": "Total Expenses"
+    },
+    "loadError": "Failed to load expense data",
+    "refresh": "Refresh",
+    "startDate": "Start",
+    "subtitle": "Track and analyze operational expenses by date range",
+    "summaryBody": "Top expense: {{top}} ({{topAmount}}). Daily average: {{daily}} ({{currency}}).",
+    "summaryTitle": "Cost Analysis",
+    "tabLabel": "Expenses",
+    "title": "Cost Analytics"
   }
 }

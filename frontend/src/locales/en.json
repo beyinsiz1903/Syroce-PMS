@@ -658,7 +658,83 @@
     "invoiceNumber": "Invoice Number",
     "invoiceDate": "Invoice Date",
     "paymentMethod": "Payment Method",
-    "generateEInvoice": "Generate E-Invoice"
+    "generateEInvoice": "Generate E-Invoice",
+    "actions": {
+      "addAccount": "Add Account",
+      "addExpense": "Add Expense",
+      "addItem": "Add Item",
+      "addSupplier": "Add Supplier"
+    },
+    "headers": {
+      "banks": "Bank Accounts ({{count}})",
+      "expenses": "Expenses ({{count}})",
+      "inventory": "Inventory ({{count}})",
+      "invoices": "Invoices ({{count}})",
+      "suppliers": "Suppliers ({{count}})"
+    },
+    "info": {
+      "noEInvoiceBody": "The system is not connected to GIB e-Invoice integration. The invoices below are for reference only.",
+      "noEInvoiceTitle": "Invoices are for reference"
+    },
+    "kpi": {
+      "accrued": "Accrued",
+      "collected": "Collected",
+      "overdueAmount": "Overdue Amount",
+      "pendingAmount": "Pending Amount"
+    },
+    "labels": {
+      "accountNo": "Account No",
+      "balance": "Balance",
+      "date": "Date",
+      "due": "Due",
+      "email": "Email",
+      "iban": "IBAN",
+      "issue": "Issue Date",
+      "lowStock": "Low stock - reorder needed",
+      "payment": "Payment",
+      "phone": "Phone",
+      "qty": "Qty",
+      "sku": "SKU",
+      "taxNo": "Tax ID",
+      "totalValue": "Total Value",
+      "type": "Type",
+      "unitPrice": "Unit Price",
+      "vat": "VAT"
+    },
+    "partial": "Partial",
+    "reports": {
+      "assets": "Assets",
+      "balanceSheet": "Balance Sheet",
+      "cash": "Cash",
+      "equity": "Equity",
+      "expenseBreakdown": "Expense Breakdown",
+      "grossProfit": "Gross Profit",
+      "inventory": "Inventory",
+      "liabilities": "Liabilities",
+      "payables": "Payables",
+      "profitLoss": "Profit & Loss Statement",
+      "profitMargin": "Profit Margin",
+      "receivables": "Receivables",
+      "thisMonth": "This Month",
+      "title": "Financial Reports",
+      "totalAssets": "Total Assets",
+      "totalEquity": "Total Equity",
+      "totalExpenses": "Total Expenses",
+      "totalLiabilities": "Total Liabilities",
+      "totalRevenue": "Total Revenue",
+      "vat": "VAT Report",
+      "vatCollected": "VAT Collected",
+      "vatPaid": "VAT Paid",
+      "vatPayable": "VAT Payable"
+    },
+    "tabs": {
+      "banks": "Banks",
+      "expenses": "Expenses",
+      "inventory": "Inventory",
+      "invoices": "Invoices",
+      "reports": "Reports",
+      "suppliers": "Suppliers"
+    }
   },
   "dashboard": {
     "monthlyIncome": "Monthly Income",

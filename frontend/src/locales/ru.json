@@ -658,7 +658,83 @@
     "invoiceNumber": "Номер счета",
     "invoiceDate": "Дата счета",
     "paymentMethod": "Способ оплаты",
-    "generateEInvoice": "Создать электронный счет"
+    "generateEInvoice": "Создать электронный счет",
+    "actions": {
+      "addAccount": "Add Account",
+      "addExpense": "Add Expense",
+      "addItem": "Add Item",
+      "addSupplier": "Add Supplier"
+    },
+    "headers": {
+      "banks": "Bank Accounts ({{count}})",
+      "expenses": "Expenses ({{count}})",
+      "inventory": "Inventory ({{count}})",
+      "invoices": "Invoices ({{count}})",
+      "suppliers": "Suppliers ({{count}})"
+    },
+    "info": {
+      "noEInvoiceBody": "The system is not connected to GIB e-Invoice integration. The invoices below are for reference only.",
+      "noEInvoiceTitle": "Invoices are for reference"
+    },
+    "kpi": {
+      "accrued": "Accrued",
+      "collected": "Collected",
+      "overdueAmount": "Overdue Amount",
+      "pendingAmount": "Pending Amount"
+    },
+    "labels": {
+      "accountNo": "Account No",
+      "balance": "Balance",
+      "date": "Date",
+      "due": "Due",
+      "email": "Email",
+      "iban": "IBAN",
+      "issue": "Issue Date",
+      "lowStock": "Low stock - reorder needed",
+      "payment": "Payment",
+      "phone": "Phone",
+      "qty": "Qty",
+      "sku": "SKU",
+      "taxNo": "Tax ID",
+      "totalValue": "Total Value",
+      "type": "Type",
+      "unitPrice": "Unit Price",
+      "vat": "VAT"
+    },
+    "partial": "Partial",
+    "reports": {
+      "assets": "Assets",
+      "balanceSheet": "Balance Sheet",
+      "cash": "Cash",
+      "equity": "Equity",
+      "expenseBreakdown": "Expense Breakdown",
+      "grossProfit": "Gross Profit",
+      "inventory": "Inventory",
+      "liabilities": "Liabilities",
+      "payables": "Payables",
+      "profitLoss": "Profit & Loss Statement",
+      "profitMargin": "Profit Margin",
+      "receivables": "Receivables",
+      "thisMonth": "This Month",
+      "title": "Financial Reports",
+      "totalAssets": "Total Assets",
+      "totalEquity": "Total Equity",
+      "totalExpenses": "Total Expenses",
+      "totalLiabilities": "Total Liabilities",
+      "totalRevenue": "Total Revenue",
+      "vat": "VAT Report",
+      "vatCollected": "VAT Collected",
+      "vatPaid": "VAT Paid",
+      "vatPayable": "VAT Payable"
+    },
+    "tabs": {
+      "banks": "Banks",
+      "expenses": "Expenses",
+      "inventory": "Inventory",
+      "invoices": "Invoices",
+      "reports": "Reports",
+      "suppliers": "Suppliers"
+    }
   },
   "dashboard": {
     "monthlyIncome": "Месячный доход",
@@ -988,7 +1064,9 @@
     "viewInsights": "Просмотреть аналитику",
     "loading": "Генерация аналитики ИИ...",
     "refreshInsights": "Обновить аналитику",
-    "poweredBy": "На основе ИИ"
+    "poweredBy": "На основе ИИ",
+    "autoSummary": "Auto Summary",
+    "dailySummary": "Daily Summary"
   },
   "messages": {
     "success": {
@@ -1468,7 +1546,17 @@
     "comingSoon": "Отчёты POS скоро...",
     "comingSoonDesc": "Ежедневные продажи и топ-позиции.",
     "todaysOrders": "Заказы Сегодня",
-    "revenue": "Доходы"
+    "revenue": "Доходы",
+    "activeOutlet": "Active Outlet",
+    "allOutlets": "All (total)",
+    "createOutletFirst": "Create an outlet first",
+    "menuCount": "Menu Items",
+    "noOutletsHint": "No outlets yet — add one from the \"Outlets\" tab",
+    "outletCount": "Outlets",
+    "outlets": "Outlets",
+    "todaysRevenue": "Today's Revenue",
+    "transactions": "transactions",
+    "voids": "Voids"
   },
   "mobileDashboard": {
     "title": "Мобильное Управление",
@@ -2181,7 +2269,17 @@
       "taskStarted": "Задача начата",
       "updateError": "Не удалось обновить",
       "taskDeleted": "Задача удалена",
-      "deleteError": "Не удалось удалить"
+      "deleteError": "Не удалось удалить",
+      "cleanupDone": "{{count}} empty tasks deleted",
+      "cleanupEmpty": "Delete Empty",
+      "cleanupError": "Failed to delete empty tasks",
+      "descLabel": "Description:",
+      "descriptionField": "Description (Optional)",
+      "roomFieldRequired": "Room *",
+      "roomRequired": "Room number is required",
+      "titleField": "Title *",
+      "titlePlaceholder": "Task title (e.g. AC malfunction)",
+      "titleRequired": "Title must be at least 3 characters"
     },
     "feedback": {
       "title": "Отзывы гостей",
@@ -2305,7 +2403,29 @@
       "updateSuccess": "Информация обновлена",
       "updateError": "Не удалось обновить",
       "guestsSent": "Отправлено {{count}} уведомлений",
-      "guestSent": "{{name}} - уведомление KBS отправлено (Реф: {{ref}})"
+      "guestSent": "{{name}} - уведомление KBS отправлено (Реф: {{ref}})",
+      "addToQueue": "Add to queue",
+      "addToQueueError": "Could not enqueue",
+      "addedToQueue": "Added to queue",
+      "alreadyQueued": "This booking is already queued",
+      "noQueueJobs": "No jobs in queue",
+      "qAttempts": "Attempts",
+      "qCreatedAt": "Created",
+      "qDead": "Dead",
+      "qDone": "Done",
+      "qFailed": "Failed",
+      "qInProgress": "In progress",
+      "qKbsRef": "KBS ref",
+      "qLastError": "Last error",
+      "qNextRetry": "Next retry",
+      "qNoBookings": "No bookings yet",
+      "qPending": "Pending",
+      "qWorker": "Worker",
+      "queueStatusBar": "Queue Status",
+      "queueTab": "Queue",
+      "retry": "Retry",
+      "retryError": "Could not retry",
+      "retryQueued": "Re-queued for retry"
     },
     "kvkk": {
       "title": "Управление данными GDPR",
@@ -2863,8 +2983,7 @@
       "loadFailed": "Не удалось загрузить склад",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock",
-      "saveFailed": "Не удалось сохранить"
+      "updateFailed": "Failed to update stock"
     },
     "success": {
       "adjusted": "Stock updated successfully"
@@ -2873,8 +2992,7 @@
       "total": "Всего",
       "good": "Good",
       "low": "Низкий",
-      "outOfStock": "Out",
-      "value": "Стоимость"
+      "outOfStock": "Out"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
@@ -2889,22 +3007,13 @@
       "urgency": {
         "critical": "CRITICAL",
         "high": "Высокая",
-        "medium": "Средняя",
-        "low": "Низкая"
+        "medium": "Средняя"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order",
-      "empty": "Активных оповещений нет",
-      "current": "Сейчас",
-      "needed": "Нужно",
-      "createPR": "Создать заявку"
+      "recommendedOrder": "Recommended order"
     },
     "movementsModal": {
-      "title": "Движения",
-      "empty": "Движений нет",
-      "in": "Приход",
-      "out": "Расход",
-      "by": "Кем"
+      "title": "Движения"
     },
     "adjustModal": {
       "title": "Корректировка запаса",
@@ -2923,43 +3032,12 @@
         "waste": "Waste",
         "return": "Возврат",
         "count": "Инвентаризация",
-        "other": "Другое",
-        "purchase": "Закупка",
-        "consumption": "Расход",
-        "damage": "Повреждение",
-        "theft": "Кража",
-        "expired": "Просрочка"
+        "other": "Другое"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
       "cancel": "Отмена",
-      "save": "Сохранить",
-      "types": {
-        "in": "Приход",
-        "out": "Расход",
-        "count": "Учёт"
-      },
-      "amount": "Кол-во",
-      "note": "Примечание",
-      "saved": "Корректировка сохранена"
-    },
-    "search": "Поиск…",
-    "filters": {
-      "all": "Все",
-      "low": "Низкий запас",
-      "out": "Закончилось"
-    },
-    "lowStockBanner": "Низкий запас: {{count}}",
-    "alertsBtn": "Оповещения",
-    "movementsBtn": "Движения",
-    "adjustBtn": "Корректировка",
-    "qty": "Количество",
-    "unit": "Ед.",
-    "reorderLevel": "Точка заказа",
-    "actions": {
-      "adjust": "Корректировка",
-      "alerts": "Оповещения",
-      "movements": "Движения"
+      "save": "Сохранить"
     }
   },
   "mobileApprovals": {
@@ -2970,8 +3048,7 @@
       "loadFailed": "Не удалось загрузить",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Укажите причину",
-      "actionFailed": "Действие не выполнено"
+      "reasonRequired": "Укажите причину"
     },
     "success": {
       "approved": "Request approved",
@@ -2983,18 +3060,12 @@
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
       "refund": "Возврат",
-      "compRoom": "Complimentary Room",
-      "pr": "Заявка на закупку",
-      "po": "Заказ",
-      "expense": "Расход",
-      "leave": "Отпуск",
-      "other": "Другое"
+      "compRoom": "Complimentary Room"
     },
     "statuses": {
       "pending": "В ожидании",
       "approved": "Одобрено",
-      "rejected": "Отклонено",
-      "cancelled": "Отменено"
+      "rejected": "Отклонено"
     },
     "priority": {
       "urgent": "URGENT",
@@ -3002,10 +3073,7 @@
     },
     "tabs": {
       "pending": "В ожидании",
-      "myRequests": "My Requests",
-      "approved": "Одобренные",
-      "rejected": "Отклонённые",
-      "all": "Все"
+      "myRequests": "My Requests"
     },
     "urgentBanner": "Срочных: {{count}}",
     "empty": {
@@ -3017,18 +3085,12 @@
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:",
-      "requester": "Инициатор",
-      "department": "Отдел",
-      "submitted": "Подано",
-      "type": "Тип",
-      "priority": "Приоритет"
+      "reason": "Reason:"
     },
     "actions": {
       "reject": "Отклонить",
       "approve": "Одобрить",
-      "cancel": "Cancel",
-      "viewDetails": "Детали"
+      "cancel": "Cancel"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -3041,23 +3103,7 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes...",
-      "title": "Рассмотреть заявку",
-      "comment": "Комментарий (необязательно)",
-      "rejectReason": "Причина отклонения (обязательно)",
-      "cancel": "Отмена",
-      "approve": "Одобрить",
-      "reject": "Отклонить"
-    },
-    "priorities": {
-      "low": "Низкий",
-      "medium": "Средний",
-      "high": "Высокий",
-      "urgent": "Срочный"
-    },
-    "toasts": {
-      "approved": "Одобрено",
-      "rejected": "Отклонено"
+      "notesPlaceholder": "Additional notes..."
     }
   },
   "frontDeskEnhanced": {
@@ -3091,41 +3137,7 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed",
-      "created": "Заезд создан: {{folio}}",
-      "alertCreated": "Оповещение создано",
-      "scanStarted": "Сканирование запущено",
-      "actionFailed": "Действие не выполнено"
-    },
-    "subtitle": "Режим киоска и заезд без брони",
-    "scanBtn": "Сканировать документ",
-    "walkInBtn": "Без брони",
-    "noArrivals": "Заездов сегодня нет",
-    "guestAlerts": {
-      "title": "Оповещения о госте",
-      "vip": "VIP-гость",
-      "blacklist": "Чёрный список",
-      "frequent": "Постоянный гость",
-      "noShow": "Ранее не явился",
-      "complaint": "Прошлая жалоба"
-    },
-    "walkIn": {
-      "title": "Бронирование без брони",
-      "guestName": "Имя гостя",
-      "phone": "Телефон",
-      "email": "Эл. почта",
-      "adults": "Взрослые",
-      "children": "Дети",
-      "nights": "Ночей",
-      "roomType": "Тип номера",
-      "rate": "Тариф",
-      "notes": "Примечания",
-      "cancel": "Отмена",
-      "create": "Создать"
-    },
-    "errors": {
-      "loadFailed": "Не удалось загрузить",
-      "guestNameRequired": "Требуется имя гостя"
+      "checkinFailed": "Guest check-in failed"
     }
   },
   "procurement": {
@@ -3501,5 +3513,52 @@
     "apply_success": "Рекомендации применены",
     "apply_failed": "Не удалось применить рекомендации",
     "load_failed": "Не удалось загрузить данные RMS"
+  },
+  "costAnalytics": {
+    "byCategory": "Expenses by Category",
+    "categories": {
+      "insurance": "Insurance",
+      "maintenance": "Maintenance",
+      "marketing": "Marketing",
+      "other": "Other",
+      "rent": "Rent",
+      "salaries": "Salaries",
+      "supplies": "Supplies",
+      "taxes": "Taxes",
+      "utilities": "Utilities"
+    },
+    "detailsTitle": "Category Details",
+    "distribution": "Expense Distribution",
+    "empty": "No expenses in this date range",
+    "endDate": "End",
+    "entriesShort": "{{count}} entries",
+    "exportCsv": "Export CSV",
+    "exportSuccess": "CSV downloaded",
+    "headers": {
+      "avg": "Average",
+      "category": "Category",
+      "count": "Count",
+      "share": "Share",
+      "total": "Total",
+      "totalRow": "TOTAL"
+    },
+    "kpi": {
+      "categories": "Categories",
+      "categoriesHint": "Number of categories",
+      "dailyAvg": "Daily Average",
+      "dailyAvgHint": "Divided by {{days}} days",
+      "entries": "Entries",
+      "entriesHint": "Total transactions",
+      "periodDays": "{{days}}-day period",
+      "total": "Total Expenses"
+    },
+    "loadError": "Failed to load expense data",
+    "refresh": "Refresh",
+    "startDate": "Start",
+    "subtitle": "Track and analyze operational expenses by date range",
+    "summaryBody": "Top expense: {{top}} ({{topAmount}}). Daily average: {{daily}} ({{currency}}).",
+    "summaryTitle": "Cost Analysis",
+    "tabLabel": "Expenses",
+    "title": "Cost Analytics"
   }
 }

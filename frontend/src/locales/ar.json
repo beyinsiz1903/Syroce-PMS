@@ -658,7 +658,83 @@
     "invoiceNumber": "رقم الفاتورة",
     "invoiceDate": "تاريخ الفاتورة",
     "paymentMethod": "طريقة الدفع",
-    "generateEInvoice": "إنشاء فاتورة إلكترونية"
+    "generateEInvoice": "إنشاء فاتورة إلكترونية",
+    "actions": {
+      "addAccount": "Add Account",
+      "addExpense": "Add Expense",
+      "addItem": "Add Item",
+      "addSupplier": "Add Supplier"
+    },
+    "headers": {
+      "banks": "Bank Accounts ({{count}})",
+      "expenses": "Expenses ({{count}})",
+      "inventory": "Inventory ({{count}})",
+      "invoices": "Invoices ({{count}})",
+      "suppliers": "Suppliers ({{count}})"
+    },
+    "info": {
+      "noEInvoiceBody": "The system is not connected to GIB e-Invoice integration. The invoices below are for reference only.",
+      "noEInvoiceTitle": "Invoices are for reference"
+    },
+    "kpi": {
+      "accrued": "Accrued",
+      "collected": "Collected",
+      "overdueAmount": "Overdue Amount",
+      "pendingAmount": "Pending Amount"
+    },
+    "labels": {
+      "accountNo": "Account No",
+      "balance": "Balance",
+      "date": "Date",
+      "due": "Due",
+      "email": "Email",
+      "iban": "IBAN",
+      "issue": "Issue Date",
+      "lowStock": "Low stock - reorder needed",
+      "payment": "Payment",
+      "phone": "Phone",
+      "qty": "Qty",
+      "sku": "SKU",
+      "taxNo": "Tax ID",
+      "totalValue": "Total Value",
+      "type": "Type",
+      "unitPrice": "Unit Price",
+      "vat": "VAT"
+    },
+    "partial": "Partial",
+    "reports": {
+      "assets": "Assets",
+      "balanceSheet": "Balance Sheet",
+      "cash": "Cash",
+      "equity": "Equity",
+      "expenseBreakdown": "Expense Breakdown",
+      "grossProfit": "Gross Profit",
+      "inventory": "Inventory",
+      "liabilities": "Liabilities",
+      "payables": "Payables",
+      "profitLoss": "Profit & Loss Statement",
+      "profitMargin": "Profit Margin",
+      "receivables": "Receivables",
+      "thisMonth": "This Month",
+      "title": "Financial Reports",
+      "totalAssets": "Total Assets",
+      "totalEquity": "Total Equity",
+      "totalExpenses": "Total Expenses",
+      "totalLiabilities": "Total Liabilities",
+      "totalRevenue": "Total Revenue",
+      "vat": "VAT Report",
+      "vatCollected": "VAT Collected",
+      "vatPaid": "VAT Paid",
+      "vatPayable": "VAT Payable"
+    },
+    "tabs": {
+      "banks": "Banks",
+      "expenses": "Expenses",
+      "inventory": "Inventory",
+      "invoices": "Invoices",
+      "reports": "Reports",
+      "suppliers": "Suppliers"
+    }
   },
   "dashboard": {
     "monthlyIncome": "الدخل الشهري",
@@ -988,7 +1064,9 @@
     "viewInsights": "عرض الرؤى",
     "loading": "جاري إنشاء رؤى الذكاء الاصطناعي...",
     "refreshInsights": "تحديث الرؤى",
-    "poweredBy": "مدعوم بالذكاء الاصطناعي"
+    "poweredBy": "مدعوم بالذكاء الاصطناعي",
+    "autoSummary": "Auto Summary",
+    "dailySummary": "Daily Summary"
   },
   "messages": {
     "success": {
@@ -1468,7 +1546,17 @@
     "comingSoon": "تقارير POS قريباً...",
     "comingSoonDesc": "مبيعات يومية وعناصر شائعة.",
     "todaysOrders": "طلبات اليوم",
-    "revenue": "الإيرادات"
+    "revenue": "الإيرادات",
+    "activeOutlet": "Active Outlet",
+    "allOutlets": "All (total)",
+    "createOutletFirst": "Create an outlet first",
+    "menuCount": "Menu Items",
+    "noOutletsHint": "No outlets yet — add one from the \"Outlets\" tab",
+    "outletCount": "Outlets",
+    "outlets": "Outlets",
+    "todaysRevenue": "Today's Revenue",
+    "transactions": "transactions",
+    "voids": "Voids"
   },
   "mobileDashboard": {
     "title": "الإدارة عبر الجوال",
@@ -2181,7 +2269,17 @@
       "taskStarted": "تم بدء المهمة",
       "updateError": "تعذر التحديث",
       "taskDeleted": "تم حذف المهمة",
-      "deleteError": "تعذر الحذف"
+      "deleteError": "تعذر الحذف",
+      "cleanupDone": "{{count}} empty tasks deleted",
+      "cleanupEmpty": "Delete Empty",
+      "cleanupError": "Failed to delete empty tasks",
+      "descLabel": "Description:",
+      "descriptionField": "Description (Optional)",
+      "roomFieldRequired": "Room *",
+      "roomRequired": "Room number is required",
+      "titleField": "Title *",
+      "titlePlaceholder": "Task title (e.g. AC malfunction)",
+      "titleRequired": "Title must be at least 3 characters"
     },
     "feedback": {
       "title": "ملاحظات النزلاء",
@@ -2305,7 +2403,29 @@
       "updateSuccess": "تم تحديث المعلومات",
       "updateError": "تعذر التحديث",
       "guestsSent": "تم إرسال {{count}} إشعار(ات)",
-      "guestSent": "{{name}} - تم إرسال إشعار KBS (مرجع: {{ref}})"
+      "guestSent": "{{name}} - تم إرسال إشعار KBS (مرجع: {{ref}})",
+      "addToQueue": "Add to queue",
+      "addToQueueError": "Could not enqueue",
+      "addedToQueue": "Added to queue",
+      "alreadyQueued": "This booking is already queued",
+      "noQueueJobs": "No jobs in queue",
+      "qAttempts": "Attempts",
+      "qCreatedAt": "Created",
+      "qDead": "Dead",
+      "qDone": "Done",
+      "qFailed": "Failed",
+      "qInProgress": "In progress",
+      "qKbsRef": "KBS ref",
+      "qLastError": "Last error",
+      "qNextRetry": "Next retry",
+      "qNoBookings": "No bookings yet",
+      "qPending": "Pending",
+      "qWorker": "Worker",
+      "queueStatusBar": "Queue Status",
+      "queueTab": "Queue",
+      "retry": "Retry",
+      "retryError": "Could not retry",
+      "retryQueued": "Re-queued for retry"
     },
     "kvkk": {
       "title": "إدارة بيانات GDPR",
@@ -2863,8 +2983,7 @@
       "loadFailed": "تعذّر تحميل المخزون",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock",
-      "saveFailed": "فشل الحفظ"
+      "updateFailed": "Failed to update stock"
     },
     "success": {
       "adjusted": "Stock updated successfully"
@@ -2873,8 +2992,7 @@
       "total": "الإجمالي",
       "good": "Good",
       "low": "منخفض",
-      "outOfStock": "Out",
-      "value": "القيمة"
+      "outOfStock": "Out"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
@@ -2889,22 +3007,13 @@
       "urgency": {
         "critical": "CRITICAL",
         "high": "عالية",
-        "medium": "متوسطة",
-        "low": "منخفضة"
+        "medium": "متوسطة"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order",
-      "empty": "لا توجد تنبيهات نشطة",
-      "current": "الحالي",
-      "needed": "المطلوب",
-      "createPR": "إنشاء طلب"
+      "recommendedOrder": "Recommended order"
     },
     "movementsModal": {
-      "title": "الحركات",
-      "empty": "لا توجد حركات",
-      "in": "وارد",
-      "out": "صادر",
-      "by": "بواسطة"
+      "title": "الحركات"
     },
     "adjustModal": {
       "title": "تعديل المخزون",
@@ -2923,43 +3032,12 @@
         "waste": "Waste",
         "return": "إرجاع",
         "count": "جرد فعلي",
-        "other": "أخرى",
-        "purchase": "شراء",
-        "consumption": "استهلاك",
-        "damage": "تلف",
-        "theft": "سرقة",
-        "expired": "منتهي الصلاحية"
+        "other": "أخرى"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
       "cancel": "إلغاء",
-      "save": "حفظ",
-      "types": {
-        "in": "وارد",
-        "out": "صرف",
-        "count": "جرد"
-      },
-      "amount": "الكمية",
-      "note": "ملاحظة",
-      "saved": "تم حفظ التعديل"
-    },
-    "search": "بحث…",
-    "filters": {
-      "all": "الكل",
-      "low": "مخزون منخفض",
-      "out": "نفد"
-    },
-    "lowStockBanner": "{{count}} صنف بمخزون منخفض",
-    "alertsBtn": "التنبيهات",
-    "movementsBtn": "الحركات",
-    "adjustBtn": "تعديل",
-    "qty": "الكمية",
-    "unit": "الوحدة",
-    "reorderLevel": "حد إعادة الطلب",
-    "actions": {
-      "adjust": "تعديل",
-      "alerts": "التنبيهات",
-      "movements": "الحركات"
+      "save": "حفظ"
     }
   },
   "mobileApprovals": {
@@ -2970,8 +3048,7 @@
       "loadFailed": "فشل التحميل",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "السبب إلزامي",
-      "actionFailed": "فشل التنفيذ"
+      "reasonRequired": "السبب إلزامي"
     },
     "success": {
       "approved": "Request approved",
@@ -2983,18 +3060,12 @@
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
       "refund": "استرداد",
-      "compRoom": "Complimentary Room",
-      "pr": "طلب شراء",
-      "po": "أمر شراء",
-      "expense": "مصروف",
-      "leave": "إجازة",
-      "other": "أخرى"
+      "compRoom": "Complimentary Room"
     },
     "statuses": {
       "pending": "قيد الانتظار",
       "approved": "موافق عليه",
-      "rejected": "مرفوض",
-      "cancelled": "ملغى"
+      "rejected": "مرفوض"
     },
     "priority": {
       "urgent": "URGENT",
@@ -3002,10 +3073,7 @@
     },
     "tabs": {
       "pending": "قيد الانتظار",
-      "myRequests": "My Requests",
-      "approved": "موافق عليها",
-      "rejected": "مرفوضة",
-      "all": "الكل"
+      "myRequests": "My Requests"
     },
     "urgentBanner": "{{count}} عاجلة",
     "empty": {
@@ -3017,18 +3085,12 @@
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:",
-      "requester": "مقدم الطلب",
-      "department": "القسم",
-      "submitted": "تاريخ التقديم",
-      "type": "النوع",
-      "priority": "الأولوية"
+      "reason": "Reason:"
     },
     "actions": {
       "reject": "رفض",
       "approve": "موافقة",
-      "cancel": "Cancel",
-      "viewDetails": "التفاصيل"
+      "cancel": "Cancel"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -3041,23 +3103,7 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes...",
-      "title": "مراجعة الطلب",
-      "comment": "تعليق (اختياري)",
-      "rejectReason": "سبب الرفض (إلزامي)",
-      "cancel": "إلغاء",
-      "approve": "موافقة",
-      "reject": "رفض"
-    },
-    "priorities": {
-      "low": "منخفض",
-      "medium": "متوسط",
-      "high": "عالي",
-      "urgent": "عاجل"
-    },
-    "toasts": {
-      "approved": "تمت الموافقة",
-      "rejected": "تم الرفض"
+      "notesPlaceholder": "Additional notes..."
     }
   },
   "frontDeskEnhanced": {
@@ -3091,41 +3137,7 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed",
-      "created": "تم إنشاء الحجز: {{folio}}",
-      "alertCreated": "تم إنشاء التنبيه",
-      "scanStarted": "بدأ المسح",
-      "actionFailed": "فشل التنفيذ"
-    },
-    "subtitle": "وضع الكشك والوصول دون حجز",
-    "scanBtn": "مسح الهوية",
-    "walkInBtn": "وصول دون حجز",
-    "noArrivals": "لا توجد وصولات اليوم",
-    "guestAlerts": {
-      "title": "تنبيهات النزيل",
-      "vip": "نزيل VIP",
-      "blacklist": "القائمة السوداء",
-      "frequent": "نزيل دائم",
-      "noShow": "تخلّف سابق",
-      "complaint": "شكوى سابقة"
-    },
-    "walkIn": {
-      "title": "حجز فوري",
-      "guestName": "اسم النزيل",
-      "phone": "الهاتف",
-      "email": "البريد",
-      "adults": "بالغون",
-      "children": "أطفال",
-      "nights": "ليالٍ",
-      "roomType": "نوع الغرفة",
-      "rate": "السعر",
-      "notes": "ملاحظات",
-      "cancel": "إلغاء",
-      "create": "إنشاء"
-    },
-    "errors": {
-      "loadFailed": "فشل التحميل",
-      "guestNameRequired": "اسم النزيل مطلوب"
+      "checkinFailed": "Guest check-in failed"
     }
   },
   "procurement": {
@@ -3501,5 +3513,52 @@
     "apply_success": "تم تطبيق التوصيات",
     "apply_failed": "تعذر تطبيق التوصيات",
     "load_failed": "تعذر تحميل بيانات RMS"
+  },
+  "costAnalytics": {
+    "byCategory": "Expenses by Category",
+    "categories": {
+      "insurance": "Insurance",
+      "maintenance": "Maintenance",
+      "marketing": "Marketing",
+      "other": "Other",
+      "rent": "Rent",
+      "salaries": "Salaries",
+      "supplies": "Supplies",
+      "taxes": "Taxes",
+      "utilities": "Utilities"
+    },
+    "detailsTitle": "Category Details",
+    "distribution": "Expense Distribution",
+    "empty": "No expenses in this date range",
+    "endDate": "End",
+    "entriesShort": "{{count}} entries",
+    "exportCsv": "Export CSV",
+    "exportSuccess": "CSV downloaded",
+    "headers": {
+      "avg": "Average",
+      "category": "Category",
+      "count": "Count",
+      "share": "Share",
+      "total": "Total",
+      "totalRow": "TOTAL"
+    },
+    "kpi": {
+      "categories": "Categories",
+      "categoriesHint": "Number of categories",
+      "dailyAvg": "Daily Average",
+      "dailyAvgHint": "Divided by {{days}} days",
+      "entries": "Entries",
+      "entriesHint": "Total transactions",
+      "periodDays": "{{days}}-day period",
+      "total": "Total Expenses"
+    },
+    "loadError": "Failed to load expense data",
+    "refresh": "Refresh",
+    "startDate": "Start",
+    "subtitle": "Track and analyze operational expenses by date range",
+    "summaryBody": "Top expense: {{top}} ({{topAmount}}). Daily average: {{daily}} ({{currency}}).",
+    "summaryTitle": "Cost Analysis",
+    "tabLabel": "Expenses",
+    "title": "Cost Analytics"
   }
 }

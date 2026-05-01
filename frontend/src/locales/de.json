@@ -658,7 +658,83 @@
     "invoiceNumber": "Rechnungsnummer",
     "invoiceDate": "Rechnungsdatum",
     "paymentMethod": "Zahlungsmethode",
-    "generateEInvoice": "E-Rechnung erstellen"
+    "generateEInvoice": "E-Rechnung erstellen",
+    "actions": {
+      "addAccount": "Add Account",
+      "addExpense": "Add Expense",
+      "addItem": "Add Item",
+      "addSupplier": "Add Supplier"
+    },
+    "headers": {
+      "banks": "Bank Accounts ({{count}})",
+      "expenses": "Expenses ({{count}})",
+      "inventory": "Inventory ({{count}})",
+      "invoices": "Invoices ({{count}})",
+      "suppliers": "Suppliers ({{count}})"
+    },
+    "info": {
+      "noEInvoiceBody": "The system is not connected to GIB e-Invoice integration. The invoices below are for reference only.",
+      "noEInvoiceTitle": "Invoices are for reference"
+    },
+    "kpi": {
+      "accrued": "Accrued",
+      "collected": "Collected",
+      "overdueAmount": "Overdue Amount",
+      "pendingAmount": "Pending Amount"
+    },
+    "labels": {
+      "accountNo": "Account No",
+      "balance": "Balance",
+      "date": "Date",
+      "due": "Due",
+      "email": "Email",
+      "iban": "IBAN",
+      "issue": "Issue Date",
+      "lowStock": "Low stock - reorder needed",
+      "payment": "Payment",
+      "phone": "Phone",
+      "qty": "Qty",
+      "sku": "SKU",
+      "taxNo": "Tax ID",
+      "totalValue": "Total Value",
+      "type": "Type",
+      "unitPrice": "Unit Price",
+      "vat": "VAT"
+    },
+    "partial": "Partial",
+    "reports": {
+      "assets": "Assets",
+      "balanceSheet": "Balance Sheet",
+      "cash": "Cash",
+      "equity": "Equity",
+      "expenseBreakdown": "Expense Breakdown",
+      "grossProfit": "Gross Profit",
+      "inventory": "Inventory",
+      "liabilities": "Liabilities",
+      "payables": "Payables",
+      "profitLoss": "Profit & Loss Statement",
+      "profitMargin": "Profit Margin",
+      "receivables": "Receivables",
+      "thisMonth": "This Month",
+      "title": "Financial Reports",
+      "totalAssets": "Total Assets",
+      "totalEquity": "Total Equity",
+      "totalExpenses": "Total Expenses",
+      "totalLiabilities": "Total Liabilities",
+      "totalRevenue": "Total Revenue",
+      "vat": "VAT Report",
+      "vatCollected": "VAT Collected",
+      "vatPaid": "VAT Paid",
+      "vatPayable": "VAT Payable"
+    },
+    "tabs": {
+      "banks": "Banks",
+      "expenses": "Expenses",
+      "inventory": "Inventory",
+      "invoices": "Invoices",
+      "reports": "Reports",
+      "suppliers": "Suppliers"
+    }
   },
   "dashboard": {
     "monthlyIncome": "Monatseinkommen",
@@ -1470,7 +1546,17 @@
     "comingSoon": "POS-Berichte demnächst...",
     "comingSoonDesc": "Tägliche Umsätze, Top-Artikel und mehr.",
     "todaysOrders": "Heutige Bestellungen",
-    "revenue": "Umsatz"
+    "revenue": "Umsatz",
+    "activeOutlet": "Active Outlet",
+    "allOutlets": "All (total)",
+    "createOutletFirst": "Create an outlet first",
+    "menuCount": "Menu Items",
+    "noOutletsHint": "No outlets yet — add one from the \"Outlets\" tab",
+    "outletCount": "Outlets",
+    "outlets": "Outlets",
+    "todaysRevenue": "Today's Revenue",
+    "transactions": "transactions",
+    "voids": "Voids"
   },
   "mobileDashboard": {
     "title": "Mobile Verwaltung",
@@ -2183,7 +2269,17 @@
       "taskStarted": "Aufgabe gestartet",
       "updateError": "Aufgabe konnte nicht aktualisiert werden",
       "taskDeleted": "Aufgabe gelöscht",
-      "deleteError": "Aufgabe konnte nicht gelöscht werden"
+      "deleteError": "Aufgabe konnte nicht gelöscht werden",
+      "cleanupDone": "{{count}} empty tasks deleted",
+      "cleanupEmpty": "Delete Empty",
+      "cleanupError": "Failed to delete empty tasks",
+      "descLabel": "Description:",
+      "descriptionField": "Description (Optional)",
+      "roomFieldRequired": "Room *",
+      "roomRequired": "Room number is required",
+      "titleField": "Title *",
+      "titlePlaceholder": "Task title (e.g. AC malfunction)",
+      "titleRequired": "Title must be at least 3 characters"
     },
     "feedback": {
       "title": "Gästefeedback",
@@ -2307,7 +2403,29 @@
       "updateSuccess": "Informationen aktualisiert",
       "updateError": "Information konnte nicht aktualisiert werden",
       "guestsSent": "{{count}} Gastmeldung(en) gesendet",
-      "guestSent": "{{name}} - KBS-Meldung gesendet (Ref: {{ref}})"
+      "guestSent": "{{name}} - KBS-Meldung gesendet (Ref: {{ref}})",
+      "addToQueue": "Add to queue",
+      "addToQueueError": "Could not enqueue",
+      "addedToQueue": "Added to queue",
+      "alreadyQueued": "This booking is already queued",
+      "noQueueJobs": "No jobs in queue",
+      "qAttempts": "Attempts",
+      "qCreatedAt": "Created",
+      "qDead": "Dead",
+      "qDone": "Done",
+      "qFailed": "Failed",
+      "qInProgress": "In progress",
+      "qKbsRef": "KBS ref",
+      "qLastError": "Last error",
+      "qNextRetry": "Next retry",
+      "qNoBookings": "No bookings yet",
+      "qPending": "Pending",
+      "qWorker": "Worker",
+      "queueStatusBar": "Queue Status",
+      "queueTab": "Queue",
+      "retry": "Retry",
+      "retryError": "Could not retry",
+      "retryQueued": "Re-queued for retry"
     },
     "kvkk": {
       "title": "DSGVO Datenverwaltung",
@@ -2865,8 +2983,7 @@
       "loadFailed": "Lager konnte nicht geladen werden",
       "movementsFailed": "Failed to load movements",
       "fillAllFields": "Please fill all fields",
-      "updateFailed": "Failed to update stock",
-      "saveFailed": "Speichern fehlgeschlagen"
+      "updateFailed": "Failed to update stock"
     },
     "success": {
       "adjusted": "Stock updated successfully"
@@ -2875,8 +2992,7 @@
       "total": "Gesamt",
       "good": "Good",
       "low": "Niedrig",
-      "outOfStock": "Out",
-      "value": "Wert"
+      "outOfStock": "Out"
     },
     "alertsBanner": "{{count}} low stock alerts",
     "details": "Details",
@@ -2891,22 +3007,13 @@
       "urgency": {
         "critical": "CRITICAL",
         "high": "Hoch",
-        "medium": "Mittel",
-        "low": "Niedrig"
+        "medium": "Mittel"
       },
       "shortage": "Shortage",
-      "recommendedOrder": "Recommended order",
-      "empty": "Keine aktiven Warnungen",
-      "current": "Aktuell",
-      "needed": "Benötigt",
-      "createPR": "Anforderung erstellen"
+      "recommendedOrder": "Recommended order"
     },
     "movementsModal": {
-      "title": "Bewegungen",
-      "empty": "Noch keine Bewegungen",
-      "in": "Eingang",
-      "out": "Ausgang",
-      "by": "Von"
+      "title": "Bewegungen"
     },
     "adjustModal": {
       "title": "Bestand anpassen",
@@ -2925,43 +3032,12 @@
         "waste": "Waste",
         "return": "Rücksendung",
         "count": "Inventurzählung",
-        "other": "Sonstiges",
-        "purchase": "Einkauf",
-        "consumption": "Verbrauch",
-        "damage": "Beschädigung",
-        "theft": "Diebstahl",
-        "expired": "Abgelaufen"
+        "other": "Sonstiges"
       },
       "notes": "Notes",
       "notesPlaceholder": "Additional notes (optional)",
       "cancel": "Abbrechen",
-      "save": "Speichern",
-      "types": {
-        "in": "Wareneingang",
-        "out": "Verbrauch",
-        "count": "Inventur"
-      },
-      "amount": "Menge",
-      "note": "Notiz",
-      "saved": "Anpassung gespeichert"
-    },
-    "search": "Suchen…",
-    "filters": {
-      "all": "Alle",
-      "low": "Niedriger Bestand",
-      "out": "Nicht vorrätig"
-    },
-    "lowStockBanner": "{{count}} Artikel mit niedrigem Bestand",
-    "alertsBtn": "Warnungen",
-    "movementsBtn": "Bewegungen",
-    "adjustBtn": "Anpassen",
-    "qty": "Menge",
-    "unit": "Einheit",
-    "reorderLevel": "Mindestbestand",
-    "actions": {
-      "adjust": "Anpassen",
-      "alerts": "Warnungen",
-      "movements": "Bewegungen"
+      "save": "Speichern"
     }
   },
   "mobileApprovals": {
@@ -2972,8 +3048,7 @@
       "loadFailed": "Anträge konnten nicht geladen werden",
       "approveFailed": "Approval failed",
       "rejectFailed": "Rejection failed",
-      "reasonRequired": "Grund ist erforderlich",
-      "actionFailed": "Aktion fehlgeschlagen"
+      "reasonRequired": "Grund ist erforderlich"
     },
     "success": {
       "approved": "Request approved",
@@ -2985,18 +3060,12 @@
       "budgetExpense": "Budget Expense",
       "rateChange": "Rate Change",
       "refund": "Erstattung",
-      "compRoom": "Complimentary Room",
-      "pr": "Bestellanforderung",
-      "po": "Bestellung",
-      "expense": "Ausgabe",
-      "leave": "Urlaub",
-      "other": "Sonstiges"
+      "compRoom": "Complimentary Room"
     },
     "statuses": {
       "pending": "Ausstehend",
       "approved": "Genehmigt",
-      "rejected": "Abgelehnt",
-      "cancelled": "Storniert"
+      "rejected": "Abgelehnt"
     },
     "priority": {
       "urgent": "URGENT",
@@ -3004,10 +3073,7 @@
     },
     "tabs": {
       "pending": "Ausstehend",
-      "myRequests": "My Requests",
-      "approved": "Genehmigt",
-      "rejected": "Abgelehnt",
-      "all": "Alle"
+      "myRequests": "My Requests"
     },
     "urgentBanner": "{{count}} dringend",
     "empty": {
@@ -3019,18 +3085,12 @@
       "oldNew": "Old → New:",
       "waitingHours": "Waiting:",
       "waitingHoursValue": "{{hours}} hours",
-      "reason": "Reason:",
-      "requester": "Antragsteller",
-      "department": "Abteilung",
-      "submitted": "Eingereicht",
-      "type": "Typ",
-      "priority": "Priorität"
+      "reason": "Reason:"
     },
     "actions": {
       "reject": "Ablehnen",
       "approve": "Genehmigen",
-      "cancel": "Cancel",
-      "viewDetails": "Details"
+      "cancel": "Cancel"
     },
     "approvedBy": "Approved by {{name}}",
     "rejectionLabel": "Rejected:",
@@ -3043,23 +3103,7 @@
       "rejectionReason": "Rejection Reason",
       "rejectionPlaceholder": "Specify rejection reason...",
       "notes": "Notes (Optional)",
-      "notesPlaceholder": "Additional notes...",
-      "title": "Antrag prüfen",
-      "comment": "Kommentar (optional)",
-      "rejectReason": "Ablehnungsgrund (Pflicht)",
-      "cancel": "Abbrechen",
-      "approve": "Genehmigen",
-      "reject": "Ablehnen"
-    },
-    "priorities": {
-      "low": "Niedrig",
-      "medium": "Mittel",
-      "high": "Hoch",
-      "urgent": "Dringend"
-    },
-    "toasts": {
-      "approved": "Genehmigt",
-      "rejected": "Abgelehnt"
+      "notesPlaceholder": "Additional notes..."
     }
   },
   "frontDeskEnhanced": {
@@ -3093,41 +3137,7 @@
       "walkInCreated": "Walk-in booking created • Folio: {{folio}}",
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
-      "checkinFailed": "Guest check-in failed",
-      "created": "Walk-in erstellt: {{folio}}",
-      "alertCreated": "Warnung erstellt",
-      "scanStarted": "Scan gestartet",
-      "actionFailed": "Aktion fehlgeschlagen"
-    },
-    "subtitle": "Kioskmodus & Walk-in",
-    "scanBtn": "Ausweis scannen",
-    "walkInBtn": "Laufkundschaft",
-    "noArrivals": "Heute keine Ankünfte",
-    "guestAlerts": {
-      "title": "Gastwarnungen",
-      "vip": "VIP-Gast",
-      "blacklist": "Sperrliste",
-      "frequent": "Stammgast",
-      "noShow": "Vorheriges Nichterscheinen",
-      "complaint": "Frühere Beschwerde"
-    },
-    "walkIn": {
-      "title": "Walk-in Buchung",
-      "guestName": "Gastname",
-      "phone": "Telefon",
-      "email": "E-Mail",
-      "adults": "Erwachsene",
-      "children": "Kinder",
-      "nights": "Nächte",
-      "roomType": "Zimmertyp",
-      "rate": "Rate",
-      "notes": "Notizen",
-      "cancel": "Abbrechen",
-      "create": "Erstellen"
-    },
-    "errors": {
-      "loadFailed": "Daten konnten nicht geladen werden",
-      "guestNameRequired": "Gastname erforderlich"
+      "checkinFailed": "Guest check-in failed"
     }
   },
   "procurement": {
@@ -3503,5 +3513,52 @@
     "apply_success": "Empfehlungen angewendet",
     "apply_failed": "Empfehlungen konnten nicht angewendet werden",
     "load_failed": "RMS-Daten konnten nicht geladen werden"
+  },
+  "costAnalytics": {
+    "byCategory": "Expenses by Category",
+    "categories": {
+      "insurance": "Insurance",
+      "maintenance": "Maintenance",
+      "marketing": "Marketing",
+      "other": "Other",
+      "rent": "Rent",
+      "salaries": "Salaries",
+      "supplies": "Supplies",
+      "taxes": "Taxes",
+      "utilities": "Utilities"
+    },
+    "detailsTitle": "Category Details",
+    "distribution": "Expense Distribution",
+    "empty": "No expenses in this date range",
+    "endDate": "End",
+    "entriesShort": "{{count}} entries",
+    "exportCsv": "Export CSV",
+    "exportSuccess": "CSV downloaded",
+    "headers": {
+      "avg": "Average",
+      "category": "Category",
+      "count": "Count",
+      "share": "Share",
+      "total": "Total",
+      "totalRow": "TOTAL"
+    },
+    "kpi": {
+      "categories": "Categories",
+      "categoriesHint": "Number of categories",
+      "dailyAvg": "Daily Average",
+      "dailyAvgHint": "Divided by {{days}} days",
+      "entries": "Entries",
+      "entriesHint": "Total transactions",
+      "periodDays": "{{days}}-day period",
+      "total": "Total Expenses"
+    },
+    "loadError": "Failed to load expense data",
+    "refresh": "Refresh",
+    "startDate": "Start",
+    "subtitle": "Track and analyze operational expenses by date range",
+    "summaryBody": "Top expense: {{top}} ({{topAmount}}). Daily average: {{daily}} ({{currency}}).",
+    "summaryTitle": "Cost Analysis",
+    "tabLabel": "Expenses",
+    "title": "Cost Analytics"
   }
 }
