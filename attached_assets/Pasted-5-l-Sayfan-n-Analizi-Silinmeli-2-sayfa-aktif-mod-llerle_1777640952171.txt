@@ -1,0 +1,33 @@
+5 Ölü Sayfanın Analizi
+🔴 Silinmeli (2 sayfa) — aktif modüllerle çakışıyor
+1. RevenueMLPanel.jsx (227 satır)
+
+Ne yapar: ML tabanlı fiyat önerileri ("Artır/Hafif Artır/Koru/Düşür" badge'leriyle)
+Çakışma: Aktif RMSModule.jsx zaten recommendations panel'i ve AI önerilerini gösteriyor. Yedek/eski sürüm.
+Karar: SİL
+2. RevenueManagementMobile.jsx (406 satır)
+
+Ne yapar: Mobil revenue dashboard (pickup, pace, rates, comparison sekmeleri)
+Çakışma: Aktif RevenueMobile.jsx routing'de kayıtlı (/pages/RevenueMobile) ve aynı işi yapıyor. Bu sayfa eski/yedek bir varyant.
+Karar: SİL
+🟢 Bağlanmalı (3 sayfa) — gerçek değer var, sadece routing eksik
+3. SeasonCalendarPanel.jsx (246 satır)
+
+Ne yapar: Sezon takvimi yönetimi (Pik/Yüksek/Orta/Düşük sezon, başlangıç-bitiş tarihi, fiyat çarpanı, min konaklama)
+Backend ucu: /rms/seasonal-calendar MEVCUT
+RMSModule bunu bekliyor: no_seasons data quality uyarısı gösteriyor ama yönlendirecek UI olmadığı için kullanıcı sezon ayarlayamıyor
+Karar: ROUTING'E EKLE → RMSModule'den link ver
+4. YieldRulesPanel.jsx (210 satır)
+
+Ne yapar: Yield kuralları (örn. "doluluk %80 üstündeyse fiyatı %15 artır", "varışa 7 günden az kalmışsa %10 düşür")
+Backend ucu: /rms/yield-rules MEVCUT
+RMSModule bunu bekliyor: no_yield_rules data quality uyarısı gösteriyor
+Karar: ROUTING'E EKLE → RMSModule'den link ver
+5. ReservationDetailModal.jsx (250 satır + 9 alt bileşen pages/reservation-detail/)
+
+Ne yapar: Kapsamlı rezervasyon detay modal'ı — 12 sekme: Genel Bilgi, Misafirler, Foliolar, Günlük Fiyatlar, Ek Ücretler, Oda Değişikliği, İptal, İletişim, Notlar, Geçmiş, Depozitolar, Voucher, Fatura, Online Ödeme, VCC
+Backend ucu: /pms/reservations/{id}/full-detail MEVCUT + test dosyası var
+Bugün 12:32-12:39'da modüler olarak inşa edilmiş (~120 KB iş), ama frontend'de hiçbir yerden açılmıyor — Takvim/RoomGrid/Liste'den çağrılması gereken yer boş
+Karar: REZERVASYON LİSTELERİNDEN/TAKVİMDEN AÇILMASI İÇİN BAĞLA
+Tavsiyem
+2 sil + 3 bağla yapalım. Toplam ~3000 satır kullanılan değer kazanır, ~630 satır ölü kod gider.
