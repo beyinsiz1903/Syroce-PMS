@@ -20,39 +20,67 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
     loadData();
   }, []);
 
+  // Backend: {products:[{product_name, unit_price, unit_of_measure, status, ...}], count}
+  // Frontend render: {name, price, unit, in_stock, ...}
+  // Hem array hem obje şekline tolerans + alan adı normalize
+  const normalizeProduct = (p) => ({
+    ...p,
+    id: p.id,
+    name: p.name ?? p.product_name ?? '',
+    price: p.price ?? p.unit_price ?? 0,
+    unit: p.unit ?? p.unit_of_measure ?? '',
+    in_stock: p.in_stock ?? (p.status ? p.status === 'active' : true),
+    description: p.description ?? '',
+    supplier: p.supplier ?? '',
+    category: p.category ?? 'equipment',
+  });
+  const extractProducts = (data) => {
+    const raw = Array.isArray(data) ? data : Array.isArray(data?.products) ? data.products : [];
+    return raw.map(normalizeProduct);
+  };
+  const extractOrders = (data) => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.orders)) return data.orders;
+    return [];
+  };
+
   const loadData = async () => {
     try {
-      // Load products and orders
       const [productsRes, ordersRes] = await Promise.all([
         axios.get('/marketplace/products'),
         axios.get('/marketplace/orders')
       ]);
-      
-      // If no products exist, seed with sample data
-      if (productsRes.data.length === 0) {
+
+      const initialProducts = extractProducts(productsRes.data);
+      // Ürün yoksa örnek veriyle seed et
+      if (initialProducts.length === 0) {
         await seedProducts();
         const newProductsRes = await axios.get('/marketplace/products');
-        setProducts(newProductsRes.data);
+        setProducts(extractProducts(newProductsRes.data));
       } else {
-        setProducts(productsRes.data);
+        setProducts(initialProducts);
       }
-      
-      setOrders(ordersRes.data);
+
+      setOrders(extractOrders(ordersRes.data));
     } catch (error) {
+      console.error('Marketplace load failed', error);
       toast.error('Pazar yeri verileri yüklenemedi');
+      setProducts([]);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
   };
 
   const seedProducts = async () => {
+    // Backend POST /marketplace/products şeması: product_name, category, unit_price, unit_of_measure, supplier, min_order_qty
     const sampleProducts = [
-      { name: 'Industrial Vacuum Cleaner', category: 'equipment', description: 'Heavy-duty cleaning equipment', price: 299.99, unit: 'piece', supplier: 'CleanPro Industries', in_stock: true },
-      { name: 'Bedding Set (King)', category: 'equipment', description: 'Premium cotton bedding', price: 89.99, unit: 'set', supplier: 'ComfortBeds Co.', in_stock: true },
-      { name: 'Multi-Surface Cleaner', category: 'cleaning', description: 'Professional grade cleaner', price: 24.99, unit: 'gallon', supplier: 'ChemClean Solutions', in_stock: true },
-      { name: 'Disinfectant Spray', category: 'cleaning', description: 'Hospital-grade disinfectant', price: 15.99, unit: 'bottle', supplier: 'SafeGuard Products', in_stock: true },
-      { name: 'Shampoo & Conditioner Set', category: 'amenities', description: 'Luxury guest amenities', price: 12.99, unit: 'set', supplier: 'GuestCare Amenities', in_stock: true },
-      { name: 'Bath Towels (Pack of 12)', category: 'amenities', description: 'Premium cotton towels', price: 79.99, unit: 'pack', supplier: 'TowelWorld', in_stock: true },
+      { product_name: 'Endüstriyel Süpürge', category: 'equipment', unit_price: 299.99, unit_of_measure: 'adet', supplier: 'CleanPro', min_order_qty: 1 },
+      { product_name: 'King Yatak Takımı', category: 'equipment', unit_price: 89.99, unit_of_measure: 'set', supplier: 'ComfortBeds', min_order_qty: 1 },
+      { product_name: 'Çok Amaçlı Temizleyici', category: 'cleaning', unit_price: 24.99, unit_of_measure: 'galon', supplier: 'ChemClean', min_order_qty: 1 },
+      { product_name: 'Dezenfektan Sprey', category: 'cleaning', unit_price: 15.99, unit_of_measure: 'şişe', supplier: 'SafeGuard', min_order_qty: 1 },
+      { product_name: 'Şampuan & Saç Kremi Seti', category: 'amenities', unit_price: 12.99, unit_of_measure: 'set', supplier: 'GuestCare', min_order_qty: 1 },
+      { product_name: 'Banyo Havlusu (12li)', category: 'amenities', unit_price: 79.99, unit_of_measure: 'paket', supplier: 'TowelWorld', min_order_qty: 1 },
     ];
 
     for (const product of sampleProducts) {
