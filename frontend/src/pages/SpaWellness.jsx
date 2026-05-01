@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import Layout from '@/components/Layout';
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card';
@@ -26,7 +27,7 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
   hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
 }) : '—';
 
-const SpaWellness = () => {
+const SpaWellness = ({ user, tenant, onLogout }) => {
   const [services, setServices] = useState([]);
   const [therapists, setTherapists] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -58,20 +59,26 @@ const SpaWellness = () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const [s, t, r, a, sum] = await Promise.all([
+      // Promise.allSettled: tek bir uç hata verirse diğer kartlar boş kalmasın.
+      const [s, t, r, a, sum] = await Promise.allSettled([
         axios.get('/spa/services'),
         axios.get('/spa/therapists'),
         axios.get('/spa/rooms'),
         axios.get('/spa/appointments', { params: filter }),
         axios.get('/spa/daily-summary', { params: { date: today } }),
       ]);
-      setServices(s.data.services);
-      setTherapists(t.data.therapists);
-      setRooms(r.data.rooms);
-      setAppointments(a.data.appointments);
-      setSummary(sum.data);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Yüklenemedi');
+      const failed = [];
+      if (s.status === 'fulfilled') setServices(s.value.data.services || []);
+      else { setServices([]); failed.push('Hizmetler'); }
+      if (t.status === 'fulfilled') setTherapists(t.value.data.therapists || []);
+      else { setTherapists([]); failed.push('Terapistler'); }
+      if (r.status === 'fulfilled') setRooms(r.value.data.rooms || []);
+      else { setRooms([]); failed.push('Odalar'); }
+      if (a.status === 'fulfilled') setAppointments(a.value.data.appointments || []);
+      else { setAppointments([]); failed.push('Randevular'); }
+      if (sum.status === 'fulfilled') setSummary(sum.value.data);
+      else { setSummary(null); failed.push('Günlük özet'); }
+      if (failed.length) toast.error(`Yüklenemedi: ${failed.join(', ')}`);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [filter]);
@@ -123,12 +130,17 @@ const SpaWellness = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">
-      <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
-    </div>;
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
+        <div className="p-8 text-center text-gray-500">
+          <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
+        </div>
+      </Layout>
+    );
   }
 
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -453,6 +465,7 @@ const SpaWellness = () => {
         </Modal>
       )}
     </div>
+    </Layout>
   );
 };
 
