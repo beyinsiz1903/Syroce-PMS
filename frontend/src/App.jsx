@@ -19,6 +19,7 @@ import {
   ProtectedRoute, ProtectedRouteWithMemory, ModuleGuardedRoute, LoadingFallback,
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
+import { prefetchHeavyModules } from "@/lib/prefetch";
 
 const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -68,6 +69,7 @@ function App() {
           }
           setTenant(parsedTenant ? (parsedModules ? { ...parsedTenant, modules: parsedModules } : parsedTenant) : null);
           setIsAuthenticated(true);
+          prefetchHeavyModules();
         })
         .catch(() => {
           clearAuthStorage();
@@ -107,6 +109,7 @@ function App() {
     setTenant(tenantData);
     setIsAuthenticated(true);
     fetchModules();
+    prefetchHeavyModules();
 
     // Reconnect the realtime socket so the new JWT is sent during the
     // socket.io handshake and the user joins their tenant-scoped rooms
