@@ -114,7 +114,6 @@ const VIPManagement = lazy(() => import("@/pages/VIPManagement"));
 const SalesCRM = lazy(() => import("@/pages/SalesCRM"));
 const ServiceRecovery = lazy(() => import("@/pages/ServiceRecovery"));
 const SpaWellness = lazy(() => import("@/pages/SpaWellness"));
-const MeetingEvents = lazy(() => import("@/pages/MeetingEvents"));
 const AIChatbot = lazy(() => import("@/pages/AIChatbot"));
 const DynamicPricing = lazy(() => import("@/pages/DynamicPricing"));
 const MultiProperty = lazy(() => import("@/pages/MultiProperty"));
@@ -479,7 +478,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/sales-crm", ...p(SalesCRM) },
     { path: "/service-recovery", ...p(ServiceRecovery) },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
-    { path: "/meeting-events", ...pm(MeetingEvents, "mice", undefined, { strict: true }) },
     { path: "/multi-property", ...p(MultiProperty) },
     { path: "/payment-gateway", ...p(PaymentGateway) },
     { path: "/gds-integration", ...p(GDSIntegration) },

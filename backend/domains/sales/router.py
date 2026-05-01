@@ -325,27 +325,6 @@ async def get_spa_appointments(current_user: User = Depends(get_current_user)):
     return {"appointments": appointments, "total": len(appointments)}
 
 
-# ── Meetings & Events ──────────────────────────────────────────────
-
-@router.post("/events/bookings")
-async def create_event_booking(
-    event_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
-):
-    event = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        **event_data,
-        "status": "confirmed",
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await db.event_bookings.insert_one(event)
-    return {"success": True, "event_id": event["id"]}
-
-
-@router.get("/events/bookings")
-async def get_event_bookings(current_user: User = Depends(get_current_user)):
-    events = await db.event_bookings.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(100)
-    return {"events": events, "total": len(events)}
+# NOT: /events/bookings uçları kaldırıldı.
+# MICE etkinlik yönetimi için backend/routers/mice.py kullanılır
+# (mice_events koleksiyonu, /api/mice/events* uçları).

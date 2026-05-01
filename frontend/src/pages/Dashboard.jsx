@@ -353,15 +353,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'guest'
     },
     {
-      title: t('dashboard.meetingEvents'),
-      description: t('dashboard.meetingEventsDesc'),
-      icon: Calendar,
-      path: '/meeting-events',
-      color: '#f59e0b',
-      badge: 'NEW',
-      category: 'revenue'
-    },
-    {
       title: t('dashboard.aiChatbot'),
       description: t('dashboard.aiChatbotDesc'),
       icon: Bot,
@@ -512,7 +503,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
       // Add-on modules — sold separately, default OFF for all plans
       if (m.path === '/spa-wellness') return modules.spa === true;
-      if (m.path === '/meeting-events' || m.path === '/app/mice') return modules.mice === true;
+      if (m.path === '/app/mice') return modules.mice === true;
 
       // Raporlar
       if (m.path === '/reports' || m.path === '/flash-report') return modules.reports !== false;
