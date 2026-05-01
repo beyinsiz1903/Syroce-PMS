@@ -37,6 +37,19 @@ async def create_group_block(
     check_out = block_data.get('check_out') or block_data.get('check_out_date')
     cutoff_date = block_data.get('cutoff_date') or block_data.get('cutoff', check_in)
 
+    # total_rooms zorunlu — eksikse veya geçersizse anlamlı 400 dön
+    raw_total_rooms = block_data.get('total_rooms')
+    if raw_total_rooms is None:
+        raw_total_rooms = block_data.get('room_count')
+    if raw_total_rooms is None or raw_total_rooms == '':
+        raise HTTPException(status_code=400, detail="Toplam oda sayısı zorunludur")
+    try:
+        total_rooms = int(raw_total_rooms)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Toplam oda sayısı geçerli bir sayı olmalıdır")
+    if total_rooms <= 0:
+        raise HTTPException(status_code=400, detail="Toplam oda sayısı 0'dan büyük olmalıdır")
+
     # Create group block
     block = {
         'id': str(uuid.uuid4()),
@@ -48,7 +61,7 @@ async def create_group_block(
         'contact_phone': contact_phone,
         'check_in': check_in,
         'check_out': check_out,
-        'total_rooms': block_data['total_rooms'],
+        'total_rooms': total_rooms,
         'rooms_picked_up': 0,
         'room_breakdown': block_data.get('room_breakdown', {}),
         'group_rate': block_data.get('group_rate') or block_data.get('rate_per_room', 100),
@@ -92,7 +105,7 @@ async def create_group_block(
         'message': 'Grup bloğu başarıyla oluşturuldu',
         'block_id': block['id'],
         'group_name': group_name,
-        'total_rooms': block_data['total_rooms']
+        'total_rooms': total_rooms
     }
 
 
