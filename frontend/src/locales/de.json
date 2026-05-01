@@ -717,8 +717,6 @@
     "aiChatbotDesc": "NLP-gesteuerter Gästeassistent",
     "advancedLoyalty": "Erweiterte Treue",
     "advancedLoyaltyDesc": "Gamification, Empfehlungen, Stufenverwaltung",
-    "gdsIntegration": "GDS-Integration",
-    "gdsIntegrationDesc": "Amadeus, Sabre, Galileo Integration",
     "staffManagement": "Personalverwaltung",
     "staffManagementDesc": "Personal-, Schicht- und Leistungsverwaltung",
     "guestJourney": "Gästereise",

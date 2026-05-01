@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Layout from '@/components/Layout';
-import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, Globe, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
+import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Crown, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
 import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -387,15 +387,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       color: '#10b981',
       badge: 'NEW',
       category: 'financial'
-    },
-    {
-      title: t('dashboard.gdsIntegration'),
-      description: t('dashboard.gdsIntegrationDesc'),
-      icon: Globe,
-      path: '/gds-integration',
-      color: '#3b82f6',
-      badge: 'NEW',
-      category: 'revenue'
     },
     {
       title: t('dashboard.staffManagement'),

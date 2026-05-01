@@ -761,36 +761,10 @@ async def create_payment_intent(payment_data: dict, current_user: User = Depends
     await db.payment_intents.insert_one(intent)
 
 
-# ============= GDS INTEGRATION (AMADEUS, SABRE, GALILEO) =============
+# NOT: GDS (Amadeus/Sabre/Galileo) entegrasyon stub'ları kaldırıldı.
+# Gerçek bir GDS bağlantısı eklendiğinde, OTA Channel Manager paterniyle
+# (backend/domains/channel_manager) ayrı bir adapter olarak kurulmalı.
 
-
-
-@router.post("/gds/push-rate")
-async def push_rate_to_gds(rate_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
-):
-    """GDS'e rate ve availability gönder"""
-    # Simulated GDS push (real: Amadeus/Sabre API)
-    gds_update = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'gds_provider': rate_data.get('provider', 'Amadeus'),
-        'room_type': rate_data['room_type'],
-        'rate': rate_data['rate'],
-        'availability': rate_data['availability'],
-        'pushed_at': datetime.now(UTC).isoformat(),
-        'success': True
-    }
-    await db.gds_rate_updates.insert_one(gds_update)
-    return {'success': True, 'message': f'{gds_update["gds_provider"]} GDS güncellendi', 'update_id': gds_update['id']}
-
-
-
-@router.get("/gds/reservations")
-async def get_gds_reservations(current_user: User = Depends(get_current_user)):
-    """GDS'ten gelen rezervasyonlar"""
-    reservations = await db.gds_reservations.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
-    return {'reservations': reservations, 'total': len(reservations)}
 
 # ============= MOBILE APP BACKEND =============
 

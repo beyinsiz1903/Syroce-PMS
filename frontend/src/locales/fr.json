@@ -717,8 +717,6 @@
     "aiChatbotDesc": "Assistant client NLP",
     "advancedLoyalty": "Fidélité Avancée",
     "advancedLoyaltyDesc": "Gamification, parrainages, niveaux",
-    "gdsIntegration": "Intégration GDS",
-    "gdsIntegrationDesc": "Intégration Amadeus, Sabre, Galileo",
     "staffManagement": "Gestion Personnel",
     "staffManagementDesc": "Personnel, plannings et performance",
     "guestJourney": "Parcours Client",

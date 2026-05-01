@@ -118,7 +118,6 @@ const AIChatbot = lazy(() => import("@/pages/AIChatbot"));
 const DynamicPricing = lazy(() => import("@/pages/DynamicPricing"));
 const MultiProperty = lazy(() => import("@/pages/MultiProperty"));
 const PaymentGateway = lazy(() => import("@/pages/PaymentGateway"));
-const GDSIntegration = lazy(() => import("@/pages/GDSIntegration"));
 const StaffManagement = lazy(() => import("@/pages/StaffManagement"));
 const GuestJourney = lazy(() => import("@/pages/GuestJourney"));
 const ArrivalList = lazy(() => import("@/pages/ArrivalList"));
@@ -480,7 +479,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
     { path: "/multi-property", ...p(MultiProperty) },
     { path: "/payment-gateway", ...p(PaymentGateway) },
-    { path: "/gds-integration", ...p(GDSIntegration) },
     { path: "/staff-management", ...p(StaffManagement) },
     { path: "/hr-complete", ...p(HRComplete) },
     { path: "/fnb-complete", ...p(FnBComplete) },

@@ -717,8 +717,6 @@
     "aiChatbotDesc": "NLP-powered guest service assistant",
     "advancedLoyalty": "Advanced Loyalty",
     "advancedLoyaltyDesc": "Gamification, referrals, tier management",
-    "gdsIntegration": "GDS Integration",
-    "gdsIntegrationDesc": "Amadeus, Sabre, Galileo integration",
     "staffManagement": "Staff Management",
     "staffManagementDesc": "Staff, shift and performance management",
     "guestJourney": "Guest Journey",
