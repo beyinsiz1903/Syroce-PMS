@@ -757,8 +757,6 @@
     "dynamicPricingModuleDesc": "Competitor analysis and automatic pricing",
     "reputationCenterModule": "Reputation Center",
     "reputationCenterModuleDesc": "Online reputation management and review tracking",
-    "paymentGatewayModule": "Payment Gateway",
-    "paymentGatewayModuleDesc": "Stripe, PayPal, Crypto payment integration",
     "todayCheckOut": "Today Check-out",
     "monthlyTurnover": "Monthly Revenue",
     "bookingTrends": "Booking Trends",

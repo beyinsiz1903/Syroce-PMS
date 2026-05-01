@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Layout from '@/components/Layout';
-import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, CreditCard, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
+import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
 import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -369,15 +369,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       color: '#06b6d4',
       badge: 'NEW',
       category: 'management'
-    },
-    {
-      title: t('dashboard.paymentGatewayModule'),
-      description: t('dashboard.paymentGatewayModuleDesc'),
-      icon: CreditCard,
-      path: '/payment-gateway',
-      color: '#10b981',
-      badge: 'NEW',
-      category: 'financial'
     },
     {
       title: t('dashboard.staffManagement'),

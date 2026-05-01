@@ -757,8 +757,6 @@
     "dynamicPricingModuleDesc": "竞争分析和自动定价",
     "reputationCenterModule": "声誉中心",
     "reputationCenterModuleDesc": "在线声誉管理和评论追踪",
-    "paymentGatewayModule": "支付网关",
-    "paymentGatewayModuleDesc": "Stripe、PayPal、加密货币支付集成",
     "todayCheckOut": "今日退房",
     "monthlyTurnover": "月营业额",
     "bookingTrends": "预订趋势",

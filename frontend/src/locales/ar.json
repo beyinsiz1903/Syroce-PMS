@@ -757,8 +757,6 @@
     "dynamicPricingModuleDesc": "تحليل المنافسين وتسعير تلقائي",
     "reputationCenterModule": "مركز السمعة",
     "reputationCenterModuleDesc": "إدارة السمعة الإلكترونية",
-    "paymentGatewayModule": "بوابة الدفع",
-    "paymentGatewayModuleDesc": "تكامل Stripe, PayPal, كريبتو",
     "todayCheckOut": "مغادرة اليوم",
     "monthlyTurnover": "الإيرادات الشهرية",
     "bookingTrends": "اتجاهات الحجز",

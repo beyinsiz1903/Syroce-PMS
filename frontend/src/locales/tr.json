@@ -833,8 +833,6 @@
     "dynamicPricingModuleDesc": "Rakip analizi ve otomatik fiyatlandırma",
     "reputationCenterModule": "İtibar Merkezi",
     "reputationCenterModuleDesc": "Online itibar yönetimi ve yorum takibi",
-    "paymentGatewayModule": "Ödeme Geçidi",
-    "paymentGatewayModuleDesc": "Stripe, PayPal, Crypto ödeme entegrasyonu",
     "todayCheckOut": "Bugünkü Check-out",
     "monthlyTurnover": "Aylık Ciro",
     "bookingTrends": "Rezervasyon Trendleri",

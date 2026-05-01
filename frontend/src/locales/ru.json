@@ -757,8 +757,6 @@
     "dynamicPricingModuleDesc": "Анализ конкурентов и автоматическое ценообразование",
     "reputationCenterModule": "Центр Репутации",
     "reputationCenterModuleDesc": "Управление онлайн-репутацией",
-    "paymentGatewayModule": "Платёжный Шлюз",
-    "paymentGatewayModuleDesc": "Интеграция Stripe, PayPal, Крипто",
     "todayCheckOut": "Выезд Сегодня",
     "monthlyTurnover": "Месячные Доходы",
     "bookingTrends": "Тренды Бронирований",

@@ -744,10 +744,8 @@ async def payment_intent(payment_data: dict, current_user: User = Depends(get_cu
 
 
 
-@router.get("/payments/installment")
-async def installment_calc(amount: float, months: int, current_user: User = Depends(get_current_user)):
-    total = amount * (1 + months * 0.01)
-    return {'monthly': round(total/months, 2), 'total': round(total, 2)}
+# NOT: /payments/installment ucu kaldırıldı (sadece silinen PaymentGateway
+# sayfası kullanıyordu). Frontdesk taksitlendirme için folio_ledger kullanılır.
 
 
 @router.post("/payments/create-intent")
@@ -904,12 +902,8 @@ async def get_staff_performance(staff_id: str, current_user: User = Depends(get_
     }
 
 
-@router.get("/payments/installment-calculator")
-async def installment_calculator(amount: float, installments: int, current_user: User = Depends(get_current_user)):
-    rates = {1: 0.0, 2: 0.02, 3: 0.03, 6: 0.05, 9: 0.07, 12: 0.09}
-    rate = rates.get(installments, 0.1)
-    total = amount * (1 + rate)
-    total / installments
+# NOT: /payments/installment-calculator ucu kaldırıldı (kullanılmıyordu ve
+# return ifadesi de eksikti — total/installments hesaplanıp atılıyordu).
 
 
 @router.post("/companies", response_model=Company)
