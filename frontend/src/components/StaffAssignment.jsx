@@ -27,8 +27,14 @@ const StaffAssignment = () => {
         avgEfficiency: response.data.avg_efficiency
       });
     } catch (error) {
-      console.error('Personel yüklenemedi:', error);
-      toast.error('Personel yüklenemedi');
+      // 404: housekeeping personel ataması henüz tanımlı değil → sessiz boş durum
+      if (error?.response?.status === 404) {
+        setStaff([]);
+        setStats({ total: 0, totalRooms: 0, avgEfficiency: 0 });
+      } else {
+        console.error('Personel yüklenemedi:', error);
+        toast.error('Personel yüklenemedi');
+      }
     } finally {
       setLoading(false);
     }

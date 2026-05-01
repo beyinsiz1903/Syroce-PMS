@@ -69,8 +69,13 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
       });
       setRoomPhotos(res.data.items || []);
     } catch (error) {
-      console.error('Room photo fetch failed', error);
-      toast.error('Oda fotoğrafları yüklenemedi');
+      // 404 (henüz medya servisi yok) → sessizce boş liste; diğer hatalarda toast
+      if (error?.response?.status === 404) {
+        setRoomPhotos([]);
+      } else {
+        console.error('Room photo fetch failed', error);
+        toast.error('Oda fotoğrafları yüklenemedi');
+      }
     } finally {
       setLoadingRoomPhotos(false);
     }
@@ -87,7 +92,11 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
       const items = res.data.items || [];
       setRecentPhotos(items.slice(0, 6));
     } catch (error) {
-      console.error('Photo feed load failed', error);
+      // 404 → medya servisi yok, sessizce boş feed
+      if (error?.response?.status !== 404) {
+        console.error('Photo feed load failed', error);
+      }
+      setRecentPhotos([]);
     } finally {
       setLoadingFeed(false);
     }
