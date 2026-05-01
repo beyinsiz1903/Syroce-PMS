@@ -17,12 +17,6 @@ from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
-try:
-    from websocket_server import broadcast_kitchen_orders
-except Exception:  # pragma: no cover
-    async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
-        return None
-
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 
 # ============= HR COMPLETE SUITE =============
@@ -404,87 +398,11 @@ async def create_beo(beo_data: dict, current_user: User = Depends(get_current_us
     await db.banquet_event_orders.insert_one(beo)
     return {'success': True, 'beo_id': beo['id'], 'message': 'BEO olusturuldu'}
 
-async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None = None):
-    query = {'tenant_id': tenant_id}
-    if statuses:
-        query['status'] = {'$in': statuses}
-    else:
-        query['status'] = {'$in': ['pending', 'preparing']}
-    return await db.kitchen_orders.find(query, {'_id': 0}).sort(
-        [('priority', -1), ('ordered_at', 1)]
-    ).to_list(200)
+# NOTE: Kitchen Display System endpoints (/fnb/kitchen-display, /fnb/kitchen-order,
+# /fnb/kitchen-order/{id}/status) and their helpers were moved to
+# backend/domains/pms/pos_fnb_router.py where the rest of the F&B / POS surface
+# lives. This file now only owns true HR endpoints + the F&B "ingredients" set.
 
-
-async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({'tenant_id': tenant_id}).sort('order_number', -1).limit(1).to_list(1)
-    return (last_order[0]['order_number'] + 1) if last_order else 1
-
-
-async def _broadcast_kitchen_queue(tenant_id: str):
-    try:
-        orders = await _get_active_kitchen_orders(tenant_id)
-        await broadcast_kitchen_orders(tenant_id, orders)
-    except Exception as exc:
-        logging.warning(f"Kitchen broadcast failed: {exc}")
-
-
-@router.get("/fnb/kitchen-display")
-async def get_kitchen_orders(
-    status: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    statuses = status.split(',') if status else None
-    orders = await _get_active_kitchen_orders(current_user.tenant_id, statuses=statuses)
-    return {'orders': orders, 'total': len(orders)}
-
-
-@router.post("/fnb/kitchen-order")
-async def create_kitchen_order(order_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
-):
-    if not order_data.get('items'):
-        raise HTTPException(status_code=400, detail="Order items required")
-
-    order = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'order_number': await _next_kitchen_order_number(current_user.tenant_id),
-        'table_number': order_data.get('table_number'),
-        'room_number': order_data.get('room_number'),
-        'priority': order_data.get('priority', 'normal'),
-        'status': 'pending',
-        'station': order_data.get('station'),
-        'items': order_data.get('items'),
-        'notes': order_data.get('notes'),
-        'ordered_by': current_user.name,
-        'ordered_at': datetime.now(UTC).isoformat()
-    }
-    await db.kitchen_orders.insert_one(order)
-    await _broadcast_kitchen_queue(current_user.tenant_id)
-    order.pop('_id', None)
-    return {'success': True, 'order': order}
-
-
-@router.put("/fnb/kitchen-order/{order_id}/status")
-async def update_kitchen_order_status(
-    order_id: str,
-    status: str,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
-):
-    update_data = {'status': status}
-    if status == 'preparing':
-        update_data['started_at'] = datetime.now(UTC).isoformat()
-    if status in ['ready', 'served']:
-        update_data['ready_at'] = datetime.now(UTC).isoformat()
-    result = await db.kitchen_orders.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': order_id},
-        {'$set': update_data}
-    )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found")
-    await _broadcast_kitchen_queue(current_user.tenant_id)
-    return {'success': True, 'order_id': order_id, 'status': status}
 
 @router.get("/fnb/ingredients")
 async def list_ingredients(current_user: User = Depends(get_current_user)):

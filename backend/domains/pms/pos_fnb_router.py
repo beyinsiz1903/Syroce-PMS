@@ -27,14 +27,35 @@ from modules.pms_core.role_permission_service import require_module as require_m
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
 
-async def _broadcast_kitchen_queue(tenant_id: str) -> None:
-    """Lightweight no-op stub; replaced by websocket broadcaster when available."""
-    try:
-        from websocket_server import broadcast_kitchen_orders
-        orders = await db.fnb_orders.find({'tenant_id': tenant_id, 'status': {'$in': ['queued', 'preparing']}}, {'_id': 0}).to_list(200)
-        await broadcast_kitchen_orders(tenant_id, orders)
-    except Exception:
+try:
+    from websocket_server import broadcast_kitchen_orders
+except Exception:  # pragma: no cover
+    async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
         return None
+
+
+async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None = None):
+    query = {'tenant_id': tenant_id}
+    if statuses:
+        query['status'] = {'$in': statuses}
+    else:
+        query['status'] = {'$in': ['pending', 'preparing']}
+    return await db.kitchen_orders.find(query, {'_id': 0}).sort(
+        [('priority', -1), ('ordered_at', 1)]
+    ).to_list(200)
+
+
+async def _next_kitchen_order_number(tenant_id: str) -> int:
+    last_order = await db.kitchen_orders.find({'tenant_id': tenant_id}).sort('order_number', -1).limit(1).to_list(1)
+    return (last_order[0]['order_number'] + 1) if last_order else 1
+
+
+async def _broadcast_kitchen_queue(tenant_id: str) -> None:
+    try:
+        orders = await _get_active_kitchen_orders(tenant_id)
+        await broadcast_kitchen_orders(tenant_id, orders)
+    except Exception as exc:
+        logging.warning(f"Kitchen broadcast failed: {exc}")
 
 
 def calculate_table_duration(opened_at: Any) -> int:
@@ -211,6 +232,68 @@ class Alert(BaseModel):
     action_url: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     read_at: datetime | None = None
+
+
+@router.get("/fnb/kitchen-display")
+async def get_kitchen_orders(
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    statuses = status.split(',') if status else None
+    orders = await _get_active_kitchen_orders(current_user.tenant_id, statuses=statuses)
+    return {'orders': orders, 'total': len(orders)}
+
+
+@router.post("/fnb/kitchen-order")
+async def create_kitchen_order(
+    order_data: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    if not order_data.get('items'):
+        raise HTTPException(status_code=400, detail="Order items required")
+
+    order = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'order_number': await _next_kitchen_order_number(current_user.tenant_id),
+        'table_number': order_data.get('table_number'),
+        'room_number': order_data.get('room_number'),
+        'priority': order_data.get('priority', 'normal'),
+        'status': 'pending',
+        'station': order_data.get('station'),
+        'items': order_data.get('items'),
+        'notes': order_data.get('notes'),
+        'ordered_by': current_user.name,
+        'ordered_at': datetime.now(UTC).isoformat(),
+    }
+    await db.kitchen_orders.insert_one(order)
+    await _broadcast_kitchen_queue(current_user.tenant_id)
+    order.pop('_id', None)
+    return {'success': True, 'order': order}
+
+
+@router.put("/fnb/kitchen-order/{order_id}/status")
+async def update_kitchen_order_status_v2(
+    order_id: str,
+    status: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    update_data = {'status': status}
+    if status == 'preparing':
+        update_data['started_at'] = datetime.now(UTC).isoformat()
+    if status in ['ready', 'served']:
+        update_data['ready_at'] = datetime.now(UTC).isoformat()
+    result = await db.kitchen_orders.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': order_id},
+        {'$set': update_data},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    await _broadcast_kitchen_queue(current_user.tenant_id)
+    return {'success': True, 'order_id': order_id, 'status': status}
 
 
 @router.post("/fnb/kitchen-order/{order_id}/complete")
@@ -602,71 +685,6 @@ async def get_split_bill_ui_data(
             {'id': 'custom', 'name': 'Custom Amount', 'description': 'Enter custom amounts for each person'}
         ],
         'payment_methods': ['cash', 'card', 'mobile', 'room_charge']
-    }
-
-
-
-
-@router.get("/pos/kds/kitchen-display")
-async def get_kitchen_display_orders(
-    station: str | None = None,  # hot_kitchen, cold_kitchen, bar, pastry
-    status: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Kitchen Display System (KDS)
-    - Real-time order display
-    - Station-specific filtering
-    - Order timing and prioritization
-    """
-    match_criteria = {
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['pending', 'preparing']}
-    }
-
-    if station:
-        match_criteria['station'] = station
-    if status:
-        match_criteria['status'] = status
-
-    orders = []
-    async for order in db.kitchen_orders.find(match_criteria).sort('ordered_at', 1):
-        # Calculate wait time
-        ordered_at = datetime.fromisoformat(order.get('ordered_at'))
-        wait_minutes = (datetime.now(UTC) - ordered_at).total_seconds() / 60
-
-        # Determine priority color
-        if wait_minutes > 15:
-            priority_color = 'red'
-            priority = 'urgent'
-        elif wait_minutes > 10:
-            priority_color = 'orange'
-            priority = 'high'
-        else:
-            priority_color = 'green'
-            priority = 'normal'
-
-        orders.append({
-            'id': order.get('id'),
-            'table_number': order.get('table_number'),
-            'item_name': order.get('item_name'),
-            'quantity': order.get('quantity'),
-            'special_instructions': order.get('special_instructions'),
-            'station': order.get('station'),
-            'status': order.get('status'),
-            'wait_minutes': int(wait_minutes),
-            'priority': priority,
-            'priority_color': priority_color,
-            'ordered_at': order.get('ordered_at')
-        })
-
-    return {
-        'station': station or 'all',
-        'total_orders': len(orders),
-        'pending': sum(1 for o in orders if o['status'] == 'pending'),
-        'preparing': sum(1 for o in orders if o['status'] == 'preparing'),
-        'urgent_count': sum(1 for o in orders if o['priority'] == 'urgent'),
-        'orders': orders
     }
 
 
