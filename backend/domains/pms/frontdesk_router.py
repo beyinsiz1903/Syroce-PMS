@@ -281,6 +281,10 @@ async def add_folio_payment(
         "processed_by": current_user.name,
         "processed_at": now_iso,
     }
+    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+    await ensure_active_shift(current_user.tenant_id, method_value)
+
     await db.payments.insert_one(dict(payment_doc))
     await db.folios.update_one(
         {"id": folio["id"], "tenant_id": current_user.tenant_id},
@@ -290,6 +294,44 @@ async def add_folio_payment(
         {"id": booking_id, "tenant_id": current_user.tenant_id},
         {"$inc": {"paid_amount": amount}},
     )
+
+    # Kasa hareketine yaz — cash için race-safe rollback
+    is_cash = method_value.lower() == "cash"
+    try:
+        await record_cash_transaction(
+            tenant_id=current_user.tenant_id,
+            amount=amount,
+            method=method_value,
+            direction="in",
+            description=f"Folio ödemesi - Oda {booking.get('room_number', '?')}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment_doc["id"],
+            created_by=current_user.email,
+            created_by_name=getattr(current_user, "name", None) or current_user.email,
+            idempotency_key=f"payment:{payment_doc['id']}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as he:
+        if is_cash and he.status_code == 409:
+            try:
+                await db.payments.delete_one({"id": payment_doc["id"], "tenant_id": current_user.tenant_id})
+                await db.folios.update_one(
+                    {"id": folio["id"], "tenant_id": current_user.tenant_id},
+                    {"$inc": {"balance": amount}},
+                )
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": current_user.tenant_id},
+                    {"$inc": {"paid_amount": -amount}},
+                )
+            except Exception:
+                import logging as _lg
+                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+        raise
+    except Exception:
+        import logging as _lg
+        _lg.getLogger(__name__).exception("cashier txn record failed")
+
     return payment_doc
 
 

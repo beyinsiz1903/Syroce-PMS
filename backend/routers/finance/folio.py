@@ -527,6 +527,11 @@ async def post_payment_to_folio(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
+    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu (5y kasa standardı)
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+    method_str = payment_data.method.value if hasattr(payment_data.method, 'value') else str(payment_data.method)
+    await ensure_active_shift(current_user.tenant_id, method_str)
+
     payment = Payment(
         tenant_id=current_user.tenant_id,
         folio_id=folio_id,
@@ -546,6 +551,40 @@ async def post_payment_to_folio(
         {'id': folio_id},
         {'$set': {'balance': balance}}
     )
+
+    # Kasa hareketine yaz (idempotent — aynı payment.id için tek kayıt)
+    # Cash için vardiya zorunlu: TOCTOU race'inde 409 → ödemeyi geri al
+    is_cash = method_str.lower() == "cash"
+    try:
+        await record_cash_transaction(
+            tenant_id=current_user.tenant_id,
+            amount=payment.amount,
+            method=method_str,
+            direction="in",
+            description=f"Folio ödemesi - {folio.get('folio_number') or folio_id[:8]}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment.id,
+            created_by=current_user.email,
+            created_by_name=getattr(current_user, 'name', None) or current_user.email,
+            idempotency_key=f"payment:{payment.id}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as he:
+        if is_cash and he.status_code == 409:
+            # vardiya kapanmış → ödemeyi rollback et
+            try:
+                await db.payments.delete_one({'id': payment.id, 'tenant_id': current_user.tenant_id})
+                new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+                await db.folios.update_one({'id': folio_id}, {'$set': {'balance': new_balance}})
+            except Exception:
+                import logging as _lg
+                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+        raise
+    except Exception:
+        # Kasa kayıt arızası (kart/banka) ödemeyi düşürmesin (loglanır)
+        import logging as _lg
+        _lg.getLogger(__name__).exception("cashier txn record failed")
 
     return payment
 

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 import uuid
 from datetime import datetime
 
@@ -16,6 +18,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["PMS / Cashier"])
 
 _ledger = FolioLedgerService()
+
+# Tek-açık-vardiya garantisi için partial unique index
+_SHIFT_INDEX_LOCK = asyncio.Lock()
+_SHIFT_INDEX_CREATED = False
+_SHIFT_INDEX_LAST_ATTEMPT = 0.0
+_SHIFT_INDEX_RETRY_BACKOFF_SEC = 60.0
+
+
+async def _ensure_shift_indexes() -> None:
+    """Tek-açık-vardiya partial unique index'i oluşturur (idempotent)."""
+    global _SHIFT_INDEX_CREATED, _SHIFT_INDEX_LAST_ATTEMPT
+    if _SHIFT_INDEX_CREATED:
+        return
+    now = time.monotonic()
+    if (now - _SHIFT_INDEX_LAST_ATTEMPT) < _SHIFT_INDEX_RETRY_BACKOFF_SEC:
+        return
+    async with _SHIFT_INDEX_LOCK:
+        if _SHIFT_INDEX_CREATED:
+            return
+        _SHIFT_INDEX_LAST_ATTEMPT = time.monotonic()
+        try:
+            await db.cashier_shifts.create_index(
+                [("tenant_id", 1), ("status", 1)],
+                unique=True,
+                partialFilterExpression={"status": "open"},
+                name="uniq_tenant_open_shift",
+                background=True,
+            )
+            _SHIFT_INDEX_CREATED = True
+            logger.info("cashier_shifts: ensured unique (tenant_id, status=open) index")
+        except Exception as exc:
+            logger.warning(
+                "cashier_shifts: index creation failed (will retry in %ss): %s",
+                int(_SHIFT_INDEX_RETRY_BACKOFF_SEC), exc,
+            )
 
 
 async def _find_active_booking_by_room(tenant_id: str, room_number: str) -> dict | None:
@@ -68,19 +105,22 @@ def _safe_int(val, default=0):
 
 
 @router.get("/cashier/current-shift")
-async def get_current_shift(current_user: User = Depends(get_current_user)):
+async def get_current_shift(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    await _ensure_shift_indexes()
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"},
         sort=[("opened_at", -1)]
     )
     if shift:
         shift["id"] = str(shift.pop("_id"))
-        txns = await db.cashier_transactions.find(
-            {"tenant_id": current_user.tenant_id, "shift_id": shift["id"]}
-        ).sort("created_at", -1).to_list(200)
-        for t in txns:
-            t["id"] = str(t.pop("_id"))
-        return {"shift": shift, "transactions": txns}
+        # Embedded transactions array (Atlas 500-koleksiyon limiti pattern'i)
+        txns = list(shift.pop("transactions", []) or [])
+        # En yeni önce
+        txns.sort(key=lambda t: t.get("created_at") or "", reverse=True)
+        return {"shift": shift, "transactions": txns[:200]}
     return {"shift": None, "transactions": []}
 
 
@@ -88,11 +128,12 @@ async def get_current_shift(current_user: User = Depends(get_current_user)):
 async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
+    await _ensure_shift_indexes()
     existing = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
     )
     if existing:
-        raise HTTPException(status_code=400, detail="Zaten acik bir vardiya var")
+        raise HTTPException(status_code=400, detail="Zaten açık bir vardiya var")
     now = datetime.utcnow()
     opening_amount = _safe_float(body.get("opening_amount", 0))
     doc = {
@@ -109,7 +150,13 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
         "opened_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
         "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
-    await db.cashier_shifts.insert_one(doc)
+    try:
+        await db.cashier_shifts.insert_one(doc)
+    except Exception as e:
+        # partial unique index yarış kazanıldı → 400
+        if "duplicate key" in str(e).lower() or "E11000" in str(e):
+            raise HTTPException(status_code=400, detail="Zaten açık bir vardiya var")
+        raise
     doc["id"] = doc.pop("_id")
     return {"shift": doc}
 
@@ -228,10 +275,60 @@ async def handover_shift(body: dict = Body(...), current_user: User = Depends(ge
     }
 
 
+@router.post("/cashier/manual-transaction")
+async def manual_transaction(body: dict = Body(...), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
+    """
+    Manuel kasa hareketi (Paid-Out / Cash-In / düzeltme).
+    Body: { amount, direction: 'in'|'out', method: 'cash'|'card'..., description, type? }
+    """
+    from domains.pms.cashier_service import record_cash_transaction
+    amount = _safe_float(body.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Tutar 0'dan büyük olmalı")
+    direction = (body.get("direction") or "").lower()
+    if direction not in {"in", "out"}:
+        raise HTTPException(status_code=400, detail="Yön 'in' veya 'out' olmalı")
+    method = (body.get("method") or "cash").lower()
+    description = (body.get("description") or "").strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="Açıklama zorunludur")
+    txn_type = body.get("type") or ("paid_out" if direction == "out" else "manual_in")
+
+    # Aktif vardiya zorunlu (tüm manuel işlemler için)
+    shift = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"}
+    )
+    if not shift:
+        raise HTTPException(status_code=409, detail="Aktif kasa vardiyası yok. Önce 'Vardiya Aç' işlemini yapın.")
+
+    txn = await record_cash_transaction(
+        tenant_id=current_user.tenant_id,
+        amount=amount,
+        method=method,
+        direction=direction,
+        description=description,
+        txn_type=txn_type,
+        ref_type="manual",
+        ref_id=None,
+        created_by=current_user.email,
+        created_by_name=getattr(current_user, "name", None) or current_user.email,
+    )
+    return {"ok": True, "transaction": txn}
+
+
 @router.get("/cashier/shift-history")
-async def shift_history(skip: int = 0, limit: int = 20, current_user: User = Depends(get_current_user)):
+async def shift_history(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    # transactions array büyük olabilir → liste görünümünde dahil etme
     cursor = db.cashier_shifts.find(
-        {"tenant_id": current_user.tenant_id}
+        {"tenant_id": current_user.tenant_id},
+        {"transactions": 0}
     ).sort("opened_at", -1).skip(skip).limit(limit)
     shifts = await cursor.to_list(limit)
     for s in shifts:

@@ -392,6 +392,10 @@ async def record_payment_mobile(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
+    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+    await ensure_active_shift(current_user.tenant_id, payment_method)
+
     # Create payment
     payment_id = str(uuid.uuid4())
     payment = {
@@ -408,6 +412,35 @@ async def record_payment_mobile(
     }
 
     await db.payments.insert_one(payment)
+
+    # Kasa hareketine yaz — cash için race-safe rollback
+    is_cash = (payment_method or "").lower() == "cash"
+    try:
+        await record_cash_transaction(
+            tenant_id=current_user.tenant_id,
+            amount=amount,
+            method=payment_method,
+            direction="in",
+            description=f"Mobil ödeme - Folio {folio_id[:8]}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment_id,
+            created_by=current_user.email,
+            created_by_name=getattr(current_user, "name", None) or current_user.email,
+            idempotency_key=f"payment:{payment_id}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as he:
+        if is_cash and he.status_code == 409:
+            try:
+                await db.payments.delete_one({'id': payment_id, 'tenant_id': current_user.tenant_id})
+            except Exception:
+                import logging as _lg
+                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+        raise
+    except Exception:
+        import logging as _lg
+        _lg.getLogger(__name__).exception("cashier txn record failed")
 
     # Update folio balance
     new_balance = folio.get('balance', 0) - amount
