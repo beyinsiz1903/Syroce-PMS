@@ -370,8 +370,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/rms", type: "feature", featureKey: "hidden_rms", ...p(RMSModule) },
     { path: "/app/rms", type: "feature", featureKey: "hidden_rms", ...p(RMSModule) },
 
-    // ── Marketplace (feature-gated) ────────────────────
-    { path: "/marketplace", type: "feature", featureKey: "hidden_marketplace", ...p(MarketplaceModule) },
+    // ── Marketplace ────────────────────────────────────
+    { path: "/marketplace", ...p(MarketplaceModule) },
     { path: "/app/marketplace", ...p(MarketplaceModule) },
     { path: "/app/supplies-market", ...p(SuppliesMarket) },
     { path: "/vendor", type: "public", component: VendorPortal },
@@ -381,6 +381,11 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/loyalty", ...p(LoyaltyModule) },
     { path: "/hotel-inventory", ...p(HotelInventory) },
     { path: "/templates", ...p(TemplateManager) },
+
+    // ── Core Operations (Dashboard module cards) ──────
+    { path: "/housekeeping", ...p(HousekeepingDashboard) },
+    { path: "/pos", ...p(POSDashboard) },
+    { path: "/features", ...p(FeaturesShowcase) },
 
     // ── Guest Features ─────────────────────────────────
     { path: "/guest/checkin/:bookingId", ...p(SelfCheckin) },

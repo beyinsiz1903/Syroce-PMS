@@ -25,6 +25,7 @@ const PATH_MODULE_MAP = {
   "/app/rms": "revenue_management",
   "/app/ai": "ai",
   "/app/marketplace": "marketplace",
+  "/marketplace": "marketplace",
   "/app/loyalty": "loyalty_program",
   "/app/multi-property": "multi_property",
   "/app/group-sales": "group_sales",
