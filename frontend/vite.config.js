@@ -154,8 +154,33 @@ export default defineConfig({
           if (id.includes('node_modules/@tanstack')) {
             return 'vendor-query';
           }
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor')) {
+          if (
+            id.includes('node_modules/recharts') ||
+            id.includes('node_modules/d3-') ||
+            id.includes('node_modules/victory-vendor') ||
+            id.includes('node_modules/chart.js') ||
+            id.includes('node_modules/react-chartjs-2')
+          ) {
             return 'vendor-charts';
+          }
+          if (
+            id.includes('node_modules/jspdf') ||
+            id.includes('node_modules/html2canvas') ||
+            id.includes('node_modules/canvg') ||
+            id.includes('node_modules/dompurify')
+          ) {
+            return 'vendor-pdf';
+          }
+          if (id.includes('node_modules/@sentry')) {
+            return 'vendor-sentry';
+          }
+          if (
+            id.includes('node_modules/socket.io-client') ||
+            id.includes('node_modules/engine.io-client') ||
+            id.includes('node_modules/socket.io-parser') ||
+            id.includes('node_modules/engine.io-parser')
+          ) {
+            return 'vendor-socket';
           }
           if (id.includes('node_modules/@radix-ui')) {
             return 'vendor-radix';
@@ -193,6 +218,11 @@ export default defineConfig({
           ) {
             return 'vendor-ui';
           }
+          // Catch-all YOK: kalan node_modules paketleri için Rollup'ın
+          // doğal split algoritması kullanılır. Tek "vendor-misc" kovası,
+          // lazy route'a ait paketleri startup modulepreload'a sokarak
+          // ilk yük maliyetini gizlice artırıyordu (T006 review bulgusu).
+          return undefined;
         },
         assetFileNames: 'assets/[name]-[hash][extname]',
         chunkFileNames: 'js/[name]-[hash].js',

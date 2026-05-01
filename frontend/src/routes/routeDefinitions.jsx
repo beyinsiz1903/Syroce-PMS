@@ -11,13 +11,13 @@
  */
 import { lazyWithPreload as lazy } from "./lazyWithPreload";
 
-// ── Critical imports (loaded immediately) ──────────────────────────
-import AuthPage from "@/pages/AuthPage";
-import Dashboard from "@/pages/Dashboard";
-import LandingPage from "@/pages/LandingPage";
-import PrivacyPolicy from "@/pages/PrivacyPolicy";
-
 // ── Lazy imports ───────────────────────────────────────────────────
+// Eski "kritik" sayfalar da lazy yapıldı (T006 perf): AuthPage, Dashboard,
+// LandingPage, PrivacyPolicy — App.jsx'te <Routes> Suspense ile sarılı.
+const AuthPage = lazy(() => import("@/pages/AuthPage"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const LandingPage = lazy(() => import("@/pages/LandingPage"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const PMSModule = lazy(() => import("@/pages/PMSModule"));
 const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
 const RMSModule = lazy(() => import("@/pages/RMSModule"));

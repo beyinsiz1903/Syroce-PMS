@@ -205,13 +205,15 @@ function App() {
           <div className="App">
             <Toaster position="top-right" />
             <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                <Route path="/gizlilik" element={<PrivacyPolicy />} />
-                <Route path="/guest-portal/*" element={<GuestPortal user={user} onLogout={handleLogout} />} />
-                <Route path="*" element={<Navigate to="/guest-portal" replace />} />
-              </Routes>
+              <Suspense fallback={<LoadingFallback />}>
+                <Routes>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                  <Route path="/gizlilik" element={<PrivacyPolicy />} />
+                  <Route path="/guest-portal/*" element={<GuestPortal user={user} onLogout={handleLogout} />} />
+                  <Route path="*" element={<Navigate to="/guest-portal" replace />} />
+                </Routes>
+              </Suspense>
             </BrowserRouter>
           </div>
         </QueryClientProvider>
@@ -235,6 +237,7 @@ function App() {
           <BrowserRouter>
             <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>
+                <Suspense fallback={<LoadingFallback />}>
                 <Routes>
                   {/* Auth */}
                   <Route path="/login" element={<Navigate to="/auth" replace />} />
@@ -294,6 +297,7 @@ function App() {
                   {/* Catch-all */}
                   <Route path="*" element={isAuthenticated ? <Navigate to="/app/dashboard" replace /> : <Navigate to="/auth" replace />} />
                 </Routes>
+                </Suspense>
               </PlanRouteGuard>
             </ErrorBoundary>
           </BrowserRouter>
