@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, Plus, FileText, DollarSign, Calendar, TrendingUp, Mail, Phone, Home } from 'lucide-react';
+import { Users, Plus, Mail, Phone, Home, Trash2, UploadCloud, UnlockKeyhole } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const StatusBadge = ({ status }) => {
@@ -38,7 +39,18 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const GroupSales = () => {
+const emptyRoomingRow = () => ({
+  guest_name: '',
+  room_type: 'Standard',
+  check_in: '',
+  check_out: '',
+  email: '',
+  phone: '',
+  passport_number: '',
+  special_requests: '',
+});
+
+const GroupSales = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -51,6 +63,15 @@ const GroupSales = () => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [groupDetails, setGroupDetails] = useState(null);
+
+  // Rooming list (toplu rezervasyon yükleme)
+  const [roomingRows, setRoomingRows] = useState([emptyRoomingRow()]);
+  const [roomingLoading, setRoomingLoading] = useState(false);
+
+  // Bloğu serbest bırak (cutoff sonrası N oda iade)
+  const [showReleaseDialog, setShowReleaseDialog] = useState(false);
+  const [releaseCount, setReleaseCount] = useState(1);
+  const [releaseLoading, setReleaseLoading] = useState(false);
 
   const [newGroup, setNewGroup] = useState({
     group_name: '',
@@ -130,12 +151,106 @@ const GroupSales = () => {
       const response = await axios.get(`/groups/block/${blockId}`);
       setGroupDetails(response.data);
       setSelectedGroup(blockId);
+      // Rooming list satırlarını blok tarihleriyle önyükle
+      const block = response.data.block || {};
+      setRoomingRows([{
+        ...emptyRoomingRow(),
+        room_type: block.room_type || 'Standard',
+        check_in: block.check_in || '',
+        check_out: block.check_out || '',
+      }]);
     } catch (error) {
       toast.error('Grup detayları yüklenemedi');
     }
   };
 
+  const closeDetail = () => {
+    setSelectedGroup(null);
+    setGroupDetails(null);
+    setRoomingRows([emptyRoomingRow()]);
+  };
+
+  // ── Rooming list işlemleri ─────────────────────────────────────────
+  const updateRoomingRow = (idx, patch) => {
+    setRoomingRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+  const addRoomingRow = () => {
+    const last = roomingRows[roomingRows.length - 1] || emptyRoomingRow();
+    setRoomingRows((rows) => [...rows, {
+      ...emptyRoomingRow(),
+      room_type: last.room_type,
+      check_in: last.check_in,
+      check_out: last.check_out,
+    }]);
+  };
+  const removeRoomingRow = (idx) => {
+    setRoomingRows((rows) => (rows.length === 1 ? [emptyRoomingRow()] : rows.filter((_, i) => i !== idx)));
+  };
+
+  const handleUploadRoomingList = async () => {
+    if (!selectedGroup) return;
+    const valid = roomingRows.filter(r => r.guest_name && r.check_in && r.check_out && r.room_type);
+    if (valid.length === 0) {
+      toast.error('En az bir geçerli satır gerekli (Misafir, Oda Tipi, Tarihler).');
+      return;
+    }
+    const payload = valid.map((r) => ({
+      guest_name: r.guest_name,
+      room_type: r.room_type,
+      check_in: r.check_in,
+      check_out: r.check_out,
+      email: r.email || null,
+      phone: r.phone || null,
+      passport_number: r.passport_number || null,
+      special_requests: r.special_requests || null,
+    }));
+    setRoomingLoading(true);
+    try {
+      const res = await axios.post(`/groups/rooming-list/${selectedGroup}`, payload);
+      const ok = res.data?.successful ?? 0;
+      const failed = res.data?.failed ?? 0;
+      if (ok > 0) toast.success(`${ok} rezervasyon oluşturuldu`);
+      if (failed > 0) {
+        const errs = (res.data?.errors || []).slice(0, 3).join('\n');
+        toast.error(`${failed} satır başarısız${errs ? `:\n${errs}` : ''}`);
+      }
+      await loadGroupDetails(selectedGroup);
+      loadGroups();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Rooming list yüklenemedi');
+    } finally {
+      setRoomingLoading(false);
+    }
+  };
+
+  // ── Bloğu serbest bırak (release N rooms) ──────────────────────────
+  const openReleaseDialog = () => {
+    const remaining = (groupDetails?.pickup?.rooms_remaining) ?? 0;
+    setReleaseCount(Math.max(1, remaining));
+    setShowReleaseDialog(true);
+  };
+  const handleReleaseBlock = async () => {
+    if (!selectedGroup || releaseCount <= 0) return;
+    setReleaseLoading(true);
+    try {
+      const res = await axios.post(
+        `/groups/block/${selectedGroup}/release`,
+        null,
+        { params: { release_count: releaseCount } }
+      );
+      toast.success(res.data?.message || `${releaseCount} oda serbest bırakıldı`);
+      setShowReleaseDialog(false);
+      await loadGroupDetails(selectedGroup);
+      loadGroups();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Serbest bırakma başarısız');
+    } finally {
+      setReleaseLoading(false);
+    }
+  };
+
   return (
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group-sales">
     <div className="p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -256,7 +371,7 @@ const GroupSales = () => {
                   <p className="text-xs text-gray-500 mt-1">Rezervasyon kapanış tarihi</p>
                 </div>
                 <div>
-                  <Label>Grup Fiyatı (€) *</Label>
+                  <Label>Grup Fiyatı (₺) *</Label>
                   <Input
                     type="number"
                     min="0"
@@ -410,7 +525,7 @@ const GroupSales = () => {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Grup Fiyatı</p>
-                        <p className="font-semibold">€{group.group_rate}</p>
+                        <p className="font-semibold">₺{group.group_rate}</p>
                       </div>
                     </div>
                   </div>
@@ -430,18 +545,34 @@ const GroupSales = () => {
 
       {/* Group Details Modal */}
       {selectedGroup && groupDetails && (
-        <Dialog open={!!selectedGroup} onOpenChange={() => setSelectedGroup(null)}>
+        <Dialog open={!!selectedGroup} onOpenChange={(open) => { if (!open) closeDetail(); }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-2xl">
-                {groupDetails.block.group_name}
-              </DialogTitle>
+              <div className="flex items-start justify-between gap-3">
+                <DialogTitle className="text-2xl">
+                  {groupDetails.block.group_name}
+                </DialogTitle>
+                {(groupDetails.pickup?.rooms_remaining ?? 0) > 0 &&
+                  groupDetails.block.status !== 'released' &&
+                  groupDetails.block.status !== 'cancelled' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openReleaseDialog}
+                    className="mr-8 text-orange-700 border-orange-300 hover:bg-orange-50"
+                  >
+                    <UnlockKeyhole className="w-4 h-4 mr-1" />
+                    Bloğu Serbest Bırak
+                  </Button>
+                )}
+              </div>
             </DialogHeader>
 
             <Tabs defaultValue="overview" className="mt-4">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="overview">{t("loyalty.overview")}</TabsTrigger>
                 <TabsTrigger value="bookings">Rezervasyonlar ({groupDetails.bookings_count})</TabsTrigger>
+                <TabsTrigger value="rooming">Rooming List</TabsTrigger>
                 <TabsTrigger value="folio">Master Folio</TabsTrigger>
               </TabsList>
 
@@ -524,7 +655,7 @@ const GroupSales = () => {
                             </div>
                             <div className="text-right">
                               <p className="text-sm text-gray-500">Tutar</p>
-                              <p className="text-lg font-bold">€{booking.total_amount}</p>
+                              <p className="text-lg font-bold">₺{booking.total_amount}</p>
                             </div>
                           </div>
                         </CardContent>
@@ -532,6 +663,111 @@ const GroupSales = () => {
                     ))
                   )}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="rooming">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Rooming List Yükle</CardTitle>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Misafir listesini gir; her satır bir oda rezervasyonuna dönüşür.
+                      Müsait oda bulunamayan satırlar atlanır ve raporlanır.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="border rounded">
+                      <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 grid grid-cols-12 gap-2">
+                        <div className="col-span-3">Misafir Adı *</div>
+                        <div className="col-span-2">Oda Tipi *</div>
+                        <div className="col-span-2">Check-in *</div>
+                        <div className="col-span-2">Check-out *</div>
+                        <div className="col-span-2">İletişim</div>
+                        <div className="col-span-1"></div>
+                      </div>
+                      {roomingRows.map((row, idx) => (
+                        <div key={idx} className="px-3 py-2 border-t grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-3">
+                            <Input
+                              value={row.guest_name}
+                              onChange={(e) => updateRoomingRow(idx, { guest_name: e.target.value })}
+                              placeholder="Ad Soyad"
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Select
+                              value={row.room_type}
+                              onValueChange={(val) => updateRoomingRow(idx, { room_type: val })}
+                            >
+                              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Standard">Standard</SelectItem>
+                                <SelectItem value="Deluxe">Deluxe</SelectItem>
+                                <SelectItem value="Suite">Suite</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="col-span-2">
+                            <Input
+                              type="date"
+                              value={row.check_in}
+                              onChange={(e) => updateRoomingRow(idx, { check_in: e.target.value })}
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Input
+                              type="date"
+                              value={row.check_out}
+                              onChange={(e) => updateRoomingRow(idx, { check_out: e.target.value })}
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Input
+                              value={row.email}
+                              onChange={(e) => updateRoomingRow(idx, { email: e.target.value })}
+                              placeholder="E-posta (ops.)"
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeRoomingRow(idx)}
+                              className="h-9 w-9 text-red-600 hover:bg-red-50"
+                              title="Satırı sil"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-4">
+                      <Button type="button" variant="outline" size="sm" onClick={addRoomingRow}>
+                        <Plus className="w-4 h-4 mr-1" /> Satır Ekle
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleUploadRoomingList}
+                        disabled={roomingLoading}
+                        className="bg-purple-600 hover:bg-purple-700"
+                      >
+                        <UploadCloud className="w-4 h-4 mr-1" />
+                        {roomingLoading ? 'Yükleniyor...' : 'Rooming List Yükle'}
+                      </Button>
+                    </div>
+
+                    <p className="text-xs text-gray-400 mt-3">
+                      İpucu: Telefon ve pasaport gibi ek alanları daha sonra misafir kartından
+                      güncelleyebilirsin. Burada minimum bilgi yeterli.
+                    </p>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="folio">
@@ -558,7 +794,7 @@ const GroupSales = () => {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="bg-purple-50 border border-purple-100 rounded p-3">
                               <div className="text-xs text-purple-700">Toplam Folio Tutarı</div>
-                              <div className="text-2xl font-bold text-purple-900">€{total.toFixed(2)}</div>
+                              <div className="text-2xl font-bold text-purple-900">₺{total.toFixed(2)}</div>
                             </div>
                             <div className="bg-blue-50 border border-blue-100 rounded p-3">
                               <div className="text-xs text-blue-700">Toplam Geceleme</div>
@@ -566,7 +802,7 @@ const GroupSales = () => {
                             </div>
                             <div className="bg-green-50 border border-green-100 rounded p-3">
                               <div className="text-xs text-green-700">Ortalama Gecelik (ADR)</div>
-                              <div className="text-2xl font-bold text-green-900">€{adr.toFixed(2)}</div>
+                              <div className="text-2xl font-bold text-green-900">₺{adr.toFixed(2)}</div>
                             </div>
                             <div className="bg-orange-50 border border-orange-100 rounded p-3">
                               <div className="text-xs text-orange-700">Pickup / Toplam Oda</div>
@@ -599,7 +835,7 @@ const GroupSales = () => {
                                       {ci.toLocaleDateString("tr-TR")} → {co.toLocaleDateString("tr-TR")}
                                     </div>
                                     <div className="col-span-2 text-right">{n}</div>
-                                    <div className="col-span-2 text-right font-medium">€{Number(b.total_amount || 0).toFixed(2)}</div>
+                                    <div className="col-span-2 text-right font-medium">₺{Number(b.total_amount || 0).toFixed(2)}</div>
                                   </div>
                                 );
                               })
@@ -608,7 +844,7 @@ const GroupSales = () => {
                               <div className="px-3 py-2 text-sm border-t bg-purple-50 grid grid-cols-12 gap-2 font-bold">
                                 <div className="col-span-8 text-right">TOPLAM</div>
                                 <div className="col-span-2 text-right">{nightsTotal}</div>
-                                <div className="col-span-2 text-right text-purple-700">€{total.toFixed(2)}</div>
+                                <div className="col-span-2 text-right text-purple-700">₺{total.toFixed(2)}</div>
                               </div>
                             )}
                           </div>
@@ -664,7 +900,7 @@ const GroupSales = () => {
               <div className="text-center">
                 <p className="text-sm text-gray-500">Potansiyel Oda Geliri</p>
                 <p className="text-xl font-bold text-amber-600">
-                  €{groups.reduce((sum, g) => sum + (g.total_rooms * (g.group_rate || 0)), 0).toFixed(0)}
+                  ₺{groups.reduce((sum, g) => sum + (g.total_rooms * (g.group_rate || 0)), 0).toFixed(0)}
                 </p>
               </div>
             </CardContent>
@@ -683,7 +919,63 @@ const GroupSales = () => {
           </Card>
         </div>
       )}
+
+      {/* Release block dialog */}
+      <Dialog open={showReleaseDialog} onOpenChange={setShowReleaseDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bloğu Serbest Bırak</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-gray-600">
+              Bu işlem grup bloğundan belirttiğin oda sayısı kadar oda iade eder ve toplam
+              blok kontenjanını azaltır. Cutoff tarihi geçmişse genelde kalan tüm odalar
+              serbest bırakılır.
+            </p>
+            <div className="grid grid-cols-3 gap-3 text-center text-sm">
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-xs text-gray-500">Toplam</div>
+                <div className="font-bold">{groupDetails?.pickup?.total_rooms ?? 0}</div>
+              </div>
+              <div className="bg-green-50 rounded p-2">
+                <div className="text-xs text-green-700">Alındı</div>
+                <div className="font-bold text-green-700">{groupDetails?.pickup?.rooms_picked_up ?? 0}</div>
+              </div>
+              <div className="bg-orange-50 rounded p-2">
+                <div className="text-xs text-orange-700">Kalan</div>
+                <div className="font-bold text-orange-700">{groupDetails?.pickup?.rooms_remaining ?? 0}</div>
+              </div>
+            </div>
+            <div>
+              <Label>Serbest bırakılacak oda sayısı</Label>
+              <Input
+                type="number"
+                min={1}
+                max={groupDetails?.pickup?.rooms_remaining ?? 0}
+                value={releaseCount}
+                onChange={(e) => setReleaseCount(parseInt(e.target.value || '0', 10))}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                En fazla {groupDetails?.pickup?.rooms_remaining ?? 0} oda iade edilebilir.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" onClick={() => setShowReleaseDialog(false)} className="flex-1">
+                İptal
+              </Button>
+              <Button
+                onClick={handleReleaseBlock}
+                disabled={releaseLoading || releaseCount <= 0 || releaseCount > (groupDetails?.pickup?.rooms_remaining ?? 0)}
+                className="flex-1 bg-orange-600 hover:bg-orange-700"
+              >
+                {releaseLoading ? 'İşleniyor...' : 'Serbest Bırak'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+    </Layout>
   );
 };
 
