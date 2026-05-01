@@ -582,7 +582,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                 {rsIssues.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-6 text-emerald-500/60">
                     <CheckCircle className="w-5 h-5" />
-                    <span className="text-sm">Tum kontroller gecti — sistem hazir!</span>
+                    <span className="text-sm">Tüm kontroller gecti — sistem hazir!</span>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -625,7 +625,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
               {/* Fix Order */}
               {fixOrder.length > 0 && (
-                <Section title="Onerilen Duzeltme Sirasi" icon={ClipboardCheck} iconColor="text-blue-400" testId="readiness-fix-order">
+                <Section title="Önerilen Duzeltme Sirasi" icon={ClipboardCheck} iconColor="text-blue-400" testId="readiness-fix-order">
                   <div className="space-y-1.5">
                     {fixOrder.map((fix, i) => (
                       <div key={i} data-testid={`fix-order-${i}`}
@@ -690,7 +690,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Revalidate Mapping */}
             <Section title="Mapping Dogrulama" icon={ClipboardCheck} iconColor="text-emerald-400" testId="action-revalidate-section">
               <p className="text-xs text-slate-600 mb-3">
-                Tum provider mapping'lerini bastan dogrula. Hatalilari ve nedenlerini detayli goster.
+                Tüm provider mapping'lerini bastan dogrula. Hatalilari ve nedenlerini detaylı goster.
                 Salt okunur işlem — hicbir seyi değiştirmez.
               </p>
               <Button data-testid="action-revalidate-btn" onClick={() => handleSafeAction('revalidate-mapping', {})}
@@ -786,7 +786,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                       {ro.is_active && !ro.gate_evaluation.gate_passed && (
                         <div className="mt-3 p-2 rounded bg-red-500/5 border border-red-500/20">
                           <p className="text-[10px] text-red-400">
-                            Gate kontrolleri gecmedi — gecis engellidir. Manuel override mevcut degil.
+                            Gate kontrolleri gecmedi — gecis engellidir. Manuel override mevcut değil.
                           </p>
                         </div>
                       )}
@@ -843,11 +843,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      Tum drift aciklanabilir
+                      Tüm drift aciklanabilir
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      Tum incident'lar actionable
+                      Tüm incident'lar actionable
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />

@@ -167,7 +167,7 @@ export default function OverviewTab(props) {
                 <p className="font-semibold">{lastRun.total_tax_amount?.toFixed(2)} TL</p>
               </div>
               <div>
-                <span className="text-gray-500 text-xs">Sure</span>
+                <span className="text-gray-500 text-xs">Süre</span>
                 <p className="font-semibold">{lastRun.duration_ms ? `${lastRun.duration_ms}ms` : "-"}</p>
               </div>
             </div>

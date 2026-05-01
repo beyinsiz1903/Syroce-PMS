@@ -154,7 +154,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
         { key_id: keyId, reason: 'scheduled' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success('Rotasyon baslatildi');
+      toast.success('Rotasyon başlatıldı');
       fetchDashboard();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Rotasyon başlatılamadı');
@@ -191,7 +191,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
   const handleEmergencyRevoke = async () => {
     if (!selectedKey || revokeReason.length < 10) {
-      toast.error('Lutfen detayli bir sebep girin (min 10 karakter)');
+      toast.error('Lutfen detaylı bir sebep girin (min 10 karakter)');
       return;
     }
     try {
@@ -233,7 +233,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
         { job_id: jobId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success(`Is ${action === 'start' ? 'baslatildi' : action === 'pause' ? 'durduruldu' : 'iptal edildi'}`);
+      toast.success(`Is ${action === 'start' ? 'başlatıldı' : action === 'pause' ? 'durduruldu' : 'iptal edildi'}`);
       fetchDashboard();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'İşlem başarısız');
@@ -497,7 +497,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <TabsContent value="keys" className="space-y-4">
             <Card className="bg-gray-50 border-gray-200">
               <CardHeader>
-                <CardTitle className="text-slate-900">Tum Anahtarlar</CardTitle>
+                <CardTitle className="text-slate-900">Tüm Anahtarlar</CardTitle>
                 <CardDescription className="text-gray-600">
                   Kayıtlı sifreleme anahtarlari ve durumlari
                 </CardDescription>
@@ -752,7 +752,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-50 border-gray-200">
                     <SelectItem value="master">Master (Ana)</SelectItem>
-                    <SelectItem value="connector">Connector (Baglanti)</SelectItem>
+                    <SelectItem value="connector">Connector (Bağlantı)</SelectItem>
                     <SelectItem value="webhook">Webhook</SelectItem>
                     <SelectItem value="api">API</SelectItem>
                     <SelectItem value="pii">PII (Kisisel Veri)</SelectItem>
@@ -760,7 +760,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Aciklama</Label>
+                <Label className="text-gray-700">Açıklama</Label>
                 <Input 
                   value={registerForm.description}
                   onChange={e => setRegisterForm({...registerForm, description: e.target.value})}
@@ -886,7 +886,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Aciklama</Label>
+                <Label className="text-gray-700">Açıklama</Label>
                 <Input 
                   value={jobForm.description}
                   onChange={e => setJobForm({...jobForm, description: e.target.value})}

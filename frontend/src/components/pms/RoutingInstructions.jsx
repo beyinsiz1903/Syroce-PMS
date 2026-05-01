@@ -24,7 +24,7 @@ const CHARGE_CATEGORIES = [
 
 const ROUTING_TARGETS = [
   { value: 'guest', label: 'Misafir Folyosu', icon: User },
-  { value: 'company', label: 'Sirket Folyosu', icon: Building2 },
+  { value: 'company', label: 'Şirket Folyosu', icon: Building2 },
   { value: 'travel_agent', label: 'Acente Folyosu', icon: FileText },
   { value: 'group_master', label: 'Grup Master Folyo', icon: CreditCard },
 ];
@@ -59,7 +59,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
     setSaving(true);
     try {
       await axios.post(`/frontdesk/booking/${booking?.id}/routing-rules`, { rules });
-      toast.success('Yonlendirme kurallari kaydedildi');
+      toast.success('Yonlendirme kuralları kaydedildi');
       onSave?.(rules);
     } catch {
       toast.error('Kurallar kaydedilemedi');
@@ -86,7 +86,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
       <CardContent>
         {rules.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            Henüz yonlendirme kurali tanimlanmadi. Tum masraflar misafir folyosuna yansiyacak.
+            Henüz yonlendirme kuralı tanimlanmadi. Tüm masraflar misafir folyosuna yansiyacak.
           </p>
         ) : (
           <div className="space-y-2">
@@ -136,7 +136,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
               </div>
               <div>
                 <Label>Not</Label>
-                <Input value={newRule.notes} onChange={e => setNewRule(p => ({ ...p, notes: e.target.value }))} placeholder="Opsiyonel aciklama" />
+                <Input value={newRule.notes} onChange={e => setNewRule(p => ({ ...p, notes: e.target.value }))} placeholder="Opsiyonel açıklama" />
               </div>
               <Button className="w-full" onClick={addRule}>Kural Ekle</Button>
             </div>

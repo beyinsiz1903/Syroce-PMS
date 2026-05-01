@@ -141,7 +141,7 @@ export default function FinancialTab(props) {
         </>
       ) : (
         <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Finansal ozet yükleniyor...
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Finansal özet yükleniyor...
         </div>
       )}
     </TabsContent>

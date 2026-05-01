@@ -71,7 +71,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                   data-testid="payment-fill-balance"
                 >
                   <Lightbulb className="w-3 h-3 mr-1" />
-                  Tum bakiyeyi al: {balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
+                  Tüm bakiyeyi al: {balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
                 </Button>
               </div>
             )}

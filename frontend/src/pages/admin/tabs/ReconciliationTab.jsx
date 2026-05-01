@@ -34,7 +34,7 @@ const ReconciliationTab = () => {
     setActionLoading(`${issueId}-${action}`);
     try {
       await axios.post(`${API}/admin/reconciliation/issues/${issueId}/${action}`);
-      toast.success(`Islem basarili: ${action}`);
+      toast.success(`İşlem basarili: ${action}`);
       fetchIssues();
     } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
     setActionLoading(null);
@@ -47,7 +47,7 @@ const ReconciliationTab = () => {
       await axios.post(`${API}/admin/reconciliation/issues/bulk-dismiss`, { issue_ids: ids, reason: 'Bulk admin dismiss' });
       toast.success(`${ids.length} sorun kapatildi`);
       fetchIssues();
-    } catch { toast.error('Toplu kapatma hatasi'); }
+    } catch { toast.error('Toplu kapatma hatası'); }
   };
 
   return (
@@ -56,7 +56,7 @@ const ReconciliationTab = () => {
         <Select value={filters.status} onValueChange={v => setFilters(f => ({...f, status: v}))}>
           <SelectTrigger data-testid="filter-status" className="w-36 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Durum</SelectItem>
+            <SelectItem value="all">Tüm Durum</SelectItem>
             <SelectItem value="open">Open</SelectItem>
             <SelectItem value="investigating">Investigating</SelectItem>
             <SelectItem value="retrying">Retrying</SelectItem>
@@ -67,7 +67,7 @@ const ReconciliationTab = () => {
         <Select value={filters.severity} onValueChange={v => setFilters(f => ({...f, severity: v}))}>
           <SelectTrigger data-testid="filter-severity" className="w-32 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Seviye</SelectItem>
+            <SelectItem value="all">Tüm Seviye</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="high">High</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>

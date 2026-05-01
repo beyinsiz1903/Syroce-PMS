@@ -93,7 +93,7 @@ export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
     <div className="grid grid-cols-4 gap-3 mb-3" data-testid="calendar-stats">
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
-          <div className="text-xs text-gray-500 font-medium">Bugun Dolu</div>
+          <div className="text-xs text-gray-500 font-medium">Bugün Dolu</div>
           <div className="text-lg font-bold text-gray-800">{todayBookings.length} / {rooms.length}</div>
         </CardContent>
       </Card>
@@ -105,7 +105,7 @@ export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
       </Card>
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
-          <div className="text-xs text-gray-500 font-medium">Ort. Gunluk Gelir</div>
+          <div className="text-xs text-gray-500 font-medium">Ort. Günlük Gelir</div>
           <div className="text-lg font-bold text-emerald-600">{adr.toLocaleString('tr-TR')} TL</div>
         </CardContent>
       </Card>

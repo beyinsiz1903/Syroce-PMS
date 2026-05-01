@@ -46,7 +46,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">KVKK/GDPR Uyumluluk</h1>
-            <p className="text-gray-500">Veri koruma, onay yonetimi, veri silme/export/anonimize</p>
+            <p className="text-gray-500">Veri koruma, onay yönetimi, veri silme/export/anonimize</p>
           </div>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             {loading ? 'Yükleniyor...' : 'Yenile'}

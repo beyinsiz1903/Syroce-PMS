@@ -135,7 +135,7 @@ export default function EventBusDashboard() {
                 <div className="text-lg font-bold text-zinc-100">{metrics.redis_delivery_metrics.avg_publish_latency_ms}ms</div>
               </div>
               <div className="p-3 bg-zinc-800/60 rounded-lg">
-                <div className="text-xs text-zinc-400">Channel Sayisi</div>
+                <div className="text-xs text-zinc-400">Channel Sayısı</div>
                 <div className="text-lg font-bold text-zinc-100">{metrics.redis_delivery_metrics.channel_cardinality}</div>
               </div>
               <div className="p-3 bg-zinc-800/60 rounded-lg">

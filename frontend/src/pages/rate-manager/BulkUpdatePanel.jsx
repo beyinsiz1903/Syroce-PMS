@@ -146,7 +146,7 @@ export const BulkUpdatePanel = ({
       <Card className="border-orange-200 bg-orange-50/50 mt-4" data-testid="bulk-summary">
         <CardContent className="py-3 px-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="font-medium text-gray-700">Ozet:</span>
+            <span className="font-medium text-gray-700">Özet:</span>
             <Badge variant="outline" className="bg-white">{totalSelectedRoomTypes} oda tipi</Badge>
             <Badge variant="outline" className="bg-white">{totalSelectedPlans} plan</Badge>
             <Badge variant="outline" className="bg-white">{enabledFields.size} alan</Badge>
@@ -193,7 +193,7 @@ const RoomTypeList = ({
         {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Musaitlik</span>}
         {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
         {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
-        {enabledFields.has('stop_sell') && <span>Satis durdur</span>}
+        {enabledFields.has('stop_sell') && <span>Satış durdur</span>}
         {enabledFields.has('cta') && <span>CTA</span>}
         {enabledFields.has('ctd') && <span>CTD</span>}
       </div>
@@ -218,12 +218,12 @@ const RoomTypeList = ({
                     <span className="font-semibold text-sm text-gray-900">{rt.name}</span>
                     {rt.availability_update === false && (
                       <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için musaitlik guncellemeye izin vermiyor">
-                        <AlertTriangle className="w-2.5 h-2.5" /> Musaitlik kapali
+                        <AlertTriangle className="w-2.5 h-2.5" /> Musaitlik kapalı
                       </span>
                     )}
                     {rt.price_update === false && (
                       <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için fiyat guncellemeye izin vermiyor">
-                        <AlertTriangle className="w-2.5 h-2.5" /> Fiyat kapali
+                        <AlertTriangle className="w-2.5 h-2.5" /> Fiyat kapalı
                       </span>
                     )}
                   </div>

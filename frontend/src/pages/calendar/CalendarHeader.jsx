@@ -72,7 +72,7 @@ const CalendarHeader = ({
               onClick={() => onShowUnassigned?.()}
             >
               {hasUrgent && <AlertTriangle className="w-3.5 h-3.5 mr-1" />}
-              {unassignedCount} atanmamis
+              {unassignedCount} atanmamış
               {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} gecikmiş!)</span>}
               {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-orange-600 font-bold">({todayCount} bugün)</span>}
             </Button>
@@ -113,7 +113,7 @@ const CalendarHeader = ({
                   }}
                 />
                 <div className="mt-2 flex gap-1">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => { onGoToDate(new Date()); setShowDatePicker(false); }}>Bugun</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => { onGoToDate(new Date()); setShowDatePicker(false); }}>Bugün</Button>
                 </div>
               </div>
             )}

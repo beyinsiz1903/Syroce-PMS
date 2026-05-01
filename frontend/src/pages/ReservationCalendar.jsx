@@ -713,7 +713,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }}></div>
-                <span>Bugun Gelis</span>
+                <span>Bugün Gelis</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }}></div>
@@ -1019,7 +1019,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-orange-600' : 'text-blue-600'}`} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamis Rezervasyonlar</h3>
+                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamış Rezervasyonlar</h3>
                       <p className="text-xs text-gray-500">{allUnassigned.length} aktif rezervasyon</p>
                     </div>
                   </div>
@@ -1073,8 +1073,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 {sorted.length === 0 ? (
                   <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
                     <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                    <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamis rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
-                    <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tum rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
+                    <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamış rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
+                    <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tüm rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
                   </div>
                 ) : (
                   sorted.map((booking, idx) => {

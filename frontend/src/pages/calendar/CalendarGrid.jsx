@@ -282,7 +282,7 @@ const CalendarGrid = ({
                         <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
-                            <div className={`font-bold text-[9px] ${labelColor}`}>Atanmamis</div>
+                            <div className={`font-bold text-[9px] ${labelColor}`}>Atanmamış</div>
                           </div>
                           <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-orange-500 font-semibold' : 'text-blue-500'}`}>
                             {unassignedForType.length} rez.

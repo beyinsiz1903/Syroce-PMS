@@ -96,7 +96,7 @@ export default function DataPipelineDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">{t("techDashboards.dataPipeline")}</h1>
-          <p className="text-sm text-slate-400 mt-1">ML model veri hatti yonetimi</p>
+          <p className="text-sm text-slate-400 mt-1">ML model veri hatti yönetimi</p>
         </div>
         <div className="flex gap-2">
           {["revenue_ml", "operational_ai", "guest_intelligence"].map((mt) => (
@@ -206,7 +206,7 @@ export default function DataPipelineDashboard() {
                         <p className="text-sm font-medium text-white">{fs.name}</p>
                         <Badge variant="outline" className="text-cyan-400 border-cyan-500/30">{fs.defined_features} feature</Badge>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">{fs.total_extractions} extraction | {fs.record_count} kayit</p>
+                      <p className="text-xs text-slate-400 mt-1">{fs.total_extractions} extraction | {fs.record_count} kayıt</p>
                     </div>
                   ))}
                 </div>
@@ -220,7 +220,7 @@ export default function DataPipelineDashboard() {
             <CardHeader><CardTitle className="text-white text-base">Stale Model & Prediction Uyarilari</CardTitle></CardHeader>
             <CardContent>
               {staleModels.length === 0 && stalePredictions.length === 0 ? (
-                <p className="text-emerald-400 text-sm">Tum modeller ve tahminler guncel</p>
+                <p className="text-emerald-400 text-sm">Tüm modeller ve tahminler güncel</p>
               ) : (
                 <div className="space-y-2">
                   {stalePredictions.map((sp, i) => (

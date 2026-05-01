@@ -52,7 +52,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Cross-Property Misafir Profilleri</h1>
-          <p className="text-gray-500">Tek misafir kaydi tum otellerde gecerli</p>
+          <p className="text-gray-500">Tek misafir kaydi tum otellerde geçerli</p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -85,7 +85,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                             <th className="text-left p-3 text-sm">E-posta</th>
                             <th className="text-left p-3 text-sm">Telefon</th>
                             <th className="text-left p-3 text-sm">Otel</th>
-                            <th className="text-left p-3 text-sm">Islem</th>
+                            <th className="text-left p-3 text-sm">İşlem</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -117,7 +117,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                       <p className="text-lg font-bold">{selectedGuest.guest?.name}</p>
                       <p className="text-sm text-gray-500">{selectedGuest.guest?.email}</p>
                       <p className="text-sm text-gray-500">{selectedGuest.guest?.phone}</p>
-                      <Badge>{selectedGuest.cross_property_records} otelde kayit</Badge>
+                      <Badge>{selectedGuest.cross_property_records} otelde kayıt</Badge>
                     </CardContent>
                   </Card>
 
@@ -139,7 +139,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-orange-600">{selectedGuest.lifetime_stats?.properties_count}</div>
-                          <p className="text-sm text-gray-500">Otel Sayisi</p>
+                          <p className="text-sm text-gray-500">Otel Sayısı</p>
                         </div>
                       </div>
                     </CardContent>
@@ -194,7 +194,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                         </div>
                         <div className="flex gap-2">
                           <Badge>{g.properties_count} otel</Badge>
-                          <Badge variant="outline">{g.total_records} kayit</Badge>
+                          <Badge variant="outline">{g.total_records} kayıt</Badge>
                         </div>
                       </div>
                     ))}

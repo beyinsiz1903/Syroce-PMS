@@ -60,7 +60,7 @@ export default function YieldRulesPanel() {
 
   const handleSave = async () => {
     if (!form.name || !form.condition_value || !form.action_value) {
-      toast.error('Tum alanlari doldurun');
+      toast.error('Tüm alanlari doldurun');
       return;
     }
     try {
@@ -98,7 +98,7 @@ export default function YieldRulesPanel() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Yield Kurallari</h2>
-          <p className="text-sm text-slate-500">Otomatik fiyat ayarlama kurallari tanimlayın</p>
+          <p className="text-sm text-slate-500">Otomatik fiyat ayarlama kuralları tanimlayın</p>
         </div>
         <Button size="sm" onClick={openAdd} data-testid="add-rule-btn">
           <Plus className="w-4 h-4 mr-1" /> Yeni Kural
@@ -109,22 +109,22 @@ export default function YieldRulesPanel() {
       {showForm && (
         <Card className="border-sky-200 bg-sky-50/30" data-testid="yield-rule-form">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm">{editId ? 'Kurali Duzenle' : 'Yeni Kural Ekle'}</CardTitle>
+            <CardTitle className="text-sm">{editId ? 'Kurali Düzenle' : 'Yeni Kural Ekle'}</CardTitle>
             <Button size="icon" variant="ghost" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Kural Adi</Label>
-                <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ornek: Yuksek Doluluk Artisi" data-testid="rule-name-input" />
+                <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ornek: Yüksek Doluluk Artisi" data-testid="rule-name-input" />
               </div>
               <div>
-                <Label className="text-xs">Oncelik (1=en yuksek)</Label>
+                <Label className="text-xs">Oncelik (1=en yüksek)</Label>
                 <Input type="number" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} />
               </div>
             </div>
             <div>
-              <Label className="text-xs">Aciklama</Label>
+              <Label className="text-xs">Açıklama</Label>
               <Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Kural aciklamasi" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

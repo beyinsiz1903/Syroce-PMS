@@ -86,10 +86,10 @@ export default function RevenueMLPanel() {
           <StatBox label="Fiyat Opt. Firsati" value={priceOpt.length} color="text-teal-600" />
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <StatBox label="Yuksek Talep Gunu" value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} color="text-purple-600" />
+          <StatBox label="Yüksek Talep Gunu" value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} color="text-purple-600" />
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <StatBox label="Riskli Rez. Sayisi" value={data?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
+          <StatBox label="Riskli Rez. Sayısı" value={data?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
         </CardContent></Card>
       </div>
 
@@ -145,7 +145,7 @@ export default function RevenueMLPanel() {
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
                     <div>
-                      <div className="text-xs text-slate-500">Onerilen</div>
+                      <div className="text-xs text-slate-500">Önerilen</div>
                       <div className="text-sm font-bold text-teal-700">{pp.suggested_price} TL</div>
                     </div>
                     <ActionBadge action={pp.action} />
@@ -186,7 +186,7 @@ export default function RevenueMLPanel() {
       <Card data-testid="at-risk-bookings-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" /> İptal Riski Yuksek Rezervasyonlar
+            <AlertTriangle className="w-4 h-4 text-red-500" /> İptal Riski Yüksek Rezervasyonlar
             <Badge variant="destructive" className="ml-2">{atRisk.length}</Badge>
           </CardTitle>
         </CardHeader>
@@ -196,7 +196,7 @@ export default function RevenueMLPanel() {
               <thead>
                 <tr className="border-b text-left">
                   <th className="pb-2 text-slate-500 font-medium">Misafir</th>
-                  <th className="pb-2 text-slate-500 font-medium">Giris</th>
+                  <th className="pb-2 text-slate-500 font-medium">Giriş</th>
                   <th className="pb-2 text-slate-500 font-medium">Kaynak</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Tutar</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Risk</th>

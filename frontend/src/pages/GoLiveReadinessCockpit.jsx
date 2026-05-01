@@ -111,7 +111,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
         axios.get('/channel-manager/v2/dashboard/overview', { headers }).then(r => r.data),
         axios.get('/validation/golive-score', { headers }).then(r => r.data),
       ]);
-      if (connRes.status === 'fulfilled') { setConnections(connRes.value); } else { errors.push('Baglanti verileri'); setConnections(null); }
+      if (connRes.status === 'fulfilled') { setConnections(connRes.value); } else { errors.push('Bağlantı verileri'); setConnections(null); }
       if (dashRes.status === 'fulfilled') { setDashboard(dashRes.value); } else { errors.push('Dashboard verileri'); setDashboard(null); }
       if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value?.data || scoreRes.value); } else { errors.push('Hazirlik skoru'); setGoliveScore(null); }
       setFetchErrors(errors);
@@ -130,12 +130,12 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.post(`/channel-manager/v2/connectors/${connectorId}/test`, {}, { headers });
       if (data?.success) {
-        toast.success('Baglanti testi basarili');
+        toast.success('Bağlantı testi basarili');
       } else {
         toast.error(data?.detail || 'Bağlantı testi başarısız');
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Baglanti testi sirasinda hata');
+      toast.error(err.response?.data?.detail || 'Bağlantı testi sirasinda hata');
     } finally {
       setTestingConnector(null);
       fetchAll();
@@ -236,11 +236,11 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 <ChecklistItem
-                  label="Credential & Baglanti"
+                  label="Credential & Bağlantı"
                   icon={Key}
                   status={hasCredentials && hasActiveConnectors ? 'pass' : hasCredentials ? 'warn' : 'fail'}
                   detail={hasActiveConnectors
-                    ? `${connectedProviders.length} aktif baglanti (${connectedProviders.map(p => p.display_name || p.provider).join(', ')})`
+                    ? `${connectedProviders.length} aktif bağlantı (${connectedProviders.map(p => p.display_name || p.provider).join(', ')})`
                     : hasCredentials ? 'Connector aktif değil' : 'Bağlantı bulunamadı'
                   }
                   action={isSuperAdmin ? () => navigate('/channel-connections') : undefined}
@@ -307,7 +307,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   >
                     {testingConnector ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : <Wifi className="w-5 h-5 text-blue-500" />}
                     <span className="text-xs font-medium">Test Connection</span>
-                    <span className="text-[10px] text-slate-400">Baglanti dogrulamasi</span>
+                    <span className="text-[10px] text-slate-400">Bağlantı dogrulamasi</span>
                   </Button>
 
                   <Button
@@ -398,7 +398,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                     />
                   ))}
                   {Object.keys(categories).length === 0 && (
-                    <p className="text-xs text-slate-400 text-center py-2">Skor verileri mevcut degil</p>
+                    <p className="text-xs text-slate-400 text-center py-2">Skor verileri mevcut değil</p>
                   )}
                 </div>
               </CardContent>
@@ -419,7 +419,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                     <WifiOff className="w-6 h-6 text-slate-300 mx-auto mb-2" />
                     <p className="text-xs text-slate-400">Aktif connector bulunamadı</p>
                     <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => navigate('/channel-connections')}>
-                      Baglanti Ekle <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      Bağlantı Ekle <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </Button>
                   </div>
                 ) : connectors.map((c, i) => (
@@ -450,7 +450,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   : 'bg-slate-200 text-slate-500 cursor-not-allowed'
                 }`}
                 disabled={!goLiveReady}
-                onClick={() => goLiveReady && toast.success('Go-Live aktivasyonu baslatildi!')}
+                onClick={() => goLiveReady && toast.success('Go-Live aktivasyonu başlatıldı!')}
                 data-testid="go-live-button"
               >
                 <Rocket className="w-4.5 h-4.5 mr-2" />

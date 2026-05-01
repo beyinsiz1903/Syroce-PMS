@@ -62,7 +62,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
       setMessage(res.data.message);
       setSetupData(null);
       fetch2FAStatus();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Gecersiz kod'); }
+    } catch (e) { setMessage(e.response?.data?.detail || 'Geçersiz kod'); }
     setLoading(false);
   };
 
@@ -106,8 +106,8 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Guvenlik Merkezi</h1>
-            <p className="text-gray-500">2FA, IP erisim kontrolu ve guvenlik ayarları</p>
+            <h1 className="text-2xl font-bold">Güvenlik Merkezi</h1>
+            <p className="text-gray-500">2FA, IP erişim kontrolu ve güvenlik ayarları</p>
           </div>
         </div>
 
@@ -135,7 +135,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                   )}
                 </CardTitle>
                 <CardDescription>
-                  TOTP tabanli ek guvenlik katmani. Google Authenticator veya benzer uygulamalarla kullanin.
+                  TOTP tabanli ek güvenlik katmani. Google Authenticator veya benzer uygulamalarla kullanin.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -150,7 +150,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                     <div className="p-4 bg-gray-50 rounded-lg text-center">
                       <p className="mb-2 font-medium">QR Kodu Tarayin</p>
                       <img src={setupData.qr_code} alt="QR Code" className="mx-auto w-48 h-48" />
-                      <p className="mt-2 text-sm text-gray-500">Manuel giris: <code className="bg-gray-200 px-2 py-1 rounded">{setupData.manual_entry_key}</code></p>
+                      <p className="mt-2 text-sm text-gray-500">Manuel giriş: <code className="bg-gray-200 px-2 py-1 rounded">{setupData.manual_entry_key}</code></p>
                     </div>
                     <div className="flex gap-2">
                       <Input
@@ -179,8 +179,8 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
 
                 {twoFAStatus?.enabled && (
                   <div className="space-y-2">
-                    <p className="text-sm text-gray-600">Yedek kod sayisi: {twoFAStatus.backup_codes_remaining}</p>
-                    <p className="text-sm text-gray-600">Son dogrulama: {twoFAStatus.last_verified || 'Bilinmiyor'}</p>
+                    <p className="text-sm text-gray-600">Yedek kod sayısı: {twoFAStatus.backup_codes_remaining}</p>
+                    <p className="text-sm text-gray-600">Son doğrulama: {twoFAStatus.last_verified || 'Bilinmiyor'}</p>
                     <Button variant="destructive" onClick={disable2FA}>2FA Devre Disi Birak</Button>
                   </div>
                 )}
@@ -192,7 +192,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
             <Card>
               <CardHeader>
                 <CardTitle>IP Erisim Kurallari</CardTitle>
-                <CardDescription>Whitelist ve blacklist ile IP bazli erisim kontrolu</CardDescription>
+                <CardDescription>Whitelist ve blacklist ile IP bazli erişim kontrolu</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2 items-end">
@@ -208,7 +208,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="text-sm font-medium">Aciklama</label>
+                    <label className="text-sm font-medium">Açıklama</label>
                     <Input value={newIPDesc} onChange={(e) => setNewIPDesc(e.target.value)} placeholder="Ofis IP" />
                   </div>
                   <Button onClick={addIPRule}>{t("common.add")}</Button>
@@ -229,9 +229,9 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
                       <tr>
                         <th className="text-left p-3 text-sm">IP Adresi</th>
                         <th className="text-left p-3 text-sm">Tip</th>
-                        <th className="text-left p-3 text-sm">Aciklama</th>
+                        <th className="text-left p-3 text-sm">Açıklama</th>
                         <th className="text-left p-3 text-sm">Durum</th>
-                        <th className="text-left p-3 text-sm">Islem</th>
+                        <th className="text-left p-3 text-sm">İşlem</th>
                       </tr>
                     </thead>
                     <tbody>

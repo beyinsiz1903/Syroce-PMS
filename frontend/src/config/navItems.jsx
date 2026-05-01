@@ -38,7 +38,7 @@ export const NAV_GROUPS = [
   },
   {
     id: "management",
-    label: "Yonetim",
+    label: "Yönetim",
     icon: "Settings",
   },
   {
@@ -48,7 +48,7 @@ export const NAV_GROUPS = [
   },
   {
     id: "admin",
-    label: "Yonetim",
+    label: "Yönetim",
     icon: "Shield",
   },
 ];
@@ -175,7 +175,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "wake_up_calls",
-    label: "Uyandirma Cagrisi",
+    label: "Uyandırma Cagrisi",
     path: "/wake-up-calls",
     moduleKey: "pms",
     tier: "basic",
@@ -211,7 +211,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "service_recovery",
-    label: "Sikayet Yonetimi",
+    label: "Sikayet Yönetimi",
     path: "/service-recovery",
     moduleKey: "pms",
     tier: "basic",
@@ -360,7 +360,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "agency_management",
-    label: "Acente Yonetimi",
+    label: "Acente Yönetimi",
     path: "/agency-management",
     moduleKey: "channel_manager",
     tier: "basic",
@@ -567,7 +567,7 @@ export const NAV_ITEMS = [
   // ──── ADVANCED GROUP ───────────────────────────────
   {
     key: "gelir_yonetimi",
-    label: "Gelir Yonetimi",
+    label: "Gelir Yönetimi",
     path: "/app/gelir-yonetimi",
     moduleKey: "revenue_management",
     tier: "enterprise",
@@ -842,7 +842,7 @@ export const NAV_ITEMS = [
   // ──── SUPER ADMIN ONLY ─────────────────────────────
   {
     key: "admin_tenants",
-    label: "Otel Yonetimi",
+    label: "Otel Yönetimi",
     path: "/admin/tenants",
     requireSuperAdmin: true,
     group: "admin",
@@ -850,7 +850,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "admin_vendors",
-    label: "Tedarikci Yonetimi",
+    label: "Tedarikci Yönetimi",
     path: "/admin/vendors",
     requireSuperAdmin: true,
     group: "admin",

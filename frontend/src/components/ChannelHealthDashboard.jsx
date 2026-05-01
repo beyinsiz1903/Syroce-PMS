@@ -35,7 +35,7 @@ const FAILURE_COLORS = {
 
 const FAILURE_LABELS = {
   timeout: "Timeout", validation_error: "Validasyon", provider_rejected: "Provider Red",
-  auth_error: "Auth Hatasi", rate_limited: "Rate Limit", provider_unavailable: "Provider Down", unknown: "Bilinmiyor",
+  auth_error: "Auth Hatası", rate_limited: "Rate Limit", provider_unavailable: "Provider Down", unknown: "Bilinmiyor",
 };
 
 const CHART_COLORS = { p50: "#10b981", p95: "#f59e0b", p99: "#ef4444", sync: "#3b82f6", drift: "#f97316", retry: "#a855f7", failures: "#ef4444" };
@@ -91,7 +91,7 @@ function FieldKPICard({ icon, label, kpi, invertTrend, testId }) {
         </div>
       </div>
       <div className="text-2xl font-bold font-mono text-zinc-100">{val}{unit === "%" ? "%" : ""}<span className="text-sm text-zinc-600 ml-1">{unit !== "%" ? unit : ""}</span></div>
-      <div className="text-[10px] text-zinc-600 mt-1.5 font-mono">onceki donem: {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
+      <div className="text-[10px] text-zinc-600 mt-1.5 font-mono">önceki dönem: {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
     </div>
   );
 }
@@ -358,7 +358,7 @@ export function ChannelHealth() {
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="field-kpis-grid">
           <FieldKPICard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari Orani" kpi={fk.sync_success} testId="fkpi-sync-success" />
-          <FieldKPICard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayisi" kpi={fk.drift_reduction} invertTrend testId="fkpi-drift" />
+          <FieldKPICard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayısı" kpi={fk.drift_reduction} invertTrend testId="fkpi-drift" />
           <FieldKPICard icon={<Timer className="h-4 w-4" />} label="MTTR" kpi={fk.mttr_hours} invertTrend testId="fkpi-mttr" />
           <FieldKPICard icon={<Wrench className="h-4 w-4" />} label="Operator Mudahale" kpi={fk.operator_interventions} invertTrend testId="fkpi-operator" />
           <FieldKPICard icon={<Shield className="h-4 w-4" />} label="Push SLA Uyum" kpi={fk.push_sla_compliance} testId="fkpi-push-sla" />
@@ -369,7 +369,7 @@ export function ChannelHealth() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KPISummaryCard icon={<Gauge className="h-4 w-4" />} label="Push Latency p95" value={`${overallLatency.p95 || 0}ms`} sub={`p50: ${overallLatency.p50 || 0}ms · p99: ${overallLatency.p99 || 0}ms`} ok={(overallLatency.p95 || 0) <= 5000} testId="kpi-push-latency" />
         <KPISummaryCard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari" value={`${overallSync.success_rate ?? 100}%`} sub={`${overallSync.completed || 0}/${overallSync.total || 0} basarili`} ok={(overallSync.success_rate ?? 100) >= 95} testId="kpi-sync-success" />
-        <KPISummaryCard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayisi" value={drift.total_open || 0} sub={`${allProviders.length} provider`} ok={(drift.total_open || 0) < 10} testId="kpi-drift-count" />
+        <KPISummaryCard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayısı" value={drift.total_open || 0} sub={`${allProviders.length} provider`} ok={(drift.total_open || 0) < 10} testId="kpi-drift-count" />
         <KPISummaryCard icon={<Zap className="h-4 w-4" />} label="Retry Basari" value={`${overallRetry.retry_success_rate ?? 0}%`} sub={`${overallRetry.retried_success || 0}/${overallRetry.total_retried || 0}`} ok={(overallRetry.retry_success_rate ?? 100) >= 80} testId="kpi-retry-success" />
       </div>
 
@@ -448,7 +448,7 @@ export function ChannelHealth() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                 <TrendingDown className="h-4 w-4 text-zinc-500" /> Reconciliation Drift
-                <Badge variant="outline" className={`text-[10px] ml-auto border ${(drift.total_open || 0) >= 50 ? "text-red-400 border-red-500/30" : (drift.total_open || 0) >= 10 ? "text-yellow-400 border-yellow-500/30" : "text-emerald-400 border-emerald-500/30"}`}>{drift.total_open || 0} acik</Badge>
+                <Badge variant="outline" className={`text-[10px] ml-auto border ${(drift.total_open || 0) >= 50 ? "text-red-400 border-red-500/30" : (drift.total_open || 0) >= 10 ? "text-yellow-400 border-yellow-500/30" : "text-emerald-400 border-emerald-500/30"}`}>{drift.total_open || 0} açık</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">

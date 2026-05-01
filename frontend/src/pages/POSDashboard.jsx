@@ -42,7 +42,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
       setOutlets(active);
       return active;
     } catch (err) {
-      console.error('Outlets yuklenemedi:', err);
+      console.error('Outlets yüklenemedi:', err);
       return [];
     }
   }, []);
@@ -64,7 +64,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
         today_revenue: zRes.data.gross_sales || 0,
       });
     } catch (err) {
-      console.error('Istatistikler yuklenemedi:', err);
+      console.error('Istatistikler yüklenemedi:', err);
     } finally {
       setLoadingStats(false);
     }

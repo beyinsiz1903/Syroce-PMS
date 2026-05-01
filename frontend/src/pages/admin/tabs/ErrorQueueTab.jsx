@@ -37,7 +37,7 @@ const ErrorQueueTab = () => {
     try {
       for (const [errorType, ids] of Object.entries(groups)) { await axios.post(`${API}/admin/error-queue/bulk-${action}`, { item_ids: ids, error_type: errorType, reason: 'Bulk admin action' }); }
       toast.success(`Toplu ${action}: ${selected.size} oge`); setSelected(new Set()); fetchQueue();
-    } catch { toast.error('Toplu işlem hatasi'); }
+    } catch { toast.error('Toplu işlem hatası'); }
   };
 
   const summary = queue.summary || {};
@@ -46,18 +46,18 @@ const ErrorQueueTab = () => {
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <MetricCard title="Toplam Hata" value={summary.total || 0} icon={AlertOctagon} color="text-red-400" />
-        <MetricCard title="Sync Hatasi" value={summary.sync_failed || 0} icon={RefreshCw} color="text-orange-400" />
-        <MetricCard title="Import Hatasi" value={summary.import_failed || 0} icon={Database} color="text-amber-400" />
-        <MetricCard title="ACK Hatasi" value={summary.ack_failed || 0} icon={AlertTriangle} color="text-red-400" />
+        <MetricCard title="Sync Hatası" value={summary.sync_failed || 0} icon={RefreshCw} color="text-orange-400" />
+        <MetricCard title="Import Hatası" value={summary.import_failed || 0} icon={Database} color="text-amber-400" />
+        <MetricCard title="ACK Hatası" value={summary.ack_failed || 0} icon={AlertTriangle} color="text-red-400" />
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <Select value={filterType} onValueChange={setFilterType}>
           <SelectTrigger data-testid="error-type-filter" className="w-40 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Tipler</SelectItem>
-            <SelectItem value="sync_failed">Sync Hatasi</SelectItem>
-            <SelectItem value="import_failed">Import Hatasi</SelectItem>
-            <SelectItem value="ack_failed">ACK Hatasi</SelectItem>
+            <SelectItem value="all">Tüm Tipler</SelectItem>
+            <SelectItem value="sync_failed">Sync Hatası</SelectItem>
+            <SelectItem value="import_failed">Import Hatası</SelectItem>
+            <SelectItem value="ack_failed">ACK Hatası</SelectItem>
           </SelectContent>
         </Select>
         <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchQueue}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>

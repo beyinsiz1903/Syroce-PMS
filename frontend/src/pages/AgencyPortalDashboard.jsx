@@ -61,9 +61,9 @@ const AgencyPortalDashboard = () => {
       setToken(data.token);
       setAgencyUser(data.user);
       setAgencyInfo(data.agency);
-      toast.success('Giris basarili');
+      toast.success('Giriş basarili');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Giris hatasi');
+      toast.error(err.response?.data?.detail || 'Giriş hatası');
     } finally {
       setLoginLoading(false);
     }
@@ -118,7 +118,7 @@ const AgencyPortalDashboard = () => {
       });
       setAvailability(data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Arama hatasi');
+      toast.error(err.response?.data?.detail || 'Arama hatası');
     } finally {
       setSearchLoading(false);
     }
@@ -153,7 +153,7 @@ const AgencyPortalDashboard = () => {
       setAvailability(null);
       loadReservations();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Rezervasyon hatasi');
+      toast.error(err.response?.data?.detail || 'Rezervasyon hatası');
     } finally {
       setBookingLoading(false);
     }
@@ -173,8 +173,8 @@ const AgencyPortalDashboard = () => {
   };
 
   const statusLabels = {
-    confirmed: 'Onaylandi', pending: 'Beklemede', checked_in: 'Giris Yapti',
-    checked_out: 'Cikis Yapti', cancelled: 'İptal',
+    confirmed: 'Onaylandi', pending: 'Beklemede', checked_in: 'Giriş Yapti',
+    checked_out: 'Çıkış Yapti', cancelled: 'İptal',
   };
   const statusColors = {
     confirmed: 'bg-emerald-100 text-emerald-800', pending: 'bg-amber-100 text-amber-800',
@@ -192,7 +192,7 @@ const AgencyPortalDashboard = () => {
               <Building2 size={28} className="text-emerald-700" />
             </div>
             <CardTitle className="text-xl">Acente Portali</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">Acente hesabinizla giris yapin</p>
+            <p className="text-sm text-slate-500 mt-1">Acente hesabinizla giriş yapin</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -214,7 +214,7 @@ const AgencyPortalDashboard = () => {
               </div>
               <Button type="submit" className="w-full" disabled={loginLoading} data-testid="agency-login-submit">
                 {loginLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
-                Giris Yap
+                Giriş Yap
               </Button>
             </form>
           </CardContent>
@@ -239,7 +239,7 @@ const AgencyPortalDashboard = () => {
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="agency-logout-btn">
-            <LogOut size={14} className="mr-1" /> Cikis
+            <LogOut size={14} className="mr-1" /> Çıkış
           </Button>
         </div>
       </header>
@@ -259,11 +259,11 @@ const AgencyPortalDashboard = () => {
               <CardContent className="pt-5">
                 <div className="flex flex-wrap gap-3 items-end">
                   <div>
-                    <Label className="text-xs">Giris Tarihi</Label>
+                    <Label className="text-xs">Giriş Tarihi</Label>
                     <Input type="date" value={searchForm.check_in} onChange={e => setSearchForm(p => ({ ...p, check_in: e.target.value }))} data-testid="search-checkin" className="w-44" />
                   </div>
                   <div>
-                    <Label className="text-xs">Cikis Tarihi</Label>
+                    <Label className="text-xs">Çıkış Tarihi</Label>
                     <Input type="date" value={searchForm.check_out} onChange={e => setSearchForm(p => ({ ...p, check_out: e.target.value }))} data-testid="search-checkout" className="w-44" />
                   </div>
                   <div>
@@ -476,8 +476,8 @@ const AgencyPortalDashboard = () => {
               <Input type="number" value={bookingForm.total_amount} onChange={e => setBookingForm(p => ({ ...p, total_amount: parseFloat(e.target.value) || 0 }))} data-testid="booking-amount" />
             </div>
             <div>
-              <Label>Ozel Istek</Label>
-              <Input value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({ ...p, special_requests: e.target.value }))} placeholder="Erken giris, deniz manzarasi..." />
+              <Label>Özel İstek</Label>
+              <Input value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({ ...p, special_requests: e.target.value }))} placeholder="Erken giriş, deniz manzarasi..." />
             </div>
           </div>
           <DialogFooter>

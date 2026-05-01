@@ -55,8 +55,8 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       const list = Array.isArray(res.data) ? res.data : (res.data.menu_items || []);
       setMenuItems(list);
     } catch (err) {
-      console.error('Menu yuklenemedi:', err);
-      toast.error('Menu yuklenemedi');
+      console.error('Menu yüklenemedi:', err);
+      toast.error('Menu yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -113,9 +113,9 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       setDialogOpen(false);
       await load();
     } catch (err) {
-      console.error('Menu kaydi hatasi:', err);
+      console.error('Menu kaydi hatası:', err);
       const detail = err?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Kayit basarisiz');
+      toast.error(typeof detail === 'string' ? detail : 'Kayıt basarisiz');
     } finally {
       setSaving(false);
     }
@@ -168,7 +168,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>
-                      {editing ? 'Urunu Duzenle' : 'Yeni Menu Urunu'}
+                      {editing ? 'Urunu Düzenle' : 'Yeni Menu Urunu'}
                     </DialogTitle>
                     <DialogDescription>
                       Fiyat, KDV, kategori ve durum bilgisi.
@@ -210,7 +210,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         </Select>
                       </div>
                       <div>
-                        <Label>Satis Fiyati (TL) *</Label>
+                        <Label>Satış Fiyati (TL) *</Label>
                         <Input
                           type="number" step="0.01"
                           value={form.price}
@@ -227,7 +227,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         />
                       </div>
                       <div className="col-span-2">
-                        <Label>Aciklama</Label>
+                        <Label>Açıklama</Label>
                         <Textarea
                           rows={2}
                           value={form.description}
@@ -254,7 +254,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-                      Iptal
+                      İptal
                     </Button>
                     <Button onClick={submit} disabled={saving} data-testid="button-save-menu-item">
                       {saving ? 'Kaydediliyor...' : (editing ? 'Guncelle' : 'Ekle')}

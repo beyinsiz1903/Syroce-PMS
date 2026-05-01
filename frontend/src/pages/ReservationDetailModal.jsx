@@ -39,7 +39,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   useEffect(() => { setLoading(true); loadData(); }, [loadData]);
 
-  const action = async (url, body = {}, msg = 'Islem tamamlandi') => {
+  const action = async (url, body = {}, msg = 'İşlem tamamlandi') => {
     try { await axios.post(`${API}${url}`, body); toast.success(msg); loadData(); }
     catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
@@ -60,8 +60,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
     { id: 'vcc', label: 'Sanal Kart', icon: Shield },
     { id: 'folios', label: 'Folyolar', icon: DollarSign },
-    { id: 'daily_rates', label: 'Gunluk Fiyatlar', icon: Calendar },
-    { id: 'extras', label: 'Ek Ucretler', icon: Receipt },
+    { id: 'daily_rates', label: 'Günlük Fiyatlar', icon: Calendar },
+    { id: 'extras', label: 'Ek Ücretler', icon: Receipt },
     { id: 'room_change', label: 'Oda Degistir', icon: Repeat2 },
     { id: 'cancel', label: 'İptal', icon: AlertTriangle },
     { id: 'voucher', label: 'Voucher', icon: FileText },
@@ -99,8 +99,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="flex justify-between"><span className="text-gray-500">Durum</span><Badge className="bg-emerald-100 text-emerald-700 text-xs h-5">{statusLabel(booking?.status)}</Badge></div>
                 <div className="flex justify-between"><span className="text-gray-500">Kanal</span><span className="font-medium text-gray-700">{booking?.source_channel || 'Direkt'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Oda</span><span className="font-medium text-blue-600">{booking?.room_number || room?.room_number || '-'}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Giris</span><span className="font-medium">{booking?.check_in?.toString().slice(0, 10)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Cikis</span><span className="font-medium">{booking?.check_out?.toString().slice(0, 10)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Giriş</span><span className="font-medium">{booking?.check_in?.toString().slice(0, 10)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Çıkış</span><span className="font-medium">{booking?.check_out?.toString().slice(0, 10)}</span></div>
                 {booking?.created_at && (
                   <div className="flex justify-between"><span className="text-gray-500">Olusturulma</span><span className="font-medium text-[10px]">{new Date(booking.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
                 )}

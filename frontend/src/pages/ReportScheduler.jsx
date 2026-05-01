@@ -232,7 +232,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Rapor Zamanlayici</h1>
-          <p className="text-sm text-gray-500 mt-1">Otomatik rapor gonderim zamanlamalarini yonetin</p>
+          <p className="text-sm text-gray-500 mt-1">Otomatik rapor gonderim zamanlamalarini yönetin</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadData}>
@@ -369,7 +369,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                               <Edit className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Duzenle</TooltipContent>
+                          <TooltipContent>Düzenle</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -425,7 +425,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                       <TableHead>Durum</TableHead>
                       <TableHead>Alicilar</TableHead>
                       <TableHead>Tetikleyen</TableHead>
-                      <TableHead className="text-right">Islem</TableHead>
+                      <TableHead className="text-right">İşlem</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -485,7 +485,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Zamanlama Duzenle" : "Yeni Zamanlama Olustur"}</DialogTitle>
+            <DialogTitle>{editingId ? "Zamanlama Düzenle" : "Yeni Zamanlama Olustur"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -524,8 +524,8 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="daily">Günlük</SelectItem>
-                    <SelectItem value="weekly">Haftalik</SelectItem>
-                    <SelectItem value="monthly">Aylik</SelectItem>
+                    <SelectItem value="weekly">Haftalık</SelectItem>
+                    <SelectItem value="monthly">Aylık</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -565,7 +565,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
             <div>
               <label className="text-sm font-medium text-gray-700">Notlar</label>
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Opsiyonel aciklama" className="mt-1" />
+                placeholder="Opsiyonel açıklama" className="mt-1" />
             </div>
           </div>
           <DialogFooter>
@@ -619,7 +619,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                 </div>
               )}
               {detailEntry.retry_count > 0 && (
-                <div className="text-xs text-gray-500">Tekrar deneme sayisi: {detailEntry.retry_count}</div>
+                <div className="text-xs text-gray-500">Tekrar deneme sayısı: {detailEntry.retry_count}</div>
               )}
             </div>
           )}

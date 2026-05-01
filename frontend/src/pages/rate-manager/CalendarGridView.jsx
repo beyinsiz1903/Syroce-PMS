@@ -15,7 +15,7 @@ export const CalendarGridView = ({
         <div>
           <CardTitle className="text-base">Mevcut Fiyat Takvimi</CardTitle>
           <CardDescription className="text-xs">
-            Tarih bazinda mevcut fiyat, musaitlik ve kisitlamalari goruntuleyin
+            Tarih bazinda mevcut fiyat, musaitlik ve kisitlamalari görüntüleyin
           </CardDescription>
         </div>
         <Button variant="outline" size="sm" onClick={fetchGrid} disabled={loading}>
@@ -31,7 +31,7 @@ export const CalendarGridView = ({
             <SelectValue placeholder="Oda Tipi" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Oda Tipleri</SelectItem>
+            <SelectItem value="all">Tüm Oda Tipleri</SelectItem>
             {roomTypes.map(rt => (
               <SelectItem key={rt.code} value={rt.code}>{rt.name}</SelectItem>
             ))}
@@ -43,7 +43,7 @@ export const CalendarGridView = ({
             <SelectValue placeholder="Fiyat Plani" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Fiyat Planlari</SelectItem>
+            <SelectItem value="all">Tüm Fiyat Planlari</SelectItem>
             {ratePlans.map(rp => (
               <SelectItem key={rp.code} value={rp.code}>{rp.name}</SelectItem>
             ))}
@@ -61,7 +61,7 @@ export const CalendarGridView = ({
               setStartDate(t); setEndDate(e.toISOString().slice(0, 10));
             }}
             data-testid="today-btn">
-            <Calendar className="w-3 h-3 mr-1" /> Bugun
+            <Calendar className="w-3 h-3 mr-1" /> Bugün
           </Button>
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftDates(7)} data-testid="next-week-btn">
             <ChevronRight className="w-4 h-4" />

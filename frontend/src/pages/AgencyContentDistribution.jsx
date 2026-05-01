@@ -58,7 +58,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
       setContent(res.data);
       toast.success('Icerik kaydedildi');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Kaydetme hatasi');
+      toast.error(err.response?.data?.detail || 'Kaydetme hatası');
     } finally {
       setSaving(false);
     }
@@ -74,7 +74,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get('/agencies');
       setAgencies(data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Dagitim hatasi');
+      toast.error(err.response?.data?.detail || 'Dagitim hatası');
     } finally {
       setDistributing(false);
     }
@@ -150,7 +150,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900" data-testid="content-dist-title">Icerik Dagitimi</h1>
-          <p className="text-slate-500 text-sm mt-1">Otel bilgilerini duzenleyin ve sectiginiz acentelere gonderin</p>
+          <p className="text-slate-500 text-sm mt-1">Otel bilgilerini duzenleyin ve sectiginiz acentelere gönderin</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleSaveContent} disabled={saving} data-testid="save-content-btn">
@@ -183,7 +183,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                     <Input value={content?.hotel_name || ''} onChange={e => setContent(p => ({ ...p, hotel_name: e.target.value }))} data-testid="hotel-name-input" />
                   </div>
                   <div>
-                    <Label>Aciklama</Label>
+                    <Label>Açıklama</Label>
                     <Textarea rows={3} value={content?.description || ''} onChange={e => setContent(p => ({ ...p, description: e.target.value }))} placeholder="Otel hakkinda kisa tanitim..." />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -258,7 +258,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                       </div>
                     </div>
                     <div>
-                      <Label className="text-xs">Aciklama</Label>
+                      <Label className="text-xs">Açıklama</Label>
                       <Textarea rows={2} value={rt.description} onChange={e => updateRoomType(idx, 'description', e.target.value)} className="text-sm" placeholder="Oda aciklamasi..." />
                     </div>
                     <div className="grid grid-cols-3 gap-3">
@@ -332,7 +332,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                         <Input value={svc.name} onChange={e => updateService(idx, 'name', e.target.value)} className="text-sm" placeholder="Havuz" />
                       </div>
                       <div>
-                        <Label className="text-xs">Aciklama</Label>
+                        <Label className="text-xs">Açıklama</Label>
                         <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Açık havuz, 08:00-20:00" />
                       </div>
                     </div>
@@ -378,7 +378,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                     )}
                     <div className="min-w-0">
                       <div className="font-medium text-sm text-slate-800 truncate">{agency.name}</div>
-                      <div className="text-xs text-slate-400">{agency.contact_name || 'Yetkili belirtilmemis'}</div>
+                      <div className="text-xs text-slate-400">{agency.contact_name || 'Yetkili belirtilmemiş'}</div>
                     </div>
                     {agency.published_content && (
                       <Badge variant="outline" className="text-[10px] text-blue-500 border-blue-200 ml-auto flex-shrink-0">Yayinda</Badge>
@@ -396,7 +396,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
               <li>2. "Kaydet" ile icerigi kaydedin</li>
               <li>3. Sagdaki listeden acenteleri seçin</li>
               <li>4. "Secili Acentelere Gonder" ile dagitimi yapin</li>
-              <li>5. Secilen acenteler portallarinda bu icerigi gorur</li>
+              <li>5. Seçilen acenteler portallarinda bu icerigi gorur</li>
             </ul>
           </div>
         </div>

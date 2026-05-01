@@ -59,8 +59,8 @@ const POSOutletManagement = ({ onChange }) => {
       const list = Array.isArray(res.data) ? res.data : (res.data.outlets || []);
       setOutlets(list);
     } catch (err) {
-      console.error('Outlets yuklenemedi:', err);
-      toast.error('Satis noktalari yuklenemedi');
+      console.error('Outlets yüklenemedi:', err);
+      toast.error('Satış noktalari yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -102,18 +102,18 @@ const POSOutletManagement = ({ onChange }) => {
       };
       if (editing) {
         await axios.put(`/pos/outlets/${editing.id}`, payload);
-        toast.success('Satis noktasi guncellendi');
+        toast.success('Satış noktasi guncellendi');
       } else {
         await axios.post('/pos/outlets', payload);
-        toast.success('Satis noktasi olusturuldu');
+        toast.success('Satış noktasi oluşturuldu');
       }
       setDialogOpen(false);
       await load();
       onChange?.();
     } catch (err) {
-      console.error('Outlet kaydi hatasi:', err);
+      console.error('Outlet kaydi hatası:', err);
       const detail = err?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Kayit basarisiz');
+      toast.error(typeof detail === 'string' ? detail : 'Kayıt basarisiz');
     } finally {
       setSaving(false);
     }
@@ -122,7 +122,7 @@ const POSOutletManagement = ({ onChange }) => {
   const remove = async (outlet) => {
     try {
       await axios.delete(`/pos/outlets/${outlet.id}`);
-      toast.success('Satis noktasi pasif duruma alindi');
+      toast.success('Satış noktasi pasif duruma alindi');
       await load();
       onChange?.();
     } catch (err) {
@@ -137,7 +137,7 @@ const POSOutletManagement = ({ onChange }) => {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="flex items-center gap-2">
             <Store className="w-5 h-5 text-orange-600" />
-            Satis Noktalari ({outlets.length})
+            Satış Noktalari ({outlets.length})
           </CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -148,16 +148,16 @@ const POSOutletManagement = ({ onChange }) => {
               <DialogTrigger asChild>
                 <Button size="sm" onClick={openNew} data-testid="button-new-outlet">
                   <Plus className="w-4 h-4 mr-2" />
-                  Yeni Satis Noktasi
+                  Yeni Satış Noktası
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>
-                    {editing ? 'Satis Noktasini Duzenle' : 'Yeni Satis Noktasi'}
+                    {editing ? 'Satış Noktasını Düzenle' : 'Yeni Satış Noktası'}
                   </DialogTitle>
                   <DialogDescription>
-                    Restoran, bar, spa gibi ayri kasalar icin tanim olustur.
+                    Restoran, bar, spa gibi ayrı kasalar için tanım oluştur.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
@@ -206,7 +206,7 @@ const POSOutletManagement = ({ onChange }) => {
                       />
                     </div>
                     <div>
-                      <Label>Calisma Saatleri</Label>
+                      <Label>Çalışma Saatleri</Label>
                       <Input
                         value={form.opening_hours}
                         onChange={(e) => setForm({ ...form, opening_hours: e.target.value })}
@@ -217,7 +217,7 @@ const POSOutletManagement = ({ onChange }) => {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-                    Iptal
+                    İptal
                   </Button>
                   <Button onClick={submit} disabled={saving} data-testid="button-save-outlet">
                     {saving ? 'Kaydediliyor...' : (editing ? 'Guncelle' : 'Olustur')}
@@ -236,8 +236,8 @@ const POSOutletManagement = ({ onChange }) => {
         ) : outlets.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <Store className="w-16 h-16 mx-auto mb-3 text-gray-300" />
-            <p>Henuz satis noktasi yok</p>
-            <p className="text-sm mt-2">"Yeni Satis Noktasi" ile ilk kasanizi olusturun</p>
+            <p>Henüz satış noktasi yok</p>
+            <p className="text-sm mt-2">"Yeni Satış Noktası" ile ilk kasanizi oluşturun</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -278,10 +278,10 @@ const POSOutletManagement = ({ onChange }) => {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Satis noktasi pasiflestirilsin mi?</AlertDialogTitle>
+                              <AlertDialogTitle>Satış noktasi pasiflestirilsin mi?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 "{outlet.outlet_name || outlet.name}" pasif duruma alinacak.
-                                Gecmis satis kayitlari silinmez.
+                                Gecmis satış kayitlari silinmez.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -316,7 +316,7 @@ const POSOutletManagement = ({ onChange }) => {
                       )}
                       {outlet.today_transactions != null && (
                         <div className="text-xs pt-2 border-t">
-                          Bugun: <strong>{outlet.today_transactions}</strong> islem
+                          Bugün: <strong>{outlet.today_transactions}</strong> işlem
                         </div>
                       )}
                     </div>

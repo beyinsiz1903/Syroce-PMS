@@ -17,7 +17,7 @@ export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
 
 export function statusLabel(s) {
-  return s === 'checked_in' ? 'Giris Yapildi' : s === 'confirmed' ? 'Onaylandi' : s === 'checked_out' ? 'Cikis Yapildi' : s === 'cancelled' ? 'İptal' : s === 'no_show' ? 'No-Show' : s || 'Beklemede';
+  return s === 'checked_in' ? 'Giriş Yapildi' : s === 'confirmed' ? 'Onaylandi' : s === 'checked_out' ? 'Çıkış Yapildi' : s === 'cancelled' ? 'İptal' : s === 'no_show' ? 'No-Show' : s || 'Beklemede';
 }
 
 export function InfoField({ label, value, className = '' }) {

@@ -38,7 +38,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
   const sendProposalEmail = (opp) => {
     const subject = encodeURIComponent(`Teklif: ${opp.name}`);
     const body = encodeURIComponent(
-      `Sayin ${opp.contact},\n\n${opp.name} icin ${opp.rooms} oda x ${opp.nights} gece, tahmini deger $${opp.value.toLocaleString()}.\n\nGirisim tarihi: ${opp.arrival}\n\nDetayli teklifimizi ekte bulabilirsiniz.\n\nIyi gunler.`,
+      `Sayın ${opp.contact},\n\n${opp.name} için ${opp.rooms} oda x ${opp.nights} gece, tahmini değer $${opp.value.toLocaleString()}.\n\nGiriş tarihi: ${opp.arrival}\n\nDetaylı teklifimizi ekte bulabilirsiniz.\n\nİyi günler.`,
     );
     window.location.href = `mailto:${opp.email}?subject=${subject}&body=${body}`;
   };
@@ -201,7 +201,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">MICE, Corporate Contracts & Group Bookings</p>
           </div>
           <div className="flex space-x-2">
-            <Button onClick={() => notifyComingSoon('Yeni firsat olusturma')}>
+            <Button onClick={() => notifyComingSoon('Yeni firsat oluşturma')}>
               <Plus className="w-4 h-4 mr-2" />
               New Opportunity
             </Button>

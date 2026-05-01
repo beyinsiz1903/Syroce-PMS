@@ -22,7 +22,7 @@ const CredentialsTab = () => {
 
   const handleTest = async (cid) => {
     setActionLoading(`test-${cid}`);
-    try { const { data } = await axios.post(`${API}/admin/credentials/${cid}/test`); toast.success(`Baglanti testi: ${data.success ? 'Basarili' : 'Basarisiz'}`); } catch (e) { toast.error(e.response?.data?.detail || 'Test hatasi'); }
+    try { const { data } = await axios.post(`${API}/admin/credentials/${cid}/test`); toast.success(`Bağlantı testi: ${data.success ? 'Basarili' : 'Basarisiz'}`); } catch (e) { toast.error(e.response?.data?.detail || 'Test hatası'); }
     setActionLoading(null);
   };
 
@@ -37,7 +37,7 @@ const CredentialsTab = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-300">Credential Yonetimi (RBAC Korumali)</h3>
+        <h3 className="text-sm font-medium text-slate-300">Credential Yönetimi (RBAC Korumali)</h3>
         <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchCreds}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
       </div>
       {creds.map(c => (

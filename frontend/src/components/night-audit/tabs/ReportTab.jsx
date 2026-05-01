@@ -191,7 +191,7 @@ export default function ReportTab(props) {
                             <th className="text-right pb-2 pr-4">Gelir</th>
                             <th className="text-right pb-2 pr-4">Vergi</th>
                             <th className="text-right pb-2 pr-4">Oda</th>
-                            <th className="text-right pb-2">Sure</th>
+                            <th className="text-right pb-2">Süre</th>
                           </tr>
                         </thead>
                         <tbody>

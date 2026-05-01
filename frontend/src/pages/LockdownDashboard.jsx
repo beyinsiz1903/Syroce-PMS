@@ -567,7 +567,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
 
         {/* ─── Timestamp ──────────────────────────────────── */}
         <p className="text-[10px] text-gray-600 text-right">
-          Son guncelleme: {status?.timestamp ? new Date(status.timestamp).toLocaleString('tr-TR') : '-'}
+          Son güncelleme: {status?.timestamp ? new Date(status.timestamp).toLocaleString('tr-TR') : '-'}
         </p>
       </div>
     </Layout>

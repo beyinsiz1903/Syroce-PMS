@@ -110,12 +110,12 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
                   </h2>
                   <p className="text-sm text-slate-400 mt-1">
                     {isEnabled
-                      ? "Tum API yanıtlarinda PII alanlari otomatik olarak maskeleniyor."
+                      ? "Tüm API yanıtlarinda PII alanlari otomatik olarak maskeleniyor."
                       : "PII maskeleme endpoint bazinda uygulaniyor. Global zorlama kapalı."}
                   </p>
                   {config?.updated_at && (
                     <p className="text-xs text-slate-500 mt-1">
-                      Son guncelleme: {new Date(config.updated_at).toLocaleString("tr-TR")} — {config.updated_by}
+                      Son güncelleme: {new Date(config.updated_at).toLocaleString("tr-TR")} — {config.updated_by}
                     </p>
                   )}
                 </div>

@@ -36,10 +36,10 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
           </div>
         )}
         <div className="grid grid-cols-2 gap-4">
-          <InfoField label="Giris Tarihi" value={fmtDate(booking?.check_in)} />
-          <InfoField label="Giris Saati" value={booking?.check_in_time || booking?.checkin_time || '14:00'} />
-          <InfoField label="Cikis Tarihi" value={fmtDate(booking?.check_out)} />
-          <InfoField label="Cikis Saati" value={booking?.check_out_time || booking?.checkout_time || '12:00'} />
+          <InfoField label="Giriş Tarihi" value={fmtDate(booking?.check_in)} />
+          <InfoField label="Giriş Saati" value={booking?.check_in_time || booking?.checkin_time || '14:00'} />
+          <InfoField label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} />
+          <InfoField label="Çıkış Saati" value={booking?.check_out_time || booking?.checkout_time || '12:00'} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Yetiskin" value={booking?.adults || booking?.guests_count || 1} />
@@ -60,14 +60,14 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
           </div>
           <InfoField label="Kaynak" value={booking?.source_channel || booking?.channel || 'Direkt'} />
         </div>
-        {booking?.special_requests && <InfoField label="Ozel Istekler" value={booking.special_requests} className="bg-amber-50 border-amber-200" />}
+        {booking?.special_requests && <InfoField label="Özel Istekler" value={booking.special_requests} className="bg-amber-50 border-amber-200" />}
       </div>
       <div className="space-y-4">
         <div className="border rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase">Ana Kontak</span>
             <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} className="h-7 px-2">
-              <Pencil className="w-3 h-3 mr-1" /> {editing ? 'İptal' : 'Duzenle'}
+              <Pencil className="w-3 h-3 mr-1" /> {editing ? 'İptal' : 'Düzenle'}
             </Button>
           </div>
           {editing ? (
@@ -96,7 +96,7 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
           <span className="text-xs font-semibold text-gray-500 uppercase">Kanal</span>
           <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-blue-600" /><span className="text-sm font-medium">{booking?.source_channel || 'Direkt'}</span></div>
         </div>
-        {company && <div className="border rounded-lg p-4 space-y-2"><span className="text-xs font-semibold text-gray-500 uppercase">Sirket</span><div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-gray-500" /><span className="text-sm">{company.name}</span></div></div>}
+        {company && <div className="border rounded-lg p-4 space-y-2"><span className="text-xs font-semibold text-gray-500 uppercase">Şirket</span><div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-gray-500" /><span className="text-sm">{company.name}</span></div></div>}
       </div>
     </div>
   );
@@ -228,7 +228,7 @@ export function GuestsTab({ guests, booking, onRefresh }) {
                   )}
                   <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
-                    <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Duzenle'}</span>
+                    <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Düzenle'}</span>
                   </Button>
                 </div>
               </div>
@@ -267,7 +267,7 @@ export function GuestsTab({ guests, booking, onRefresh }) {
                       </Select>
                     </div>
                     <div><Label className="text-xs">Sehir</Label><Input value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Ulke</Label><Input value={form.country} onChange={e => setForm(p => ({ ...p, country: e.target.value }))} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Ülke</Label><Input value={form.country} onChange={e => setForm(p => ({ ...p, country: e.target.value }))} className="h-8 text-sm" /></div>
                   </div>
 
                   <div><Label className="text-xs">Adres</Label><Input value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} className="h-8 text-sm" /></div>

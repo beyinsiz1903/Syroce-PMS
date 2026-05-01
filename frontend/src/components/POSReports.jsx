@@ -17,7 +17,7 @@ import {
 const PAYMENT_LABEL = {
   cash: 'Nakit',
   card: 'Kart',
-  credit: 'Kredi Karti',
+  credit: 'Kredi Kartı',
   room_charge: 'Oda Hesabi',
   folio: 'Folio',
   unknown: 'Belirsiz',
@@ -51,8 +51,8 @@ const POSReports = ({ outletId }) => {
         : (vRes.data.void_transactions || vRes.data.voided_transactions || []);
       setVoids(vlist);
     } catch (err) {
-      console.error('Z raporu yuklenemedi:', err);
-      toast.error('Rapor yuklenemedi');
+      console.error('Z raporu yüklenemedi:', err);
+      toast.error('Rapor yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -103,8 +103,8 @@ const POSReports = ({ outletId }) => {
           ) : (
             <Tabs defaultValue="summary">
               <TabsList>
-                <TabsTrigger value="summary">Ozet</TabsTrigger>
-                <TabsTrigger value="payment">Odeme Dagilimi</TabsTrigger>
+                <TabsTrigger value="summary">Özet</TabsTrigger>
+                <TabsTrigger value="payment">Ödeme Dagilimi</TabsTrigger>
                 <TabsTrigger value="category">Kategori Dagilimi</TabsTrigger>
                 <TabsTrigger value="voids">
                   Iptaller ({report.void_count ?? voids.length})
@@ -126,7 +126,7 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <DollarSign className="w-6 h-6 mx-auto text-green-600 mb-1" />
-                      <p className="text-xs text-gray-600">Brut Satis</p>
+                      <p className="text-xs text-gray-600">Brut Satış</p>
                       <p className="text-2xl font-bold text-green-600">
                         {fmt(report.gross_sales)}
                       </p>
@@ -136,7 +136,7 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <TrendingUp className="w-6 h-6 mx-auto text-blue-600 mb-1" />
-                      <p className="text-xs text-gray-600">Net Satis</p>
+                      <p className="text-xs text-gray-600">Net Satış</p>
                       <p className="text-2xl font-bold text-blue-600">
                         {fmt(report.net_sales)}
                       </p>
@@ -146,7 +146,7 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <Receipt className="w-6 h-6 mx-auto text-purple-600 mb-1" />
-                      <p className="text-xs text-gray-600">Islem Sayisi</p>
+                      <p className="text-xs text-gray-600">İşlem Sayısı</p>
                       <p className="text-2xl font-bold text-purple-600">
                         {report.transaction_count || 0}
                       </p>
@@ -174,7 +174,7 @@ const POSReports = ({ outletId }) => {
                   </Card>
                   <Card>
                     <CardContent className="p-3 flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Indirim</span>
+                      <span className="text-sm text-gray-600">İndirim</span>
                       <span className="font-semibold text-orange-600">{fmt(report.discounts)} TL</span>
                     </CardContent>
                   </Card>
@@ -184,7 +184,7 @@ const POSReports = ({ outletId }) => {
               <TabsContent value="payment" className="mt-4">
                 <div className="space-y-2">
                   {Object.keys(report.payment_methods || {}).length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">Bu tarihte odeme yok</p>
+                    <p className="text-center py-8 text-gray-500">Bu tarihte ödeme yok</p>
                   ) : Object.entries(report.payment_methods || {}).map(([method, amount]) => {
                     const total = report.gross_sales || 1;
                     const pct = (amount / total) * 100;
@@ -235,7 +235,7 @@ const POSReports = ({ outletId }) => {
                 {voids.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p>Iptal edilmis islem yok</p>
+                    <p>İptal edilmiş işlem yok</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -243,9 +243,9 @@ const POSReports = ({ outletId }) => {
                       <Card key={v.id || idx}>
                         <CardContent className="p-3 flex items-center justify-between">
                           <div>
-                            <p className="font-medium">{v.id?.slice(0, 8) || `Islem ${idx + 1}`}</p>
+                            <p className="font-medium">{v.id?.slice(0, 8) || `İşlem ${idx + 1}`}</p>
                             <p className="text-xs text-gray-500">
-                              {v.void_reason || v.reason || 'Sebep belirtilmemis'}
+                              {v.void_reason || v.reason || 'Sebep belirtilmemiş'}
                             </p>
                           </div>
                           <div className="text-right">

@@ -40,11 +40,11 @@ const navLabels = {
     folio: 'Folio & Billing', webhooks: 'Webhooks',
   },
   tr: {
-    overview: 'Genel Bakis', quickstart: 'Hizli Baslangic', auth: 'Kimlik Dogrulama', errors: 'Hata Kodlari',
-    ratelimits: 'Istek Limitleri', pagination: 'Sayfalama', content: 'Icerik', availability: 'Musaitlik',
+    overview: 'Genel Bakis', quickstart: 'Hızlı Baslangic', auth: 'Kimlik Dogrulama', errors: 'Hata Kodlari',
+    ratelimits: 'İstek Limitleri', pagination: 'Sayfalama', content: 'Icerik', availability: 'Musaitlik',
     rates: 'Fiyatlar', reservations: 'Rezervasyonlar', guests: 'Misafirler', loyalty: 'Sadakat Programi',
     housekeeping: 'Kat Hizmetleri', kbs: 'KBS / Emniyet', identity: 'Pasaport / Kimlik',
-    lostfound: 'Kayip Esya', wakeup: 'Uyandirma', journey: 'Misafir Yolculugu',
+    lostfound: 'Kayip Esya', wakeup: 'Uyandırma', journey: 'Misafir Yolculugu',
     concierge: 'Concierge', spa: 'Spa & Wellness', groups: 'MICE & Grup',
     folio: 'Folio & Fatura', webhooks: 'Webhook\'lar',
   },
@@ -208,7 +208,7 @@ export default function B2BApiDocs() {
               <SectionHeader icon={BookOpen} title={isEn ? 'Getting Started' : 'Baslangic'} id="overview-h" />
               <Desc>{isEn
                 ? 'The Syroce Open API provides complete access to all hotel PMS modules — reservations, guest management, loyalty programs, housekeeping, KBS police notifications, passport/ID scanning, lost & found, wake-up calls, guest journey, concierge, spa, MICE/groups, folio/billing, and real-time webhooks. All through a single API with API key authentication.'
-                : 'Syroce Open API, tum otel PMS modullerine tam erisim saglar — rezervasyon, misafir yonetimi, sadakat programlari, kat hizmetleri, KBS emniyet bildirimleri, pasaport/kimlik okuma, kayip esya, uyandirma servisi, misafir yolculugu, concierge, spa, MICE/grup, folio/fatura ve gercek zamanli webhook\'lar. Tek bir API key ile tum islemler.'
+                : 'Syroce Open API, tüm otel PMS modullerine tam erişim saglar — rezervasyon, misafir yönetimi, sadakat programlari, kat hizmetleri, KBS emniyet bildirimleri, pasaport/kimlik okuma, kayip esya, uyandırma servisi, misafir yolculugu, concierge, spa, MICE/grup, folio/fatura ve gerçek zamanlı webhook\'lar. Tek bir API key ile tüm işlemler.'
               }</Desc>
 
               <div className="mt-6 space-y-4">
@@ -237,7 +237,7 @@ export default function B2BApiDocs() {
 
             {/* ── QUICK START ── */}
             <section id="quickstart">
-              <SectionHeader icon={Rocket} title={isEn ? 'Quick Start Guide' : 'Hizli Baslangic Rehberi'} id="qs-h" />
+              <SectionHeader icon={Rocket} title={isEn ? 'Quick Start Guide' : 'Hızlı Baslangic Rehberi'} id="qs-h" />
               <Desc>{isEn
                 ? 'Follow these steps to start integrating with the Syroce Open API in minutes. From getting your API key to making your first reservation.'
                 : 'Syroce Open API ile dakikalar icinde entegrasyona baslayin. API key almaktan ilk rezervasyonunuzu yapmaya kadar adim adim rehber.'
@@ -251,10 +251,10 @@ export default function B2BApiDocs() {
                       <h4 className="font-semibold text-slate-900">{isEn ? 'Get Your API Key' : 'API Key Alin'}</h4>
                       <p className="text-sm text-slate-600 mt-1">{isEn
                         ? 'Your hotel partner creates an API key for your agency through the Syroce PMS admin panel:'
-                        : 'Otel ortaginiz Syroce PMS yonetim panelinden acente API key\'inizi olusturur:'
+                        : 'Otel ortağınız Syroce PMS yönetim panelinden acente API key\'inizi oluşturur:'
                       }</p>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
-                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">a.</span> {isEn ? 'Hotel admin navigates to Travel Agent Management (Acente Yonetimi)' : 'Otel yoneticisi Acente Yonetimi sayfasina gider'}</div>
+                        <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">a.</span> {isEn ? 'Hotel admin navigates to Travel Agent Management (Acente Yönetimi)' : 'Otel yöneticisi Acente Yönetimi sayfasina gider'}</div>
                         <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">b.</span> {isEn ? 'Selects your agency and clicks "Generate API Key"' : 'Acentenizi secer ve "API Key Olustur" butonuna tiklar'}</div>
                         <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">c.</span> {isEn ? 'The key (starting with syroce_b2b_) is shown ONCE — copy it immediately' : 'Key (syroce_b2b_ ile baslar) sadece BIR KEZ gosterilir — hemen kopyalayin'}</div>
                         <div className="flex items-start gap-2"><span className="text-[#C09D63] font-bold">d.</span> {isEn ? 'Store the key securely (environment variable, secrets manager)' : 'Key\'i guvenli saklayin (ortam degiskeni, secrets manager)'}</div>
@@ -262,7 +262,7 @@ export default function B2BApiDocs() {
                       <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
                         <p className="text-xs text-amber-800 flex items-center gap-1.5">
                           <AlertTriangle size={13} className="shrink-0" />
-                          {isEn ? 'The raw API key is only shown at creation time. If lost, the hotel admin must regenerate it (POST /api/b2b/api-keys/{agency_id}/regenerate). This invalidates the old key.' : 'Ham API key sadece olusturulurken gosterilir. Kaybederseniz otel yoneticisi yenilemek zorundadir (POST /api/b2b/api-keys/{agency_id}/regenerate). Eski key gecersiz olur.'}
+                          {isEn ? 'The raw API key is only shown at creation time. If lost, the hotel admin must regenerate it (POST /api/b2b/api-keys/{agency_id}/regenerate). This invalidates the old key.' : 'Ham API key sadece olusturulurken gosterilir. Kaybederseniz otel yöneticisi yenilemek zorundadir (POST /api/b2b/api-keys/{agency_id}/regenerate). Eski key geçersiz olur.'}
                         </p>
                       </div>
                     </div>
@@ -274,7 +274,7 @@ export default function B2BApiDocs() {
                     <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">2</div>
                     <div className="flex-1">
                       <h4 className="font-semibold text-slate-900">{isEn ? 'Test Your Connection' : 'Baglantinizi Test Edin'}</h4>
-                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Make your first API call to verify the key works:' : 'Key\'in calistigini dogrulamak icin ilk API cagrinizi yapin:'}</p>
+                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Make your first API call to verify the key works:' : 'Key\'in çalıştığını doğrulamak için ilk API çağrınızı yapin:'}</p>
                       <div className="mt-3">
                         <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/content" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"\n\n# Expected: 200 OK with hotel content\n# If 401: Check your key is correct and active\n# If 403: Your agency account may be inactive`} />
                       </div>
@@ -311,7 +311,7 @@ export default function B2BApiDocs() {
                     <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">5</div>
                     <div className="flex-1">
                       <h4 className="font-semibold text-slate-900">{isEn ? 'Set Up Webhooks (Optional)' : 'Webhook Kurun (Opsiyonel)'}</h4>
-                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Receive real-time notifications when reservations change:' : 'Rezervasyonlar degistiginde gercek zamanli bildirim alin:'}</p>
+                      <p className="text-sm text-slate-600 mt-1">{isEn ? 'Receive real-time notifications when reservations change:' : 'Rezervasyonlar degistiginde gerçek zamanlı bildirim alin:'}</p>
                       <div className="mt-3">
                         <CodeBlock lang="bash" code={`curl -X POST "${API_BASE}/webhooks" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "url": "https://your-system.com/webhook/syroce",\n    "events": ["reservation.created", "reservation.cancelled", "reservation.updated"],\n    "secret": "your_webhook_signing_secret"\n  }'`} />
                       </div>
@@ -334,7 +334,7 @@ export default function B2BApiDocs() {
             {/* ── AUTH ── */}
             <section id="auth">
               <SectionHeader icon={Key} title={isEn ? 'Authentication' : 'Kimlik Dogrulama'} id="auth-h" />
-              <Desc>{isEn ? 'All API endpoints require an API key in the X-API-Key header. Keys are issued by the hotel administrator through the PMS admin panel.' : 'Tum API endpoint\'leri X-API-Key basliginda bir API key gerektirir. Key\'ler otel yoneticisi tarafindan PMS yonetim panelinden verilir.'}</Desc>
+              <Desc>{isEn ? 'All API endpoints require an API key in the X-API-Key header. Keys are issued by the hotel administrator through the PMS admin panel.' : 'Tüm API endpoint\'leri X-API-Key başlığında bir API key gerektirir. Key\'ler otel yöneticisi tarafından PMS yönetim panelinden verilir.'}</Desc>
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Header Format' : 'Baslik Formati'}</SubTitle>
@@ -345,7 +345,7 @@ export default function B2BApiDocs() {
                 <SubTitle>{isEn ? 'API Key Format' : 'API Key Formati'}</SubTitle>
                 <p className="text-sm text-slate-600 mb-3">{isEn
                   ? 'All API keys start with the prefix syroce_b2b_ followed by a random string. Example:'
-                  : 'Tum API key\'ler syroce_b2b_ on eki ile baslar, ardindan rastgele bir dizi gelir. Ornek:'
+                  : 'Tüm API key\'ler syroce_b2b_ on eki ile baslar, ardindan rastgele bir dizi gelir. Ornek:'
                 }</p>
                 <CodeBlock lang="text" code="syroce_b2b_zMskjN7H0K4xPq2B1wR9fY3eT6uI8oL" />
               </div>
@@ -356,7 +356,7 @@ export default function B2BApiDocs() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Action' : 'Islem'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Action' : 'İşlem'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Who' : 'Kim'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Endpoint</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Auth' : 'Yetki'}</th>
@@ -364,10 +364,10 @@ export default function B2BApiDocs() {
                     </thead>
                     <tbody>
                       {[
-                        { action: isEn ? 'Create key' : 'Key olustur', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'POST /api/b2b/api-keys?agency_id=...', auth: 'JWT' },
-                        { action: isEn ? 'View key info' : 'Key bilgisi gor', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'GET /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
-                        { action: isEn ? 'Regenerate key' : 'Key yenile', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'POST /api/b2b/api-keys/{agency_id}/regenerate', auth: 'JWT' },
-                        { action: isEn ? 'Revoke key' : 'Key iptal', who: isEn ? 'Hotel Admin' : 'Otel Yoneticisi', ep: 'DELETE /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
+                        { action: isEn ? 'Create key' : 'Key oluştur', who: isEn ? 'Hotel Admin' : 'Otel Yöneticisi', ep: 'POST /api/b2b/api-keys?agency_id=...', auth: 'JWT' },
+                        { action: isEn ? 'View key info' : 'Key bilgisi gor', who: isEn ? 'Hotel Admin' : 'Otel Yöneticisi', ep: 'GET /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
+                        { action: isEn ? 'Regenerate key' : 'Key yenile', who: isEn ? 'Hotel Admin' : 'Otel Yöneticisi', ep: 'POST /api/b2b/api-keys/{agency_id}/regenerate', auth: 'JWT' },
+                        { action: isEn ? 'Revoke key' : 'Key iptal', who: isEn ? 'Hotel Admin' : 'Otel Yöneticisi', ep: 'DELETE /api/b2b/api-keys/{agency_id}', auth: 'JWT' },
                       ].map((r, i) => (
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.action}</td>
@@ -381,7 +381,7 @@ export default function B2BApiDocs() {
                 </div>
                 <p className="text-xs text-slate-500 mt-2">{isEn
                   ? 'Note: Key management endpoints require JWT authentication (hotel admin login), not API key auth. Only the hotel admin can create, view, regenerate, or revoke API keys.'
-                  : 'Not: Key yonetim endpoint\'leri JWT kimlik dogrulama (otel admin girisi) gerektirir, API key degil. Sadece otel yoneticisi API key olusturabilir, goruntuleyebilir, yenileyebilir veya iptal edebilir.'
+                  : 'Not: Key yönetim endpoint\'leri JWT kimlik doğrulama (otel admin girisi) gerektirir, API key değil. Sadece otel yöneticisi API key oluşturabilir, görüntüleyebilir, yenileyebilir veya iptal edebilir.'
                 }</p>
               </div>
 
@@ -395,13 +395,13 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-5">
-                <h4 className="font-semibold text-blue-900 flex items-center gap-2 text-sm"><Shield size={15} /> {isEn ? 'Security Best Practices' : 'Guvenlik En Iyi Uygulamalari'}</h4>
+                <h4 className="font-semibold text-blue-900 flex items-center gap-2 text-sm"><Shield size={15} /> {isEn ? 'Security Best Practices' : 'Güvenlik En İyi Uygulamaları'}</h4>
                 <ul className="text-sm text-blue-800 mt-2 space-y-1.5 list-disc pl-5">
                   <li>{isEn ? 'Keys are SHA-256 hashed on the server — never stored in plaintext' : 'Key\'ler sunucuda SHA-256 ile hashlenir — asla duz metin saklanmaz'}</li>
                   <li>{isEn ? 'Each key is scoped to a single agency and hotel tenant' : 'Her key tek bir acenteye ve otel tenant\'ina baglidir'}</li>
                   <li>{isEn ? 'Store your key in environment variables — never hardcode in source code' : 'Key\'inizi ortam degiskenlerinde saklayin — kaynak koduna asla yazmayIn'}</li>
-                  <li>{isEn ? 'Keys can be revoked or rotated by the hotel at any time' : 'Key\'ler otel tarafindan her zaman iptal edilebilir veya dondurulebilir'}</li>
-                  <li>{isEn ? 'Usage is tracked: request count, last used time, and IP address' : 'Kullanim takip edilir: istek sayisi, son kullanim zamani ve IP adresi'}</li>
+                  <li>{isEn ? 'Keys can be revoked or rotated by the hotel at any time' : 'Key\'ler otel tarafından her zaman iptal edilebilir veya dondurulebilir'}</li>
+                  <li>{isEn ? 'Usage is tracked: request count, last used time, and IP address' : 'Kullanim takip edilir: istek sayısı, son kullanım zamani ve IP adresi'}</li>
                   <li>{isEn ? 'Use HTTPS in production — never send API keys over unencrypted connections' : 'Uretimde HTTPS kullanin — API key\'leri sifrelenmemis baglantilarda gondermeyin'}</li>
                   <li>{isEn ? 'Rotate keys periodically using the regenerate endpoint' : 'Key\'leri periyodik olarak yenileme endpoint\'i ile dondurun'}</li>
                 </ul>
@@ -418,7 +418,7 @@ export default function B2BApiDocs() {
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Error Response Format' : 'Hata Yanit Formati'}</SubTitle>
-                <CodeBlock lang="json" code={`{\n  "detail": "Gecersiz veya devre disi API key"\n}`} />
+                <CodeBlock lang="json" code={`{\n  "detail": "Geçersiz veya devre dışı API key"\n}`} />
               </div>
 
               <div className="mt-6">
@@ -429,22 +429,22 @@ export default function B2BApiDocs() {
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-24">{isEn ? 'Code' : 'Kod'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-40">{isEn ? 'Status' : 'Durum'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Aciklama'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Açıklama'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Ornek'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[
-                        { code: '200', status: 'OK', color: 'emerald', desc: isEn ? 'Request succeeded' : 'Istek basarili', example: isEn ? 'Data returned successfully' : 'Veri basariyla dondu' },
-                        { code: '201', status: 'Created', color: 'emerald', desc: isEn ? 'Resource created' : 'Kaynak olusturuldu', example: isEn ? 'Reservation created' : 'Rezervasyon olusturuldu' },
-                        { code: '400', status: 'Bad Request', color: 'amber', desc: isEn ? 'Invalid request data' : 'Gecersiz istek verisi', example: isEn ? 'Invalid date format, missing required field, invalid enum value' : 'Gecersiz tarih formati, eksik zorunlu alan, gecersiz enum degeri' },
-                        { code: '401', status: 'Unauthorized', color: 'red', desc: isEn ? 'Invalid or missing API key' : 'Gecersiz veya eksik API key', example: '"Gecersiz veya devre disi API key"' },
-                        { code: '403', status: 'Forbidden', color: 'red', desc: isEn ? 'API key valid but access denied' : 'API key gecerli ama erisim reddedildi', example: isEn ? 'Agency account inactive' : 'Acente hesabi aktif degil' },
-                        { code: '404', status: 'Not Found', color: 'amber', desc: isEn ? 'Resource not found' : 'Kaynak bulunamadi', example: isEn ? 'Reservation, guest, or room not found' : 'Rezervasyon, misafir veya oda bulunamadi' },
-                        { code: '409', status: 'Conflict', color: 'amber', desc: isEn ? 'Resource conflict' : 'Kaynak catismasi', example: isEn ? 'No available rooms for the selected dates' : 'Secilen tarihler icin musait oda yok' },
-                        { code: '422', status: 'Validation Error', color: 'amber', desc: isEn ? 'Request body validation failed' : 'Istek govdesi dogrulama hatasi', example: isEn ? 'Negative amount, zero points, date in past' : 'Negatif tutar, sifir puan, gecmis tarih' },
-                        { code: '429', status: 'Too Many Requests', color: 'red', desc: isEn ? 'Rate limit exceeded' : 'Istek limiti asildi', example: isEn ? 'Retry after the specified time' : 'Belirtilen sureden sonra tekrar deneyin' },
-                        { code: '500', status: 'Server Error', color: 'red', desc: isEn ? 'Internal server error' : 'Sunucu hatasi', example: isEn ? 'Contact support if persistent' : 'Devam ederse destek ile iletisime gecin' },
+                        { code: '200', status: 'OK', color: 'emerald', desc: isEn ? 'Request succeeded' : 'İstek basarili', example: isEn ? 'Data returned successfully' : 'Veri basariyla dondu' },
+                        { code: '201', status: 'Created', color: 'emerald', desc: isEn ? 'Resource created' : 'Kaynak oluşturuldu', example: isEn ? 'Reservation created' : 'Rezervasyon oluşturuldu' },
+                        { code: '400', status: 'Bad Request', color: 'amber', desc: isEn ? 'Invalid request data' : 'Geçersiz istek verisi', example: isEn ? 'Invalid date format, missing required field, invalid enum value' : 'Geçersiz tarih formatı, eksik zorunlu alan, geçersiz enum değeri' },
+                        { code: '401', status: 'Unauthorized', color: 'red', desc: isEn ? 'Invalid or missing API key' : 'Geçersiz veya eksik API key', example: '"Geçersiz veya devre dışı API key"' },
+                        { code: '403', status: 'Forbidden', color: 'red', desc: isEn ? 'API key valid but access denied' : 'API key geçerli ama erişim reddedildi', example: isEn ? 'Agency account inactive' : 'Acente hesabı aktif değil' },
+                        { code: '404', status: 'Not Found', color: 'amber', desc: isEn ? 'Resource not found' : 'Kaynak bulunamadı', example: isEn ? 'Reservation, guest, or room not found' : 'Rezervasyon, misafir veya oda bulunamadı' },
+                        { code: '409', status: 'Conflict', color: 'amber', desc: isEn ? 'Resource conflict' : 'Kaynak çatışması', example: isEn ? 'No available rooms for the selected dates' : 'Seçilen tarihler için müsait oda yok' },
+                        { code: '422', status: 'Validation Error', color: 'amber', desc: isEn ? 'Request body validation failed' : 'İstek govdesi doğrulama hatası', example: isEn ? 'Negative amount, zero points, date in past' : 'Negatif tutar, sifir puan, gecmis tarih' },
+                        { code: '429', status: 'Too Many Requests', color: 'red', desc: isEn ? 'Rate limit exceeded' : 'İstek limiti asildi', example: isEn ? 'Retry after the specified time' : 'Belirtilen sureden sonra tekrar deneyin' },
+                        { code: '500', status: 'Server Error', color: 'red', desc: isEn ? 'Internal server error' : 'Sunucu hatası', example: isEn ? 'Contact support if persistent' : 'Devam ederse destek ile iletisime gecin' },
                       ].map((r, i) => (
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5"><span className={`font-mono font-bold text-${r.color}-700`}>{r.code}</span></td>
@@ -461,22 +461,22 @@ export default function B2BApiDocs() {
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Common Error Examples' : 'Yaygin Hata Ornekleri'}</SubTitle>
                 <div className="space-y-3">
-                  <CodeBlock lang="json" code={`// 401 — Invalid API Key\n{"detail": "Gecersiz veya devre disi API key"}\n\n// 403 — Agency Inactive\n{"detail": "Acente hesabi aktif degil"}\n\n// 400 — Bad Request\n{"detail": "check_out, check_in'den sonra olmali"}\n{"detail": "Gecersiz durum. Gecerli: clean, dirty, inspected, maintenance, out_of_order"}\n{"detail": "operation must be 'add' or 'subtract'"}\n\n// 404 — Not Found\n{"detail": "Rezervasyon bulunamadi"}\n{"detail": "Misafir bulunamadi"}\n{"detail": "Oda bulunamadi"}\n\n// 409 — No Availability\n{"detail": "Bu tarihler ve oda tipi icin musait oda yok"}\n\n// 422 — Validation Error (Pydantic)\n{"detail": [{"loc": ["body", "amount"], "msg": "Input should be greater than 0", "type": "greater_than"}]}`} />
+                  <CodeBlock lang="json" code={`// 401 — Invalid API Key\n{"detail": "Geçersiz veya devre dışı API key"}\n\n// 403 — Agency Inactive\n{"detail": "Acente hesabı aktif değil"}\n\n// 400 — Bad Request\n{"detail": "check_out, check_in'den sonra olmalı"}\n{"detail": "Geçersiz durum. Geçerli: clean, dirty, inspected, maintenance, out_of_order"}\n{"detail": "operation must be 'add' or 'subtract'"}\n\n// 404 — Not Found\n{"detail": "Rezervasyon bulunamadı"}\n{"detail": "Misafir bulunamadı"}\n{"detail": "Oda bulunamadı"}\n\n// 409 — No Availability\n{"detail": "Bu tarihler ve oda tipi için müsait oda yok"}\n\n// 422 — Validation Error (Pydantic)\n{"detail": [{"loc": ["body", "amount"], "msg": "Input should be greater than 0", "type": "greater_than"}]}`} />
                 </div>
               </div>
 
               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-5">
-                <h4 className="font-semibold text-blue-900 text-sm">{isEn ? 'Error Handling Best Practice' : 'Hata Yonetimi En Iyi Uygulama'}</h4>
+                <h4 className="font-semibold text-blue-900 text-sm">{isEn ? 'Error Handling Best Practice' : 'Hata Yönetimi En İyi Uygulama'}</h4>
                 <CodeBlock lang="python" code={`import requests\n\ntry:\n    resp = requests.post(f"{BASE_URL}/reservations",\n        headers=headers, json=data, timeout=30)\n    resp.raise_for_status()\n    result = resp.json()\nexcept requests.exceptions.HTTPError as e:\n    error_body = e.response.json()\n    if e.response.status_code == 401:\n        print("API key invalid — check or regenerate")\n    elif e.response.status_code == 409:\n        print(f"No availability: {error_body['detail']}")\n    elif e.response.status_code == 422:\n        print(f"Validation error: {error_body['detail']}")\n    else:\n        print(f"Error {e.response.status_code}: {error_body}")\nexcept requests.exceptions.Timeout:\n    print("Request timed out — retry with backoff")\nexcept requests.exceptions.ConnectionError:\n    print("Connection failed — check network")`} />
               </div>
             </section>
 
             {/* ── RATE LIMITS ── */}
             <section id="ratelimits">
-              <SectionHeader icon={Gauge} title={isEn ? 'Rate Limits' : 'Istek Limitleri'} id="rl-h" />
+              <SectionHeader icon={Gauge} title={isEn ? 'Rate Limits' : 'İstek Limitleri'} id="rl-h" />
               <Desc>{isEn
                 ? 'API requests are rate-limited per API key to ensure fair usage and system stability. Limits vary by endpoint type.'
-                : 'API istekleri, adil kullanim ve sistem karaliligi icin API key basina sinirlandirilmistir. Limitler endpoint tipine gore degisir.'
+                : 'API istekleri, adil kullanım ve sistem kararlılığı için API key basina sınırlandırılmıştır. Limitler endpoint tipine göre değişir.'
               }</Desc>
 
               <div className="mt-6">
@@ -485,7 +485,7 @@ export default function B2BApiDocs() {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Endpoint Type' : 'Endpoint Tipi'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Rate Limit' : 'Istek Limiti'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Rate Limit' : 'İstek Limiti'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Window' : 'Pencere'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Examples' : 'Ornekler'}</th>
                       </tr>
@@ -510,21 +510,21 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Rate Limit Headers' : 'Istek Limiti Basliklari'}</SubTitle>
+                <SubTitle>{isEn ? 'Rate Limit Headers' : 'İstek Limiti Basliklari'}</SubTitle>
                 <p className="text-sm text-slate-600 mb-3">{isEn
                   ? 'Every API response includes headers showing your current rate limit status:'
                   : 'Her API yaniti mevcut istek limiti durumunuzu gosteren basliklar icerir:'
                 }</p>
                 <CodeBlock lang="http" code={`X-RateLimit-Limit: 120\nX-RateLimit-Remaining: 115\nX-RateLimit-Reset: 1719835260`} />
                 <div className="mt-3 space-y-1.5 text-sm text-slate-600">
-                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Limit</code> — {isEn ? 'Maximum requests allowed in the window' : 'Penceredeki maksimum istek sayisi'}</div>
-                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Remaining</code> — {isEn ? 'Remaining requests in current window' : 'Mevcut pencerede kalan istek sayisi'}</div>
+                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Limit</code> — {isEn ? 'Maximum requests allowed in the window' : 'Penceredeki maksimum istek sayısı'}</div>
+                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Remaining</code> — {isEn ? 'Remaining requests in current window' : 'Mevcut pencerede kalan istek sayısı'}</div>
                   <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">X-RateLimit-Reset</code> — {isEn ? 'Unix timestamp when the window resets' : 'Pencerenin sifirlanacagi Unix zaman damgasi'}</div>
                 </div>
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Handling 429 Too Many Requests' : '429 Cok Fazla Istek Yonetimi'}</SubTitle>
+                <SubTitle>{isEn ? 'Handling 429 Too Many Requests' : '429 Cok Fazla İstek Yönetimi'}</SubTitle>
                 <CodeBlock lang="python" code={`import time\nimport requests\n\ndef api_call_with_retry(url, headers, max_retries=3):\n    for attempt in range(max_retries):\n        resp = requests.get(url, headers=headers)\n        if resp.status_code == 429:\n            retry_after = int(resp.headers.get("Retry-After", 60))\n            print(f"Rate limited. Retrying in {retry_after}s...")\n            time.sleep(retry_after)\n            continue\n        return resp\n    raise Exception("Max retries exceeded")`} />
               </div>
             </section>
@@ -534,7 +534,7 @@ export default function B2BApiDocs() {
               <SectionHeader icon={List} title={isEn ? 'Pagination & Filtering' : 'Sayfalama & Filtreleme'} id="pag-h" />
               <Desc>{isEn
                 ? 'List endpoints support limit-based pagination and various filters. All list responses include a count field.'
-                : 'Liste endpoint\'leri limit tabanli sayfalama ve cesitli filtreler destekler. Tum liste yanitlari bir count alani icerir.'
+                : 'Liste endpoint\'leri limit tabanli sayfalama ve cesitli filtreler destekler. Tüm liste yanitlari bir count alani icerir.'
               }</Desc>
 
               <div className="mt-6">
@@ -546,14 +546,14 @@ export default function B2BApiDocs() {
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Parameter</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">Type</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Default' : 'Varsayilan'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Aciklama'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Açıklama'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[
-                        { name: 'limit', type: 'integer', def: isEn ? 'Varies (20-100)' : 'Degisir (20-100)', desc: isEn ? 'Maximum number of results to return' : 'Dondurulecek maksimum sonuc sayisi' },
-                        { name: 'status', type: 'string', def: isEn ? 'All statuses' : 'Tum durumlar', desc: isEn ? 'Filter by status (varies per endpoint)' : 'Duruma gore filtre (endpoint\'e gore degisir)' },
-                        { name: 'date', type: 'string', def: isEn ? 'Today' : 'Bugun', desc: isEn ? 'Filter by date (YYYY-MM-DD)' : 'Tarihe gore filtre (YYYY-MM-DD)' },
+                        { name: 'limit', type: 'integer', def: isEn ? 'Varies (20-100)' : 'Degisir (20-100)', desc: isEn ? 'Maximum number of results to return' : 'Dondurulecek maksimum sonuc sayısı' },
+                        { name: 'status', type: 'string', def: isEn ? 'All statuses' : 'Tüm durumlar', desc: isEn ? 'Filter by status (varies per endpoint)' : 'Duruma göre filtre (endpoint\'e göre değişir)' },
+                        { name: 'date', type: 'string', def: isEn ? 'Today' : 'Bugün', desc: isEn ? 'Filter by date (YYYY-MM-DD)' : 'Tarihe göre filtre (YYYY-MM-DD)' },
                       ].map((p, i) => (
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-mono text-[13px] text-emerald-700">{p.name}</td>
@@ -571,7 +571,7 @@ export default function B2BApiDocs() {
                 <SubTitle>{isEn ? 'Response Structure' : 'Yanit Yapisi'}</SubTitle>
                 <p className="text-sm text-slate-600 mb-3">{isEn
                   ? 'All list endpoints return data in a consistent format with a count field:'
-                  : 'Tum liste endpoint\'leri verileri count alaniyla tutarli bir formatta dondurur:'
+                  : 'Tüm liste endpoint\'leri verileri count alaniyla tutarli bir formatta dondurur:'
                 }</p>
                 <CodeBlock lang="json" code={`// GET /api/b2b/reservations?status=confirmed&limit=50\n{\n  "reservations": [\n    { "id": "abc...", "guest_name": "John Doe", ... },\n    { "id": "def...", "guest_name": "Jane Smith", ... }\n  ],\n  "count": 2\n}\n\n// GET /api/b2b/wake-up-calls?date=2026-07-01\n{\n  "wake_up_calls": [...],\n  "count": 5\n}\n\n// GET /api/b2b/lost-found?status=found&category=electronics\n{\n  "items": [...],\n  "count": 3\n}`} />
               </div>
@@ -657,13 +657,13 @@ export default function B2BApiDocs() {
             {/* ── AVAILABILITY ── */}
             <section id="availability">
               <SectionHeader icon={Calendar} title={isEn ? 'Availability API' : 'Musaitlik API'} id="avail-h" />
-              <Desc>{isEn ? 'Check real-time room availability for specified dates.' : 'Belirtilen tarihler icin gercek zamanli oda musaitligini kontrol edin.'}</Desc>
+              <Desc>{isEn ? 'Check real-time room availability for specified dates.' : 'Belirtilen tarihler için gerçek zamanlı oda müsaitliğini kontrol edin.'}</Desc>
               <div className="mt-6">
                 <EndpointBlock method="GET" path="/api/b2b/availability">
                   <ParamTable lang={lang} params={[
-                    { name: 'check_in', type: 'string', required: true, desc: isEn ? 'Check-in date (YYYY-MM-DD)' : 'Giris tarihi (YYYY-MM-DD)' },
-                    { name: 'check_out', type: 'string', required: true, desc: isEn ? 'Check-out date (YYYY-MM-DD)' : 'Cikis tarihi (YYYY-MM-DD)' },
-                    { name: 'room_type', type: 'string', required: false, desc: isEn ? 'Filter by room type' : 'Oda tipine gore filtre' },
+                    { name: 'check_in', type: 'string', required: true, desc: isEn ? 'Check-in date (YYYY-MM-DD)' : 'Giriş tarihi (YYYY-MM-DD)' },
+                    { name: 'check_out', type: 'string', required: true, desc: isEn ? 'Check-out date (YYYY-MM-DD)' : 'Çıkış tarihi (YYYY-MM-DD)' },
+                    { name: 'room_type', type: 'string', required: false, desc: isEn ? 'Filter by room type' : 'Oda tipine göre filtre' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "check_in": "2026-06-01",\n  "check_out": "2026-06-03",\n  "room_types": [\n    { "room_type": "Deluxe Double", "capacity": 3, "base_price": 250.00,\n      "total_rooms": 10, "available_rooms": 6 }\n  ]\n}`} />
                 </EndpointBlock>
@@ -673,13 +673,13 @@ export default function B2BApiDocs() {
             {/* ── RATES ── */}
             <section id="rates">
               <SectionHeader icon={DollarSign} title={isEn ? 'Rates API' : 'Fiyat API'} id="rates-h" />
-              <Desc>{isEn ? 'Fetch agency-specific or base hotel rates for a date range.' : 'Acenteye ozel veya temel otel fiyatlarini cekin.'}</Desc>
+              <Desc>{isEn ? 'Fetch agency-specific or base hotel rates for a date range.' : 'Acenteye özel veya temel otel fiyatlarini cekin.'}</Desc>
               <div className="mt-6">
                 <EndpointBlock method="GET" path="/api/b2b/rates">
                   <ParamTable lang={lang} params={[
                     { name: 'start_date', type: 'string', required: true, desc: isEn ? 'Start date (YYYY-MM-DD)' : 'Baslangic tarihi (YYYY-MM-DD)' },
                     { name: 'end_date', type: 'string', required: true, desc: isEn ? 'End date (YYYY-MM-DD)' : 'Bitis tarihi (YYYY-MM-DD)' },
-                    { name: 'room_type', type: 'string', required: false, desc: isEn ? 'Filter by room type' : 'Oda tipine gore filtre' },
+                    { name: 'room_type', type: 'string', required: false, desc: isEn ? 'Filter by room type' : 'Oda tipine göre filtre' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "source": "agency_rates",\n  "rates": [\n    { "date": "2026-06-01", "room_type_code": "DLX",\n      "single": 200, "double": 250, "triple": 300 }\n  ]\n}`} />
                 </EndpointBlock>
@@ -689,9 +689,9 @@ export default function B2BApiDocs() {
             {/* ── RESERVATIONS ── */}
             <section id="reservations">
               <SectionHeader icon={FileText} title={isEn ? 'Reservations API' : 'Rezervasyon API'} id="res-h" />
-              <Desc>{isEn ? 'Create, list, view, and cancel reservations. All bookings automatically sync with PMS.' : 'Rezervasyon olusturun, listeleyin, goruntuleyin ve iptal edin. Otomatik PMS senkronizasyonu.'}</Desc>
+              <Desc>{isEn ? 'Create, list, view, and cancel reservations. All bookings automatically sync with PMS.' : 'Rezervasyon oluşturun, listeleyin, görüntüleyin ve iptal edin. Otomatik PMS senkronizasyonu.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="POST" path="/api/b2b/reservations" desc={isEn ? 'Create a reservation with auto room assignment' : 'Otomatik oda atamali rezervasyon olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/reservations" desc={isEn ? 'Create a reservation with auto room assignment' : 'Otomatik oda atamali rezervasyon oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'room_type', type: 'string', required: true, desc: isEn ? 'Room type name' : 'Oda tipi adi' },
                     { name: 'check_in', type: 'string', required: true, desc: 'YYYY-MM-DD' },
@@ -720,8 +720,8 @@ export default function B2BApiDocs() {
 
             {/* ── GUESTS ── */}
             <section id="guests">
-              <SectionHeader icon={Users} title={isEn ? 'Guest Management' : 'Misafir Yonetimi'} id="guests-h" />
-              <Desc>{isEn ? 'Search guests, view profiles, and access stay history.' : 'Misafir arayin, profilleri goruntuleyin ve konaklama gecmisine erisin.'}</Desc>
+              <SectionHeader icon={Users} title={isEn ? 'Guest Management' : 'Misafir Yönetimi'} id="guests-h" />
+              <Desc>{isEn ? 'Search guests, view profiles, and access stay history.' : 'Misafir arayin, profilleri görüntüleyin ve konaklama gecmisine erişin.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/guests/search?q={query}" desc={isEn ? 'Search by name, email, or phone (min 2 chars)' : 'Isim, e-posta veya telefon ile arama (min 2 karakter)'}>
                   <ParamTable lang={lang} params={[
@@ -742,7 +742,7 @@ export default function B2BApiDocs() {
             {/* ── LOYALTY ── */}
             <section id="loyalty">
               <SectionHeader icon={Sparkles} title={isEn ? 'Loyalty Program' : 'Sadakat Programi'} id="loyalty-h" />
-              <Desc>{isEn ? 'Manage guest loyalty points, tiers, and VIP status. Tiers: Bronze (0+), Silver (2000+), Gold (5000+), Platinum (10000+).' : 'Misafir sadakat puanlarini, seviyeleri ve VIP durumunu yonetin. Seviyeler: Bronze (0+), Silver (2000+), Gold (5000+), Platinum (10000+).'}</Desc>
+              <Desc>{isEn ? 'Manage guest loyalty points, tiers, and VIP status. Tiers: Bronze (0+), Silver (2000+), Gold (5000+), Platinum (10000+).' : 'Misafir sadakat puanlarini, seviyeleri ve VIP durumunu yönetin. Seviyeler: Bronze (0+), Silver (2000+), Gold (5000+), Platinum (10000+).'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/guests/{guest_id}/loyalty" desc={isEn ? 'Get loyalty status and points' : 'Sadakat durumu ve puan bilgisi'}>
                   <CodeBlock lang="json" code={`{\n  "guest_id": "g1...",\n  "guest_name": "John Doe",\n  "loyalty_points": 5200,\n  "loyalty_tier": "gold",\n  "vip_status": true,\n  "total_stays": 12,\n  "total_spend": 45000.00\n}`} />
@@ -761,12 +761,12 @@ export default function B2BApiDocs() {
             {/* ── HOUSEKEEPING ── */}
             <section id="housekeeping">
               <SectionHeader icon={ClipboardList} title={isEn ? 'Housekeeping' : 'Kat Hizmetleri'} id="hk-h" />
-              <Desc>{isEn ? 'Query and update room cleaning status. Integrate with housekeeping management systems.' : 'Oda temizlik durumlarini sorgulama ve guncelleme. Kat hizmeti sistemleriyle entegrasyon.'}</Desc>
+              <Desc>{isEn ? 'Query and update room cleaning status. Integrate with housekeeping management systems.' : 'Oda temizlik durumlarini sorgulama ve güncelleme. Kat hizmeti sistemleriyle entegrasyon.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/housekeeping/rooms" desc={isEn ? 'List rooms with cleaning status' : 'Odalar ve temizlik durumlarini listele'}>
                   <ParamTable lang={lang} params={[
                     { name: 'status', type: 'string', required: false, desc: 'clean, dirty, inspected, maintenance, out_of_order' },
-                    { name: 'floor', type: 'string', required: false, desc: isEn ? 'Filter by floor' : 'Kata gore filtre' },
+                    { name: 'floor', type: 'string', required: false, desc: isEn ? 'Filter by floor' : 'Kata göre filtre' },
                   ]} />
                 </EndpointBlock>
                 <EndpointBlock method="PUT" path="/api/b2b/housekeeping/rooms/{room_id}" desc={isEn ? 'Update room cleaning status' : 'Oda temizlik durumu guncelle'}>
@@ -781,16 +781,16 @@ export default function B2BApiDocs() {
             {/* ── KBS ── */}
             <section id="kbs">
               <SectionHeader icon={Shield} title={isEn ? 'KBS / Police Notification' : 'KBS / Emniyet Bildirimi'} id="kbs-h" />
-              <Desc>{isEn ? 'Access guest registration data for KBS (police notification system). List checked-in guests with identity information and submit reports.' : 'KBS (emniyet bildirim sistemi) icin misafir kayit verilerine erisin. Check-in yapan misafirleri kimlik bilgileriyle listeleyin ve rapor gonderin.'}</Desc>
+              <Desc>{isEn ? 'Access guest registration data for KBS (police notification system). List checked-in guests with identity information and submit reports.' : 'KBS (emniyet bildirim sistemi) için misafir kayıt verilerine erişin. Check-in yapan misafirleri kimlik bilgileriyle listeleyin ve rapor gönderin.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="GET" path="/api/b2b/kbs/guests" desc={isEn ? 'Get guests for KBS reporting with identity data' : 'KBS bildirimi icin misafir listesi ve kimlik bilgileri'}>
+                <EndpointBlock method="GET" path="/api/b2b/kbs/guests" desc={isEn ? 'Get guests for KBS reporting with identity data' : 'KBS bildirimi için misafir listesi ve kimlik bilgileri'}>
                   <ParamTable lang={lang} params={[
-                    { name: 'date', type: 'string', required: false, desc: isEn ? 'Date (YYYY-MM-DD, default: today)' : 'Tarih (YYYY-MM-DD, varsayilan: bugun)' },
+                    { name: 'date', type: 'string', required: false, desc: isEn ? 'Date (YYYY-MM-DD, default: today)' : 'Tarih (YYYY-MM-DD, varsayilan: bugün)' },
                     { name: 'status', type: 'string', required: false, desc: 'pending, submitted, confirmed, error' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "date": "2026-06-01",\n  "guests": [\n    { "id": "b1...", "guest_name": "Ali Yilmaz", "room_number": "302",\n      "check_in": "2026-06-01T14:00:00", "nationality": "TR",\n      "id_number": "12345678901", "passport_number": "",\n      "birth_date": "1985-03-15", "gender": "M" }\n  ],\n  "guest_count": 1,\n  "reports": [],\n  "report_count": 0\n}`} />
                 </EndpointBlock>
-                <EndpointBlock method="POST" path="/api/b2b/kbs/report" desc={isEn ? 'Submit a KBS report' : 'KBS bildirimi olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/kbs/report" desc={isEn ? 'Submit a KBS report' : 'KBS bildirimi oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'date', type: 'string', required: true, desc: 'YYYY-MM-DD' },
                     { name: 'guest_ids', type: 'array', required: false, desc: isEn ? 'List of guest/booking IDs' : 'Misafir/rezervasyon ID listesi' },
@@ -804,23 +804,23 @@ export default function B2BApiDocs() {
             {/* ── IDENTITY / PASSPORT ── */}
             <section id="identity">
               <SectionHeader icon={Fingerprint} title={isEn ? 'Passport / ID Scanning' : 'Pasaport / Kimlik Okuma'} id="id-h" />
-              <Desc>{isEn ? 'Submit passport/ID OCR scan results and query guest identity data. Supports passport, ID card, and driving license. Auto-updates guest profile with scanned data.' : 'Pasaport/kimlik OCR tarama sonuclarini gonderin ve misafir kimlik verilerini sorgulayIn. Pasaport, kimlik karti ve ehliyet destegi. Taranan veriler otomatik misafir profiline yansir.'}</Desc>
+              <Desc>{isEn ? 'Submit passport/ID OCR scan results and query guest identity data. Supports passport, ID card, and driving license. Auto-updates guest profile with scanned data.' : 'Pasaport/kimlik OCR tarama sonuclarini gönderin ve misafir kimlik verilerini sorgulayIn. Pasaport, kimlik karti ve ehliyet destegi. Taranan veriler otomatik misafir profiline yansir.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="POST" path="/api/b2b/identity/scan" desc={isEn ? 'Submit OCR scan data — auto-updates guest profile' : 'OCR tarama verisini gonderin — misafir profili otomatik guncellenir'}>
+                <EndpointBlock method="POST" path="/api/b2b/identity/scan" desc={isEn ? 'Submit OCR scan data — auto-updates guest profile' : 'OCR tarama verisini gönderin — misafir profili otomatik guncellenir'}>
                   <ParamTable lang={lang} params={[
                     { name: 'guest_id', type: 'string', required: true, desc: isEn ? 'Guest ID' : 'Misafir ID' },
                     { name: 'scan_type', type: 'string', required: true, desc: 'passport, id_card, driving_license' },
                     { name: 'document_number', type: 'string', required: true, desc: isEn ? 'Document number' : 'Belge numarasi' },
                     { name: 'first_name', type: 'string', required: true, desc: isEn ? 'First name from document' : 'Belgedeki ad' },
                     { name: 'last_name', type: 'string', required: true, desc: isEn ? 'Last name from document' : 'Belgedeki soyad' },
-                    { name: 'nationality', type: 'string', required: false, desc: isEn ? 'Nationality code (TR, DE, US...)' : 'Ulke kodu (TR, DE, US...)' },
+                    { name: 'nationality', type: 'string', required: false, desc: isEn ? 'Nationality code (TR, DE, US...)' : 'Ülke kodu (TR, DE, US...)' },
                     { name: 'birth_date', type: 'string', required: false, desc: 'YYYY-MM-DD' },
                     { name: 'gender', type: 'string', required: false, desc: 'M, F' },
                     { name: 'expiry_date', type: 'string', required: false, desc: 'YYYY-MM-DD' },
                     { name: 'issuing_country', type: 'string', required: false, desc: isEn ? 'Issuing country' : 'Veren ulke' },
                     { name: 'mrz_line1', type: 'string', required: false, desc: 'MRZ Line 1' },
                     { name: 'mrz_line2', type: 'string', required: false, desc: 'MRZ Line 2' },
-                    { name: 'scan_quality', type: 'number', required: false, desc: isEn ? 'Quality score 0-100 (auto-verify if >= 80)' : 'Kalite skoru 0-100 (>=80 otomatik dogrulama)' },
+                    { name: 'scan_quality', type: 'number', required: false, desc: isEn ? 'Quality score 0-100 (auto-verify if >= 80)' : 'Kalite skoru 0-100 (>=80 otomatik doğrulama)' },
                     { name: 'raw_ocr_data', type: 'object', required: false, desc: isEn ? 'Raw OCR JSON data' : 'Ham OCR JSON verisi' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "ok": true,\n  "scan": {\n    "id": "s1...",\n    "scan_type": "passport",\n    "document_number": "U12345678",\n    "verified": true,\n    "scan_quality": 92.5\n  }\n}`} />
@@ -832,7 +832,7 @@ export default function B2BApiDocs() {
             {/* ── LOST & FOUND ── */}
             <section id="lostfound">
               <SectionHeader icon={Package} title={isEn ? 'Lost & Found' : 'Kayip Esya'} id="lf-h" />
-              <Desc>{isEn ? 'Manage lost and found items — register, update status, link to guests.' : 'Kayip ve bulunan esyalari yonetin — kaydedIn, durum guncelleyin, misafirlere baglayin.'}</Desc>
+              <Desc>{isEn ? 'Manage lost and found items — register, update status, link to guests.' : 'Kayip ve bulunan esyalari yönetin — kaydedIn, durum guncelleyin, misafirlere baglayin.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/lost-found" desc={isEn ? 'List items with filters' : 'Filtreli esya listesi'}>
                   <ParamTable lang={lang} params={[
@@ -843,7 +843,7 @@ export default function B2BApiDocs() {
                 <EndpointBlock method="POST" path="/api/b2b/lost-found" desc={isEn ? 'Register a found item' : 'Bulunan esya kaydet'}>
                   <ParamTable lang={lang} params={[
                     { name: 'item_name', type: 'string', required: true, desc: isEn ? 'Item name' : 'Esya adi' },
-                    { name: 'description', type: 'string', required: false, desc: isEn ? 'Description' : 'Aciklama' },
+                    { name: 'description', type: 'string', required: false, desc: isEn ? 'Description' : 'Açıklama' },
                     { name: 'category', type: 'string', required: false, desc: isEn ? 'Category (electronics, clothing, jewelry, documents, other)' : 'Kategori (elektronik, giyim, muceviher, belge, diger)' },
                     { name: 'location_found', type: 'string', required: false, desc: isEn ? 'Where found' : 'Bulundugu yer' },
                     { name: 'room_number', type: 'string', required: false, desc: isEn ? 'Room number' : 'Oda numarasi' },
@@ -861,33 +861,33 @@ export default function B2BApiDocs() {
 
             {/* ── WAKE-UP CALLS ── */}
             <section id="wakeup">
-              <SectionHeader icon={Phone} title={isEn ? 'Wake-up Calls' : 'Uyandirma Servisi'} id="wu-h" />
-              <Desc>{isEn ? 'Create and manage wake-up call requests for guests.' : 'Misafirler icin uyandirma talepleri olusturun ve yonetin.'}</Desc>
+              <SectionHeader icon={Phone} title={isEn ? 'Wake-up Calls' : 'Uyandırma Servisi'} id="wu-h" />
+              <Desc>{isEn ? 'Create and manage wake-up call requests for guests.' : 'Misafirler için uyandırma talepleri oluşturun ve yönetin.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="GET" path="/api/b2b/wake-up-calls" desc={isEn ? 'List wake-up calls' : 'Uyandirma listesi'}>
+                <EndpointBlock method="GET" path="/api/b2b/wake-up-calls" desc={isEn ? 'List wake-up calls' : 'Uyandırma listesi'}>
                   <ParamTable lang={lang} params={[
                     { name: 'date', type: 'string', required: false, desc: 'YYYY-MM-DD' },
                     { name: 'status', type: 'string', required: false, desc: 'pending, completed, cancelled, missed' },
                   ]} />
                 </EndpointBlock>
-                <EndpointBlock method="POST" path="/api/b2b/wake-up-calls" desc={isEn ? 'Create wake-up call' : 'Uyandirma olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/wake-up-calls" desc={isEn ? 'Create wake-up call' : 'Uyandırma oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'room_number', type: 'string', required: true, desc: isEn ? 'Room number' : 'Oda numarasi' },
                     { name: 'guest_name', type: 'string', required: true, desc: isEn ? 'Guest name' : 'Misafir adi' },
                     { name: 'wake_date', type: 'string', required: true, desc: 'YYYY-MM-DD' },
                     { name: 'wake_time', type: 'string', required: true, desc: 'HH:MM' },
-                    { name: 'recurring', type: 'boolean', required: false, desc: isEn ? 'Repeat daily' : 'Her gun tekrarla' },
+                    { name: 'recurring', type: 'boolean', required: false, desc: isEn ? 'Repeat daily' : 'Her gün tekrarla' },
                   ]} />
                 </EndpointBlock>
-                <EndpointBlock method="PUT" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Update wake-up call' : 'Uyandirma guncelle'} />
-                <EndpointBlock method="DELETE" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Cancel wake-up call' : 'Uyandirma iptal'} />
+                <EndpointBlock method="PUT" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Update wake-up call' : 'Uyandırma guncelle'} />
+                <EndpointBlock method="DELETE" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Cancel wake-up call' : 'Uyandırma iptal'} />
               </div>
             </section>
 
             {/* ── GUEST JOURNEY ── */}
             <section id="journey">
               <SectionHeader icon={Globe} title={isEn ? 'Guest Journey' : 'Misafir Yolculugu'} id="gj-h" />
-              <Desc>{isEn ? 'Online check-in, pre-arrival management, and guest service requests.' : 'Online check-in, pre-arrival yonetimi ve misafir servis talepleri.'}</Desc>
+              <Desc>{isEn ? 'Online check-in, pre-arrival management, and guest service requests.' : 'Online check-in, pre-arrival yönetimi ve misafir servis talepleri.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="POST" path="/api/b2b/guest-journey/online-checkin" desc={isEn ? 'Submit online check-in data' : 'Online check-in bilgilerini gonder'}>
                   <ParamTable lang={lang} params={[
@@ -899,7 +899,7 @@ export default function B2BApiDocs() {
                   ]} />
                 </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/guest-journey/pre-arrival/{booking_id}" desc={isEn ? 'Get pre-arrival status' : 'Pre-arrival durumu sorgula'} />
-                <EndpointBlock method="POST" path="/api/b2b/guest-journey/request" desc={isEn ? 'Create a service request' : 'Servis talebi olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/guest-journey/request" desc={isEn ? 'Create a service request' : 'Servis talebi oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'booking_id', type: 'string', required: true, desc: isEn ? 'Booking ID' : 'Rezervasyon ID' },
                     { name: 'request_type', type: 'string', required: true, desc: 'concierge, spa, room_service, maintenance, transport, other' },
@@ -909,9 +909,9 @@ export default function B2BApiDocs() {
                 </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/guest-journey/requests" desc={isEn ? 'List service requests with filters' : 'Servis taleplerini filtreli listele'}>
                   <ParamTable lang={lang} params={[
-                    { name: 'booking_id', type: 'string', required: false, desc: isEn ? 'Filter by booking' : 'Rezervasyona gore filtre' },
+                    { name: 'booking_id', type: 'string', required: false, desc: isEn ? 'Filter by booking' : 'Rezervasyona göre filtre' },
                     { name: 'status', type: 'string', required: false, desc: 'pending, in_progress, completed, cancelled' },
-                    { name: 'request_type', type: 'string', required: false, desc: isEn ? 'Filter by type' : 'Tipe gore filtre' },
+                    { name: 'request_type', type: 'string', required: false, desc: isEn ? 'Filter by type' : 'Tipe göre filtre' },
                   ]} />
                 </EndpointBlock>
               </div>
@@ -920,12 +920,12 @@ export default function B2BApiDocs() {
             {/* ── CONCIERGE ── */}
             <section id="concierge">
               <SectionHeader icon={Coffee} title={isEn ? 'Concierge Services' : 'Concierge Hizmetleri'} id="con-h" />
-              <Desc>{isEn ? 'Browse available concierge services and create service requests.' : 'Mevcut concierge hizmetlerini goruntuleyin ve talep olusturun.'}</Desc>
+              <Desc>{isEn ? 'Browse available concierge services and create service requests.' : 'Mevcut concierge hizmetlerini görüntüleyin ve talep oluşturun.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/concierge/services" desc={isEn ? 'List available concierge services' : 'Mevcut concierge hizmetlerini listele'}>
                   <CodeBlock lang="json" code={`{\n  "services": [\n    { "id": "transfer", "name": "Airport Transfer",\n      "name_tr": "Havaalani Transferi", "category": "transport",\n      "price_range": "50-150" },\n    { "id": "restaurant", "name": "Restaurant Reservation",\n      "name_tr": "Restoran Rezervasyonu", "category": "dining" }\n  ]\n}`} />
                 </EndpointBlock>
-                <EndpointBlock method="POST" path="/api/b2b/concierge/request" desc={isEn ? 'Create a concierge request' : 'Concierge talebi olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/concierge/request" desc={isEn ? 'Create a concierge request' : 'Concierge talebi oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'booking_id', type: 'string', required: true, desc: isEn ? 'Booking ID' : 'Rezervasyon ID' },
                     { name: 'service_id', type: 'string', required: true, desc: isEn ? 'Service ID from /concierge/services' : '/concierge/services\'ten gelen hizmet ID' },
@@ -940,19 +940,19 @@ export default function B2BApiDocs() {
             {/* ── SPA ── */}
             <section id="spa">
               <SectionHeader icon={Zap} title={isEn ? 'Spa & Wellness' : 'Spa & Wellness'} id="spa-h" />
-              <Desc>{isEn ? 'Browse spa services and create spa bookings for guests.' : 'Spa hizmetlerini goruntuleyin ve misafirler icin spa randevusu olusturun.'}</Desc>
+              <Desc>{isEn ? 'Browse spa services and create spa bookings for guests.' : 'Spa hizmetlerini görüntüleyin ve misafirler için spa randevusu oluşturun.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/spa/services" desc={isEn ? 'List spa services with prices' : 'Spa hizmetleri ve fiyat listesi'}>
                   <CodeBlock lang="json" code={`{\n  "services": [\n    { "id": "massage_60", "name": "Swedish Massage 60min",\n      "name_tr": "Isvec Masaji 60dk", "category": "massage",\n      "duration": 60, "price": 120 },\n    { "id": "hammam", "name": "Turkish Hammam",\n      "name_tr": "Turk Hamami", "category": "bath",\n      "duration": 75, "price": 100 }\n  ]\n}`} />
                 </EndpointBlock>
-                <EndpointBlock method="POST" path="/api/b2b/spa/booking" desc={isEn ? 'Create spa booking' : 'Spa randevusu olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/spa/booking" desc={isEn ? 'Create spa booking' : 'Spa randevusu oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'booking_id', type: 'string', required: true, desc: isEn ? 'Hotel booking ID' : 'Otel rezervasyon ID' },
                     { name: 'service_id', type: 'string', required: true, desc: isEn ? 'Service ID from /spa/services' : '/spa/services\'ten gelen hizmet ID' },
                     { name: 'preferred_date', type: 'string', required: true, desc: 'YYYY-MM-DD' },
                     { name: 'preferred_time', type: 'string', required: true, desc: 'HH:MM' },
-                    { name: 'guest_count', type: 'int', required: false, desc: isEn ? 'Number of guests (default: 1)' : 'Misafir sayisi (varsayilan: 1)' },
-                    { name: 'notes', type: 'string', required: false, desc: isEn ? 'Special requests' : 'Ozel istekler' },
+                    { name: 'guest_count', type: 'int', required: false, desc: isEn ? 'Number of guests (default: 1)' : 'Misafir sayısı (varsayilan: 1)' },
+                    { name: 'notes', type: 'string', required: false, desc: isEn ? 'Special requests' : 'Özel istekler' },
                   ]} />
                 </EndpointBlock>
               </div>
@@ -960,34 +960,34 @@ export default function B2BApiDocs() {
 
             {/* ── MICE & GROUPS ── */}
             <section id="groups">
-              <SectionHeader icon={Building} title={isEn ? 'MICE & Groups' : 'MICE & Grup Yonetimi'} id="grp-h" />
-              <Desc>{isEn ? 'Manage group blocks, rooming lists, and MICE events (conferences, weddings, corporate events).' : 'Grup bloklari, rooming listleri ve MICE etkinliklerini (konferans, dugun, kurumsal) yonetin.'}</Desc>
+              <SectionHeader icon={Building} title={isEn ? 'MICE & Groups' : 'MICE & Grup Yönetimi'} id="grp-h" />
+              <Desc>{isEn ? 'Manage group blocks, rooming lists, and MICE events (conferences, weddings, corporate events).' : 'Grup bloklari, rooming listleri ve MICE etkinliklerini (konferans, dugun, kurumsal) yönetin.'}</Desc>
               <div className="mt-6 space-y-6">
                 <EndpointBlock method="GET" path="/api/b2b/groups" desc={isEn ? 'List group blocks' : 'Grup bloklari listele'}>
                   <ParamTable lang={lang} params={[
                     { name: 'status', type: 'string', required: false, desc: 'tentative, confirmed, cancelled' },
                   ]} />
                 </EndpointBlock>
-                <EndpointBlock method="POST" path="/api/b2b/groups/block" desc={isEn ? 'Create a group block' : 'Grup blok olustur'}>
+                <EndpointBlock method="POST" path="/api/b2b/groups/block" desc={isEn ? 'Create a group block' : 'Grup blok oluştur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'group_name', type: 'string', required: true, desc: isEn ? 'Group/event name' : 'Grup/etkinlik adi' },
                     { name: 'contact_name', type: 'string', required: true, desc: isEn ? 'Contact person' : 'Irtibat kisisi' },
                     { name: 'check_in', type: 'string', required: true, desc: 'YYYY-MM-DD' },
                     { name: 'check_out', type: 'string', required: true, desc: 'YYYY-MM-DD' },
-                    { name: 'rooms_requested', type: 'int', required: true, desc: isEn ? 'Number of rooms needed' : 'Gereken oda sayisi' },
+                    { name: 'rooms_requested', type: 'int', required: true, desc: isEn ? 'Number of rooms needed' : 'Gereken oda sayısı' },
                     { name: 'event_type', type: 'string', required: false, desc: 'conference, wedding, corporate, tour_group, other' },
                     { name: 'room_type', type: 'string', required: false, desc: isEn ? 'Preferred room type' : 'Tercih edilen oda tipi' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "ok": true,\n  "block": {\n    "id": "blk1...",\n    "group_name": "Tech Conference 2026",\n    "rooms_requested": 50,\n    "rooms_picked_up": 0,\n    "status": "tentative"\n  }\n}`} />
                 </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/groups/{block_id}" desc={isEn ? 'Get block details with rooming list' : 'Blok detayi ve rooming list'} />
-                <EndpointBlock method="POST" path="/api/b2b/groups/{block_id}/rooming-list" desc={isEn ? 'Upload bulk guest list — creates reservations automatically' : 'Toplu misafir listesi yukle — otomatik rezervasyon olusturur'}>
+                <EndpointBlock method="POST" path="/api/b2b/groups/{block_id}/rooming-list" desc={isEn ? 'Upload bulk guest list — creates reservations automatically' : 'Toplu misafir listesi yukle — otomatik rezervasyon oluşturur'}>
                   <ParamTable lang={lang} params={[
                     { name: 'guests', type: 'array', required: true, desc: isEn ? 'Array of guest entries' : 'Misafir kayitlari dizisi' },
                     { name: 'guests[].guest_name', type: 'string', required: true, desc: isEn ? 'Guest full name' : 'Misafir tam adi' },
                     { name: 'guests[].room_type', type: 'string', required: false, desc: isEn ? 'Override room type' : 'Oda tipi (override)' },
-                    { name: 'guests[].check_in', type: 'string', required: false, desc: isEn ? 'Override check-in (default: block dates)' : 'Giris tarihi (varsayilan: blok tarihi)' },
-                    { name: 'guests[].check_out', type: 'string', required: false, desc: isEn ? 'Override check-out' : 'Cikis tarihi' },
+                    { name: 'guests[].check_in', type: 'string', required: false, desc: isEn ? 'Override check-in (default: block dates)' : 'Giriş tarihi (varsayilan: blok tarihi)' },
+                    { name: 'guests[].check_out', type: 'string', required: false, desc: isEn ? 'Override check-out' : 'Çıkış tarihi' },
                   ]} />
                   <CodeBlock lang="json" code={`{\n  "ok": true,\n  "created_count": 3,\n  "reservations": [\n    { "guest_name": "Alice Johnson",\n      "booking_id": "b1...",\n      "confirmation_code": "GRP-B1A2C3D4" }\n  ]\n}`} />
                 </EndpointBlock>
@@ -997,9 +997,9 @@ export default function B2BApiDocs() {
             {/* ── FOLIO & BILLING ── */}
             <section id="folio">
               <SectionHeader icon={Receipt} title={isEn ? 'Folio & Billing' : 'Folio & Fatura'} id="fol-h" />
-              <Desc>{isEn ? 'View guest folios, post charges, and generate invoices.' : 'Misafir foliolarini goruntuleyin, masraf ekleyin ve fatura olusturun.'}</Desc>
+              <Desc>{isEn ? 'View guest folios, post charges, and generate invoices.' : 'Misafir foliolarini görüntüleyin, masraf ekleyin ve fatura oluşturun.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="GET" path="/api/b2b/folio/{booking_id}" desc={isEn ? 'Get folio with all charges and payments' : 'Tum masraf ve odemelerle folio getir'}>
+                <EndpointBlock method="GET" path="/api/b2b/folio/{booking_id}" desc={isEn ? 'Get folio with all charges and payments' : 'Tüm masraf ve odemelerle folio getir'}>
                   <CodeBlock lang="json" code={`{\n  "booking": { "guest_name": "John Doe", "room_number": "302" },\n  "charges": [\n    { "charge_type": "room", "description": "Room charge",\n      "amount": 250.00 },\n    { "charge_type": "minibar", "description": "Minibar",\n      "amount": 35.00 }\n  ],\n  "payments": [\n    { "amount": 250.00, "method": "credit_card" }\n  ],\n  "total_charges": 285.00,\n  "total_payments": 250.00,\n  "balance": 35.00\n}`} />
                 </EndpointBlock>
                 <EndpointBlock method="POST" path="/api/b2b/folio/{booking_id}/charge" desc={isEn ? 'Post a charge to the folio' : 'Folioya masraf ekle'}>
@@ -1010,7 +1010,7 @@ export default function B2BApiDocs() {
                     { name: 'quantity', type: 'int', required: false, desc: isEn ? 'Quantity (default: 1)' : 'Adet (varsayilan: 1)' },
                   ]} />
                 </EndpointBlock>
-                <EndpointBlock method="GET" path="/api/b2b/folio/{booking_id}/invoice" desc={isEn ? 'Generate invoice (JSON format)' : 'Fatura olustur (JSON formatinda)'}>
+                <EndpointBlock method="GET" path="/api/b2b/folio/{booking_id}/invoice" desc={isEn ? 'Generate invoice (JSON format)' : 'Fatura oluştur (JSON formatında)'}>
                   <CodeBlock lang="json" code={`{\n  "invoice_number": "INV-A1B2C3D4",\n  "invoice_date": "2026-06-03",\n  "hotel": { "hotel_name": "Grand Palace", "tax_number": "123..." },\n  "guest_name": "John Doe",\n  "check_in": "2026-06-01", "check_out": "2026-06-03",\n  "charges": [...],\n  "subtotal": 535.00,\n  "total_paid": 500.00,\n  "balance_due": 35.00,\n  "currency": "TRY"\n}`} />
                 </EndpointBlock>
               </div>
@@ -1019,13 +1019,13 @@ export default function B2BApiDocs() {
             {/* ── WEBHOOKS ── */}
             <section id="webhooks">
               <SectionHeader icon={Bell} title="Webhooks" id="wh-h" />
-              <Desc>{isEn ? 'Receive real-time notifications when events occur. Register webhook URLs and Syroce will POST event data with retry and dead-letter queue support.' : 'Olaylar gerceklestiginde gercek zamanli bildirimler alin. Webhook URL\'si kaydedin, Syroce olay verisini retry ve dead-letter queue destegi ile POST edecektir.'}</Desc>
+              <Desc>{isEn ? 'Receive real-time notifications when events occur. Register webhook URLs and Syroce will POST event data with retry and dead-letter queue support.' : 'Olaylar gerceklestiginde gerçek zamanlı bildirimler alin. Webhook URL\'si kaydedin, Syroce olay verisini retry ve dead-letter queue destegi ile POST edecektir.'}</Desc>
 
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">{isEn ? 'Supported Events' : 'Desteklenen Olaylar'}</h3>
                 <div className="space-y-2">
                   {[
-                    { name: 'reservation.created', desc: isEn ? 'New reservation created' : 'Yeni rezervasyon olusturuldu' },
+                    { name: 'reservation.created', desc: isEn ? 'New reservation created' : 'Yeni rezervasyon oluşturuldu' },
                     { name: 'reservation.cancelled', desc: isEn ? 'Reservation cancelled' : 'Rezervasyon iptal edildi' },
                     { name: 'reservation.updated', desc: isEn ? 'Reservation status changed' : 'Rezervasyon durumu degisti' },
                   ].map(ev => (
@@ -1042,7 +1042,7 @@ export default function B2BApiDocs() {
                   <ParamTable lang={lang} params={[
                     { name: 'url', type: 'string', required: true, desc: isEn ? 'HTTPS endpoint URL' : 'HTTPS endpoint URL' },
                     { name: 'events', type: 'array', required: true, desc: isEn ? 'Event types to subscribe' : 'Abone olunacak olay tipleri' },
-                    { name: 'secret', type: 'string', required: false, desc: isEn ? 'Signing secret for HMAC verification' : 'HMAC dogrulamasi icin imzalama anahtari' },
+                    { name: 'secret', type: 'string', required: false, desc: isEn ? 'Signing secret for HMAC verification' : 'HMAC dogrulamasi için imzalama anahtari' },
                   ]} />
                   <CodeBlock lang="bash" code={`curl -X POST "${API_BASE}/webhooks" \\\n  -H "X-API-Key: syroce_b2b_your_key" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "url": "https://your-app.com/webhook",\n    "events": ["reservation.created", "reservation.cancelled"],\n    "secret": "your_signing_secret"\n  }'`} />
                 </EndpointBlock>
@@ -1059,7 +1059,7 @@ export default function B2BApiDocs() {
                   <h4 className="font-semibold text-amber-900 flex items-center gap-2 text-sm">
                     <Shield size={15} /> {isEn ? 'Signature Verification' : 'Imza Dogrulama'}
                   </h4>
-                  <p className="text-sm text-amber-800 mt-2">{isEn ? 'If you provide a secret, each delivery includes X-Webhook-Signature header. Verify with HMAC-SHA256:' : 'Secret belirlerseniz her teslimat X-Webhook-Signature basligini icerir. HMAC-SHA256 ile dogrulayin:'}</p>
+                  <p className="text-sm text-amber-800 mt-2">{isEn ? 'If you provide a secret, each delivery includes X-Webhook-Signature header. Verify with HMAC-SHA256:' : 'Secret belirlerseniz her teslimat X-Webhook-Signature basligini icerir. HMAC-SHA256 ile doğrulayın:'}</p>
                   <div className="mt-3">
                     <CodeBlock lang="python" code={`import hmac, hashlib\n\ndef verify_signature(body, secret, sig_header):\n    expected = hmac.new(\n        secret.encode(), body, hashlib.sha256\n    ).hexdigest()\n    return hmac.compare_digest(f"sha256={expected}", sig_header)`} />
                   </div>

@@ -126,7 +126,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
                       <p className="text-2xl font-bold text-white">{(auditScore * 100).toFixed(0)}%</p>
                       <ScoreBadge score={auditScore} />
                     </div>
-                    <p className="text-xs text-gray-600 mt-1">{audit?.total_audit_entries || 0} kayit (24h)</p>
+                    <p className="text-xs text-gray-600 mt-1">{audit?.total_audit_entries || 0} kayıt (24h)</p>
                   </CardContent>
                 </Card>
                 <Card data-testid="card-vault" className="bg-white border-gray-200">

@@ -16,7 +16,7 @@ export default function ReconciliationTab(props) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               icon={Receipt}
-              label="Masraf Toplami"
+              label="Masraf Toplamı"
               value={`${reconciliation.charges_total?.toFixed(2) || "0.00"} TL`}
               subValue={`${reconciliation.charges_count || 0} masraf`}
               color="text-blue-600"

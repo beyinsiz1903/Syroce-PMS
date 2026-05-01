@@ -139,7 +139,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
         <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-xs text-blue-700">
           OTA ve acente sanal kart bilgileri sifrelenerek saklanir.
-          Guvenlik nedeniyle kart detayları <strong>en fazla 3 kez</strong> goruntulenebilir.
+          Güvenlik nedeniyle kart detayları <strong>en fazla 3 kez</strong> goruntulenebilir.
         </p>
       </div>
 
@@ -198,8 +198,8 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                 data-testid="select-card-type"
               >
                 <option value="virtual">Sanal Kart</option>
-                <option value="credit">Kredi Karti</option>
-                <option value="debit">Banka Karti</option>
+                <option value="credit">Kredi Kartı</option>
+                <option value="debit">Banka Kartı</option>
               </select>
             </div>
           </div>
@@ -239,7 +239,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                     ? 'bg-amber-500/20 text-amber-200 border-amber-400/30'
                     : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
               }`}>
-                {vcc.card_type === 'virtual' ? 'Sanal Kart' : vcc.card_type === 'credit' ? 'Kredi Karti' : 'Banka Karti'}
+                {vcc.card_type === 'virtual' ? 'Sanal Kart' : vcc.card_type === 'credit' ? 'Kredi Kartı' : 'Banka Kartı'}
               </Badge>
               <CreditCard className="w-6 h-6 text-white/40" />
             </div>
@@ -321,7 +321,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                   ) : (
                     <Eye className="w-3.5 h-3.5 mr-1.5" />
                   )}
-                  Kart Bilgilerini Goruntule ({remaining} hak)
+                  Kart Bilgilerini Görüntüle ({remaining} hak)
                 </Button>
               )}
               <Button
@@ -401,7 +401,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
         <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl" data-testid="vcc-empty-state">
           <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm text-gray-500 mb-1">Kayıtlı kart bilgisi bulunamadı</p>
-          <p className="text-xs text-gray-400">OTA veya acente tarafindan gonderilen sanal kart bilgilerini ekleyebilirsiniz</p>
+          <p className="text-xs text-gray-400">OTA veya acente tarafından gonderilen sanal kart bilgilerini ekleyebilirsiniz</p>
         </div>
       )}
     </div>

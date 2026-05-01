@@ -396,7 +396,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
   );
 
   const postCharge = async () => {
-    if (!chargeForm.description || !chargeForm.amount) { toast.error("Aciklama ve tutar zorunludur"); return; }
+    if (!chargeForm.description || !chargeForm.amount) { toast.error("Açıklama ve tutar zorunludur"); return; }
     setChargeLoading(true);
     try {
       await axios.post(`/frontdesk/folio/${folio?.booking_id}/charge`, {
@@ -432,7 +432,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
             </select>
           </div>
           <div>
-            <label className="text-xs text-gray-500">Aciklama</label>
+            <label className="text-xs text-gray-500">Açıklama</label>
             <input className="w-full border rounded-md p-2 text-sm" value={chargeForm.description} onChange={e => setChargeForm(p => ({ ...p, description: e.target.value }))} placeholder="Minibar - Kola vb." />
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -58,9 +58,9 @@ describe('reservation-detail/helpers', () => {
 
   describe('statusLabel', () => {
     it('returns correct labels for known statuses', () => {
-      expect(statusLabel('checked_in')).toBe('Giris Yapildi');
+      expect(statusLabel('checked_in')).toBe('Giriş Yapildi');
       expect(statusLabel('confirmed')).toBe('Onaylandi');
-      expect(statusLabel('checked_out')).toBe('Cikis Yapildi');
+      expect(statusLabel('checked_out')).toBe('Çıkış Yapildi');
       expect(statusLabel('cancelled')).toBe('İptal');
       expect(statusLabel('no_show')).toBe('No-Show');
     });

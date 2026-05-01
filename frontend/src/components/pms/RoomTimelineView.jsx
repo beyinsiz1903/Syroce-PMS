@@ -106,7 +106,7 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
               <SelectValue placeholder="Oda Tipi" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tum Tipler</SelectItem>
+              <SelectItem value="all">Tüm Tipler</SelectItem>
               {roomTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -119,7 +119,7 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={goToToday}>Bugun</Button>
+          <Button variant="outline" size="sm" onClick={goToToday}>Bugün</Button>
           <Button variant="outline" size="sm" onClick={() => navigate(1)}>
             <ChevronRight className="w-4 h-4" />
           </Button>

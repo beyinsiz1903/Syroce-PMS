@@ -30,7 +30,7 @@ const MultiPropertyTab = () => {
         <h3 className="text-sm font-medium text-slate-300">Multi-Property Integration Dashboard</h3>
         <div className="flex gap-2">
           <Button size="sm" variant={view === 'dashboard' ? 'default' : 'outline'} className={view === 'dashboard' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('dashboard')}>Genel Bakis</Button>
-          <Button size="sm" variant={view === 'comparison' ? 'default' : 'outline'} className={view === 'comparison' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('comparison')}>Karsilastirma</Button>
+          <Button size="sm" variant={view === 'comparison' ? 'default' : 'outline'} className={view === 'comparison' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('comparison')}>Karşılaştırma</Button>
           <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchDashboard}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
         </div>
       </div>

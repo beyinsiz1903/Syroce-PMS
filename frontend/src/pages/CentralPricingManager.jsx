@@ -56,8 +56,8 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Merkezi Fiyat Yonetimi</h1>
-            <p className="text-gray-500">Zincir genelinde fiyat push ve bulk guncelleme</p>
+            <h1 className="text-2xl font-bold">Merkezi Fiyat Yönetimi</h1>
+            <p className="text-gray-500">Zincir genelinde fiyat push ve bulk güncelleme</p>
           </div>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             {loading ? 'Yükleniyor...' : 'Yenile'}
@@ -68,8 +68,8 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="rates">Guncel Fiyatlar</TabsTrigger>
-            <TabsTrigger value="bulk">Toplu Guncelleme</TabsTrigger>
+            <TabsTrigger value="rates">Güncel Fiyatlar</TabsTrigger>
+            <TabsTrigger value="bulk">Toplu Güncelleme</TabsTrigger>
             <TabsTrigger value="templates">Sablonlar</TabsTrigger>
             <TabsTrigger value="history">Fiyat Geçmişi</TabsTrigger>
           </TabsList>
@@ -101,8 +101,8 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
           <TabsContent value="bulk" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Toplu Fiyat Guncelleme</CardTitle>
-                <CardDescription>Tum otellerde secilen oda tipi için fiyat degisikligi yapin</CardDescription>
+                <CardTitle>Toplu Fiyat Güncelleme</CardTitle>
+                <CardDescription>Tüm otellerde seçilen oda tipi için fiyat degisikligi yapin</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -115,7 +115,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
                     <Input type="number" value={bulkForm.new_rate} onChange={(e) => setBulkForm({...bulkForm, new_rate: e.target.value})} />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Guncelleme Tipi</label>
+                    <label className="text-sm font-medium">Güncelleme Tipi</label>
                     <select className="w-full border rounded px-3 py-2" value={bulkForm.adjustment_type} onChange={(e) => setBulkForm({...bulkForm, adjustment_type: e.target.value})}>
                       <option value="fixed">Sabit Fiyat</option>
                       <option value="percentage">Yuzde Degisim</option>
@@ -127,7 +127,7 @@ export default function CentralPricingManager({ user, tenant, onLogout }) {
                     <Input type="date" value={bulkForm.effective_from} onChange={(e) => setBulkForm({...bulkForm, effective_from: e.target.value})} />
                   </div>
                 </div>
-                <Button onClick={handleBulkUpdate} className="w-full">Tum Otellere Uygula</Button>
+                <Button onClick={handleBulkUpdate} className="w-full">Tüm Otellere Uygula</Button>
               </CardContent>
             </Card>
           </TabsContent>

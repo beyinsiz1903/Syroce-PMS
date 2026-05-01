@@ -292,7 +292,7 @@ export default function RuntimeInfrastructureDashboard() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="p-3 bg-zinc-800/60 rounded-lg">
-                <div className="text-xs text-zinc-400">Istek (1h)</div>
+                <div className="text-xs text-zinc-400">İstek (1h)</div>
                 <div className="text-lg font-bold text-zinc-100">{observability.traces?.total_requests || 0}</div>
               </div>
               <div className="p-3 bg-zinc-800/60 rounded-lg">

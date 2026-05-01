@@ -29,7 +29,7 @@ const SandboxValidationTab = () => {
       const { data } = await axios.post(`${API}/sandbox/validate/${selectedConnector}/full`);
       setReport(data);
       toast.success('Validation tamamlandi');
-    } catch (e) { toast.error(e.response?.data?.detail || 'Validation hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Validation hatası'); }
     setLoading(false);
   };
 

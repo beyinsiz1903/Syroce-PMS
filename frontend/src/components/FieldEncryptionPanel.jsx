@@ -95,11 +95,11 @@ export function FieldEncryptionPanel() {
       );
       const migration = res.data?.migration || {};
       toast.success(
-        `${collection}: ${migration.processed} kayit sifrelendi (${migration.errors} hata)`
+        `${collection}: ${migration.processed} kayıt sifrelendi (${migration.errors} hata)`
       );
       fetchData();
     } catch (err) {
-      toast.error(`Migration hatasi: ${err.response?.data?.detail || err.message}`);
+      toast.error(`Migration hatası: ${err.response?.data?.detail || err.message}`);
     } finally {
       setMigrating((prev) => ({ ...prev, [collection]: false }));
     }
@@ -115,7 +115,7 @@ export function FieldEncryptionPanel() {
       );
       toast.success(`${res.data?.indexes_created?.length || 0} index oluşturuldu`);
     } catch (err) {
-      toast.error(`Index hatasi: ${err.response?.data?.detail || err.message}`);
+      toast.error(`Index hatası: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -232,7 +232,7 @@ export function FieldEncryptionPanel() {
                 <div key={i} className="flex items-center justify-between text-[10px] text-zinc-400">
                   <span className="font-mono">{p.collection}</span>
                   <div className="flex items-center gap-2">
-                    <span>{p.processed} kayit</span>
+                    <span>{p.processed} kayıt</span>
                     {p.errors > 0 && (
                       <Badge variant="outline" className="text-[8px] text-red-400 border-red-500/30 px-1 py-0">
                         {p.errors} hata

@@ -71,9 +71,9 @@ export function WeeklyProof() {
     try {
       const res = await axios.get(`/ops/dashboard/channel-health/weekly-proof?weeks=${weeks}`);
       setData(res.data);
-      if (showToast) toast.success("Haftalik veriler güncellendi");
+      if (showToast) toast.success("Haftalık veriler güncellendi");
     } catch (err) {
-      toast.error("Haftalik veri yüklenemedi", { description: err.message });
+      toast.error("Haftalık veri yüklenemedi", { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -99,7 +99,7 @@ export function WeeklyProof() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="weekly-proof-empty">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Haftalik veri bulunamadı</p>
+        <p className="text-sm">Haftalık veri bulunamadı</p>
       </div>
     );
   }
@@ -145,7 +145,7 @@ export function WeeklyProof() {
       {Object.keys(imp).length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="improvement-cards">
           <ImprovementCard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari" delta={imp.sync_success_delta ?? 0} unit="%" testId="imp-sync" />
-          <ImprovementCard icon={<TrendingDown className="h-4 w-4" />} label="Drift Sayisi" delta={imp.drift_delta ?? 0} unit="" invertGood testId="imp-drift" />
+          <ImprovementCard icon={<TrendingDown className="h-4 w-4" />} label="Drift Sayısı" delta={imp.drift_delta ?? 0} unit="" invertGood testId="imp-drift" />
           <ImprovementCard icon={<Clock className="h-4 w-4" />} label="MTTR" delta={imp.mttr_delta ?? 0} unit="s" invertGood testId="imp-mttr" />
           <ImprovementCard icon={<Shield className="h-4 w-4" />} label="SLA Uyum" delta={imp.sla_delta ?? 0} unit="%" testId="imp-sla" />
           <ImprovementCard icon={<BarChart3 className="h-4 w-4" />} label="Push p95" delta={imp.push_p95_delta ?? 0} unit="ms" invertGood testId="imp-p95" />
@@ -201,7 +201,7 @@ export function WeeklyProof() {
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-zinc-500" /> Push Latency p95 Haftalik
+            <BarChart3 className="h-4 w-4 text-zinc-500" /> Push Latency p95 Haftalık
           </CardTitle>
         </CardHeader>
         <CardContent data-testid="chart-p95-weekly">

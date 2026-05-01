@@ -306,7 +306,7 @@ export function CICDPipelineDashboard() {
       });
       const gate = res.data?.deploy_gate || {};
       if (gate.verdict === "PASS") {
-        toast.success(`${TIER_LABELS[tier]?.name || tier}: Tum kriterler karsilandi — PASS`);
+        toast.success(`${TIER_LABELS[tier]?.name || tier}: Tüm kriterler karsilandi — PASS`);
       } else if (gate.verdict === "BLOCK") {
         toast.error(`${TIER_LABELS[tier]?.name || tier}: Deploy ENGELLENDI — ${gate.message}`);
       } else {
@@ -351,7 +351,7 @@ export function CICDPipelineDashboard() {
             CI/CD Pipeline Validation
           </h3>
           <p className="text-[10px] text-zinc-600 mt-0.5">
-            3 katmanli sandbox dogrulama: PR Gate / Staging Gate / Nightly Resilience
+            3 katmanli sandbox doğrulama: PR Gate / Staging Gate / Nightly Resilience
           </p>
         </div>
         <div className="flex items-center gap-2">

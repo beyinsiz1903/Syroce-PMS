@@ -141,7 +141,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
           </Card>
           <Card className="border-l-4 border-l-orange-500">
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase">Yuksek</p>
+              <p className="text-xs text-slate-500 uppercase">Yüksek</p>
               <p className="text-2xl font-bold" data-testid="stat-high">{stats?.by_priority?.high || 0}</p>
             </CardContent>
           </Card>
@@ -269,7 +269,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
               </CardHeader>
               <CardContent>
                 {(fdQueue?.departures || []).length === 0 ? (
-                  <p className="text-slate-400 text-sm text-center py-8">Bekleyen cikis yok</p>
+                  <p className="text-slate-400 text-sm text-center py-8">Bekleyen çıkış yok</p>
                 ) : (
                   <div className="space-y-2" data-testid="departures-list">
                     {(fdQueue?.departures || []).map((d, i) => (
@@ -320,7 +320,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
             {(hkBoard?.overdue_alerts || []).length > 0 && (
               <Card>
                 <CardHeader><CardTitle className="text-base text-red-600 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Geciken Gorevler
+                  <AlertTriangle className="w-4 h-4" /> Geciken Görevler
                 </CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2" data-testid="hk-overdue-list">

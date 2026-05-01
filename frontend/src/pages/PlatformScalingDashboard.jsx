@@ -147,9 +147,9 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
     { label: 'Toplam Oda', value: portfolio.total_rooms || 0, icon: Building2, color: 'text-teal-600' },
     { label: 'Portfolio Doluluk', value: `${portfolio.portfolio_occupancy_pct || 0}%`, icon: TrendingUp, color: 'text-blue-600' },
     { label: 'Riskli Rezervasyon', value: mlSummary.at_risk_bookings || 0, icon: AlertTriangle, color: 'text-amber-600' },
-    { label: 'Yuksek Talep Gunu', value: `${mlSummary.high_demand_days_next_14 || 0}/14`, icon: Zap, color: 'text-purple-600' },
-    { label: 'Global Uyari', value: alerts.count || 0, icon: Bell, color: 'text-red-600' },
-    { label: 'Olay Sayisi (24s)', value: eventData?.total_events || 0, icon: Activity, color: 'text-indigo-600' },
+    { label: 'Yüksek Talep Gunu', value: `${mlSummary.high_demand_days_next_14 || 0}/14`, icon: Zap, color: 'text-purple-600' },
+    { label: 'Global Uyarı', value: alerts.count || 0, icon: Bell, color: 'text-red-600' },
+    { label: 'Olay Sayısı (24s)', value: eventData?.total_events || 0, icon: Activity, color: 'text-indigo-600' },
   ];
 
   return (
@@ -188,8 +188,8 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
                   <div className="flex items-center gap-3">
                     <OccupancyBadge pct={p.occupancy_pct} />
                     <div className="text-right text-xs">
-                      <div className="text-green-600">{p.arrivals_today} giris</div>
-                      <div className="text-orange-600">{p.departures_today} cikis</div>
+                      <div className="text-green-600">{p.arrivals_today} giriş</div>
+                      <div className="text-orange-600">{p.departures_today} çıkış</div>
                     </div>
                   </div>
                 </div>
@@ -222,7 +222,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
                 </div>
               ))}
               {(!alerts.alerts || alerts.alerts.length === 0) && (
-                <p className="text-sm text-slate-400 text-center py-4">Aktif uyari yok</p>
+                <p className="text-sm text-slate-400 text-center py-4">Aktif uyarı yok</p>
               )}
             </div>
           </CardContent>
@@ -234,15 +234,15 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
         <Card data-testid="ml-summary-overview">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Brain className="w-4 h-4 text-purple-600" /> ML Ozet
+              <Brain className="w-4 h-4 text-purple-600" /> ML Özet
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <StatBox label="Riskli Rez. Geliri" value={`${(mlData?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString()} TL`} color="text-red-600" />
               <StatBox label="Fiyat Opt. Firsati" value={mlData?.price_optimization?.price_points?.length || 0} color="text-teal-600" />
-              <StatBox label="Dusuk Talep Gunu" value={`${mlData?.summary?.low_demand_days_next_14 || 0}/14`} color="text-amber-600" />
-              <StatBox label="Riskli Rez. Sayisi" value={mlData?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
+              <StatBox label="Düşük Talep Gunu" value={`${mlData?.summary?.low_demand_days_next_14 || 0}/14`} color="text-amber-600" />
+              <StatBox label="Riskli Rez. Sayısı" value={mlData?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
             </div>
           </CardContent>
         </Card>
@@ -363,7 +363,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
             <div className="grid grid-cols-4 gap-4 mb-4">
               <StatBox label="Toplam" value={data?.total_events || 0} color="text-slate-800" />
               <StatBox label="Kritik" value={data?.by_priority?.critical || 0} color="text-red-600" />
-              <StatBox label="Yuksek" value={data?.by_priority?.high || 0} color="text-orange-600" />
+              <StatBox label="Yüksek" value={data?.by_priority?.high || 0} color="text-orange-600" />
               <StatBox label="Onaysiz Kritik" value={data?.unacknowledged_critical || 0} color="text-red-500" />
             </div>
             {data?.by_type && Object.keys(data.by_type).length > 0 ? (
@@ -428,7 +428,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
               {escalations.length === 0 && (
                 <div className="text-center py-8">
                   <Shield className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                  <p className="text-sm text-green-600">Tum olaylar zamaninda islenidi</p>
+                  <p className="text-sm text-green-600">Tüm olaylar zamaninda islenidi</p>
                 </div>
               )}
             </div>
@@ -445,7 +445,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
-            <StatBox label="Aktif Baglanti" value={data?.gateway_stats?.total_connections || 0} color="text-blue-600" />
+            <StatBox label="Aktif Bağlantı" value={data?.gateway_stats?.total_connections || 0} color="text-blue-600" />
             <StatBox label="Bagli Tenant" value={data?.gateway_stats?.tenants_connected || 0} color="text-teal-600" />
             <StatBox label="Son Yayinlar" value={data?.gateway_stats?.recent_broadcasts || 0} color="text-indigo-600" />
           </div>
@@ -476,7 +476,7 @@ function MultiPropertyPanel({ data }) {
       {/* Property Comparison */}
       <Card data-testid="property-comparison-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Property Karsilastirma</CardTitle>
+          <CardTitle className="text-sm font-medium">Property Karşılaştırma</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -486,8 +486,8 @@ function MultiPropertyPanel({ data }) {
                   <th className="pb-2 text-slate-500 font-medium">Property</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Oda</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Doluluk</th>
-                  <th className="pb-2 text-slate-500 font-medium text-right">Giris</th>
-                  <th className="pb-2 text-slate-500 font-medium text-right">Cikis</th>
+                  <th className="pb-2 text-slate-500 font-medium text-right">Giriş</th>
+                  <th className="pb-2 text-slate-500 font-medium text-right">Çıkış</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Gelir</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">ADR</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">RevPAR</th>
@@ -558,7 +558,7 @@ function MultiPropertyPanel({ data }) {
                 </div>
               ))}
               {(!alerts.alerts || alerts.alerts.length === 0) && (
-                <p className="text-sm text-slate-400 text-center py-4">Aktif uyari yok</p>
+                <p className="text-sm text-slate-400 text-center py-4">Aktif uyarı yok</p>
               )}
             </div>
           </CardContent>
@@ -710,7 +710,7 @@ function CompetitivePanel({ data, headers, fetchAll }) {
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                   <div className="text-right">
-                    <div className="text-xs text-slate-500">Onerilen</div>
+                    <div className="text-xs text-slate-500">Önerilen</div>
                     <div className="text-sm font-bold text-teal-700">{s.suggested_rate} TL</div>
                   </div>
                   <ActionBadge action={s.action} />

@@ -24,8 +24,8 @@ export default function GelirYonetimiPage({ user, tenant, onLogout }) {
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
       <div className="p-4 lg:p-6 space-y-4" data-testid="gelir-yonetimi-page">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gelir Yonetimi</h1>
-          <p className="text-sm text-muted-foreground">Dinamik fiyatlama, yield kurallari ve sezon yonetimi</p>
+          <h1 className="text-2xl font-bold tracking-tight">Gelir Yönetimi</h1>
+          <p className="text-sm text-muted-foreground">Dinamik fiyatlama, yield kuralları ve sezon yönetimi</p>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>

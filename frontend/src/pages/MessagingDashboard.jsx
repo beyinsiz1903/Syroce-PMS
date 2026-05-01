@@ -124,7 +124,7 @@ function SettingsTab() {
     setSaving(true);
     const res = await post('/api/messaging-center/settings/email', emailForm);
     if (res.success) toast.success(`Email ayarları ${res.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
-    else toast.error('Kaydetme hatasi');
+    else toast.error('Kaydetme hatası');
     setSaving(false);
     load();
   };
@@ -133,7 +133,7 @@ function SettingsTab() {
     setSaving(true);
     const res = await post('/api/messaging-center/settings/whatsapp', waForm);
     if (res.success) toast.success(`WhatsApp ayarları ${res.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
-    else toast.error('Kaydetme hatasi');
+    else toast.error('Kaydetme hatası');
     setSaving(false);
     load();
   };
@@ -142,8 +142,8 @@ function SettingsTab() {
     const res = await post('/api/messaging-center/settings/test-connection', {});
     if (res.results) {
       res.results.forEach(r => {
-        if (r.status === 'healthy') toast.success(`${r.provider_type}: Baglanti basarili`);
-        else toast.error(`${r.provider_type}: ${r.error || 'Baglanti hatasi'}`);
+        if (r.status === 'healthy') toast.success(`${r.provider_type}: Bağlantı basarili`);
+        else toast.error(`${r.provider_type}: ${r.error || 'Bağlantı hatası'}`);
       });
     }
   };
@@ -163,7 +163,7 @@ function SettingsTab() {
             <div className="flex items-center gap-2">
               {settings?.email && (
                 <Badge variant={settings.email.health_status === 'healthy' ? 'default' : 'destructive'}>
-                  {settings.email.health_status === 'healthy' ? 'Bagli' : 'Baglanti Yok'}
+                  {settings.email.health_status === 'healthy' ? 'Bagli' : 'Bağlantı Yok'}
                 </Badge>
               )}
               {settings?.email?.is_sandbox && <Badge variant="outline">Sandbox</Badge>}
@@ -221,7 +221,7 @@ function SettingsTab() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Sandbox modunda gercek email gonderilmez, simule edilir. API bilgilerinizi girdikten sonra sandbox'u kapatin.
+            Sandbox modunda gerçek email gonderilmez, simule edilir. API bilgilerinizi girdikten sonra sandbox'u kapatin.
           </p>
         </CardContent>
       </Card>
@@ -237,7 +237,7 @@ function SettingsTab() {
             <div className="flex items-center gap-2">
               {settings?.whatsapp && (
                 <Badge variant={settings.whatsapp.health_status === 'healthy' ? 'default' : 'destructive'}>
-                  {settings.whatsapp.health_status === 'healthy' ? 'Bagli' : 'Baglanti Yok'}
+                  {settings.whatsapp.health_status === 'healthy' ? 'Bagli' : 'Bağlantı Yok'}
                 </Badge>
               )}
               {settings?.whatsapp?.is_sandbox && <Badge variant="outline">Sandbox</Badge>}
@@ -277,7 +277,7 @@ function SettingsTab() {
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             Meta Business panelinden WhatsApp Business API token ve Phone Number ID bilgilerinizi alin.
-            Sandbox modunda gercek mesaj gonderilmez.
+            Sandbox modunda gerçek mesaj gonderilmez.
           </p>
         </CardContent>
       </Card>
@@ -285,7 +285,7 @@ function SettingsTab() {
       {/* Test Connection */}
       <div className="flex gap-2">
         <Button data-testid="test-connection-btn" variant="outline" onClick={testConnection}>
-          <TestTube className="h-4 w-4 mr-1" /> Baglanti Testi
+          <TestTube className="h-4 w-4 mr-1" /> Bağlantı Testi
         </Button>
       </div>
     </div>
@@ -421,7 +421,7 @@ function TemplatesTab() {
       <Dialog open={showCreate || !!editTemplate} onOpenChange={v => { if (!v) { setShowCreate(false); setEditTemplate(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editTemplate ? 'Şablonu Duzenle' : 'Yeni Şablon Olustur'}</DialogTitle>
+            <DialogTitle>{editTemplate ? 'Şablonu Düzenle' : 'Yeni Şablon Olustur'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -531,7 +531,7 @@ function SendTab() {
       setVariables({});
       setSelectedTemplate(null);
     } else {
-      toast.error(res.error || 'Gonderim hatasi');
+      toast.error(res.error || 'Gonderim hatası');
     }
     setSending(false);
   };
@@ -637,7 +637,7 @@ function DeliveryLogsTab() {
   const retry = async (id) => {
     const res = await post(`/api/messaging-center/retry/${id}`, {});
     if (res.success) toast.success('Yeniden gönderildi');
-    else toast.error(res.error || 'Yeniden gonderim hatasi');
+    else toast.error(res.error || 'Yeniden gonderim hatası');
     load();
   };
 
@@ -654,7 +654,7 @@ function DeliveryLogsTab() {
         <div className="flex gap-1">
           {['all', 'email', 'whatsapp'].map(f => (
             <Button key={f} size="sm" variant={channelFilter === f ? 'default' : 'outline'} onClick={() => setChannelFilter(f)}>
-              {f === 'all' ? 'Tum Kanallar' : CHANNEL_LABELS[f]}
+              {f === 'all' ? 'Tüm Kanallar' : CHANNEL_LABELS[f]}
             </Button>
           ))}
         </div>
@@ -684,7 +684,7 @@ function DeliveryLogsTab() {
                   </div>
                   <Badge className={STATUS_COLORS[l.status] || 'bg-gray-100'}>{STATUS_LABELS[l.status] || l.status}</Badge>
                   {l.status === 'failed' && l.retry_count < (l.max_retries || 3) && (
-                    <Button size="sm" variant="ghost" onClick={() => retry(l.id)} title="Yeniden gonder">
+                    <Button size="sm" variant="ghost" onClick={() => retry(l.id)} title="Yeniden gönder">
                       <RefreshCw className="h-3 w-3" />
                     </Button>
                   )}
@@ -744,7 +744,7 @@ function MetricsTab() {
         </Card>
       </div>
 
-      <h3 className="text-base font-semibold mt-4">Kanal Bazli Dagilim</h3>
+      <h3 className="text-base font-semibold mt-4">Kanal Bazli Dağılım</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {channels.map(([ch, stats]) => {
           const Icon = CHANNEL_ICONS[ch] || Mail;
@@ -776,7 +776,7 @@ function MetricsTab() {
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">Son {metrics.period_days} gunluk veriler.</p>
+      <p className="text-xs text-muted-foreground">Son {metrics.period_days} günlük veriler.</p>
     </div>
   );
 }
@@ -830,7 +830,7 @@ function AutomationTab() {
   const handleCreate = async () => {
     if (!form.name || !form.template_id) { toast.error('Ad ve sablon gerekli'); return; }
     const res = await post('/api/messaging-center/automation/rules', form);
-    if (res.id) { toast.success('Otomasyon kurali oluşturuldu'); setShowCreate(false); load(); }
+    if (res.id) { toast.success('Otomasyon kuralı oluşturuldu'); setShowCreate(false); load(); }
   };
 
   const handleUpdate = async () => {
@@ -842,7 +842,7 @@ function AutomationTab() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Bu kurali silmek istediginizden emin misiniz?')) return;
+    if (!confirm('Bu kuralı silmek istediginizden emin misiniz?')) return;
     await del(`/api/messaging-center/automation/rules/${id}`);
     toast.success('Kural silindi');
     load();
@@ -856,7 +856,7 @@ function AutomationTab() {
   const testRule = async (rule) => {
     const res = await post(`/api/messaging-center/automation/test/${rule.id}`, {});
     if (res.success) toast.success(`Test tetiklendi: ${rule.name}`);
-    else toast.error('Test hatasi');
+    else toast.error('Test hatası');
   };
 
   const openEdit = (r) => {
@@ -903,7 +903,7 @@ function AutomationTab() {
       {rules.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">
           <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>Henüz otomasyon kurali yok.</p>
+          <p>Henüz otomasyon kuralı yok.</p>
           <p className="text-xs mt-1">Yeni kural ekleyerek check-in/check-out olaylarinda otomatik mesaj gonderimi baslatin.</p>
         </CardContent></Card>
       ) : (
@@ -987,7 +987,7 @@ function AutomationTab() {
       <Dialog open={showCreate || !!editRule} onOpenChange={v => { if (!v) { setShowCreate(false); setEditRule(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editRule ? 'Kurali Duzenle' : 'Yeni Otomasyon Kurali'}</DialogTitle>
+            <DialogTitle>{editRule ? 'Kurali Düzenle' : 'Yeni Otomasyon Kurali'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -1071,7 +1071,7 @@ function SchedulerCard() {
       toast.success('Zamanlayici durduruldu');
     } else {
       await post('/api/messaging-center/scheduler/start', {});
-      toast.success('Zamanlayici baslatildi');
+      toast.success('Zamanlayici başlatıldı');
     }
     await load();
     setActionLoading(false);
@@ -1084,7 +1084,7 @@ function SchedulerCard() {
       const r = res.result || {};
       toast.success(`Tarama tamamlandi: ${r.events_fired || 0} mesaj tetiklendi, ${r.bookings_scanned || 0} rezervasyon tarandi`);
     } else {
-      toast.error('Tarama hatasi');
+      toast.error('Tarama hatası');
     }
     await load();
     setActionLoading(false);

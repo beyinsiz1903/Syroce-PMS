@@ -23,7 +23,7 @@ export default function AIZekaPage({ user, tenant, onLogout }) {
       <div className="p-4 lg:p-6 space-y-4" data-testid="ai-zeka-page">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">AI & Zeka</h1>
-          <p className="text-sm text-muted-foreground">Yapay zeka asistanlari, misafir zekasi ve veri analitigi</p>
+          <p className="text-sm text-muted-foreground">Yapay zeka asistanları, misafir zekası ve veri analitiği</p>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -32,7 +32,7 @@ export default function AIZekaPage({ user, tenant, onLogout }) {
               <Brain className="h-4 w-4" /> AI Hub
             </TabsTrigger>
             <TabsTrigger value="veri-zekasi" data-testid="tab-veri-zekasi" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" /> Veri Zekasi
+              <BarChart3 className="h-4 w-4" /> Veri Zekası
             </TabsTrigger>
           </TabsList>
 

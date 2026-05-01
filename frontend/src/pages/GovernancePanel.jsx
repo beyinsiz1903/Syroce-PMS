@@ -147,7 +147,7 @@ const EntitlementsTab = () => {
                 </div>
               </div>
               <div>
-                <p className="text-sm font-medium mb-2">Kapali Moduller</p>
+                <p className="text-sm font-medium mb-2">Kapalı Moduller</p>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(tenantDetail.modules || {}).filter(([, v]) => !v).map(([k]) => (
                     <Badge key={k} variant="outline" className="text-xs bg-slate-50 text-slate-400">{k}</Badge>
@@ -194,12 +194,12 @@ const MeteringTab = () => {
   const EVENT_LABELS = {
     api_call: 'API Cagrisi',
     reservation_created: 'Rezervasyon',
-    login: 'Giris',
+    login: 'Giriş',
     guest_created: 'Misafir',
     channel_sync: 'Kanal Sync',
     report_generated: 'Rapor',
     invoice_created: 'Fatura',
-    ai_request: 'AI Istek',
+    ai_request: 'AI İstek',
     webhook_received: 'Webhook',
   };
 
@@ -210,7 +210,7 @@ const MeteringTab = () => {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Bugun</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Bugün</CardTitle></CardHeader>
               <CardContent>
                 {Object.keys(overview.today || {}).length === 0 ? (
                   <p className="text-sm text-slate-400">Henüz veri yok</p>
@@ -407,7 +407,7 @@ const FeatureFlagsTab = () => {
                       <p className="font-mono text-sm font-semibold">{flag.flag_key}</p>
                       {flag.kill_switch && <Badge variant="destructive" className="text-xs">KILL SWITCH</Badge>}
                       {flag.enabled && !flag.kill_switch && <Badge className="text-xs bg-green-100 text-green-700">Aktif</Badge>}
-                      {!flag.enabled && !flag.kill_switch && <Badge variant="outline" className="text-xs">Kapali</Badge>}
+                      {!flag.enabled && !flag.kill_switch && <Badge variant="outline" className="text-xs">Kapalı</Badge>}
                     </div>
                     {flag.description && <p className="text-xs text-slate-500 mt-1">{flag.description}</p>}
                     <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
@@ -446,7 +446,7 @@ const FeatureFlagsTab = () => {
               <Input placeholder="new_booking_flow" value={form.flag_key} onChange={(e) => setForm(f => ({...f, flag_key: e.target.value}))} data-testid="flag-key-input" />
             </div>
             <div>
-              <Label>Aciklama</Label>
+              <Label>Açıklama</Label>
               <Input placeholder="Bu flag ne yapar?" value={form.description} onChange={(e) => setForm(f => ({...f, description: e.target.value}))} />
             </div>
             <div className="flex items-center justify-between">
@@ -840,7 +840,7 @@ const GovernancePanel = ({ user, tenant, onLogout }) => {
             <Settings2 className="w-6 h-6 text-indigo-600" />
             Governance & Metering
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Entitlement, kullanim olcumu, feature flag ve deploy pipeline yonetimi.</p>
+          <p className="text-sm text-gray-500 mt-1">Entitlement, kullanım olcumu, feature flag ve deploy pipeline yönetimi.</p>
         </div>
 
         <Tabs defaultValue="entitlements">

@@ -11,8 +11,8 @@ vi.mock('lucide-react', () => ({
 describe('reservation-detail helper components', () => {
   describe('InfoField', () => {
     it('renders label and value', () => {
-      render(<InfoField label="Giris Tarihi" value="15 Haz 2025" />);
-      expect(screen.getByText('Giris Tarihi')).toBeInTheDocument();
+      render(<InfoField label="Giriş Tarihi" value="15 Haz 2025" />);
+      expect(screen.getByText('Giriş Tarihi')).toBeInTheDocument();
       expect(screen.getByText('15 Haz 2025')).toBeInTheDocument();
     });
 
@@ -50,8 +50,8 @@ describe('reservation-detail helper components', () => {
   describe('EmptyState', () => {
     it('renders icon and text', () => {
       const MockIcon = (props) => <div data-testid="mock-icon" {...props} />;
-      render(<EmptyState icon={MockIcon} text="Kayit bulunamadi" />);
-      expect(screen.getByText('Kayit bulunamadi')).toBeInTheDocument();
+      render(<EmptyState icon={MockIcon} text="Kayıt bulunamadı" />);
+      expect(screen.getByText('Kayıt bulunamadı')).toBeInTheDocument();
       expect(screen.getByTestId('mock-icon')).toBeInTheDocument();
     });
   });

@@ -173,7 +173,7 @@ export default function MappingsTab(props) {
                         )}
                         {(mappingReadiness.invalid_count || 0) > 0 && (
                           <span data-testid="invalid-count" className="text-red-400">
-                            Gecersiz: {mappingReadiness.invalid_count}
+                            Geçersiz: {mappingReadiness.invalid_count}
                           </span>
                         )}
                         {(mappingReadiness.duplicate_count || 0) > 0 && (
@@ -210,8 +210,8 @@ export default function MappingsTab(props) {
                 <div className="flex items-center gap-2" data-testid="mapping-filters">
                   {[
                     { key: 'all', label: 'Tumu', count: mappings.length },
-                    { key: 'valid', label: 'Gecerli', count: mappings.filter(m => m.validation_status === 'valid').length },
-                    { key: 'invalid', label: 'Gecersiz', count: mappings.filter(m => m.validation_status === 'invalid').length },
+                    { key: 'valid', label: 'Geçerli', count: mappings.filter(m => m.validation_status === 'valid').length },
+                    { key: 'invalid', label: 'Geçersiz', count: mappings.filter(m => m.validation_status === 'invalid').length },
                     { key: 'not_validated', label: 'Dogrulanmamis', count: mappings.filter(m => !m.validation_status || m.validation_status === 'not_validated').length },
                     { key: 'inactive', label: 'Inaktif', count: mappings.filter(m => m.status === 'inactive').length },
                   ].filter(f => f.key === 'all' || f.count > 0).map(f => (

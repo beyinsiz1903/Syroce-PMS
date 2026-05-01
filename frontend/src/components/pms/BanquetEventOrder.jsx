@@ -27,7 +27,7 @@ const SETUP_TYPES = [
 const MENU_TYPES = [
   { value: 'breakfast', label: 'Kahvalti' },
   { value: 'lunch', label: 'Ogle Yemegi' },
-  { value: 'dinner', label: 'Aksam Yemegi' },
+  { value: 'dinner', label: 'Akşam Yemegi' },
   { value: 'coffee_break', label: 'Kahve Molasi' },
   { value: 'cocktail', label: 'Kokteyl' },
   { value: 'gala', label: 'Gala Yemegi' },
@@ -106,9 +106,9 @@ const BanquetEventOrder = () => {
     if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${esc(event.menu_details)}</p></div>`);
     if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${esc(event.av_equipment.join(', '))}</p></div>`);
     if (event.decorations) w.document.write(`<div class="section"><span class="label">Dekorasyon:</span><p>${esc(event.decorations)}</p></div>`);
-    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Ozel Istekler:</span><p>${esc(event.special_requests)}</p></div>`);
+    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Özel Istekler:</span><p>${esc(event.special_requests)}</p></div>`);
     if (event.billing_instructions) w.document.write(`<div class="section"><span class="label">Faturalama:</span><p>${esc(event.billing_instructions)}</p></div>`);
-    w.document.write(`<div style="margin-top:40px;display:flex;justify-content:space-between"><div>Satis Md: _______________</div><div>Mutfak Sefi: _______________</div><div>Banket Md: _______________</div></div>`);
+    w.document.write(`<div style="margin-top:40px;display:flex;justify-content:space-between"><div>Satış Md: _______________</div><div>Mutfak Sefi: _______________</div><div>Banket Md: _______________</div></div>`);
     w.document.write('</body></html>');
     w.document.close();
     w.print();
@@ -130,7 +130,7 @@ const BanquetEventOrder = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          <Calendar className="h-5 w-5" /> Banket & Etkinlik Yonetimi
+          <Calendar className="h-5 w-5" /> Banket & Etkinlik Yönetimi
         </h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}>
@@ -212,7 +212,7 @@ const BanquetEventOrder = () => {
                 {selectedEvent.menu_details && <div><Label className="text-xs text-muted-foreground">Menu</Label><p className="text-sm">{selectedEvent.menu_details}</p></div>}
                 {selectedEvent.av_equipment?.length > 0 && <div><Label className="text-xs text-muted-foreground">AV Ekipman</Label><div className="flex flex-wrap gap-1 mt-1">{selectedEvent.av_equipment.map(eq => <Badge key={eq} variant="outline">{eq}</Badge>)}</div></div>}
                 {selectedEvent.decorations && <div><Label className="text-xs text-muted-foreground">Dekorasyon</Label><p className="text-sm">{selectedEvent.decorations}</p></div>}
-                {selectedEvent.special_requests && <div><Label className="text-xs text-muted-foreground">Ozel Istekler</Label><p className="text-sm">{selectedEvent.special_requests}</p></div>}
+                {selectedEvent.special_requests && <div><Label className="text-xs text-muted-foreground">Özel Istekler</Label><p className="text-sm">{selectedEvent.special_requests}</p></div>}
                 <div className="grid grid-cols-3 gap-4 bg-muted p-3 rounded-lg">
                   <div className="text-center"><div className="text-xs text-muted-foreground">Kisi Basi</div><div className="font-bold">{selectedEvent.price_per_person} TL</div></div>
                   <div className="text-center"><div className="text-xs text-muted-foreground">Toplam</div><div className="font-bold text-green-600">{selectedEvent.total_price?.toLocaleString()} TL</div></div>
@@ -236,7 +236,7 @@ const BanquetEventOrder = () => {
               <TabsTrigger value="financial">Finansal</TabsTrigger>
             </TabsList>
             <TabsContent value="general" className="space-y-3">
-              <div><Label>Etkinlik Adi</Label><Input value={newEvent.event_name} onChange={e => setNewEvent(p => ({ ...p, event_name: e.target.value }))} placeholder="Yillik Toplanti, Dugun..." /></div>
+              <div><Label>Etkinlik Adi</Label><Input value={newEvent.event_name} onChange={e => setNewEvent(p => ({ ...p, event_name: e.target.value }))} placeholder="Yıllık Toplanti, Dugun..." /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Firma/Kurum</Label><Input value={newEvent.company} onChange={e => setNewEvent(p => ({ ...p, company: e.target.value }))} /></div>
                 <div><Label>Salon</Label><Select value={newEvent.room_name} onValueChange={v => setNewEvent(p => ({ ...p, room_name: v }))}><SelectTrigger><SelectValue placeholder="Salon seçin..." /></SelectTrigger><SelectContent><SelectItem value="Balo Salonu">Balo Salonu</SelectItem><SelectItem value="Toplanti Salonu A">Toplanti Salonu A</SelectItem><SelectItem value="Toplanti Salonu B">Toplanti Salonu B</SelectItem><SelectItem value="VIP Toplanti Odasi">VIP Toplanti Odasi</SelectItem></SelectContent></Select></div>
@@ -261,7 +261,7 @@ const BanquetEventOrder = () => {
               <div><Label>Menu Tipi</Label><Select value={newEvent.menu_type} onValueChange={v => setNewEvent(p => ({ ...p, menu_type: v }))}><SelectTrigger><SelectValue placeholder="Menu tipi..." /></SelectTrigger><SelectContent>{MENU_TYPES.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent></Select></div>
               <div><Label>Menu Detaylari</Label><Textarea value={newEvent.menu_details} onChange={e => setNewEvent(p => ({ ...p, menu_details: e.target.value }))} placeholder="Meze cesitleri, ana yemek, tatli..." rows={3} /></div>
               <div><Label>Dekorasyon</Label><Textarea value={newEvent.decorations} onChange={e => setNewEvent(p => ({ ...p, decorations: e.target.value }))} placeholder="Tema, cicek, masa duzeni..." rows={2} /></div>
-              <div><Label>Ozel Istekler</Label><Textarea value={newEvent.special_requests} onChange={e => setNewEvent(p => ({ ...p, special_requests: e.target.value }))} placeholder="Ek istekler..." rows={2} /></div>
+              <div><Label>Özel Istekler</Label><Textarea value={newEvent.special_requests} onChange={e => setNewEvent(p => ({ ...p, special_requests: e.target.value }))} placeholder="Ek istekler..." rows={2} /></div>
             </TabsContent>
             <TabsContent value="technical" className="space-y-3">
               <Label>AV Ekipman (secili: {newEvent.av_equipment.length})</Label>
@@ -280,7 +280,7 @@ const BanquetEventOrder = () => {
                 <div><Label>Kapora (TL)</Label><Input type="number" value={newEvent.deposit_amount} onChange={e => setNewEvent(p => ({ ...p, deposit_amount: e.target.value }))} /></div>
               </div>
               <div><Label>Durum</Label><Select value={newEvent.status} onValueChange={v => setNewEvent(p => ({ ...p, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tentative">Opsiyonel</SelectItem><SelectItem value="confirmed">Kesin</SelectItem></SelectContent></Select></div>
-              <div><Label>Faturalama Talimatlari</Label><Textarea value={newEvent.billing_instructions} onChange={e => setNewEvent(p => ({ ...p, billing_instructions: e.target.value }))} placeholder="Fatura kime kesilecek, ozel notlar..." /></div>
+              <div><Label>Faturalama Talimatlari</Label><Textarea value={newEvent.billing_instructions} onChange={e => setNewEvent(p => ({ ...p, billing_instructions: e.target.value }))} placeholder="Fatura kime kesilecek, özel notlar..." /></div>
               <div><Label>Notlar</Label><Input value={newEvent.notes} onChange={e => setNewEvent(p => ({ ...p, notes: e.target.value }))} /></div>
             </TabsContent>
           </Tabs>

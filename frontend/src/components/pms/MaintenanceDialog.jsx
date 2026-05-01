@@ -14,7 +14,7 @@ const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenance
 
   const handleSubmit = async () => {
     if (!maintenanceForm.description?.trim()) {
-      toast.error('Lutfen bir aciklama girin');
+      toast.error('Lutfen bir açıklama girin');
       return;
     }
     if (submitting) return;

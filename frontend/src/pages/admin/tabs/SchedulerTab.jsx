@@ -34,7 +34,7 @@ const SchedulerTab = () => {
     setTriggerLoading('all');
     try {
       const { data } = await axios.post(`${API}/admin/scheduler/trigger-all`);
-      toast.success(`Tum scheduler calisti: ${data.connectors_checked || 0} connector`);
+      toast.success(`Tüm scheduler calisti: ${data.connectors_checked || 0} connector`);
       fetchStatus();
     } catch { toast.error('Hata'); }
     setTriggerLoading(null);

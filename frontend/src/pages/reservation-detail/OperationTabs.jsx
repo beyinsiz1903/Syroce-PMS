@@ -101,19 +101,19 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
-                    Mevcut fiyat (ek ucret yok)
+                    Mevcut fiyat (ek ücret yok)
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    Guncel fiyat farki ({fmtTL(priceDiff)} TL)
+                    Güncel fiyat farki ({fmtTL(priceDiff)} TL)
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
-                    Ozel fiyat
+                    Özel fiyat
                   </label>
                 </div>
                 {pricingOption === 'custom' && (
-                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Ek ucret (TL)" className="h-8 text-sm w-40" />
+                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Ek ücret (TL)" className="h-8 text-sm w-40" />
                 )}
               </div>
             )}
@@ -205,7 +205,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
             </select>
           </div>
           <div>
-            <Label className="text-xs">Aciklama *</Label>
+            <Label className="text-xs">Açıklama *</Label>
             <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="İptal aciklamasi..." data-testid="cancel-reason-input" />
           </div>
 
@@ -226,11 +226,11 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  Tum Konaklama ({fmtTL(booking?.total_amount)} TL)
+                  Tüm Konaklama ({fmtTL(booking?.total_amount)} TL)
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="custom" checked={noshowChargeType === 'custom'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  Ozel Tutar
+                  Özel Tutar
                 </label>
               </div>
               <Input type="number" value={noshowAmount} onChange={e => { setNoshowAmount(e.target.value); setNoshowChargeType('custom'); }} placeholder="Tutar (TL)" className="h-8 text-sm w-40" data-testid="noshow-amount-input" />

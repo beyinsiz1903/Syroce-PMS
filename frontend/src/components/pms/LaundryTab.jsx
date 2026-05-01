@@ -49,7 +49,7 @@ const LaundryTab = () => {
       const res = await axios.get('/laundry/orders');
       setOrders(res.data.orders || []);
     } catch {
-      toast.error('Camasir siparisleri yuklenemedi');
+      toast.error('Çamaşır siparişleri yüklenemedi');
       setOrders([]);
     }
   }, []);
@@ -63,7 +63,7 @@ const LaundryTab = () => {
         setItemToAdd(p => ({ ...p, code: list[0].code }));
       }
     } catch {
-      toast.error('Urun listesi yuklenemedi');
+      toast.error('Urun listesi yüklenemedi');
       setItems(FALLBACK_ITEMS);
     }
   }, [itemToAdd.code]);
@@ -85,7 +85,7 @@ const LaundryTab = () => {
         }));
         toast.success(`Misafir bulundu: ${res.data.guest_name || '(isimsiz)'}`);
       } else {
-        toast.info(`Oda ${roomNumber} icin aktif misafir yok`);
+        toast.info(`Oda ${roomNumber} için aktif misafir yok`);
         setOrderForm(p => ({ ...p, booking_id: '', folio_id: '' }));
       }
     } catch {
@@ -127,7 +127,7 @@ const LaundryTab = () => {
     setLoading(true);
     try {
       await axios.post('/laundry/orders', orderForm);
-      toast.success('Camasir siparisi olusturuldu');
+      toast.success('Çamaşır siparişi oluşturuldu');
       setShowNewOrder(false);
       setOrderForm({
         room_number: '', guest_name: '', booking_id: '', folio_id: '',
@@ -135,7 +135,7 @@ const LaundryTab = () => {
       });
       loadOrders();
     } catch {
-      toast.error('Camasir siparisi olusturulamadi');
+      toast.error('Çamaşır siparişi oluşturulamadı');
     }
     setLoading(false);
   };
@@ -149,9 +149,9 @@ const LaundryTab = () => {
           toast.success(`Teslim edildi — Folio'ya ${charge.amount?.toFixed(2)} TL eklendi`);
         } else if (charge && charge.charged === false) {
           if (charge.reason === 'no_active_booking_or_folio') {
-            toast.warning('Teslim edildi, ancak aktif folio bulunamadigi icin folio yansitilmadi');
+            toast.warning('Teslim edildi, ancak aktif folio bulunamadığı için folio yansıtılmadı');
           } else if (charge.error) {
-            toast.warning(`Teslim edildi, folio yansitma hatasi: ${charge.error}`);
+            toast.warning(`Teslim edildi, folio yansıtma hatası: ${charge.error}`);
           } else {
             toast.success('Sipariş teslim edildi');
           }
@@ -173,7 +173,7 @@ const LaundryTab = () => {
     const name = newItem.name.trim();
     const price = parseFloat(newItem.price);
     if (!code || !name || isNaN(price) || price < 0) {
-      toast.error('Kod, ad ve gecerli fiyat zorunludur');
+      toast.error('Kod, ad ve geçerli fiyat zorunludur');
       return;
     }
     try {
@@ -194,7 +194,7 @@ const LaundryTab = () => {
   const saveEdit = async (id) => {
     const price = parseFloat(editDraft.price);
     if (!editDraft.name.trim() || isNaN(price) || price < 0) {
-      toast.error('Gecerli ad ve fiyat girin');
+      toast.error('Geçerli ad ve fiyat girin');
       return;
     }
     try {
@@ -249,7 +249,7 @@ const LaundryTab = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <Shirt className="w-6 h-6" /> Camasirhane Yonetimi
+          <Shirt className="w-6 h-6" /> Camasirhane Yönetimi
         </h2>
       </div>
 
@@ -279,7 +279,7 @@ const LaundryTab = () => {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-40"><SelectValue placeholder="Durum" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tum Durumlar</SelectItem>
+                <SelectItem value="all">Tüm Durumlar</SelectItem>
                 <SelectItem value="pending">Bekliyor</SelectItem>
                 <SelectItem value="in_progress">Isleniyor</SelectItem>
                 <SelectItem value="ready">Hazir</SelectItem>
@@ -308,7 +308,7 @@ const LaundryTab = () => {
             {filteredOrders.length === 0 ? (
               <Card className="border-dashed"><CardContent className="py-8 text-center text-gray-400">
                 <Shirt className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p>Sipariş bulunamadi</p>
+                <p>Sipariş bulunamadı</p>
               </CardContent></Card>
             ) : filteredOrders.map(order => {
               const sc = statusConfig[order.status] || statusConfig.pending;
@@ -377,7 +377,7 @@ const LaundryTab = () => {
             <CardContent>
               <div className="space-y-2">
                 {items.length === 0 ? (
-                  <p className="text-center text-gray-400 py-6">Henuz urun yok</p>
+                  <p className="text-center text-gray-400 py-6">Henüz urun yok</p>
                 ) : items.map(it => (
                   <div key={it.id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50">
                     {editingId === it.id ? (
@@ -419,7 +419,7 @@ const LaundryTab = () => {
       <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> Yeni Camasir Siparişi</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> Yeni Çamaşır Siparişi</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -457,7 +457,7 @@ const LaundryTab = () => {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">Yuksek</SelectItem>
+                    <SelectItem value="high">Yüksek</SelectItem>
                     <SelectItem value="urgent">Acil</SelectItem>
                   </SelectContent>
                 </Select>
@@ -493,7 +493,7 @@ const LaundryTab = () => {
                 </div>
               )}
             </div>
-            <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))} placeholder="Ozel talimatlar..." /></div>
+            <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))} placeholder="Özel talimatlar..." /></div>
             <Button onClick={submitOrder} disabled={loading} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
               Sipariş Olustur ({orderTotal.toFixed(2)} TL)

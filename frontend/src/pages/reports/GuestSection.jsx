@@ -9,7 +9,7 @@ const GuestTable = ({ guests, title, showId = false, searchGuest, setSearchGuest
   <div className="space-y-4">
     <div className="flex items-center justify-between">
       <SectionHeader title={title} />
-      <Badge variant="outline" className="h-6">{guests.length} kayit</Badge>
+      <Badge variant="outline" className="h-6">{guests.length} kayıt</Badge>
     </div>
     <div className="relative">
       <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400 z-10" />

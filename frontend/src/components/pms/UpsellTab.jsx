@@ -197,7 +197,7 @@ const UpsellTab = ({ bookings = [] }) => {
       loadAllOffers();
       loadInsights();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Islem başarısız');
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
     }
     setLoadingAction(null);
   };
@@ -294,7 +294,7 @@ const UpsellTab = ({ bookings = [] }) => {
                 <DollarSign className="w-4 h-4" /> ADR
               </div>
               <p className="text-2xl font-bold">{kpis.adr?.toFixed(0)} TL</p>
-              <p className="text-xs text-gray-400">Ortalama Gunluk Fiyat</p>
+              <p className="text-xs text-gray-400">Ortalama Günlük Fiyat</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-purple-500">

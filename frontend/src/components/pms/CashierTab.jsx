@@ -139,14 +139,14 @@ const CashierTab = ({ user }) => {
   const statusLabel = (s) => {
     if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">Açık</Badge>;
     if (s === 'handed_over') return <Badge className="bg-blue-100 text-blue-700">Devredildi</Badge>;
-    return <Badge className="bg-gray-100 text-gray-600">Kapali</Badge>;
+    return <Badge className="bg-gray-100 text-gray-600">Kapalı</Badge>;
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <Wallet className="w-6 h-6" /> Kasa Yonetimi
+          <Wallet className="w-6 h-6" /> Kasa Yönetimi
         </h2>
         <div className="flex gap-2">
           {!shift ? (
@@ -201,20 +201,20 @@ const CashierTab = ({ user }) => {
             </Card>
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="p-3">
-                <p className="text-xs text-blue-600">Nakit Giris</p>
+                <p className="text-xs text-blue-600">Nakit Giriş</p>
                 <p className="text-lg font-bold text-blue-700">{cashStats.totalIn.toFixed(2)} TL</p>
               </CardContent>
             </Card>
             <Card className="bg-amber-50 border-amber-200">
               <CardContent className="p-3">
-                <p className="text-xs text-amber-600">Nakit Cikis</p>
+                <p className="text-xs text-amber-600">Nakit Çıkış</p>
                 <p className="text-lg font-bold text-amber-700">{cashStats.totalOut.toFixed(2)} TL</p>
               </CardContent>
             </Card>
             <Card className="bg-purple-50 border-purple-200">
               <CardContent className="p-3">
-                <p className="text-xs text-purple-600">Kredi Karti</p>
-                <p className="text-lg font-bold text-purple-700">{cashStats.cardCount} islem</p>
+                <p className="text-xs text-purple-600">Kredi Kartı</p>
+                <p className="text-lg font-bold text-purple-700">{cashStats.cardCount} işlem</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
@@ -240,7 +240,7 @@ const CashierTab = ({ user }) => {
                     <div key={i} className="flex items-center justify-between p-2 rounded border border-gray-100 hover:bg-gray-50 text-xs">
                       <div className="flex items-center gap-2">
                         {t.direction === 'in' ? <DollarSign className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowRightLeft className="w-3.5 h-3.5 text-red-500" />}
-                        <span className="text-gray-700">{t.description || t.type || 'Islem'}</span>
+                        <span className="text-gray-700">{t.description || t.type || 'İşlem'}</span>
                         <Badge variant="outline" className="text-[10px]">{t.method}</Badge>
                       </div>
                       <div className="flex items-center gap-3">
@@ -261,7 +261,7 @@ const CashierTab = ({ user }) => {
           <CardContent className="py-12 text-center">
             <Wallet className="w-12 h-12 mx-auto mb-4 text-gray-300" />
             <p className="text-gray-500 text-lg mb-2">Aktif vardiya yok</p>
-            <p className="text-gray-400 text-sm mb-4">Islem yapabilmek için vardiya acmaniz gerekiyor</p>
+            <p className="text-gray-400 text-sm mb-4">İşlem yapabilmek için vardiya acmaniz gerekiyor</p>
             <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
               <LogIn className="w-4 h-4 mr-2" /> Vardiya Ac
             </Button>

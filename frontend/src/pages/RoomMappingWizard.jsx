@@ -389,7 +389,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 mt-3">
-                    Ileri butonuna tikladiginizda, kanal saglayicisinin API'sinden gercek oda tipleri ve fiyat planlari otomatik olarak cekilecektir.
+                    İleri butonuna tikladiginizda, kanal saglayicisinin API'sinden gerçek oda tipleri ve fiyat planlari otomatik olarak cekilecektir.
                   </p>
                 </div>
               )}
@@ -405,7 +405,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   Oda Tipi Eslestirme
                 </CardTitle>
                 <p className="text-sm text-slate-500 mt-1">
-                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine gore otomatik eşleştirme onerdi. Dusuk guvenli oneriler inceleme bolumunde listelenir.
+                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine göre otomatik eşleştirme onerdi. Düşük guvenli oneriler inceleme bolumunde listelenir.
                 </p>
               </div>
               {roomData?.summary && (
@@ -530,7 +530,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                                   <SelectValue placeholder="Kanal oda tipi seçin..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
+                                  <SelectItem value="__none__">-- Seçim yapilmadi --</SelectItem>
                                   {roomData?.external_room_types?.map((e) => (
                                     <SelectItem key={e.id} value={e.id}>
                                       {e.name}{e.max_occupancy > 0 ? ` (K:${e.max_occupancy})` : ''}
@@ -567,7 +567,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <CheckCircle className="w-4 h-4 text-emerald-600" />
                               <span className="text-sm font-semibold text-emerald-800">Otomatik Eslestirmeler ({autoItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Yuksek guven — otomatik uygulanabilir</span>
+                              <span className="text-[10px] text-slate-400">Yüksek guven — otomatik uygulanabilir</span>
                             </div>
                             {autoItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -578,7 +578,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <Eye className="w-4 h-4 text-amber-600" />
                               <span className="text-sm font-semibold text-amber-800">Inceleme Gerektiren ({reviewItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Dusuk guven — operator onayi gerekli</span>
+                              <span className="text-[10px] text-slate-400">Düşük guven — operator onayi gerekli</span>
                             </div>
                             {reviewItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -679,7 +679,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <SelectValue placeholder="Kanal fiyat plani seçin..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__none__">-- Secim yapilmadi --</SelectItem>
+                            <SelectItem value="__none__">-- Seçim yapilmadi --</SelectItem>
                             {rateData?.external_rate_plans?.map((e) => (
                               <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
                             ))}
@@ -699,7 +699,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
           <Card data-testid="step-confirm">
             <CardHeader>
               <CardTitle className="text-lg" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                Ozet & Onay
+                Özet & Onay
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -846,7 +846,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   data-testid="wizard-next-btn"
                 >
                   {(loading || fetching) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                  {fetching ? 'Kanaldan veriler cekiliyor...' : 'Ileri'}
+                  {fetching ? 'Kanaldan veriler cekiliyor...' : 'İleri'}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               )}

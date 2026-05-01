@@ -81,7 +81,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="status">Model Durumu</TabsTrigger>
-            <TabsTrigger value="training">Egitim</TabsTrigger>
+            <TabsTrigger value="training">Eğitim</TabsTrigger>
             <TabsTrigger value="predict">Tahminleme</TabsTrigger>
             <TabsTrigger value="sentiment">Duygu Analizi</TabsTrigger>
           </TabsList>
@@ -107,7 +107,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
                             <span className="font-medium">{typeof mv === 'number' ? mv.toFixed(4) : String(mv)}</span>
                           </div>
                         ))}
-                        <p className="text-xs text-gray-400 mt-2">Son egitim: {val.db_record?.trained_at ? new Date(val.db_record.trained_at).toLocaleString('tr-TR') : '-'}</p>
+                        <p className="text-xs text-gray-400 mt-2">Son eğitim: {val.db_record?.trained_at ? new Date(val.db_record.trained_at).toLocaleString('tr-TR') : '-'}</p>
                       </div>
                     )}
                     {val.type && <p className="text-sm text-gray-500">Tip: {val.type}</p>}
@@ -147,7 +147,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
 
                 {trainingResult && (
                   <div className={`p-4 rounded-lg ${trainingResult.trained ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                    <p className="font-medium">{trainingResult.type} model egitim sonucu:</p>
+                    <p className="font-medium">{trainingResult.type} model eğitim sonucu:</p>
                     {trainingResult.metrics ? (
                       <div className="mt-2 space-y-1 text-sm">
                         {Object.entries(trainingResult.metrics).map(([k, v]) => (

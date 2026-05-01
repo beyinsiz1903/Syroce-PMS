@@ -43,7 +43,7 @@ const AlertsTab = () => {
       const { data } = await axios.post(`${API}/alerts/evaluate`);
       toast.success(`${data.alerts_created} yeni alarm oluşturuldu`);
       fetchAlerts();
-    } catch { toast.error('Degerlendirme hatasi'); }
+    } catch { toast.error('Degerlendirme hatası'); }
     setActionLoading(null);
   };
 
@@ -62,7 +62,7 @@ const AlertsTab = () => {
       await axios.put(`${API}/alerts/rules/${ruleId}`, { trigger: '', threshold: 0, severity: '', description: '', enabled: !enabled });
       toast.success(`Kural ${!enabled ? 'aktif' : 'deaktif'} edildi`);
       fetchRules();
-    } catch { toast.error('Kural guncelleme hatasi'); }
+    } catch { toast.error('Kural güncelleme hatası'); }
   };
 
   return (
@@ -78,7 +78,7 @@ const AlertsTab = () => {
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger data-testid="alert-status-filter" className="w-36 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Durum</SelectItem>
+            <SelectItem value="all">Tüm Durum</SelectItem>
             <SelectItem value="active">Aktif</SelectItem>
             <SelectItem value="acknowledged">Onaylanan</SelectItem>
             <SelectItem value="resolved">Cozulen</SelectItem>
@@ -88,7 +88,7 @@ const AlertsTab = () => {
         <Select value={filterSeverity} onValueChange={setFilterSeverity}>
           <SelectTrigger data-testid="alert-severity-filter" className="w-32 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tum Seviye</SelectItem>
+            <SelectItem value="all">Tüm Seviye</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="warning">Warning</SelectItem>
             <SelectItem value="info">Info</SelectItem>

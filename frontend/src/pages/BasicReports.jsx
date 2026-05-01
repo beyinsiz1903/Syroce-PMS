@@ -236,11 +236,11 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   }));
   const countryData = Object.entries(countryDist).sort((a, b) => b[1] - a[1]).map(([key, value]) => ({ name: key, count: value }));
   const paymentData = Object.entries(payments.by_method || {}).map(([key, value]) => ({
-    name: key === 'credit_card' ? 'Kredi Karti' : key === 'cash' ? 'Nakit' : key === 'bank_transfer' ? 'Havale/EFT' : key === 'debit_card' ? 'Banka Karti' : key,
+    name: key === 'credit_card' ? 'Kredi Kartı' : key === 'cash' ? 'Nakit' : key === 'bank_transfer' ? 'Havale/EFT' : key === 'debit_card' ? 'Banka Kartı' : key,
     value
   }));
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Sirket' : key,
+    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key,
     count: value, revenue: bookingSources.revenue?.[key] || 0
   }));
 

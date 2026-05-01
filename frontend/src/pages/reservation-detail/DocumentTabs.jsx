@@ -54,7 +54,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
           <div className="grid grid-cols-3 gap-3">
             <FormField label="Tutar (TL)" type="number" value={depForm.amount} onChange={v => setDepForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Yontem" value={depForm.method} onChange={v => setDepForm(p => ({ ...p, method: v }))}
-              options={[['cash','Nakit'],['card','Kredi Karti'],['bank_transfer','Havale/EFT']]} />
+              options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT']]} />
             <FormField label="Referans" value={depForm.reference} onChange={v => setDepForm(p => ({ ...p, reference: v }))} />
           </div>
           <div className="flex gap-2">
@@ -214,7 +214,7 @@ export function InvoiceTab({ booking, bookingId }) {
     setTimeout(() => w.print(), 300);
   };
 
-  const catLabels = { room: 'Konaklama', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Camasir', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', room_service: 'Oda Servisi', other: 'Diger' };
+  const catLabels = { room: 'Konaklama', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', room_service: 'Oda Servisi', other: 'Diger' };
 
   return (
     <div data-testid="invoice-tab" className="space-y-4">

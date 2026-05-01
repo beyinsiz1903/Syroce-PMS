@@ -179,7 +179,7 @@ const ReportsTab = () => {
               <DollarSign className="w-4 h-4" /> ADR
             </div>
             <p className="text-2xl font-bold">{revenue ? fmtCurrency(adr) : '...'}</p>
-            <p className="text-xs text-gray-400">Ortalama Gunluk Oda Fiyati</p>
+            <p className="text-xs text-gray-400">Ortalama Günlük Oda Fiyati</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-violet-500">
@@ -204,7 +204,7 @@ const ReportsTab = () => {
 
       <Tabs value={subTab} onValueChange={setSubTab}>
         <TabsList>
-          <TabsTrigger value="overview">Gunluk Ozet</TabsTrigger>
+          <TabsTrigger value="overview">Günlük Özet</TabsTrigger>
           <TabsTrigger value="forecast">Tahmin ({forecast.length + forecast30.length > 0 ? '7/30 Gun' : '-'})</TabsTrigger>
           <TabsTrigger value="market">Pazar Segmenti</TabsTrigger>
           <TabsTrigger value="housekeeping">Kat Hizmetleri</TabsTrigger>
@@ -217,14 +217,14 @@ const ReportsTab = () => {
                 <CardContent className="pt-4 pb-3 text-center">
                   <LogIn className="w-6 h-6 mx-auto mb-1 text-blue-500" />
                   <p className="text-2xl font-bold text-blue-600">{movements.arrivals ?? 0}</p>
-                  <p className="text-xs text-gray-500">Giris</p>
+                  <p className="text-xs text-gray-500">Giriş</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-3 text-center">
                   <LogOut className="w-6 h-6 mx-auto mb-1 text-green-500" />
                   <p className="text-2xl font-bold text-green-600">{movements.departures ?? 0}</p>
-                  <p className="text-xs text-gray-500">Cikis</p>
+                  <p className="text-xs text-gray-500">Çıkış</p>
                 </CardContent>
               </Card>
               <Card>
@@ -243,7 +243,7 @@ const ReportsTab = () => {
               </Card>
             </div>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Gunluk ozet yüklenemedi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">Günlük özet yüklenemedi</CardContent></Card>
           )}
 
           {dailyFlash?.revenue && (
@@ -277,18 +277,18 @@ const ReportsTab = () => {
           {dailySummary && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Gunluk Rapor Ozeti</CardTitle>
+                <CardTitle className="text-base">Günlük Rapor Ozeti</CardTitle>
                 <CardDescription>{dailySummary.date}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 md:grid-cols-5 gap-4 text-center">
                   <div>
                     <p className="text-lg font-bold">{dailySummary.arrivals}</p>
-                    <p className="text-xs text-gray-500">Giris</p>
+                    <p className="text-xs text-gray-500">Giriş</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold">{dailySummary.departures}</p>
-                    <p className="text-xs text-gray-500">Cikis</p>
+                    <p className="text-xs text-gray-500">Çıkış</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold">{dailySummary.inhouse}</p>
@@ -300,7 +300,7 @@ const ReportsTab = () => {
                   </div>
                   <div>
                     <p className="text-lg font-bold">{fmtCurrency(dailySummary.daily_revenue)}</p>
-                    <p className="text-xs text-gray-500">Gunluk Gelir</p>
+                    <p className="text-xs text-gray-500">Günlük Gelir</p>
                   </div>
                 </div>
               </CardContent>
@@ -361,8 +361,8 @@ const ReportsTab = () => {
           {forecast.length > 0 ? (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">7 Gunluk Doluluk Tahmini</CardTitle>
-                <CardDescription>Onumuzdeki 7 gun için beklenen doluluk ve rezervasyon sayisi</CardDescription>
+                <CardTitle className="text-base">7 Günlük Doluluk Tahmini</CardTitle>
+                <CardDescription>Onumuzdeki 7 gun için beklenen doluluk ve rezervasyon sayısı</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -386,7 +386,7 @@ const ReportsTab = () => {
           {forecast30.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">30 Gunluk Doluluk Trendi</CardTitle>
+                <CardTitle className="text-base">30 Günlük Doluluk Trendi</CardTitle>
                 <CardDescription>Onumuzdeki 30 gun için doluluk tahmini</CardDescription>
               </CardHeader>
               <CardContent>
@@ -410,7 +410,7 @@ const ReportsTab = () => {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Pazar Segmenti Dagilimi</CardTitle>
-                  <CardDescription>Rezervasyon kaynaklarina gore dagilim — {marketSegment?.total_bookings ?? 0} toplam rezervasyon</CardDescription>
+                  <CardDescription>Rezervasyon kaynaklarina göre dağılım — {marketSegment?.total_bookings ?? 0} toplam rezervasyon</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -503,21 +503,21 @@ const ReportsTab = () => {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <Card className="border-l-4 border-l-blue-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Tamamlanan Gorev</p>
+                    <p className="text-sm text-gray-500">Tamamlanan Görev</p>
                     <p className="text-2xl font-bold">{hkEfficiency.total_tasks_completed}</p>
-                    <p className="text-xs text-gray-400">{hkEfficiency.date_range_days} gunluk donem</p>
+                    <p className="text-xs text-gray-400">{hkEfficiency.date_range_days} günlük dönem</p>
                   </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-emerald-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Gunluk Ortalama</p>
+                    <p className="text-sm text-gray-500">Günlük Ortalama</p>
                     <p className="text-2xl font-bold">{hkEfficiency.daily_average_all_staff?.toFixed(1) ?? 0}</p>
-                    <p className="text-xs text-gray-400">gorev/gun</p>
+                    <p className="text-xs text-gray-400">görev/gün</p>
                   </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-violet-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Personel Sayisi</p>
+                    <p className="text-sm text-gray-500">Personel Sayısı</p>
                     <p className="text-2xl font-bold">{Object.keys(staffPerf).length}</p>
                     <p className="text-xs text-gray-400">aktif personel</p>
                   </CardContent>
@@ -528,7 +528,7 @@ const ReportsTab = () => {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Personel Performansi</CardTitle>
-                    <CardDescription>Gorev tamamlama sayisina gore</CardDescription>
+                    <CardDescription>Görev tamamlama sayisina göre</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -536,7 +536,7 @@ const ReportsTab = () => {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis type="number" tick={{ fontSize: 12 }} />
                         <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={80} />
-                        <Tooltip formatter={(v) => [v, 'Gorev']} />
+                        <Tooltip formatter={(v) => [v, 'Görev']} />
                         <Bar dataKey="gorev" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Tamamlanan" />
                       </BarChart>
                     </ResponsiveContainer>
@@ -547,7 +547,7 @@ const ReportsTab = () => {
               {staffData.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Detayli Personel Raporu</CardTitle>
+                    <CardTitle className="text-base">Detaylı Personel Raporu</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
@@ -556,8 +556,8 @@ const ReportsTab = () => {
                           <tr className="border-b">
                             <th className="text-left py-2 px-3">Personel</th>
                             <th className="text-right py-2 px-3">Toplam</th>
-                            <th className="text-right py-2 px-3">Gunluk Ort.</th>
-                            <th className="text-left py-2 px-3">Gorev Turleri</th>
+                            <th className="text-right py-2 px-3">Günlük Ort.</th>
+                            <th className="text-left py-2 px-3">Görev Turleri</th>
                           </tr>
                         </thead>
                         <tbody>

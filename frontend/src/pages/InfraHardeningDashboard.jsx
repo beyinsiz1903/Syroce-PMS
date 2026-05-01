@@ -226,8 +226,8 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
             </div>
             <div className="text-xs text-zinc-500 mt-2">
               {secrets.provider === "env" && "Yerel ortam degiskenleri kullaniliyor (gelistirme modu)"}
-              {secrets.provider === "aws" && "AWS Secrets Manager bagli"}
-              {secrets.provider === "vault" && "HashiCorp Vault bagli"}
+              {secrets.provider === "aws" && "AWS Secrets Manager bağlı"}
+              {secrets.provider === "vault" && "HashiCorp Vault bağlı"}
             </div>
           </Section>
 

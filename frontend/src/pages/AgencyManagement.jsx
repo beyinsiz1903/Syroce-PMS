@@ -227,8 +227,8 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900" data-testid="agency-management-title">Acente Yonetimi</h1>
-          <p className="text-slate-500 text-sm mt-1">Bolgesel acentelerinizi yonetin, kullanici ekleyin</p>
+          <h1 className="text-2xl font-bold text-slate-900" data-testid="agency-management-title">Acente Yönetimi</h1>
+          <p className="text-slate-500 text-sm mt-1">Bolgesel acentelerinizi yönetin, kullanici ekleyin</p>
         </div>
         <Button onClick={() => openAgencyForm()} data-testid="add-agency-btn" className="gap-2">
           <Plus size={16} /> Yeni Acente
@@ -293,7 +293,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                   {/* Actions */}
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openAgencyForm(agency); }} data-testid={`edit-agency-${agency.id}`}>
-                      <Edit2 size={14} className="mr-1" /> Duzenle
+                      <Edit2 size={14} className="mr-1" /> Düzenle
                     </Button>
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleToggleStatus(agency); }}>
                       {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Disi Birak</> : <><ToggleLeft size={14} className="mr-1" /> Aktif Et</>}
@@ -424,7 +424,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       <Dialog open={showAgencyForm} onOpenChange={setShowAgencyForm}>
         <DialogContent className="max-w-lg" data-testid="agency-form-dialog">
           <DialogHeader>
-            <DialogTitle>{editingAgency ? 'Acente Duzenle' : 'Yeni Acente'}</DialogTitle>
+            <DialogTitle>{editingAgency ? 'Acente Düzenle' : 'Yeni Acente'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>

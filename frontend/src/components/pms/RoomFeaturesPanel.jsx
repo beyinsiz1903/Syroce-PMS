@@ -26,11 +26,11 @@ const MINIBAR_ITEMS = [
 ];
 
 const CHECKOUT_RULES = [
-  { key: 'early_checkout', label: 'Erken Cikis (12:00 oncesi)', charge: 0, description: 'Ucret yok' },
-  { key: 'standard_checkout', label: 'Standart Cikis (12:00)', charge: 0, description: 'Normal cikis saati' },
-  { key: 'late_14', label: 'Gec Cikis (14:00)', charge: 30, description: 'Oda ucretinin %30' },
-  { key: 'late_17', label: 'Gec Cikis (17:00)', charge: 50, description: 'Oda ucretinin %50' },
-  { key: 'late_after_17', label: 'Gec Cikis (17:00 sonrasi)', charge: 100, description: 'Tam gun ucreti' },
+  { key: 'early_checkout', label: 'Erken Çıkış (12:00 oncesi)', charge: 0, description: 'Ücret yok' },
+  { key: 'standard_checkout', label: 'Standart Çıkış (12:00)', charge: 0, description: 'Normal çıkış saati' },
+  { key: 'late_14', label: 'Gec Çıkış (14:00)', charge: 30, description: 'Oda ucretinin %30' },
+  { key: 'late_17', label: 'Gec Çıkış (17:00)', charge: 50, description: 'Oda ucretinin %50' },
+  { key: 'late_after_17', label: 'Gec Çıkış (17:00 sonrasi)', charge: 100, description: 'Tam gun ucreti' },
 ];
 
 const RoomFeaturesPanel = ({ room, onUpdate }) => {
@@ -123,7 +123,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Link2 className="h-4 w-4" />
-              Baglanti Oda
+              Bağlantı Oda
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -163,7 +163,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="h-4 w-4" />
-            Erken / Gec Cikis Kurallari
+            Erken / Gec Çıkış Kurallari
           </CardTitle>
         </CardHeader>
         <CardContent>

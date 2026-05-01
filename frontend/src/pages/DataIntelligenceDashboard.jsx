@@ -56,9 +56,9 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, color = 'blue', t
 
 function ConfidenceBadge({ band }) {
   const map = {
-    high: { label: 'Yuksek Guven', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+    high: { label: 'Yüksek Guven', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
     medium: { label: 'Orta Guven', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
-    low: { label: 'Dusuk Guven', cls: 'bg-red-100 text-red-800 border-red-200' },
+    low: { label: 'Düşük Guven', cls: 'bg-red-100 text-red-800 border-red-200' },
   };
   const m = map[band] || map.low;
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${m.cls}`}>{m.label}</span>;
@@ -191,7 +191,7 @@ function RevenueTab() {
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>Mevcut: {rec.current_rate?.toLocaleString()} TL</span>
                       <ChevronRight className="h-3 w-3" />
-                      <span className="font-medium text-foreground">Onerilen: {rec.suggested_rate?.toLocaleString()} TL</span>
+                      <span className="font-medium text-foreground">Önerilen: {rec.suggested_rate?.toLocaleString()} TL</span>
                       <span className={rec.direction === 'increase' ? 'text-emerald-600' : 'text-red-500'}>
                         ({rec.direction === 'increase' ? '+' : ''}{rec.change_pct}%)
                       </span>
@@ -236,7 +236,7 @@ function RevenueTab() {
                   </div>
                   <span className="w-12 text-xs font-medium text-right">{f.predicted_occupancy_pct}%</span>
                   <Badge variant="outline" className="text-xs w-14 justify-center">
-                    {f.demand_level === 'high' ? 'Yuksek' : f.demand_level === 'medium' ? 'Orta' : 'Dusuk'}
+                    {f.demand_level === 'high' ? 'Yüksek' : f.demand_level === 'medium' ? 'Orta' : 'Düşük'}
                   </Badge>
                 </div>
               ))}
@@ -258,7 +258,7 @@ function RevenueTab() {
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="pb-2">Oda Tipi</th>
                     <th className="pb-2">Mevcut</th>
-                    <th className="pb-2">Onerilen</th>
+                    <th className="pb-2">Önerilen</th>
                     <th className="pb-2">Degisim</th>
                     <th className="pb-2">Guven</th>
                     <th className="pb-2">Durum</th>
@@ -338,7 +338,7 @@ function OperationalTab() {
         <StatCard testId="expected-arrivals" title="Beklenen Varis" value={checkin.total_expected_arrivals || 0} subtitle={`Peak: ${checkin.peak_hour || '-'}`} icon={Users} color="blue" />
         <StatCard testId="hk-rooms" title="Temizlenecek Oda" value={hkWorkload.total_rooms_to_clean || 0} subtitle={`${hkWorkload.total_hours || 0} saat is yuku`} icon={Activity} color="amber" />
         <StatCard testId="rooms-pending" title="Hazirlik Bekleyen" value={readiness.total_rooms_pending || 0} subtitle={`Ort. ${readiness.avg_eta_minutes || 0} dk`} icon={Clock} color="purple" />
-        <StatCard testId="maint-risk" title="Bakım Riski" value={maint.at_risk_rooms || 0} subtitle={`${maint.high_risk_count || 0} yuksek risk`} icon={Shield} color="red" />
+        <StatCard testId="maint-risk" title="Bakım Riski" value={maint.at_risk_rooms || 0} subtitle={`${maint.high_risk_count || 0} yüksek risk`} icon={Shield} color="red" />
       </div>
 
       {/* Staffing Recommendations */}
@@ -351,7 +351,7 @@ function OperationalTab() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-3xl font-bold">{checkinStaffing.recommended_agents || 1}</div>
-                <div className="text-xs text-muted-foreground">onerilen ajan</div>
+                <div className="text-xs text-muted-foreground">önerilen ajan</div>
               </div>
               <PressureBadge score={checkin.arrival_pressure_score || 0} />
             </div>
@@ -367,7 +367,7 @@ function OperationalTab() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-3xl font-bold">{hkStaffing.staff_needed || 1}</div>
-                <div className="text-xs text-muted-foreground">onerilen personel</div>
+                <div className="text-xs text-muted-foreground">önerilen personel</div>
               </div>
               <PressureBadge score={hkStaffing.shift_pressure_score || 0} />
             </div>
@@ -379,7 +379,7 @@ function OperationalTab() {
       {/* Check-in Hourly Forecast */}
       <Card data-testid="checkin-hourly">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Check-in Saatlik Dagilim</CardTitle>
+          <CardTitle className="text-base">Check-in Saatlik Dağılım</CardTitle>
         </CardHeader>
         <CardContent>
           {Object.keys(checkin.hourly_forecast || {}).length === 0 ? <EmptyState message="Saatlik veri yok" /> : (
@@ -408,7 +408,7 @@ function OperationalTab() {
           <div className="grid grid-cols-3 gap-4 text-center">
             <div className="p-3 rounded-lg bg-red-50 border border-red-100">
               <div className="text-2xl font-bold text-red-700">{hkWorkload.departures || 0}</div>
-              <div className="text-xs text-red-600">Cikis (Derin Temizlik)</div>
+              <div className="text-xs text-red-600">Çıkış (Derin Temizlik)</div>
             </div>
             <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
               <div className="text-2xl font-bold text-amber-700">{hkWorkload.stayovers || 0}</div>
@@ -436,7 +436,7 @@ function OperationalTab() {
                     <th className="pb-2">Oda</th>
                     <th className="pb-2">Risk Skoru</th>
                     <th className="pb-2">Seviye</th>
-                    <th className="pb-2">Ariza Sayisi</th>
+                    <th className="pb-2">Ariza Sayısı</th>
                     <th className="pb-2">Oneri</th>
                   </tr>
                 </thead>
@@ -447,7 +447,7 @@ function OperationalTab() {
                       <td className="py-2">{Math.round(r.risk_score * 100)}%</td>
                       <td className="py-2">
                         <Badge variant={r.risk_level === 'high' ? 'destructive' : 'secondary'} className="text-xs">
-                          {r.risk_level === 'high' ? 'Yuksek' : 'Orta'}
+                          {r.risk_level === 'high' ? 'Yüksek' : 'Orta'}
                         </Badge>
                       </td>
                       <td className="py-2">{r.issue_count}</td>
@@ -506,14 +506,14 @@ function GuestTab() {
     <div data-testid="guest-tab" className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">Guest Intelligence</h3>
-        <p className="text-sm text-muted-foreground">Misafir degeri, segmentasyon, kayip riski ve satis firsatlari</p>
+        <p className="text-sm text-muted-foreground">Misafir değeri, segmentasyon, kayip riski ve satış firsatlari</p>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard testId="total-guests" title="Analiz Edilen" value={totalGuests} icon={Users} color="blue" />
         <StatCard testId="platinum-guests" title="Platinum Misafir" value={valDist.platinum || 0} icon={Star} color="purple" />
-        <StatCard testId="high-churn" title="Yuksek Kayip Riski" value={churnSummary.high || 0} icon={AlertTriangle} color="red" />
+        <StatCard testId="high-churn" title="Yüksek Kayip Riski" value={churnSummary.high || 0} icon={AlertTriangle} color="red" />
         <StatCard testId="upsell-count" title="Upsell Firsati" value={upsellOps.length} icon={Target} color="green" />
       </div>
 
@@ -563,10 +563,10 @@ function GuestTab() {
         {/* Churn Risk Table */}
         <Card data-testid="churn-risk-table">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" />Yuksek Kayip Riski</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" />Yüksek Kayip Riski</CardTitle>
           </CardHeader>
           <CardContent>
-            {highChurn.length === 0 ? <EmptyState message="Yuksek riskli misafir yok" /> : (
+            {highChurn.length === 0 ? <EmptyState message="Yüksek riskli misafir yok" /> : (
               <div className="space-y-2">
                 {highChurn.map((g, i) => (
                   <div key={i} className="flex items-center justify-between p-2 rounded bg-red-50 border border-red-100">

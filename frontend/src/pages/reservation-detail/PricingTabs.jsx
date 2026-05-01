@@ -24,10 +24,10 @@ export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
   return (
     <div data-testid="daily-rates-tab" className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-700">Gunluk Fiyatlar</span>
+        <span className="text-sm font-semibold text-gray-700">Günlük Fiyatlar</span>
         <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving} className="h-7 text-xs">
           {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
-          {editMode ? 'Kaydet' : 'Duzenle'}
+          {editMode ? 'Kaydet' : 'Düzenle'}
         </Button>
       </div>
       <div className="border rounded-lg overflow-hidden">
@@ -58,14 +58,14 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
   const [splitForm, setSplitForm] = useState({ target_booking_id: '', split_amount: '', reason: '' });
   const [loading, setLoading] = useState(false);
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
-  const cats = { room_service: 'Oda Servisi', room: 'Oda', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Camasir', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', other: 'Diger' };
+  const cats = { room_service: 'Oda Servisi', room: 'Oda', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', other: 'Diger' };
 
   const handleAdd = async () => {
-    if (!form.description || !form.amount) { toast.error('Aciklama ve tutar zorunlu'); return; }
+    if (!form.description || !form.amount) { toast.error('Açıklama ve tutar zorunlu'); return; }
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/add-extra-charge`, { ...form, amount: parseFloat(form.amount), quantity: parseFloat(form.quantity) || 1 });
-      toast.success('Ekstra ucret eklendi'); setShowAdd(false); setForm({ description: '', category: 'other', amount: '', quantity: '1' }); onRefresh?.();
+      toast.success('Ekstra ücret eklendi'); setShowAdd(false); setForm({ description: '', category: 'other', amount: '', quantity: '1' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
@@ -83,13 +83,13 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
   return (
     <div data-testid="extra-charges-tab" className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-700">Ek Ucretler</span>
+        <span className="text-sm font-semibold text-gray-700">Ek Ücretler</span>
         <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> Ekle</Button>
       </div>
       {showAdd && (
         <div className="border rounded-lg p-4 bg-amber-50/50 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Aciklama" value={form.description} onChange={v => setForm(p => ({ ...p, description: v }))} placeholder="Ornek: Minibar" />
+            <FormField label="Açıklama" value={form.description} onChange={v => setForm(p => ({ ...p, description: v }))} placeholder="Ornek: Minibar" />
             <SelectField label="Kategori" value={form.category} onChange={v => setForm(p => ({ ...p, category: v }))} options={Object.entries(cats)} />
             <FormField label="Tutar (TL)" type="number" value={form.amount} onChange={v => setForm(p => ({ ...p, amount: v }))} />
             <FormField label="Adet" type="number" value={form.quantity} onChange={v => setForm(p => ({ ...p, quantity: v }))} />
@@ -101,7 +101,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
         </div>
       )}
       <div className="space-y-2">
-        {allCharges.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Ek ucret bulunmuyor</div> : (
+        {allCharges.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Ek ücret bulunmuyor</div> : (
           allCharges.map((c, i) => (
             <div key={c.id || i} className="border rounded-lg p-3 relative">
               <div className="flex items-center gap-3">

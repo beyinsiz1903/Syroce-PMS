@@ -78,7 +78,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
   };
 
   const tabs = [
-    { id: 'dashboard', label: 'Ozet', icon: Star },
+    { id: 'dashboard', label: 'Özet', icon: Star },
     { id: 'requests', label: 'Talepler', icon: MessageSquare },
     { id: 'messaging', label: 'Mesajlasma', icon: Send },
     { id: 'reviews', label: 'Degerlendirmeler', icon: Star },
@@ -127,7 +127,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
           </Card>
           <Card className="border-l-4 border-l-amber-500">
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase">Bugun Varislar</p>
+              <p className="text-xs text-slate-500 uppercase">Bugün Varislar</p>
               <p className="text-2xl font-bold" data-testid="kpi-arrivals">{dashboard?.today_arrivals || 0}</p>
             </CardContent>
           </Card>
@@ -190,7 +190,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                 {(dashboard?.request_queue || []).length === 0 ? (
                   <div className="text-center py-8 text-slate-400" data-testid="empty-queue">
                     <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>Tum talepler cozulmus</p>
+                    <p>Tüm talepler cozulmus</p>
                   </div>
                 ) : (
                   <div className="space-y-2" data-testid="request-queue">
@@ -235,7 +235,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                   <Button key={t || 'all_type'} variant={typeFilter === t ? 'default' : 'outline'} size="sm"
                     data-testid={`filter-type-${t || 'all'}`}
                     onClick={() => setTypeFilter(t)}>
-                    {t ? `${TYPE_ICONS[t] || ''} ${t.replace(/_/g, ' ')}` : 'Tum Tipler'}
+                    {t ? `${TYPE_ICONS[t] || ''} ${t.replace(/_/g, ' ')}` : 'Tüm Tipler'}
                   </Button>
                 ))}
               </div>
@@ -248,7 +248,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50">
                         <th className="text-left py-3 px-4 text-slate-500 font-medium">Tip</th>
-                        <th className="text-left py-3 px-4 text-slate-500 font-medium">Aciklama</th>
+                        <th className="text-left py-3 px-4 text-slate-500 font-medium">Açıklama</th>
                         <th className="text-center py-3 px-4 text-slate-500 font-medium">Oda</th>
                         <th className="text-center py-3 px-4 text-slate-500 font-medium">Oncelik</th>
                         <th className="text-center py-3 px-4 text-slate-500 font-medium">Durum</th>
@@ -369,7 +369,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
             {/* Monthly Trend */}
             {(rep.recent_trend || []).length > 0 && (
               <Card>
-                <CardHeader><CardTitle className="text-base">Aylik Puan Trendi</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">Aylık Puan Trendi</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex gap-4 overflow-x-auto pb-2" data-testid="monthly-trend">
                     {(rep.recent_trend || []).map((m, i) => (

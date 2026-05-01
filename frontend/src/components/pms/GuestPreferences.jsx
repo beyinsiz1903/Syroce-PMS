@@ -18,9 +18,9 @@ const PREFERENCE_CATEGORIES = {
     items: [
       { key: 'pillow_type', label: 'Yastik Tipi', options: ['Yumusak', 'Sert', 'Ortopedik', 'Tuy', 'Anti-Alerjik'] },
       { key: 'bed_type', label: 'Yatak Tercihi', options: ['King', 'Twin', 'Queen', 'Ekstra Yatak'] },
-      { key: 'floor_pref', label: 'Kat Tercihi', options: ['Yuksek Kat', 'Alcak Kat', 'Orta Kat', 'Fark Etmez'] },
+      { key: 'floor_pref', label: 'Kat Tercihi', options: ['Yüksek Kat', 'Alcak Kat', 'Orta Kat', 'Fark Etmez'] },
       { key: 'room_view', label: 'Manzara', options: ['Deniz', 'Havuz', 'Bahce', 'Sehir', 'Fark Etmez'] },
-      { key: 'room_location', label: 'Konum', options: ['Asansore Yakin', 'Asansordan Uzak', 'Kose Oda', 'Sessiz Bolge'] },
+      { key: 'room_location', label: 'Konum', options: ['Asansore Yakin', 'Asansordan Uzak', 'Köşe Oda', 'Sessiz Bolge'] },
     ]
   },
   comfort: {
@@ -30,7 +30,7 @@ const PREFERENCE_CATEGORIES = {
       { key: 'room_temp', label: 'Oda Sicakligi', options: ['18°C', '20°C', '22°C', '24°C', '26°C'] },
       { key: 'extra_blanket', label: 'Ekstra Battaniye', options: ['Evet', 'Hayir'] },
       { key: 'bath_amenities', label: 'Banyo Urunleri', options: ['Standart', 'Premium', 'Hipoalerjenik'] },
-      { key: 'towel_pref', label: 'Havlu', options: ['Gunluk Degisim', 'Talep Uzerine', 'Cevreci (2 Gunde Bir)'] },
+      { key: 'towel_pref', label: 'Havlu', options: ['Günlük Degisim', 'Talep Uzerine', 'Cevreci (2 Gunde Bir)'] },
     ]
   },
   dining: {
@@ -44,11 +44,11 @@ const PREFERENCE_CATEGORIES = {
     ]
   },
   special: {
-    label: 'Ozel Durumlar',
+    label: 'Özel Durumlar',
     icon: AlertTriangle,
     items: [
       { key: 'allergies', label: 'Alerjiler', type: 'text', placeholder: 'Fistik, toz, kedi...' },
-      { key: 'medical', label: 'Saglik Notu', type: 'text', placeholder: 'Ozel saglik durumu...' },
+      { key: 'medical', label: 'Saglik Notu', type: 'text', placeholder: 'Özel saglik durumu...' },
       { key: 'mobility', label: 'Hareket Kisitlamasi', options: ['Yok', 'Tekerlekli Sandalye', 'Yurume Guclugu', 'Gorme Engeli'] },
       { key: 'smoking', label: 'Sigara', options: ['Icmez', 'Icer (Balkon)', 'Icer (Dis Alan)'] },
       { key: 'pet', label: 'Evcil Hayvan', options: ['Yok', 'Kopek', 'Kedi', 'Diger'] },
@@ -95,7 +95,7 @@ const GuestPreferences = ({ guest, onSave }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Star className="h-4 w-4" /> VIP & Ozel Gunler</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Star className="h-4 w-4" /> VIP & Özel Gunler</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
@@ -125,13 +125,13 @@ const GuestPreferences = ({ guest, onSave }) => {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Bell className="h-4 w-4" /> Ozel Notlar</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Bell className="h-4 w-4" /> Özel Notlar</CardTitle>
           </CardHeader>
           <CardContent>
             <Textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Misafir hakkinda ozel notlar, istekler, dikkat edilecek hususlar..."
+              placeholder="Misafir hakkinda özel notlar, istekler, dikkat edilecek hususlar..."
               rows={4}
             />
           </CardContent>

@@ -10,9 +10,9 @@ import { Plus, Trash2, Pencil, CalendarRange, X, Loader2 } from 'lucide-react';
 
 const SEASON_TYPES = [
   { value: 'peak', label: 'Pik Sezon', color: '#f59e0b' },
-  { value: 'high', label: 'Yuksek Sezon', color: '#ef4444' },
+  { value: 'high', label: 'Yüksek Sezon', color: '#ef4444' },
   { value: 'mid', label: 'Ara Sezon', color: '#22c55e' },
-  { value: 'low', label: 'Dusuk Sezon', color: '#3b82f6' },
+  { value: 'low', label: 'Düşük Sezon', color: '#3b82f6' },
 ];
 
 const emptySeason = {
@@ -104,7 +104,7 @@ export default function SeasonCalendarPanel() {
       {/* Visual Timeline */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-slate-600">Yillik Gorunum</CardTitle>
+          <CardTitle className="text-sm font-medium text-slate-600">Yıllık Gorunum</CardTitle>
         </CardHeader>
         <CardContent>
           <div data-testid="season-timeline" className="relative">
@@ -140,7 +140,7 @@ export default function SeasonCalendarPanel() {
       {showForm && (
         <Card className="border-amber-200 bg-amber-50/30" data-testid="season-form">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm">{editId ? 'Sezonu Duzenle' : 'Yeni Sezon Ekle'}</CardTitle>
+            <CardTitle className="text-sm">{editId ? 'Sezonu Düzenle' : 'Yeni Sezon Ekle'}</CardTitle>
             <Button size="icon" variant="ghost" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3">

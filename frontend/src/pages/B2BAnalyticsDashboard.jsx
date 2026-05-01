@@ -52,8 +52,8 @@ const EVENT_TYPE_LABELS = {
   guest_created: 'Misafir',
   report_generated: 'Rapor',
   invoice_created: 'Fatura',
-  ai_request: 'AI Istek',
-  login: 'Giris',
+  ai_request: 'AI İstek',
+  login: 'Giriş',
   night_audit_run: 'Gece Audit',
 };
 
@@ -136,7 +136,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
             <BarChart3 className="w-7 h-7 text-indigo-600" />
             B2B Analytics
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Acente performansi ve API kullanim analitikleri</p>
+          <p className="text-sm text-gray-500 mt-1">Acente performansi ve API kullanım analitikleri</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -153,10 +153,10 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
 
           <Select value={agencyFilter} onValueChange={setAgencyFilter}>
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Tum Acenteler" />
+              <SelectValue placeholder="Tüm Acenteler" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tum Acenteler</SelectItem>
+              <SelectItem value="all">Tüm Acenteler</SelectItem>
               {agencies.map((a) => (
                 <SelectItem key={a.agency_id} value={a.agency_id}>{a.agency_name}</SelectItem>
               ))}
@@ -199,7 +199,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Gunluk Rezervasyonlar</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">Günlük Rezervasyonlar</CardTitle>
               </CardHeader>
               <CardContent>
                 {trends.length > 0 ? (
@@ -225,7 +225,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Gunluk Gelir Trendi</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">Günlük Gelir Trendi</CardTitle>
               </CardHeader>
               <CardContent>
                 {trends.length > 0 ? (

@@ -128,7 +128,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
               <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
                 Channel Manager Dashboard
               </h1>
-              <p className="text-sm text-slate-500">Tum kanal operasyonlarinin birlesik gorunumu</p>
+              <p className="text-sm text-slate-500">Tüm kanal operasyonlarinin birlesik gorunumu</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -151,7 +151,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
           <KpiCard icon={AlertTriangle} label="Bozulmus" value={(kpis.degraded || 0) + (kpis.error || 0)} color={(kpis.degraded || 0) + (kpis.error || 0) > 0 ? 'text-red-600' : 'text-slate-500'} sub={`${kpis.degraded || 0} yavaslama, ${kpis.error || 0} hata`} />
           <KpiCard icon={Users} label="Son 24s Rez." value={kpis.recent_reservations_24h || 0} color="text-blue-600" />
           <KpiCard icon={WifiOff} label="Basarisiz Import" value={kpis.failed_imports || 0} color={kpis.failed_imports > 0 ? 'text-red-600' : 'text-slate-500'} />
-          <KpiCard icon={Layers} label="Push Kuyrugu" value={kpis.push_queue_depth || 0} color={kpis.push_queue_depth > 10 ? 'text-amber-600' : 'text-slate-500'} sub={`${kpis.wire_failures_24h || 0} wire hatasi`} />
+          <KpiCard icon={Layers} label="Push Kuyrugu" value={kpis.push_queue_depth || 0} color={kpis.push_queue_depth > 10 ? 'text-amber-600' : 'text-slate-500'} sub={`${kpis.wire_failures_24h || 0} wire hatası`} />
         </div>
 
         {(kpis.review_queue > 0 || kpis.dlq_count > 0 || mapping.total_conflicts > 0) && (
@@ -210,7 +210,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
                         <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Durum</th>
                         <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Son Sync</th>
                         <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Son Hata</th>
-                        <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">Islem</th>
+                        <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">İşlem</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -394,7 +394,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
                       data-testid="ops-summary-cta"
                     >
                       <Zap className="w-3.5 h-3.5 mr-1.5" />
-                      Detayli Operasyon Gorunumu
+                      Detaylı Operasyon Gorunumu
                       <ArrowRight className="w-3.5 h-3.5 ml-auto" />
                     </Button>
                   </div>

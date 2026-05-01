@@ -139,9 +139,9 @@ const RoomsTab = ({
 
   const categoryLabels = {
     in_house: { text: 'Iceride', cls: 'bg-green-100 text-green-700' },
-    departing_today: { text: 'Bugun Cikis', cls: 'bg-red-100 text-red-700' },
-    departing_tomorrow: { text: 'Yarin Cikis', cls: 'bg-orange-100 text-orange-700' },
-    pending_checkin: { text: 'Giris Bekleniyor', cls: 'bg-purple-100 text-purple-700' },
+    departing_today: { text: 'Bugün Çıkış', cls: 'bg-red-100 text-red-700' },
+    departing_tomorrow: { text: 'Yarin Çıkış', cls: 'bg-orange-100 text-orange-700' },
+    pending_checkin: { text: 'Giriş Bekleniyor', cls: 'bg-purple-100 text-purple-700' },
   };
 
   const guestSectionStyles = {
@@ -204,7 +204,7 @@ const RoomsTab = ({
     if (!paymentTarget) return;
     const amount = parseFloat(paymentAmount);
     if (!amount || amount <= 0) {
-      toast.error('Lutfen gecerli bir tutar giriniz');
+      toast.error('Lutfen geçerli bir tutar giriniz');
       return;
     }
     setPaymentLoading(true);
@@ -289,9 +289,9 @@ const RoomsTab = ({
     const { guest_name, check_in, check_out, total_amount } = quickResForm;
     if (!guest_name.trim()) { toast.error('Misafir adi giriniz'); return; }
     if (!check_in || !check_out) { toast.error('Tarih seciniz'); return; }
-    if (check_in >= check_out) { toast.error('Cikis tarihi giristen sonra olmalidir'); return; }
+    if (check_in >= check_out) { toast.error('Çıkış tarihi giristen sonra olmalidir'); return; }
     const amount = parseFloat(total_amount);
-    if (!amount || amount <= 0) { toast.error('Gecerli bir fiyat giriniz'); return; }
+    if (!amount || amount <= 0) { toast.error('Geçerli bir fiyat giriniz'); return; }
 
     setQuickResLoading(true);
     try {
@@ -331,21 +331,21 @@ const RoomsTab = ({
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-40"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tum Tipler'}</SelectItem>
+            <SelectItem value="all">{t('common.filter') || 'Tüm Tipler'}</SelectItem>
             {allTypes.map(t2 => <SelectItem key={t2} value={t2}>{t2}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={viewFilter} onValueChange={setViewFilter}>
           <SelectTrigger className="w-40"><SelectValue placeholder={t('common.view')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tum Manzaralar'}</SelectItem>
+            <SelectItem value="all">{t('common.filter') || 'Tüm Manzaralar'}</SelectItem>
             {allViews.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={amenityFilter} onValueChange={setAmenityFilter}>
           <SelectTrigger className="w-40"><SelectValue placeholder="Ozellik" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tum Ozellikler'}</SelectItem>
+            <SelectItem value="all">{t('common.filter') || 'Tüm Ozellikler'}</SelectItem>
             {allAmenities.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -354,9 +354,9 @@ const RoomsTab = ({
       {/* Legend */}
       <div className="flex gap-4 flex-wrap text-xs">
         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-500" /> Iceride</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> Yarin Cikis</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-500" /> Bugun Cikis</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-500" /> Giris Bekleniyor</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> Yarin Çıkış</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-500" /> Bugün Çıkış</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-500" /> Giriş Bekleniyor</div>
         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-400" /> Kirli</div>
         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-300" /> Bos</div>
       </div>
@@ -430,7 +430,7 @@ const RoomsTab = ({
                 {room.status === 'available' && guestInfo && guestInfo.isCheckInToday && (
                   <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1" data-testid={`room-checkin-eta-${room.room_number}`}>
                     <span className="text-[10px] text-emerald-700 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> Giris bekleniyor
+                      <Calendar className="w-3 h-3" /> Giriş bekleniyor
                     </span>
                   </div>
                 )}
@@ -542,7 +542,7 @@ const RoomsTab = ({
               Açık Bakiye Uyarisi
             </DialogTitle>
             <DialogDescription>
-              Misafirin acik bakiyesi bulunmaktadir
+              Misafirin açık bakiyesi bulunmaktadir
             </DialogDescription>
           </DialogHeader>
           {checkoutBooking && (
@@ -600,7 +600,7 @@ const RoomsTab = ({
               Kirli Oda — Karar Paneli
             </DialogTitle>
             <DialogDescription>
-              Misafir check-in bekliyor, oda henüz hazir degil
+              Misafir check-in bekliyor, oda henüz hazir değil
             </DialogDescription>
           </DialogHeader>
           {dirtyRoomInfo && (
@@ -631,7 +631,7 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-blue-600" />
-              Hizli Ödeme
+              Hızlı Ödeme
             </DialogTitle>
             <DialogDescription>
               Ödeme bilgilerini girin
@@ -750,7 +750,7 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarPlus className="w-5 h-5 text-blue-600" />
-              Hizli Rezervasyon
+              Hızlı Rezervasyon
             </DialogTitle>
             <DialogDescription>
               {quickResRoom ? `Oda ${quickResRoom.room_number} - ${quickResRoom.room_type}` : 'Oda bilgisi'}
@@ -847,7 +847,7 @@ const RoomsTab = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-sm font-medium">Giris Tarihi *</Label>
+                  <Label className="text-sm font-medium">Giriş Tarihi *</Label>
                   <Input
                     type="date"
                     value={quickResForm.check_in}
@@ -857,7 +857,7 @@ const RoomsTab = ({
                   />
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Cikis Tarihi *</Label>
+                  <Label className="text-sm font-medium">Çıkış Tarihi *</Label>
                   <Input
                     type="date"
                     value={quickResForm.check_out}
@@ -980,7 +980,7 @@ function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssign
           data-testid="dirty-room-checkin-btn"
         >
           <SprayCan className="w-4 h-4 mr-1" />
-          Temizle ve Giris Yap
+          Temizle ve Giriş Yap
         </Button>
         <Button variant="outline" onClick={onCancel} data-testid="dirty-room-cancel-btn">
           Bekle

@@ -246,7 +246,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       backgroundColor: 'rgba(14,165,233,0.7)',
       borderRadius: 4,
     }, {
-      label: 'Rez. Sayisi',
+      label: 'Rez. Sayısı',
       data: roomTypePerf.map(r => r.count),
       backgroundColor: 'rgba(245,158,11,0.7)',
       borderRadius: 4,
@@ -532,7 +532,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                         </td>
                         <td className="py-2">%{r.occupancy}</td>
                         <td className="py-2">
-                          <Badge variant={r.confidence_level === 'Yuksek' ? 'default' : r.confidence_level === 'Orta' ? 'secondary' : 'outline'}
+                          <Badge variant={r.confidence_level === 'Yüksek' ? 'default' : r.confidence_level === 'Orta' ? 'secondary' : 'outline'}
                             className="text-xs">
                             {r.confidence_level}
                           </Badge>

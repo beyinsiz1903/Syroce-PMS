@@ -85,12 +85,12 @@ export const NewBookingDialog = ({
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-2xl">
       <DialogHeader>
-        <DialogTitle>Hizli Rezervasyon</DialogTitle>
+        <DialogTitle>Hızlı Rezervasyon</DialogTitle>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
         {selectedRoom ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="selected-room-info">
-            <div className="text-xs text-blue-600 font-medium mb-1">Secilen Oda</div>
+            <div className="text-xs text-blue-600 font-medium mb-1">Seçilen Oda</div>
             <div className="font-bold text-lg text-gray-900">
               Oda {selectedRoom.room_number}
               <span className="text-sm font-normal text-gray-500 ml-2">
@@ -300,7 +300,7 @@ export const NewBookingDialog = ({
           >
             <option value="confirmed">Onaylandi</option>
             <option value="guaranteed">Garantili</option>
-            <option value="checked_in">Giris Yapildi</option>
+            <option value="checked_in">Giriş Yapildi</option>
           </select>
         </div>
         <div className="flex space-x-2 pt-4">
@@ -787,12 +787,12 @@ export const FindRoomDialog = ({
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, room_type: e.target.value})}
               data-testid="find-room-type"
             >
-              <option value="all">Tum Tipler</option>
+              <option value="all">Tüm Tipler</option>
               {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <Label>Misafir Sayisi</Label>
+            <Label>Misafir Sayısı</Label>
             <Input
               type="number"
               min="1"

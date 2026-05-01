@@ -161,7 +161,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
             <div>
               <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Bagli Kanallar</h1>
               <p className="text-sm text-slate-500 mt-1">
-                Otelinizin bagli oldugu satis kanallari ve acenteler
+                Otelinizin bağlı oldugu satış kanalları ve acenteler
               </p>
             </div>
             <Button
@@ -192,7 +192,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
                     <div>
                       <p className="font-semibold text-green-800">Kanal Baglantisi Aktif</p>
                       <p className="text-sm text-green-600">
-                        {allConnectedChannels.length} satis kanali uzerinden rezervasyon alinabiliyor
+                        {allConnectedChannels.length} satış kanalı üzerinden rezervasyon alinabiliyor
                       </p>
                     </div>
                   </div>
@@ -202,7 +202,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
               {/* Connected Channels Grid */}
               <div>
                 <h2 className="text-base font-semibold text-slate-700 mb-3" data-testid="connected-channels-title">
-                  Bagli Satis Kanallari ({allConnectedChannels.length})
+                  Bagli Satış Kanallari ({allConnectedChannels.length})
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {allConnectedChannels.map((channel, i) => (
@@ -267,10 +267,10 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
             <Card className="border-slate-200">
               <CardContent className="p-8 text-center">
                 <WifiOff className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henüz bagli kanal yok</h3>
+                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henüz bağlı kanal yok</h3>
                 <p className="text-sm text-slate-500 max-w-md mx-auto">
-                  Satis kanallari (Booking.com, Expedia vb.) uzerinden rezervasyon alabilmek icin
-                  lutfen otel yoneticinize basvurun.
+                  Satış kanalları (Booking.com, Expedia vb.) üzerinden rezervasyon alabilmek için
+                  lütfen otel yöneticinize başvurun.
                 </p>
               </CardContent>
             </Card>
@@ -290,7 +290,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Kanal Yönetimi</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Kanal saglayicilarinizin baglanti durumunu yonetin ve yeni baglanti kurun
+              Kanal saglayicilarinizin bağlantı durumunu yönetin ve yeni bağlantı kurun
             </p>
           </div>
           <Button
@@ -311,16 +311,16 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
             <div className="flex gap-3">
               <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
               <div className="text-sm text-blue-800 space-y-1">
-                <p className="font-semibold">Yeni Otel Baglanti Rehberi</p>
+                <p className="font-semibold">Yeni Otel Bağlantı Rehberi</p>
                 <ol className="list-decimal ml-4 space-y-0.5 text-blue-700">
                   <li>Kanal saglayicinizdan (HotelRunner / Exely) API kimlik bilgilerini alin</li>
                   <li>Asagidaki ilgili saglayici kartindan "Baglan" butonuna tiklayin</li>
-                  <li>Kimlik bilgilerini girin — sistem otomatik olarak baglanti testi yapacak</li>
-                  <li>Baglanti kurulduktan sonra oda eslemelerini yapin</li>
+                  <li>Kimlik bilgilerini girin — sistem otomatik olarak bağlantı testi yapacak</li>
+                  <li>Bağlantı kurulduktan sonra oda eslemelerini yapin</li>
                   <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden baglanir</li>
                 </ol>
                 <p className="text-xs text-blue-600 mt-2">
-                  <strong>Not:</strong> Her otel için ayri token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafindan verilir.
+                  <strong>Not:</strong> Her otel için ayrı token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafından verilir.
                 </p>
               </div>
             </div>
@@ -382,7 +382,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
           <ProviderCard
             provider="exely"
             displayName="Exely"
-            description="SOAP API ile acente baglantilari ve musaitlik yonetimi"
+            description="SOAP API ile acente baglantilari ve musaitlik yönetimi"
             data={exely}
             loading={loading}
             testing={testing === 'exely'}
@@ -539,7 +539,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
                   placeholder="501694"
                   data-testid="exely-hotelcode-input"
                 />
-                <p className="text-xs text-slate-400 mt-1">Exely tarafindan verilen otel kodu</p>
+                <p className="text-xs text-slate-400 mt-1">Exely tarafından verilen otel kodu</p>
               </div>
               <div>
                 <Label htmlFor="exely-name">Otel Adi</Label>
@@ -674,7 +674,7 @@ function ProviderCard({
               {data.connected_at && (
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Baglanti: {new Date(data.connected_at).toLocaleDateString('tr-TR')}
+                  Bağlantı: {new Date(data.connected_at).toLocaleDateString('tr-TR')}
                 </div>
               )}
               {data.last_sync_at && (
@@ -718,7 +718,7 @@ function ProviderCard({
               >
                 <a href={detailsPath} data-testid={`${provider}-details-link`}>
                   <Settings2 className="w-3 h-3 mr-1.5" />
-                  Detayli Yönetim
+                  Detaylı Yönetim
                 </a>
               </Button>
               <Button

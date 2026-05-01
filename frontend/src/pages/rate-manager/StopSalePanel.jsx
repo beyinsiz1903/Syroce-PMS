@@ -175,9 +175,9 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       );
 
       if (stopSell) {
-        toast.success(`${data.saved} kayit için satis durduruldu`);
+        toast.success(`${data.saved} kayıt için satış durduruldu`);
       } else {
-        toast.success(`${data.saved} kayit için satis acildi`);
+        toast.success(`${data.saved} kayıt için satış acildi`);
       }
       if (data.all_pushed) {
         toast.success(isHotelRunner ? 'HotelRunner push basarili' : 'Exely push basarili');
@@ -310,7 +310,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2" data-testid="holiday-selector-title">
             <Palmtree className="w-4 h-4 text-indigo-600" />
-            Tatil Donemi Hizli Secim
+            Tatil Donemi Hızlı Seçim
           </CardTitle>
           <CardDescription className="text-xs">
             Tatil donemi seçin, tarihler otomatik dolsun. Isterseniz tarihleri manuel duzenleyebilirsiniz.
@@ -465,7 +465,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Calendar className="w-4 h-4" />
-              Islem & Zamanlayici
+              İşlem & Zamanlayici
             </CardTitle>
             <CardDescription className="text-xs">
               Satisi durdur/ac veya zamanlayici olarak kaydet
@@ -533,8 +533,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{isHotelRunner
-                ? 'Stop sale işlemleri HotelRunner uzerinden tum kanallara anlik yansitilir.'
-                : 'Stop sale işlemleri Exely uzerinden tum kanallara anlik yansitilir.'
+                ? 'Stop sale işlemleri HotelRunner üzerinden tum kanallara anlik yansitilir.'
+                : 'Stop sale işlemleri Exely üzerinden tum kanallara anlik yansitilir.'
               }</span>
             </div>
           </CardContent>
@@ -724,7 +724,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="text-center py-8 text-gray-400">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-emerald-300" />
               <p className="text-sm font-medium">Aktif stop sale yok</p>
-              <p className="text-xs mt-1">Tum odalar satis için acik</p>
+              <p className="text-xs mt-1">Tüm odalar satış için açık</p>
             </div>
           ) : (
             <div className="space-y-3" data-testid="active-stop-sales-list">

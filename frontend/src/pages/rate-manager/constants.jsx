@@ -13,8 +13,8 @@ export const UPDATE_FIELDS = [
   { key: 'rate', label: 'Fiyat' },
   { key: 'min_stay', label: 'Minimum konaklama' },
   { key: 'max_stay', label: 'Maksimum konaklama' },
-  { key: 'cta', label: 'CTA (Varisa Kapali)' },
-  { key: 'ctd', label: 'CTD (Cikisa Kapali)' },
+  { key: 'cta', label: 'CTA (Varisa Kapalı)' },
+  { key: 'ctd', label: 'CTD (Cikisa Kapalı)' },
   { key: 'stop_sell', label: 'Satisi durdur' },
 ];
 

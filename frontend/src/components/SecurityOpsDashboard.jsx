@@ -24,7 +24,7 @@ function SecretHealthCard({ data }) {
     <Card className="bg-zinc-900 border-zinc-800" data-testid="secrets-health-card">
       <CardHeader className="pb-2 pt-4 px-4">
         <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-          <Key className="h-3.5 w-3.5" /> SEC-001 Secrets Yonetimi
+          <Key className="h-3.5 w-3.5" /> SEC-001 Secrets Yönetimi
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
@@ -242,7 +242,7 @@ function RotationPlanCard({ data }) {
           )}
           {summary.recommended_rotations > 0 && (
             <span className="text-yellow-400">
-              Onerilen: <span className="font-mono">{summary.recommended_rotations}</span>
+              Önerilen: <span className="font-mono">{summary.recommended_rotations}</span>
             </span>
           )}
           <span className="text-emerald-400">
@@ -312,7 +312,7 @@ export function SecurityOpsDashboard() {
       if (cutRes.status === "fulfilled") setCutoverMetrics(cutRes.value.data);
       if (rotRes.status === "fulfilled") setRotationPlan(rotRes.value.data);
     } catch {
-      toast.error("Guvenlik verisi yüklenemedi");
+      toast.error("Güvenlik verisi yüklenemedi");
     } finally {
       setLoading(false);
     }

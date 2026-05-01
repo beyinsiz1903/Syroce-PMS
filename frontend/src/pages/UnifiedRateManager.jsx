@@ -289,7 +289,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
   const deleteAgencyOverride = async (agencyId) => {
     try {
       await axios.delete(`${UNIFIED_PREFIX}/agency-rates/${agencyId}`, { headers });
-      toast.success('Acente ozel fiyati silindi');
+      toast.success('Acente özel fiyati silindi');
       const { data } = await axios.get(`${UNIFIED_PREFIX}/agencies`, { headers });
       setAgencies(data?.agencies || []);
     } catch {
@@ -312,7 +312,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
         (enabledFields.has('min_stay') && rv.min_stay) || (enabledFields.has('max_stay') && rv.max_stay) ||
         (enabledFields.has('stop_sell') && rv.stop_sell) || (enabledFields.has('cta') && rv.cta) || (enabledFields.has('ctd') && rv.ctd);
     });
-    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi için deger girin'); return; }
+    if (!hasAnyValue) { toast.error('Lutfen en az bir oda tipi için değer girin'); return; }
 
     setSaving(true);
     try {
@@ -348,7 +348,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
       }
       fetchGrid();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Guncelleme hatasi');
+      toast.error(e.response?.data?.detail || 'Güncelleme hatası');
     }
     setSaving(false);
   };
@@ -403,7 +403,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
           <Building2 className="w-16 h-16 text-zinc-300" />
           <h2 className="text-xl font-semibold text-zinc-600">Aktif Kanal Saglayici Bulunamadi</h2>
           <p className="text-sm text-zinc-500 text-center max-w-md">
-            Fiyat ve musaitlik yonetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
+            Fiyat ve musaitlik yönetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
           </p>
         </div>
       </Layout>
@@ -417,10 +417,10 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-              Fiyat & Musaitlik Yonetimi
+              Fiyat & Musaitlik Yönetimi
             </h1>
             <p className="text-sm text-zinc-500 mt-1">
-              Tum kanallara ve acentelere tek noktadan fiyat, musaitlik ve kontenjan gonderin
+              Tüm kanallara ve acentelere tek noktadan fiyat, musaitlik ve kontenjan gönderin
             </p>
           </div>
           <div className="flex items-center gap-2" data-testid="unified-push-provider-badges">
@@ -581,7 +581,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
                                   {agency.name}
                                 </span>
                                 {agency.has_custom_rates && (
-                                  <span className="text-[10px] text-teal-600 font-medium">Ozel fiyat</span>
+                                  <span className="text-[10px] text-teal-600 font-medium">Özel fiyat</span>
                                 )}
                               </div>
                               <span className="text-[10px] text-zinc-400">%{agency.commission_rate}</span>
@@ -606,7 +606,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
                                     data-testid={`agency-override-btn-${agency.id}`}
                                   >
                                     <Settings2 className="w-3 h-3" />
-                                    {agency.has_custom_rates ? 'Ozel fiyat duzenle' : 'Ozel fiyat tanimla'}
+                                    {agency.has_custom_rates ? 'Özel fiyat düzenle' : 'Özel fiyat tanimla'}
                                   </button>
                                 )}
                               </div>
@@ -622,7 +622,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout }) => {
                           afise fiyat iletilecektir.
                           {agencies.some(a => selectedAgencies.has(a.id) && a.has_custom_rates) && (
                             <span className="block text-teal-600 mt-0.5">
-                              Ozel fiyat tanımlı acentelerde indirimli fiyat uygulanir.
+                              Özel fiyat tanımlı acentelerde indirimli fiyat uygulanir.
                             </span>
                           )}
                         </div>
@@ -671,7 +671,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
         onChange={e => setRoomType(e.target.value)}
         className="w-full text-[10px] h-6 rounded border border-zinc-200 px-1"
       >
-        <option value="*">Tum oda tipleri</option>
+        <option value="*">Tüm oda tipleri</option>
         {roomTypes.map(rt => (
           <option key={rt.code} value={rt.code}>{rt.name}</option>
         ))}

@@ -50,11 +50,11 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Giris</Label>
+              <Label>Giriş</Label>
               <Input type="date" value={newBooking.check_in} min={new Date().toISOString().split('T')[0]} onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})} required />
             </div>
             <div>
-              <Label>Cikis</Label>
+              <Label>Çıkış</Label>
               <Input type="date" value={newBooking.check_out} onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})} required />
             </div>
           </div>
@@ -73,7 +73,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
             </div>
           </div>
           <div>
-            <Label>Ozel Istekler</Label>
+            <Label>Özel Istekler</Label>
             <Input value={newBooking.special_requests || ''} onChange={(e) => setNewBooking({...newBooking, special_requests: e.target.value})} placeholder="Opsiyonel" />
           </div>
           <div className="flex justify-end gap-2">
@@ -117,7 +117,7 @@ export function MoveReasonDialog({ open, onOpenChange, moveData, moveReason, set
                 <option value="Operational">Operasyonel</option>
                 <option value="Other">Diger</option>
               </select>
-              {moveReason === 'Other' && <Input placeholder="Aciklama..." onChange={(e) => setMoveReason(e.target.value)} />}
+              {moveReason === 'Other' && <Input placeholder="Açıklama..." onChange={(e) => setMoveReason(e.target.value)} />}
             </div>
             <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
               <strong>Not:</strong> Bu işlem geçmişe kaydedilecektir.
@@ -144,11 +144,11 @@ export function FindRoomDialog({ open, onOpenChange, findRoomCriteria, setFindRo
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-4">
             <div>
-              <Label>Giris</Label>
+              <Label>Giriş</Label>
               <Input type="date" value={findRoomCriteria.check_in} onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_in: e.target.value})} />
             </div>
             <div>
-              <Label>Cikis</Label>
+              <Label>Çıkış</Label>
               <Input type="date" value={findRoomCriteria.check_out} onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})} />
             </div>
             <div>

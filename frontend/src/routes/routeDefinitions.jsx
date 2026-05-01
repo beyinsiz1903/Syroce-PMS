@@ -491,7 +491,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Security & Compliance ──────────────────────────
     { path: "/security-center", ...p(SecurityCenter) },
-    { path: "/app/guvenlik", ...p(SecurityDashboard) },
+    { path: "/app/güvenlik", ...p(SecurityDashboard) },
     { path: "/gdpr-compliance", ...p(GDPRCompliance) },
     { path: "/encryption-management", ...p(EncryptionManagementPage) },
     { path: "/central-office", ...p(CentralOfficeDashboard) },

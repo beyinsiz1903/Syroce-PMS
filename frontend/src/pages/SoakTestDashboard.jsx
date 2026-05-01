@@ -149,10 +149,10 @@ export default function SoakTestDashboard() {
         `/production/soak-test/start?duration=${duration}&users=${users}`,
         {}, { headers }
       );
-      toast.success(`Soak test baslatildi: ${users} kullanici, ${duration}`);
+      toast.success(`Soak test başlatıldı: ${users} kullanici, ${duration}`);
       setTimeout(fetchStatus, 3000);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Test baslatma hatasi");
+      toast.error(e.response?.data?.detail || "Test baslatma hatası");
     } finally {
       setStarting(false);
     }
@@ -165,7 +165,7 @@ export default function SoakTestDashboard() {
       toast.success("Soak test durduruldu");
       setTimeout(fetchStatus, 2000);
     } catch (e) {
-      toast.error("Test durdurma hatasi");
+      toast.error("Test durdurma hatası");
     } finally {
       setStopping(false);
     }
@@ -214,11 +214,11 @@ export default function SoakTestDashboard() {
           </h2>
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">Sure</label>
+              <label className="text-xs text-slate-500 block mb-1">Süre</label>
               <select data-testid="duration-select" value={duration} onChange={e => setDuration(e.target.value)}
                 className="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white"
                 disabled={isRunning}>
-                <option value="5m">5 dakika (hizli)</option>
+                <option value="5m">5 dakika (hızlı)</option>
                 <option value="15m">15 dakika</option>
                 <option value="30m">30 dakika</option>
                 <option value="1h">1 saat</option>
@@ -261,9 +261,9 @@ export default function SoakTestDashboard() {
               }`}>{fr.verdict}</span>
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              <MetricCard label="Sure" value={fr.duration_minutes?.toFixed(1)} unit="dk" icon={Clock}
+              <MetricCard label="Süre" value={fr.duration_minutes?.toFixed(1)} unit="dk" icon={Clock}
                 status="neutral" />
-              <MetricCard label="Toplam Istek" value={fr.total_requests?.toLocaleString()} unit="" icon={Activity}
+              <MetricCard label="Toplam İstek" value={fr.total_requests?.toLocaleString()} unit="" icon={Activity}
                 status="neutral" />
               <MetricCard label="Hata Orani" value={fr.error_rate_pct?.toFixed(2)} unit="%"
                 icon={AlertTriangle}
@@ -363,7 +363,7 @@ export default function SoakTestDashboard() {
                 <thead>
                   <tr className="border-b border-slate-700">
                     <th className="py-2 px-3 text-xs text-slate-500">Endpoint</th>
-                    <th className="py-2 px-3 text-xs text-slate-500 text-right">Istek</th>
+                    <th className="py-2 px-3 text-xs text-slate-500 text-right">İstek</th>
                     <th className="py-2 px-3 text-xs text-slate-500 text-right">Hata</th>
                     <th className="py-2 px-3 text-xs text-slate-500 text-right">Ort(ms)</th>
                     <th className="py-2 px-3 text-xs text-slate-500 text-right">p95(ms)</th>

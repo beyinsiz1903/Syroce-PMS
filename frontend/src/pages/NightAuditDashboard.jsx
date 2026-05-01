@@ -608,7 +608,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </label>
 
                 <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Aciklama (opsiyonel)</label>
+                  <label className="text-xs text-gray-600 mb-1 block">Açıklama (opsiyonel)</label>
                   <input
                     data-testid="reason-input"
                     type="text"

@@ -37,7 +37,7 @@ const SyncHealthTab = () => {
           <p className="text-sm text-slate-400">{health.connector_count} connector izleniyor</p>
           <div className="flex gap-4 mt-2 text-xs">
             <span className="text-red-400">{health.error_summary?.total || 0} hata</span>
-            <span className="text-amber-400">{health.error_summary?.sync_failed || 0} sync hatasi</span>
+            <span className="text-amber-400">{health.error_summary?.sync_failed || 0} sync hatası</span>
           </div>
         </div>
         <Button size="sm" variant="outline" className="ml-auto border-slate-700 text-slate-300" onClick={fetchHealth}>

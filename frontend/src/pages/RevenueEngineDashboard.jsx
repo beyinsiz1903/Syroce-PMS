@@ -119,7 +119,7 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
           </Card>
           <Card className="border-l-4 border-l-violet-500">
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">Doluluk (Bugun)</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Doluluk (Bugün)</p>
               <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-occupancy">{dashboard?.today_occupancy_pct || 0}%</p>
             </CardContent>
           </Card>
@@ -182,7 +182,7 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
 
             {/* Revenue & Occupancy Trend */}
             <Card>
-              <CardHeader><CardTitle className="text-base">Gunluk Gelir ve Doluluk</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Günlük Gelir ve Doluluk</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={dashboard?.daily_trend || []}>
@@ -214,10 +214,10 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
                         <th className="text-left py-2 px-3 text-slate-500 font-medium">Tarih</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Doluluk</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Carpan</th>
-                        <th className="text-right py-2 px-3 text-slate-500 font-medium">Onerilen ADR</th>
+                        <th className="text-right py-2 px-3 text-slate-500 font-medium">Önerilen ADR</th>
                         <th className="text-right py-2 px-3 text-slate-500 font-medium">Est. RevPAR</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Oneri</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Islem</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">İşlem</th>
                       </tr>
                     </thead>
                     <tbody>

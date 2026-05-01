@@ -145,12 +145,12 @@ export function HistoryTab({ history, roomMoves }) {
   ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
   const labels = {
-    payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente odemesi',
+    payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente ödemesi',
     charge_split: 'Masraf bolundu', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
-    early_checkin: 'Erken giris', late_checkout: 'Gec cikis', marked_noshow: 'No-show',
+    early_checkin: 'Erken giriş', late_checkout: 'Gec çıkış', marked_noshow: 'No-show',
     vip_status_changed: 'VIP durumu', deposit_recorded: 'Depozito', deposit_refunded: 'Depozito iade',
-    extra_charge_added: 'Ekstra ucret', daily_rates_updated: 'Fiyat guncelleme', guest_updated: 'Misafir guncelleme',
-    communication_logged: 'İletişim', group_checkin: 'Grup giris', group_checkout: 'Grup cikis',
+    extra_charge_added: 'Ekstra ücret', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',
+    communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
   };
   const colors = {
     payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-orange-100 text-orange-700',
@@ -162,7 +162,7 @@ export function HistoryTab({ history, roomMoves }) {
 
   return (
     <div data-testid="history-tab" className="space-y-3">
-      <div className="text-sm font-semibold text-gray-700">Islem Geçmişi</div>
+      <div className="text-sm font-semibold text-gray-700">İşlem Geçmişi</div>
       {allEvents.length === 0 ? <EmptyState icon={History} text="Henüz işlem geçmişi yok" /> : (
         <div className="relative">
           <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-200" />

@@ -28,7 +28,7 @@ export default function IntegrityTab(props) {
             />
             <StatCard
               icon={AlertTriangle}
-              label="Uyari"
+              label="Uyarı"
               value={integrityCheck.summary?.warnings || 0}
               color="text-amber-600"
             />

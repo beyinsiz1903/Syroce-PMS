@@ -41,15 +41,15 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       <div className="grid grid-cols-4 gap-3">
         <SummaryCard label="Toplam" value={summary?.total_amount} color="blue" />
         <SummaryCard label="Masraflar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
-        <SummaryCard label="Odemeler" value={summary?.total_payments} color="emerald" />
+        <SummaryCard label="Ödemeler" value={summary?.total_payments} color="emerald" />
         <SummaryCard label="Bakiye" value={summary?.balance} color={(summary?.balance || 0) > 0 ? 'red' : 'green'} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-ödeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
+        <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Odemesi</Button>
+        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplastir</Button>
+        <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
           <FileText className="w-3 h-3 mr-1" /> Fatura Olustur
         </Button>
@@ -64,7 +64,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
-              options={[['cash','Nakit'],['card','Kredi Karti'],['bank_transfer','Havale/EFT'],['online','Online']]} />
+              options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online']]} />
             <SelectField label={t('common.paymentType')} value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
               options={[['prepayment','On Ödeme'],['deposit','Depozito'],['interim','Ara Ödeme'],['final','Final']]} />
             <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
@@ -83,15 +83,15 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <SelectField label="Cari Hesap" value={cariForm.cari_account_id} onChange={v => setCariForm(p => ({ ...p, cari_account_id: v }))}
               options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
           </div>
-          <FormField label="Aciklama" value={cariForm.description} onChange={v => setCariForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
+          <FormField label="Açıklama" value={cariForm.description} onChange={v => setCariForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
         </FormPanel>
       )}
 
       {showAgency && (
-        <FormPanel color="purple" title="Acente Odemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
+        <FormPanel color="purple" title="Acente Ödemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount: parseFloat(agencyForm.amount) });
-            toast.success('Acente odemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });
+            toast.success('Acente ödemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
@@ -125,7 +125,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
-            <FormField label="Aciklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
+            <FormField label="Açıklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
           </div>
         </FormPanel>
       )}
@@ -134,7 +134,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <div className="border rounded-lg p-4 bg-indigo-50/50 space-y-3" data-testid="new-cari-form">
           <div className="text-sm font-semibold text-indigo-800">Yeni Cari Hesap Olustur</div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Hesap Adi *" value={newCariForm.name} onChange={v => setNewCariForm(p => ({ ...p, name: v }))} placeholder="Acente / Sirket adi" />
+            <FormField label="Hesap Adi *" value={newCariForm.name} onChange={v => setNewCariForm(p => ({ ...p, name: v }))} placeholder="Acente / Şirket adi" />
             <SelectField label="Hesap Tipi" value={newCariForm.account_type} onChange={v => setNewCariForm(p => ({ ...p, account_type: v }))}
               options={[['agency','Acente'],['corporate','Kurumsal'],['individual','Bireysel']]} />
             <FormField label="Vergi No" value={newCariForm.tax_id} onChange={v => setNewCariForm(p => ({ ...p, tax_id: v }))} placeholder="Vergi / TC No" />
@@ -180,12 +180,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
             <FormField label="Tutar (TL)" type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
-          <FormField label="Aciklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma aciklamasi" />
+          <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma aciklamasi" />
         </FormPanel>
       )}
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">Islem Geçmişi</div>
+        <div className="text-xs font-semibold text-gray-500 uppercase">İşlem Geçmişi</div>
         {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
           allItems.map((item, i) => (
             <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>

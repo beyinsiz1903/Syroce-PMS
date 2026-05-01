@@ -118,7 +118,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       toast.success('Esleme silindi');
       fetchAll();
       fetchMappingStatus();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatası'); }
   };
 
   const handleConnect = async () => {
@@ -138,7 +138,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       fetchConnection();
       fetchAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Baglanti hatasi');
+      toast.error(e.response?.data?.detail || 'Bağlantı hatası');
     } finally { setLoading(false); }
   };
 
@@ -154,9 +154,9 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const { data } = await axios.post(`/channel-manager/exely/test`, {}, { headers });
-      if (data.connected) toast.success(`Baglanti basarili (${data.duration_ms}ms)`);
-      else toast.error(`Baglanti hatasi: ${data.error}`);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Test hatasi'); }
+      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);
+      else toast.error(`Bağlantı hatası: ${data.error}`);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Test hatası'); }
     finally { setLoading(false); }
   };
 
@@ -167,7 +167,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
       toast.success(`${(data.room_types || []).length} oda tipi, ${(data.rate_plans || []).length} fiyat plani kesfedildi`);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Kesfetme hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Kesfetme hatası'); }
     finally { setLoading(false); }
   };
 
@@ -177,7 +177,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, { headers });
       toast.success(data.message);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Pull hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Pull hatası'); }
     finally { setLoading(false); }
   };
 
@@ -186,7 +186,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.post(`/channel-manager/exely/reservations/${resId}/import`, {}, { headers });
       toast.success(`${data.message} - Oda: ${data.room_number}`);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Import hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Import hatası'); }
   };
 
   const isConnected = connection?.connected;
@@ -210,7 +210,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-6 w-full max-w-3xl">
-            <TabsTrigger value="connection" data-testid="exely-tab-connection"><Link2 className="w-4 h-4 mr-1" /> Baglanti</TabsTrigger>
+            <TabsTrigger value="connection" data-testid="exely-tab-connection"><Link2 className="w-4 h-4 mr-1" /> Bağlantı</TabsTrigger>
             <TabsTrigger value="rooms" data-testid="exely-tab-rooms" disabled={!isConnected}><Building2 className="w-4 h-4 mr-1" /> Odalar</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="exely-tab-reservations" disabled={!isConnected}><CalendarCheck className="w-4 h-4 mr-1" /> Rezervasyonlar</TabsTrigger>
             <TabsTrigger value="test-booking" data-testid="exely-tab-test-booking" disabled={!isConnected}><FlaskConical className="w-4 h-4 mr-1" /> Test Booking</TabsTrigger>
@@ -290,14 +290,14 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> Exely Baglantisi Aktif</CardTitle>
                     <CardDescription>
                       {connection.connection?.property_name || 'Exely'} &middot; Otel Kodu: {connection.connection?.hotel_code || '-'} &middot;
-                      Baglanti: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
+                      Bağlantı: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-3 items-center">
                       <Button data-testid="exely-test-btn" variant="outline" onClick={handleTest} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                        Baglanti Test
+                        Bağlantı Test
                       </Button>
                       <Button data-testid="exely-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
@@ -451,12 +451,12 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <th className="pb-2 pr-4">Rez. ID</th>
                           <th className="pb-2 pr-4">Misafir</th>
                           <th className="pb-2 pr-4">Kanal</th>
-                          <th className="pb-2 pr-4">Giris</th>
-                          <th className="pb-2 pr-4">Cikis</th>
+                          <th className="pb-2 pr-4">Giriş</th>
+                          <th className="pb-2 pr-4">Çıkış</th>
                           <th className="pb-2 pr-4">Tutar</th>
                           <th className="pb-2 pr-4">Durum</th>
                           <th className="pb-2">PMS</th>
-                          <th className="pb-2">Islem</th>
+                          <th className="pb-2">İşlem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -577,7 +577,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <th className="pb-2 pr-4">Exely Rate Plan</th>
                           <th className="pb-2 pr-4">Exely Oda Adi</th>
                           <th className="pb-2 pr-4">Sync</th>
-                          <th className="pb-2 text-right">Islem</th>
+                          <th className="pb-2 text-right">İşlem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -633,7 +633,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                   <div className="space-y-4 mt-2">
                     {autoMapSuggestions.suggestions.length > 0 ? (
                       <>
-                        <p className="text-sm text-slate-600">Isim benzerligine gore eslesme onerileri:</p>
+                        <p className="text-sm text-slate-600">Isim benzerligine göre eslesme onerileri:</p>
                         <div className="space-y-2">
                           {autoMapSuggestions.suggestions.map((s, i) => (
                             <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`auto-map-suggestion-${i}`}>
@@ -656,7 +656,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                         <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                          Tum Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                          Tüm Onerileri Uygula ({autoMapSuggestions.suggestions.length})
                         </Button>
                       </>
                     ) : (
@@ -727,7 +727,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           )}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
-                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayit</p>
+                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayıt</p>
                           </div>
                         </div>
                         <div className="text-right">

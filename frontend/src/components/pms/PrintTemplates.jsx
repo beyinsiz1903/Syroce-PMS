@@ -41,7 +41,7 @@ export function printRegistrationCard(booking, guest, room, hotelArg) {
   const hotel = normalizeHotelInfo(hotelArg);
   const w = window.open('', '_blank');
   if (!w) return;
-  w.document.write(`<html><head><title>Kayıt Karti - ${escapeHtml(guest?.name || '')}</title>
+  w.document.write(`<html><head><title>Kayıt Kartı - ${escapeHtml(guest?.name || '')}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:12px;color:#333}
     h1{font-size:16px;text-align:center;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:16px}
@@ -72,15 +72,15 @@ export function printRegistrationCard(booking, guest, room, hotelArg) {
     <div class="field"><div class="label">E-posta / Email</div><div class="value">${escapeHtml(guest?.email || '')}</div></div>
     <div class="field"><div class="label">Telefon / Phone</div><div class="value">${escapeHtml(guest?.phone || '')}</div></div>
     <div class="field"><div class="label">Adres / Address</div><div class="value">${escapeHtml(guest?.address || '')}</div></div>
-    <div class="field"><div class="label">Sirket / Company</div><div class="value">${escapeHtml(booking?.company_name || '')}</div></div>
+    <div class="field"><div class="label">Şirket / Company</div><div class="value">${escapeHtml(booking?.company_name || '')}</div></div>
   </div>
   <div class="section">
     <div class="section-title">Konaklama Bilgileri / Stay Details</div>
     <div class="grid">
       <div class="field"><div class="label">Oda No / Room No</div><div class="value">${escapeHtml(booking?.room_number || room?.room_number || '')}</div></div>
       <div class="field"><div class="label">Oda Tipi / Room Type</div><div class="value">${escapeHtml(room?.room_type || booking?.room_type || '')}</div></div>
-      <div class="field"><div class="label">Giris / Check-in</div><div class="value">${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div></div>
-      <div class="field"><div class="label">Cikis / Check-out</div><div class="value">${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div></div>
+      <div class="field"><div class="label">Giriş / Check-in</div><div class="value">${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div></div>
+      <div class="field"><div class="label">Çıkış / Check-out</div><div class="value">${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div></div>
       <div class="field"><div class="label">Yetiskin / Adults</div><div class="value">${booking?.adults || 1}</div></div>
       <div class="field"><div class="label">Cocuk / Children</div><div class="value">${booking?.children || 0}</div></div>
       <div class="field"><div class="label">Pansiyon / Board</div><div class="value">${escapeHtml(booking?.board_type || 'Oda+Kahvalti')}</div></div>
@@ -88,11 +88,11 @@ export function printRegistrationCard(booking, guest, room, hotelArg) {
     </div>
   </div>
   <div class="section">
-    <div class="section-title">Ozel Istekler / Special Requests</div>
+    <div class="section-title">Özel Istekler / Special Requests</div>
     <div class="field"><div class="value" style="min-height:40px">${escapeHtml(booking?.special_requests || guest?.notes || '')}</div></div>
   </div>
   <div class="kvkk">
-    KVKK AYDINLATMA METNI: Kisisel verileriniz, 6698 sayili Kisisel Verilerin Korunmasi Kanunu kapsaminda, konaklama hizmetlerinin sunulmasi, yasal yukumluluklerin yerine getirilmesi ve guvenlik amaciyla islenmektedir. Detayli bilgi için resepsiyondan KVKK aydinlatma metnini talep edebilirsiniz.
+    KVKK AYDINLATMA METNI: Kisisel verileriniz, 6698 sayili Kisisel Verilerin Korunmasi Kanunu kapsaminda, konaklama hizmetlerinin sunulmasi, yasal yukumluluklerin yerine getirilmesi ve güvenlik amaciyla islenmektedir. Detaylı bilgi için resepsiyondan KVKK aydinlatma metnini talep edebilirsiniz.
     <br/><br/>
     PERSONAL DATA NOTICE: Your personal data is processed in accordance with applicable data protection regulations for the purpose of providing accommodation services, fulfilling legal obligations, and security purposes.
   </div>
@@ -148,13 +148,13 @@ export function printFolio(folioData, hotelArg) {
     <div class="info-item"><span class="info-label">Tarih:</span><span class="info-value">${new Date().toLocaleDateString('tr-TR')}</span></div>
     <div class="info-item"><span class="info-label">Misafir:</span><span class="info-value">${escapeHtml(folio?.guest_name || '')}</span></div>
     <div class="info-item"><span class="info-label">Oda No:</span><span class="info-value">${escapeHtml(folio?.room_number || '')}</span></div>
-    <div class="info-item"><span class="info-label">Giris:</span><span class="info-value">${escapeHtml(folio?.check_in?.toString().slice(0, 10) || '')}</span></div>
-    <div class="info-item"><span class="info-label">Cikis:</span><span class="info-value">${escapeHtml(folio?.check_out?.toString().slice(0, 10) || '')}</span></div>
+    <div class="info-item"><span class="info-label">Giriş:</span><span class="info-value">${escapeHtml(folio?.check_in?.toString().slice(0, 10) || '')}</span></div>
+    <div class="info-item"><span class="info-label">Çıkış:</span><span class="info-value">${escapeHtml(folio?.check_out?.toString().slice(0, 10) || '')}</span></div>
     <div class="info-item"><span class="info-label">Durum:</span><span class="info-value">${escapeHtml(folio?.status || '')}</span></div>
     <div class="info-item"><span class="info-label">Tip:</span><span class="info-value">${escapeHtml(folio?.folio_type || '')}</span></div>
   </div>
   <table>
-    <thead><tr><th>Tarih</th><th>Aciklama</th><th>Kategori</th><th style="text-align:right">Borc</th><th style="text-align:right">Alacak</th><th style="text-align:right">Bakiye</th></tr></thead>
+    <thead><tr><th>Tarih</th><th>Açıklama</th><th>Kategori</th><th style="text-align:right">Borc</th><th style="text-align:right">Alacak</th><th style="text-align:right">Bakiye</th></tr></thead>
     <tbody>
     ${timeline.map(e => `
       <tr class="${e.voided ? 'voided' : ''}">
@@ -175,7 +175,7 @@ export function printFolio(folioData, hotelArg) {
   </div>
   <div class="footer">
     <p>Bu belge ${new Date().toLocaleString('tr-TR')} tarihinde olusturulmustur.</p>
-    <p>${escapeHtml(hotel.name)} - Tum haklar saklidir</p>
+    <p>${escapeHtml(hotel.name)} - Tüm haklar saklidir</p>
   </div>
   </body></html>`);
   w.document.close();
@@ -238,13 +238,13 @@ export function printProformaInvoice(booking, guest, charges, hotelArg) {
     <div class="party">
       <div class="party-title">Konaklama Bilgileri</div>
       <div>Oda: ${escapeHtml(booking?.room_number || '')} (${escapeHtml(booking?.room_type || '')})</div>
-      <div>Giris: ${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div>
-      <div>Cikis: ${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div>
+      <div>Giriş: ${escapeHtml(booking?.check_in?.toString().slice(0, 10) || '')}</div>
+      <div>Çıkış: ${escapeHtml(booking?.check_out?.toString().slice(0, 10) || '')}</div>
       <div>Misafir: ${booking?.adults || 1} Yetiskin, ${booking?.children || 0} Cocuk</div>
     </div>
   </div>
   <table>
-    <thead><tr><th>#</th><th>Aciklama</th><th style="text-align:right">Birim Fiyat</th><th style="text-align:center">Adet</th><th style="text-align:right">Tutar</th></tr></thead>
+    <thead><tr><th>#</th><th>Açıklama</th><th style="text-align:right">Birim Fiyat</th><th style="text-align:center">Adet</th><th style="text-align:right">Tutar</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>Konaklama Ucreti</td><td style="text-align:right">${(totalAmount).toFixed(2)} TL</td><td style="text-align:center">1</td><td style="text-align:right">${totalAmount.toFixed(2)} TL</td></tr>
     </tbody>
@@ -256,7 +256,7 @@ export function printProformaInvoice(booking, guest, charges, hotelArg) {
   </div>
   <div style="clear:both"></div>
   <div class="note">
-    <strong>Not:</strong> Bu bir proforma faturadir; resmi fatura yerine gecmez. Odeme yapildiginda resmi e-Fatura/e-Arsiv duzenlenecektir.
+    <strong>Not:</strong> Bu bir proforma faturadir; resmi fatura yerine gecmez. Ödeme yapildiginda resmi e-Fatura/e-Arsiv duzenlenecektir.
   </div>
   </body></html>`);
   w.document.close();

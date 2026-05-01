@@ -130,14 +130,14 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       fetchConnection();
       fetchAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Baglanti hatasi');
+      toast.error(e.response?.data?.detail || 'Bağlantı hatası');
     } finally { setLoading(false); }
   };
 
   const handleDisconnect = async () => {
     try {
       await axios.delete(`/channel-manager/hotelrunner/disconnect`, { headers });
-      toast.success('Baglanti kesildi');
+      toast.success('Bağlantı kesildi');
       setConnection({ connected: false });
     } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
   };
@@ -146,9 +146,9 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const { data } = await axios.post(`/channel-manager/hotelrunner/test`, {}, { headers });
-      if (data.connected) toast.success(`Baglanti basarili (${data.duration_ms}ms)`);
-      else toast.error(`Baglanti hatasi: ${data.error}`);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Test hatasi'); }
+      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);
+      else toast.error(`Bağlantı hatası: ${data.error}`);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Test hatası'); }
     finally { setLoading(false); }
   };
 
@@ -157,7 +157,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.get(`/channel-manager/hotelrunner/rooms`, { headers });
       setRooms(data.rooms || []);
-      toast.success(`${data.count} oda/fiyat plani yuklendi`);
+      toast.success(`${data.count} oda/fiyat plani yüklendi`);
     } catch (e) { toast.error(e.response?.data?.detail || 'Oda listesi alinamadi'); }
     finally { setLoading(false); }
   };
@@ -168,7 +168,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.post(`/channel-manager/hotelrunner/reservations/sync`, {}, { headers });
       toast.success(data.message);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Senkronizasyon hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Senkronizasyon hatası'); }
     finally { setLoading(false); }
   };
 
@@ -193,7 +193,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       }, { headers });
       toast.success(`${room.name} → ${pmsType} eslendi`);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme hatası'); }
     finally { setSavingMapping(null); }
   };
 
@@ -202,7 +202,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       await axios.delete(`/channel-manager/hotelrunner/room-mappings/${mappingId}`, { headers });
       toast.success('Esleme silindi');
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatası'); }
   };
 
   const handleSaveAllMappings = async () => {
@@ -231,7 +231,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.post(`/channel-manager/hotelrunner/room-mappings/bulk`, payload, { headers });
       toast.success(data.message);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Toplu esleme hatasi'); }
+    } catch (e) { toast.error(e.response?.data?.detail || 'Toplu esleme hatası'); }
     finally { setLoading(false); }
   };
 
@@ -290,7 +290,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-5 w-full max-w-2xl">
-            <TabsTrigger value="connection" data-testid="tab-connection"><Link2 className="w-4 h-4 mr-1" /> Baglanti</TabsTrigger>
+            <TabsTrigger value="connection" data-testid="tab-connection"><Link2 className="w-4 h-4 mr-1" /> Bağlantı</TabsTrigger>
             <TabsTrigger value="rooms" data-testid="tab-rooms" disabled={!isConnected}><Building2 className="w-4 h-4 mr-1" /> Odalar</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="tab-reservations" disabled={!isConnected}><CalendarCheck className="w-4 h-4 mr-1" /> Rezervasyonlar</TabsTrigger>
             <TabsTrigger value="mappings" data-testid="tab-mappings" disabled={!isConnected}><ArrowDownUp className="w-4 h-4 mr-1" /> Eslemeler</TabsTrigger>
@@ -350,17 +350,17 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               <div className="space-y-4">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> Baglanti Aktif</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> Bağlantı Aktif</CardTitle>
                     <CardDescription>
                       {connection.connection?.property_name || 'HotelRunner'} &middot;
-                      Baglanti: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
+                      Bağlantı: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex gap-3">
                       <Button data-testid="hr-test-btn" variant="outline" onClick={handleTestConnection} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                        Baglanti Test
+                        Bağlantı Test
                       </Button>
                       <Button data-testid="hr-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
@@ -465,8 +465,8 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                           <th className="pb-2 pr-4">HR No</th>
                           <th className="pb-2 pr-4">Misafir</th>
                           <th className="pb-2 pr-4">Kanal</th>
-                          <th className="pb-2 pr-4">Giris</th>
-                          <th className="pb-2 pr-4">Cikis</th>
+                          <th className="pb-2 pr-4">Giriş</th>
+                          <th className="pb-2 pr-4">Çıkış</th>
                           <th className="pb-2 pr-4">Tutar</th>
                           <th className="pb-2 pr-4">Durum</th>
                           <th className="pb-2">PMS</th>
@@ -548,7 +548,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                       disabled={loading}
                     >
                       {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                      Tum Eslemeleri Kaydet
+                      Tüm Eslemeleri Kaydet
                     </Button>
                   )}
                 </div>
@@ -611,7 +611,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                             <th className="pb-2 pr-2 text-center">Musaitlik</th>
                             <th className="pb-2 pr-2 text-center">Fiyat</th>
                             <th className="pb-2 pr-2 text-center">Kisitlama</th>
-                            <th className="pb-2 text-center">Islem</th>
+                            <th className="pb-2 text-center">İşlem</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -719,7 +719,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                       )}
                       {mappings.length > 0 && mappings.length >= rooms.length && (
                         <Badge className="bg-emerald-600">
-                          <CheckCircle className="w-3 h-3 mr-1" /> Tum odalar eslendi
+                          <CheckCircle className="w-3 h-3 mr-1" /> Tüm odalar eslendi
                         </Badge>
                       )}
                     </div>
@@ -738,7 +738,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                   <div className="space-y-4 mt-2">
                     {autoMapSuggestions.suggestions.length > 0 ? (
                       <>
-                        <p className="text-sm text-slate-600">Isim benzerligine gore eslesme onerileri:</p>
+                        <p className="text-sm text-slate-600">Isim benzerligine göre eslesme onerileri:</p>
                         <div className="space-y-2">
                           {autoMapSuggestions.suggestions.map((s, i) => (
                             <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`hr-auto-map-suggestion-${i}`}>
@@ -761,7 +761,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                         <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="hr-auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                          Tum Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                          Tüm Onerileri Uygula ({autoMapSuggestions.suggestions.length})
                         </Button>
                       </>
                     ) : (
@@ -829,7 +829,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                           )}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
-                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayit</p>
+                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayıt</p>
                           </div>
                         </div>
                         <div className="text-right">

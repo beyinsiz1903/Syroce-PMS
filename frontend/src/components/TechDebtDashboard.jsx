@@ -60,7 +60,7 @@ function CategoryCard({ cat }) {
       {/* Progress bar */}
       <div className="px-5 pb-3">
         <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-          <span>Haftalik hedef: {cat.weekly_target} test/hafta</span>
+          <span>Haftalık hedef: {cat.weekly_target} test/hafta</span>
           <span>{cat.weeks_to_clear} hafta kaldi</span>
         </div>
         <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -170,7 +170,7 @@ export function TechDebtDashboard() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-2">
               <Target className="h-4 w-4 text-blue-400" />
-              <span className="text-xs text-zinc-500">Haftalik Hedef</span>
+              <span className="text-xs text-zinc-500">Haftalık Hedef</span>
             </div>
             <div className="text-2xl font-bold font-mono text-zinc-100" data-testid="debt-weekly-target">
               {data.total_weekly_target}
@@ -228,7 +228,7 @@ export function TechDebtDashboard() {
             />
           </div>
           <div className="text-[10px] text-zinc-600 mt-2 font-mono">
-            Hedef: Haftalik {data.total_weekly_target} test cozumu ile {data.estimated_weeks_to_zero} hafta icinde sifir
+            Hedef: Haftalık {data.total_weekly_target} test cozumu ile {data.estimated_weeks_to_zero} hafta icinde sifir
           </div>
         </CardContent>
       </Card>
@@ -236,7 +236,7 @@ export function TechDebtDashboard() {
       {/* Category breakdown */}
       <div>
         <h2 className="text-xs text-zinc-500 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
-          <Bug className="h-3.5 w-3.5" /> Kategori Bazli Dagilim
+          <Bug className="h-3.5 w-3.5" /> Kategori Bazli Dağılım
         </h2>
         <div className="space-y-3" data-testid="debt-categories">
           {data.categories.map((cat) => (

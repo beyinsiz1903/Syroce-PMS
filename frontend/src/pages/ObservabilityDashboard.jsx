@@ -113,7 +113,7 @@ export default function ObservabilityDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="metrics-overview">
         <Card className="bg-zinc-900/60 border-zinc-800">
           <CardContent className="p-4">
-            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><Gauge className="w-3 h-3" /> Istek (1h)</div>
+            <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><Gauge className="w-3 h-3" /> İstek (1h)</div>
             <div className="text-2xl font-bold text-zinc-100 mt-1">{traces?.total_requests || 0}</div>
             <div className="text-xs text-zinc-500">Aktif trace: {traces?.active_traces || 0}</div>
           </CardContent>

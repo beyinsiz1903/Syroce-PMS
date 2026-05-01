@@ -56,7 +56,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
   const statusColor = summary?.health_status === 'healthy' ? 'text-emerald-600' : summary?.health_status === 'warning' ? 'text-amber-600' : 'text-red-600';
   const statusBg = summary?.health_status === 'healthy' ? 'bg-emerald-50 border-emerald-200' : summary?.health_status === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
   const statusIcon = summary?.health_status === 'healthy' ? <CheckCircle className="w-5 h-5" /> : summary?.health_status === 'warning' ? <AlertTriangle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />;
-  const statusLabel = summary?.health_status === 'healthy' ? 'Saglikli' : summary?.health_status === 'warning' ? 'Uyari' : 'Kritik';
+  const statusLabel = summary?.health_status === 'healthy' ? 'Saglikli' : summary?.health_status === 'warning' ? 'Uyarı' : 'Kritik';
 
   const maxTrend = Math.max(...trend.map(t => t.total), 1);
 
@@ -155,7 +155,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
           <TabsContent value="overview" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Gunluk Hata Trendi (Son 30 Gun)</CardTitle>
+                <CardTitle className="text-base">Günlük Hata Trendi (Son 30 Gun)</CardTitle>
               </CardHeader>
               <CardContent>
                 {trend.length > 0 ? (
