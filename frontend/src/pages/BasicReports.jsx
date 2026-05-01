@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
@@ -64,10 +64,12 @@ const REPORT_MENU = [
   { id: 'fnb', label: 'F&B Raporu', icon: Utensils, desc: 'Yiyecek & içecek' },
 ];
 
+const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official']);
+
 const BasicReports = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSection = searchParams.get('section') || 'overview';
@@ -92,7 +94,16 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const [officialError, setOfficialError] = useState(null);
   const [officialSearch, setOfficialSearch] = useState('');
 
+  const needsDashboard = useMemo(
+    () => !SELF_CONTAINED_SECTIONS.has(activeSection),
+    [activeSection]
+  );
+
+  const inFlightRef = useRef(false);
+
   const fetchData = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -102,10 +113,22 @@ const BasicReports = ({ user, tenant, onLogout }) => {
       });
       if (!res.ok) throw new Error('Veri yüklenemedi');
       setData(await res.json());
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      inFlightRef.current = false;
+    }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Only fetch the heavy dashboard payload when the active section actually
+  // needs it. Self-contained sections (expenses, official) load their own
+  // data and shouldn't block on the dashboard aggregate.
+  useEffect(() => {
+    if (needsDashboard && data === null && !error) {
+      fetchData();
+    }
+  }, [needsDashboard, data, error, fetchData]);
 
   const fetchOfficialGuests = useCallback(async (dateParam) => {
     setOfficialLoading(true);
@@ -164,7 +187,9 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     setTimeout(() => w.print(), 300);
   };
 
-  if (loading) return (
+  const isInitialDashboardLoad = needsDashboard && data === null && !error;
+
+  if ((loading || isInitialDashboardLoad) && needsDashboard) return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -175,7 +200,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     </Layout>
   );
 
-  if (error) return (
+  if (error && needsDashboard) return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
       <div className="p-6">
         <Card className="border-red-200 bg-red-50">
