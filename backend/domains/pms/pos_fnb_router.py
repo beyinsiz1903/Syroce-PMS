@@ -26,7 +26,6 @@ from modules.pms_core.role_permission_service import require_module, require_op 
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
-
 try:
     from websocket_server import broadcast_kitchen_orders
 except Exception:  # pragma: no cover

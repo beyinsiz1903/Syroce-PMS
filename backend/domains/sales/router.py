@@ -102,10 +102,7 @@ async def get_sales_funnel(
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
     rows = await db.mice_opportunities.aggregate(pipeline).to_list(50)
-    funnel = {s: 0 for s in [
-        "new", "contacted", "qualified", "proposal_sent",
-        "negotiating", "won", "lost",
-    ]}
+    funnel = dict.fromkeys(["new", "contacted", "qualified", "proposal_sent", "negotiating", "won", "lost"], 0)
     for r in rows:
         s = r.get("_id")
         if s in funnel:

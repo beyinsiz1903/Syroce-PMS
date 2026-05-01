@@ -1,0 +1,76 @@
+0s
+Run cd backend
+F401 [*] `logging` imported but unused
+ --> domains/hr/router.py:7:8
+  |
+5 | """
+6 | import base64
+7 | import logging
+  |        ^^^^^^^
+8 | import uuid
+9 | from datetime import UTC, date, datetime, timedelta
+  |
+help: Remove unused import: `logging`
+
+F401 [*] `modules.pms_core.role_permission_service.require_module` imported but unused
+  --> domains/hr/router.py:17:72
+   |
+15 | from core.security import get_current_user
+16 | from models.schemas import User
+17 | from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+   |                                                                        ^^^^^^^^^^^^^^^^^^
+18 | from modules.pms_core.role_permission_service import require_op  # v96 DW
+   |
+help: Remove unused import: `modules.pms_core.role_permission_service.require_module`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> domains/pms/pos_fnb_router.py:5:1
+   |
+ 3 |   Extracted from legacy_routes.py — Phase B Domain Separation
+ 4 |   """
+ 5 | / import logging
+ 6 | | import uuid
+ 7 | | from datetime import UTC, datetime, timedelta
+ 8 | | from typing import Any
+ 9 | |
+10 | | from fastapi import APIRouter, Depends, HTTPException
+11 | | from fastapi.security import HTTPAuthorizationCredentials
+12 | | from pydantic import BaseModel, ConfigDict, Field
+13 | |
+14 | | from core.database import db
+15 | | from core.helpers import (
+16 | |     require_feature,
+17 | | )
+18 | | from core.security import (
+19 | |     _is_super_admin,
+20 | |     get_current_user,
+21 | |     security,
+22 | | )
+23 | | from models.enums import ChargeCategory
+24 | | from models.schemas import CreatePOSTransactionRequest, FolioCharge, Order, OrderCreate, User
+25 | | from modules.pms_core.role_permission_service import require_module, require_op  # v89 DW
+26 | | from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+27 | | from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+   | |_________________________________________________________________________________________^
+   |
+help: Organize imports
+
+C420 [*] Unnecessary dict comprehension for iterable; use `dict.fromkeys` instead
+   --> domains/sales/router.py:105:14
+    |
+103 |       ]
+104 |       rows = await db.mice_opportunities.aggregate(pipeline).to_list(50)
+105 |       funnel = {s: 0 for s in [
+    |  ______________^
+106 | |         "new", "contacted", "qualified", "proposal_sent",
+107 | |         "negotiating", "won", "lost",
+108 | |     ]}
+    | |______^
+109 |       for r in rows:
+110 |           s = r.get("_id")
+    |
+help: Replace with `dict.fromkeys(iterable)`)
+
+Found 4 errors.
+[*] 4 fixable with the `--fix` option.
+Error: Process completed with exit code 1.

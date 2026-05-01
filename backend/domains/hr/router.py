@@ -4,7 +4,6 @@ Domain Router: HR Operations
 HR complete suite, F&B complete suite for department managers.
 """
 import base64
-import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -14,7 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])
