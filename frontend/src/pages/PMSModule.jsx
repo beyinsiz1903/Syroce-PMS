@@ -829,8 +829,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             booking={selectedBookingDetail}
             guests={guests}
             rooms={rooms}
+            companies={companies}
             onCheckIn={handleCheckIn}
             onCheckOut={handleCheckOut}
+            onViewFolio={loadBookingFolios}
+            onBookingUpdated={loadData}
           />
         )}
 

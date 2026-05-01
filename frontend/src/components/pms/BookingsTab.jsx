@@ -14,7 +14,6 @@ const BookingsTab = ({
   setOpenDialog,
   setSelectedBookingDetail,
   loadBookingFolios,
-  toast,
   isLite,
   roomsCount,
   activeTab,
@@ -95,7 +94,6 @@ const BookingsTab = ({
           onSelectBooking={(booking) => {
             setSelectedBookingDetail(booking);
             setOpenDialog('bookingDetail');
-            toast.info(tc('openingDetails'));
           }}
           height={600}
         />
