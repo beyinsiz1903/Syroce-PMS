@@ -3,12 +3,14 @@ Domain Router: RMS Revenue
 
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.cache import cached
 from core.database import db
 from core.security import get_current_user
 from models.schemas import (
@@ -176,10 +178,18 @@ async def update_rms_settings(
             "settings.rms_demo_mode_updated_by": current_user.email,
         }},
     )
+    # Toggle değişti — dashboard cache'ini hemen düşür ki eski demo değerleri görünmesin.
+    try:
+        from cache_manager import cache as _cache  # noqa: WPS433
+        if _cache is not None:
+            _cache.safe_invalidate(current_user.tenant_id, "rms_dashboard_kpis")
+    except Exception:
+        pass
     return {"rms_demo_mode": bool(payload.rms_demo_mode)}
 
 
 @router.get("/rms/dashboard-kpis")
+@cached(ttl=300, key_prefix="rms_dashboard_kpis")  # 5 min cache; period+tenant scoped
 async def get_rms_dashboard_kpis(
     period: str = "30",
     current_user: User = Depends(get_current_user)
@@ -194,31 +204,58 @@ async def get_rms_dashboard_kpis(
     tid = current_user.tenant_id
     demo_mode = await is_rms_demo_mode(tid)
 
-    real_total_rooms = await db.rooms.count_documents({"tenant_id": tid})
+    # Daily-trend window: up to last 30 days within the requested period.
+    trend_days = min(days, 30)
+    trend_window_start = (now - timedelta(days=trend_days)).date().isoformat()
+    trend_window_end_exclusive = (now + timedelta(days=1)).date().isoformat()
+
+    seven_days_ago = (now - timedelta(days=7)).isoformat()
+    booking_statuses = ["confirmed", "guaranteed", "checked_in", "checked_out"]
+
+    # Run independent reads in parallel — fan-out replaces serial 5-call chain.
+    (
+        real_total_rooms,
+        current_bookings,
+        prev_bookings,
+        cancelled,
+        pickup_count,
+        overlap_bookings,
+        data_quality,
+    ) = await asyncio.gather(
+        db.rooms.count_documents({"tenant_id": tid}),
+        db.bookings.find(
+            {"tenant_id": tid, "check_in": {"$gte": period_start},
+             "status": {"$in": booking_statuses}},
+            {"_id": 0, "total_amount": 1, "nights": 1, "base_rate": 1, "channel": 1,
+             "source_channel": 1, "status": 1, "check_in": 1, "room_type": 1},
+        ).to_list(10000),
+        db.bookings.find(
+            {"tenant_id": tid, "check_in": {"$gte": prev_period_start, "$lt": prev_period_end},
+             "status": {"$in": booking_statuses}},
+            {"_id": 0, "total_amount": 1, "nights": 1},
+        ).to_list(10000),
+        db.bookings.count_documents(
+            {"tenant_id": tid, "check_in": {"$gte": period_start}, "status": "cancelled"}
+        ),
+        db.bookings.count_documents(
+            {"tenant_id": tid, "created_at": {"$gte": seven_days_ago},
+             "status": {"$in": ["confirmed", "guaranteed"]}}
+        ),
+        db.bookings.find(
+            {"tenant_id": tid,
+             "status": {"$in": booking_statuses},
+             "check_in": {"$lt": trend_window_end_exclusive},
+             "check_out": {"$gt": trend_window_start}},
+            {"_id": 0, "check_in": 1, "check_out": 1},
+        ).to_list(20000),
+        _build_data_quality(tid, period_days=days),
+    )
+
     if real_total_rooms == 0 and demo_mode:
         total_rooms = DEMO_FALLBACK_TOTAL_ROOMS
     else:
         total_rooms = real_total_rooms
 
-    # Current period bookings
-    current_bookings = await db.bookings.find(
-        {"tenant_id": tid, "check_in": {"$gte": period_start},
-         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}},
-        {"_id": 0, "total_amount": 1, "nights": 1, "base_rate": 1, "channel": 1,
-         "source_channel": 1, "status": 1, "check_in": 1, "room_type": 1}
-    ).to_list(10000)
-
-    # Previous period bookings (for YoY-like comparison)
-    prev_bookings = await db.bookings.find(
-        {"tenant_id": tid, "check_in": {"$gte": prev_period_start, "$lt": prev_period_end},
-         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}},
-        {"_id": 0, "total_amount": 1, "nights": 1}
-    ).to_list(10000)
-
-    # Cancelled bookings
-    cancelled = await db.bookings.count_documents(
-        {"tenant_id": tid, "check_in": {"$gte": period_start}, "status": "cancelled"}
-    )
     total_with_cancelled = len(current_bookings) + cancelled
 
     # Calculate KPIs
@@ -239,12 +276,6 @@ async def get_rms_dashboard_kpis(
     prev_revpar = round(prev_revenue / (total_rooms * days), 0) if total_rooms > 0 else 0
     prev_occ = round(prev_nights / total_room_nights * 100, 1) if total_room_nights > 0 else 0
 
-    # Pickup: new bookings in last 7 days
-    seven_days_ago = (now - timedelta(days=7)).isoformat()
-    pickup_count = await db.bookings.count_documents(
-        {"tenant_id": tid, "created_at": {"$gte": seven_days_ago},
-         "status": {"$in": ["confirmed", "guaranteed"]}}
-    )
     pickup_rate = round(pickup_count / 7, 1)
 
     # Channel breakdown
@@ -282,21 +313,27 @@ async def get_rms_dashboard_kpis(
 
     room_type_perf = [{"room_type": rt, **data} for rt, data in rt_map.items()]
 
-    # Daily occupancy trend (last N days)
-    daily_trend = []
-    for d in range(min(days, 30)):
-        day_date = (now - timedelta(days=d)).date().isoformat()
-        day_bookings = await db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_in": {"$lte": day_date},
-            "check_out": {"$gt": day_date},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-        })
-        day_occ = round(day_bookings / total_rooms * 100, 1) if total_rooms > 0 else 0
-        daily_trend.append({"date": day_date, "occupancy": day_occ, "rooms_sold": day_bookings})
+    # Daily occupancy trend — single fetch, computed in-memory.
+    # Replaces the previous 30 sequential count_documents calls.
+    day_dates = [(now - timedelta(days=d)).date().isoformat() for d in range(trend_days)]
+    day_counts = dict.fromkeys(day_dates, 0)
+    for b in overlap_bookings:
+        ci = (b.get("check_in") or "")[:10]
+        co = (b.get("check_out") or "")[:10]
+        if not ci or not co:
+            continue
+        for dd in day_dates:
+            if ci <= dd < co:
+                day_counts[dd] += 1
+    daily_trend = [
+        {
+            "date": dd,
+            "occupancy": round(day_counts[dd] / total_rooms * 100, 1) if total_rooms > 0 else 0,
+            "rooms_sold": day_counts[dd],
+        }
+        for dd in day_dates
+    ]
     daily_trend.reverse()
-
-    data_quality = await _build_data_quality(tid, period_days=days)
     # Reflect demo mode in the contract so the frontend can show a badge.
     data_quality["demo_mode"] = demo_mode
     data_quality["effective_total_rooms"] = total_rooms
