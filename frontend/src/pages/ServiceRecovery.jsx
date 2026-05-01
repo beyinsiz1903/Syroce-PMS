@@ -117,6 +117,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   const [rooms, setRooms] = useState([]);
   const [guests, setGuests] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [auxLoaded, setAuxLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -154,23 +155,37 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [complaintsRes, roomsRes, guestsRes, bookingsRes] = await Promise.all([
-        axios.get('/service/complaints'),
-        axios.get('/service/complaints-rooms'),
-        axios.get('/service/complaints-guests'),
-        axios.get('/service/complaints-bookings'),
-      ]);
+      const complaintsRes = await axios.get('/service/complaints');
       setComplaints(complaintsRes.data.complaints || []);
       setStats(complaintsRes.data.stats || {});
-      setRooms(roomsRes.data.rooms || []);
-      setGuests(guestsRes.data.guests || []);
-      setBookings(bookingsRes.data.bookings || []);
     } catch {
-      toast.error('Veriler yüklenemedi');
+      toast.error('Şikayetler yüklenemedi');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadAuxData = useCallback(async () => {
+    if (auxLoaded) return;
+    try {
+      const [roomsRes, guestsRes, bookingsRes] = await Promise.all([
+        axios.get('/service/complaints-rooms'),
+        axios.get('/service/complaints-guests'),
+        axios.get('/service/complaints-bookings'),
+      ]);
+      setRooms(roomsRes.data.rooms || []);
+      setGuests(guestsRes.data.guests || []);
+      setBookings(bookingsRes.data.bookings || []);
+      setAuxLoaded(true);
+    } catch {
+      toast.error('Form verileri yüklenemedi');
+    }
+  }, [auxLoaded]);
+
+  const openCreateDialog = useCallback(() => {
+    loadAuxData();
+    setShowCreateDialog(true);
+  }, [loadAuxData]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -454,7 +469,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               <Zap className="w-4 h-4 mr-2" /> Otomatik Eskalasyon
               {stats.overdue ? <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs">{stats.overdue}</span> : null}
             </Button>
-            <Button onClick={() => setShowCreateDialog(true)} className="bg-red-600 hover:bg-red-700">
+            <Button onClick={openCreateDialog} className="bg-red-600 hover:bg-red-700">
               <Plus className="w-4 h-4 mr-2" /> Yeni Şikayet
             </Button>
           </div>
@@ -616,8 +631,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             <form onSubmit={handleCreateComplaint} className="space-y-4 mt-2">
               <div>
                 <Label className="text-sm font-medium">Aktif Rezervasyon (Otomatik Doldurur)</Label>
-                <Select value={newComplaint.booking_id} onValueChange={handleBookingSelect}>
-                  <SelectTrigger><SelectValue placeholder="Rezervasyon seçin..." /></SelectTrigger>
+                <Select value={newComplaint.booking_id} onValueChange={handleBookingSelect} disabled={!auxLoaded}>
+                  <SelectTrigger><SelectValue placeholder={auxLoaded ? "Rezervasyon seçin..." : "Yükleniyor..."} /></SelectTrigger>
                   <SelectContent>
                     {bookings.map(b => (
                       <SelectItem key={b.id} value={b.id}>
@@ -631,8 +646,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-sm font-medium">Oda</Label>
-                  <Select value={newComplaint.room_id} onValueChange={handleRoomSelect}>
-                    <SelectTrigger><SelectValue placeholder="Oda seçin..." /></SelectTrigger>
+                  <Select value={newComplaint.room_id} onValueChange={handleRoomSelect} disabled={!auxLoaded}>
+                    <SelectTrigger><SelectValue placeholder={auxLoaded ? "Oda seçin..." : "Yükleniyor..."} /></SelectTrigger>
                     <SelectContent>
                       {rooms.map(r => (
                         <SelectItem key={r.id} value={r.id}>
@@ -644,8 +659,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Misafir</Label>
-                  <Select value={newComplaint.guest_id} onValueChange={handleGuestSelect}>
-                    <SelectTrigger><SelectValue placeholder="Misafir seçin..." /></SelectTrigger>
+                  <Select value={newComplaint.guest_id} onValueChange={handleGuestSelect} disabled={!auxLoaded}>
+                    <SelectTrigger><SelectValue placeholder={auxLoaded ? "Misafir seçin..." : "Yükleniyor..."} /></SelectTrigger>
                     <SelectContent>
                       {guests.map(g => (
                         <SelectItem key={g.id} value={g.id}>
