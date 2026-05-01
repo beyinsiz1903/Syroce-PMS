@@ -123,7 +123,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
   const handleConnect = async () => {
     if (!connectForm.username || !connectForm.password || !connectForm.hotel_code) {
-      toast.error('Kullanici adi, sifre ve otel kodu zorunludur');
+      toast.error('Kullanıcı adı, şifre ve otel kodu zorunludur');
       return;
     }
     setLoading(true);
@@ -229,13 +229,13 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="exely-user">Kullanici Adi</Label>
-                      <Input id="exely-user" data-testid="exely-username-input" placeholder="Exely kullanici adi"
+                      <Label htmlFor="exely-user">Kullanıcı Adı</Label>
+                      <Input id="exely-user" data-testid="exely-username-input" placeholder="Exely kullanıcı adı"
                         value={connectForm.username} onChange={e => setConnectForm(p => ({ ...p, username: e.target.value }))} />
                     </div>
                     <div>
-                      <Label htmlFor="exely-pass">Sifre</Label>
-                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder="Exely sifre"
+                      <Label htmlFor="exely-pass">Şifre</Label>
+                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder="Exely şifre"
                         value={connectForm.password} onChange={e => setConnectForm(p => ({ ...p, password: e.target.value }))} />
                     </div>
                     <div>

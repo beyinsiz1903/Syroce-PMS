@@ -23,7 +23,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Toplanan Veriler / Data We Collect</h2>
             <p className="font-medium mb-2">Asagidaki kisisel verileri topluyoruz / We collect the following personal data:</p>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Hesap Bilgileri / Account Info:</strong> Ad, soyad, e-posta adresi, sifre (sifrelenmis / encrypted)</li>
+              <li><strong>Hesap Bilgileri / Account Info:</strong> Ad, soyad, e-posta adresi, şifre (şifrelenmiş / encrypted)</li>
               <li><strong>Otel Bilgileri / Hotel Info:</strong> Otel adi, oda bilgileri, rezervasyon verileri</li>
               <li><strong>Misafir Bilgileri / Guest Info:</strong> Misafir adi, iletişim bilgileri, kimlik numarası, konaklama geçmişi</li>
               <li><strong>Finansal Veriler / Financial Data:</strong> Fatura bilgileri, ödeme kayitlari, folio detayları</li>

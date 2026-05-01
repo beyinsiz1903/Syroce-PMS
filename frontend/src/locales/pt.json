@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Esta funcionalidade não está disponível no seu plano",
-    "description": "Este ecrã está disponível apenas em planos mais abrangentes. Pode voltar atrás e continuar a usar os ecrãs PMS Lite.",
-    "backToDashboard": "Voltar ao Painel"
+    "title": "Esta página não está incluída no seu plano",
+    "description": "Para acessar este módulo, atualize seu plano ou ative o módulo relevante.",
+    "backToDashboard": "Voltar ao Painel",
+    "toDashboard": "Ir ao painel"
   },
   "adminPanel": {
     "checkingStatus": "A verificar o estado do sistema...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "Análise de Custos",
     "tabLabel": "Despesas",
     "title": "Análise de Custos"
+  },
+  "securityHub": {
+    "title": "Segurança",
+    "subtitle": "Centro, monitoramento e hardening em um só lugar",
+    "tabs": {
+      "center": "Centro",
+      "monitor": "Monitoramento",
+      "hardening": "Hardening"
+    }
+  },
+  "channelHub": {
+    "title": "Canais",
+    "subtitle": "Conexões, painel e operações em um só lugar",
+    "tabs": {
+      "connections": "Conexões",
+      "dashboard": "Painel",
+      "ops": "Operações"
+    }
+  },
+  "hrHub": {
+    "title": "RH",
+    "subtitle": "Suite de RH e painel de operações em um só lugar",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Operações"
+    }
   }
 }

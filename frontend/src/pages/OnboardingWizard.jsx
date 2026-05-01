@@ -276,7 +276,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
             done={!!stepStatus.rates_configured}
             primary={{
               label: "Tarife Yönetimi",
-              action: () => navigate("/app/rate-management"),
+              action: () => navigate("/unified-rate-manager"),
             }}
           />
         )}
@@ -289,7 +289,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
             done={!!stepStatus.team_members_added}
             primary={{
               label: "Kullanıcı Yönetimi",
-              action: () => navigate("/app/users"),
+              action: () => navigate("/admin/user-roles"),
             }}
           />
         )}

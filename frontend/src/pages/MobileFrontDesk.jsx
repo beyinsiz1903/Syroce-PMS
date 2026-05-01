@@ -428,7 +428,7 @@ const MobileFrontDesk = ({ user }) => {
           <Button
             size="sm"
             className="h-16 flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-1"
-            onClick={() => navigate('/walk-in-booking')}
+            onClick={() => navigate('/reservation-calendar')}
           >
             <UserPlus className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Walk-In</span>

@@ -192,7 +192,7 @@ const MobileSecurity = ({ user }) => {
           
           <Button 
             className="h-20 flex flex-col items-center justify-center bg-gradient-to-br from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white"
-            onClick={() => navigate('/network/test')}
+            onClick={() => navigate('/system/network')}
           >
             <Wifi className="w-6 h-6 mb-1" />
             <span className="text-xs font-semibold">Ağ Testi</span>

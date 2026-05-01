@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Esta función no está disponible en tu plan",
-    "description": "Solo disponible en planes superiores.",
-    "backToDashboard": "Volver al Dashboard"
+    "title": "Esta página no está incluida en su plan",
+    "description": "Para acceder a este módulo, actualice su plan o habilite el módulo correspondiente.",
+    "backToDashboard": "Volver al Dashboard",
+    "toDashboard": "Ir al panel"
   },
   "adminPanel": {
     "checkingStatus": "Verificando estado...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "Análisis de Costos",
     "tabLabel": "Gastos",
     "title": "Análisis de Costos"
+  },
+  "securityHub": {
+    "title": "Seguridad",
+    "subtitle": "Centro, monitoreo y endurecimiento en un solo lugar",
+    "tabs": {
+      "center": "Centro",
+      "monitor": "Monitoreo",
+      "hardening": "Endurecimiento"
+    }
+  },
+  "channelHub": {
+    "title": "Canales",
+    "subtitle": "Conexiones, panel y operaciones en un solo lugar",
+    "tabs": {
+      "connections": "Conexiones",
+      "dashboard": "Panel",
+      "ops": "Operaciones"
+    }
+  },
+  "hrHub": {
+    "title": "RRHH",
+    "subtitle": "Suite de RRHH y panel de operaciones en un solo lugar",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Operaciones"
+    }
   }
 }

@@ -548,7 +548,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               Kanal Bazli Stop Sale
             </CardTitle>
             <CardDescription className="text-xs">
-              Belirli kanallar için satisi tek tikla durdurun
+              Belirli kanallar için satışı tek tıkla durdurun
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">

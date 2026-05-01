@@ -968,7 +968,7 @@ function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssign
 
       {sameTypeClean.length === 0 && (
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-          <p className="text-xs text-slate-500">Ayni tipte bos oda yok. Bekle ve temizle secenegini kullanin.</p>
+          <p className="text-xs text-slate-500">Aynı tipte boş oda yok. Bekle ve temizle seçeneğini kullanın.</p>
         </div>
       )}
 

@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Cette fonction n'est pas disponible",
-    "description": "Disponible dans les plans supérieurs.",
-    "backToDashboard": "Retour au Dashboard"
+    "title": "Cette page n'est pas incluse dans votre plan",
+    "description": "Pour accéder à ce module, veuillez mettre à niveau votre plan ou activer le module concerné.",
+    "backToDashboard": "Retour au Dashboard",
+    "toDashboard": "Aller au tableau de bord"
   },
   "adminPanel": {
     "checkingStatus": "Vérification...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "Analyse des Coûts",
     "tabLabel": "Dépenses",
     "title": "Analyse des Coûts"
+  },
+  "securityHub": {
+    "title": "Sécurité",
+    "subtitle": "Centre, surveillance et durcissement au même endroit",
+    "tabs": {
+      "center": "Centre",
+      "monitor": "Surveillance",
+      "hardening": "Durcissement"
+    }
+  },
+  "channelHub": {
+    "title": "Canaux",
+    "subtitle": "Connexions, tableau de bord et opérations au même endroit",
+    "tabs": {
+      "connections": "Connexions",
+      "dashboard": "Tableau de bord",
+      "ops": "Opérations"
+    }
+  },
+  "hrHub": {
+    "title": "RH",
+    "subtitle": "Suite RH et tableau de bord opérationnel au même endroit",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Opérations"
+    }
   }
 }

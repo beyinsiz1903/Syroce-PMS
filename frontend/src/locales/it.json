@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Funzione non disponibile nel tuo piano",
-    "description": "Disponibile solo nei piani superiori.",
-    "backToDashboard": "Torna al Dashboard"
+    "title": "Questa pagina non è inclusa nel tuo piano",
+    "description": "Per accedere a questo modulo, aggiorna il tuo piano o abilita il modulo pertinente.",
+    "backToDashboard": "Torna al Dashboard",
+    "toDashboard": "Vai al pannello"
   },
   "adminPanel": {
     "checkingStatus": "Controllo stato...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "Analisi dei Costi",
     "tabLabel": "Spese",
     "title": "Analisi dei Costi"
+  },
+  "securityHub": {
+    "title": "Sicurezza",
+    "subtitle": "Centro, monitoraggio e hardening in un unico luogo",
+    "tabs": {
+      "center": "Centro",
+      "monitor": "Monitoraggio",
+      "hardening": "Hardening"
+    }
+  },
+  "channelHub": {
+    "title": "Canali",
+    "subtitle": "Connessioni, dashboard e operazioni in un unico luogo",
+    "tabs": {
+      "connections": "Connessioni",
+      "dashboard": "Dashboard",
+      "ops": "Operazioni"
+    }
+  },
+  "hrHub": {
+    "title": "HR",
+    "subtitle": "Suite HR e dashboard operativo in un unico luogo",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Operazioni"
+    }
   }
 }

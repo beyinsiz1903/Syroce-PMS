@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Bu özellik paketinizde mevcut değil",
-    "description": "Bu ekran yalnızca daha kapsamlı paketlerde kullanılabilir. Geri dönüp PMS Lite ekranlarını kullanmaya devam edebilirsiniz.",
-    "backToDashboard": "Dashboard'a dön"
+    "title": "Bu sayfa planınıza dahil değil",
+    "description": "Bu modüle erişmek için planınızı yükseltmeniz veya ilgili modülü etkinleştirmeniz gerekir.",
+    "backToDashboard": "Dashboard'a dön",
+    "toDashboard": "Panele Git"
   },
   "adminPanel": {
     "checkingStatus": "Sistem durumu kontrol ediliyor...",
@@ -3559,6 +3560,32 @@
       "insurance": "Sigorta",
       "taxes": "Vergiler",
       "other": "Diğer"
+    }
+  },
+  "securityHub": {
+    "title": "Güvenlik",
+    "subtitle": "Merkez, izleme ve sertleştirme tek yerde",
+    "tabs": {
+      "center": "Merkez",
+      "monitor": "İzleme",
+      "hardening": "Sertleştirme"
+    }
+  },
+  "channelHub": {
+    "title": "Kanallar",
+    "subtitle": "Bağlantılar, dashboard ve operasyon tek yerde",
+    "tabs": {
+      "connections": "Bağlantılar",
+      "dashboard": "Dashboard",
+      "ops": "Operasyon"
+    }
+  },
+  "hrHub": {
+    "title": "İK",
+    "subtitle": "İK suite ve operasyon dashboard tek yerde",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Operasyon"
     }
   }
 }

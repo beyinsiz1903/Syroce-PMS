@@ -454,7 +454,7 @@ const FeatureFlagsTab = () => {
               <Switch checked={form.enabled} onCheckedChange={(v) => setForm(f => ({...f, enabled: v}))} />
             </div>
             <div>
-              <Label>Rollout Yuzdesi (0-100, bos = tum tenantlar)</Label>
+              <Label>Rollout Yüzdesi (0-100, boş = tüm tenantlar)</Label>
               <Input type="number" min="0" max="100" placeholder="100" value={form.rollout_percentage} onChange={(e) => setForm(f => ({...f, rollout_percentage: e.target.value}))} />
             </div>
             <div>

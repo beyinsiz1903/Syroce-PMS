@@ -196,7 +196,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
 
   const handleSaveUser = async () => {
     if (!userForm.name.trim() || !userForm.email.trim() || !userForm.password) {
-      return toast.error('Ad, e-posta ve sifre gerekli');
+      return toast.error('Ad, e-posta ve şifre gerekli');
     }
     setSaving(true);
     try {

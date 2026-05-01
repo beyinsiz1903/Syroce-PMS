@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "Diese Funktion ist in Ihrem Plan nicht verfügbar",
-    "description": "Nur in umfangreicheren Plänen verfügbar.",
-    "backToDashboard": "Zurück zum Dashboard"
+    "title": "Diese Seite ist nicht in Ihrem Plan enthalten",
+    "description": "Um auf dieses Modul zuzugreifen, müssen Sie Ihren Plan aktualisieren oder das entsprechende Modul aktivieren.",
+    "backToDashboard": "Zurück zum Dashboard",
+    "toDashboard": "Zum Dashboard"
   },
   "adminPanel": {
     "checkingStatus": "Systemstatus wird geprüft...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "Kostenanalyse",
     "tabLabel": "Ausgaben",
     "title": "Kostenanalyse"
+  },
+  "securityHub": {
+    "title": "Sicherheit",
+    "subtitle": "Zentrum, Überwachung und Härtung an einem Ort",
+    "tabs": {
+      "center": "Zentrum",
+      "monitor": "Überwachung",
+      "hardening": "Härtung"
+    }
+  },
+  "channelHub": {
+    "title": "Kanäle",
+    "subtitle": "Verbindungen, Dashboard und Betrieb an einem Ort",
+    "tabs": {
+      "connections": "Verbindungen",
+      "dashboard": "Dashboard",
+      "ops": "Betrieb"
+    }
+  },
+  "hrHub": {
+    "title": "HR",
+    "subtitle": "HR-Suite und Betriebs-Dashboard an einem Ort",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Betrieb"
+    }
   }
 }

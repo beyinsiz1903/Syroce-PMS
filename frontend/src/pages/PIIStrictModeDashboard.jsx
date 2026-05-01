@@ -254,7 +254,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
                 </Badge>
               ))}
               {(!config?.whitelisted_paths || config.whitelisted_paths.length === 0) && (
-                <p className="text-sm text-slate-500">Whitelist bos</p>
+                <p className="text-sm text-slate-500">Whitelist boş</p>
               )}
             </div>
           </CardContent>

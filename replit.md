@@ -5016,3 +5016,16 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
   - 3 yeni menü item (`navItems.jsx`): security_hub→admin, channels_hub→channels, hr_hub→management
 - **Güvenlik düzeltmesi**: `/channel-ops` eskiden `pa()` (super-admin only) idi. Hub `p()` ile sarılınca açıkta kalmıştı. ChannelHub'da `SUPER_ADMIN_ONLY_TABS = {'ops'}` ile `ops` tab non-super-admin'lere gizlendi ve URL ile `?tab=ops` gelirse fallback'e düşer. ChannelConnections kendi içinde non-super-admin variant'ı zaten içerdiği için `connections` tab herkese açık bırakıldı.
 - **Build**: PASS (7.01s).
+
+## 2026-05-01 — Uçtan Uca Audit
+- **Kapsam**: 202 sayfa, 125 bileşen, 1249 Python dosyası, 118 router, 10 dil × 3237 anahtar, 230 route taranıp düzeltildi.
+- **Düzeltmeler**:
+  - **i18n hub anahtarları (10 dil × 17 anahtar)**: `securityHub.{title,subtitle,tabs.center|monitor|hardening}`, `channelHub.{title,subtitle,tabs.connections|dashboard|ops}`, `hrHub.{title,subtitle,tabs.suite|ops}`, `notAvailable.{title,description,toDashboard}` 10 dile (tr/en/de/fr/es/it/pt/ru/ar/zh) eklendi. Parity TAM (3237 anahtar).
+  - **Türkçe imla (14 düzeltme)**: AgencyManagement, ExelyIntegration (5×), ReportScheduler (2×), GovernancePanel, PIIStrictModeDashboard, ReservationCalendar (3×), StopSalePanel, PrivacyPolicy, RoomsTab — sifre→şifre, bos→boş, tikla→tıkla, gorunecek→görünecek vb.
+  - **Kırık link (4 düzeltme)**: MobileFrontDesk `/walk-in-booking`→`/reservation-calendar`, MobileSecurity `/network/test`→`/system/network`, OnboardingWizard `/app/users`→`/admin/user-roles` ve `/app/rate-management`→`/unified-rate-manager`.
+  - **NotAvailable.jsx**: PlanRouteGuard tarafından kullanılıyor, i18n entegrasyonu eklendi (ProtectedRoute kısıtlama mesajı 10 dilde).
+- **Backend**: log temiz, hata yok. Eski log'da Atlas free-tier 500 collection limit hatası vardı (geçmiş bir test, şu an ilgisiz).
+- **Build**: PASS (7.57s, 0 hata). Ana bundle `index.js` 1.4MB (gzip 460KB) — code-splitting iyileştirmesi raporlandı (kullanıcı kararı bekliyor).
+- **Henüz uygulanmadı (kullanıcı onayı bekliyor)**:
+  - **T006 (perf)**: ana bundle ağır; `vendor-charts (recharts)` ve `PMSModule` lazy chunk'lara ayrılabilir.
+  - **T007 (sayfa kümeleri)**: Revenue (9 sayfa) ve Settings/Admin (9 sayfa) potansiyel hub adayı.

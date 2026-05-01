@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "此功能在您的计划中不可用",
-    "description": "此界面仅在更高级的计划中可用。您可以返回继续使用PMS Lite功能。",
-    "backToDashboard": "返回仪表板"
+    "title": "此页面不在您的套餐中",
+    "description": "要访问此模块,请升级您的套餐或启用相关模块。",
+    "backToDashboard": "返回仪表板",
+    "toDashboard": "前往仪表板"
   },
   "adminPanel": {
     "checkingStatus": "正在检查系统状态...",
@@ -3560,5 +3561,31 @@
     "summaryTitle": "成本分析",
     "tabLabel": "支出",
     "title": "成本分析"
+  },
+  "securityHub": {
+    "title": "安全",
+    "subtitle": "中心、监控和加固集于一处",
+    "tabs": {
+      "center": "中心",
+      "monitor": "监控",
+      "hardening": "加固"
+    }
+  },
+  "channelHub": {
+    "title": "渠道",
+    "subtitle": "连接、仪表板和操作集于一处",
+    "tabs": {
+      "connections": "连接",
+      "dashboard": "仪表板",
+      "ops": "操作"
+    }
+  },
+  "hrHub": {
+    "title": "人力资源",
+    "subtitle": "人力资源套件和运营仪表板集于一处",
+    "tabs": {
+      "suite": "套件",
+      "ops": "操作"
+    }
   }
 }

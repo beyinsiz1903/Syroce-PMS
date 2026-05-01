@@ -733,9 +733,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
             </div>
             <div className="flex items-center gap-3 text-gray-400">
-              <span>Tikla = Yeni rez.</span>
-              <span>Cift tikla = Detay</span>
-              <span>Surukle = Tasi</span>
+              <span>Tıkla = Yeni rez.</span>
+              <span>Çift tıkla = Detay</span>
+              <span>Sürükle = Taşı</span>
             </div>
           </div>
         </div>

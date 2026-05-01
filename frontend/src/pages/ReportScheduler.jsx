@@ -409,8 +409,8 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
             <Card>
               <CardContent className="p-12 text-center">
                 <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-gray-700">Gonderim geçmişi bos</h3>
-                <p className="text-sm text-gray-500 mt-1">Zamanlamalar calistiginda burada gorunecek</p>
+                <h3 className="font-semibold text-gray-700">Gönderim geçmişi boş</h3>
+                <p className="text-sm text-gray-500 mt-1">Zamanlamalar çalıştığında burada görünecek</p>
               </CardContent>
             </Card>
           ) : (

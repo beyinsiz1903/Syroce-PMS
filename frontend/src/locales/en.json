@@ -1431,9 +1431,10 @@
     }
   },
   "notAvailable": {
-    "title": "This feature is not available in your plan",
-    "description": "This screen is only available in more comprehensive plans. You can go back and continue using PMS Lite screens.",
-    "backToDashboard": "Back to Dashboard"
+    "title": "This page is not in your plan",
+    "description": "To access this module, please upgrade your plan or enable the relevant module.",
+    "backToDashboard": "Back to Dashboard",
+    "toDashboard": "Go to Dashboard"
   },
   "adminPanel": {
     "checkingStatus": "Checking system status...",
@@ -3559,6 +3560,32 @@
       "insurance": "Insurance",
       "taxes": "Taxes",
       "other": "Other"
+    }
+  },
+  "securityHub": {
+    "title": "Security",
+    "subtitle": "Center, monitoring and hardening in one place",
+    "tabs": {
+      "center": "Center",
+      "monitor": "Monitoring",
+      "hardening": "Hardening"
+    }
+  },
+  "channelHub": {
+    "title": "Channels",
+    "subtitle": "Connections, dashboard and operations in one place",
+    "tabs": {
+      "connections": "Connections",
+      "dashboard": "Dashboard",
+      "ops": "Operations"
+    }
+  },
+  "hrHub": {
+    "title": "HR",
+    "subtitle": "HR suite and operations dashboard in one place",
+    "tabs": {
+      "suite": "Suite",
+      "ops": "Operations"
     }
   }
 }
