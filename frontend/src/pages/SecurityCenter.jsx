@@ -5,13 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
-import Layout from '@/components/Layout';
+import Layout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 const BACKEND = "";
 
-export default function SecurityCenter({ user, tenant, onLogout }) {
+export default function SecurityCenter({ user, tenant, onLogout, embedded = false }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('2fa');
   const [twoFAStatus, setTwoFAStatus] = useState(null);
@@ -102,7 +102,7 @@ export default function SecurityCenter({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>

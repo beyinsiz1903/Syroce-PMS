@@ -205,6 +205,9 @@ const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
 const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));
 const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
+const SecurityHub = lazy(() => import("@/pages/SecurityHub"));
+const ChannelHub = lazy(() => import("@/pages/ChannelHub"));
+const HRHub = lazy(() => import("@/pages/HRHub"));
 const GoLiveReadinessCockpit = lazy(() => import("@/pages/GoLiveReadinessCockpit"));
 const EncryptionManagementPage = lazy(() => import("@/pages/EncryptionManagementPage"));
 const WebhookOutboxAdmin = lazy(() => import("@/pages/WebhookOutboxAdmin"));
@@ -313,16 +316,18 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/settings", ...p(Settings) },
 
     // ── Channel Manager ────────────────────────────────
-    { path: "/channel-connections", ...pa(ChannelConnections) },
-    { path: "/cm-dashboard", ...p(ChannelManagerDashboardV2) },
+    { path: "/channel-connections", type: "redirect", to: "/channels?tab=connections" },
+    { path: "/cm-dashboard", type: "redirect", to: "/channels?tab=dashboard" },
     { path: "/go-live-readiness", ...p(GoLiveReadinessCockpit) },
     { path: "/channel-manager", ...p(ChannelManagerModule) },
     { path: "/app/channel-manager", ...p(ChannelManagerModule) },
-    { path: "/channel-ops", ...pa(ChannelOpsPage) },
+    { path: "/channel-ops", type: "redirect", to: "/channels?tab=ops" },
+    { path: "/channels", ...p(ChannelHub) },
+    { path: "/app/channels", ...p(ChannelHub) },
     { path: "/mapping-manager", ...p(MappingManager) },
     { path: "/room-mapping-wizard", ...p(RoomMappingWizard) },
     { path: "/hotelrunner", ...pa(HotelRunnerIntegration) },
-    { path: "/hrv2-ops", ...p(HRv2OpsDashboard) },
+    { path: "/hrv2-ops", type: "redirect", to: "/hr?tab=ops" },
     { path: "/exely", ...pa(ExelyIntegration) },
     { path: "/ari-push", ...pa(ARIPushDashboard) },
     { path: "/rate-manager", ...pa(UnifiedRateManager) },
@@ -443,7 +448,9 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/event-bus", ...p(EventBusDashboard) },
     { path: "/system-health", ...p(SystemHealthDashboard) },
     { path: "/observability", ...p(ObservabilityDashboard) },
-    { path: "/security-hardening", ...p(SecurityHardeningDashboard) },
+    { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
+    { path: "/security", ...p(SecurityHub) },
+    { path: "/app/security", ...p(SecurityHub) },
     { path: "/runtime-infrastructure", ...p(RuntimeInfrastructureDashboard) },
     { path: "/infra-hardening", ...p(InfraHardeningDashboard) },
     { path: "/production-golive", ...p(ProductionGoLiveDashboard) },
@@ -476,7 +483,9 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
     { path: "/multi-property", ...p(MultiProperty) },
     { path: "/staff-management", ...p(StaffManagement) },
-    { path: "/hr-complete", ...p(HRComplete) },
+    { path: "/hr-complete", type: "redirect", to: "/hr?tab=suite" },
+    { path: "/hr", ...p(HRHub) },
+    { path: "/app/hr", ...p(HRHub) },
     { path: "/fnb-complete", ...p(FnBComplete) },
     { path: "/fnb/beo-generator", ...p(FnbBeoGenerator) },
     { path: "/kitchen-display", ...p(KitchenDisplay) },
@@ -490,8 +499,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/revenue-autopilot", ...pm(RevenueAutopilot, "ai_revenue_autopilot") },
 
     // ── Security & Compliance ──────────────────────────
-    { path: "/security-center", ...p(SecurityCenter) },
-    { path: "/app/güvenlik", ...p(SecurityDashboard) },
+    { path: "/security-center", type: "redirect", to: "/security?tab=center" },
+    { path: "/app/güvenlik", type: "redirect", to: "/security?tab=monitor" },
     { path: "/gdpr-compliance", ...p(GDPRCompliance) },
     { path: "/encryption-management", ...p(EncryptionManagementPage) },
     { path: "/central-office", ...p(CentralOfficeDashboard) },

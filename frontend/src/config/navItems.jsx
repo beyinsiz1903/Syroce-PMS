@@ -98,6 +98,30 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "security_hub",
+    label: "Güvenlik",
+    path: "/security",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
+    key: "channels_hub",
+    label: "Kanallar Hub",
+    path: "/channels",
+    tier: "basic",
+    group: "core",
+    navGroup: "channels",
+  },
+  {
+    key: "hr_hub",
+    label: "İK",
+    path: "/hr",
+    tier: "basic",
+    group: "core",
+    navGroup: "management",
+  },
+  {
     // Task #26: acil mesaj kullanımı için adanmış rapor ekranı.
     key: "urgent_message_report",
     label: "Acil Mesaj Raporu",

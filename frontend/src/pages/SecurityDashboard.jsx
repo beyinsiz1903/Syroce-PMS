@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+import Layout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import {
 
 const API = "";
 
-const SecurityDashboard = ({ user, tenant, onLogout }) => {
+const SecurityDashboard = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
   const token = localStorage.getItem('token');
   const [data, setData] = useState(null);
@@ -52,7 +52,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
+      <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
@@ -65,7 +65,7 @@ const SecurityDashboard = ({ user, tenant, onLogout }) => {
   const events = data?.recent_events || [];
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="security-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">

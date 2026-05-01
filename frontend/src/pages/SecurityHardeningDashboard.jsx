@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Shield, Lock, FileCheck, Users, Server, Eye, RefreshCw, Loader2 } from "lucide-react";
-import Layout from "@/components/Layout";
+import Layout from "@/components/MaybeLayout";
 
 const PIIStrictModeDashboard = lazy(() => import("@/pages/PIIStrictModeDashboard"));
 const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
@@ -30,7 +30,7 @@ function TabLoader() {
   );
 }
 
-export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
+export default function SecurityHardeningDashboard({ user, tenant, onLogout, embedded = false }) {
   const { t } = useTranslation();
   const [mainTab, setMainTab] = useState("security");
   const [secTab, setSecTab] = useState("isolation");
@@ -70,7 +70,7 @@ export default function SecurityHardeningDashboard({ user, tenant, onLogout }) {
   const properties = permissions?.properties || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
     <div data-testid="security-hardening-dashboard" className="space-y-6 p-6 bg-white min-h-screen">
       <div className="flex items-center justify-between">
         <div>

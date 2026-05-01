@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+import Layout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,7 @@ import {
 
 const API = "";
 
-export default function ChannelConnections({ user, tenant, onLogout }) {
+export default function ChannelConnections({ user, tenant, onLogout, embedded = false }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [connectDialog, setConnectDialog] = useState(null); // 'hotelrunner' | 'exely' | null
@@ -153,7 +153,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
   // ── HOTEL USER VIEW (non-superadmin) ──
   if (!isSuperAdmin) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
         <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto" data-testid="channel-connections-page">
 
           {/* Header */}
@@ -282,7 +282,7 @@ export default function ChannelConnections({ user, tenant, onLogout }) {
 
   // ── SUPER ADMIN VIEW (full technical details) ──
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto" data-testid="channel-connections-page">
 
         {/* Header */}

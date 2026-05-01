@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+import Layout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -63,7 +63,7 @@ const TimeAgo = ({ ts }) => {
   return <span className={`${days > 3 ? 'text-amber-600' : 'text-slate-600'}`}>{days}g once</span>;
 };
 
-const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
+const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false }) => {
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [data, setData] = useState(null);
@@ -103,7 +103,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
 
   if (loading && !data) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
         </div>
@@ -117,7 +117,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout }) => {
   const mapping = data?.mapping_visibility || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="max-w-7xl mx-auto space-y-6" data-testid="cm-dashboard">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

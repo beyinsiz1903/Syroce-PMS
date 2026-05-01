@@ -5004,3 +5004,15 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
     - Aynı URL fix + `Array.isArray` guard + normalize map (response.data direkt array dönerse de güvenli)
 - **Etkilenmedi**: `/messaging/internal/*` (push, inbox, presence, conversations, send) endpoint'leri `backend/domains/guest/messaging/router.py`'de gerçekten var, dokunulmadı.
 - **Architect**: PASS. List + select + send akışı end-to-end uyumlu. Smoke test öneri: gerçek template ile UI'dan gönderim → 200 + delivery_id doğrulama.
+
+## 2026-05-01 — Hub Sayfaları (Security/Channel/HR)
+- **Sorun**: 8 yinelenen şüpheli sayfa (Security 3, Channel 3, HR 2) menüde gizliydi; URL bilen erişebiliyordu, kafa karıştırıcıydı.
+- **Çözüm B (uygulandı)**: 3 hub sayfası + tab birleştirme + 8 eski URL'den `?tab=...` ile redirect + 3 menü item.
+  - Yeni: `frontend/src/pages/SecurityHub.jsx`, `ChannelHub.jsx`, `HRHub.jsx`
+  - Yardımcı: `frontend/src/components/MaybeLayout.jsx` — `embedded` prop ile Layout sarımını koşullu hale getirir, hub içinde nested chrome'u önler.
+  - 6 alt sayfa (Security 3 + Channel 3) `MaybeLayout` kullanacak şekilde güncellendi (`embedded={false}` default; hub `embedded={true}` ile çağırır). HRComplete + HRv2OpsDashboard zaten Layout sarmıyordu, dokunulmadı.
+  - 8 eski URL → 301 redirect: `/security-center`, `/app/güvenlik`, `/security-hardening`, `/channel-connections`, `/cm-dashboard`, `/channel-ops`, `/hr-complete`, `/hrv2-ops` → `/security|channels|hr?tab=...`
+  - 3 yeni route: `/security`, `/channels` (+`/app/channels`), `/hr` (+`/app/hr`)
+  - 3 yeni menü item (`navItems.jsx`): security_hub→admin, channels_hub→channels, hr_hub→management
+- **Güvenlik düzeltmesi**: `/channel-ops` eskiden `pa()` (super-admin only) idi. Hub `p()` ile sarılınca açıkta kalmıştı. ChannelHub'da `SUPER_ADMIN_ONLY_TABS = {'ops'}` ile `ops` tab non-super-admin'lere gizlendi ve URL ile `?tab=ops` gelirse fallback'e düşer. ChannelConnections kendi içinde non-super-admin variant'ı zaten içerdiği için `connections` tab herkese açık bırakıldı.
+- **Build**: PASS (7.01s).

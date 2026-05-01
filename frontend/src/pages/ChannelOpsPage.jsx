@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+import Layout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -345,7 +345,7 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
 
 // ── Main Component ─────────────────────────────────────────────────
 
-const ChannelOpsPage = ({ user, tenant, onLogout }) => {
+const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -522,7 +522,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
+      <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
         <div className="flex items-center justify-center h-96" data-testid="ops-loading">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
           <span className="ml-3 text-gray-600">Operasyon verileri yükleniyor...</span>
@@ -540,7 +540,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout }) => {
   const healthSummary = connectorsHealth.summary || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
+    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
       <div className="p-4 md:p-6 space-y-6 max-w-[1400px] mx-auto" data-testid="channel-ops-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">
