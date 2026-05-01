@@ -2,6 +2,7 @@
 PMS Dashboard Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Dashboard overview, operational alerts, room alternatives.
 """
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -125,20 +126,71 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     """Decision-driven operational intelligence: what needs attention NOW."""
     tenant_id = current_user.tenant_id
     today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Redis cache (15s TTL) — dashboard ekranı sık yüklendiği için en pahalı çağrıyı sıcak tutar
+    cache_key = f"operational_alerts:{tenant_id}"
+    try:
+        from redis_cache import redis_cache
+        if redis_cache:
+            cached_result = redis_cache.get(cache_key)
+            if cached_result is not None:
+                return cached_result
+    except Exception:
+        pass
+
+    active_statuses = ["confirmed", "guaranteed", "checked_in"]
+    today_end = f"{today}\uffff"
+
+    # Bağımsız sorguları paralel çalıştır (8 sıralı çağrı → tek round-trip eşdeğeri)
+    (
+        dirty_rooms,
+        arrivals_today,
+        unpaid,
+        departures_with_balance,
+        departures_today,
+        inhouse_count,
+        available_clean,
+        currency_tuple,
+    ) = await asyncio.gather(
+        db.rooms.find(
+            {"tenant_id": tenant_id, "status": {"$in": ["dirty", "cleaning"]}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1}
+        ).to_list(200),
+        db.bookings.find(
+            {"tenant_id": tenant_id, "status": {"$in": ["confirmed", "guaranteed"]},
+             "check_in": {"$gte": today, "$lt": today_end}},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "guest_id": 1}
+        ).to_list(200),
+        db.bookings.find(
+            {"tenant_id": tenant_id, "status": "checked_in",
+             "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1}
+        ).to_list(200),
+        db.bookings.find(
+            {"tenant_id": tenant_id, "status": "checked_in",
+             "check_out": {"$gte": today, "$lt": today_end},
+             "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1}
+        ).to_list(200),
+        db.bookings.count_documents(
+            {"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$gte": today, "$lt": today_end}}
+        ),
+        db.bookings.count_documents(
+            {"tenant_id": tenant_id, "status": {"$in": active_statuses},
+             "check_in": {"$lte": today + "T23:59:59"},
+             "check_out": {"$gt": today}}
+        ),
+        db.rooms.find(
+            {"tenant_id": tenant_id, "status": "available"},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1}
+        ).to_list(50),
+        get_tenant_currency(tenant_id),
+    )
+    currency_code, currency_symbol = currency_tuple
+
     alerts = []
 
     # 1) Dirty rooms blocking check-ins
-    dirty_rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "status": {"$in": ["dirty", "cleaning"]}},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1}
-    ).to_list(200)
-
-    arrivals_today = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": {"$in": ["confirmed", "guaranteed"]},
-         "check_in": {"$gte": today, "$lt": f"{today}\uffff"}},
-        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1}
-    ).to_list(200)
-
     dirty_room_numbers = {str(r["room_number"]) for r in dirty_rooms}
     blocked_checkins = []
     for arr in arrivals_today:
@@ -164,12 +216,6 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         })
 
     # 2) Pending payments (balance > 0 for checked-in guests)
-    unpaid = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": "checked_in",
-         "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
-        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1}
-    ).to_list(200)
-
     pending_payments = []
     total_outstanding = 0
     for b in unpaid:
@@ -196,7 +242,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "action_label": "Odemelere Git"
         })
 
-    # 3) VIP arrivals today (batched)
+    # 3) VIP arrivals today (arrivals_today'e bağımlı, tek ek sorgu)
     vip_arrivals = []
     arrival_guest_ids = list({arr["guest_id"] for arr in arrivals_today if arr.get("guest_id")})
     guest_map: dict = {}
@@ -230,13 +276,6 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         })
 
     # 4) Today's departures with balance
-    departures_with_balance = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": "checked_in",
-         "check_out": {"$gte": today, "$lt": f"{today}\uffff"},
-         "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
-        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1}
-    ).to_list(200)
-
     if departures_with_balance:
         dep_items = []
         for d in departures_with_balance:
@@ -258,34 +297,13 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "action_label": "Cikislara Git"
         })
 
-    # 5) Summary stats
-    all_arrivals_count = len(arrivals_today)
-    active_statuses = ["confirmed", "guaranteed", "checked_in"]
-    departures_today = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$gte": today, "$lt": f"{today}\uffff"}}
-    )
-    inhouse_count = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "status": {"$in": active_statuses},
-         "check_in": {"$lte": today + "T23:59:59"},
-         "check_out": {"$gt": today}}
-    )
-    dirty_count = len(dirty_rooms)
-
-    # 6) Alternative rooms for dirty room situations
-    available_clean = await db.rooms.find(
-        {"tenant_id": tenant_id, "status": "available"},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1}
-    ).to_list(50)
-
-    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
-
-    return {
+    result = {
         "alerts": alerts,
         "summary": {
-            "arrivals_today": all_arrivals_count,
+            "arrivals_today": len(arrivals_today),
             "departures_today": departures_today,
             "inhouse": inhouse_count,
-            "dirty_rooms": dirty_count,
+            "dirty_rooms": len(dirty_rooms),
             "pending_payments_count": len(pending_payments),
             "vip_arrivals": len(vip_arrivals),
             "total_outstanding": round(total_outstanding, 2)
@@ -294,6 +312,16 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         "currency_symbol": currency_symbol,
         "available_clean_rooms": available_clean[:20]
     }
+
+    # Cache (15s) — frontend genelde 30-60sn'de bir polling yapar; gecikmeyi gizler
+    try:
+        from redis_cache import redis_cache
+        if redis_cache:
+            redis_cache.set(cache_key, result, ttl=15)
+    except Exception:
+        pass
+
+    return result
 
 
 @router.get("/pms/room-alternatives/{room_number}")
