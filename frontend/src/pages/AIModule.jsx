@@ -18,7 +18,6 @@ const AIChatbot = lazy(() => import('@/pages/AIChatbot'));
 const AIWhatsAppConcierge = lazy(() => import('@/pages/AIWhatsAppConcierge'));
 const DynamicPricing = lazy(() => import('@/pages/DynamicPricing'));
 const PredictiveAnalytics = lazy(() => import('@/pages/PredictiveAnalytics'));
-const ReputationCenter = lazy(() => import('@/pages/ReputationCenter'));
 const RevenueAutopilot = lazy(() => import('@/pages/RevenueAutopilot'));
 const SocialMediaRadar = lazy(() => import('@/pages/SocialMediaRadar'));
 import { useTranslation } from 'react-i18next';
@@ -30,7 +29,6 @@ const MODULE_COMPONENTS = {
   'ai-whatsapp-concierge': AIWhatsAppConcierge,
   'dynamic-pricing': DynamicPricing,
   'predictive-analytics': PredictiveAnalytics,
-  'reputation-center': ReputationCenter,
   'revenue-autopilot': RevenueAutopilot,
   'social-media-radar': SocialMediaRadar,
 };
@@ -145,13 +143,6 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       description: t('aiModule.predictiveDesc'),
       icon: TrendingUp, 
       color: 'from-pink-500 to-rose-500',
-    },
-    { 
-      id: 'reputation-center',
-      title: 'Reputation Center', 
-      description: t('aiModule.socialRadarDesc'),
-      icon: Star, 
-      color: 'from-yellow-500 to-amber-500',
     },
     { 
       id: 'revenue-autopilot',

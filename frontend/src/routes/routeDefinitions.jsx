@@ -117,7 +117,6 @@ const SpaWellness = lazy(() => import("@/pages/SpaWellness"));
 const MeetingEvents = lazy(() => import("@/pages/MeetingEvents"));
 const AIChatbot = lazy(() => import("@/pages/AIChatbot"));
 const DynamicPricing = lazy(() => import("@/pages/DynamicPricing"));
-const ReputationCenter = lazy(() => import("@/pages/ReputationCenter"));
 const MultiProperty = lazy(() => import("@/pages/MultiProperty"));
 const PaymentGateway = lazy(() => import("@/pages/PaymentGateway"));
 const AdvancedLoyalty = lazy(() => import("@/pages/AdvancedLoyalty"));
@@ -495,7 +494,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── AI Module-gated ────────────────────────────────
     { path: "/ai-chatbot", ...pm(AIChatbot, "ai_chatbot") },
     { path: "/dynamic-pricing", ...pm(DynamicPricing, "ai_pricing") },
-    { path: "/reputation-center", ...pm(ReputationCenter, "ai_reputation") },
     { path: "/ai-whatsapp-concierge", ...pm(AIWhatsAppConcierge, "ai_whatsapp") },
     { path: "/predictive-analytics", ...pm(PredictiveAnalytics, "ai_predictive") },
     { path: "/social-media-radar", ...pm(SocialMediaRadar, "ai_social_radar") },

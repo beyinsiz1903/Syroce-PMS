@@ -380,15 +380,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       category: 'ai'
     },
     {
-      title: t('dashboard.reputationCenterModule'),
-      description: t('dashboard.reputationCenterModuleDesc'),
-      icon: Star,
-      path: '/reputation-center',
-      color: '#f59e0b',
-      badge: 'NEW',
-      category: 'guest'
-    },
-    {
       title: t('dashboard.multiProperty'),
       description: t('dashboard.multiPropertyDesc'),
       icon: Building,
@@ -545,7 +536,6 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
       if (m.path === '/dynamic-pricing') return modules.ai_pricing !== false;
       if (m.path === '/ai-whatsapp-concierge') return modules.ai_whatsapp !== false;
       if (m.path === '/predictive-analytics') return modules.ai_predictive !== false;
-      if (m.path === '/reputation-center') return modules.ai_reputation !== false;
       if (m.path === '/revenue-autopilot') return modules.ai_revenue_autopilot !== false;
       if (m.path === '/social-media-radar') return modules.ai_social_radar !== false;
 
