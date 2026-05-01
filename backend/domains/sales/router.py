@@ -299,30 +299,10 @@ async def create_complaint(
     return {"success": True, "message": "Şikayet kaydedildi", "complaint_id": complaint["id"]}
 
 
-# ── Spa & Wellness ──────────────────────────────────────────────────
-
-@router.post("/spa/appointments")
-async def create_spa_appointment(
-    appointment_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v98 DW
-):
-    appointment = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        **appointment_data,
-        "status": "confirmed",
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await db.spa_appointments.insert_one(appointment)
-    return {"success": True, "appointment_id": appointment["id"]}
-
-
-@router.get("/spa/appointments")
-async def get_spa_appointments(current_user: User = Depends(get_current_user)):
-    appointments = await db.spa_appointments.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(100)
-    return {"appointments": appointments, "total": len(appointments)}
+# NOT: Spa & Wellness uçları (/spa/appointments POST+GET) kaldırıldı.
+# Tam sürüm domains/spa/router.py'de; çakışma riski sebebiyle stub'lar burada
+# tutulmuyor. Frontend zaten gerçek modülü çağırıyor (services/therapists/
+# rooms/appointments CRUD + status update + delete + daily-summary).
 
 
 # NOT: /events/bookings uçları kaldırıldı.
