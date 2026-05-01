@@ -4986,3 +4986,21 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
   - `frontend/src/components/HousekeepingQualityPanel.jsx`: `fetchRoomPhotos` ve `fetchRecentPhotos` 404'te sessiz boş state'e düşüyor (toast yok, console.error yok); diğer hatalarda log/toast korunmuş.
   - `frontend/src/components/StaffAssignment.jsx`: `loadStaff` aynı 404 pattern'i — toast yerine boş liste + sıfır istatistik; non-404 hatalarda davranış değişmedi.
 - **Architect notu (koşullu pass)**: 404 silencing pattern'i mevcut acıyı doğru çözüyor ama gelecekte gerçek route bug'larını gizleyebilir; long-term backend capability flag ile koşullandırılması önerildi. Backend `/media/list`, `/housekeeping/staff` endpoint'leri implementasyonu için follow-up gerekli (şimdilik UI sessizce çalışıyor).
+
+## Özellik Vitrini "Şablonlar yüklenemedi" toast fix (1 May 2026)
+- **Sorun**: `/features` (Özellik Vitrini) sayfası açıldığında — POS Tables tab aktif olsa bile — sağ üstte "Şablonlar yüklenemedi" toast'ı çıkıyordu. Sebep: shadcn TabsContent tüm tab içeriklerini eagerly mount ediyor; Messaging tab içindeki MessagingTemplates bileşeni anında `loadTemplates()` çağırıp 404 alıyordu.
+- **Kök neden**: Frontend yanlış URL'ler kullanıyordu:
+  - `/messaging/templates` → 404 (mevcut değil)
+  - `/messaging/send` → 404 (mevcut değil)
+  - Doğru endpoint'ler: `/messaging-center/templates`, `/messaging-center/send` (`backend/routers/messaging.py` prefix `/api/messaging-center`).
+- **Schema farkı (architect ile yakalandı)**: Backend template doc `{channel, body_template}` döndürüyor, frontend `{type, content}` bekliyordu. URL fix yetmezdi — tablodan seçim sonrası `selectedTemplate.type` undefined olur, send 422 alırdı; OTAMessagingHub'da ise `template.content.substring()` runtime crash riski.
+- **Düzeltme**:
+  - `frontend/src/components/MessagingTemplates.jsx`:
+    - Templates URL: `/messaging/templates` → `/messaging-center/templates`
+    - Send URL: `/messaging/send` → `/messaging-center/send`
+    - Normalize katmanı: `(response.data?.templates || []).map(t => ({...t, type: t.type ?? t.channel, content: t.content ?? t.body_template ?? ''}))` + `Array.isArray` guard
+    - `handleSendMessage` channel fallback chain (`type || channel`) + eksikse user-facing toast `'Şablon kanal bilgisi eksik'` ve early return
+  - `frontend/src/pages/OTAMessagingHub.jsx`:
+    - Aynı URL fix + `Array.isArray` guard + normalize map (response.data direkt array dönerse de güvenli)
+- **Etkilenmedi**: `/messaging/internal/*` (push, inbox, presence, conversations, send) endpoint'leri `backend/domains/guest/messaging/router.py`'de gerçekten var, dokunulmadı.
+- **Architect**: PASS. List + select + send akışı end-to-end uyumlu. Smoke test öneri: gerçek template ile UI'dan gönderim → 200 + delivery_id doğrulama.

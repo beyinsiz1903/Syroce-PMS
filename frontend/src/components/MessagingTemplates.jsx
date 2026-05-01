@@ -33,8 +33,15 @@ const MessagingTemplates = () => {
   const loadTemplates = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/messaging/templates');
-      setTemplates(response.data.templates || []);
+      const response = await axios.get('/messaging-center/templates');
+      // Backend şeması: {channel, body_template}; bileşen {type, content} bekliyor → normalize
+      const raw = response.data?.templates || [];
+      const normalized = (Array.isArray(raw) ? raw : []).map((t) => ({
+        ...t,
+        type: t.type ?? t.channel,
+        content: t.content ?? t.body_template ?? '',
+      }));
+      setTemplates(normalized);
     } catch (error) {
       console.error('Şablonlar yüklenemedi:', error);
       toast.error('Şablonlar yüklenemedi');
@@ -50,11 +57,16 @@ const MessagingTemplates = () => {
     }
 
     try {
-      const response = await axios.post('/messaging/send', {
+      const channel = selectedTemplate.type || selectedTemplate.channel;
+      if (!channel) {
+        toast.error('Şablon kanal bilgisi eksik');
+        return;
+      }
+      const response = await axios.post('/messaging-center/send', {
         recipient: sendData.recipient,
         template_id: selectedTemplate.id,
         variables: sendData.variables,
-        channel: selectedTemplate.type
+        channel
       });
 
       toast.success(

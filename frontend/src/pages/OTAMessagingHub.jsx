@@ -35,8 +35,15 @@ const OTAMessagingHub = () => {
 
   const loadTemplates = async () => {
     try {
-      const response = await axios.get('/messaging/templates');
-      setTemplates(response.data);
+      const response = await axios.get('/messaging-center/templates');
+      const raw = response.data?.templates || response.data || [];
+      // Backend {channel, body_template} → bileşen {type, content} bekliyor
+      const normalized = (Array.isArray(raw) ? raw : []).map((t) => ({
+        ...t,
+        type: t.type ?? t.channel,
+        content: t.content ?? t.body_template ?? '',
+      }));
+      setTemplates(normalized);
     } catch (error) {
       console.error('Failed to load templates:', error);
     }
