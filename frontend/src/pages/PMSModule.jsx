@@ -34,7 +34,7 @@ import CashierTab from '@/components/pms/CashierTab';
 import UpsellTab from '@/components/pms/UpsellTab';
 import InternalChatTab from '@/components/pms/InternalChatTab';
 import ReportsTab from '@/components/pms/ReportsTab';
-import FlashReportPanel from '@/components/pms/FlashReportPanel';
+import FlashReportContent from '@/components/pms/FlashReportContent';
 import LaundryTab from '@/components/pms/LaundryTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
@@ -794,7 +794,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {visitedTabs.has('upsell') && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
           {visitedTabs.has('internal_chat') && <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>}
           {visitedTabs.has('reports') && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
-          {visitedTabs.has('flash') && <TabsContent value="flash" className="space-y-4"><FlashReportPanel rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {visitedTabs.has('flash') && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
           {visitedTabs.has('tasks') && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
           {visitedTabs.has('feedback') && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
           {visitedTabs.has('allotment') && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
