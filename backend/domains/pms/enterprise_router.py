@@ -28,6 +28,15 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.cache import cached
 from core.database import db
+
+try:
+    from cache_manager import cache as _cache_mgr, cached as _cm_cached
+except ImportError:
+    _cache_mgr = None  # type: ignore
+    def _cm_cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
 from core.helpers import require_feature
 from core.security import get_current_user, security
 from models.schemas import (
@@ -1065,6 +1074,7 @@ async def log_audit_event(tenant_id: str, user_id: str, action: str, entity_type
     return audit_log
 
 @router.get("/admin/audit-logs")
+@_cm_cached(ttl=120, key_prefix="admin_audit_logs")  # v95.3 — 2dk cache, audit log read-heavy
 async def get_audit_logs(
     action: str = None,
     entity_type: str = None,
@@ -1072,9 +1082,14 @@ async def get_audit_logs(
     start_date: str = None,
     end_date: str = None,
     limit: int = 100,
+    skip: int = 0,  # v95.3 — pagination eklendi (90 KB liste için)
     current_user: User = Depends(get_current_user)
 ):
-    """Get audit logs with filters"""
+    """Get audit logs with filters + pagination."""
+    # v95.3 — limit cap (DoS koruması) + skip non-negative
+    limit = max(1, min(int(limit), 500))
+    skip = max(0, int(skip))
+
     query = {'tenant_id': current_user.tenant_id}
 
     if action:
@@ -1086,13 +1101,24 @@ async def get_audit_logs(
     if start_date and end_date:
         query['timestamp'] = {'$gte': start_date, '$lte': end_date}
 
-    logs = await db.audit_logs.find(
-        query,
-        {'_id': 0}
-    ).sort('timestamp', -1).limit(limit).to_list(limit)
+    cursor = (
+        db.audit_logs.find(query, {'_id': 0})
+        .sort('timestamp', -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    logs = await cursor.to_list(limit)
+    total = await db.audit_logs.count_documents(query)
 
     logs = _jsonable(logs)
-    return {'logs': logs, 'count': len(logs)}
+    return {
+        'logs': logs,
+        'count': len(logs),
+        'total': total,
+        'skip': skip,
+        'limit': limit,
+        'has_more': (skip + len(logs)) < total,
+    }
 
 @router.get("/admin/audit-logs/critical")
 async def get_critical_audit_logs(

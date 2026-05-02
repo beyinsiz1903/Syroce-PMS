@@ -550,18 +550,29 @@ async def get_ai_activity_feed(
             'status': 'active'
         })
 
-    # 3. VIP Visitor Insights
+    # 3. VIP Visitor Insights — v95.3 N+1 fix + tenant scope (cross-tenant guest read riskini kapatır)
     vip_arrivals = []
     today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
     today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
 
-    async for booking in db.bookings.find({
+    today_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
         'status': {'$in': ['confirmed', 'guaranteed']}
-    }):
-        guest = await db.guests.find_one({'id': booking.get('guest_id')})
-        if guest and guest.get('vip'):
+    }, {'_id': 0, 'guest_id': 1, 'room_number': 1}).to_list(500)
+
+    guest_ids = list({b.get('guest_id') for b in today_bookings if b.get('guest_id')})
+    guests_by_id: dict[str, dict] = {}
+    if guest_ids:
+        async for g in db.guests.find(
+            {'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id, 'vip': True},
+            {'_id': 0, 'id': 1, 'name': 1, 'loyalty_tier': 1, 'preferences': 1},
+        ):
+            guests_by_id[g['id']] = g
+
+    for booking in today_bookings:
+        guest = guests_by_id.get(booking.get('guest_id'))
+        if guest:
             vip_arrivals.append({
                 'name': guest.get('name'),
                 'room': booking.get('room_number'),

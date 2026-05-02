@@ -20,6 +20,26 @@ from core.security import (
 )
 from modules.pms_core.role_permission_service import require_op  # v90 DW
 
+try:
+    from cache_manager import cache as _cache_mgr, cached as _cm_cached
+except ImportError:
+    _cache_mgr = None  # type: ignore
+    def _cm_cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+        return decorator
+
+
+def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
+    """v95.3 — admin/tenants list cache'i temizle. Super-admin tenant_id ile
+    set edilir; bu fonksiyon güvenli (hata fırlatmaz)."""
+    if not _cache_mgr or not tenant_id:
+        return
+    try:
+        _cache_mgr.invalidate_tenant_cache(tenant_id, "admin_tenants_list")
+    except Exception:
+        pass
+
 require_super_admin = require_super_admin_guard()
 from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings
 from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
@@ -178,19 +198,38 @@ async def get_property_type_detail(property_type: str):
 
 
 @router.get("/admin/tenants")
-async def list_tenants(current_user: User = Depends(require_super_admin)):
+@_cm_cached(ttl=60, key_prefix="admin_tenants_list")  # v95.3 — 1dk cache, super-admin paneli
+async def list_tenants(
+    skip: int = 0,
+    limit: int = 1000,  # v95.3 — backward-compat default; UI küçük sayfa istediğinde override eder
+    current_user: User = Depends(require_super_admin),
+):
     """List all hotels/tenants for super admin users ONLY.
 
     NOTE: Only SUPER_ADMIN users can view all hotels.
     Regular ADMIN users (hotel managers) cannot access this endpoint.
+
+    v95.3 — pagination: ?skip=0&limit=50 ile sayfalanır; default 1000
+    eski davranışı korur. Limit 2000 ile cap'lendi.
     """
-    tenants = await db.tenants.find({}, {"_id": 0}).to_list(1000)
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 2000))
+
+    cursor = db.tenants.find({}, {"_id": 0}).skip(skip).limit(limit)
+    tenants = await cursor.to_list(limit)
+    total = await db.tenants.count_documents({})
 
     # Merge defaults for backward compatibility
     for tenant in tenants:
         tenant["modules"] = get_tenant_modules(tenant)
 
-    return {"tenants": tenants}
+    return {
+        "tenants": tenants,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + len(tenants)) < total,
+    }
 
 
 
@@ -693,6 +732,8 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
+    _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
+
     # Return updated tenant with merged modules
     tenant_doc = await db.tenants.find_one(query, {"_id": 0})
     if not tenant_doc:
@@ -782,6 +823,8 @@ async def update_tenant_subscription(
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Subscription could not be updated")
 
+    _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
+
     return {
         "success": True,
         "message": "Subscription updated successfully",
@@ -851,6 +894,7 @@ async def update_tenant_tier(
         update_data["modules"] = get_plan_default_modules(new_tier)
 
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
+    _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
 
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
@@ -893,6 +937,7 @@ async def admin_update_tenant_info(
 
     update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
+    _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
 
     updated = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     return {"success": True, "message": "Hotel information updated", "tenant": updated}
