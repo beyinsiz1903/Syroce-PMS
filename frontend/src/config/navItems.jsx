@@ -280,6 +280,24 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "reservations",
   },
+  {
+    key: "departure_list",
+    label: "Bugünün Çıkışları",
+    path: "/departure-list",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
+  {
+    key: "no_show_today",
+    label: "Bekleyen / No-Show Adayları",
+    path: "/no-show-today",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
 
   // ──── FINANCE GROUP ────────────────────────────────
   {

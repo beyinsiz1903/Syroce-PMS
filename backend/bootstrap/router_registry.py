@@ -30,6 +30,7 @@ def _safe_import(module_path: str, attr: str):
 _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = [
     # Core extracted routers
     ("routers.auth", "router", ["auth"], None, None),
+    ("routers.db_admin", "router", ["admin-db"], None, None),
     ("routers.housekeeping", "router", ["housekeeping"], None, None),
     ("routers.departments", "router", ["departments"], None, None),
     ("routers.pms", "router", ["pms"], None, None),

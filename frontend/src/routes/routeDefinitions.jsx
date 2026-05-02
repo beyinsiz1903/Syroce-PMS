@@ -119,6 +119,8 @@ const MultiProperty = lazy(() => import("@/pages/MultiProperty"));
 const StaffManagement = lazy(() => import("@/pages/StaffManagement"));
 const GuestJourney = lazy(() => import("@/pages/GuestJourney"));
 const ArrivalList = lazy(() => import("@/pages/ArrivalList"));
+const DepartureList = lazy(() => import("@/pages/DepartureList"));
+const NoShowToday = lazy(() => import("@/pages/NoShowToday"));
 const AIWhatsAppConcierge = lazy(() => import("@/pages/AIWhatsAppConcierge"));
 const PredictiveAnalytics = lazy(() => import("@/pages/PredictiveAnalytics"));
 const TravelAgentARAP = lazy(() => import("@/pages/TravelAgentARAP"));
@@ -303,6 +305,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/no-show-analytics", ...p(NoShowAnalytics) },
     { path: "/group-reservations", ...p(GroupReservations) },
     { path: "/arrival-list", ...p(ArrivalList) },
+    { path: "/departure-list", ...p(DepartureList) },
+    { path: "/no-show-today", ...p(NoShowToday) },
 
     // ── Finance ────────────────────────────────────────
     { path: "/invoices", ...p(InvoiceModule) },

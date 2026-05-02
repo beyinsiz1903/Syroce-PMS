@@ -5029,3 +5029,16 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
 - **Henüz uygulanmadı (kullanıcı onayı bekliyor)**:
   - **T006 (perf)**: ana bundle ağır; `vendor-charts (recharts)` ve `PMSModule` lazy chunk'lara ayrılabilir.
   - **T007 (sayfa kümeleri)**: Revenue (9 sayfa) ve Settings/Admin (9 sayfa) potansiyel hub adayı.
+
+## Front-Office Quick Ops (Mayıs 2026)
+- `/arrival-list` (ArrivalList): "Hızlı Check-in" butonu — `/api/pms-core/check-in`
+- `/departure-list` (DepartureList): bugünkü çıkış + folio bakiyesi + force — `/api/pms-core/checkout`
+- `/no-show-today` (NoShowToday): bekleyen varış + tek-tık no-show — `/api/pms-core/no-show`
+- Hepsi atomic core (core/atomic_checkin_checkout.py) üzerinden — night audit ile çakışmaz.
+
+## Atlas Koleksiyon Teşhis (Mayıs 2026)
+- `routers/db_admin.py`:
+  - `GET /api/admin/db/collections` → liste + count + droppable
+  - `DELETE /api/admin/db/collections/{name}?dry_run=true|false` → allowlist
+    (`*_test`, `*_tmp`, `legacy_*`, `__obsolete__`); PROTECTED_PREFIXES guard
+    kritik koleksiyonları korur. Admin rolü zorunlu, audit_log'a düşer.

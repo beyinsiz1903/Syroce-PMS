@@ -5,7 +5,7 @@ import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar } from 'lucide-react';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   const [arrivals, setArrivals] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
     loadTodayArrivals();
@@ -121,6 +122,32 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       loadTodayArrivals();
     } catch (error) {
       toast.error('Oda atanamadı');
+    }
+  };
+
+  const quickCheckIn = async (booking) => {
+    if (busyId) return;
+    if (!booking.room_id && !booking.room_number) {
+      toast.error('Önce oda atayın');
+      return;
+    }
+    const status = (booking.status || '').toLowerCase();
+    if (status === 'checked_in') {
+      toast.info('Zaten check-in yapılmış');
+      return;
+    }
+    if (!window.confirm(`${booking.guest_name || booking.id.slice(0, 8)} için check-in yapılsın mı?`)) return;
+    setBusyId(booking.id);
+    try {
+      await axios.post('/api/pms-core/check-in', { booking_id: booking.id });
+      toast.success('Check-in tamamlandı');
+      loadTodayArrivals();
+    } catch (e) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : detail?.message || detail?.error || 'Check-in başarısız';
+      toast.error(msg);
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -304,6 +331,17 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                       >
                         <BedDouble className="w-4 h-4 mr-2" />
                         Oda Ata
+                      </Button>
+                    )}
+                    {(booking.status || '').toLowerCase() !== 'checked_in' && (
+                      <Button
+                        size="sm"
+                        className="mb-2 bg-green-600 hover:bg-green-700"
+                        disabled={busyId === booking.id || (!booking.room_id && !booking.room_number)}
+                        onClick={() => quickCheckIn(booking)}
+                      >
+                        <LogIn className="w-4 h-4 mr-2" />
+                        {busyId === booking.id ? 'İşleniyor…' : 'Hızlı Check-in'}
                       </Button>
                     )}
                     <p className="text-lg font-semibold">€{booking.total_amount}</p>
