@@ -232,7 +232,7 @@ async def require_auth(
         path = ""
     if path not in _PWD_CHANGE_BYPASS_PATHS:
         try:
-            from server import users_col
+            from db import users_col
             email = payload.get("email")
             # v107 EK-3 round-4 (architect P0): email/user_doc None case fail-closed.
             # Önceki davranış: email yoksa veya user_doc yoksa skip → silinmiş user'ın
@@ -304,7 +304,7 @@ async def require_admin(
         raise HTTPException(status_code=401, detail="Geçersiz oturum")
     # Lazy import to avoid circular dep at module load
     from bson import ObjectId
-    from server import users_col  # type: ignore
+    from db import users_col  # type: ignore
     try:
         oid = ObjectId(sub)
     except Exception:

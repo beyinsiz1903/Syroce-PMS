@@ -1,21 +1,29 @@
+"""Quick ID Reader API — FastAPI app entry.
+
+Refactor R3a: split monolithic server.py into:
+  - db.py          : Mongo client + collections
+  - schemas.py     : Pydantic request models + constants (MAX_IMAGE_BASE64_LENGTH, ID_EXTRACTION_PROMPT)
+  - middleware.py  : SecurityHeaders / CSRF / RequestSizeLimit + exception handlers
+  - helpers.py     : serialize_doc, image-validate, audit, throttle, find_duplicates, extract_id_data
+This file keeps only app construction + lifespan + route handlers.
+"""
 from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from dotenv import load_dotenv
 import os
 import json
 import base64
 import re
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
-from pydantic import BaseModel, Field
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
 import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+from bson import ObjectId
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import qrcode
+import io
 
 load_dotenv()
 
@@ -28,75 +36,89 @@ logging.basicConfig(
 )
 logger = logging.getLogger("quickid")
 
-# Suppress cosmetic passlib bcrypt-version detection warning. passlib's version
-# probe uses `bcrypt.__about__.__version__`, removed in bcrypt ≥4.1. The hash
-# round-trip itself is unaffected; only the noisy WARNING is silenced.
+# Suppress cosmetic passlib bcrypt-version detection warning.
 logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
 logging.getLogger("passlib").setLevel(logging.ERROR)
 
-from auth import (
-    hash_password, verify_password, create_token,
-    require_auth, require_admin, get_current_user, security, decode_token,
-    validate_password_strength, check_account_lockout, record_login_attempt,
-    unlock_account, ACCOUNT_LOCKOUT_THRESHOLD
+# --- Local module imports (R3a split). Order matters: load_dotenv() above must
+# run first so DB/env-dependent modules see their environment. noqa: E402 below.
+from db import db, guests_col, scans_col, audit_col, users_col  # noqa: E402
+from schemas import (  # noqa: E402
+    MAX_IMAGE_BASE64_LENGTH,
+    ScanRequest, GuestCreate, GuestUpdate,
+    LoginRequest, UserCreate, UserUpdate, PasswordChange,
+    SettingsUpdate, RightsRequestCreate, RightsRequestProcess,
+    FaceCompareRequest, LivenessCheckRequest,
+    TcKimlikValidateRequest, EmniyetBildirimiRequest,
+    PropertyCreate, PropertyUpdate, KioskSessionCreate,
+    PreCheckinCreate, PreCheckinScanRequest, OfflineSyncRequest,
+    RoomCreate, RoomUpdate, RoomAssignRequest, AutoAssignRequest,
+    GroupCheckinRequest, GuestPhotoRequest,
+    BackupCreateRequest, BackupRestoreRequest,
 )
-from kvkk import get_settings, update_settings, run_data_cleanup, anonymize_guest
-from kvkk_compliance import (
+from helpers import (  # noqa: E402
+    get_user_or_ip, serialize_doc, _validate_image_payload,
+    extract_id_data, find_duplicates,
+    create_audit_log, create_auth_audit_log, compute_field_diffs,
+    _chgpw_throttle_check, _chgpw_throttle_reset,
+)
+from middleware import (  # noqa: E402
+    SecurityHeadersMiddleware, CSRFProtectionMiddleware, RequestSizeLimitMiddleware,
+    rate_limit_handler, generic_exception_handler,
+)
+
+# --- External feature modules (unchanged) ---
+from auth import (  # noqa: E402
+    hash_password, verify_password, create_token,
+    require_auth, require_admin, security,
+    validate_password_strength, check_account_lockout, record_login_attempt,
+    unlock_account, ACCOUNT_LOCKOUT_THRESHOLD,
+)
+from kvkk import get_settings, update_settings, run_data_cleanup, anonymize_guest  # noqa: E402
+from kvkk_compliance import (  # noqa: E402
     create_rights_request, list_rights_requests, process_rights_request,
     get_guest_data_for_access, export_guest_data_portable,
     generate_verbis_report, get_data_inventory, get_retention_warnings,
-    calculate_confidence_score, VALID_REQUEST_TYPES, VALID_REQUEST_STATUSES
+    calculate_confidence_score,
 )
-from tc_kimlik import validate_tc_kimlik, generate_emniyet_bildirimi, is_foreign_guest
-from biometric import compare_faces, check_liveness, get_liveness_challenge
-from multi_property import (
+from tc_kimlik import validate_tc_kimlik, generate_emniyet_bildirimi, is_foreign_guest  # noqa: E402
+from biometric import compare_faces, check_liveness, get_liveness_challenge  # noqa: E402
+from multi_property import (  # noqa: E402
     create_property, list_properties, get_property, update_property,
     create_kiosk_session, update_kiosk_activity, get_kiosk_sessions,
     store_offline_data, get_pending_syncs, process_sync,
     create_precheckin_token, get_precheckin_token, use_precheckin_token, list_precheckin_tokens,
 )
-from image_quality import assess_image_quality, preprocess_image_for_ocr
-from mrz_parser import parse_mrz_from_text, detect_and_parse_mrz
-from room_assignment import (
+from image_quality import assess_image_quality, preprocess_image_for_ocr  # noqa: E402
+from mrz_parser import parse_mrz_from_text, detect_and_parse_mrz  # noqa: E402
+from room_assignment import (  # noqa: E402
     create_room, list_rooms, get_room, update_room,
     assign_room, release_room, auto_assign_room, get_room_stats,
     ROOM_TYPES, ROOM_STATUSES,
 )
-from monitoring import (
+from monitoring import (  # noqa: E402
     get_scan_statistics, get_error_log, track_ai_cost,
     get_ai_cost_summary, get_monitoring_dashboard,
 )
-from backup_restore import (
+from backup_restore import (  # noqa: E402
     create_backup, list_backups, restore_backup, get_backup_schedule,
 )
-from ocr_fallback import ocr_scan_document, is_tesseract_available
-from ocr_providers import (
+from ocr_fallback import ocr_scan_document, is_tesseract_available  # noqa: E402
+from ocr_providers import (  # noqa: E402
     list_providers, get_provider_info, extract_with_provider,
     smart_scan, get_provider_stats, estimate_scan_cost,
     get_smart_provider_chain, update_provider_health, PROVIDERS,
 )
-from pdf_reports import generate_form_c_pdf, generate_guest_list_pdf
-from email_service import (
+from pdf_reports import generate_form_c_pdf, generate_guest_list_pdf  # noqa: E402
+from email_service import (  # noqa: E402
     notify_checkin, notify_checkout, notify_kvkk_request,
     get_email_log, get_email_status, send_email,
 )
-import qrcode
-import io
 
+# --- Rate limiter ---
+from rate_limit import limiter  # shared singleton (also used by routers/*)
 
-# --- Rate Limiter Setup ---
-def get_user_or_ip(request: Request) -> str:
-    """Rate limit key: use authenticated user email if available, else IP."""
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        payload = decode_token(token)
-        if payload and payload.get("email"):
-            return payload["email"]
-    return get_remote_address(request)
-
-limiter = Limiter(key_func=get_user_or_ip)
-
+# --- FastAPI app ---
 app = FastAPI(
     title="Quick ID Reader API",
     description="""
@@ -147,170 +169,15 @@ Authorization: Bearer <jwt_token>
         {"name": "Monitoring", "description": "Sistem izleme ve metrikler"},
         {"name": "Yedekleme", "description": "Veritabanı yedekleme ve geri yükleme"},
         {"name": "OCR", "description": "Offline OCR ve görüntü işleme"},
-    ]
+    ],
 )
 app.state.limiter = limiter
 
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"detail": "İstek limiti aşıldı. Lütfen biraz bekleyin ve tekrar deneyin.", "retry_after": str(exc.detail)}
-    )
+# --- Exception handlers ---
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
 
-# v109 Bug DAJ: generic 500 catch-all → defense-in-depth against info disclosure.
-# Stack traces, internal paths, library versions, DB schema, file paths are all
-# logged server-side but NEVER returned to client. Generic Turkish error message
-# only. CRITICAL: HTTPException + StarletteHTTPException + RequestValidationError
-# + RateLimitExceeded are re-raised so FastAPI's built-in handlers run (otherwise
-# every 401/404/422/429 collapses into a generic 500, breaking login/permissions).
-from starlette.exceptions import HTTPException as _StarletteHTTPException
-from fastapi.exceptions import RequestValidationError as _RVE
-
-@app.exception_handler(Exception)
-async def _generic_exception_handler(request: Request, exc: Exception):
-    if isinstance(exc, (_StarletteHTTPException, HTTPException, _RVE, RateLimitExceeded)):
-        raise exc
-    import traceback as _tb
-    logger.error(
-        "Unhandled exception | path=%s method=%s type=%s\n%s",
-        request.url.path, request.method, type(exc).__name__, _tb.format_exc()
-    )
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin."}
-    )
-
-# --- Security Headers Middleware ---
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(self), microphone=()"
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
-        return response
-
-app.add_middleware(SecurityHeadersMiddleware)
-
-# v48 (Bug CF) — per-user-id sliding-window throttle for the authenticated
-# self-change-password surface. Inline (rather than slowapi) because slowapi
-# decorators key by request IP only; we need the user_id to be the bucket key
-# so a stolen access_token cannot brute-force the password silently while
-# rotating IPs through a botnet.
-from collections import deque as _cgw_deque
-import asyncio as _cgw_asyncio
-_chgpw_hits: dict[str, _cgw_deque] = {}
-_chgpw_lock = _cgw_asyncio.Lock()
-_CHGPW_MAX = 5
-_CHGPW_WINDOW = 900  # seconds (15 min)
-
-async def _chgpw_throttle_check(uid: str) -> None:
-    async with _chgpw_lock:
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(seconds=_CHGPW_WINDOW)
-        dq = _chgpw_hits.setdefault(uid, _cgw_deque())
-        while dq and dq[0] < cutoff:
-            dq.popleft()
-        if len(dq) >= _CHGPW_MAX:
-            retry = int((dq[0] + timedelta(seconds=_CHGPW_WINDOW) - now).total_seconds()) + 1
-            raise HTTPException(
-                status_code=429,
-                detail=f"Çok fazla şifre değiştirme denemesi. Lütfen {max(1, retry)} saniye sonra tekrar deneyin.",
-                headers={"Retry-After": str(max(1, retry))},
-            )
-        dq.append(now)
-        # bounded growth
-        if len(_chgpw_hits) > 10_000:
-            _chgpw_hits.clear()
-
-def _chgpw_throttle_reset(uid: str) -> None:
-    _chgpw_hits.pop(uid, None)
-
-
-# --- CSRF Protection Middleware (Origin/Referer check) ---
-CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-CSRF_EXEMPT_PATHS = {
-    "/api/auth/login", "/api/auth/validate-password",
-    "/api/health", "/api/docs", "/api/redoc", "/api/openapi.json",
-    "/api/rate-limits", "/api/scan/ocr-status", "/api/scan/providers",
-}
-
-class CSRFProtectionMiddleware(BaseHTTPMiddleware):
-    """
-    CSRF koruması: Bearer token olmayan POST/PATCH/DELETE isteklerinde
-    Origin veya Referer header'ı kontrol eder.
-    JWT Bearer token kullanan istekler CSRF'den muaftır (browser otomatik göndermez).
-    """
-    async def dispatch(self, request, call_next):
-        if request.method in CSRF_SAFE_METHODS:
-            return await call_next(request)
-
-        # Exempt paths
-        path = request.url.path.rstrip("/")
-        if path in CSRF_EXEMPT_PATHS:
-            return await call_next(request)
-
-        # Pre-check-in public endpoints are exempt
-        if path.startswith("/api/precheckin/"):
-            return await call_next(request)
-
-        # Bearer token ile gelen istekler CSRF'den muaf
-        # (Browser otomatik olarak Bearer token göndermez, bu yüzden CSRF riski yok)
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            return await call_next(request)
-
-        # Token yok → Origin/Referer kontrolü
-        origin = request.headers.get("origin", "")
-        referer = request.headers.get("referer", "")
-
-        # İzin verilen origin'ler
-        allowed_origins = set(cors_origins_list) if cors_origins_list else set()
-        allowed_origins.add("http://localhost:3000")
-        allowed_origins.add("http://localhost:8001")
-        allowed_origins.add("http://127.0.0.1:3000")
-        allowed_origins.add("http://127.0.0.1:8001")
-
-        origin_ok = False
-        if origin:
-            origin_ok = any(origin.startswith(allowed.rstrip("/")) for allowed in allowed_origins if allowed and allowed != "*")
-        if not origin_ok and referer:
-            origin_ok = any(referer.startswith(allowed.rstrip("/")) for allowed in allowed_origins if allowed and allowed != "*")
-
-        # Origin/Referer yoksa ve token da yoksa → potansiyel CSRF
-        if not origin_ok and (origin or referer):
-            # Sadece tanınmayan Origin varsa engelle (Origin yoksa izin ver - curl, Postman vb.)
-            logger.warning(f"⚠️ CSRF rejected: {request.method} {path} (origin: {origin})")
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "CSRF doğrulama hatası. İstek reddedildi."}
-            )
-
-        return await call_next(request)
-
-app.add_middleware(CSRFProtectionMiddleware)
-
-# --- Request Size Limit Middleware ---
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.method == "POST" and request.url.path in ["/api/scan"]:
-            content_length = request.headers.get("content-length")
-            if content_length and int(content_length) > MAX_IMAGE_BASE64_LENGTH:
-                return JSONResponse(
-                    status_code=413,
-                    content={"detail": f"Görüntü boyutu çok büyük. Maksimum {MAX_IMAGE_BASE64_LENGTH // (1024*1024)}MB izin verilir."}
-                )
-        return await call_next(request)
-
-app.add_middleware(RequestSizeLimitMiddleware)
-
-# CORS - Secure whitelist configuration
+# --- CORS whitelist ---
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
 REPLIT_DEV_DOMAIN = os.environ.get("REPLIT_DEV_DOMAIN", "")
 if CORS_ORIGINS == "*":
@@ -327,8 +194,11 @@ else:
     ]
     if REPLIT_DEV_DOMAIN:
         cors_origins_list.append(f"https://{REPLIT_DEV_DOMAIN}")
-        cors_origins_list.append(f"https://{REPLIT_DEV_DOMAIN.replace('-00-', '-00-')}")
 
+# --- Middleware (added in reverse-execution order: last added runs first) ---
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFProtectionMiddleware, cors_origins_list=cors_origins_list)
+app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
@@ -337,433 +207,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# MongoDB
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME = os.environ.get("DB_NAME", "quick_id_reader")
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
-
-# Collections
-guests_col = db["guests"]
-scans_col = db["scans"]
-audit_col = db["audit_logs"]
-users_col = db["users"]
-
+# --- OpenAI key (used in extract_id_data via llm_client) ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-
-# System prompt for ID extraction
-ID_EXTRACTION_PROMPT = """You are an expert ID document reader for a hotel check-in system. You analyze images of identity documents (ID cards, passports, driver's licenses) and extract structured information.
-
-CRITICAL: The image may contain ONE or MULTIPLE identity documents. You MUST detect and extract data from ALL visible documents separately.
-
-IMPORTANT RULES:
-1. Count ALL visible identity documents in the image
-2. Extract ALL visible text fields from EACH document separately
-3. Return ONLY valid JSON - no markdown, no extra text, no code blocks
-4. If a field is not visible or unclear, set it to null
-5. Normalize dates to YYYY-MM-DD format
-6. For gender, use "M" (Male/Erkek) or "F" (Female/Kadin)
-7. Detect the document type automatically for each document
-8. If the image is blurry, cropped, or not an ID document, set "is_valid" to false
-9. For Turkish ID cards (TC Kimlik), extract TC Kimlik No
-10. For passports, extract passport number and MRZ data if visible
-11. For driver's licenses, extract license number
-
-ALWAYS return a JSON object with a "documents" array. Even if there is only 1 document, wrap it in the array.
-
-Return this exact JSON structure (no markdown, no code fences):
-{
-    "document_count": 1 or 2 or more,
-    "documents": [
-        {
-            "is_valid": true or false,
-            "document_type": "tc_kimlik" | "passport" | "drivers_license" | "old_nufus_cuzdani" | "other",
-            "first_name": "string or null",
-            "last_name": "string or null",
-            "id_number": "string or null",
-            "birth_date": "YYYY-MM-DD or null",
-            "gender": "M" | "F" | null,
-            "nationality": "string or null",
-            "expiry_date": "YYYY-MM-DD or null",
-            "document_number": "string or null",
-            "birth_place": "string or null",
-            "issue_date": "YYYY-MM-DD or null",
-            "mother_name": "string or null",
-            "father_name": "string or null",
-            "address": "string or null",
-            "warnings": ["list of any issues or uncertain fields"],
-            "raw_extracted_text": "all visible text from this specific document"
-        }
-    ]
-}"""
-
-
-def serialize_doc(doc):
-    if doc is None:
-        return None
-    result = {}
-    for key, value in doc.items():
-        if key == "_id":
-            result["id"] = str(value)
-        elif key == "password_hash":
-            continue  # Never expose password hash
-        elif isinstance(value, ObjectId):
-            result[key] = str(value)
-        elif isinstance(value, datetime):
-            result[key] = value.isoformat()
-        elif isinstance(value, list):
-            result[key] = [serialize_doc(v) if isinstance(v, dict) else str(v) if isinstance(v, (ObjectId, datetime)) else v for v in value]
-        elif isinstance(value, dict):
-            result[key] = serialize_doc(value)
-        else:
-            result[key] = value
-    return result
-
-
-# --- Pydantic Models ---
-# Maximum image size: ~10MB base64 (approx 7.5MB raw)
-MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024  # 10MB
-
-# v50 (Bug CK): defense against guest-photo upload accepting arbitrary strings.
-# Magic bytes for safe raster image formats — no SVG/HTML/PDF/EXE accepted.
-_IMAGE_MAGIC = (
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-)
-_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
-_DATA_URI_PREFIX = re.compile(r"^data:image/(jpeg|png|webp|gif);base64,", re.IGNORECASE)
-
-def _validate_image_payload(image_base64: str) -> tuple[bytes, str]:
-    """Return (raw_bytes, mime). Raises HTTPException(400) on any anomaly.
-    Strips a single optional data:image/...;base64, prefix (no other prefixes
-    allowed). Rejects SVG/HTML/PDF/EXE/text via strict magic-byte allowlist.
-    Also rejects WEBP since the form needs an extra RIFF check (handled below)."""
-    s = image_base64.strip()
-    if _DATA_URI_PREFIX.match(s):
-        s = s.split(",", 1)[1]
-    # No whitespace inside payload (defeats odd polyglots / smuggling).
-    if not _BASE64_RE.match(s):
-        raise HTTPException(status_code=400,
-            detail="Geçersiz fotoğraf: yalnızca base64-kodlu görüntü kabul edilir.")
-    try:
-        raw = base64.b64decode(s, validate=True)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Geçersiz fotoğraf: base64 çözümlenemedi.")
-    if len(raw) < 64:
-        raise HTTPException(status_code=400, detail="Geçersiz fotoğraf: dosya çok küçük.")
-    # Magic byte allowlist
-    detected_mime = None
-    for sig, mime in _IMAGE_MAGIC:
-        if raw.startswith(sig):
-            detected_mime = mime
-            break
-    if not detected_mime and len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        detected_mime = "image/webp"
-    if not detected_mime:
-        raise HTTPException(status_code=400,
-            detail="Geçersiz fotoğraf: yalnızca JPEG, PNG, WEBP veya GIF kabul edilir.")
-    # v50 Round-2 hardening: prevent valid-magic + junk-payload integrity bypass
-    # (attacker stuffs `\xff\xd8\xff` + 1KB random — magic check passed pre-R2).
-    # Force PIL to actually parse + verify the image. v50 Round-3: also enforce
-    # decompression-bomb / pixel-dimension caps to mitigate DoS via crafted images.
-    try:
-        from PIL import Image
-        from io import BytesIO
-        import warnings
-        # Treat decompression-bomb warnings as hard errors. Default Pillow cap
-        # is ~178 MP; we tighten to 25 MP — well above any real ID/selfie shot.
-        Image.MAX_IMAGE_PIXELS = 25_000_000
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(BytesIO(raw)) as im:
-                im.verify()
-                w, h = im.size
-        if w * h > Image.MAX_IMAGE_PIXELS or w > 8192 or h > 8192:
-            raise HTTPException(status_code=400,
-                detail="Geçersiz fotoğraf: çözünürlük limitin üzerinde.")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=400,
-            detail="Geçersiz fotoğraf: dosya bozuk veya tanınamadı.")
-    return raw, detected_mime
-
-class ScanRequest(BaseModel):
-    image_base64: str
-    provider: Optional[str] = None  # gpt-4o, gpt-4o-mini, gemini-flash, tesseract, auto
-    smart_mode: Optional[bool] = True  # Akıllı yönlendirme
-
-class GuestCreate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    id_number: Optional[str] = None
-    birth_date: Optional[str] = None
-    gender: Optional[str] = None
-    nationality: Optional[str] = None
-    document_type: Optional[str] = None
-    document_number: Optional[str] = None
-    birth_place: Optional[str] = None
-    expiry_date: Optional[str] = None
-    issue_date: Optional[str] = None
-    mother_name: Optional[str] = None
-    father_name: Optional[str] = None
-    address: Optional[str] = None
-    notes: Optional[str] = None
-    scan_id: Optional[str] = None
-    original_extracted_data: Optional[dict] = None
-    force_create: Optional[bool] = False
-    kvkk_consent: Optional[bool] = False
-
-class GuestUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    id_number: Optional[str] = None
-    birth_date: Optional[str] = None
-    gender: Optional[str] = None
-    nationality: Optional[str] = None
-    document_type: Optional[str] = None
-    document_number: Optional[str] = None
-    birth_place: Optional[str] = None
-    expiry_date: Optional[str] = None
-    issue_date: Optional[str] = None
-    mother_name: Optional[str] = None
-    father_name: Optional[str] = None
-    address: Optional[str] = None
-    notes: Optional[str] = None
-    status: Optional[str] = None
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-class UserCreate(BaseModel):
-    email: str
-    password: str
-    name: str
-    role: str = "reception"  # "admin" or "reception"
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
-    is_active: Optional[bool] = None
-
-class PasswordChange(BaseModel):
-    current_password: Optional[str] = None
-    new_password: str
-
-class SettingsUpdate(BaseModel):
-    retention_days_scans: Optional[int] = None
-    retention_days_audit: Optional[int] = None
-    store_scan_images: Optional[bool] = None
-    kvkk_consent_required: Optional[bool] = None
-    kvkk_consent_text: Optional[str] = None
-    data_processing_purpose: Optional[str] = None
-    auto_cleanup_enabled: Optional[bool] = None
-
-class RightsRequestCreate(BaseModel):
-    request_type: str  # access, rectification, erasure, portability, objection
-    guest_id: Optional[str] = None
-    requester_name: str
-    requester_email: str
-    requester_id_number: Optional[str] = None
-    description: str
-
-class RightsRequestProcess(BaseModel):
-    status: str  # in_progress, completed, rejected
-    response_note: str
-    response_data: Optional[dict] = None
-
-class FaceCompareRequest(BaseModel):
-    document_image_base64: str
-    selfie_image_base64: str
-
-class LivenessCheckRequest(BaseModel):
-    image_base64: str
-    challenge_id: str
-    session_id: str
-
-class TcKimlikValidateRequest(BaseModel):
-    tc_no: str
-
-class EmniyetBildirimiRequest(BaseModel):
-    guest_id: str
-
-class PropertyCreate(BaseModel):
-    name: str
-    address: Optional[str] = ""
-    phone: Optional[str] = ""
-    tax_no: Optional[str] = ""
-    city: Optional[str] = ""
-
-class PropertyUpdate(BaseModel):
-    name: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    tax_no: Optional[str] = None
-    city: Optional[str] = None
-    is_active: Optional[bool] = None
-    settings: Optional[dict] = None
-
-class KioskSessionCreate(BaseModel):
-    property_id: str
-    kiosk_name: Optional[str] = "Lobby Kiosk"
-
-class PreCheckinCreate(BaseModel):
-    property_id: str
-    reservation_ref: Optional[str] = ""
-    guest_name: Optional[str] = ""
-
-class PreCheckinScanRequest(BaseModel):
-    image_base64: str
-    kvkk_consent: Optional[bool] = False
-
-class OfflineSyncRequest(BaseModel):
-    property_id: str
-    data_type: str  # scans, guests
-    data: list
-    device_id: Optional[str] = None
-
-class RoomCreate(BaseModel):
-    room_number: str
-    room_type: str = "standard"
-    floor: int = 1
-    capacity: int = 2
-    property_id: Optional[str] = "default"
-    features: Optional[list] = []
-
-class RoomUpdate(BaseModel):
-    room_type: Optional[str] = None
-    floor: Optional[int] = None
-    capacity: Optional[int] = None
-    status: Optional[str] = None
-    features: Optional[list] = None
-
-class RoomAssignRequest(BaseModel):
-    room_id: str
-    guest_id: str
-
-class AutoAssignRequest(BaseModel):
-    guest_id: str
-    property_id: Optional[str] = None
-    preferred_type: Optional[str] = None
-
-class GroupCheckinRequest(BaseModel):
-    guest_ids: List[str]
-    room_id: Optional[str] = None
-
-class GuestPhotoRequest(BaseModel):
-    # v50 (Bug CK): minimal length to reject empty / "AAAA" trivial payloads.
-    # Full magic-byte validation done in _validate_image_payload below.
-    image_base64: str = Field(..., min_length=128, max_length=MAX_IMAGE_BASE64_LENGTH)
-
-class BackupCreateRequest(BaseModel):
-    description: Optional[str] = ""
-
-class BackupRestoreRequest(BaseModel):
-    backup_id: str
-
-
-async def extract_id_data(image_base64: str) -> dict:
-    """Extract data from one or more ID documents in an image using OpenAI Vision"""
-    from llm_client import chat_with_vision_json
-
-    result = await chat_with_vision_json(
-        system_message=ID_EXTRACTION_PROMPT,
-        user_text="Analyze ALL identity documents visible in this image. There may be 1 or more documents. Extract data from EACH document separately and return them in the documents array. Return ONLY the JSON structure, no markdown.",
-        images_base64=[image_base64],
-        model="gpt-4o",
-    )
-
-    if "documents" in result and isinstance(result["documents"], list):
-        return result
-    else:
-        return {
-            "document_count": 1,
-            "documents": [result]
-        }
-
-
-# --- Helpers ---
-async def find_duplicates(id_number=None, first_name=None, last_name=None, birth_date=None, exclude_id=None):
-    duplicates = []
-    if id_number and id_number.strip():
-        query = {"id_number": id_number.strip(), "anonymized": {"$ne": True}}
-        if exclude_id:
-            query["_id"] = {"$ne": ObjectId(exclude_id)}
-        async for doc in guests_col.find(query):
-            duplicates.append({**serialize_doc(doc), "match_type": "id_number", "match_confidence": "high"})
-    if first_name and last_name and birth_date:
-        query = {
-            "first_name": {"$regex": f"^{first_name.strip()}$", "$options": "i"},
-            "last_name": {"$regex": f"^{last_name.strip()}$", "$options": "i"},
-            "birth_date": birth_date.strip(),
-            "anonymized": {"$ne": True}
-        }
-        if exclude_id:
-            query["_id"] = {"$ne": ObjectId(exclude_id)}
-        existing_ids = {d["id"] for d in duplicates}
-        async for doc in guests_col.find(query):
-            s = serialize_doc(doc)
-            if s["id"] not in existing_ids:
-                duplicates.append({**s, "match_type": "name_birthdate", "match_confidence": "medium"})
-    return duplicates
-
-
-TRACKED_FIELDS = ["first_name", "last_name", "id_number", "birth_date", "gender", "nationality",
-                   "document_type", "document_number", "birth_place", "expiry_date", "issue_date",
-                   "mother_name", "father_name", "address", "notes", "status"]
-
-async def create_audit_log(guest_id, action, changes=None, old_data=None, new_data=None, metadata=None, user_email=None):
-    audit_entry = {
-        "guest_id": guest_id,
-        "action": action,
-        "changes": changes or {},
-        "old_data": old_data or {},
-        "new_data": new_data or {},
-        "metadata": metadata or {},
-        "user_email": user_email,
-        "created_at": datetime.now(timezone.utc)
-    }
-    await audit_col.insert_one(audit_entry)
-
-# v49 (Bug CJ): authentication & user-management audit trail.
-# Forensic gap: prior to v49, change-password / admin reset / user CRUD only
-# wrote `logger.info(...)` (volatile, rotated, not queryable). Stolen-token
-# probing left no durable trace. We now persist a structured row per attempt
-# (success AND blocked) into `audit_logs` with `category="auth"`.
-async def create_auth_audit_log(action, *, actor_id=None, actor_email=None,
-                                 target_id=None, target_email=None,
-                                 outcome="success", reason=None,
-                                 metadata=None, ip_address=None):
-    try:
-        await audit_col.insert_one({
-            "category": "auth",
-            "action": action,
-            "actor_id": actor_id,
-            "actor_email": actor_email,
-            "target_id": target_id,
-            "target_email": target_email,
-            "outcome": outcome,
-            "reason": reason,
-            "ip_address": ip_address,
-            "metadata": metadata or {},
-            "created_at": datetime.now(timezone.utc),
-        })
-    except Exception as e:
-        # Audit write failure must not break the request, but it MUST be logged
-        # loudly so the missing trail is detectable.
-        logger.error(f"AUDIT WRITE FAIL action={action} outcome={outcome}: {e}")
-
-def compute_field_diffs(old_data, new_data):
-    diffs = {}
-    for field in TRACKED_FIELDS:
-        old_val = old_data.get(field)
-        new_val = new_data.get(field)
-        if old_val != new_val and new_val is not None:
-            diffs[field] = {"old": old_val, "new": new_val}
-    return diffs
 
 
 # ===== STARTUP: Create default admin =====
@@ -1041,533 +486,31 @@ async def startup_tasks():
 
 
 # ===== AUTH ROUTES =====
-async def _health_payload():
-    """Ortak sağlık çıktısı — root /health ve /api/health için aynı yanıt."""
-    db_status = "healthy"
-    try:
-        await client.admin.command("ping")
-    except Exception:
-        db_status = "unhealthy"
-    return {
-        "status": "healthy" if db_status == "healthy" else "degraded",
-        "service": "Quick ID Reader",
-        "version": "3.1.0",
-        "database": db_status,
-    }
 
+# ===== R3b routers (split from monolithic server.py) =====
+from routers.health import router as health_router  # noqa: E402
+from routers.auth import router as auth_router  # noqa: E402
+from routers.users import router as users_router  # noqa: E402
+from routers.settings import router as settings_router  # noqa: E402
 
-@app.get("/", tags=["Sağlık"], summary="Servis kök bilgisi", include_in_schema=False)
-async def root():
-    """Servis kök sayfası — yön bulmak için kısa bilgi."""
-    return {
-        "service": "Quick ID Reader",
-        "version": "3.1.0",
-        "docs": "/api/docs",
-        "health": "/health",
-        "health_api": "/api/health",
-    }
+app.include_router(health_router)
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(settings_router)
+from routers.biometric import router as biometric_router  # noqa: E402
+from routers.precheckin import router as precheckin_router  # noqa: E402
+from routers.properties import router as properties_router  # noqa: E402
+from routers.kiosk import router as kiosk_router  # noqa: E402
+from routers.sync import router as sync_router  # noqa: E402
+from routers.monitoring import router as monitoring_router  # noqa: E402
 
+app.include_router(biometric_router)
+app.include_router(precheckin_router)
+app.include_router(properties_router)
+app.include_router(kiosk_router)
+app.include_router(sync_router)
+app.include_router(monitoring_router)
 
-@app.get("/health", tags=["Sağlık"], summary="Sağlık kontrolü (kısa yol)", include_in_schema=False)
-async def health_short():
-    """k8s/load-balancer probe'ları için kısa /health yolu."""
-    return await _health_payload()
-
-
-@app.get("/api/health", tags=["Sağlık"], summary="Sistem sağlık kontrolü")
-async def health():
-    # MongoDB bağlantı kontrolü
-    return await _health_payload()
-
-@app.get("/api/rate-limits", tags=["Sağlık"], summary="Rate limit bilgileri")
-async def get_rate_limits():
-    """Return rate limit configuration for the frontend"""
-    return {
-        "limits": {
-            "scan": {"limit": 15, "window": "dakika", "description": "Kimlik tarama (AI)"},
-            "login": {"limit": 5, "window": "dakika", "description": "Giriş denemesi"},
-            "guest_create": {"limit": 30, "window": "dakika", "description": "Misafir oluşturma"},
-        },
-        "note": "Limitler kullanıcı bazında uygulanır. Her kullanıcının kendi limiti vardır."
-    }
-
-
-@app.post("/api/auth/login")
-@limiter.limit("5/minute")
-async def login(request: Request, req: LoginRequest):
-    client_ip = request.client.host if request.client else "unknown"
-
-    # Hesap kilidi kontrolü
-    lockout = await check_account_lockout(db, req.email)
-    if lockout.get("locked"):
-        logger.warning(f"🔒 Kilitli hesaba giriş denemesi: {req.email} (IP: {client_ip})")
-        # v49 Round-1: durable forensic row for stolen-token / brute-force probes.
-        await create_auth_audit_log("login_blocked_locked", actor_email=req.email,
-            target_email=req.email, outcome="blocked", reason="account_locked", ip_address=client_ip)
-        raise HTTPException(status_code=423, detail={
-            "message": lockout["message"],
-            "locked": True,
-            "remaining_minutes": lockout["remaining_minutes"],
-        })
-
-    user = await users_col.find_one({"email": req.email})
-    # v108 (Bug DAI): timing-attack defense — user yoksa dummy bcrypt verify çalıştır
-    # ki user-exists vs user-not-found timing farkı sızdırılmasın.
-    if not user:
-        from auth import dummy_verify_password
-        dummy_verify_password()
-    if not user or not verify_password(req.password, user["password_hash"]):
-        await record_login_attempt(db, req.email, success=False, ip_address=client_ip)
-        remaining = lockout.get("remaining_attempts", ACCOUNT_LOCKOUT_THRESHOLD) - 1
-        logger.warning(f"🔒 Başarısız giriş denemesi: {req.email} (kalan: {remaining}, IP: {client_ip})")
-        await create_auth_audit_log("login_failed", actor_email=req.email,
-            target_email=req.email, outcome="blocked",
-            reason=("user_not_found" if not user else "wrong_password"),
-            ip_address=client_ip, metadata={"remaining_attempts": max(remaining, 0)})
-        detail_msg = "Geçersiz e-posta veya şifre"
-        if remaining <= 2 and remaining > 0:
-            detail_msg += f". {remaining} deneme hakkınız kaldı."
-        elif remaining <= 0:
-            detail_msg = f"Hesap kilitlendi. 15 dakika sonra tekrar deneyin."
-        raise HTTPException(status_code=401, detail=detail_msg)
-
-    if not user.get("is_active", True):
-        logger.warning(f"🔒 Devre dışı hesap ile giriş denemesi: {req.email}")
-        await create_auth_audit_log("login_blocked_inactive",
-            actor_id=str(user["_id"]), actor_email=req.email,
-            target_id=str(user["_id"]), target_email=req.email,
-            outcome="blocked", reason="account_disabled", ip_address=client_ip)
-        raise HTTPException(status_code=403, detail="Hesap devre dışı")
-
-    await record_login_attempt(db, req.email, success=True, ip_address=client_ip)
-    await create_auth_audit_log("login_success",
-        actor_id=str(user["_id"]), actor_email=req.email,
-        target_id=str(user["_id"]), target_email=req.email,
-        outcome="success", ip_address=client_ip, metadata={"role": user.get("role")})
-    token = create_token({"sub": str(user["_id"]), "email": user["email"], "name": user["name"], "role": user["role"]})
-    logger.info(f"✅ Giriş başarılı: {req.email} (rol: {user['role']}, IP: {client_ip})")
-    return {
-        "token": token,
-        "user": {"id": str(user["_id"]), "email": user["email"], "name": user["name"], "role": user["role"]}
-    }
-
-@app.get("/api/auth/me")
-async def get_me(user=Depends(require_auth)):
-    db_user = await users_col.find_one({"email": user["email"]})
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"user": serialize_doc(db_user)}
-
-@app.post("/api/auth/change-password")
-async def change_password(request: Request, req: PasswordChange, user=Depends(require_auth)):
-    ip = request.client.host if request.client else None
-    db_user = await users_col.find_one({"email": user["email"]})
-    if not db_user:
-        raise HTTPException(status_code=404)
-    actor_id = str(db_user.get("_id"))
-    actor_email = user["email"]
-    # v48 (Bug CF, architect Round-1): current_password is MANDATORY for
-    # self-change, regardless of role. Previously a non-admin caller could
-    # omit `current_password` entirely and the verify branch was skipped
-    # (`if role != admin and req.current_password`) → stolen access_token
-    # = full account takeover without knowing the password. The admin-as-
-    # admin reset of OTHER users lives at
-    # /api/admin/users/{user_id}/reset-password (different endpoint).
-    if not req.current_password:
-        # v49 audit: omitted current_password is suspicious (most clients send it)
-        await create_auth_audit_log(
-            "password_change_failed",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=actor_id, target_email=actor_email,
-            outcome="blocked", reason="current_password_missing", ip_address=ip)
-        raise HTTPException(status_code=400, detail="Mevcut şifre zorunludur")
-    # Per-user throttle (5 / 15 min) on the bcrypt verify surface so a stolen
-    # token can't dictionary-attack at bcrypt-throttled speed only.
-    try:
-        await _chgpw_throttle_check(str(db_user.get("id") or db_user.get("_id") or user["email"]))
-    except HTTPException as e:
-        if e.status_code == 429:
-            await create_auth_audit_log(
-                "password_change_throttled",
-                actor_id=actor_id, actor_email=actor_email,
-                target_id=actor_id, target_email=actor_email,
-                outcome="blocked", reason="rate_limit", ip_address=ip)
-        raise
-    if not verify_password(req.current_password, db_user["password_hash"]):
-        await create_auth_audit_log(
-            "password_change_failed",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=actor_id, target_email=actor_email,
-            outcome="blocked", reason="wrong_password", ip_address=ip)
-        raise HTTPException(status_code=401, detail="Mevcut şifre yanlış")
-    # success → reset throttle so legit users aren't penalised after a typo
-    _chgpw_throttle_reset(str(db_user.get("id") or db_user.get("_id") or user["email"]))
-    # v108 (Bug DAI): same-password reuse engelle. Önceki davranış: req.new_password
-    # === req.current_password olsa bile geçer → password_changed_at update edilir,
-    # audit log "success" yazar, ama kullanıcı yine eski şifresinde kalır (KVKK/SOC2
-    # password rotation policy ihlali + false-positive change audit).
-    if req.new_password == req.current_password:
-        await create_auth_audit_log(
-            "password_change_failed",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=actor_id, target_email=actor_email,
-            outcome="blocked", reason="same_as_current", ip_address=ip)
-        raise HTTPException(status_code=400, detail={
-            "message": "Yeni şifre eskisinden farklı olmalı",
-            "error_code": "SAME_AS_CURRENT_PASSWORD",
-        })
-    # Şifre güçlülük kontrolü
-    pwd_check = validate_password_strength(req.new_password)
-    if not pwd_check["valid"]:
-        await create_auth_audit_log(
-            "password_change_failed",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=actor_id, target_email=actor_email,
-            outcome="blocked", reason="weak_password", ip_address=ip,
-            metadata={"strength": pwd_check.get("strength")})
-        raise HTTPException(status_code=400, detail={
-            "message": "Şifre gereksinimleri karşılanmadı",
-            "errors": pwd_check["errors"],
-            "strength": pwd_check["strength"],
-        })
-    # v107 EK-2 (Bug DAH P0 round-3, architect): clear force_password_change on success.
-    # Aksi: force_password_change=True olan user şifresini değiştirse bile permanent locked
-    # kalır (require_auth hala 403 PASSWORD_CHANGE_REQUIRED döner).
-    await users_col.update_one(
-        {"email": user["email"]},
-        {"$set": {
-            "password_hash": hash_password(req.new_password),
-            "updated_at": datetime.now(timezone.utc),
-            "password_changed_at": datetime.now(timezone.utc),
-            "force_password_change": False,
-        }}
-    )
-    await create_auth_audit_log(
-        "password_change_success",
-        actor_id=actor_id, actor_email=actor_email,
-        target_id=actor_id, target_email=actor_email,
-        outcome="success", ip_address=ip)
-    logger.info(f"🔑 Şifre değiştirildi: {user['email']}")
-    return {"success": True, "message": "Şifre güncellendi"}
-
-
-# ===== USER MANAGEMENT (Admin Only) =====
-@app.get("/api/users")
-async def list_users(user=Depends(require_admin)):
-    cursor = users_col.find({}).sort("created_at", -1)
-    users = [serialize_doc(doc) async for doc in cursor]
-    return {"users": users, "total": len(users)}
-
-@app.post("/api/users")
-async def create_user(request: Request, req: UserCreate, user=Depends(require_admin)):
-    ip = request.client.host if request.client else None
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    existing = await users_col.find_one({"email": req.email})
-    if existing:
-        await create_auth_audit_log("user_created",
-            actor_id=actor_id, actor_email=actor_email,
-            target_email=req.email, outcome="blocked",
-            reason="duplicate_email", ip_address=ip)
-        raise HTTPException(status_code=400, detail="Bu e-posta zaten kayıtlı")
-    if req.role not in ("admin", "reception"):
-        await create_auth_audit_log("user_created",
-            actor_id=actor_id, actor_email=actor_email,
-            target_email=req.email, outcome="blocked",
-            reason="invalid_role", ip_address=ip,
-            metadata={"requested_role": req.role})
-        raise HTTPException(status_code=400, detail="Geçersiz rol")
-    # Şifre güçlülük kontrolü
-    pwd_check = validate_password_strength(req.password)
-    if not pwd_check["valid"]:
-        await create_auth_audit_log("user_created",
-            actor_id=actor_id, actor_email=actor_email,
-            target_email=req.email, outcome="blocked",
-            reason="weak_password", ip_address=ip)
-        raise HTTPException(status_code=400, detail={
-            "message": "Şifre gereksinimleri karşılanmadı",
-            "errors": pwd_check["errors"],
-            "strength": pwd_check["strength"],
-        })
-    user_doc = {
-        "email": req.email,
-        "password_hash": hash_password(req.password),
-        "name": req.name,
-        "role": req.role,
-        "is_active": True,
-        "created_at": datetime.now(timezone.utc),
-        "password_changed_at": datetime.now(timezone.utc),
-    }
-    result = await users_col.insert_one(user_doc)
-    user_doc["_id"] = result.inserted_id
-    await create_auth_audit_log("user_created",
-        actor_id=actor_id, actor_email=actor_email,
-        target_id=str(result.inserted_id), target_email=req.email,
-        outcome="success", ip_address=ip,
-        metadata={"role": req.role, "name": req.name})
-    logger.info(f"👤 Yeni kullanıcı oluşturuldu: {req.email} (rol: {req.role}) - oluşturan: {user.get('email')}")
-    return {"success": True, "user": serialize_doc(user_doc)}
-
-@app.patch("/api/users/{user_id}")
-async def update_user(request: Request, user_id: str, req: UserUpdate, user=Depends(require_admin)):
-    ip = request.client.host if request.client else None
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        await create_auth_audit_log("user_updated", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="invalid_user_id", ip_address=ip)
-        raise HTTPException(status_code=400, detail="Invalid user ID")
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    if "role" in updates and updates["role"] not in ("admin", "reception"):
-        await create_auth_audit_log("user_updated", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="invalid_role", ip_address=ip,
-            metadata={"requested_role": updates.get("role")})
-        raise HTTPException(status_code=400, detail="Geçersiz rol")
-    old_doc = await users_col.find_one({"_id": oid})
-    updates["updated_at"] = datetime.now(timezone.utc)
-    result = await users_col.update_one({"_id": oid}, {"$set": updates})
-    if result.matched_count == 0:
-        await create_auth_audit_log("user_updated", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="not_found", ip_address=ip)
-        raise HTTPException(status_code=404)
-    doc = await users_col.find_one({"_id": oid})
-    # Diff: only fields that actually changed; role/is_active changes are
-    # security-relevant and we want them prominent in audit.
-    diffs = {k: {"old": (old_doc or {}).get(k), "new": v} for k, v in updates.items()
-             if k != "updated_at" and (old_doc or {}).get(k) != v}
-    await create_auth_audit_log("user_updated", actor_id=actor_id, actor_email=actor_email,
-        target_id=user_id, target_email=(doc or {}).get("email"),
-        outcome="success", ip_address=ip, metadata={"changes": diffs})
-    return {"success": True, "user": serialize_doc(doc)}
-
-@app.delete("/api/users/{user_id}")
-async def delete_user(request: Request, user_id: str, user=Depends(require_admin)):
-    ip = request.client.host if request.client else None
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        await create_auth_audit_log("user_deleted", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="invalid_user_id", ip_address=ip)
-        raise HTTPException(status_code=400, detail="Invalid user ID")
-    # Don't allow deleting yourself.
-    # v48 Round-3: ObjectId-normalized compare — uppercase hex bypass closed.
-    try:
-        if oid == ObjectId(user.get("sub") or ""):
-            await create_auth_audit_log("user_delete_self_blocked",
-                actor_id=actor_id, actor_email=actor_email,
-                target_id=user_id, target_email=actor_email,
-                outcome="blocked", reason="self_target", ip_address=ip)
-            raise HTTPException(status_code=400, detail="Kendi hesabınızı silemezsiniz")
-    except HTTPException:
-        raise
-    except Exception:
-        await create_auth_audit_log("user_deleted", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="invalid_session", ip_address=ip)
-        raise HTTPException(status_code=401, detail="Geçersiz oturum")
-    target_doc = await users_col.find_one({"_id": oid})
-    target_email = (target_doc or {}).get("email")
-    result = await users_col.delete_one({"_id": oid})
-    if result.deleted_count == 0:
-        await create_auth_audit_log("user_deleted", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="not_found", ip_address=ip)
-        raise HTTPException(status_code=404)
-    await create_auth_audit_log("user_deleted", actor_id=actor_id, actor_email=actor_email,
-        target_id=user_id, target_email=target_email,
-        outcome="success", ip_address=ip)
-    return {"success": True}
-
-@app.post("/api/users/{user_id}/reset-password")
-@limiter.limit("10/minute")
-async def reset_user_password(request: Request, user_id: str, req: PasswordChange, user=Depends(require_admin)):
-    ip = request.client.host if request.client else None
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        await create_auth_audit_log("admin_reset_password",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked",
-            reason="invalid_user_id", ip_address=ip)
-        raise HTTPException(status_code=400)
-    # v48 (Bug CG, architect Round-2): block self-target. Without this guard,
-    # an admin (or attacker holding an admin token) could call the admin
-    # reset endpoint with their OWN user_id and bypass the
-    # `current_password` requirement that v48 (Bug CF) added to
-    # `/api/auth/change-password`. Self-password-change MUST go through
-    # /api/auth/change-password (which now mandates current_password +
-    # per-user throttle).
-    # Round-3: compare ObjectId values, NOT raw strings. ObjectId hex is
-    # case-insensitive (uppercase form normalizes to lowercase), so a raw
-    # string compare lets an attacker bypass with `/users/<UPPERCASE>/reset`.
-    try:
-        if oid == ObjectId(user.get("sub") or ""):
-            await create_auth_audit_log("admin_reset_self_blocked",
-                actor_id=actor_id, actor_email=actor_email,
-                target_id=user_id, target_email=actor_email,
-                outcome="blocked", reason="self_target", ip_address=ip)
-            raise HTTPException(
-                status_code=400,
-                detail="Kendi şifrenizi bu uçtan değiştiremezsiniz; lütfen 'Şifremi Değiştir' bölümünü kullanın",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        # malformed sub → fail-closed
-        await create_auth_audit_log("admin_reset_password",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked",
-            reason="invalid_session", ip_address=ip)
-        raise HTTPException(status_code=401, detail="Geçersiz oturum")
-    # Şifre güçlülük kontrolü
-    pwd_check = validate_password_strength(req.new_password)
-    if not pwd_check["valid"]:
-        await create_auth_audit_log("admin_reset_password",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked",
-            reason="weak_password", ip_address=ip)
-        raise HTTPException(status_code=400, detail={
-            "message": "Şifre gereksinimleri karşılanmadı",
-            "errors": pwd_check["errors"],
-            "strength": pwd_check["strength"],
-        })
-    # v49 Round-1 fix: previously update_one ran without matched_count check
-    # for nonexistent IDs → false 'success' audit row created. Pre-check.
-    target_doc = await users_col.find_one({"_id": oid})
-    if not target_doc:
-        await create_auth_audit_log("admin_reset_password",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked",
-            reason="not_found", ip_address=ip)
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    target_email = target_doc.get("email")
-    # v108 (Bug DAI): admin reset same-password reuse engelle. Önceki: admin başkasına
-    # aynı şifreyi tekrar set edebilir → no-op rotation, password_changed_at false-update,
-    # audit log "success" yazar. Hash compare ile gerçek değişiklik garanti.
-    if verify_password(req.new_password, target_doc.get("password_hash", "")):
-        await create_auth_audit_log("admin_reset_password",
-            actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, target_email=target_email,
-            outcome="blocked", reason="same_as_current", ip_address=ip)
-        raise HTTPException(status_code=400, detail={
-            "message": "Yeni şifre kullanıcının mevcut şifresinden farklı olmalı",
-            "error_code": "SAME_AS_CURRENT_PASSWORD",
-        })
-    # v107 EK-2 (Bug DAH P0 round-3, architect): admin reset = recovery semantics.
-    # is_active=True (legacy disabled hesapları yeniden aç), force_password_change=True
-    # (target user ilk login sonrası kendi password'üne geçsin — admin'in set ettiği
-    # geçici password log/email/sözlü iletim sırasında sızabilir).
-    await users_col.update_one({"_id": oid}, {"$set": {
-        "password_hash": hash_password(req.new_password),
-        "password_changed_at": datetime.now(timezone.utc),
-        "is_active": True,
-        "force_password_change": True,
-    }})
-    await create_auth_audit_log("admin_reset_password",
-        actor_id=actor_id, actor_email=actor_email,
-        target_id=user_id, target_email=target_email,
-        outcome="success", ip_address=ip)
-    logger.info(f"🔑 Şifre sıfırlandı: user_id={user_id} - admin: {user.get('email')}")
-    return {"success": True, "message": "Şifre sıfırlandı"}
-
-
-# ===== Account Lockout Management (Admin) =====
-@app.post("/api/users/{user_id}/unlock", tags=["Kullanıcı Yönetimi"], summary="Hesap kilidini aç")
-@limiter.limit("10/minute")
-async def unlock_user_account(request: Request, user_id: str, user=Depends(require_admin)):
-    # v49 Round-2: JWT payload uses "sub" not "id"; previously yielded empty actor_id.
-    actor_id = str(user.get("sub") or user.get("id") or user.get("_id") or "")
-    actor_email = user.get("email")
-    ip = request.client.host if request and request.client else None
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        await create_auth_audit_log("user_unlock", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="invalid_user_id", ip_address=ip)
-        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı ID")
-    target_user = await users_col.find_one({"_id": oid})
-    if not target_user:
-        await create_auth_audit_log("user_unlock", actor_id=actor_id, actor_email=actor_email,
-            target_id=user_id, outcome="blocked", reason="not_found", ip_address=ip)
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    result = await unlock_account(db, target_user["email"])
-    await create_auth_audit_log("user_unlock", actor_id=actor_id, actor_email=actor_email,
-        target_id=user_id, target_email=target_user.get("email"), outcome="success",
-        ip_address=ip, metadata={"cleared_attempts": result.get("cleared_attempts", 0)})
-    logger.info(f"🔓 Hesap kilidi açıldı: {target_user['email']} - admin: {user.get('email')}")
-    return {"success": True, "message": f"Hesap kilidi açıldı", "cleared_attempts": result["cleared_attempts"]}
-
-
-@app.get("/api/users/{user_id}/lockout-status", tags=["Kullanıcı Yönetimi"], summary="Hesap kilit durumu")
-async def get_lockout_status(user_id: str, user=Depends(require_admin)):
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı ID")
-    target_user = await users_col.find_one({"_id": oid})
-    if not target_user:
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    status = await check_account_lockout(db, target_user["email"])
-    return {"email": target_user["email"], "lockout": status}
-
-
-@app.post("/api/auth/validate-password", tags=["Kimlik Doğrulama"], summary="Şifre güçlülük kontrolü")
-async def validate_password_endpoint(req: PasswordChange):
-    """Şifre güçlülük kurallarını kontrol eder (kayıt/değişiklik öncesi)"""
-    result = validate_password_strength(req.new_password)
-    return result
-
-
-# ===== KVKK / SETTINGS =====
-@app.get("/api/settings/kvkk")
-async def get_kvkk_settings(user=Depends(require_auth)):
-    settings = await get_settings(db)
-    return {"settings": settings}
-
-@app.patch("/api/settings/kvkk")
-@limiter.limit("20/minute")
-async def update_kvkk_settings(request: Request, req: SettingsUpdate, user=Depends(require_admin)):
-    # v109 Bug DAJ round-2: forensic-floor enforcement (audit retention ≥365d,
-    # scans ≥30d) raises RetentionFloorViolation; map to 400 + audit log so the
-    # tampering attempt is permanently recorded.
-    from kvkk import RetentionFloorViolation
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    ip = request.client.host if request and request.client else None
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    try:
-        settings = await update_settings(db, updates)
-    except RetentionFloorViolation as exc:
-        await create_auth_audit_log("kvkk_settings_blocked",
-            actor_id=actor_id, actor_email=actor_email,
-            outcome="blocked", reason=str(exc),
-            metadata={"attempted_updates": updates}, ip_address=ip)
-        raise HTTPException(status_code=400, detail=str(exc))
-    await create_auth_audit_log("kvkk_settings_updated",
-        actor_id=actor_id, actor_email=actor_email,
-        outcome="success",
-        metadata={"updates": updates}, ip_address=ip)
-    return {"success": True, "settings": settings}
-
-@app.post("/api/settings/cleanup")
-@limiter.limit("5/minute")
-async def trigger_cleanup(request: Request, user=Depends(require_admin)):
-    # v109 Bug DAJ round-2: actor + outcome recorded in auth audit trail
-    # (in addition to the self-audit row run_data_cleanup writes).
-    actor_id = user.get("sub"); actor_email = user.get("email")
-    ip = request.client.host if request and request.client else None
-    results = await run_data_cleanup(db)
-    await create_auth_audit_log("data_cleanup_triggered",
-        actor_id=actor_id, actor_email=actor_email,
-        outcome="success", metadata={"results": results}, ip_address=ip)
-    return {"success": True, "results": results}
-
-@app.post("/api/guests/{guest_id}/anonymize")
-async def anonymize_guest_endpoint(guest_id: str, user=Depends(require_admin)):
-    success = await anonymize_guest(db, guest_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Misafir bulunamadı")
-    await create_audit_log(guest_id, "anonymized", metadata={"kvkk": True}, user_email=user.get("email"))
-    return {"success": True, "message": "Misafir verileri KVKK kapsamında anonimleştirildi"}
 
 
 # ===== SCAN ENDPOINTS =====
@@ -2454,86 +1397,6 @@ Haklarınızı kullanmak için resepsiyon yetkilisine başvurabilirsiniz.
 
 
 # ===== BIOMETRIC FACE MATCHING =====
-@app.post("/api/biometric/face-compare", tags=["Biyometrik"], summary="Yüz eşleştirme",
-          description="Kimlik belgesindeki fotoğraf ile canlı selfie karşılaştırması. Güven skoru (0-100) döner.")
-@limiter.limit("10/minute")
-async def biometric_face_compare(request: Request, req: FaceCompareRequest, user=Depends(require_auth)):
-    try:
-        # v50 Round-3: validate both image payloads before downstream processing
-        _validate_image_payload(req.document_image_base64)
-        _validate_image_payload(req.selfie_image_base64)
-        result = await compare_faces(req.document_image_base64, req.selfie_image_base64)
-        
-        # Store result
-        match_doc = {
-            "match_id": str(uuid.uuid4()),
-            "result": result,
-            "match": result.get("match", False),
-            "confidence_score": result.get("confidence_score", 0),
-            "created_at": datetime.now(timezone.utc),
-            "created_by": user.get("email"),
-        }
-        await db["biometric_matches"].insert_one(match_doc)
-        
-        return {
-            "success": True,
-            "match": result.get("match", False),
-            "confidence_score": result.get("confidence_score", 0),
-            "confidence_level": result.get("confidence_level", "low"),
-            "analysis": result.get("analysis", {}),
-            "notes": result.get("notes", ""),
-            "warnings": result.get("warnings", []),
-            "image_quality": result.get("image_quality", {}),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Yüz eşleştirme hatası: {str(e)}")
-
-
-@app.get("/api/biometric/liveness-challenge", tags=["Biyometrik"], summary="Canlılık testi sorusu",
-         description="Spoofing önleme için rastgele canlılık testi sorusu döner")
-async def get_liveness_challenge_endpoint():
-    """Kimlik doğrulama gerektirmez - ön check-in'de de kullanılabilir"""
-    challenge = get_liveness_challenge()
-    return challenge
-
-
-@app.post("/api/biometric/liveness-check", tags=["Biyometrik"], summary="Canlılık testi doğrulama",
-          description="Gönderilen fotoğrafın canlı kişiye ait olup olmadığını kontrol eder")
-@limiter.limit("10/minute")
-async def biometric_liveness_check(request: Request, req: LivenessCheckRequest, user=Depends(require_auth)):
-    try:
-        # v50 Round-3: validate image payload before downstream processing
-        _validate_image_payload(req.image_base64)
-        result = await check_liveness(req.image_base64, req.challenge_id)
-        
-        # Store result
-        liveness_doc = {
-            "session_id": req.session_id,
-            "challenge_id": req.challenge_id,
-            "result": result,
-            "is_live": result.get("is_live", False),
-            "confidence_score": result.get("confidence_score", 0),
-            "created_at": datetime.now(timezone.utc),
-            "created_by": user.get("email"),
-        }
-        await db["liveness_checks"].insert_one(liveness_doc)
-        
-        return {
-            "success": True,
-            "is_live": result.get("is_live", False),
-            "challenge_completed": result.get("challenge_completed", False),
-            "confidence_score": result.get("confidence_score", 0),
-            "spoof_indicators": result.get("spoof_indicators", []),
-            "notes": result.get("notes", ""),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Canlılık testi hatası: {str(e)}")
-
-
 # ===== TC KIMLIK VALIDATION =====
 @app.post("/api/tc-kimlik/validate", tags=["TC Kimlik"], summary="TC Kimlik No doğrulama",
           description="TC Kimlik No'nun geçerliliğini matematiksel algoritma ile kontrol eder")
@@ -2604,300 +1467,6 @@ async def list_emniyet_bildirimleri(
     return {"forms": forms, "total": total, "page": page, "limit": limit}
 
 
-# ===== PRE-CHECKIN (QR) =====
-@app.post("/api/precheckin/create", tags=["Ön Check-in"], summary="QR ön check-in token oluştur",
-          description="Misafirin varıştan önce telefonundan kimlik taraması yapabilmesi için QR token oluşturur")
-async def create_precheckin(req: PreCheckinCreate, user=Depends(require_auth)):
-    token = await create_precheckin_token(
-        db, property_id=req.property_id,
-        reservation_ref=req.reservation_ref,
-        guest_name=req.guest_name,
-        created_by=user.get("email")
-    )
-    return {"success": True, "token": serialize_doc(token)}
-
-
-@app.get("/api/precheckin/list", tags=["Ön Check-in"], summary="Ön check-in tokenlarını listele")
-async def list_precheckin(
-    property_id: Optional[str] = None,
-    status: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    user=Depends(require_auth)
-):
-    result = await list_precheckin_tokens(db, property_id=property_id, status=status, page=page, limit=limit)
-    return result
-
-
-@app.get("/api/precheckin/{token_id}", tags=["Ön Check-in"], summary="Token bilgisi (public)",
-         description="QR kod ile erişilen token bilgisi. Kimlik doğrulama gerektirmez.")
-async def get_precheckin_info(token_id: str):
-    """Public endpoint - QR ile erişim"""
-    token = await get_precheckin_token(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Geçersiz veya süresi dolmuş QR kod")
-    if token.get("status") != "active":
-        raise HTTPException(status_code=400, detail="Bu QR kod zaten kullanılmış")
-    
-    # Get property info
-    prop = await get_property(db, token.get("property_id", ""))
-    
-    return {
-        "token_id": token["token_id"],
-        "status": token["status"],
-        "property_name": prop.get("name", "Otel") if prop else "Otel",
-        "reservation_ref": token.get("reservation_ref", ""),
-        "guest_name": token.get("guest_name", ""),
-    }
-
-
-@app.post("/api/precheckin/{token_id}/scan", tags=["Ön Check-in"], summary="QR ile kimlik tara (public)",
-          description="Misafirin kendi telefonundan kimlik belgesi taraması. Kimlik doğrulama gerektirmez.")
-@limiter.limit("5/minute")
-async def precheckin_scan(request: Request, token_id: str, req: PreCheckinScanRequest):
-    """Public endpoint - Misafir kendi telefonundan tarar"""
-    token = await get_precheckin_token(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Geçersiz QR kod")
-    if token.get("status") != "active":
-        raise HTTPException(status_code=400, detail="Bu QR kod zaten kullanılmış")
-    
-    try:
-        # v50 Round-3: validate image payload before AI scan (public endpoint)
-        _validate_image_payload(req.image_base64)
-        extracted = await extract_id_data(req.image_base64)
-        documents = extracted.get("documents", [])
-        confidence = calculate_confidence_score(extracted)
-        
-        scan_doc = {
-            "extracted_data": extracted,
-            "document_count": extracted.get("document_count", len(documents)),
-            "is_valid": any(d.get("is_valid", False) for d in documents),
-            "created_at": datetime.now(timezone.utc),
-            "status": "completed",
-            "source": "precheckin",
-            "token_id": token_id,
-            "confidence_score": confidence.get("overall_score", 0),
-            "confidence_level": confidence.get("confidence_level", "low"),
-            "kvkk_consent": req.kvkk_consent,
-        }
-        await scans_col.insert_one(scan_doc)
-        
-        # Update token with scan data
-        await use_precheckin_token(db, token_id, extracted)
-        
-        return {
-            "success": True,
-            "extracted_data": extracted,
-            "documents": documents,
-            "confidence": confidence,
-            "message": "Kimlik taramanız başarılı! Otele vardığınızda hızlı check-in yapabilirsiniz.",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        fallback = [
-            "Kimlik belgesi okunamadı. Lütfen şunları deneyin:",
-            "1. Belgeyi düz bir yüzeye yerleştirin",
-            "2. Flaş kullanarak fotoğraf çekin",
-            "3. İyi aydınlatma altında tekrar deneyin",
-        ]
-        raise HTTPException(status_code=500, detail={
-            "message": f"Tarama başarısız: {str(e)}",
-            "fallback_guidance": fallback,
-            "can_retry": True,
-        })
-
-
-@app.get("/api/precheckin/{token_id}/qr", tags=["Ön Check-in"], summary="QR kod görüntüsü",
-         description="Ön check-in QR kodunu PNG olarak döndürür")
-async def get_precheckin_qr(token_id: str, user=Depends(require_auth)):
-    """QR kod oluştur ve döndür"""
-    from fastapi.responses import StreamingResponse
-    
-    token = await get_precheckin_token(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Token bulunamadı")
-    
-    # QR code URL - frontend precheckin page
-    frontend_url = os.environ.get("FRONTEND_URL", "")
-    qr_url = f"{frontend_url}/precheckin/{token_id}"
-    
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(qr_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    
-    return StreamingResponse(buf, media_type="image/png",
-                             headers={"Content-Disposition": f"inline; filename=precheckin-{token_id}.png"})
-
-
-# ===== MULTI-PROPERTY =====
-@app.get("/api/properties", tags=["Multi-Property"], summary="Tesisleri listele")
-async def get_properties(is_active: Optional[bool] = None, user=Depends(require_auth)):
-    properties = await list_properties(db, is_active=is_active)
-    return {"properties": properties, "total": len(properties)}
-
-
-@app.post("/api/properties", tags=["Multi-Property"], summary="Yeni tesis oluştur")
-async def create_new_property(req: PropertyCreate, user=Depends(require_admin)):
-    prop = await create_property(
-        db, name=req.name, address=req.address, phone=req.phone,
-        tax_no=req.tax_no, city=req.city, created_by=user.get("email")
-    )
-    return {"success": True, "property": serialize_doc(prop)}
-
-
-@app.get("/api/properties/{property_id}", tags=["Multi-Property"], summary="Tesis detayı")
-async def get_property_detail(property_id: str, user=Depends(require_auth)):
-    prop = await get_property(db, property_id)
-    if not prop:
-        raise HTTPException(status_code=404, detail="Tesis bulunamadı")
-    return {"property": prop}
-
-
-@app.patch("/api/properties/{property_id}", tags=["Multi-Property"], summary="Tesis güncelle")
-async def update_property_endpoint(property_id: str, req: PropertyUpdate, user=Depends(require_admin)):
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    prop = await update_property(db, property_id, updates)
-    if not prop:
-        raise HTTPException(status_code=404, detail="Tesis bulunamadı")
-    return {"success": True, "property": prop}
-
-
-# ===== KIOSK MODE =====
-@app.post("/api/kiosk/session", tags=["Kiosk"], summary="Kiosk oturumu başlat")
-async def start_kiosk_session(req: KioskSessionCreate, user=Depends(require_admin)):
-    session = await create_kiosk_session(db, property_id=req.property_id, kiosk_name=req.kiosk_name)
-    return {"success": True, "session": serialize_doc(session)}
-
-
-@app.get("/api/kiosk/sessions", tags=["Kiosk"], summary="Kiosk oturumları listele")
-async def list_kiosk_sessions(
-    property_id: Optional[str] = None,
-    status: Optional[str] = None,
-    user=Depends(require_auth)
-):
-    sessions = await get_kiosk_sessions(db, property_id=property_id, status=status)
-    return {"sessions": sessions, "total": len(sessions)}
-
-
-@app.post("/api/kiosk/scan", tags=["Kiosk"], summary="Kiosk kimlik tarama",
-          description="Kiosk modunda kimlik tarama - session_id ile çalışır")
-@limiter.limit("20/minute")
-async def kiosk_scan(request: Request, scan_req: ScanRequest, 
-                     session_id: str = Query(..., description="Kiosk session ID")):
-    """Kiosk taraması - basic auth yeterli, session bazlı"""
-    try:
-        # v50 Round-3: validate image payload before AI scan
-        _validate_image_payload(scan_req.image_base64)
-        extracted = await extract_id_data(scan_req.image_base64)
-        documents = extracted.get("documents", [])
-        confidence = calculate_confidence_score(extracted)
-        
-        scan_doc = {
-            "extracted_data": extracted,
-            "document_count": extracted.get("document_count", len(documents)),
-            "is_valid": any(d.get("is_valid", False) for d in documents),
-            "created_at": datetime.now(timezone.utc),
-            "status": "completed",
-            "source": "kiosk",
-            "session_id": session_id,
-            "confidence_score": confidence.get("overall_score", 0),
-            "confidence_level": confidence.get("confidence_level", "low"),
-        }
-        await scans_col.insert_one(scan_doc)
-        
-        # Update kiosk activity
-        await update_kiosk_activity(db, session_id, scan_increment=1)
-        
-        return {
-            "success": True,
-            "scan": serialize_doc(scan_doc),
-            "extracted_data": extracted,
-            "documents": documents,
-            "confidence": confidence,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={
-            "message": f"Kiosk tarama hatası: {str(e)}",
-            "fallback_guidance": [
-                "Belgeyi düz yerleştirin", "Flaş kullanın", "Tekrar deneyin"
-            ],
-        })
-
-
-# ===== OFFLINE SYNC =====
-@app.post("/api/sync/upload", tags=["Offline Sync"], summary="Çevrimdışı veri yükle",
-          description="Internet kesintisinde biriktirilen verileri sunucuya yükler")
-async def upload_offline_data(req: OfflineSyncRequest, user=Depends(require_auth)):
-    if req.data_type not in ("scans", "guests"):
-        raise HTTPException(status_code=400, detail="Geçersiz veri tipi. scans veya guests olmalı.")
-    sync = await store_offline_data(
-        db, property_id=req.property_id, data_type=req.data_type,
-        data=req.data, device_id=req.device_id
-    )
-    return {"success": True, "sync": serialize_doc(sync)}
-
-
-@app.get("/api/sync/pending", tags=["Offline Sync"], summary="Bekleyen senkronizasyonlar")
-async def get_pending_sync(property_id: Optional[str] = None, user=Depends(require_auth)):
-    syncs = await get_pending_syncs(db, property_id=property_id)
-    return {"syncs": syncs, "total": len(syncs)}
-
-
-@app.post("/api/sync/{sync_id}/process", tags=["Offline Sync"], summary="Senkronizasyonu işle")
-async def process_sync_data(sync_id: str, user=Depends(require_admin)):
-    """Offline verilerini gerçek DB'ye işle"""
-    col = db["offline_sync"]
-    sync_doc = await col.find_one({"sync_id": sync_id})
-    if not sync_doc:
-        raise HTTPException(status_code=404, detail="Senkronizasyon bulunamadı")
-    
-    errors = []
-    processed = 0
-    
-    for item in sync_doc.get("data", []):
-        try:
-            if sync_doc["data_type"] == "guests":
-                guest_doc = {
-                    **item,
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
-                    "status": "pending",
-                    "source": "offline_sync",
-                    "sync_id": sync_id,
-                }
-                await guests_col.insert_one(guest_doc)
-                processed += 1
-            elif sync_doc["data_type"] == "scans":
-                scan_doc = {
-                    **item,
-                    "created_at": datetime.now(timezone.utc),
-                    "source": "offline_sync",
-                    "sync_id": sync_id,
-                }
-                await scans_col.insert_one(scan_doc)
-                processed += 1
-        except Exception as e:
-            errors.append(f"Kayıt işleme hatası: {str(e)}")
-    
-    status = "processed" if not errors else "partial"
-    result = await process_sync(db, sync_id, status=status, errors=errors)
-    
-    return {
-        "success": True,
-        "processed_count": processed,
-        "error_count": len(errors),
-        "errors": errors,
-        "sync": result,
-    }
 
 
 # ===== ROOM MANAGEMENT =====
@@ -3310,37 +1879,6 @@ async def get_compliance_reports(user=Depends(require_admin)):
 
 
 # ===== MONITORING DASHBOARD =====
-@app.get("/api/monitoring/dashboard", tags=["Monitoring"], summary="Monitoring dashboard",
-         description="Scan sayısı, başarı oranı, hata izleme, oda durumu")
-async def monitoring_dashboard(user=Depends(require_admin)):
-    dashboard = await get_monitoring_dashboard(db)
-    return dashboard
-
-
-@app.get("/api/monitoring/scan-stats", tags=["Monitoring"], summary="Tarama istatistikleri")
-async def scan_statistics(days: int = Query(30, ge=1, le=365), user=Depends(require_auth)):
-    stats = await get_scan_statistics(db, days=days)
-    return stats
-
-
-@app.get("/api/monitoring/error-log", tags=["Monitoring"], summary="Hata izleme",
-         description="Son hataları ve hata türlerini listeler")
-async def error_log(
-    limit: int = Query(50, ge=1, le=200),
-    days: int = Query(7, ge=1, le=90),
-    user=Depends(require_auth)
-):
-    errors = await get_error_log(db, limit=limit, days=days)
-    return errors
-
-
-@app.get("/api/monitoring/ai-costs", tags=["Monitoring"], summary="AI API maliyet raporu",
-         description="GPT-4o API kullanım maliyeti takibi")
-async def ai_cost_report(days: int = Query(30, ge=1, le=365), user=Depends(require_admin)):
-    costs = await get_ai_cost_summary(db, days=days)
-    return costs
-
-
 # ===== BACKUP & RESTORE =====
 @app.post("/api/admin/backup", tags=["Yedekleme"], summary="Veritabanı yedeği oluştur")
 async def create_db_backup(req: BackupCreateRequest, user=Depends(require_admin)):
