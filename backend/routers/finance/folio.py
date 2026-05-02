@@ -6,7 +6,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 
 try:
@@ -705,6 +705,112 @@ async def void_charge(
     await db.folio_operations.insert_one(operation_dict)
 
     return {"message": "Charge voided successfully"}
+
+
+@router.post("/folio/{folio_id}/payment/{payment_id}/void")
+async def void_payment(
+    folio_id: str,
+    payment_id: str,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Ödemeyi iade eder (void). Kasaya negatif kayıt (refund) düşer.
+    Body: { reason: str }
+    """
+    from modules.pms_core.role_permission_service import RolePermissionService
+    RolePermissionService().enforce_permission(current_user.role, "post_payment")
+
+    reason = (body or {}).get("reason", "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="İade nedeni zorunlu")
+
+    payment = await db.payments.find_one({
+        'id': payment_id,
+        'folio_id': folio_id,
+        'tenant_id': current_user.tenant_id,
+    })
+    if not payment:
+        raise HTTPException(status_code=404, detail="Ödeme bulunamadı")
+    if payment.get('voided'):
+        raise HTTPException(status_code=400, detail="Ödeme zaten iade edilmiş")
+
+    method_str = payment.get('method') or 'cash'
+    if hasattr(method_str, 'value'):
+        method_str = method_str.value
+    method_str = str(method_str).lower()
+    is_cash = method_str == "cash"
+
+    # Vardiya kontrolü: nakit iadesi için aktif vardiya zorunlu
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+    await ensure_active_shift(current_user.tenant_id, method_str)
+
+    # CAS: voided != True koşullu update — eşzamanlı iki istek ikinci kez geçemez
+    now = datetime.now(UTC)
+    cas_res = await db.payments.update_one(
+        {
+            'id': payment_id,
+            'tenant_id': current_user.tenant_id,
+            '$or': [{'voided': {'$exists': False}}, {'voided': False}],
+        },
+        {'$set': {
+            'voided': True,
+            'void_reason': reason,
+            'voided_by': current_user.id,
+            'voided_by_name': current_user.name,
+            'voided_at': now.isoformat(),
+        }}
+    )
+    if cas_res.modified_count == 0:
+        raise HTTPException(status_code=409, detail="Ödeme zaten iade edilmiş veya değiştirildi")
+
+    new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+    await db.folios.update_one(
+        {'id': folio_id},
+        {'$set': {'balance': new_balance}}
+    )
+
+    async def _rollback_void():
+        await db.payments.update_one(
+            {'id': payment_id, 'tenant_id': current_user.tenant_id},
+            {'$set': {'voided': False},
+             '$unset': {'void_reason': '', 'voided_by': '', 'voided_by_name': '', 'voided_at': ''}}
+        )
+        restored = await calculate_folio_balance(folio_id, current_user.tenant_id)
+        await db.folios.update_one({'id': folio_id}, {'$set': {'balance': restored}})
+
+    # Kasaya iade kaydı (negatif/out) — başarısızsa void'i geri al (compensation)
+    try:
+        await record_cash_transaction(
+            tenant_id=current_user.tenant_id,
+            amount=float(payment.get('amount') or 0),
+            method=method_str,
+            direction="out",
+            description=f"Ödeme iadesi - {reason}",
+            txn_type="refund",
+            ref_type="payment",
+            ref_id=payment_id,
+            created_by=current_user.email,
+            created_by_name=getattr(current_user, 'name', None) or current_user.email,
+            idempotency_key=f"void:{payment_id}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException:
+        await _rollback_void()
+        raise
+    except Exception as e:
+        import logging as _lg
+        _lg.getLogger(__name__).exception("cashier refund record failed")
+        await _rollback_void()
+        raise HTTPException(status_code=500, detail=f"Kasa iade kaydı başarısız, iade geri alındı: {e}")
+
+    return {
+        "message": "Ödeme iade edildi",
+        "payment_id": payment_id,
+        "amount": payment.get('amount'),
+        "method": method_str,
+        "new_balance": new_balance,
+    }
 
 
 @router.post("/folio/{folio_id}/close")

@@ -318,6 +318,120 @@ async def manual_transaction(body: dict = Body(...), current_user: User = Depend
     return {"ok": True, "transaction": txn}
 
 
+def _build_shift_report(shift: dict) -> dict:
+    """X/Z raporu için breakdown üretir."""
+    txns = list(shift.get("transactions") or [])
+    opening = float(shift.get("opening_amount") or 0)
+    cash_in = sum(float(t.get("amount") or 0) for t in txns if t.get("method") == "cash" and t.get("direction") == "in")
+    cash_out = sum(float(t.get("amount") or 0) for t in txns if t.get("method") == "cash" and t.get("direction") == "out")
+    expected = opening + cash_in - cash_out
+
+    by_method: dict = {}
+    by_type: dict = {}
+    for t in txns:
+        m = t.get("method") or "other"
+        ty = t.get("type") or "other"
+        amt = float(t.get("amount") or 0)
+        sign = 1 if t.get("direction") == "in" else -1
+        by_method.setdefault(m, {"in": 0.0, "out": 0.0, "count": 0, "net": 0.0})
+        by_method[m]["count"] += 1
+        if sign > 0:
+            by_method[m]["in"] += amt
+        else:
+            by_method[m]["out"] += amt
+        by_method[m]["net"] += sign * amt
+        by_type.setdefault(ty, {"in": 0.0, "out": 0.0, "count": 0})
+        by_type[ty]["count"] += 1
+        if sign > 0:
+            by_type[ty]["in"] += amt
+        else:
+            by_type[ty]["out"] += amt
+
+    return {
+        "shift_id": str(shift.get("_id") or shift.get("id") or ""),
+        "status": shift.get("status"),
+        "cashier_name": shift.get("cashier_name") or shift.get("cashier_email"),
+        "cashier_email": shift.get("cashier_email"),
+        "opened_at": shift.get("opened_at"),
+        "opened_by_name": shift.get("opened_by_name"),
+        "closed_at": shift.get("closed_at"),
+        "closed_by_name": shift.get("closed_by_name"),
+        "opening_amount": opening,
+        "cash_in": cash_in,
+        "cash_out": cash_out,
+        "expected_amount": expected,
+        "closing_amount": shift.get("closing_amount"),
+        "difference": shift.get("difference"),
+        "transaction_count": len(txns),
+        "by_method": by_method,
+        "by_type": by_type,
+        "closing_denominations": shift.get("closing_denominations") or {},
+    }
+
+
+@router.get("/cashier/x-report")
+async def x_report(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Aktif vardiya için ara rapor (X-Raporu)."""
+    shift = await db.cashier_shifts.find_one(
+        {"tenant_id": current_user.tenant_id, "status": "open"},
+        sort=[("opened_at", -1)],
+    )
+    if not shift:
+        raise HTTPException(status_code=404, detail="Açık vardiya yok")
+    report = _build_shift_report(shift)
+    report["report_type"] = "X"
+    report["generated_at"] = datetime.utcnow().isoformat()
+    report["generated_by"] = getattr(current_user, "name", None) or current_user.email
+    return report
+
+
+@router.get("/cashier/z-report/{shift_id}")
+async def z_report(
+    shift_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Kapalı/devredilmiş vardiya için kesin rapor (Z-Raporu)."""
+    shift = await db.cashier_shifts.find_one(
+        {"_id": shift_id, "tenant_id": current_user.tenant_id}
+    )
+    if not shift:
+        raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    report = _build_shift_report(shift)
+    report["report_type"] = "Z" if shift.get("status") in ("closed", "handed_over") else "X"
+    report["generated_at"] = datetime.utcnow().isoformat()
+    report["generated_by"] = getattr(current_user, "name", None) or current_user.email
+    return report
+
+
+@router.get("/cashier/shift/{shift_id}/transactions")
+async def shift_transactions(
+    shift_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Vardiya işlem listesini döner (geçmiş vardiya detay görünümü için)."""
+    shift = await db.cashier_shifts.find_one(
+        {"_id": shift_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "transactions": 1, "cashier_name": 1, "opened_at": 1, "closed_at": 1, "status": 1}
+    )
+    if not shift:
+        raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    txns = list(shift.get("transactions") or [])
+    txns.sort(key=lambda t: t.get("created_at") or "", reverse=True)
+    return {
+        "shift_id": shift_id,
+        "cashier_name": shift.get("cashier_name"),
+        "opened_at": shift.get("opened_at"),
+        "closed_at": shift.get("closed_at"),
+        "status": shift.get("status"),
+        "transactions": txns,
+    }
+
+
 @router.get("/cashier/shift-history")
 async def shift_history(
     skip: int = 0,

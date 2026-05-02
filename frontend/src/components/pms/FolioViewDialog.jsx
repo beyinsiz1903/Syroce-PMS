@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, ClipboardList, DollarSign } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, ClipboardList, DollarSign, RotateCcw } from 'lucide-react';
 
 const FolioViewDialog = ({
   open,
@@ -24,6 +25,9 @@ const FolioViewDialog = ({
   const { t } = useTranslation();
   const [subDialog, setSubDialog] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidLoading, setVoidLoading] = useState(false);
 
   const [newFolioCharge, setNewFolioCharge] = useState({
     charge_category: 'room',
@@ -67,6 +71,25 @@ const FolioViewDialog = ({
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to post payment');
     }
+  };
+
+  const handleVoidPayment = async () => {
+    if (!selectedFolio || !voidTarget) return;
+    if (!voidReason.trim()) { toast.error('İade nedeni zorunlu'); return; }
+    setVoidLoading(true);
+    try {
+      await axios.post(
+        `/folio/${selectedFolio.id}/payment/${voidTarget.id}/void`,
+        { reason: voidReason.trim() }
+      );
+      toast.success('Ödeme iade edildi');
+      onPaymentPosted(selectedFolio.id);
+      setVoidTarget(null);
+      setVoidReason('');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'İade başarısız');
+    }
+    setVoidLoading(false);
   };
 
   return (
@@ -196,18 +219,41 @@ const FolioViewDialog = ({
                       <div className="text-center text-gray-400 py-8">{t('pms.noPaymentsYet', 'No payments posted yet')}</div>
                     ) :
                       folioPayments.map((payment) => (
-                        <Card key={payment.id}>
+                        <Card key={payment.id} className={payment.voided ? 'opacity-60 bg-red-50/30' : ''}>
                           <CardContent className="p-4">
                             <div className="flex justify-between items-start">
-                              <div>
-                                <div className="font-semibold capitalize">{payment.method}</div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold capitalize">{payment.method}</span>
+                                  {payment.voided && (
+                                    <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">İADE</span>
+                                  )}
+                                </div>
                                 <div className="text-xs text-gray-500 capitalize">{payment.payment_type}</div>
                                 {payment.reference && <div className="text-xs text-gray-400">Ref: {payment.reference}</div>}
                                 <div className="text-xs text-gray-400">
-                                  {new Date(payment.created_at).toLocaleString()}
+                                  {new Date(payment.created_at || payment.processed_at).toLocaleString()}
                                 </div>
+                                {payment.voided && payment.void_reason && (
+                                  <div className="text-xs text-red-600 mt-1">İade nedeni: {payment.void_reason}</div>
+                                )}
                               </div>
-                              <div className="text-green-600 font-bold">{payment.amount.toFixed(2)} ₺</div>
+                              <div className="text-right">
+                                <div className={`font-bold ${payment.voided ? 'text-gray-400 line-through' : 'text-green-600'}`}>
+                                  {(payment.amount || 0).toFixed(2)} ₺
+                                </div>
+                                {!payment.voided && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    onClick={() => { setVoidTarget(payment); setVoidReason(''); }}
+                                  >
+                                    <RotateCcw className="w-3 h-3 mr-1" /> İade
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -301,6 +347,46 @@ const FolioViewDialog = ({
             </div>
             <Button type="submit" className="w-full">{t('pms.postPayment', 'Post Payment')}</Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!voidTarget} onOpenChange={(o) => { if (!o) { setVoidTarget(null); setVoidReason(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ödeme İadesi</DialogTitle>
+            <DialogDescription>
+              {voidTarget && (
+                <>
+                  {voidTarget.method?.toUpperCase()} ödemesi {(voidTarget.amount || 0).toFixed(2)} ₺ iade edilecek.
+                  {voidTarget.method === 'cash' && ' Nakit iadesi için açık bir vardiya gerekir.'}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>İade Nedeni *</Label>
+              <Textarea
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder="Ör: yanlış tutar, müşteri talebi"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="outline" onClick={() => { setVoidTarget(null); setVoidReason(''); }}>
+                Vazgeç
+              </Button>
+              <Button
+                type="button"
+                onClick={handleVoidPayment}
+                disabled={voidLoading || !voidReason.trim()}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {voidLoading ? 'İşleniyor...' : 'İadeyi Onayla'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

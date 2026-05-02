@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,8 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Wallet, DollarSign, ArrowRightLeft, Clock,
   LogIn, LogOut, Receipt, RefreshCw,
-  Calculator, UserCheck, Users, Plus, Minus
+  Calculator, UserCheck, Users, Plus, Minus,
+  FileText, FileDown, Search, Printer, AlertTriangle
 } from 'lucide-react';
+
+const DIFF_THRESHOLD = 50;
 
 const CashierTab = () => {
   const [shift, setShift] = useState(null);
@@ -33,6 +36,12 @@ const CashierTab = () => {
   const [closingNote, setClosingNote] = useState('');
   const [handoverTarget, setHandoverTarget] = useState({ email: '', password: '', note: '' });
   const [manualTxn, setManualTxn] = useState({ amount: '', method: 'cash', description: '' });
+
+  const [txnSearch, setTxnSearch] = useState('');
+  const [txnMethodFilter, setTxnMethodFilter] = useState('all');
+  const [reportData, setReportData] = useState(null);
+  const [showReportDialog, setShowReportDialog] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
 
   const loadShift = useCallback(async () => {
     try {
@@ -75,6 +84,10 @@ const CashierTab = () => {
     (counts.cash_1 * 1) + (counts.coin_1 * 1) + (counts.coin_050 * 0.5) + (counts.coin_025 * 0.25);
 
   const closeShift = async () => {
+    if (Math.abs(difference) >= DIFF_THRESHOLD && !closingNote.trim()) {
+      toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
+      return;
+    }
     setLoading(true);
     try {
       await axios.post('/cashier/close-shift', {
@@ -134,6 +147,30 @@ const CashierTab = () => {
     setLoading(false);
   };
 
+  const openXReport = async () => {
+    setReportLoading(true);
+    try {
+      const res = await axios.get('/cashier/x-report');
+      setReportData(res.data);
+      setShowReportDialog(true);
+    } catch (e) {
+      toast.error('Rapor alınamadı: ' + (e.response?.data?.detail || e.message));
+    }
+    setReportLoading(false);
+  };
+
+  const openZReport = async (shiftId) => {
+    setReportLoading(true);
+    try {
+      const res = await axios.get(`/cashier/z-report/${shiftId}`);
+      setReportData(res.data);
+      setShowReportDialog(true);
+    } catch (e) {
+      toast.error('Rapor alınamadı: ' + (e.response?.data?.detail || e.message));
+    }
+    setReportLoading(false);
+  };
+
   const cashInTotal = transactions.filter(t => t.direction === 'in' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
   const cashOutTotal = transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
   const cardCount = transactions.filter(t => t.method === 'card').length;
@@ -156,6 +193,54 @@ const CashierTab = () => {
   const methodLabel = (m) => {
     const map = { cash: 'Nakit', card: 'Kart', bank_transfer: 'Havale', online: 'Online' };
     return map[m] || m;
+  };
+
+  const filteredTransactions = useMemo(() => {
+    const q = txnSearch.trim().toLowerCase();
+    return transactions.filter(t => {
+      if (txnMethodFilter !== 'all' && t.method !== txnMethodFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        t.description, txnTypeLabel(t.type), methodLabel(t.method),
+        t.created_by_name, t.ref_id, String(t.amount || '')
+      ].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [transactions, txnSearch, txnMethodFilter]);
+
+  const exportTransactionsCsv = () => {
+    if (!filteredTransactions.length) { toast.error('Dışa aktarılacak işlem yok'); return; }
+    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Kullanici', 'Ref'];
+    const escape = (v) => {
+      let s = (v ?? '').toString();
+      // Formula injection guard — Excel/Sheets formula triggers
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      s = s.replace(/"/g, '""');
+      return /[",\n;]/.test(s) ? `"${s}"` : s;
+    };
+    const rows = filteredTransactions.map(t => [
+      (t.timestamp || t.created_at || '').slice(0, 19).replace('T', ' '),
+      txnTypeLabel(t.type),
+      t.direction === 'in' ? 'Giris' : 'Cikis',
+      methodLabel(t.method),
+      t.description || '',
+      (t.amount || 0).toFixed(2),
+      t.created_by_name || '',
+      t.ref_id || '',
+    ].map(escape).join(','));
+    const csv = '\uFEFF' + [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+    a.href = url; a.download = `vardiya-islemler-${stamp}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('CSV indirildi');
+  };
+
+  const printReport = () => {
+    if (typeof window !== 'undefined') window.print();
   };
 
   const DenominationGrid = ({ counts, setCounts }) => (
@@ -181,6 +266,10 @@ const CashierTab = () => {
     return <Badge className="bg-gray-100 text-gray-600">Kapalı</Badge>;
   };
 
+  const closingDisabled =
+    loading ||
+    (Math.abs(difference) >= DIFF_THRESHOLD && !closingNote.trim());
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center flex-wrap gap-2">
@@ -199,6 +288,9 @@ const CashierTab = () => {
               </Button>
               <Button onClick={() => setShowPaidOutDialog(true)} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
                 <Minus className="w-4 h-4 mr-2" /> Kasa Çıkışı
+              </Button>
+              <Button onClick={openXReport} disabled={reportLoading} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                <FileText className="w-4 h-4 mr-2" /> X-Raporu
               </Button>
               <Button onClick={() => setShowHandoverDialog(true)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
                 <Users className="w-4 h-4 mr-2" /> Devret
@@ -273,16 +365,44 @@ const CashierTab = () => {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Receipt className="w-4 h-4" /> Vardiya İşlemleri ({transactions.length})
-              </CardTitle>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Receipt className="w-4 h-4" /> Vardiya İşlemleri ({filteredTransactions.length}/{transactions.length})
+                </CardTitle>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      value={txnSearch}
+                      onChange={(e) => setTxnSearch(e.target.value)}
+                      placeholder="Ara..."
+                      className="h-8 text-xs pl-7 w-44"
+                    />
+                  </div>
+                  <Select value={txnMethodFilter} onValueChange={setTxnMethodFilter}>
+                    <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tüm Yöntemler</SelectItem>
+                      <SelectItem value="cash">Nakit</SelectItem>
+                      <SelectItem value="card">Kart</SelectItem>
+                      <SelectItem value="bank_transfer">Havale</SelectItem>
+                      <SelectItem value="online">Online</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={exportTransactionsCsv}>
+                    <FileDown className="w-3.5 h-3.5 mr-1" /> CSV
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              {transactions.length === 0 ? (
-                <p className="text-sm text-gray-400 py-4 text-center">Henüz işlem yok</p>
+              {filteredTransactions.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4 text-center">
+                  {transactions.length === 0 ? 'Henüz işlem yok' : 'Filtreye uyan işlem yok'}
+                </p>
               ) : (
                 <div className="max-h-[400px] overflow-y-auto space-y-1">
-                  {transactions.map((t, i) => (
+                  {filteredTransactions.map((t, i) => (
                     <div key={t.id || i} className="flex items-center justify-between p-2 rounded border border-gray-100 hover:bg-gray-50 text-xs">
                       <div className="flex items-center gap-2">
                         {t.direction === 'in' ? <DollarSign className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowRightLeft className="w-3.5 h-3.5 text-red-500" />}
@@ -352,6 +472,17 @@ const CashierTab = () => {
                           {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${s.difference.toFixed(2)}`}
                         </Badge>
                       )}
+                      {s.status !== 'open' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                          onClick={() => openZReport(s.id)}
+                          disabled={reportLoading}
+                        >
+                          <FileText className="w-3 h-3 mr-1" /> Z-Rapor
+                        </Button>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
@@ -411,11 +542,26 @@ const CashierTab = () => {
                 <span className="font-bold">{difference.toFixed(2)} TL</span>
               </div>
             </div>
+            {Math.abs(difference) >= DIFF_THRESHOLD && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-red-700">
+                  Fark {DIFF_THRESHOLD} TL'yi aştı. Kapatabilmek için aşağıya açıklama girmeniz zorunlu.
+                </p>
+              </div>
+            )}
             <div>
-              <Label>Not</Label>
-              <Input value={closingNote} onChange={e => setClosingNote(e.target.value)} placeholder="Vardiya notu (opsiyonel)" />
+              <Label>
+                Not {Math.abs(difference) >= DIFF_THRESHOLD && <span className="text-red-600">*</span>}
+              </Label>
+              <Textarea
+                value={closingNote}
+                onChange={e => setClosingNote(e.target.value)}
+                placeholder={Math.abs(difference) >= DIFF_THRESHOLD ? 'Fark açıklaması zorunlu' : 'Vardiya notu (opsiyonel)'}
+                rows={2}
+              />
             </div>
-            <Button onClick={closeShift} disabled={loading} className="w-full" variant="destructive">
+            <Button onClick={closeShift} disabled={closingDisabled} className="w-full" variant="destructive">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />}
               Vardiyayı Kapat
             </Button>
@@ -486,7 +632,7 @@ const CashierTab = () => {
             </div>
             <div>
               <Label>Açıklama *</Label>
-              <Textarea rows={2} value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="ör. Misafir avansı - Oda 201" />
+              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: depozito iadesi, kasa avansı" rows={2} />
             </div>
             <Button onClick={() => submitManual('in')} disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -499,10 +645,10 @@ const CashierTab = () => {
       <Dialog open={showPaidOutDialog} onOpenChange={(o) => { setShowPaidOutDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Minus className="w-5 h-5 text-amber-600" /> Kasa Çıkışı (Paid-Out)</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Minus className="w-5 h-5 text-amber-600" /> Kasa Çıkışı Ekle</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-xs text-gray-500">Kasadan yapılan harcamalar (kırtasiye, küçük tedarik, misafire iade vb.) için kullanın. Belge/fiş mutlaka saklanmalıdır.</p>
+            <p className="text-xs text-gray-500">Kasadan çıkan nakit (tedarikçi, küçük gider, banka yatırma vb.).</p>
             <div>
               <Label>Tutar (TL) *</Label>
               <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
@@ -513,20 +659,147 @@ const CashierTab = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Nakit</SelectItem>
-                  <SelectItem value="card">Kart</SelectItem>
                   <SelectItem value="bank_transfer">Havale</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label>Açıklama *</Label>
-              <Textarea rows={2} value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="ör. Kırtasiye alımı - Fiş No: 1234" />
+              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: tedarikçi ödemesi, banka yatırma" rows={2} />
             </div>
-            <Button onClick={() => submitManual('out')} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+            <Button onClick={() => submitManual('out')} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Minus className="w-4 h-4 mr-2" />}
               Çıkışı Kaydet
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReportDialog} onOpenChange={(o) => { if (!o) { setShowReportDialog(false); setReportData(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              {reportData?.report_type === 'Z' ? 'Z-Raporu (Kapanış)' : 'X-Raporu (Ara Rapor)'}
+            </DialogTitle>
+          </DialogHeader>
+          {reportData && (
+            <div className="space-y-4 text-sm" id="cashier-report">
+              <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg text-xs">
+                <div><span className="text-gray-500">Kasiyer:</span> <strong>{reportData.cashier_name || reportData.cashier_email || '-'}</strong></div>
+                <div><span className="text-gray-500">Durum:</span> <strong>{reportData.status === 'open' ? 'Açık' : reportData.status === 'handed_over' ? 'Devredildi' : 'Kapalı'}</strong></div>
+                <div><span className="text-gray-500">Açılış:</span> {reportData.opened_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
+                <div><span className="text-gray-500">Kapanış:</span> {reportData.closed_at?.slice(0, 16).replace('T', ' ') || 'Açık'}</div>
+                <div><span className="text-gray-500">Rapor Zamanı:</span> {reportData.generated_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
+                <div><span className="text-gray-500">Raporu Alan:</span> {reportData.generated_by || '-'}</div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
+                  <p className="text-[10px] text-emerald-600 uppercase">Açılış</p>
+                  <p className="text-base font-bold text-emerald-700">{(reportData.opening_amount || 0).toFixed(2)} TL</p>
+                </div>
+                <div className="p-3 rounded bg-blue-50 border border-blue-200">
+                  <p className="text-[10px] text-blue-600 uppercase">Nakit Giriş</p>
+                  <p className="text-base font-bold text-blue-700">{(reportData.cash_in || 0).toFixed(2)} TL</p>
+                </div>
+                <div className="p-3 rounded bg-amber-50 border border-amber-200">
+                  <p className="text-[10px] text-amber-600 uppercase">Nakit Çıkış</p>
+                  <p className="text-base font-bold text-amber-700">{(reportData.cash_out || 0).toFixed(2)} TL</p>
+                </div>
+                <div className="p-3 rounded bg-gray-100 border border-gray-300">
+                  <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
+                  <p className="text-base font-bold text-gray-800">{(reportData.expected_amount || 0).toFixed(2)} TL</p>
+                </div>
+              </div>
+
+              {reportData.report_type === 'Z' && reportData.closing_amount != null && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded bg-purple-50 border border-purple-200">
+                    <p className="text-[10px] text-purple-600 uppercase">Sayılan Kapanış</p>
+                    <p className="text-base font-bold text-purple-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className={`p-3 rounded border ${Math.abs(reportData.difference || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className={`text-[10px] uppercase ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark</p>
+                    <p className={`text-base font-bold ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {(reportData.difference || 0).toFixed(2)} TL
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">Yöntem Bazında Özet</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2">Yöntem</th>
+                        <th className="text-right px-3 py-2">Giriş</th>
+                        <th className="text-right px-3 py-2">Çıkış</th>
+                        <th className="text-right px-3 py-2">Net</th>
+                        <th className="text-right px-3 py-2">Adet</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(reportData.by_method || {}).length === 0 ? (
+                        <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                      ) : Object.entries(reportData.by_method).map(([m, v]) => (
+                        <tr key={m} className="border-t">
+                          <td className="px-3 py-2">{methodLabel(m)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">İşlem Tipi Bazında</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2">Tip</th>
+                        <th className="text-right px-3 py-2">Giriş</th>
+                        <th className="text-right px-3 py-2">Çıkış</th>
+                        <th className="text-right px-3 py-2">Adet</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(reportData.by_type || {}).length === 0 ? (
+                        <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                      ) : Object.entries(reportData.by_type).map(([ty, v]) => (
+                        <tr key={ty} className="border-t">
+                          <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-gray-500 text-center pt-3 border-t">
+                Toplam {reportData.transaction_count || 0} işlem
+              </div>
+
+              <div className="flex justify-end gap-2 print:hidden">
+                <Button variant="outline" onClick={() => { setShowReportDialog(false); setReportData(null); }}>
+                  Kapat
+                </Button>
+                <Button onClick={printReport} className="bg-indigo-600 hover:bg-indigo-700">
+                  <Printer className="w-4 h-4 mr-2" /> Yazdır
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
