@@ -34,8 +34,9 @@ from modules.folio.services.open_folio_service import OpenFolioService
 from modules.pms_core.role_permission_service import require_op
 
 try:
-    from cache_manager import cached
+    from cache_manager import cache, cached
 except ImportError:
+    cache = None  # type: ignore
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
@@ -598,17 +599,27 @@ async def create_accounting_invoice(
     cf_dict['created_at'] = cf_dict['created_at'].isoformat()
     await db.cash_flow.insert_one(cf_dict)
 
+    # v95.1 — list cache + dashboard cache invalidasyon
+    if cache:
+        cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
+        try:
+            cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
+        except Exception:
+            pass
+
     return invoice
 
 
 
 @router.get("/accounting/invoices")
+@cached(ttl=300, key_prefix="accounting_invoices_list")  # v95.1 — 5dk cache, write path'leri invalidate eder
 async def get_accounting_invoices(
     start_date: str | None = None,
     end_date: str | None = None,
     invoice_type: str | None = None,
     status: str | None = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v95.1 — diğer finance uçlarıyla tutarlı yetki
 ):
     query = {'tenant_id': current_user.tenant_id}
     if start_date and end_date:
@@ -643,11 +654,13 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
     await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     invoice = await db.accounting_invoices.find_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
 
-    # Drop the dashboard cache so KPI cards reflect the new status immediately.
+    # Drop the dashboard + invoices list cache so the UI reflects the change.
     # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
     try:
         from cache_manager import cache as _cache
-        _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
+        if _cache:
+            _cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
+            _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
     except Exception:
         pass
 
