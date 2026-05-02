@@ -1,11 +1,131 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Calendar, TrendingUp, Utensils } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { DollarSign, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
 import {
   BarChart, Bar, Cell, ComposedChart, Line, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
+
+const CATEGORY_LABELS = {
+  room: 'Konaklama', food: 'Yiyecek', beverage: 'İçecek', minibar: 'Minibar',
+  spa: 'Spa', laundry: 'Çamaşır', phone: 'Telefon', internet: 'İnternet',
+  parking: 'Otopark', city_tax: 'Şehir Vergisi', service_charge: 'Servis Bedeli', other: 'Diğer',
+};
+
+const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const isoDaysAgo = (n) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+};
+const isoToday = () => new Date().toISOString().slice(0, 10);
+
+const CategoryRevenueCard = () => {
+  const [from, setFrom] = useState(isoDaysAgo(30));
+  const [to, setTo] = useState(isoToday());
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.get(`/folio/reports/revenue-by-category`, {
+        params: { date_from: from, date_to: to },
+      });
+      setData(res.data);
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Yüklenemedi');
+      setData(null);
+    }
+    setLoading(false);
+  }, [from, to]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const rows = data?.rows || [];
+  const totals = data?.totals;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center justify-between">
+          <span>Kategori Bazlı Gelir</span>
+          <div className="flex items-end gap-2">
+            <div>
+              <Label className="text-[10px] text-gray-500">Başlangıç</Label>
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 text-xs w-36" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-500">Bitiş</Label>
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 text-xs w-36" />
+            </div>
+            <Button size="sm" variant="outline" onClick={load} disabled={loading} className="h-8">
+              <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-600">
+              <tr>
+                <th className="text-left p-2">Kategori</th>
+                <th className="text-right p-2">Adet</th>
+                <th className="text-right p-2">Ara Toplam</th>
+                <th className="text-right p-2">İndirim</th>
+                <th className="text-right p-2">Net</th>
+                <th className="text-right p-2">KDV</th>
+                <th className="text-right p-2">Şehir Vergisi</th>
+                <th className="text-right p-2">Toplam</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={8} className="text-center p-6 text-gray-400">Bu tarih aralığında işlem yok</td></tr>
+              ) : rows.map((r) => (
+                <tr key={r.category} className="border-t">
+                  <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
+                  <td className="p-2 text-right">{r.count}</td>
+                  <td className="p-2 text-right">{fmt(r.subtotal)}</td>
+                  <td className="p-2 text-right text-orange-700">{r.discount > 0 ? `−${fmt(r.discount)}` : '0,00'}</td>
+                  <td className="p-2 text-right">{fmt(r.net)}</td>
+                  <td className="p-2 text-right">{fmt(r.vat)}</td>
+                  <td className="p-2 text-right">{fmt(r.city_tax)}</td>
+                  <td className="p-2 text-right font-semibold">{fmt(r.total)} ₺</td>
+                </tr>
+              ))}
+            </tbody>
+            {totals && rows.length > 0 && (
+              <tfoot className="bg-gray-100 font-semibold">
+                <tr>
+                  <td className="p-2">TOPLAM</td>
+                  <td className="p-2 text-right">{totals.count}</td>
+                  <td className="p-2 text-right">{fmt(totals.subtotal)}</td>
+                  <td className="p-2 text-right text-orange-700">{totals.discount > 0 ? `−${fmt(totals.discount)}` : '0,00'}</td>
+                  <td className="p-2 text-right">{fmt(totals.net)}</td>
+                  <td className="p-2 text-right">{fmt(totals.vat)}</td>
+                  <td className="p-2 text-right">{fmt(totals.city_tax)}</td>
+                  <td className="p-2 text-right">{fmt(totals.total)} ₺</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const RevenueSection = ({ data, s, pc, roomTypeData }) => (
   <div className="space-y-6" data-testid="section-revenue">
@@ -33,6 +153,7 @@ const RevenueSection = ({ data, s, pc, roomTypeData }) => (
         </ResponsiveContainer>
       </CardContent>
     </Card>
+    <CategoryRevenueCard />
     {roomTypeData.length > 0 && (
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Oda Tipi Bazlı Gelir</CardTitle></CardHeader>

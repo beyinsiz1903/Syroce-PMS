@@ -616,6 +616,90 @@ async def post_payment_to_folio(
     return payment
 
 
+@router.get("/folio/reports/revenue-by-category")
+async def revenue_by_category(
+    date_from: str,
+    date_to: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Tarih aralığında kategori bazlı gelir raporu (void hariç)."""
+    try:
+        dt_from = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
+        dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Tarih formatı YYYY-MM-DD olmalı")
+    if dt_from > dt_to:
+        raise HTTPException(status_code=400, detail="date_from > date_to olamaz")
+
+    # charge.date hem ISO string hem BSON datetime olarak depolanmış olabilir.
+    # ISO 8601 string'ler lexicographic olarak sıralanabilir; type-mismatch'ten
+    # kaçınmak için $expr + $cond ile her iki tipi de tek pipeline'da karşıla.
+    pipeline = [
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'voided': {'$ne': True},
+            '$expr': {
+                '$let': {
+                    'vars': {
+                        'd': {
+                            '$cond': [
+                                {'$eq': [{'$type': '$date'}, 'string']},
+                                {'$dateFromString': {'dateString': '$date', 'onError': None, 'onNull': None}},
+                                '$date',
+                            ]
+                        }
+                    },
+                    'in': {'$and': [
+                        {'$ne': ['$$d', None]},
+                        {'$gte': ['$$d', dt_from]},
+                        {'$lte': ['$$d', dt_to]},
+                    ]}
+                }
+            }
+        }},
+        {'$group': {
+            '_id': '$charge_category',
+            'count': {'$sum': 1},
+            'subtotal': {'$sum': {'$ifNull': ['$subtotal', '$amount']}},
+            'discount': {'$sum': {'$ifNull': ['$discount_amount', 0]}},
+            'net': {'$sum': '$amount'},
+            'vat': {'$sum': {'$ifNull': ['$vat_amount', 0]}},
+            'city_tax': {'$sum': {'$ifNull': ['$tax_amount', 0]}},
+            'total': {'$sum': {'$ifNull': ['$total', '$amount']}},
+        }},
+    ]
+    rows_raw = await db.folio_charges.aggregate(pipeline).to_list(100)
+
+    rows = []
+    totals = {'count': 0, 'subtotal': 0.0, 'discount': 0.0, 'net': 0.0, 'vat': 0.0, 'city_tax': 0.0, 'total': 0.0}
+    for r in rows_raw:
+        item = {
+            'category': r['_id'] or 'other',
+            'count': int(r.get('count') or 0),
+            'subtotal': round(float(r.get('subtotal') or 0.0), 2),
+            'discount': round(float(r.get('discount') or 0.0), 2),
+            'net': round(float(r.get('net') or 0.0), 2),
+            'vat': round(float(r.get('vat') or 0.0), 2),
+            'city_tax': round(float(r.get('city_tax') or 0.0), 2),
+            'total': round(float(r.get('total') or 0.0), 2),
+        }
+        rows.append(item)
+        totals['count'] += item['count']
+        for k in ('subtotal', 'discount', 'net', 'vat', 'city_tax', 'total'):
+            totals[k] = round(totals[k] + item[k], 2)
+
+    rows.sort(key=lambda x: x['total'], reverse=True)
+    return {
+        'date_from': date_from,
+        'date_to': date_to,
+        'rows': rows,
+        'totals': totals,
+    }
+
+
 @router.post("/folio/transfer", response_model=FolioOperation)
 async def transfer_charges(
     operation_data: FolioOperationCreate,
@@ -645,11 +729,41 @@ async def transfer_charges(
     if not from_folio or not to_folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
-    # Transfer specified charges
-    for charge_id in operation_data.charge_ids:
-        await db.folio_charges.update_one(
-            {'id': charge_id, 'folio_id': operation_data.from_folio_id},
-            {'$set': {'folio_id': operation_data.to_folio_id}}
+    if not operation_data.charge_ids:
+        raise HTTPException(status_code=400, detail="En az bir charge_id gerekli")
+
+    # Önce hedef charge'ların hepsi gerçekten kaynak folio'da ve void değil mi doğrula
+    existing = await db.folio_charges.find(
+        {
+            'id': {'$in': operation_data.charge_ids},
+            'folio_id': operation_data.from_folio_id,
+            'tenant_id': current_user.tenant_id,
+            'voided': {'$ne': True},
+        },
+        {'_id': 0, 'id': 1}
+    ).to_list(len(operation_data.charge_ids))
+    found_ids = {c['id'] for c in existing}
+    missing = [cid for cid in operation_data.charge_ids if cid not in found_ids]
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Aktarılamayan kayıtlar (kaynakta yok / iptal edilmiş / başka tenant): {missing}"
+        )
+
+    # Tek bulk update — modified_count tüm hedeflerle eşit olmalı
+    res = await db.folio_charges.update_many(
+        {
+            'id': {'$in': operation_data.charge_ids},
+            'folio_id': operation_data.from_folio_id,
+            'tenant_id': current_user.tenant_id,
+            'voided': {'$ne': True},
+        },
+        {'$set': {'folio_id': operation_data.to_folio_id}}
+    )
+    if getattr(res, 'modified_count', 0) != len(operation_data.charge_ids):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Aktarım kısmi: {res.modified_count}/{len(operation_data.charge_ids)} işlem güncellendi"
         )
 
     # Create operation record

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -43,6 +43,11 @@ const FolioViewDialog = ({
   const [proformaLoading, setProformaLoading] = useState(false);
   const [operations, setOperations] = useState(null);
   const [opsLoading, setOpsLoading] = useState(false);
+  const [openFolios, setOpenFolios] = useState([]);
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [transferChargeIds, setTransferChargeIds] = useState([]);
+  const [transferReason, setTransferReason] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
 
   const [newFolioCharge, setNewFolioCharge] = useState({
     charge_category: 'room',
@@ -162,6 +167,49 @@ const FolioViewDialog = ({
     setOpsLoading(false);
   };
 
+  const openTransferDialog = async () => {
+    if (!selectedFolio) return;
+    setTransferTargetId('');
+    setTransferChargeIds([]);
+    setTransferReason('');
+    try {
+      const res = await axios.get('/folio/list', { params: { status: 'open' } });
+      const list = (res.data?.folios || res.data || []).filter(f => f.id !== selectedFolio.id);
+      setOpenFolios(list);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Açık folio listesi alınamadı');
+      setOpenFolios([]);
+    }
+    setSubDialog('transfer');
+  };
+
+  const toggleTransferCharge = (id) => {
+    setTransferChargeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleTransferSubmit = async () => {
+    if (!selectedFolio) return;
+    if (!transferTargetId) { toast.error('Hedef folio seçin'); return; }
+    if (transferChargeIds.length === 0) { toast.error('En az bir işlem seçin'); return; }
+    if (!transferReason.trim()) { toast.error('Aktarım nedeni zorunlu'); return; }
+    setTransferLoading(true);
+    try {
+      await axios.post('/folio/transfer', {
+        operation_type: 'transfer',
+        from_folio_id: selectedFolio.id,
+        to_folio_id: transferTargetId,
+        charge_ids: transferChargeIds,
+        reason: transferReason.trim(),
+      });
+      toast.success('İşlemler aktarıldı');
+      setSubDialog(null);
+      onChargePosted(selectedFolio.id);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Aktarım başarısız');
+    }
+    setTransferLoading(false);
+  };
+
   const printProforma = () => {
     const node = document.getElementById('proforma-printable');
     if (!node) return;
@@ -238,6 +286,9 @@ th{background:#f5f5f5}
                 </Button>
                 <Button onClick={loadOperations} variant="outline" disabled={opsLoading}>
                   <ArrowLeftRight className="w-4 h-4 mr-2" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
+                </Button>
+                <Button onClick={openTransferDialog} variant="outline">
+                  <Send className="w-4 h-4 mr-2" /> İşlem Aktar
                 </Button>
               </div>
 
@@ -661,6 +712,76 @@ th{background:#f5f5f5}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={subDialog === 'transfer'} onOpenChange={(o) => !o && setSubDialog(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>İşlem Aktar</DialogTitle>
+            <DialogDescription>
+              Bu folio'daki seçili işlemleri başka bir açık folio'ya taşır. Bakiyeler her iki tarafta yeniden hesaplanır.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Hedef Folio *</Label>
+              <Select value={transferTargetId} onValueChange={setTransferTargetId}>
+                <SelectTrigger><SelectValue placeholder="Açık folio seçin" /></SelectTrigger>
+                <SelectContent>
+                  {openFolios.length === 0 ? (
+                    <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem>
+                  ) : openFolios.map(f => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.folio_number} • {f.folio_type?.toUpperCase?.() || ''} • Bakiye: {fmt(f.balance)} ₺
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Aktarılacak İşlemler ({transferChargeIds.length} seçili)</Label>
+              <div className="border rounded max-h-72 overflow-y-auto divide-y">
+                {folioCharges.filter(c => !c.voided).length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-400">Aktarılabilir işlem yok</div>
+                ) : folioCharges.filter(c => !c.voided).map(c => (
+                  <label key={c.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={transferChargeIds.includes(c.id)}
+                      onChange={() => toggleTransferCharge(c.id)}
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium">{c.description}</div>
+                      <div className="text-xs text-gray-500 capitalize">{c.charge_category}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{fmt(c.total ?? c.amount)} ₺</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Aktarım Nedeni *</Label>
+              <Textarea
+                value={transferReason}
+                onChange={(e) => setTransferReason(e.target.value)}
+                placeholder="Ör: misafir oda değişikliği, şirket folio'suna devir"
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="outline" onClick={() => setSubDialog(null)}>Vazgeç</Button>
+              <Button
+                type="button"
+                onClick={handleTransferSubmit}
+                disabled={transferLoading || !transferTargetId || transferChargeIds.length === 0 || !transferReason.trim()}
+              >
+                {transferLoading ? 'Aktarılıyor…' : 'Aktar'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
