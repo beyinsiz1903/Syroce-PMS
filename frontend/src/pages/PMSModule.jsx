@@ -1,11 +1,34 @@
 import { useState, useEffect, useMemo, useCallback, Suspense, lazy, memo } from 'react';
-const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
+// Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
+// İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
+// diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
+// Sticky-mount mantığı (visitedTabs) korunur — bir kez ziyaret edilen
+// chunk RAM'de kalır, geri dönünce yeniden indirilmez.
+const FrontdeskTab = lazy(() => import('@/components/pms/FrontdeskTab'));
+const HousekeepingTab = lazy(() => import('@/components/pms/HousekeepingTab'));
+const BookingsTab = lazy(() => import('@/components/pms/BookingsTab'));
+const RoomsTab = lazy(() => import('@/components/pms/RoomsTab'));
+const GuestsTab = lazy(() => import('@/components/pms/GuestsTab'));
+const CashierTab = lazy(() => import('@/components/pms/CashierTab'));
+const UpsellTab = lazy(() => import('@/components/pms/UpsellTab'));
+const InternalChatTab = lazy(() => import('@/components/pms/InternalChatTab'));
+const ReportsTab = lazy(() => import('@/components/pms/ReportsTab'));
+const FlashReportContent = lazy(() => import('@/components/pms/FlashReportContent'));
+const LaundryTab = lazy(() => import('@/components/pms/LaundryTab'));
+const POSTab = lazy(() => import('@/components/pms/POSTab'));
+// Büyük dialog'lar (>500 satır) — açılmadığı sürece chunk indirilmez.
+const BookingDialog = lazy(() => import('@/components/pms/BookingDialog'));
+const FolioViewDialog = lazy(() => import('@/components/pms/FolioViewDialog'));
+const Guest360Dialog = lazy(() => import('@/components/pms/Guest360Dialog'));
+// Modal flow — her zaman opt-in, ekstra split.
+const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
+// Küçük/sık dialog'lar statik kalsın (split overhead'i değmez).
 import LeadTimeCurve from '@/components/LeadTimeCurve';
 import RevenueDashboard from '@/components/RevenueDashboard';
 import AIActivityLog from '@/components/AIActivityLog';
@@ -14,11 +37,6 @@ import FeedbackSystem from '@/components/FeedbackSystem';
 import AllotmentGrid from '@/components/AllotmentGrid';
 import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
-import FrontdeskTab from '@/components/pms/FrontdeskTab';
-import HousekeepingTab from '@/components/pms/HousekeepingTab';
-import BookingsTab from '@/components/pms/BookingsTab';
-import RoomsTab from '@/components/pms/RoomsTab';
-import BookingDialog from '@/components/pms/BookingDialog';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
@@ -26,16 +44,8 @@ import FindRoomDialog from '@/components/pms/FindRoomDialog';
 import HKTaskDialog from '@/components/pms/HKTaskDialog';
 import MaintenanceDialog from '@/components/pms/MaintenanceDialog';
 import { RoomBlockCreateDialog, RoomBlockViewDialog } from '@/components/pms/RoomBlockDialogs';
-import GuestsTab from '@/components/pms/GuestsTab';
 import GuestInfoDialog from '@/components/pms/GuestInfoDialog';
 import PaymentDialog from '@/components/pms/PaymentDialog';
-import Guest360Dialog from '@/components/pms/Guest360Dialog';
-import CashierTab from '@/components/pms/CashierTab';
-import UpsellTab from '@/components/pms/UpsellTab';
-import InternalChatTab from '@/components/pms/InternalChatTab';
-import ReportsTab from '@/components/pms/ReportsTab';
-import FlashReportContent from '@/components/pms/FlashReportContent';
-import LaundryTab from '@/components/pms/LaundryTab';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import RoomFeaturesPanel from '@/components/pms/RoomFeaturesPanel';
 import ConciergeDesk from '@/components/pms/ConciergeDesk';
@@ -45,9 +55,7 @@ import ManagerDailyReport from '@/components/pms/ManagerDailyReport';
 import KBSNotification from '@/components/pms/KBSNotification';
 import KVKKManager from '@/components/pms/KVKKManager';
 import RevenueControls from '@/components/pms/RevenueControls';
-import POSTab from '@/components/pms/POSTab';
 import FolioDialog from '@/components/pms/FolioDialog';
-import FolioViewDialog from '@/components/pms/FolioViewDialog';
 import RoomCreateDialog from '@/components/pms/RoomCreateDialog';
 import RoomImageUploadDialog from '@/components/pms/RoomImageUploadDialog';
 import GuestCreateDialog from '@/components/pms/GuestCreateDialog';
@@ -149,6 +157,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [maintenanceForm, setMaintenanceForm] = useState({
     room_id: null, room_number: '', issue_type: 'housekeeping_damage', priority: 'normal', description: ''
   });
+
+  // Tur 5: lazy dialog'lar için sticky-visited pattern.
+  // Bir kez açıldığında DOM'da kalır → kapanış animasyonu kaybolmaz,
+  // ikinci açılışta chunk yeniden indirilmez. open prop tek source-of-truth.
+  const [visitedDialogs, setVisitedDialogs] = useState(() => new Set());
+  useEffect(() => {
+    if (!openDialog) return;
+    setVisitedDialogs((prev) => (prev.has(openDialog) ? prev : new Set([...prev, openDialog])));
+  }, [openDialog]);
 
   const LITE_TABS = new Set(['frontdesk', 'housekeeping', 'rooms', 'guests', 'bookings', 'reports']);
 
@@ -762,6 +779,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             })}
           </TabsList>
 
+          {/* Tur 5: Tüm tab içerikleri lazy chunk — tek Suspense yeterli.
+              Sticky-mount + lazy birlikte: ziyaret edilmemiş tab indirilmez,
+              ziyaret edilmiş tab tekrar gelse RAM'den anında render. */}
+          <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
           {visitedTabs.has('frontdesk') && (
             <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
@@ -805,6 +826,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {visitedTabs.has('manager_report') && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
           {visitedTabs.has('kbs') && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
           {visitedTabs.has('kvkk') && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
+          </Suspense>
         </Tabs>
 
         <FolioDialog open={openDialog === 'folio'} onClose={() => setOpenDialog(null)} folio={folio} bookingId={selectedBooking} onFolioUpdated={() => loadFolio(selectedBooking)} />
@@ -813,9 +835,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <BulkDeleteRoomsDialog open={openDialog === 'bulk-delete-rooms'} onClose={() => setOpenDialog(null)} selectedRooms={selectedRooms} rooms={rooms} onDeleted={() => { setSelectedRooms([]); setBulkRoomMode(false); loadData(); }} />
         <BulkRoomsDialog open={openDialog === 'bulk-rooms'} onClose={() => setOpenDialog(null)} onRoomsCreated={loadData} user={user} />
         <GuestCreateDialog open={openDialog === 'guest'} onClose={() => setOpenDialog(null)} onGuestCreated={loadData} />
-        <BookingDialog open={openDialog === 'booking'} onClose={() => setOpenDialog(null)} guests={guests} rooms={rooms} companies={companies} ratePlans={ratePlans} packages={packages} newBooking={newBooking} setNewBooking={setNewBooking} multiRoomBooking={multiRoomBooking} handleCreateBooking={handleCreateBooking} handleCompanySelect={handleCompanySelect} handleContractedRateSelect={handleContractedRateSelect} handleChildrenChange={handleChildrenChange} handleChildAgeChange={handleChildAgeChange} addRoomToMultiBooking={addRoomToMultiBooking} removeRoomFromMultiBooking={removeRoomFromMultiBooking} updateMultiRoomField={updateMultiRoomField} updateMultiRoomChildrenAges={updateMultiRoomChildrenAges} updateMultiRoomChildAge={updateMultiRoomChildAge} isLite={isLite} setOpenDialog={setOpenDialog} />
+        {/* Tur 5: Büyük dialog'lar lazy + sticky-visited.
+            Bir kez açıldıktan sonra DOM'da kalır (visitedDialogs Set),
+            chunk yeniden indirilmez, kapanış animasyonu çalışır.
+            open prop her zaman gerçek koşulu yansıtır → modal davranışı korunur. */}
+        {visitedDialogs.has('booking') && (
+          <Suspense fallback={null}>
+            <BookingDialog open={openDialog === 'booking'} onClose={() => setOpenDialog(null)} guests={guests} rooms={rooms} companies={companies} ratePlans={ratePlans} packages={packages} newBooking={newBooking} setNewBooking={setNewBooking} multiRoomBooking={multiRoomBooking} handleCreateBooking={handleCreateBooking} handleCompanySelect={handleCompanySelect} handleContractedRateSelect={handleContractedRateSelect} handleChildrenChange={handleChildrenChange} handleChildAgeChange={handleChildAgeChange} addRoomToMultiBooking={addRoomToMultiBooking} removeRoomFromMultiBooking={removeRoomFromMultiBooking} updateMultiRoomField={updateMultiRoomField} updateMultiRoomChildrenAges={updateMultiRoomChildrenAges} updateMultiRoomChildAge={updateMultiRoomChildAge} isLite={isLite} setOpenDialog={setOpenDialog} />
+          </Suspense>
+        )}
         <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />
-        <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} />
+        {visitedDialogs.has('folio-view') && (
+          <Suspense fallback={null}>
+            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} />
+          </Suspense>
+        )}
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} selectedRoom={selectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
@@ -845,18 +879,20 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           />
         )}
 
-        {guest360Data && (
-          <Guest360Dialog
-            open={openDialog === 'guest360'}
-            onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
-            guest360Data={guest360Data}
-            guestTag={guestTag}
-            setGuestTag={setGuestTag}
-            guestNote={guestNote}
-            setGuestNote={setGuestNote}
-            addGuestTag={addGuestTag}
-            addGuestNote={addGuestNote}
-          />
+        {guest360Data && visitedDialogs.has('guest360') && (
+          <Suspense fallback={null}>
+            <Guest360Dialog
+              open={openDialog === 'guest360'}
+              onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
+              guest360Data={guest360Data}
+              guestTag={guestTag}
+              setGuestTag={setGuestTag}
+              guestNote={guestNote}
+              setGuestNote={setGuestNote}
+              addGuestTag={addGuestTag}
+              addGuestNote={addGuestNote}
+            />
+          </Suspense>
         )}
 
         <MaintenanceDialog

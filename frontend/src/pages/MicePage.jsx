@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Suspense, lazy } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import SalesPipelineTab from '@/components/mice/SalesPipelineTab';
-import PackagesTab from '@/components/mice/PackagesTab';
+// Tur 5: pipeline ve packages tab'ları sadece tıklanınca yüklenir.
+const SalesPipelineTab = lazy(() => import('@/components/mice/SalesPipelineTab'));
+const PackagesTab = lazy(() => import('@/components/mice/PackagesTab'));
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
   Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
@@ -48,6 +49,15 @@ const MicePage = ({ user, tenant, onLogout }) => {
   const [loadedTabs, setLoadedTabs] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('events');
+  // Tur 5: TabsContent global forceMount yaptığı için lazy chunk'lar
+  // panel mount olur olmaz indiriliyordu. visitedMiceTabs koşulu ile
+  // pipeline/packages componentleri ancak kullanıcı sekmeye geçince
+  // instantiate edilir. Bir kez ziyaret edildiğinde DOM'da kalır,
+  // tekrar dönünce yeniden chunk fetch yok.
+  const [visitedMiceTabs, setVisitedMiceTabs] = useState(() => new Set(['events']));
+  useEffect(() => {
+    setVisitedMiceTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])));
+  }, [activeTab]);
   const [showEventForm, setShowEventForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [beoData, setBeoData] = useState(null);
@@ -678,11 +688,19 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="pipeline">
-          <SalesPipelineTab accounts={accounts} />
+          {visitedMiceTabs.has('pipeline') && (
+            <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+              <SalesPipelineTab accounts={accounts} />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="packages">
-          <PackagesTab />
+          {visitedMiceTabs.has('packages') && (
+            <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+              <PackagesTab />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="competitors">
