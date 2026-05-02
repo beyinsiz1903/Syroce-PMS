@@ -642,19 +642,20 @@ async def all_room_qr_codes(
     request: Request,
     current_user=Depends(get_current_user),
 ):
-    """Tüm odalar için QR URL listesi (toplu yazdırma için)."""
+    """Tüm odalar için QR URL listesi (toplu yazdırma için).
+
+    v95 — Projection (sadece gerekli alanlar) + tek to_list batch fetch.
+    """
     tenant_id = _tenant_of(current_user)
-    cursor = raw_db["rooms"].find(
-        {"tenant_id": tenant_id, "is_active": {"$ne": False}}
-    ).sort("room_number", 1)
-    items = []
-    async for room in cursor:
-        rid = room.get("id")
-        items.append({
-            "room_id": rid,
-            "room_number": room.get("room_number"),
-            "room_type": room.get("room_type"),
-            "floor": room.get("floor"),
-            "url": _guest_url(request, tenant_id, rid),
-        })
+    rooms = await raw_db["rooms"].find(
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
+    ).sort("room_number", 1).to_list(2000)
+    items = [{
+        "room_id": room.get("id"),
+        "room_number": room.get("room_number"),
+        "room_type": room.get("room_type"),
+        "floor": room.get("floor"),
+        "url": _guest_url(request, tenant_id, room.get("id")),
+    } for room in rooms]
     return {"items": items, "count": len(items)}

@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from cache_manager import cache, cached  # v95 — cache for invalidation on writes
 from core.database import db
 from core.security import get_current_user
 from modules.pms_core.role_permission_service import require_op  # v89 DW
@@ -75,6 +76,7 @@ async def add_to_room_queue(
     )
 
     await db.room_queue.insert_one(queue_entry.model_dump())
+    cache.invalidate_tenant_cache(current_user.tenant_id, "rooms_queue_list")  # v95
 
     return {
         'success': True,
@@ -85,24 +87,24 @@ async def add_to_room_queue(
 
 
 @router.get("/rooms/queue/list")
+@cached(ttl=60, key_prefix="rooms_queue_list")  # v95 — 60s cache (front-desk, kısa TTL)
 async def get_room_queue(
     status: str = "waiting",
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user=Depends(get_current_user),  # v95 — explicit dep so @cached extracts tenant_id (was 'global' namespace bug)
 ):
     """Get room queue list sorted by priority"""
-    current_user = await get_current_user(credentials)
-
-    queue = await db.room_queue.find({
+    # v95 — Parallel queries + projection on rooms (only fields used downstream)
+    import asyncio as _asyncio
+    queue_q = db.room_queue.find({
         'tenant_id': current_user.tenant_id,
         'status': status
     }, {'_id': 0}).sort('priority', 1).to_list(1000)
-
-    # Get available rooms for assignment
-    available_rooms = await db.rooms.find({
+    available_rooms_q = db.rooms.find({
         'tenant_id': current_user.tenant_id,
         'status': 'available',
         'housekeeping_status': 'clean'
-    }, {'_id': 0}).to_list(1000)
+    }, {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'floor': 1}).to_list(1000)
+    queue, available_rooms = await _asyncio.gather(queue_q, available_rooms_q)
 
     return {
         'queue': queue,
@@ -142,6 +144,7 @@ async def assign_queue_priority(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
+    cache.invalidate_tenant_cache(current_user.tenant_id, "rooms_queue_list")  # v95
     return {
         'success': True,
         'queue_id': queue_id,
@@ -170,9 +173,9 @@ async def notify_guest_room_ready(
 
     # (no booking re-fetch needed — queue_entry already tenant-scoped above)
 
-    # Update queue status
+    # v95 — tenant_id filter eklendi (önceden filter yok → cross-tenant update riski)
     await db.room_queue.update_one(
-        {'id': queue_id},
+        {'id': queue_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'status': 'assigned',
@@ -182,6 +185,8 @@ async def notify_guest_room_ready(
             }
         }
     )
+
+    cache.invalidate_tenant_cache(current_user.tenant_id, "rooms_queue_list")  # v95
 
     # Send notification (mock)
     notification_message = f"Dear {queue_entry['guest_name']}, your room {room_number} is now ready! Please proceed to reception."
@@ -214,6 +219,7 @@ async def remove_from_queue(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
+    cache.invalidate_tenant_cache(current_user.tenant_id, "rooms_queue_list")  # v95
     return {
         'success': True,
         'message': 'Entry removed from queue'

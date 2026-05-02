@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
+from cache_manager import cached  # v95
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
@@ -144,6 +145,7 @@ async def get_reservation_details_enhanced(
 
 
 @router.get("/reservations/double-booking-check")
+@cached(ttl=60, key_prefix="double_booking_check")  # v95 — 60s cache (front-desk operasyonel, kısa TTL)
 async def check_double_booking_conflicts(
     date: str | None = None,
     current_user: User = Depends(get_current_user)
@@ -155,13 +157,14 @@ async def check_double_booking_conflicts(
     """
     target_date = date or datetime.now().date().isoformat()
 
-    # Get all bookings for the date
+    # v95 — Projection: only fields needed for conflict detection (was full-doc fetch)
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
         'check_in': {'$lte': target_date},
         'check_out': {'$gte': target_date}
-    }).to_list(length=None)
+    }, {'_id': 0, 'id': 1, 'room_id': 1, 'guest_id': 1,
+        'check_in': 1, 'check_out': 1, 'status': 1}).to_list(length=None)
 
     # Group by room
     room_bookings = {}

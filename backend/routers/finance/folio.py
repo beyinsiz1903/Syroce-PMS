@@ -121,34 +121,34 @@ async def get_folio_dashboard_stats(
     """Get folio statistics for dashboard"""
 
     try:
-        # Get all open folios
-        open_folios = await db.folios.find({
-            'tenant_id': current_user.tenant_id,
-            'status': 'open'
-        }, {'_id': 0}).to_list(1000)
-
-        # Calculate total outstanding balance from folio balance field
-        total_outstanding = 0.0
-        for folio in open_folios:
-            # Use the balance field directly instead of calculating
-            total_outstanding += folio.get('balance', 0)
-
-        # Get recent charges (last 24 hours)
+        # v95 — Parallel queries + server-side $sum (was to_list(1000) + Python sum, sequential)
+        tid = current_user.tenant_id
         yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        recent_charges = await db.folio_charges.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'date': {'$gte': yesterday},
-            'voided': False
-        })
 
-        # Get recent payments (last 24 hours)
-        recent_payments = await db.payments.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'date': {'$gte': yesterday}
+        open_folios_pipeline = [
+            {'$match': {'tenant_id': tid, 'status': 'open'}},
+            {'$group': {
+                '_id': None,
+                'count': {'$sum': 1},
+                'total_balance': {'$sum': {'$ifNull': ['$balance', 0]}},
+            }},
+        ]
+        open_folios_q = db.folios.aggregate(open_folios_pipeline).to_list(1)
+        charges_q = db.folio_charges.count_documents({
+            'tenant_id': tid, 'date': {'$gte': yesterday}, 'voided': False
         })
+        payments_q = db.payments.count_documents({
+            'tenant_id': tid, 'date': {'$gte': yesterday}
+        })
+        open_agg, recent_charges, recent_payments = await asyncio.gather(
+            open_folios_q, charges_q, payments_q
+        )
+
+        total_open = open_agg[0]['count'] if open_agg else 0
+        total_outstanding = open_agg[0]['total_balance'] if open_agg else 0.0
 
         return {
-            'total_open_folios': len(open_folios),
+            'total_open_folios': total_open,
             'total_outstanding_balance': round(total_outstanding, 2),
             'recent_charges_24h': recent_charges,
             'recent_payments_24h': recent_payments

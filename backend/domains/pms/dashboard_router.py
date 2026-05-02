@@ -855,11 +855,42 @@ async def get_budget_vs_actual(
     else:
         end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
 
-    # Get budget data
-    budget = await db.budgets.find_one({
-        'tenant_id': current_user.tenant_id,
-        'month': month
-    })
+    # v95 — Parallel queries with server-side $sum (was 3 sequential to_list(10000) + Python sum)
+    import asyncio as _asyncio
+    tid = current_user.tenant_id
+    date_range = {'$gte': start.isoformat(), '$lte': end.isoformat()}
+
+    # Charges aggregation: total revenue + room-only revenue in single pipeline
+    charges_pipeline = [
+        {'$match': {'tenant_id': tid, 'voided': False, 'date': date_range}},
+        {'$group': {
+            '_id': None,
+            'total': {'$sum': {'$ifNull': ['$total', 0]}},
+            'room_revenue': {'$sum': {'$cond': [
+                {'$eq': ['$charge_category', 'room']},
+                {'$ifNull': ['$total', 0]},
+                0,
+            ]}},
+        }},
+    ]
+    expenses_pipeline = [
+        {'$match': {'tenant_id': tid, 'date': date_range}},
+        {'$group': {'_id': None, 'total': {'$sum': {'$ifNull': ['$amount', 0]}}}},
+    ]
+
+    budget_q = db.budgets.find_one({'tenant_id': tid, 'month': month})
+    charges_q = db.folio_charges.aggregate(charges_pipeline).to_list(1)
+    expenses_q = db.expenses.aggregate(expenses_pipeline).to_list(1)
+    rooms_count_q = db.rooms.count_documents({'tenant_id': tid})
+    bookings_q = db.bookings.find(
+        {'tenant_id': tid, 'status': {'$in': ['checked_in', 'checked_out']},
+         'check_in': date_range},
+        {'_id': 0, 'check_in': 1, 'check_out': 1},
+    ).to_list(10000)
+
+    budget, charges_agg, expenses_agg, total_rooms, bookings = await _asyncio.gather(
+        budget_q, charges_q, expenses_q, rooms_count_q, bookings_q
+    )
 
     # If no budget, create default
     if not budget:
@@ -870,42 +901,13 @@ async def get_budget_vs_actual(
             'adr_budget': 150
         }
 
-    # Get actual revenue
-    charges = await db.folio_charges.find({
-        'tenant_id': current_user.tenant_id,
-        'voided': False,
-        'date': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
-
-    actual_revenue = sum(c.get('total', 0) for c in charges)
-
-    # Get actual expenses
-    expenses = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
-
-    actual_expense = sum(e.get('amount', 0) for e in expenses)
+    actual_revenue = charges_agg[0]['total'] if charges_agg else 0
+    room_revenue = charges_agg[0]['room_revenue'] if charges_agg else 0
+    actual_expense = expenses_agg[0]['total'] if expenses_agg else 0
 
     # Get actual occupancy
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     days_in_month = (end - start).days + 1
     available_room_nights = total_rooms * days_in_month
-
-    bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['checked_in', 'checked_out']},
-        'check_in': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
 
     occupied_room_nights = 0
     for booking in bookings:
@@ -922,8 +924,6 @@ async def get_budget_vs_actual(
     actual_occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
 
     # Calculate ADR
-    room_charges = [c for c in charges if c.get('charge_category') == 'room']
-    room_revenue = sum(c.get('total', 0) for c in room_charges)
     actual_adr = round(room_revenue / occupied_room_nights, 2) if occupied_room_nights > 0 else 0
 
     # Calculate variances
