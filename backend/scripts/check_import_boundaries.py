@@ -40,12 +40,7 @@ BOUNDARY_RULES = [
 # Entry format: (relative_path_from_backend_root, line_number).
 # When you suppress an entry here, please also create a follow-up to migrate the
 # shared module to `common/` or `shared_kernel/` so the exception can be removed.
-KNOWN_EXCEPTIONS = frozenset({
-    # Admin tenant push-metrics dashboard reads guest-domain rollup helper.
-    # Proper fix: move `web_push_metrics` into `shared_kernel/` (domain-agnostic
-    # Mongo upsert/aggregation helper used by both guest router and admin UI).
-    ("domains/admin/router.py", 684),
-})
+KNOWN_EXCEPTIONS = frozenset()  # web_push_metrics shared_kernel/ya tasindi
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
 

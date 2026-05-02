@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import domains.guest.messaging.web_push_metrics as wpm
-from domains.guest.messaging.web_push_metrics import (
+import shared_kernel.web_push_metrics as wpm
+from shared_kernel.web_push_metrics import (
     SYSTEM_TENANT,
     get_metrics_summary,
     record_dispatch,
@@ -92,7 +92,7 @@ async def test_record_scheduled_prune_explicit_tenant():
 async def test_record_dispatch_swallows_db_error(caplog):
     db, coll = _mock_db()
     coll.update_one = AsyncMock(side_effect=RuntimeError("mongo down"))
-    with caplog.at_level("ERROR", logger="domains.guest.messaging.web_push_metrics"):
+    with caplog.at_level("ERROR", logger="shared_kernel.web_push_metrics"):
         # raise etmemeli — best-effort
         await record_dispatch(db, tenant_id="t1", attempted=1, sent=1,
                               failed=0, pruned=0)

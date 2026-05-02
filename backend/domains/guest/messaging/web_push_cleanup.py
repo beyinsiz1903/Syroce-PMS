@@ -110,7 +110,7 @@ async def prune_inactive_subscriptions(
         )
         # Task #32: Yaş tabanlı silmeyi sayaç olarak rollup'a yaz.
         try:
-            from domains.guest.messaging.web_push_metrics import (
+            from shared_kernel.web_push_metrics import (
                 record_scheduled_prune,
             )
             await record_scheduled_prune(db, count=deleted)

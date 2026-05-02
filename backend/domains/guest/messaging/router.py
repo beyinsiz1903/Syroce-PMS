@@ -519,7 +519,7 @@ async def send_internal_message(
             # Task #32: günlük rollup'a yaz (best-effort).
             try:
                 from core.database import db as _metrics_db
-                from domains.guest.messaging.web_push_metrics import record_dispatch
+                from shared_kernel.web_push_metrics import record_dispatch
                 await record_dispatch(
                     _metrics_db,
                     tenant_id=current_user.tenant_id,

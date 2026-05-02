@@ -681,7 +681,7 @@ async def get_web_push_metrics(
             raise HTTPException(status_code=400, detail="Tenant tanımsız.")
         target_tenant = current_user.tenant_id
 
-    from domains.guest.messaging.web_push_metrics import get_metrics_summary
+    from shared_kernel.web_push_metrics import get_metrics_summary
     summary = await get_metrics_summary(db, tenant_id=target_tenant, days=days)
     return summary
 
