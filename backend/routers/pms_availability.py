@@ -188,7 +188,8 @@ async def check_room_availability(
 ):
     """Check room availability including blocks"""
     # Tur 3: defaults — today / today+1 when omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not check_in:
         check_in = _d.today().isoformat()
     if not check_out:

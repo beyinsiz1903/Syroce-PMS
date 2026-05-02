@@ -22,7 +22,6 @@ Tasarım notları:
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from fastapi import HTTPException
 
@@ -35,7 +34,7 @@ CASH_METHODS = {"cash"}
 ALL_METHODS = {"cash", "card", "bank_transfer", "online"}
 
 
-async def get_active_shift(tenant_id: str) -> Optional[dict]:
+async def get_active_shift(tenant_id: str) -> dict | None:
     """Tenant'ın açık vardiyasını döner (yoksa None)."""
     return await db.cashier_shifts.find_one(
         {"tenant_id": tenant_id, "status": "open"},
@@ -43,7 +42,7 @@ async def get_active_shift(tenant_id: str) -> Optional[dict]:
     )
 
 
-async def ensure_active_shift(tenant_id: str, method: str) -> Optional[dict]:
+async def ensure_active_shift(tenant_id: str, method: str) -> dict | None:
     """
     Nakit (cash) işlemler için aktif vardiya zorunludur. Kart/banka için
     vardiya tercihen olmalı ama yoksa engellenmiyor (POS terminal akışı).
@@ -62,7 +61,7 @@ async def ensure_active_shift(tenant_id: str, method: str) -> Optional[dict]:
     return None
 
 
-async def get_shift_transactions(tenant_id: str, shift_id: Optional[str] = None) -> list[dict]:
+async def get_shift_transactions(tenant_id: str, shift_id: str | None = None) -> list[dict]:
     """Vardiyanın işlem listesini döner (en yeni önce)."""
     query = {"tenant_id": tenant_id}
     if shift_id:
@@ -83,17 +82,17 @@ async def record_cash_transaction(
     direction: str,                       # "in" | "out"
     description: str,
     txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
-    ref_type: Optional[str] = None,       # folio|booking|payment|manual|bank
-    ref_id: Optional[str] = None,
-    created_by: Optional[str] = None,
-    created_by_name: Optional[str] = None,
-    idempotency_key: Optional[str] = None,
+    ref_type: str | None = None,       # folio|booking|payment|manual|bank
+    ref_id: str | None = None,
+    created_by: str | None = None,
+    created_by_name: str | None = None,
+    idempotency_key: str | None = None,
     require_open_shift: bool = False,
     currency: str = "TRY",
     fx_rate: float = 1.0,
-    original_amount: Optional[float] = None,
-    extra: Optional[dict] = None,
-) -> Optional[dict]:
+    original_amount: float | None = None,
+    extra: dict | None = None,
+) -> dict | None:
     """
     Kasa hareketi yazar (cashier_shifts.transactions array'ine push) ve
     aktif vardiyanın cash_in/cash_out alanını günceller (yalnızca

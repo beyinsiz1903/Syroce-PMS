@@ -709,7 +709,8 @@ async def get_profit_loss_report(
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     # Tur 3: defaults — last 30 days when params omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
@@ -764,7 +765,8 @@ async def get_vat_report(
     current_user: User = Depends(get_current_user)
 ):
     # Tur 3: defaults — last 30 days when params omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:

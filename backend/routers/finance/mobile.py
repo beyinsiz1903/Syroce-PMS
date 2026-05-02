@@ -535,7 +535,7 @@ async def get_cash_flow_summary_mobile(
         }, {'_id': 0, 'booking_id': 1, 'balance': 1}):
             folios_by_booking[folio.get('booking_id')] = folio.get('balance', 0)
 
-    invoices_by_due: dict[str, float] = {d: 0.0 for d in weekly_dates}
+    invoices_by_due: dict[str, float] = dict.fromkeys(weekly_dates, 0.0)
     async for invoice in db.accounting_invoices.find({
         'tenant_id': current_user.tenant_id,
         'due_date': {'$in': weekly_dates},

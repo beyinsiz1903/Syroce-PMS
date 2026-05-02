@@ -1821,7 +1821,8 @@ async def get_available_rooms_by_type(
     current_user: User = Depends(get_current_user),
 ):
     # Tur 3: defaults — today / today+1 when omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not check_in:
         check_in = _d.today().isoformat()
     if not check_out:

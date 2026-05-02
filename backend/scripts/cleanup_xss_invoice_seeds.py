@@ -18,9 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from core.database import db  # noqa: E402
-
 from core.sanitize import sanitize_plaintext  # noqa: E402  — prod helper
-
 
 SUSPECT = re.compile(
     r"<\s*(?:script|img|svg|iframe|object|embed|body|link|style)\b|on\w+\s*=|javascript:",

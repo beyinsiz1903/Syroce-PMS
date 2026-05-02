@@ -243,7 +243,8 @@ async def get_financial_report(
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     # Tur 3: defaults — last 30 days when omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:

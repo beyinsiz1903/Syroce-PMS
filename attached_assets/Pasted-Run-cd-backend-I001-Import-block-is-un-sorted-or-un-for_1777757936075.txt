@@ -1,0 +1,378 @@
+Run cd backend
+I001 [*] Import block is un-sorted or un-formatted
+  --> domains/admin/router.py:24:5
+   |
+23 | try:
+24 |     from cache_manager import cache as _cache_mgr, cached as _cm_cached
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+25 | except ImportError:
+26 |     _cache_mgr = None  # type: ignore
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> domains/channel_manager/unified_rate_manager_router.py:25:1
+   |
+23 |     GET  /stop-sale-summary        — Stop sale ozet
+24 |   """
+25 | / import asyncio
+26 | | import logging
+27 | | import uuid
+28 | | from datetime import UTC, datetime, timedelta
+29 | |
+30 | | from cache_manager import cached
+31 | | from fastapi import APIRouter, Depends, HTTPException
+32 | | from pydantic import BaseModel
+33 | | from pymongo import UpdateOne
+34 | |
+35 | | from core.database import db
+36 | | from core.security import get_current_user
+37 | | from core.tenant_currency import get_tenant_currency
+38 | | from models.schemas import User
+39 | | from modules.pms_core.role_permission_service import require_op  # v96 DW
+   | |_______________________________________________________________^
+40 |
+41 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:38:47
+   |
+38 | async def get_active_shift(tenant_id: str) -> Optional[dict]:
+   |                                               ^^^^^^^^^^^^^^
+39 |     """Tenant'ın açık vardiyasını döner (yoksa None)."""
+40 |     return await db.cashier_shifts.find_one(
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:46:63
+   |
+46 | async def ensure_active_shift(tenant_id: str, method: str) -> Optional[dict]:
+   |                                                               ^^^^^^^^^^^^^^
+47 |     """
+48 |     Nakit (cash) işlemler için aktif vardiya zorunludur. Kart/banka için
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:65:60
+   |
+65 | async def get_shift_transactions(tenant_id: str, shift_id: Optional[str] = None) -> list[dict]:
+   |                                                            ^^^^^^^^^^^^^
+66 |     """Vardiyanın işlem listesini döner (en yeni önce)."""
+67 |     query = {"tenant_id": tenant_id}
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:86:15
+   |
+84 |     description: str,
+85 |     txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
+86 |     ref_type: Optional[str] = None,       # folio|booking|payment|manual|bank
+   |               ^^^^^^^^^^^^^
+87 |     ref_id: Optional[str] = None,
+88 |     created_by: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:87:13
+   |
+85 |     txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
+86 |     ref_type: Optional[str] = None,       # folio|booking|payment|manual|bank
+87 |     ref_id: Optional[str] = None,
+   |             ^^^^^^^^^^^^^
+88 |     created_by: Optional[str] = None,
+89 |     created_by_name: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:88:17
+   |
+86 |     ref_type: Optional[str] = None,       # folio|booking|payment|manual|bank
+87 |     ref_id: Optional[str] = None,
+88 |     created_by: Optional[str] = None,
+   |                 ^^^^^^^^^^^^^
+89 |     created_by_name: Optional[str] = None,
+90 |     idempotency_key: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:89:22
+   |
+87 |     ref_id: Optional[str] = None,
+88 |     created_by: Optional[str] = None,
+89 |     created_by_name: Optional[str] = None,
+   |                      ^^^^^^^^^^^^^
+90 |     idempotency_key: Optional[str] = None,
+91 |     require_open_shift: bool = False,
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:90:22
+   |
+88 |     created_by: Optional[str] = None,
+89 |     created_by_name: Optional[str] = None,
+90 |     idempotency_key: Optional[str] = None,
+   |                      ^^^^^^^^^^^^^
+91 |     require_open_shift: bool = False,
+92 |     currency: str = "TRY",
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:94:22
+   |
+92 |     currency: str = "TRY",
+93 |     fx_rate: float = 1.0,
+94 |     original_amount: Optional[float] = None,
+   |                      ^^^^^^^^^^^^^^^
+95 |     extra: Optional[dict] = None,
+96 | ) -> Optional[dict]:
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:95:12
+   |
+93 |     fx_rate: float = 1.0,
+94 |     original_amount: Optional[float] = None,
+95 |     extra: Optional[dict] = None,
+   |            ^^^^^^^^^^^^^^
+96 | ) -> Optional[dict]:
+97 |     """
+   |
+help: Convert to `X | None`
+
+UP045 [*] Use `X | None` for type annotations
+  --> domains/pms/cashier_service.py:96:6
+   |
+94 |     original_amount: Optional[float] = None,
+95 |     extra: Optional[dict] = None,
+96 | ) -> Optional[dict]:
+   |      ^^^^^^^^^^^^^^
+97 |     """
+98 |     Kasa hareketi yazar (cashier_shifts.transactions array'ine push) ve
+   |
+help: Convert to `X | None`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> domains/pms/enterprise_router.py:33:5
+   |
+32 | try:
+33 |     from cache_manager import cache as _cache_mgr, cached as _cm_cached
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+34 | except ImportError:
+35 |     _cache_mgr = None  # type: ignore
+   |
+help: Organize imports
+
+F401 [*] `fastapi.security.HTTPAuthorizationCredentials` imported but unused
+  --> domains/pms/frontdesk_router.py:14:30
+   |
+13 | from fastapi import APIRouter, Depends, HTTPException
+14 | from fastapi.security import HTTPAuthorizationCredentials
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 | from pydantic import BaseModel
+   |
+help: Remove unused import: `fastapi.security.HTTPAuthorizationCredentials`
+
+F401 [*] `core.security.security` imported but unused
+  --> domains/pms/frontdesk_router.py:21:5
+   |
+19 | from core.security import (
+20 |     get_current_user,
+21 |     security,
+   |     ^^^^^^^^
+22 | )
+23 | from core.utils import generate_folio_number
+   |
+help: Remove unused import: `core.security.security`
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> domains/pms/night_audit/router.py:246:5
+    |
+244 | ):
+245 |     # Tur 3: defaults — last 30 days when omitted
+246 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+247 |     if not start_date:
+248 |         start_date = (_d.today() - _td(days=30)).isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> domains/pms/pos_router.py:643:5
+    |
+641 |     """Get available rooms for check-in"""
+642 |     # Tur 3: defaults — today / today+1 when omitted
+643 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+644 |     if not check_in:
+645 |         check_in = _d.today().isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> domains/revenue/analytics_router.py:445:5
+    |
+443 | ):
+444 |     """Get available rooms for a specific date range. Varsayılan: bugün/yarın."""
+445 |     from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+446 |     if not check_in:
+447 |         check_in = _dt.now(_UTC).date().isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> domains/revenue/pricing_router/rms.py:558:9
+    |
+556 | ):
+557 |     if not check_in_date:
+558 |         from datetime import datetime as _dt, UTC as _UTC
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+559 |         check_in_date = _dt.now(_UTC).date().isoformat()
+560 |     """Get competitor prices - REAL DATA from compset database
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/finance/accounting.py:712:5
+    |
+710 | ):
+711 |     # Tur 3: defaults — last 30 days when params omitted
+712 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+713 |     if not start_date:
+714 |         start_date = (_d.today() - _td(days=30)).isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/finance/accounting.py:767:5
+    |
+765 | ):
+766 |     # Tur 3: defaults — last 30 days when params omitted
+767 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+768 |     if not start_date:
+769 |         start_date = (_d.today() - _td(days=30)).isoformat()
+    |
+help: Organize imports
+
+C420 [*] Unnecessary dict comprehension for iterable; use `dict.fromkeys` instead
+   --> routers/finance/mobile.py:538:41
+    |
+536 |             folios_by_booking[folio.get('booking_id')] = folio.get('balance', 0)
+537 |
+538 |     invoices_by_due: dict[str, float] = {d: 0.0 for d in weekly_dates}
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+539 |     async for invoice in db.accounting_invoices.find({
+540 |         'tenant_id': current_user.tenant_id,
+    |
+help: Replace with `dict.fromkeys(iterable)`)
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> routers/hotel_services.py:1824:5
+     |
+1822 | ):
+1823 |     # Tur 3: defaults — today / today+1 when omitted
+1824 |     from datetime import date as _d, timedelta as _td
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1825 |     if not check_in:
+1826 |         check_in = _d.today().isoformat()
+     |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> routers/mice.py:1249:5
+     |
+1247 | ) -> dict:
+1248 |     """Etkinlik takvimi. Varsayılan: bugünden +30 gün."""
+1249 |     from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1250 |     today = _dt.now(_UTC).date()
+1251 |     if not date_from:
+     |
+help: Organize imports
+
+F401 [*] `datetime.timedelta` imported but unused
+  --> routers/missing_endpoints_compat.py:10:37
+   |
+ 9 | import uuid
+10 | from datetime import UTC, datetime, timedelta
+   |                                     ^^^^^^^^^
+11 | from typing import Any
+   |
+help: Remove unused import: `datetime.timedelta`
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/pms_availability.py:191:5
+    |
+189 |     """Check room availability including blocks"""
+190 |     # Tur 3: defaults — today / today+1 when omitted
+191 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+192 |     if not check_in:
+193 |         check_in = _d.today().isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/pms_hardening.py:544:5
+    |
+542 | ):
+543 |     """Get operational trends for date range (arrivals, departures, occupancy, etc.)."""
+544 |     from datetime import date as date_cls, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+545 |     # Tur 3: default range = last 7 days (30 caused timeout)
+546 |     if not end_date:
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> routers/pms_reservations.py:228:5
+    |
+226 |     """
+227 |     # Tur 3: defaults — last 30 days when omitted
+228 |     from datetime import date as _d, timedelta as _td
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+229 |     if not start_date:
+230 |         start_date = (_d.today() - _td(days=30)).isoformat()
+    |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> scripts/cleanup_xss_invoice_seeds.py:20:1
+   |
+18 |   sys.path.insert(0, str(ROOT / "backend"))
+19 |
+20 | / from core.database import db  # noqa: E402
+21 | |
+22 | | from core.sanitize import sanitize_plaintext  # noqa: E402  — prod helper
+   | |____________________________________________^
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> server.py:471:5
+    |
+469 | # Note: room_qr_router is mounted via bootstrap/router_registry.py:250 — not here.
+470 | try:
+471 |     from routers.quick_id_proxy import router as quick_id_proxy_router, public_router as quick_id_public_router
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+472 |     app.include_router(quick_id_proxy_router)
+473 |     app.include_router(quick_id_public_router)
+    |
+help: Organize imports
+
+Found 31 errors.
+[*] 31 fixable with the `--fix` option.
+Error: Process completed with exit code 1.

@@ -555,7 +555,8 @@ async def get_compset_real_time_prices(
     current_user: User = Depends(get_current_user)
 ):
     if not check_in_date:
-        from datetime import datetime as _dt, UTC as _UTC
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
         check_in_date = _dt.now(_UTC).date().isoformat()
     """Get competitor prices - REAL DATA from compset database
 

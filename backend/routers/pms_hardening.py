@@ -541,7 +541,8 @@ async def api_dashboard_trends(
     current_user: User = Depends(get_current_user),
 ):
     """Get operational trends for date range (arrivals, departures, occupancy, etc.)."""
-    from datetime import date as date_cls, timedelta as _td
+    from datetime import date as date_cls
+    from datetime import timedelta as _td
     # Tur 3: default range = last 7 days (30 caused timeout)
     if not end_date:
         end_date = date_cls.today().isoformat()

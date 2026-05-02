@@ -11,14 +11,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from core.database import db
 from core.security import (
     get_current_user,
-    security,
 )
 from core.utils import generate_folio_number
 from domains.pms.frontdesk_service import frontdesk_service

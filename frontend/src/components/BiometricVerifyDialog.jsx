@@ -65,7 +65,9 @@ export default function BiometricVerifyDialog({
     try {
       const s = streamRef.current;
       if (s) s.getTracks().forEach(t => t.stop());
-    } catch (_) {}
+    } catch (_) {
+      /* stream zaten kapalı olabilir */
+    }
     streamRef.current = null;
     setStreamReady(false);
   };

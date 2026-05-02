@@ -30,7 +30,8 @@ from core.cache import cached
 from core.database import db
 
 try:
-    from cache_manager import cache as _cache_mgr, cached as _cm_cached
+    from cache_manager import cache as _cache_mgr
+    from cache_manager import cached as _cm_cached
 except ImportError:
     _cache_mgr = None  # type: ignore
     def _cm_cached(ttl=300, key_prefix=""):

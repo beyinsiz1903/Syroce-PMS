@@ -1246,7 +1246,9 @@ async def diary(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Etkinlik takvimi. Varsayılan: bugünden +30 gün."""
-    from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
     today = _dt.now(_UTC).date()
     if not date_from:
         date_from = today.isoformat()

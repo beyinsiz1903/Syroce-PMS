@@ -225,7 +225,8 @@ async def get_adr_and_rate_visibility(
     - By room type
     """
     # Tur 3: defaults — last 30 days when omitted
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d
+    from datetime import timedelta as _td
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:

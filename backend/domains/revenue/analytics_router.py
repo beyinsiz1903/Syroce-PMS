@@ -442,7 +442,9 @@ async def get_available_rooms_for_assignment(
     current_user=Depends(get_current_user),  # v67 Bug DD2 (architect): tenant-scoped cache key garanti.
 ):
     """Get available rooms for a specific date range. Varsayılan: bugün/yarın."""
-    from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
     if not check_in:
         check_in = _dt.now(_UTC).date().isoformat()
     if not check_out:
