@@ -42,13 +42,13 @@ class RecordPaymentRequest(BaseModel):
 
 
 @router.get("/finance/mobile/daily-collections")
+@cached(ttl=120, key_prefix="mobile_daily_collections")
 async def get_daily_collections_mobile(
     date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get daily collections for finance mobile dashboard"""
-    current_user = await get_current_user(credentials)
 
     if date:
         target_date = datetime.fromisoformat(date)
@@ -88,14 +88,14 @@ async def get_daily_collections_mobile(
 
 
 @router.get("/finance/mobile/monthly-collections")
+@cached(ttl=300, key_prefix="mobile_monthly_collections")
 async def get_monthly_collections_mobile(
     year: int | None = None,
     month: int | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get monthly collections for finance mobile dashboard"""
-    current_user = await get_current_user(credentials)
 
     today = datetime.now(UTC)
     target_year = year or today.year
@@ -241,12 +241,12 @@ async def get_cashier_shift_report(
 
 
 @router.get("/finance/mobile/pending-receivables")
+@cached(ttl=180, key_prefix="mobile_pending_receivables")
 async def get_pending_receivables_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get pending receivables for finance mobile dashboard"""
-    current_user = await get_current_user(credentials)
 
     # Get all open folios with balance
     total_pending = 0.0
@@ -474,8 +474,9 @@ async def record_payment_mobile(
 
 
 @router.get("/finance/mobile/cash-flow-summary")
+@cached(ttl=180, key_prefix="mobile_cash_flow_summary")
 async def get_cash_flow_summary_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get cash flow summary for finance mobile dashboard
@@ -484,7 +485,6 @@ async def get_cash_flow_summary_mobile(
     - Weekly collection/payment plan
     - Bank balance summaries
     """
-    current_user = await get_current_user(credentials)
     today = datetime.now(UTC).date()
     start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
     end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)

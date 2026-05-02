@@ -56,9 +56,12 @@ logger = logging.getLogger("hrv2.router")
 # (b) the tenant_id query param must match current_user.tenant_id (super-admin
 # bypass for system-wide ops). One dependency = 38 endpoints hardened.
 async def _enforce_auth_and_tenant_match(
-    tenant_id: str = Query(...),
+    tenant_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ) -> User:
+    # Default: kullanıcının kendi tenant'ı (super_admin dahil).
+    if not tenant_id:
+        tenant_id = current_user.tenant_id
     is_super = current_user.role == UserRole.SUPER_ADMIN or "super_admin" in (
         getattr(current_user, "roles", None) or []
     )
@@ -386,9 +389,12 @@ async def retry_dlq_entry(
 
 @router.get("/ops-dashboard")
 async def get_ops_dashboard(
-    tenant_id: str = Query(...),
+    tenant_id: str | None = Query(None),
     property_id: str = Query("default"),
+    current_user=Depends(get_current_user),
 ):
+    if not tenant_id:
+        tenant_id = current_user.tenant_id
     """
     Aggregated endpoint for the Ops Dashboard Frontend.
     Returns provider health, sync overview, failure visibility,

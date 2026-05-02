@@ -30,7 +30,7 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
 
   const fetch2FAStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`/security/2fa/status`, { headers });
+      const res = await axios.get(`/2fa/status`, { headers });
       setTwoFAStatus(res.data);
     } catch (e) { console.error(e); }
   }, []);
@@ -47,7 +47,7 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
   const setup2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`/security/2fa/setup`, {}, { headers });
+      const res = await axios.post(`/2fa/setup`, {}, { headers });
       setSetupData(res.data);
       setMessage('');
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
@@ -57,21 +57,23 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
   const verify2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`/security/2fa/verify`, { code: verifyCode }, { headers });
+      const res = await axios.post(`/2fa/setup/confirm`, { code: verifyCode }, { headers });
       setBackupCodes(res.data.backup_codes);
-      setMessage(res.data.message);
+      setMessage(res.data.message || '2FA etkinlestirildi');
       setSetupData(null);
       fetch2FAStatus();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Geçersiz kod'); }
+    } catch (e) { setMessage(e.response?.data?.detail || 'Gecersiz kod'); }
     setLoading(false);
   };
 
   const disable2FA = async () => {
     const code = prompt('2FA kodunuzu girin:');
     if (!code) return;
+    const password = prompt('Sifrenizi girin:');
+    if (!password) return;
     try {
-      await axios.post(`/security/2fa/disable`, { code }, { headers });
-      setMessage('2FA devre dışı bırakıldı');
+      await axios.post(`/2fa/disable`, { code, password }, { headers });
+      setMessage('2FA devre disi birakildi');
       fetch2FAStatus();
     } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
   };

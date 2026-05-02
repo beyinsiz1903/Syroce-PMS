@@ -114,7 +114,7 @@ const MobileFinance = ({ user }) => {
         axios.get('/finance/mobile/pending-receivables'),
         axios.get('/finance/mobile/monthly-costs'),
         axios.get('/notifications/mobile/finance'),
-        axios.get('/invoice/list').catch(() => ({ data: { invoices: [] } })),
+        axios.get('/accounting/invoices').catch(() => ({ data: { invoices: [] } })),
         axios.get('/finance/mobile/cash-flow-summary').catch(() => ({ data: null })),
         axios.get('/finance/mobile/risk-alerts').catch(() => ({ data: null })),
         axios.get('/finance/mobile/daily-expenses').catch(() => ({ data: null })),

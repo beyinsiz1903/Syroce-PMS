@@ -650,12 +650,18 @@ async def post_payment_to_folio(
 @router.get("/folio/reports/revenue-by-category")
 @cached(ttl=300, key_prefix="folio_revenue_by_category")  # 5 dk cache; tarih+tenant key
 async def revenue_by_category(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Tarih aralığında kategori bazlı gelir raporu (void hariç)."""
+    """Tarih aralığında kategori bazlı gelir raporu (void hariç).
+    Varsayılan: son 30 gün.
+    """
+    if not date_to:
+        date_to = datetime.now(UTC).date().isoformat()
+    if not date_from:
+        date_from = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
     try:
         dt_from = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
         dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(

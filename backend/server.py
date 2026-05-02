@@ -331,6 +331,15 @@ from bootstrap.router_registry import register_routers  # noqa: E402
 
 register_routers(app, api_router, require_super_admin_dep=require_super_admin)
 
+# ── Compatibility / stub endpoints (UI-required modules not yet
+# (re)implemented — see backend/routers/missing_endpoints_compat.py) ──
+try:
+    from routers.missing_endpoints_compat import router as missing_endpoints_router
+    app.include_router(missing_endpoints_router)
+    logger.info("  ✅ routers.missing_endpoints_compat")
+except Exception as _compat_err:
+    logger.warning("Compatibility router skipped: %s", _compat_err)
+
 # ── Additional optional routers (factory-pattern modules) ───────────
 # NOT: Asagidaki 9 modulun hicbiri kod tabaninda artik mevcut degil
 # (security_2fa, ip_access_control, gdpr_compliance, central_office_endpoints,

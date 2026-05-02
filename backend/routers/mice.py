@@ -1241,10 +1241,17 @@ async def delete_event(event_id: str,
 # ── Function diary (calendar feed) ─────────────────────────────
 @router.get("/diary")
 async def diary(
-    date_from: str = Query(...),
-    date_to: str = Query(...),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    """Etkinlik takvimi. Varsayılan: bugünden +30 gün."""
+    from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+    today = _dt.now(_UTC).date()
+    if not date_from:
+        date_from = today.isoformat()
+    if not date_to:
+        date_to = (today + _td(days=30)).isoformat()
     db = get_system_db()
     cur = db.mice_events.find({
         "tenant_id": current_user.tenant_id,

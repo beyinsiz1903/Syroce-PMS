@@ -436,12 +436,17 @@ async def search_bookings(
 @router.get("/frontdesk/available-rooms", dependencies=[_FD_READ])
 @cached(ttl=120, key_prefix="frontdesk_available_rooms")  # Cache for 2 min
 async def get_available_rooms_for_assignment(
-    check_in: str,
-    check_out: str,
+    check_in: str | None = None,
+    check_out: str | None = None,
     room_type: str | None = None,
     current_user=Depends(get_current_user),  # v67 Bug DD2 (architect): tenant-scoped cache key garanti.
 ):
-    """Get available rooms for a specific date range"""
+    """Get available rooms for a specific date range. Varsayılan: bugün/yarın."""
+    from datetime import UTC as _UTC, datetime as _dt, timedelta as _td
+    if not check_in:
+        check_in = _dt.now(_UTC).date().isoformat()
+    if not check_out:
+        check_out = (_dt.now(_UTC).date() + _td(days=1)).isoformat()
     query = {
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['available', 'inspected']},

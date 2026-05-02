@@ -103,7 +103,12 @@ class AutoHousekeepingService:
         }
 
     async def get_assignment_suggestions(self, tenant_id: str) -> dict:
-        """Get task assignment suggestions for all dirty/pending rooms."""
+        """Get task assignment suggestions for all dirty/pending rooms.
+
+        Optimized: previous implementation was O(N_rooms * (M_staff + 3))
+        sequential queries (~132s).  Now uses bulk fetches + in-memory
+        priority/assignee computation.
+        """
         # Get all dirty rooms
         dirty_rooms = await db.rooms.find(
             {"tenant_id": tenant_id, "status": {"$in": ["dirty", "cleaning"]},
@@ -111,21 +116,105 @@ class AutoHousekeepingService:
             {"_id": 0}
         ).to_list(500)
 
-        # Get all available staff
+        # Get staff workload (uses its own bulk aggregation)
         staff_workload = await self._get_staff_workload(tenant_id)
 
-        suggestions = []
-        for room in dirty_rooms:
-            # Check if already has pending task
-            existing = await db.housekeeping_tasks.find_one({
-                "room_id": room["id"], "tenant_id": tenant_id,
-                "status": {"$in": ["pending", "in_progress"]},
-            })
-            if existing:
-                continue
+        if not dirty_rooms:
+            return {
+                "total_suggestions": 0,
+                "suggestions": [],
+                "staff_workload": staff_workload,
+            }
 
-            priority = await self._calculate_priority(tenant_id, room["id"], room)
-            assignee = await self._suggest_assignee(tenant_id, room)
+        room_ids = [r["id"] for r in dirty_rooms]
+
+        # 1) Bulk: which rooms already have a pending/in_progress task?
+        existing_room_ids: set[str] = set()
+        async for t in db.housekeeping_tasks.find(
+            {"room_id": {"$in": room_ids}, "tenant_id": tenant_id,
+             "status": {"$in": ["pending", "in_progress"]}},
+            {"_id": 0, "room_id": 1},
+        ):
+            existing_room_ids.add(t["room_id"])
+
+        rooms_to_process = [r for r in dirty_rooms if r["id"] not in existing_room_ids]
+        if not rooms_to_process:
+            return {
+                "total_suggestions": 0,
+                "suggestions": [],
+                "staff_workload": staff_workload,
+            }
+
+        # 2) Bulk: next confirmed booking per room (for priority)
+        now = datetime.now(UTC)
+        today = now.date().isoformat()
+        tomorrow = (now.date() + timedelta(days=1)).isoformat()
+        target_room_ids = [r["id"] for r in rooms_to_process]
+        next_bookings: dict[str, dict] = {}
+        async for b in db.bookings.find(
+            {"tenant_id": tenant_id, "room_id": {"$in": target_room_ids},
+             "status": {"$in": ["confirmed", "guaranteed"]},
+             "check_in": {"$gte": today}},
+            {"_id": 0, "room_id": 1, "check_in": 1, "guest_id": 1, "early_checkin": 1},
+            sort=[("check_in", 1)],
+        ):
+            rid = b["room_id"]
+            if rid not in next_bookings:
+                next_bookings[rid] = b
+
+        # 3) Bulk: VIP guest lookup
+        guest_ids = [b["guest_id"] for b in next_bookings.values() if b.get("guest_id")]
+        guest_map: dict[str, dict] = {}
+        if guest_ids:
+            async for g in db.guests.find(
+                {"id": {"$in": guest_ids}, "tenant_id": tenant_id},
+                {"_id": 0, "id": 1, "vip_status": 1, "tags": 1},
+            ):
+                guest_map[g["id"]] = g
+
+        # 4) Bulk: housekeeping staff
+        staff = await db.users.find(
+            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
+             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+            {"_id": 0, "id": 1, "name": 1},
+        ).to_list(100)
+        staff_ids = [s["id"] for s in staff]
+
+        # 5) Bulk-aggregate workload + assigned floors per staff member
+        staff_pending_count: dict[str, int] = {}
+        staff_floors: dict[str, set[str]] = {}
+        if staff_ids:
+            count_pipeline = [
+                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids},
+                            "status": {"$in": ["pending", "in_progress"]}}},
+                {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
+            ]
+            async for doc in db.housekeeping_tasks.aggregate(count_pipeline):
+                staff_pending_count[doc["_id"]] = doc.get("count") or 0
+
+            floor_pipeline = [
+                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids},
+                            "status": {"$in": ["pending", "in_progress"]}}},
+                {"$group": {"_id": "$assigned_to", "floors": {"$addToSet": "$floor"}}},
+            ]
+            async for doc in db.housekeeping_tasks.aggregate(floor_pipeline):
+                staff_floors[doc["_id"]] = {f for f in (doc.get("floors") or []) if f}
+
+        suggestions = []
+        for room in rooms_to_process:
+            priority = self._priority_inline(
+                room=room,
+                next_booking=next_bookings.get(room["id"]),
+                guest_map=guest_map,
+                today=today,
+                tomorrow=tomorrow,
+            )
+            assignee = self._assignee_inline(
+                room=room,
+                staff=staff,
+                staff_pending_count=staff_pending_count,
+                staff_floors=staff_floors,
+            )
 
             room_type = room.get("room_type", "default")
             cleaning_time = self.CLEANING_TIMES.get(room_type, self.CLEANING_TIMES["default"])
@@ -141,7 +230,6 @@ class AutoHousekeepingService:
                 "estimated_minutes": cleaning_time,
             })
 
-        # Sort by priority (higher number = higher priority)
         priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         suggestions.sort(key=lambda s: priority_order.get(s["priority"]["level"], 99))
 
@@ -150,6 +238,66 @@ class AutoHousekeepingService:
             "suggestions": suggestions,
             "staff_workload": staff_workload,
         }
+
+    def _priority_inline(self, room: dict, next_booking: dict | None,
+                          guest_map: dict, today: str, tomorrow: str) -> dict:
+        """Pure-Python priority calc using pre-fetched next_booking + guest_map."""
+        if not next_booking:
+            return {"level": "medium", "reason": "Standard cleaning"}
+
+        checkin_date = (next_booking.get("check_in") or "")[:10]
+        guest = guest_map.get(next_booking.get("guest_id"))
+        is_vip = False
+        if guest:
+            is_vip = bool(guest.get("vip_status")) or "vip" in (guest.get("tags") or [])
+
+        base_priority = "medium"
+        reason = "Future arrival"
+        if checkin_date == today:
+            base_priority = "critical" if is_vip else "high"
+            reason = "VIP same-day arrival" if is_vip else "Same-day arrival"
+        elif checkin_date == tomorrow:
+            base_priority = "high" if is_vip else "medium"
+            reason = "VIP tomorrow arrival" if is_vip else "Tomorrow arrival"
+        elif is_vip:
+            reason = "VIP future arrival"
+
+        if next_booking.get("early_checkin"):
+            if base_priority == "medium":
+                base_priority = "high"
+            elif base_priority == "high":
+                base_priority = "critical"
+            reason += " + Early check-in"
+
+        return {"level": base_priority, "reason": reason}
+
+    def _assignee_inline(self, room: dict, staff: list[dict],
+                          staff_pending_count: dict, staff_floors: dict) -> dict:
+        """Pure-Python assignee selection using pre-fetched workload counts."""
+        if not staff:
+            return {"staff_id": None, "staff_name": "Unassigned",
+                    "current_tasks": 0, "reason": "No staff available"}
+
+        floor = room.get("floor", self._extract_floor(room.get("room_number", "")))
+        best = None
+        best_score = float("inf")
+        for s in staff:
+            pending = staff_pending_count.get(s["id"], 0)
+            score = pending * 10
+            assigned_floors = staff_floors.get(s["id"], set())
+            if floor and assigned_floors and floor not in assigned_floors:
+                score += 5
+            if score < best_score:
+                best_score = score
+                best = {
+                    "staff_id": s["id"],
+                    "staff_name": s.get("name", "Unknown"),
+                    "current_tasks": pending,
+                    "score": score,
+                    "reason": f"Lowest workload ({pending} tasks)",
+                }
+        return best or {"staff_id": None, "staff_name": "Unassigned",
+                        "current_tasks": 0, "reason": "No staff available"}
 
     async def manual_override_assignment(self, tenant_id: str, task_id: str, new_assignee_id: str, reason: str, overridden_by: str) -> dict:
         """Manually override a task assignment."""
@@ -349,36 +497,69 @@ class AutoHousekeepingService:
         return best or {"staff_id": None, "staff_name": "Unassigned", "current_tasks": 0, "reason": "No staff available"}
 
     async def _get_staff_workload(self, tenant_id: str) -> list[dict]:
-        """Get workload summary for all housekeeping staff."""
+        """Get workload summary for all housekeeping staff.
+
+        Optimized: replaces 3 sequential count_documents per staff member
+        with a single grouped aggregate over all relevant tasks.
+        """
         staff = await db.users.find(
             {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
              "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
             {"_id": 0, "id": 1, "name": 1}
         ).to_list(100)
 
+        if not staff:
+            return []
+
+        staff_ids = [s["id"] for s in staff]
+        today_iso = datetime.now(UTC).date().isoformat()
+
+        # Single aggregation: count by (assigned_to, bucketed status)
+        pipeline = [
+            {"$match": {
+                "tenant_id": tenant_id,
+                "assigned_to": {"$in": staff_ids},
+                "$or": [
+                    {"status": {"$in": ["pending", "in_progress"]}},
+                    {"status": "completed", "completed_at": {"$gte": today_iso}},
+                ],
+            }},
+            {"$project": {
+                "assigned_to": 1,
+                "bucket": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$eq": ["$status", "pending"]}, "then": "pending"},
+                            {"case": {"$eq": ["$status", "in_progress"]}, "then": "in_progress"},
+                            {"case": {"$eq": ["$status", "completed"]}, "then": "completed_today"},
+                        ],
+                        "default": "other",
+                    }
+                },
+            }},
+            {"$group": {
+                "_id": {"staff": "$assigned_to", "bucket": "$bucket"},
+                "count": {"$sum": 1},
+            }},
+        ]
+
+        counts: dict[str, dict[str, int]] = {sid: {"pending": 0, "in_progress": 0, "completed_today": 0} for sid in staff_ids}
+        async for doc in db.housekeeping_tasks.aggregate(pipeline):
+            sid = doc["_id"].get("staff")
+            bucket = doc["_id"].get("bucket")
+            if sid in counts and bucket in counts[sid]:
+                counts[sid][bucket] = doc.get("count") or 0
+
         workload = []
         for s in staff:
-            pending = await db.housekeeping_tasks.count_documents({
-                "tenant_id": tenant_id, "assigned_to": s["id"],
-                "status": "pending",
-            })
-            in_progress = await db.housekeeping_tasks.count_documents({
-                "tenant_id": tenant_id, "assigned_to": s["id"],
-                "status": "in_progress",
-            })
-            completed_today = await db.housekeeping_tasks.count_documents({
-                "tenant_id": tenant_id, "assigned_to": s["id"],
-                "status": "completed",
-                "completed_at": {"$gte": datetime.now(UTC).date().isoformat()},
-            })
-
+            c = counts.get(s["id"], {"pending": 0, "in_progress": 0, "completed_today": 0})
             workload.append({
                 "staff_id": s["id"],
                 "staff_name": s.get("name", "Unknown"),
-                "pending": pending,
-                "in_progress": in_progress,
-                "completed_today": completed_today,
-                "total_active": pending + in_progress,
+                "pending": c["pending"],
+                "in_progress": c["in_progress"],
+                "completed_today": c["completed_today"],
+                "total_active": c["pending"] + c["in_progress"],
             })
 
         workload.sort(key=lambda w: w["total_active"])

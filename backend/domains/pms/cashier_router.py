@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 
@@ -394,15 +394,20 @@ async def bank_deposit(
 
 @router.get("/cashier/period-report")
 async def period_report(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),
 ):
     """
     Tarih aralığı dönem raporu (yyyy-mm-dd, dahil).
     Aralıkta opened_at olan tüm vardiyaların toplu özetini döner.
+    Varsayılan: son 7 gün.
     """
+    if not end_date:
+        end_date = datetime.now(UTC).date().isoformat()
+    if not start_date:
+        start_date = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
     try:
         s_dt = datetime.fromisoformat(start_date)
         e_dt = datetime.fromisoformat(end_date)
