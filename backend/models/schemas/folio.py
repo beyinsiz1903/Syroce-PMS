@@ -2,7 +2,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from models.enums import (
     ChargeCategory,
@@ -45,6 +45,15 @@ class ChargeCreate(BaseModel):
     amount: float = Field(..., ge=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
     auto_calculate_tax: bool = False
+    vat_rate: float = Field(0.0, ge=0, le=100)  # KDV oranı %
+    discount_amount: float = Field(0.0, ge=0, le=1e9)  # mutlak tutar (TL)
+    discount_reason: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _require_reason_when_discount(self):
+        if (self.discount_amount or 0) > 0 and not (self.discount_reason and self.discount_reason.strip()):
+            raise ValueError("İndirim için neden zorunludur")
+        return self
 
 class FolioCharge(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -56,9 +65,14 @@ class FolioCharge(BaseModel):
     description: str
     unit_price: float
     quantity: float = 1.0
-    amount: float  # unit_price * quantity
-    tax_amount: float = 0.0
-    total: float  # amount + tax_amount
+    amount: float  # net (subtotal - discount), KDV/şehir vergisi hariç (geriye uyumluluk için bu isim korundu)
+    subtotal: float = 0.0  # unit_price * quantity (indirim öncesi)
+    discount_amount: float = 0.0
+    discount_reason: str | None = None
+    vat_rate: float = 0.0
+    vat_amount: float = 0.0  # net * vat_rate / 100
+    tax_amount: float = 0.0  # şehir vergisi (mevcut)
+    total: float  # net + vat + city_tax
     date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     posted_by: str | None = None
     voided: bool = False

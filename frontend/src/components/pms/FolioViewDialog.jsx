@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +9,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer } from 'lucide-react';
+
+const VAT_OPTIONS = [
+  { value: '0', label: '%0' },
+  { value: '1', label: '%1' },
+  { value: '8', label: '%8' },
+  { value: '10', label: '%10 (Konaklama/F&B)' },
+  { value: '18', label: '%18' },
+  { value: '20', label: '%20' },
+];
+
+const fmt = (n) => (Number(n || 0)).toFixed(2);
 
 const FolioViewDialog = ({
   open,
@@ -28,13 +39,20 @@ const FolioViewDialog = ({
   const [voidTarget, setVoidTarget] = useState(null);
   const [voidReason, setVoidReason] = useState('');
   const [voidLoading, setVoidLoading] = useState(false);
+  const [proforma, setProforma] = useState(null);
+  const [proformaLoading, setProformaLoading] = useState(false);
+  const [operations, setOperations] = useState(null);
+  const [opsLoading, setOpsLoading] = useState(false);
 
   const [newFolioCharge, setNewFolioCharge] = useState({
     charge_category: 'room',
     description: '',
     amount: 0,
     quantity: 1,
-    auto_calculate_tax: false
+    auto_calculate_tax: false,
+    vat_rate: '0',
+    discount_amount: 0,
+    discount_reason: '',
   });
 
   const [newFolioPayment, setNewFolioPayment] = useState({
@@ -42,20 +60,46 @@ const FolioViewDialog = ({
     method: 'card',
     payment_type: 'interim',
     reference: '',
-    notes: ''
+    notes: '',
   });
+
+  const chargePreview = useMemo(() => {
+    const sub = (parseFloat(newFolioCharge.amount) || 0) * (parseFloat(newFolioCharge.quantity) || 0);
+    const disc = Math.max(0, Math.min(sub, parseFloat(newFolioCharge.discount_amount) || 0));
+    const net = sub - disc;
+    const rate = parseFloat(newFolioCharge.vat_rate) || 0;
+    const vat = (net * rate) / 100;
+    const total = net + vat;
+    return { sub, disc, net, rate, vat, total };
+  }, [newFolioCharge.amount, newFolioCharge.quantity, newFolioCharge.discount_amount, newFolioCharge.vat_rate]);
 
   const handlePostCharge = async (e) => {
     e.preventDefault();
     if (!selectedFolio) return;
+    if (chargePreview.disc > 0 && !newFolioCharge.discount_reason.trim()) {
+      toast.error('İndirim için neden zorunlu');
+      return;
+    }
     try {
-      await axios.post(`/folio/${selectedFolio.id}/charge`, newFolioCharge);
-      toast.success('Charge posted');
+      await axios.post(`/folio/${selectedFolio.id}/charge`, {
+        charge_category: newFolioCharge.charge_category,
+        description: newFolioCharge.description,
+        amount: parseFloat(newFolioCharge.amount) || 0,
+        quantity: parseFloat(newFolioCharge.quantity) || 1,
+        auto_calculate_tax: !!newFolioCharge.auto_calculate_tax,
+        vat_rate: parseFloat(newFolioCharge.vat_rate) || 0,
+        discount_amount: parseFloat(newFolioCharge.discount_amount) || 0,
+        discount_reason: newFolioCharge.discount_reason.trim() || null,
+      });
+      toast.success('İşlem eklendi');
       onChargePosted(selectedFolio.id);
-      setNewFolioCharge({ charge_category: 'room', description: '', amount: 0, quantity: 1, auto_calculate_tax: false });
+      setNewFolioCharge({
+        charge_category: 'room', description: '', amount: 0, quantity: 1,
+        auto_calculate_tax: false, vat_rate: '0', discount_amount: 0, discount_reason: '',
+      });
       setSubDialog(null);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to post charge');
+      toast.error(error.response?.data?.detail || 'İşlem eklenemedi');
     }
   };
 
@@ -64,12 +108,12 @@ const FolioViewDialog = ({
     if (!selectedFolio) return;
     try {
       await axios.post(`/folio/${selectedFolio.id}/payment`, newFolioPayment);
-      toast.success('Payment posted');
+      toast.success('Ödeme alındı');
       onPaymentPosted(selectedFolio.id);
       setNewFolioPayment({ amount: 0, method: 'card', payment_type: 'interim', reference: '', notes: '' });
       setSubDialog(null);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to post payment');
+      toast.error(error.response?.data?.detail || 'Ödeme eklenemedi');
     }
   };
 
@@ -92,14 +136,61 @@ const FolioViewDialog = ({
     setVoidLoading(false);
   };
 
+  const loadProforma = async () => {
+    if (!selectedFolio) return;
+    setProformaLoading(true);
+    try {
+      const res = await axios.post(`/folio/${selectedFolio.id}/proforma`);
+      setProforma(res.data);
+      setSubDialog('proforma');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Proforma alınamadı');
+    }
+    setProformaLoading(false);
+  };
+
+  const loadOperations = async () => {
+    if (!selectedFolio) return;
+    setOpsLoading(true);
+    try {
+      const res = await axios.get(`/folio/${selectedFolio.id}/operations`);
+      setOperations(res.data);
+      setSubDialog('operations');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Geçmiş alınamadı');
+    }
+    setOpsLoading(false);
+  };
+
+  const printProforma = () => {
+    const node = document.getElementById('proforma-printable');
+    if (!node) return;
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    win.document.write(`<html><head><title>Proforma ${proforma?.folio?.folio_number || ''}</title>
+<style>
+body{font-family:system-ui,sans-serif;padding:24px;color:#111}
+h1,h2,h3{margin:8px 0}
+table{width:100%;border-collapse:collapse;margin:10px 0}
+th,td{border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left}
+th{background:#f5f5f5}
+.right{text-align:right}
+.muted{color:#666;font-size:11px}
+.totals td{font-weight:600}
+</style></head><body>${node.innerHTML}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 300);
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t('pms.folioManagement', 'Folio Management')}</DialogTitle>
+            <DialogTitle>{t('pms.folioManagement', 'Folio Yönetimi')}</DialogTitle>
             <DialogDescription>
-              {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type.toUpperCase()}`}
+              {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type?.toUpperCase?.()}`}
             </DialogDescription>
           </DialogHeader>
 
@@ -108,58 +199,64 @@ const FolioViewDialog = ({
               <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <div className="text-sm text-gray-600">{t('pms.guest', 'Guest')}</div>
+                    <div className="text-sm text-gray-600">{t('pms.guest', 'Misafir')}</div>
                     <div className="font-semibold">
-                      {guests.find(g => g.id === selectedFolio.guest_id)?.name || t('common.unknown', 'Unknown')}
+                      {guests.find(g => g.id === selectedFolio.guest_id)?.name || '—'}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">{t('pms.reservation', 'Reservation')}</div>
+                    <div className="text-sm text-gray-600">{t('pms.reservation', 'Rezervasyon')}</div>
                     <div className="font-semibold">
                       {(() => {
                         const booking = bookings.find(b => b.id === selectedFolio.booking_id);
-                        if (!booking) return t('common.unknown', 'Unknown');
+                        if (!booking) return '—';
                         return `${new Date(booking.check_in).toLocaleDateString()} - ${new Date(booking.check_out).toLocaleDateString()}`;
                       })()}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">{t('pms.currentBalance', 'Current Balance')}</div>
+                    <div className="text-sm text-gray-600">{t('pms.currentBalance', 'Bakiye')}</div>
                     <div className={`text-2xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                      {selectedFolio.balance?.toFixed(2) || '0.00'} ₺
+                      {fmt(selectedFolio.balance)} ₺
                     </div>
                     <div className="text-xs text-gray-500">
-                      {selectedFolio.balance > 0 ? t('pms.guestOwes', 'Guest owes') : selectedFolio.balance < 0 ? t('pms.hotelOwes', 'Hotel owes') : t('pms.balanced', 'Balanced')}
+                      {selectedFolio.balance > 0 ? 'Misafir borçlu' : selectedFolio.balance < 0 ? 'Otel borçlu' : 'Dengeli'}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => setSubDialog('post-charge')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('pms.addCharge', 'Add Charge')}
+                  <Plus className="w-4 h-4 mr-2" /> İşlem Ekle
                 </Button>
                 <Button onClick={() => setSubDialog('post-payment')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('pms.addPayment', 'Add Payment')}
+                  <Plus className="w-4 h-4 mr-2" /> Ödeme Ekle
+                </Button>
+                <Button onClick={loadProforma} variant="outline" disabled={proformaLoading}>
+                  <FileText className="w-4 h-4 mr-2" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
+                </Button>
+                <Button onClick={loadOperations} variant="outline" disabled={opsLoading}>
+                  <ArrowLeftRight className="w-4 h-4 mr-2" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
                 </Button>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <ClipboardList className="w-5 h-5 mr-2" />
-                    {t('pms.charges', 'Charges')}
+                    <ClipboardList className="w-5 h-5 mr-2" /> İşlemler
                   </h3>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {folioCharges.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">{t('pms.noChargesYet', 'No charges posted yet')}</div>
+                      <div className="text-center text-gray-400 py-8">Henüz işlem yok</div>
                     ) :
                       folioCharges.map((charge) => {
-                        const isPOSCharge = charge.charge_category === 'restaurant' || charge.charge_category === 'bar' || charge.charge_category === 'room_service';
+                        const isPOSCharge = ['restaurant', 'food', 'bar', 'beverage', 'room_service'].includes(charge.charge_category);
                         const hasLineItems = charge.line_items && charge.line_items.length > 0;
                         const isExpanded = expandedChargeItems[charge.id];
+                        const hasDiscount = (charge.discount_amount || 0) > 0;
+                        const hasVat = (charge.vat_amount || 0) > 0;
+                        const hasCity = (charge.tax_amount || 0) > 0;
 
                         return (
                           <Card key={charge.id} className={charge.voided ? 'opacity-50 bg-gray-50' : ''}>
@@ -176,18 +273,28 @@ const FolioViewDialog = ({
                                   <div className="flex items-center gap-2">
                                     <div className="font-semibold">{charge.description}</div>
                                     {charge.voided && (
-                                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">VOID</span>
+                                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">İPTAL</span>
                                     )}
                                   </div>
                                   <div className="text-xs text-gray-500 capitalize">{charge.charge_category}</div>
                                   <div className="text-xs text-gray-400">
-                                    {new Date(charge.created_at).toLocaleString()}
+                                    {new Date(charge.created_at || charge.date).toLocaleString()}
                                   </div>
+                                  {hasDiscount && (
+                                    <div className="text-xs text-orange-700 mt-1">
+                                      İndirim: −{fmt(charge.discount_amount)} ₺
+                                      {charge.discount_reason ? ` (${charge.discount_reason})` : ''}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-bold">{(charge.total_amount || charge.amount || 0).toFixed(2)} ₺</div>
-                                  {charge.tax_amount > 0 && (
-                                    <div className="text-xs text-gray-500">Tax: {charge.tax_amount.toFixed(2)} ₺</div>
+                                  <div className="font-bold">{fmt(charge.total ?? charge.total_amount ?? charge.amount)} ₺</div>
+                                  {(hasVat || hasCity) && (
+                                    <div className="text-[11px] text-gray-500 leading-tight mt-0.5">
+                                      {hasDiscount && <div>Net: {fmt(charge.amount)} ₺</div>}
+                                      {hasVat && <div>KDV %{charge.vat_rate}: {fmt(charge.vat_amount)} ₺</div>}
+                                      {hasCity && <div>Şehir vergisi: {fmt(charge.tax_amount)} ₺</div>}
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -196,7 +303,7 @@ const FolioViewDialog = ({
                                   {charge.line_items.map((li, i) => (
                                     <div key={i} className="flex justify-between text-xs text-gray-600">
                                       <span>{li.name || li.description} x{li.quantity}</span>
-                                      <span>{(li.total || li.amount || 0).toFixed(2)} ₺</span>
+                                      <span>{fmt(li.total ?? li.amount)} ₺</span>
                                     </div>
                                   ))}
                                 </div>
@@ -211,12 +318,11 @@ const FolioViewDialog = ({
 
                 <div>
                   <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <DollarSign className="w-5 h-5 mr-2" />
-                    {t('pms.payments', 'Payments')}
+                    <DollarSign className="w-5 h-5 mr-2" /> Ödemeler
                   </h3>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {folioPayments.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">{t('pms.noPaymentsYet', 'No payments posted yet')}</div>
+                      <div className="text-center text-gray-400 py-8">Henüz ödeme yok</div>
                     ) :
                       folioPayments.map((payment) => (
                         <Card key={payment.id} className={payment.voided ? 'opacity-60 bg-red-50/30' : ''}>
@@ -240,7 +346,7 @@ const FolioViewDialog = ({
                               </div>
                               <div className="text-right">
                                 <div className={`font-bold ${payment.voided ? 'text-gray-400 line-through' : 'text-green-600'}`}>
-                                  {(payment.amount || 0).toFixed(2)} ₺
+                                  {fmt(payment.amount)} ₺
                                 </div>
                                 {!payment.voided && (
                                   <Button
@@ -268,42 +374,85 @@ const FolioViewDialog = ({
       </Dialog>
 
       <Dialog open={subDialog === 'post-charge'} onOpenChange={(o) => !o && setSubDialog(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{t('pms.postCharge', 'Post Charge')}</DialogTitle>
+            <DialogTitle>İşlem Ekle</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handlePostCharge} className="space-y-4">
-            <div>
-              <Label>{t('pms.chargeCategory', 'Category')}</Label>
-              <Select value={newFolioCharge.charge_category} onValueChange={(v) => setNewFolioCharge({...newFolioCharge, charge_category: v})}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="room">{t('pms.room', 'Room')}</SelectItem>
-                  <SelectItem value="restaurant">{t('pms.restaurant', 'Restaurant')}</SelectItem>
-                  <SelectItem value="bar">Bar</SelectItem>
-                  <SelectItem value="minibar">Minibar</SelectItem>
-                  <SelectItem value="laundry">{t('pms.laundry', 'Laundry')}</SelectItem>
-                  <SelectItem value="spa">Spa</SelectItem>
-                  <SelectItem value="phone">{t('pms.phone', 'Phone')}</SelectItem>
-                  <SelectItem value="other">{t('common.other', 'Other')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{t('common.description', 'Description')}</Label>
-              <Input value={newFolioCharge.description} onChange={(e) => setNewFolioCharge({...newFolioCharge, description: e.target.value})} required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handlePostCharge} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>{t('common.amount', 'Amount')}</Label>
-                <Input type="number" step="0.01" value={newFolioCharge.amount} onChange={(e) => setNewFolioCharge({...newFolioCharge, amount: parseFloat(e.target.value)})} required />
+                <Label>Kategori</Label>
+                <Select value={newFolioCharge.charge_category} onValueChange={(v) => setNewFolioCharge({ ...newFolioCharge, charge_category: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="room">Konaklama</SelectItem>
+                    <SelectItem value="food">Yiyecek</SelectItem>
+                    <SelectItem value="beverage">İçecek</SelectItem>
+                    <SelectItem value="minibar">Minibar</SelectItem>
+                    <SelectItem value="laundry">Çamaşır</SelectItem>
+                    <SelectItem value="spa">Spa</SelectItem>
+                    <SelectItem value="phone">Telefon</SelectItem>
+                    <SelectItem value="internet">İnternet</SelectItem>
+                    <SelectItem value="parking">Otopark</SelectItem>
+                    <SelectItem value="service_charge">Servis Bedeli</SelectItem>
+                    <SelectItem value="other">Diğer</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label>{t('common.quantity', 'Quantity')}</Label>
-                <Input type="number" value={newFolioCharge.quantity} onChange={(e) => setNewFolioCharge({...newFolioCharge, quantity: parseInt(e.target.value)})} required />
+                <Label>KDV Oranı</Label>
+                <Select value={newFolioCharge.vat_rate} onValueChange={(v) => setNewFolioCharge({ ...newFolioCharge, vat_rate: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {VAT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <Button type="submit" className="w-full">{t('pms.postCharge', 'Post Charge')}</Button>
+            <div>
+              <Label>Açıklama</Label>
+              <Input value={newFolioCharge.description} onChange={(e) => setNewFolioCharge({ ...newFolioCharge, description: e.target.value })} required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Birim Fiyat (₺)</Label>
+                <Input type="number" step="0.01" min="0" value={newFolioCharge.amount}
+                  onChange={(e) => setNewFolioCharge({ ...newFolioCharge, amount: e.target.value })} required />
+              </div>
+              <div>
+                <Label>Adet</Label>
+                <Input type="number" step="1" min="1" value={newFolioCharge.quantity}
+                  onChange={(e) => setNewFolioCharge({ ...newFolioCharge, quantity: e.target.value })} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>İndirim (₺)</Label>
+                <Input type="number" step="0.01" min="0" value={newFolioCharge.discount_amount}
+                  onChange={(e) => setNewFolioCharge({ ...newFolioCharge, discount_amount: e.target.value })} />
+              </div>
+              <div>
+                <Label>İndirim Nedeni {chargePreview.disc > 0 && <span className="text-red-600">*</span>}</Label>
+                <Input value={newFolioCharge.discount_reason}
+                  onChange={(e) => setNewFolioCharge({ ...newFolioCharge, discount_reason: e.target.value })}
+                  placeholder="Ör: Sadakat indirimi" />
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded p-3 text-sm space-y-1">
+              <div className="flex justify-between"><span>Ara Toplam</span><span>{fmt(chargePreview.sub)} ₺</span></div>
+              {chargePreview.disc > 0 && (
+                <div className="flex justify-between text-orange-700"><span>İndirim</span><span>−{fmt(chargePreview.disc)} ₺</span></div>
+              )}
+              <div className="flex justify-between"><span>Net</span><span>{fmt(chargePreview.net)} ₺</span></div>
+              {chargePreview.rate > 0 && (
+                <div className="flex justify-between text-gray-600"><span>KDV %{chargePreview.rate}</span><span>{fmt(chargePreview.vat)} ₺</span></div>
+              )}
+              <div className="flex justify-between font-bold pt-1 border-t"><span>Toplam</span><span>{fmt(chargePreview.total)} ₺</span></div>
+              <div className="text-[11px] text-gray-500">Şehir vergisi (varsa) sunucuda otomatik eklenir.</div>
+            </div>
+
+            <Button type="submit" className="w-full">Kaydet</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -311,41 +460,41 @@ const FolioViewDialog = ({
       <Dialog open={subDialog === 'post-payment'} onOpenChange={(o) => !o && setSubDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('pms.postPayment', 'Post Payment')}</DialogTitle>
+            <DialogTitle>Ödeme Ekle</DialogTitle>
           </DialogHeader>
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
-              <Label>{t('common.amount', 'Amount')}</Label>
-              <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={(e) => setNewFolioPayment({...newFolioPayment, amount: parseFloat(e.target.value)})} required />
+              <Label>Tutar (₺)</Label>
+              <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={(e) => setNewFolioPayment({ ...newFolioPayment, amount: parseFloat(e.target.value) })} required />
             </div>
             <div>
-              <Label>{t('pms.paymentMethod', 'Payment Method')}</Label>
-              <Select value={newFolioPayment.method} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, method: v})}>
+              <Label>Ödeme Yöntemi</Label>
+              <Select value={newFolioPayment.method} onValueChange={(v) => setNewFolioPayment({ ...newFolioPayment, method: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">{t('pms.cash', 'Cash')}</SelectItem>
-                  <SelectItem value="card">{t('pms.creditCard', 'Credit Card')}</SelectItem>
-                  <SelectItem value="bank_transfer">{t('pms.bankTransfer', 'Bank Transfer')}</SelectItem>
+                  <SelectItem value="cash">Nakit</SelectItem>
+                  <SelectItem value="card">Kredi Kartı</SelectItem>
+                  <SelectItem value="bank_transfer">Banka Havalesi</SelectItem>
                   <SelectItem value="online">Online</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>{t('pms.paymentType', 'Payment Type')}</Label>
-              <Select value={newFolioPayment.payment_type} onValueChange={(v) => setNewFolioPayment({...newFolioPayment, payment_type: v})}>
+              <Label>Ödeme Tipi</Label>
+              <Select value={newFolioPayment.payment_type} onValueChange={(v) => setNewFolioPayment({ ...newFolioPayment, payment_type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="interim">Interim</SelectItem>
-                  <SelectItem value="final">Final</SelectItem>
-                  <SelectItem value="deposit">Deposit</SelectItem>
+                  <SelectItem value="interim">Ara</SelectItem>
+                  <SelectItem value="final">Son</SelectItem>
+                  <SelectItem value="deposit">Depozito</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>{t('pms.reference', 'Reference')}</Label>
-              <Input value={newFolioPayment.reference} onChange={(e) => setNewFolioPayment({...newFolioPayment, reference: e.target.value})} />
+              <Label>Referans</Label>
+              <Input value={newFolioPayment.reference} onChange={(e) => setNewFolioPayment({ ...newFolioPayment, reference: e.target.value })} />
             </div>
-            <Button type="submit" className="w-full">{t('pms.postPayment', 'Post Payment')}</Button>
+            <Button type="submit" className="w-full">Kaydet</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -357,7 +506,7 @@ const FolioViewDialog = ({
             <DialogDescription>
               {voidTarget && (
                 <>
-                  {voidTarget.method?.toUpperCase()} ödemesi {(voidTarget.amount || 0).toFixed(2)} ₺ iade edilecek.
+                  {voidTarget.method?.toUpperCase()} ödemesi {fmt(voidTarget.amount)} ₺ iade edilecek.
                   {voidTarget.method === 'cash' && ' Nakit iadesi için açık bir vardiya gerekir.'}
                 </>
               )}
@@ -387,6 +536,177 @@ const FolioViewDialog = ({
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={subDialog === 'proforma'} onOpenChange={(o) => !o && setSubDialog(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Proforma Fatura</span>
+              <Button type="button" size="sm" variant="outline" onClick={printProforma}>
+                <Printer className="w-4 h-4 mr-1" /> Yazdır
+              </Button>
+            </DialogTitle>
+            <DialogDescription>Taslak — yasal fatura yerine geçmez.</DialogDescription>
+          </DialogHeader>
+          {proforma && (
+            <div id="proforma-printable" className="space-y-4 text-sm">
+              <div className="flex justify-between border-b pb-3">
+                <div>
+                  <div className="font-bold text-base">{proforma.hotel?.name || '—'}</div>
+                  <div className="muted text-xs text-gray-600">{proforma.hotel?.address || ''}</div>
+                  {proforma.hotel?.tax_no && <div className="text-xs text-gray-600">VKN: {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}</div>}
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">PROFORMA</div>
+                  <div className="text-xs text-gray-600">No: {proforma.folio?.folio_number}</div>
+                  <div className="text-xs text-gray-600">{new Date(proforma.generated_at).toLocaleString()}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="font-semibold">Misafir</div>
+                  <div>{proforma.guest?.name || '—'}</div>
+                  {proforma.guest?.email && <div className="text-xs text-gray-600">{proforma.guest.email}</div>}
+                  {proforma.guest?.phone && <div className="text-xs text-gray-600">{proforma.guest.phone}</div>}
+                  {proforma.guest?.tc_no && <div className="text-xs text-gray-600">TC: {proforma.guest.tc_no}</div>}
+                </div>
+                <div>
+                  <div className="font-semibold">Konaklama</div>
+                  {proforma.booking?.room_number && <div>Oda: {proforma.booking.room_number}</div>}
+                  {proforma.booking?.check_in && (
+                    <div className="text-xs text-gray-600">
+                      {new Date(proforma.booking.check_in).toLocaleDateString()} → {proforma.booking?.check_out ? new Date(proforma.booking.check_out).toLocaleDateString() : ''}
+                    </div>
+                  )}
+                  {(proforma.booking?.adults != null) && (
+                    <div className="text-xs text-gray-600">{proforma.booking.adults} yetişkin {proforma.booking.children ? `+ ${proforma.booking.children} çocuk` : ''}</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold mb-1">İşlemler</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tarih</th>
+                      <th>Açıklama</th>
+                      <th className="right">Birim</th>
+                      <th className="right">Adet</th>
+                      <th className="right">Ara Toplam</th>
+                      <th className="right">İnd.</th>
+                      <th className="right">Net</th>
+                      <th className="right">KDV</th>
+                      <th className="right">Toplam</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(proforma.charges || []).map((c) => (
+                      <tr key={c.id}>
+                        <td>{new Date(c.date || c.created_at).toLocaleDateString()}</td>
+                        <td>{c.description}{c.discount_reason ? ` (${c.discount_reason})` : ''}</td>
+                        <td className="right">{fmt(c.unit_price)}</td>
+                        <td className="right">{c.quantity}</td>
+                        <td className="right">{fmt(c.subtotal ?? c.amount)}</td>
+                        <td className="right">{fmt(c.discount_amount)}</td>
+                        <td className="right">{fmt(c.amount)}</td>
+                        <td className="right">{fmt(c.vat_amount)} {c.vat_rate ? `(%${c.vat_rate})` : ''}</td>
+                        <td className="right">{fmt(c.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="font-semibold mb-1">KDV Özeti</div>
+                  <table>
+                    <thead>
+                      <tr><th>Oran</th><th className="right">Net</th><th className="right">KDV</th></tr>
+                    </thead>
+                    <tbody>
+                      {(proforma.vat_breakdown || []).map((g) => (
+                        <tr key={g.vat_rate}>
+                          <td>%{g.vat_rate}</td>
+                          <td className="right">{fmt(g.net)}</td>
+                          <td className="right">{fmt(g.vat_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <div className="font-semibold mb-1">Toplamlar</div>
+                  <table className="totals">
+                    <tbody>
+                      <tr><td>Ara Toplam</td><td className="right">{fmt(proforma.totals?.subtotal)} ₺</td></tr>
+                      <tr><td>İndirim</td><td className="right">−{fmt(proforma.totals?.discount_total)} ₺</td></tr>
+                      <tr><td>Net</td><td className="right">{fmt(proforma.totals?.net_total)} ₺</td></tr>
+                      <tr><td>KDV</td><td className="right">{fmt(proforma.totals?.vat_total)} ₺</td></tr>
+                      <tr><td>Şehir Vergisi</td><td className="right">{fmt(proforma.totals?.city_tax_total)} ₺</td></tr>
+                      <tr><td>Genel Toplam</td><td className="right">{fmt(proforma.totals?.grand_total)} ₺</td></tr>
+                      <tr><td>Ödenen</td><td className="right">{fmt(proforma.totals?.payments_total)} ₺</td></tr>
+                      <tr><td>Bakiye</td><td className="right">{fmt(proforma.totals?.balance_due)} ₺</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-gray-500 border-t pt-2">
+                Bu belge taslak proformadır; resmi fatura yerine geçmez.
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={subDialog === 'operations'} onOpenChange={(o) => !o && setSubDialog(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Transfer Geçmişi</DialogTitle>
+            <DialogDescription>{operations?.folio_number} ({operations?.count || 0} kayıt)</DialogDescription>
+          </DialogHeader>
+          {operations && (
+            <div className="space-y-2">
+              {(operations.operations || []).length === 0 ? (
+                <div className="text-center text-gray-400 py-8">Bu folioda transfer/işlem yok.</div>
+              ) : (
+                (operations.operations || []).map((op) => (
+                  <Card key={op.id}>
+                    <CardContent className="p-3">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-semibold capitalize">
+                            {op.operation_type === 'transfer' ? 'Transfer' : op.operation_type}
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${op.direction === 'in' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {op.direction === 'in' ? 'Gelen' : 'Giden'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            {op.from_folio_number} → {op.to_folio_number || '—'}
+                          </div>
+                          {op.reason && <div className="text-xs text-gray-700 mt-1">Neden: {op.reason}</div>}
+                          {(op.charge_ids || []).length > 0 && (
+                            <div className="text-xs text-gray-500">{op.charge_ids.length} işlem aktarıldı</div>
+                          )}
+                          <div className="text-[11px] text-gray-400 mt-1">
+                            {op.performed_by_name || op.performed_by} • {op.performed_at ? new Date(op.performed_at).toLocaleString() : ''}
+                          </div>
+                        </div>
+                        {op.amount != null && (
+                          <div className="font-bold">{fmt(op.amount)} ₺</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

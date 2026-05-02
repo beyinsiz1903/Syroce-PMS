@@ -331,7 +331,7 @@ async def export_folio_excel(
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     """Export Folio to Excel"""
-    folio_data = await get_folio_details(folio_id, current_user)
+    folio_data = await _legacy_get_folio_details(current_user.tenant_id, folio_id)
 
     folio = folio_data['folio']
     charges = folio_data['charges']
@@ -360,7 +360,7 @@ async def export_folio_excel(
     ws['A9'] = "CHARGES"
     ws['A9'].font = Font(size=14, bold=True)
 
-    charge_headers = ["Date", "Description", "Qty", "Amount", "Tax", "Total"]
+    charge_headers = ["Date", "Description", "Qty", "Subtotal", "Discount", "Net", "VAT %", "VAT", "City Tax", "Total"]
     for col_num, header in enumerate(charge_headers, 1):
         cell = ws.cell(row=10, column=col_num)
         cell.value = header
@@ -375,19 +375,26 @@ async def export_folio_excel(
     total_charges = 0
     for charge in charges:
         if not charge.get('voided', False):
-            ws.cell(row=row, column=1, value=charge.get('posted_at', '')[:10])
+            net = float(charge.get('amount', 0) or 0)
+            disc = float(charge.get('discount_amount', 0) or 0)
+            sub = float(charge.get('subtotal') or (net + disc))  # geriye uyumlu: eski kayıtlarda subtotal=amount+discount=amount
+            ws.cell(row=row, column=1, value=(charge.get('posted_at') or charge.get('date') or '')[:10])
             ws.cell(row=row, column=2, value=xlsx_safe(charge.get('description', '')))
             ws.cell(row=row, column=3, value=charge.get('quantity', 1))
-            ws.cell(row=row, column=4, value=f"${charge.get('amount', 0):,.2f}")
-            ws.cell(row=row, column=5, value=f"${charge.get('tax_amount', 0):,.2f}")
-            ws.cell(row=row, column=6, value=f"${charge.get('total', 0):,.2f}")
-            total_charges += charge.get('total', 0)
+            ws.cell(row=row, column=4, value=round(sub, 2))
+            ws.cell(row=row, column=5, value=round(disc, 2))
+            ws.cell(row=row, column=6, value=round(net, 2))
+            ws.cell(row=row, column=7, value=round(float(charge.get('vat_rate', 0) or 0), 2))
+            ws.cell(row=row, column=8, value=round(float(charge.get('vat_amount', 0) or 0), 2))
+            ws.cell(row=row, column=9, value=round(float(charge.get('tax_amount', 0) or 0), 2))
+            ws.cell(row=row, column=10, value=round(float(charge.get('total', 0) or 0), 2))
+            total_charges += float(charge.get('total', 0) or 0)
             row += 1
 
-    ws.cell(row=row, column=5, value="Total Charges:")
-    ws.cell(row=row, column=5).font = Font(bold=True)
-    ws.cell(row=row, column=6, value=f"${total_charges:,.2f}")
-    ws.cell(row=row, column=6).font = Font(bold=True)
+    ws.cell(row=row, column=9, value="Total Charges:")
+    ws.cell(row=row, column=9).font = Font(bold=True)
+    ws.cell(row=row, column=10, value=round(total_charges, 2))
+    ws.cell(row=row, column=10).font = Font(bold=True)
 
     # Payments section
     row += 2
@@ -452,7 +459,13 @@ async def post_charge_to_folio(
         raise HTTPException(status_code=404, detail="Folio not found or closed")
 
     # Calculate amounts with proper rounding
-    amount = round(charge_data.amount * charge_data.quantity, 2)
+    subtotal = round(charge_data.amount * charge_data.quantity, 2)
+    discount = round(max(0.0, float(charge_data.discount_amount or 0.0)), 2)
+    if discount > subtotal:
+        raise HTTPException(status_code=400, detail="İndirim ara toplamı aşamaz")
+    net = round(subtotal - discount, 2)
+    vat_rate = max(0.0, min(100.0, float(charge_data.vat_rate or 0.0)))
+    vat_amount = round(net * vat_rate / 100.0, 2)
     tax_amount = 0.0
 
     # Auto-calculate city tax if requested
@@ -466,9 +479,9 @@ async def post_charge_to_folio(
             if tax_rule.get('flat_amount'):
                 tax_amount = round(tax_rule['flat_amount'], 2)
             else:
-                tax_amount = round(amount * (tax_rule['tax_percentage'] / 100), 2)
+                tax_amount = round(net * (tax_rule['tax_percentage'] / 100), 2)
 
-    total = round(amount + tax_amount, 2)
+    total = round(net + vat_amount + tax_amount, 2)
 
     charge = FolioCharge(
         tenant_id=current_user.tenant_id,
@@ -478,7 +491,12 @@ async def post_charge_to_folio(
         description=charge_data.description,
         unit_price=charge_data.amount,
         quantity=charge_data.quantity,
-        amount=amount,
+        amount=net,
+        subtotal=subtotal,
+        discount_amount=discount,
+        discount_reason=(charge_data.discount_reason or None) if discount > 0 else None,
+        vat_rate=vat_rate,
+        vat_amount=vat_amount,
         tax_amount=tax_amount,
         total=total,
         posted_by=current_user.id
@@ -502,7 +520,16 @@ async def post_charge_to_folio(
         action="POST_CHARGE",
         entity_type="folio_charge",
         entity_id=charge.id,
-        changes={'charge_category': charge_data.charge_category, 'amount': total, 'folio_id': folio_id}
+        changes={
+            'charge_category': charge_data.charge_category,
+            'subtotal': subtotal,
+            'discount': discount,
+            'vat_rate': vat_rate,
+            'vat_amount': vat_amount,
+            'city_tax': tax_amount,
+            'total': total,
+            'folio_id': folio_id,
+        }
     )
 
     return charge
@@ -931,3 +958,170 @@ async def get_folio_activity_log(
     }
 
 
+
+
+@router.get("/folio/{folio_id}/operations")
+async def get_folio_operations(
+    folio_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Folio'ya ait transfer/işlem geçmişi (from veya to == folio_id)."""
+    folio = await db.folios.find_one(
+        {'id': folio_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'folio_number': 1}
+    )
+    if not folio:
+        raise HTTPException(status_code=404, detail="Folio bulunamadı")
+
+    ops = await db.folio_operations.find({
+        'tenant_id': current_user.tenant_id,
+        '$or': [{'from_folio_id': folio_id}, {'to_folio_id': folio_id}]
+    }, {'_id': 0}).to_list(500)
+
+    # performed_by → kullanıcı adı çöz
+    user_ids = list({op.get('performed_by') for op in ops if op.get('performed_by')})
+    users = {}
+    if user_ids:
+        async for u in db.users.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': user_ids}},
+            {'_id': 0, 'id': 1, 'name': 1, 'email': 1}
+        ):
+            users[u['id']] = u.get('name') or u.get('email') or u['id']
+
+    # Karşı folio numaralarını çöz
+    other_ids = set()
+    for op in ops:
+        for k in ('from_folio_id', 'to_folio_id'):
+            v = op.get(k)
+            if v and v != folio_id:
+                other_ids.add(v)
+    other_folios = {}
+    if other_ids:
+        async for f in db.folios.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': list(other_ids)}},
+            {'_id': 0, 'id': 1, 'folio_number': 1}
+        ):
+            other_folios[f['id']] = f.get('folio_number') or f['id'][:8]
+
+    items = []
+    for op in ops:
+        items.append({
+            'id': op.get('id'),
+            'operation_type': op.get('operation_type'),
+            'from_folio_id': op.get('from_folio_id'),
+            'from_folio_number': folio.get('folio_number') if op.get('from_folio_id') == folio_id else other_folios.get(op.get('from_folio_id')),
+            'to_folio_id': op.get('to_folio_id'),
+            'to_folio_number': folio.get('folio_number') if op.get('to_folio_id') == folio_id else other_folios.get(op.get('to_folio_id')),
+            'direction': 'out' if op.get('from_folio_id') == folio_id else 'in',
+            'charge_ids': op.get('charge_ids') or [],
+            'amount': op.get('amount'),
+            'reason': op.get('reason'),
+            'performed_by': op.get('performed_by'),
+            'performed_by_name': users.get(op.get('performed_by')) if op.get('performed_by') else None,
+            'performed_at': op.get('performed_at'),
+        })
+    items.sort(key=lambda x: x.get('performed_at') or '', reverse=True)
+    return {'folio_id': folio_id, 'folio_number': folio.get('folio_number'), 'operations': items, 'count': len(items)}
+
+
+@router.post("/folio/{folio_id}/proforma")
+async def generate_folio_proforma(
+    folio_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Proforma fatura verisi: KDV oranı bazlı kırılım + toplamlar (folio'yu kapatmaz)."""
+    folio = await db.folios.find_one(
+        {'id': folio_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
+    if not folio:
+        raise HTTPException(status_code=404, detail="Folio bulunamadı")
+
+    charges = await db.folio_charges.find(
+        {'folio_id': folio_id, 'tenant_id': current_user.tenant_id, 'voided': False},
+        {'_id': 0}
+    ).to_list(2000)
+
+    payments = await db.payments.find(
+        {'folio_id': folio_id, 'tenant_id': current_user.tenant_id, 'voided': False},
+        {'_id': 0}
+    ).to_list(2000)
+
+    # KDV oranı bazlı gruplama
+    vat_groups: dict[str, dict[str, float]] = {}
+    subtotal_sum = 0.0
+    discount_sum = 0.0
+    net_sum = 0.0
+    vat_sum = 0.0
+    city_tax_sum = 0.0
+    grand_total = 0.0
+
+    for c in charges:
+        sub = float(c.get('subtotal') or c.get('amount') or 0.0)
+        disc = float(c.get('discount_amount') or 0.0)
+        net = float(c.get('amount') or max(0.0, sub - disc))
+        rate = float(c.get('vat_rate') or 0.0)
+        vat = float(c.get('vat_amount') or 0.0)
+        city = float(c.get('tax_amount') or 0.0)
+        tot = float(c.get('total') or (net + vat + city))
+
+        subtotal_sum += sub
+        discount_sum += disc
+        net_sum += net
+        vat_sum += vat
+        city_tax_sum += city
+        grand_total += tot
+
+        key = f"{rate:.2f}"
+        g = vat_groups.setdefault(key, {'vat_rate': rate, 'net': 0.0, 'vat_amount': 0.0, 'count': 0})
+        g['net'] = round(g['net'] + net, 2)
+        g['vat_amount'] = round(g['vat_amount'] + vat, 2)
+        g['count'] += 1
+
+    payments_total = round(sum(float(p.get('amount') or 0.0) for p in payments), 2)
+    balance = round(grand_total - payments_total, 2)
+
+    # Misafir ve booking bilgileri
+    guest = None
+    if folio.get('guest_id'):
+        guest = await db.guests.find_one(
+            {'id': folio['guest_id'], 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'name': 1, 'email': 1, 'phone': 1, 'tc_no': 1, 'address': 1}
+        )
+    booking = await db.bookings.find_one(
+        {'id': folio['booking_id'], 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'check_in': 1, 'check_out': 1, 'room_id': 1, 'room_number': 1, 'adults': 1, 'children': 1}
+    )
+
+    # Tenant ad
+    tenant = await db.tenants.find_one(
+        {'id': current_user.tenant_id}, {'_id': 0, 'name': 1, 'tax_no': 1, 'tax_office': 1, 'address': 1}
+    ) or {}
+
+    return {
+        'status': 'draft',
+        'document_type': 'proforma',
+        'generated_at': datetime.now(UTC).isoformat(),
+        'folio': {
+            'id': folio.get('id'),
+            'folio_number': folio.get('folio_number'),
+            'folio_type': folio.get('folio_type'),
+            'status': folio.get('status'),
+        },
+        'hotel': tenant,
+        'guest': guest or {},
+        'booking': booking or {},
+        'charges': sorted(charges, key=lambda c: c.get('date') or c.get('created_at') or ''),
+        'vat_breakdown': sorted(vat_groups.values(), key=lambda g: g['vat_rate']),
+        'totals': {
+            'subtotal': round(subtotal_sum, 2),
+            'discount_total': round(discount_sum, 2),
+            'net_total': round(net_sum, 2),
+            'vat_total': round(vat_sum, 2),
+            'city_tax_total': round(city_tax_sum, 2),
+            'grand_total': round(grand_total, 2),
+            'payments_total': payments_total,
+            'balance_due': balance,
+        },
+    }
