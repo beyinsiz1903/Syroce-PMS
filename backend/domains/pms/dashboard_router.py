@@ -2,6 +2,7 @@
 PMS / Dashboard Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import asyncio
 import logging
 import random
 import uuid
@@ -59,37 +60,53 @@ async def get_role_based_dashboard(
     today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
     today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
 
-    # Base data for all roles
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied_rooms = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'checked_in'
-    })
+    today_start_iso = today_start.isoformat()
+    today_end_iso = today_end.isoformat()
+    tid = current_user.tenant_id
+
+    # Base data for all roles — paralel iki sayim
+    total_rooms, occupied_rooms = await asyncio.gather(
+        db.rooms.count_documents({'tenant_id': tid}),
+        db.bookings.count_documents({'tenant_id': tid, 'status': 'checked_in'}),
+    )
 
     # Role-specific data
     if current_user.role in ['admin', 'supervisor']:  # GM/Manager
-        # Get comprehensive data
-        arrivals_today = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-        })
+        # Tum bagimsiz sorgular paralel — count'lar + booking listesi + revenue agg + hk count
+        arrivals_today, departures_today, candidate_bookings, revenue_doc, hk_tasks_completed = await asyncio.gather(
+            db.bookings.count_documents({
+                'tenant_id': tid,
+                'check_in': {'$gte': today_start_iso, '$lte': today_end_iso},
+            }),
+            db.bookings.count_documents({
+                'tenant_id': tid,
+                'check_out': {'$gte': today_start_iso, '$lte': today_end_iso},
+            }),
+            db.bookings.find({
+                'tenant_id': tid,
+                'check_in': {'$gte': today_start_iso, '$lte': today_end_iso},
+                'status': {'$in': ['confirmed', 'guaranteed']},
+            }, {'_id': 0, 'guest_id': 1, 'room_number': 1, 'check_in': 1}).limit(10).to_list(length=10),
+            db.folio_charges.aggregate([
+                {'$match': {
+                    'tenant_id': tid,
+                    'date': {'$gte': today_start_iso, '$lte': today_end_iso},
+                    'voided': False,
+                }},
+                {'$group': {'_id': None, 'total': {'$sum': '$total'}}},
+            ]).to_list(1),
+            db.housekeeping_tasks.count_documents({
+                'tenant_id': tid,
+                'completed_at': {'$gte': today_start_iso, '$lte': today_end_iso},
+            }),
+        )
 
-        departures_today = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-        })
-
-        # Get VIP arrivals (batched: 1 booking query + 1 guest query)
-        candidate_bookings = await db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
-            'status': {'$in': ['confirmed', 'guaranteed']}
-        }, {'_id': 0, 'guest_id': 1, 'room_number': 1, 'check_in': 1}).limit(10).to_list(length=10)
+        # Get VIP arrivals (1 guest query)
         guest_ids = [b.get('guest_id') for b in candidate_bookings if b.get('guest_id')]
         guests_by_id = {}
         if guest_ids:
             async for g in db.guests.find(
-                {'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id, 'vip': True},
+                {'id': {'$in': guest_ids}, 'tenant_id': tid, 'vip': True},
                 {'_id': 0, 'id': 1, 'name': 1, 'preferences': 1, 'vip': 1},
             ):
                 guests_by_id[g['id']] = g
@@ -104,20 +121,7 @@ async def get_role_based_dashboard(
                     'preferences': guest.get('preferences', 'None')
                 })
 
-        # Revenue today
-        charges = await db.folio_charges.find({
-            'tenant_id': current_user.tenant_id,
-            'date': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
-            'voided': False
-        }).to_list(10000)
-
-        revenue_today = sum(c.get('total', 0) for c in charges)
-
-        # Staff performance snapshot
-        hk_tasks_completed = await db.housekeeping_tasks.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'completed_at': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-        })
+        revenue_today = (revenue_doc[0]['total'] if revenue_doc else 0) or 0
 
         return {
             'role': current_user.role,
@@ -1342,83 +1346,76 @@ async def get_executive_kpi_snapshot(
             return cached_data
 
     today = datetime.now(UTC).date()
+    today_str = today.isoformat()
+    tid = current_user.tenant_id
+    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    two_days_ago = (datetime.now(UTC) - timedelta(days=2)).isoformat()
 
-    # Get total rooms
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    # Tum bagimsiz sorgular paralel: 2 count + 4 aggregate + 1 list
+    (
+        total_rooms,
+        occupied_rooms,
+        revenue_doc,
+        bookings_count,
+        nps_doc,
+        bank_accounts,
+        yesterday_revenue_doc,
+    ) = await asyncio.gather(
+        db.rooms.count_documents({'tenant_id': tid}),
+        db.rooms.count_documents({'tenant_id': tid, 'status': 'occupied'}),
+        db.payments.aggregate([
+            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': yesterday}}},
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}}},
+        ]).to_list(1),
+        db.bookings.count_documents({
+            'tenant_id': tid,
+            'status': {'$in': ['checked_in', 'checked_out']},
+            'check_in': {'$gte': yesterday},
+        }),
+        db.reviews.aggregate([
+            {'$match': {'tenant_id': tid}},
+            {'$group': {'_id': None, 'sum_rating': {'$sum': '$rating'}, 'cnt': {'$sum': 1}}},
+        ]).to_list(1),
+        db.bank_accounts.find({'tenant_id': tid}).to_list(100),
+        db.payments.aggregate([
+            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': two_days_ago, '$lt': yesterday}}},
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}}},
+        ]).to_list(1),
+    )
+
     if total_rooms == 0:
         total_rooms = 50  # Default for empty DB
 
-    # Get bookings for today
-    today_str = today.isoformat()
-
-    # Occupancy calculation
-    occupied_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'occupied'
-    })
     occupancy_pct = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+    total_revenue = (revenue_doc[0]['total'] if revenue_doc else 0) or 0
 
-    # Revenue calculation (last 24 hours)
-    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-
-    # Get payments from last 24 hours
-    total_revenue = 0
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': yesterday}
-    }):
-        total_revenue += payment.get('amount', 0)
-
-    # If no revenue data, use bookings
+    # Fallback: revenue yoksa booking total_amount'u toplam (tek aggregate)
     if total_revenue == 0:
-        async for booking in db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'status': {'$in': ['checked_in', 'checked_out']},
-            'check_in': {'$gte': yesterday}
-        }):
-            total_revenue += booking.get('total_amount', 0)
-
-    # ADR calculation
-    bookings_count = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['checked_in', 'checked_out']},
-        'check_in': {'$gte': yesterday}
-    })
+        fb_doc = await db.bookings.aggregate([
+            {'$match': {
+                'tenant_id': tid,
+                'status': {'$in': ['checked_in', 'checked_out']},
+                'check_in': {'$gte': yesterday},
+            }},
+            {'$group': {'_id': None, 'total': {'$sum': '$total_amount'}}},
+        ]).to_list(1)
+        total_revenue = (fb_doc[0]['total'] if fb_doc else 0) or 0
 
     adr = (total_revenue / bookings_count) if bookings_count > 0 else 0
-
-    # RevPAR calculation
     revpar = (total_revenue / total_rooms) if total_rooms > 0 else 0
 
-    # NPS Score (from reviews/feedback)
-    nps_score = 0
-    review_count = 0
-    async for review in db.reviews.find({'tenant_id': current_user.tenant_id}):
-        nps_score += review.get('rating', 0)
-        review_count += 1
+    # NPS — aggregate sonucundan
+    if nps_doc and nps_doc[0].get('cnt', 0) > 0:
+        avg_nps = nps_doc[0]['sum_rating'] / nps_doc[0]['cnt'] * 20
+    else:
+        avg_nps = 75  # Convert 5-star to 100 scale
 
-    avg_nps = (nps_score / review_count * 20) if review_count > 0 else 75  # Convert 5-star to 100 scale
-
-    # Cash position (from accounting)
-    cash_balance = 0
-    bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}).to_list(100)
-    for account in bank_accounts:
-        cash_balance += account.get('balance', 0)
-
-    # If no cash data, estimate from revenue
+    # Cash position
+    cash_balance = sum(a.get('balance', 0) for a in bank_accounts)
     if cash_balance == 0:
         cash_balance = total_revenue * 10  # Rough estimate
 
-    # Calculate trends (compare with yesterday)
-    (today - timedelta(days=1)).isoformat()
-
-    yesterday_revenue = 0
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': (datetime.now(UTC) - timedelta(days=2)).isoformat(), '$lt': yesterday}
-    }):
-        yesterday_revenue += payment.get('amount', 0)
-
+    yesterday_revenue = (yesterday_revenue_doc[0]['total'] if yesterday_revenue_doc else 0) or 0
     revenue_trend = ((total_revenue - yesterday_revenue) / yesterday_revenue * 100) if yesterday_revenue > 0 else 0
 
     return {
@@ -1883,65 +1880,50 @@ async def get_executive_budget_overview(
 
 
 @router.get("/executive/daily-summary")
+@cached(ttl=180, key_prefix="executive_daily_summary", role_aware=True)
 async def get_executive_daily_summary(
     date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get daily summary for executives
     Bookings, revenue, cancellations, complaints, key metrics
+
+    NOT: cache anahtarinin tenant'a duyarli olabilmesi icin
+    `current_user`'i Depends ile dogrudan aliyoruz (credentials'tan
+    extract edilen tenant cache anahtarina yansimazdi - cross-tenant
+    cache sizintisi riski).
     """
-    current_user = await get_current_user(credentials)
-
     target_date = date if date else datetime.now(UTC).date().isoformat()
+    tid = current_user.tenant_id
 
-    # Get bookings created today
-    new_bookings = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {'$gte': target_date}
-    })
+    # Tum bagimsiz sorgular paralel: 6 count + 1 revenue aggregate
+    (
+        new_bookings,
+        checkins,
+        checkouts,
+        cancellations,
+        revenue_doc,
+        complaints,
+        incidents,
+    ) = await asyncio.gather(
+        db.bookings.count_documents({'tenant_id': tid, 'created_at': {'$gte': target_date}}),
+        db.bookings.count_documents({'tenant_id': tid, 'check_in': target_date, 'status': 'checked_in'}),
+        db.bookings.count_documents({'tenant_id': tid, 'check_out': target_date, 'status': 'checked_out'}),
+        db.bookings.count_documents({'tenant_id': tid, 'status': 'cancelled', 'updated_at': {'$gte': target_date}}),
+        db.payments.aggregate([
+            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': target_date}}},
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}}},
+        ]).to_list(1),
+        db.feedback.count_documents({
+            'tenant_id': tid,
+            'rating': {'$lte': 2},
+            'created_at': {'$gte': target_date},
+        }),
+        db.incidents.count_documents({'tenant_id': tid, 'incident_date': target_date}),
+    )
 
-    # Get check-ins today
-    checkins = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': target_date,
-        'status': 'checked_in'
-    })
-
-    # Get check-outs today
-    checkouts = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_out': target_date,
-        'status': 'checked_out'
-    })
-
-    # Get cancellations today
-    cancellations = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'cancelled',
-        'updated_at': {'$gte': target_date}
-    })
-
-    # Get revenue today
-    revenue = 0
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': target_date}
-    }):
-        revenue += payment.get('amount', 0)
-
-    # Get complaints today
-    complaints = await db.feedback.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'created_at': {'$gte': target_date}
-    })
-
-    # Get staff incidents
-    incidents = await db.incidents.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'incident_date': target_date
-    })
+    revenue = (revenue_doc[0]['total'] if revenue_doc else 0) or 0
 
     return {
         'date': target_date,
