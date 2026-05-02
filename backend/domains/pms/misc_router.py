@@ -852,14 +852,92 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
 
 
 
+def _scrub_encrypted(value):
+    """v95.5 — aes256gcm: prefixli ham şifreli blob'ları UI'a yollama."""
+    if isinstance(value, str) and value.startswith('aes256gcm:'):
+        return ''
+    return value or ''
+
+
 @router.get("/hr/staff")
-async def get_staff_list(department: str | None = None, current_user: User = Depends(get_current_user)):
-    """Personel listesi"""
-    query = {'tenant_id': current_user.tenant_id, 'active': True}
+async def get_staff_list(
+    department: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v95.5 KVKK — HR PII koruması
+):
+    """Personel listesi.
+
+    v95.5 — Önce `staff_members` koleksiyonundan açıkça eklenen kayıtları al.
+    Çoğu tenant'ta bu koleksiyon boştur (POST /hr/staff henüz UI'dan çağrılmıyor),
+    bu yüzden `users` tablosundan staff role'lerini (housekeeping, front_desk,
+    supervisor, finance, sales, admin) türeterek listeyi doldururuz.
+    Email bazlı deduplikasyon + KVKK için yetki kısıtı + allow-list projection.
+    """
+    tid = current_user.tenant_id
+    role_to_dept = {
+        'housekeeping': 'housekeeping',
+        'front_desk': 'front_desk',
+        'supervisor': 'management',
+        'finance': 'finance',
+        'sales': 'sales',
+        'admin': 'management',
+    }
+
+    # 1) Açıkça eklenmiş HR kayıtları
+    explicit_query: dict = {'tenant_id': tid, 'active': True}
     if department:
-        query['department'] = department
-    staff = await db.staff_members.find(query, {'_id': 0}).to_list(200)
-    return {'staff': staff, 'total': len(staff)}
+        explicit_query['department'] = department
+    explicit = await db.staff_members.find(explicit_query, {'_id': 0}).to_list(200)
+    seen_emails = {(s.get('email') or '').lower() for s in explicit if s.get('email')}
+
+    # 2) Users tablosundan türeyenler — ALLOW-LIST projection (deny-list yerine
+    # güvenli; User modelinde `extra=allow` olduğu için yeni alanlar otomatik
+    # sızmasın diye sadece görünür alanları seç).
+    user_query: dict = {
+        'tenant_id': tid,
+        'is_active': True,
+        'role': {'$in': list(role_to_dept.keys())},
+    }
+    if department:
+        roles_in_dept = [r for r, d in role_to_dept.items() if d == department or r == department]
+        user_query['role'] = {'$in': roles_in_dept or ['__none__']}
+
+    user_projection = {
+        '_id': 0,
+        'id': 1, 'name': 1, 'email': 1, 'phone': 1,
+        'role': 1, 'created_at': 1,
+    }
+
+    derived: list = []
+    cursor = db.users.find(user_query, user_projection).limit(500)
+    async for u in cursor:
+        email_raw = (u.get('email') or '')
+        em = email_raw.lower()
+        if em and em in seen_emails:
+            continue
+        role = u.get('role')
+        # Şifreli (aes256gcm:) email/phone UI'a ham gösterilmesin
+        email_clean = _scrub_encrypted(email_raw)
+        phone_clean = _scrub_encrypted(u.get('phone'))
+        derived.append({
+            'id': u.get('id'),
+            'tenant_id': tid,
+            'name': u.get('name') or email_clean or 'Personel',
+            'email': email_clean,
+            'phone': phone_clean,
+            'department': role_to_dept.get(role, role or 'other'),
+            'position': role or 'staff',
+            'hire_date': (u.get('created_at') or '')[:10],
+            'employment_type': 'full_time',
+            'performance_score': 0.0,
+            'active': True,
+            'derived_from': 'users',
+        })
+        if em:
+            seen_emails.add(em)
+
+    combined = explicit + derived
+    return {'staff': combined, 'total': len(combined)}
 
 
 
