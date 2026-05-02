@@ -348,7 +348,6 @@ async def auto_seed_if_empty(db):
         await _ensure_tenant_admin_seeded(db)
         await _ensure_complaints_seeded(db)
         await _ensure_agencies_seeded(db)
-        await _ensure_tenant_admin_seeded(db)
         return False
 
     logger.info("🌱 Empty database detected — seeding demo data...")
@@ -449,16 +448,15 @@ async def auto_seed_if_empty(db):
     # path — distinct from `super_admin`. Used by monitoring auth tests
     # (task #57) to verify `require_op("view_system_diagnostics")` admits a
     # plain tenant admin while still rejecting cross-tenant endpoints.
+    # Tenant-scoped admin (role=admin, NOT super_admin) — used by
+    # tests/test_monitoring_auth.py to verify the require_op gate on
+    # /api/channel-manager/monitoring/dispatch-config*.
     staff_users = [
         {"name": "Tenant Admin", "email": "tenantadmin@hotel.com", "role": "admin"},
         {"name": "Front Desk Agent", "email": "frontdesk@hotel.com", "role": "front_desk"},
         {"name": "Housekeeping Mgr", "email": "housekeeping@hotel.com", "role": "housekeeping"},
         {"name": "Finance Manager", "email": "finance@hotel.com", "role": "finance"},
         {"name": "Sales Manager", "email": "sales@hotel.com", "role": "sales"},
-        # Tenant-scoped admin (role=admin, NOT super_admin) — used by
-        # tests/test_monitoring_auth.py to verify the require_op gate on
-        # /api/channel-manager/monitoring/dispatch-config*.
-        {"name": "Tenant Admin", "email": "tenantadmin@hotel.com", "role": "admin"},
     ]
     for su in staff_users:
         staff_doc = {
