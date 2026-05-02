@@ -48,6 +48,7 @@ const HotelInventory = lazy(() => import("@/pages/HotelInventory"));
 const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
 const SelfCheckin = lazy(() => import("@/pages/SelfCheckin"));
+const PreCheckinPage = lazy(() => import("@/pages/PreCheckinPage"));
 const DigitalKey = lazy(() => import("@/pages/DigitalKey"));
 const UpsellStore = lazy(() => import("@/pages/UpsellStore"));
 const StaffMobileApp = lazy(() => import("@/pages/StaffMobileApp"));
@@ -263,6 +264,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/b2b/docs", ...pa(B2BApiDocs) },
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
     { path: "/auth/reset-password", type: "public", component: ResetPasswordPage },
+    { path: "/precheckin/:token", type: "public", component: PreCheckinPage },
 
     // ── Core Operations ────────────────────────────────
     { path: "/app/dashboard", ...p(Dashboard, { modules }) },

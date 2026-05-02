@@ -459,8 +459,9 @@ except Exception as _ws_err:
 # Quick-ID Microservice Proxy (kimlik tarama)
 # Note: room_qr_router is mounted via bootstrap/router_registry.py:250 — not here.
 try:
-    from routers.quick_id_proxy import router as quick_id_proxy_router
+    from routers.quick_id_proxy import router as quick_id_proxy_router, public_router as quick_id_public_router
     app.include_router(quick_id_proxy_router)
+    app.include_router(quick_id_public_router)
     logger.info("  ✅ Quick-ID proxy router loaded")
 except Exception as _qid_err:
     logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")

@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CheckCircle, User, CreditCard, Key, Calendar } from 'lucide-react';
+import { CheckCircle, User, CreditCard, Key, Calendar, ScanLine, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+import BiometricVerifyDialog from '@/components/BiometricVerifyDialog';
 
 const SelfCheckin = ({ bookingId, onComplete }) => {
   const { t } = useTranslation();
@@ -30,6 +32,10 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
     early_checkin: false
   });
   const [loading, setLoading] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [bioOpen, setBioOpen] = useState(false);
+  const [docImageB64, setDocImageB64] = useState(null);
+  const [bioVerified, setBioVerified] = useState(null);
 
   useEffect(() => {
     loadBooking();
@@ -84,6 +90,18 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleScanned = (doc) => {
+    setGuestInfo(prev => ({
+      ...prev,
+      id_number: doc.id_number || doc.document_number || prev.id_number,
+      id_type: doc.document_type === 'tc_kimlik' ? 'tc_kimlik'
+        : doc.document_type === 'passport' ? 'passport'
+        : doc.document_type === 'drivers_license' ? 'drivers_license'
+        : prev.id_type,
+    }));
+    toast.success('Kimlik bilgileri forma aktarıldı');
   };
 
   if (!booking) {
@@ -157,8 +175,29 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex gap-2 mb-1">
+              <Button
+                type="button" variant="outline" size="sm"
+                className="flex-1 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                onClick={() => setScanOpen(true)}
+                data-testid="self-checkin-scan-btn"
+              >
+                <ScanLine className="w-4 h-4 mr-1" /> Kimliği Tara
+              </Button>
+              {docImageB64 && (
+                <Button
+                  type="button" variant="outline" size="sm"
+                  className={`flex-1 ${bioVerified?.match ? 'border-emerald-300 text-emerald-700' : 'border-amber-300 text-amber-700'} hover:bg-emerald-50`}
+                  onClick={() => setBioOpen(true)}
+                  data-testid="self-checkin-bio-btn"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1" />
+                  {bioVerified?.match ? 'Doğrulandı' : 'Yüzünü Doğrula'}
+                </Button>
+              )}
+            </div>
             <div>
-              <Label>Email *</Label>
+              <Label>E-posta *</Label>
               <Input
                 type="email"
                 value={guestInfo.email}
@@ -167,42 +206,56 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
               />
             </div>
             <div>
-              <Label>Phone *</Label>
+              <Label>Telefon *</Label>
               <Input
                 type="tel"
                 value={guestInfo.phone}
                 onChange={(e) => setGuestInfo({ ...guestInfo, phone: e.target.value })}
-                placeholder="+1234567890"
+                placeholder="+90 555 000 00 00"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>ID Type *</Label>
+                <Label>Belge Tipi *</Label>
                 <select
                   className="w-full border rounded-md p-2"
                   value={guestInfo.id_type}
                   onChange={(e) => setGuestInfo({ ...guestInfo, id_type: e.target.value })}
                 >
-                  <option value="passport">Passport</option>
-                  <option value="drivers_license">Driver's License</option>
-                  <option value="national_id">National ID</option>
+                  <option value="passport">Pasaport</option>
+                  <option value="drivers_license">Sürücü Belgesi</option>
+                  <option value="national_id">Kimlik Kartı</option>
+                  <option value="tc_kimlik">TC Kimlik</option>
                 </select>
               </div>
               <div>
-                <Label>ID Number *</Label>
+                <Label>Belge No *</Label>
                 <Input
                   value={guestInfo.id_number}
                   onChange={(e) => setGuestInfo({ ...guestInfo, id_number: e.target.value })}
-                  placeholder="ID123456"
+                  placeholder="A12345678"
                 />
               </div>
             </div>
             <Button onClick={handleGuestInfoSubmit} className="w-full">
-              Continue to Payment
+              Devam — Ödeme
             </Button>
           </CardContent>
         </Card>
       )}
+
+      <QuickIdScanDialog
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onExtracted={handleScanned}
+        onImageCaptured={(b64) => setDocImageB64(b64)}
+      />
+      <BiometricVerifyDialog
+        open={bioOpen}
+        onClose={() => setBioOpen(false)}
+        documentImageBase64={docImageB64}
+        onResult={(r) => setBioVerified(r)}
+      />
 
       {/* Step 2: Payment Information */}
       {step === 2 && (

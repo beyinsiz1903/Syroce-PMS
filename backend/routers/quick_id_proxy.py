@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import _raw_db as raw_db
@@ -441,3 +441,265 @@ async def test_quick_id_keys(current_user=Depends(get_current_user)):
         results["gemini"] = {"ok": False, "detail": "Anahtar tanımlı değil"}
 
     return {"results": results}
+
+
+# ===================== BIYOMETRIK (face-compare + liveness) =====================
+
+@router.post("/biometric/face-compare")
+async def biometric_face_compare(
+    payload: dict = Body(...),
+    current_user=Depends(get_current_user),
+):
+    """Kimlik üzerindeki fotoğraf ile selfie karşılaştır.
+    Body: { document_image_base64, selfie_image_base64 }
+    """
+    doc_b64 = payload.get("document_image_base64")
+    selfie_b64 = payload.get("selfie_image_base64")
+    if not doc_b64 or not selfie_b64:
+        raise HTTPException(status_code=400, detail="document_image_base64 ve selfie_image_base64 gerekli")
+
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
+
+    api_keys = await _resolve_api_keys()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{QUICKID_URL}/api/biometric/face-compare",
+                json={"document_image_base64": doc_b64, "selfie_image_base64": selfie_b64},
+                headers=_service_headers(current_user, api_keys=api_keys),
+            )
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("detail", "")
+            except Exception:
+                detail = r.text
+            raise HTTPException(status_code=r.status_code, detail=str(detail) or "Yüz eşleştirme hatası")
+        return r.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Biyometrik servise ulaşılamıyor: {e}")
+
+
+@router.get("/biometric/liveness-challenge")
+async def biometric_liveness_challenge(current_user=Depends(get_current_user)):
+    """Rastgele canlılık testi sorusu döner."""
+    if not QUICKID_SERVICE_KEY:
+        # Demo challenge
+        return {
+            "challenge_id": "demo",
+            "instruction": "Lütfen başınızı hafifçe sağa çevirin",
+            "type": "head_turn",
+        }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{QUICKID_URL}/api/biometric/liveness-challenge",
+                headers=_service_headers(current_user),
+            )
+            if r.status_code == 200:
+                return r.json()
+    except Exception as e:
+        logger.warning(f"Liveness challenge hatası: {e}")
+    return {"challenge_id": "fallback", "instruction": "Kameraya bakın", "type": "look"}
+
+
+@router.post("/biometric/liveness-check")
+async def biometric_liveness_check(
+    payload: dict = Body(...),
+    current_user=Depends(get_current_user),
+):
+    """Selfie'nin canlı kişi olup olmadığını kontrol et."""
+    image_b64 = payload.get("image_base64")
+    if not image_b64:
+        raise HTTPException(status_code=400, detail="image_base64 gerekli")
+
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
+
+    api_keys = await _resolve_api_keys()
+    body = {
+        "image_base64": image_b64,
+        "challenge_id": payload.get("challenge_id", ""),
+        "session_id": payload.get("session_id", ""),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{QUICKID_URL}/api/biometric/liveness-check",
+                json=body,
+                headers=_service_headers(current_user, api_keys=api_keys),
+            )
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("detail", "")
+            except Exception:
+                detail = r.text
+            raise HTTPException(status_code=r.status_code, detail=str(detail) or "Canlılık testi hatası")
+        return r.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Biyometrik servise ulaşılamıyor: {e}")
+
+
+# ===================== ÖN CHECK-IN (QR) =====================
+
+@router.post("/precheckin/create")
+async def precheckin_create(
+    payload: dict = Body(...),
+    current_user=Depends(get_current_user),
+):
+    """QR ön check-in tokenı oluştur.
+    Body: { property_id, reservation_ref?, guest_name? }
+    """
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Quick-ID servis anahtarı tanımlı değil")
+    body = {
+        "property_id": payload.get("property_id") or "default",
+        "reservation_ref": payload.get("reservation_ref", ""),
+        "guest_name": payload.get("guest_name", ""),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"{QUICKID_URL}/api/precheckin/create",
+                json=body,
+                headers=_service_headers(current_user),
+            )
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("detail", "")
+            except Exception:
+                detail = r.text
+            raise HTTPException(status_code=r.status_code, detail=str(detail) or "Token oluşturulamadı")
+        return r.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Servise ulaşılamıyor: {e}")
+
+
+# Aşağıdaki iki endpoint **public** — JWT zorunlu DEĞİL.
+# Misafir kendi telefonundan QR linkiyle açtığında çalışır.
+public_router = APIRouter(prefix="/api/quick-id/precheckin", tags=["Quick-ID Public"])
+
+# In-memory rate limiter (IP+token bazlı). Multi-instance için Redis'e taşınabilir.
+import time
+from collections import defaultdict, deque
+from threading import Lock
+
+_RL_BUCKETS: dict = defaultdict(deque)
+_RL_ATTEMPTS: dict = defaultdict(int)
+_RL_LOCKED_UNTIL: dict = defaultdict(float)
+_RL_LOCK = Lock()
+_RL_INFO_LIMIT = 30      # token başına 60 sn'de en fazla 30 info isteği
+_RL_INFO_WINDOW = 60
+_RL_SCAN_LIMIT = 5       # token başına 60 sn'de en fazla 5 scan
+_RL_SCAN_WINDOW = 60
+_RL_MAX_ATTEMPTS = 10    # token başına toplam 10 başarısız sonrası 30 dk kilit
+_RL_LOCKOUT_SEC = 1800
+
+
+def _rl_check(bucket_key: str, limit: int, window: int):
+    """Sliding-window rate-limit + lockout kontrolü."""
+    now = time.time()
+    with _RL_LOCK:
+        if _RL_LOCKED_UNTIL.get(bucket_key, 0) > now:
+            remain = int(_RL_LOCKED_UNTIL[bucket_key] - now)
+            raise HTTPException(status_code=429, detail=f"Çok fazla deneme. {remain}s sonra tekrar deneyin.")
+        dq = _RL_BUCKETS[bucket_key]
+        cutoff = now - window
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= limit:
+            raise HTTPException(status_code=429, detail="İstek limiti aşıldı, biraz bekleyin.")
+        dq.append(now)
+
+
+def _rl_record_attempt(bucket_key: str, success: bool):
+    """Başarısız deneme sayar; eşik aşılırsa lockout uygular."""
+    with _RL_LOCK:
+        if success:
+            _RL_ATTEMPTS[bucket_key] = 0
+            return
+        _RL_ATTEMPTS[bucket_key] += 1
+        if _RL_ATTEMPTS[bucket_key] >= _RL_MAX_ATTEMPTS:
+            _RL_LOCKED_UNTIL[bucket_key] = time.time() + _RL_LOCKOUT_SEC
+            _RL_ATTEMPTS[bucket_key] = 0
+
+
+def _client_ip(request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@public_router.get("/{token_id}/info")
+async def precheckin_info_public(token_id: str, request: Request):
+    """QR ile ulaşılan token bilgisi (public)."""
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
+    bucket = f"info:{_client_ip(request)}:{token_id}"
+    _rl_check(bucket, _RL_INFO_LIMIT, _RL_INFO_WINDOW)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{QUICKID_URL}/api/precheckin/{token_id}",
+                headers={"X-Service-Key": QUICKID_SERVICE_KEY, "X-Acting-User": "guest-public"},
+            )
+        if r.status_code >= 400:
+            _rl_record_attempt(bucket, success=False)
+            try:
+                detail = r.json().get("detail", "QR geçersiz")
+            except Exception:
+                detail = "QR geçersiz"
+            raise HTTPException(status_code=r.status_code, detail=str(detail))
+        _rl_record_attempt(bucket, success=True)
+        return r.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Servise ulaşılamıyor: {e}")
+
+
+@public_router.post("/{token_id}/scan")
+async def precheckin_scan_public(token_id: str, request: Request, payload: dict = Body(...)):
+    """Misafir kendi telefonundan kimlik tarar (public)."""
+    # KVKK consent backend'de zorunlu — frontend kontrolüne ek katman
+    if not payload.get("kvkk_consent"):
+        raise HTTPException(status_code=400, detail="KVKK onayı zorunludur")
+    image_b64 = payload.get("image_base64")
+    if not image_b64:
+        raise HTTPException(status_code=400, detail="image_base64 gerekli")
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
+    # Tarama maliyetli — sıkı limit
+    bucket = f"scan:{_client_ip(request)}:{token_id}"
+    _rl_check(bucket, _RL_SCAN_LIMIT, _RL_SCAN_WINDOW)
+
+    api_keys = await _resolve_api_keys()
+    headers = {
+        "X-Service-Key": QUICKID_SERVICE_KEY,
+        "X-Acting-User": "guest-public",
+        "Content-Type": "application/json",
+    }
+    if _is_safe_quickid_transport(QUICKID_URL):
+        if api_keys.get("openai"):
+            headers["X-OpenAI-Key"] = api_keys["openai"]
+        if api_keys.get("gemini"):
+            headers["X-Gemini-Key"] = api_keys["gemini"]
+
+    body = {"image_base64": image_b64, "kvkk_consent": True}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{QUICKID_URL}/api/precheckin/{token_id}/scan",
+                json=body,
+                headers=headers,
+            )
+        if r.status_code >= 400:
+            _rl_record_attempt(bucket, success=False)
+            try:
+                detail = r.json().get("detail", "")
+            except Exception:
+                detail = r.text
+            raise HTTPException(status_code=r.status_code, detail=str(detail) or "Tarama hatası")
+        _rl_record_attempt(bucket, success=True)
+        return r.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Servise ulaşılamıyor: {e}")

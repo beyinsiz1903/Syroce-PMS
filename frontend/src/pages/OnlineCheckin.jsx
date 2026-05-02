@@ -11,9 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Plane, Clock, Hotel, BedDouble, Wind, Coffee, Wifi, 
-  MapPin, User, Phone, Mail, CheckCircle2, Sparkles 
+  MapPin, User, Phone, Mail, CheckCircle2, Sparkles, ScanLine
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 
 const OnlineCheckin = () => {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ const OnlineCheckin = () => {
   const [step, setStep] = useState(1); // 1: Info, 2: Preferences, 3: Upsells, 4: Complete
   const [booking, setBooking] = useState(null);
   const [upsellOffers, setUpsellOffers] = useState([]);
+  const [scanOpen, setScanOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     booking_id: bookingId,
@@ -181,9 +183,19 @@ const OnlineCheckin = () => {
               <form onSubmit={handleStep1Submit} className="space-y-6">
                 {/* Passport Information */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    📄 Pasaport Bilgileri
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      📄 Pasaport Bilgileri
+                    </h3>
+                    <Button
+                      type="button" size="sm" variant="outline"
+                      className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                      onClick={() => setScanOpen(true)}
+                      data-testid="online-checkin-scan-btn"
+                    >
+                      <ScanLine className="w-4 h-4 mr-1" /> Pasaportu Tara
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Pasaport Numarası *</Label>
@@ -592,6 +604,20 @@ const OnlineCheckin = () => {
           </Card>
         )}
       </div>
+
+      <QuickIdScanDialog
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onExtracted={(doc) => {
+          setFormData(prev => ({
+            ...prev,
+            passport_number: doc.id_number || doc.document_number || prev.passport_number,
+            passport_expiry: doc.expiry_date || prev.passport_expiry,
+            nationality: doc.nationality || prev.nationality,
+          }));
+          toast.success('Pasaport bilgileri forma aktarıldı');
+        }}
+      />
     </div>
   );
 };

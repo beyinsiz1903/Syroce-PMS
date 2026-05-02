@@ -5,9 +5,10 @@ import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn } from 'lucide-react';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 
 const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -16,6 +17,24 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [scanBookingId, setScanBookingId] = useState(null);
+
+  const applyScanToBooking = async (bookingId, doc) => {
+    try {
+      const patch = {};
+      if (doc.first_name) patch.guest_first_name = doc.first_name;
+      if (doc.last_name) patch.guest_last_name = doc.last_name;
+      if (doc.id_number || doc.document_number) patch.guest_id_number = doc.id_number || doc.document_number;
+      if (doc.document_type) patch.guest_id_type = doc.document_type;
+      if (doc.nationality) patch.guest_nationality = doc.nationality;
+      if (doc.birth_date) patch.guest_birth_date = doc.birth_date;
+      await axios.patch(`/bookings/${bookingId}/guest-info`, patch).catch(() => {});
+      toast.success('Kimlik bilgileri rezervasyona aktarıldı');
+      loadTodayArrivals();
+    } catch (e) {
+      toast.warning('Bilgiler aktarılamadı, manuel güncelleyebilirsiniz');
+    }
+  };
 
   useEffect(() => {
     loadTodayArrivals();
@@ -334,15 +353,27 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                       </Button>
                     )}
                     {(booking.status || '').toLowerCase() !== 'checked_in' && (
-                      <Button
-                        size="sm"
-                        className="mb-2 bg-green-600 hover:bg-green-700"
-                        disabled={busyId === booking.id || (!booking.room_id && !booking.room_number)}
-                        onClick={() => quickCheckIn(booking)}
-                      >
-                        <LogIn className="w-4 h-4 mr-2" />
-                        {busyId === booking.id ? 'İşleniyor…' : 'Hızlı Check-in'}
-                      </Button>
+                      <div className="flex flex-col gap-2 mb-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                          onClick={() => setScanBookingId(booking.id)}
+                          data-testid={`btn-scan-arrival-${booking.id}`}
+                        >
+                          <ScanLine className="w-4 h-4 mr-2" />
+                          Kimlik Tara
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700"
+                          disabled={busyId === booking.id || (!booking.room_id && !booking.room_number)}
+                          onClick={() => quickCheckIn(booking)}
+                        >
+                          <LogIn className="w-4 h-4 mr-2" />
+                          {busyId === booking.id ? 'İşleniyor…' : 'Hızlı Check-in'}
+                        </Button>
+                      </div>
                     )}
                     <p className="text-lg font-semibold">€{booking.total_amount}</p>
                   </div>
@@ -353,6 +384,11 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         )}
       </div>
     </div>
+    <QuickIdScanDialog
+      open={!!scanBookingId}
+      onClose={() => setScanBookingId(null)}
+      onExtracted={(doc) => { if (scanBookingId) applyScanToBooking(scanBookingId, doc); }}
+    />
     </Layout>
   );
 };
