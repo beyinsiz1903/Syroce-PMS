@@ -13,10 +13,20 @@ import {
   Wallet, DollarSign, ArrowRightLeft, Clock,
   LogIn, LogOut, Receipt, RefreshCw,
   Calculator, UserCheck, Users, Plus, Minus,
-  FileText, FileDown, Search, Printer, AlertTriangle
+  FileText, FileDown, Search, Printer, AlertTriangle,
+  Landmark, CalendarRange
 } from 'lucide-react';
 
 const DIFF_THRESHOLD = 50;
+const CURRENCIES = [
+  { code: 'TRY', label: 'TRY (₺)' },
+  { code: 'USD', label: 'USD ($)' },
+  { code: 'EUR', label: 'EUR (€)' },
+  { code: 'GBP', label: 'GBP (£)' },
+];
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 
 const CashierTab = () => {
   const [shift, setShift] = useState(null);
@@ -35,13 +45,21 @@ const CashierTab = () => {
   });
   const [closingNote, setClosingNote] = useState('');
   const [handoverTarget, setHandoverTarget] = useState({ email: '', password: '', note: '' });
-  const [manualTxn, setManualTxn] = useState({ amount: '', method: 'cash', description: '' });
+  const [manualTxn, setManualTxn] = useState({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' });
 
   const [txnSearch, setTxnSearch] = useState('');
   const [txnMethodFilter, setTxnMethodFilter] = useState('all');
   const [reportData, setReportData] = useState(null);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+
+  const [showBankDepositDialog, setShowBankDepositDialog] = useState(false);
+  const [bankDeposit, setBankDeposit] = useState({ amount: '', bank_name: '', account_no: '', reference: '', note: '' });
+
+  const [showPeriodReportDialog, setShowPeriodReportDialog] = useState(false);
+  const [periodRange, setPeriodRange] = useState({ start: monthAgoIso(), end: todayIso() });
+  const [periodData, setPeriodData] = useState(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
 
   const loadShift = useCallback(async () => {
     try {
@@ -130,21 +148,111 @@ const CashierTab = () => {
     const amt = parseFloat(manualTxn.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!manualTxn.description.trim()) { toast.error('Açıklama girin'); return; }
+    const cur = manualTxn.currency || 'TRY';
+    const fx = parseFloat(manualTxn.fx_rate) || 1;
+    if (cur !== 'TRY' && (!fx || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
     setLoading(true);
     try {
+      const idemKey = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
       await axios.post('/cashier/manual-transaction', {
         amount: amt,
         direction,
         method: manualTxn.method,
-        description: manualTxn.description.trim()
-      });
+        description: manualTxn.description.trim(),
+        currency: cur,
+        fx_rate: cur === 'TRY' ? 1 : fx,
+        original_amount: amt,
+      }, { headers: { 'X-Idempotency-Key': idemKey } });
       toast.success(direction === 'in' ? 'Nakit girişi kaydedildi' : 'Kasa çıkışı kaydedildi');
       setShowCashInDialog(false);
       setShowPaidOutDialog(false);
-      setManualTxn({ amount: '', method: 'cash', description: '' });
+      setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' });
       loadShift();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
+  };
+
+  const submitBankDeposit = async () => {
+    const amt = parseFloat(bankDeposit.amount);
+    if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
+    if (!bankDeposit.bank_name.trim()) { toast.error('Banka adı zorunlu'); return; }
+    setLoading(true);
+    try {
+      const idemKey = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+      await axios.post('/cashier/bank-deposit', {
+        amount: amt,
+        bank_name: bankDeposit.bank_name.trim(),
+        account_no: bankDeposit.account_no.trim() || undefined,
+        reference: bankDeposit.reference.trim() || undefined,
+        note: bankDeposit.note.trim() || undefined,
+      }, { headers: { 'X-Idempotency-Key': idemKey } });
+      toast.success('Banka yatırma kaydedildi');
+      setShowBankDepositDialog(false);
+      setBankDeposit({ amount: '', bank_name: '', account_no: '', reference: '', note: '' });
+      loadShift();
+    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    setLoading(false);
+  };
+
+  const loadPeriodReport = async () => {
+    if (!periodRange.start || !periodRange.end) { toast.error('Tarih aralığı seçin'); return; }
+    setPeriodLoading(true);
+    try {
+      const res = await axios.get('/cashier/period-report', {
+        params: { start_date: periodRange.start, end_date: periodRange.end }
+      });
+      setPeriodData(res.data);
+    } catch (e) { toast.error('Rapor alınamadı: ' + (e.response?.data?.detail || e.message)); }
+    setPeriodLoading(false);
+  };
+
+  const exportPeriodCsv = () => {
+    if (!periodData) { toast.error('Önce rapor getirin'); return; }
+    const t = periodData.totals || {};
+    const lines = [];
+    const escape = (v) => {
+      let s = (v ?? '').toString();
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      s = s.replace(/"/g, '""');
+      return /[",\n;]/.test(s) ? `"${s}"` : s;
+    };
+    lines.push(['Donem Raporu', `${periodData.start_date} - ${periodData.end_date}`].map(escape).join(','));
+    lines.push(['Olusturuldu', periodData.generated_at || '', periodData.generated_by || ''].map(escape).join(','));
+    lines.push('');
+    lines.push(['TOPLAMLAR'].map(escape).join(','));
+    lines.push(['Vardiya sayisi', t.shift_count || 0].map(escape).join(','));
+    lines.push(['Acilis toplam', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit giris', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit cikis', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Beklenen', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Sayilan kapanis', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Fark', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Islem sayisi', t.transaction_count || 0].map(escape).join(','));
+    lines.push('');
+    lines.push(['YONTEM BAZINDA', 'Giris', 'Cikis', 'Net', 'Adet'].map(escape).join(','));
+    Object.entries(periodData.by_method || {}).forEach(([m, v]) =>
+      lines.push([m, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), (v.net || 0).toFixed(2), v.count || 0].map(escape).join(',')));
+    lines.push('');
+    lines.push(['TIP BAZINDA', 'Giris', 'Cikis', 'Adet'].map(escape).join(','));
+    Object.entries(periodData.by_type || {}).forEach(([ty, v]) =>
+      lines.push([ty, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), v.count || 0].map(escape).join(',')));
+    lines.push('');
+    lines.push(['KASIYER BAZINDA', 'Vardiya', 'Nakit Giris', 'Nakit Cikis', 'Islem'].map(escape).join(','));
+    Object.entries(periodData.by_cashier || {}).forEach(([k, v]) =>
+      lines.push([v.name || k, v.shift_count || 0, (v.cash_in || 0).toFixed(2), (v.cash_out || 0).toFixed(2), v.transaction_count || 0].map(escape).join(',')));
+    lines.push('');
+    lines.push(['DOVIZ BAZINDA', 'Giris (TL)', 'Cikis (TL)', 'Giris (orj)', 'Cikis (orj)', 'Adet'].map(escape).join(','));
+    Object.entries(periodData.by_currency || {}).forEach(([cur, v]) =>
+      lines.push([cur, (v.in_try || 0).toFixed(2), (v.out_try || 0).toFixed(2), (v.in_original || 0).toFixed(2), (v.out_original || 0).toFixed(2), v.count || 0].map(escape).join(',')));
+
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `donem-raporu-${periodData.start_date}_${periodData.end_date}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('CSV indirildi');
   };
 
   const openXReport = async () => {
@@ -186,6 +294,7 @@ const CashierTab = () => {
       manual_in: 'Manuel giriş',
       manual_out: 'Manuel çıkış',
       refund: 'İade',
+      bank_deposit: 'Banka yatırma',
     };
     return map[type] || 'İşlem';
   };
@@ -289,6 +398,9 @@ const CashierTab = () => {
               <Button onClick={() => setShowPaidOutDialog(true)} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
                 <Minus className="w-4 h-4 mr-2" /> Kasa Çıkışı
               </Button>
+              <Button onClick={() => setShowBankDepositDialog(true)} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                <Landmark className="w-4 h-4 mr-2" /> Banka Yat
+              </Button>
               <Button onClick={openXReport} disabled={reportLoading} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
                 <FileText className="w-4 h-4 mr-2" /> X-Raporu
               </Button>
@@ -300,6 +412,9 @@ const CashierTab = () => {
               </Button>
             </>
           )}
+          <Button onClick={() => setShowPeriodReportDialog(true)} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
+            <CalendarRange className="w-4 h-4 mr-2" /> Dönem Raporu
+          </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> Yenile
           </Button>
@@ -607,17 +722,37 @@ const CashierTab = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showCashInDialog} onOpenChange={(o) => { setShowCashInDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '' }); }}>
+      <Dialog open={showCashInDialog} onOpenChange={(o) => { setShowCashInDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Plus className="w-5 h-5 text-emerald-600" /> Nakit Giriş Ekle</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-xs text-gray-500">Folio dışı nakit girişleri (avans, depozito iadesi vb.) için kullanın.</p>
-            <div>
-              <Label>Tutar (TL) *</Label>
-              <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <Label>Tutar *</Label>
+                <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+              </div>
+              <div>
+                <Label>Para Birimi</Label>
+                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : p.fx_rate }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {manualTxn.currency !== 'TRY' && (
+              <div>
+                <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
+                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder="örn 32.50" />
+                {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1">TL karşılığı: <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                )}
+              </div>
+            )}
             <div>
               <Label>Yöntem</Label>
               <Select value={manualTxn.method} onValueChange={v => setManualTxn(p => ({ ...p, method: v }))}>
@@ -642,17 +777,37 @@ const CashierTab = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPaidOutDialog} onOpenChange={(o) => { setShowPaidOutDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '' }); }}>
+      <Dialog open={showPaidOutDialog} onOpenChange={(o) => { setShowPaidOutDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Minus className="w-5 h-5 text-amber-600" /> Kasa Çıkışı Ekle</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-xs text-gray-500">Kasadan çıkan nakit (tedarikçi, küçük gider, banka yatırma vb.).</p>
-            <div>
-              <Label>Tutar (TL) *</Label>
-              <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+            <p className="text-xs text-gray-500">Kasadan çıkan nakit (tedarikçi, küçük gider vb.). Bankaya yatırma için "Banka Yat" butonunu kullanın.</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <Label>Tutar *</Label>
+                <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+              </div>
+              <div>
+                <Label>Para Birimi</Label>
+                <Select value={manualTxn.currency} onValueChange={v => setManualTxn(p => ({ ...p, currency: v, fx_rate: v === 'TRY' ? '1' : p.fx_rate }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {manualTxn.currency !== 'TRY' && (
+              <div>
+                <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
+                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder="örn 32.50" />
+                {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1">TL karşılığı: <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                )}
+              </div>
+            )}
             <div>
               <Label>Yöntem</Label>
               <Select value={manualTxn.method} onValueChange={v => setManualTxn(p => ({ ...p, method: v }))}>
@@ -665,7 +820,7 @@ const CashierTab = () => {
             </div>
             <div>
               <Label>Açıklama *</Label>
-              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: tedarikçi ödemesi, banka yatırma" rows={2} />
+              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: tedarikçi ödemesi, küçük gider" rows={2} />
             </div>
             <Button onClick={() => submitManual('out')} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Minus className="w-4 h-4 mr-2" />}
@@ -800,6 +955,219 @@ const CashierTab = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBankDepositDialog} onOpenChange={(o) => { setShowBankDepositDialog(o); if (!o) setBankDeposit({ amount: '', bank_name: '', account_no: '', reference: '', note: '' }); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Landmark className="w-5 h-5 text-indigo-600" /> Bankaya Yatırma</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-gray-500">Kasadan bankaya nakit yatırma. Aktif vardiyanın nakit çıkışına işlenir.</p>
+            <div>
+              <Label>Tutar (TL) *</Label>
+              <Input type="number" step="0.01" value={bankDeposit.amount} onChange={e => setBankDeposit(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label>Banka Adı *</Label>
+              <Input value={bankDeposit.bank_name} onChange={e => setBankDeposit(p => ({ ...p, bank_name: e.target.value }))} placeholder="Örn: Garanti BBVA" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Hesap / IBAN</Label>
+                <Input value={bankDeposit.account_no} onChange={e => setBankDeposit(p => ({ ...p, account_no: e.target.value }))} placeholder="opsiyonel" />
+              </div>
+              <div>
+                <Label>Dekont / Ref</Label>
+                <Input value={bankDeposit.reference} onChange={e => setBankDeposit(p => ({ ...p, reference: e.target.value }))} placeholder="opsiyonel" />
+              </div>
+            </div>
+            <div>
+              <Label>Not</Label>
+              <Textarea value={bankDeposit.note} onChange={e => setBankDeposit(p => ({ ...p, note: e.target.value }))} placeholder="opsiyonel" rows={2} />
+            </div>
+            <Button onClick={submitBankDeposit} disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700">
+              {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Landmark className="w-4 h-4 mr-2" />}
+              Yatırmayı Kaydet
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPeriodReportDialog} onOpenChange={(o) => { setShowPeriodReportDialog(o); if (!o) setPeriodData(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> Dönem Raporu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm" id="period-report">
+            <div className="flex items-end gap-2 flex-wrap print:hidden">
+              <div>
+                <Label>Başlangıç</Label>
+                <Input type="date" value={periodRange.start} onChange={e => setPeriodRange(p => ({ ...p, start: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Bitiş</Label>
+                <Input type="date" value={periodRange.end} onChange={e => setPeriodRange(p => ({ ...p, end: e.target.value }))} />
+              </div>
+              <Button onClick={loadPeriodReport} disabled={periodLoading} className="bg-slate-700 hover:bg-slate-800">
+                {periodLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CalendarRange className="w-4 h-4 mr-2" />}
+                Getir
+              </Button>
+              {periodData && (
+                <>
+                  <Button variant="outline" onClick={exportPeriodCsv}>
+                    <FileDown className="w-4 h-4 mr-2" /> CSV
+                  </Button>
+                  <Button variant="outline" onClick={printReport}>
+                    <Printer className="w-4 h-4 mr-2" /> Yazdır
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {periodData && (
+              <>
+                <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded text-xs">
+                  <div><span className="text-gray-500">Aralık:</span> <strong>{periodData.start_date} → {periodData.end_date}</strong></div>
+                  <div><span className="text-gray-500">Vardiya:</span> <strong>{periodData.totals?.shift_count || 0}</strong> ({periodData.totals?.open_shift_count || 0} açık)</div>
+                  <div><span className="text-gray-500">Oluşturuldu:</span> {periodData.generated_at?.slice(0, 16).replace('T', ' ')}</div>
+                  <div><span className="text-gray-500">Raporu Alan:</span> {periodData.generated_by || '-'}</div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
+                    <p className="text-[10px] text-emerald-600 uppercase">Açılış Toplam</p>
+                    <p className="text-base font-bold text-emerald-700">{(periodData.totals?.opening_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className="p-3 rounded bg-blue-50 border border-blue-200">
+                    <p className="text-[10px] text-blue-600 uppercase">Nakit Giriş</p>
+                    <p className="text-base font-bold text-blue-700">{(periodData.totals?.cash_in_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className="p-3 rounded bg-amber-50 border border-amber-200">
+                    <p className="text-[10px] text-amber-600 uppercase">Nakit Çıkış</p>
+                    <p className="text-base font-bold text-amber-700">{(periodData.totals?.cash_out_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className="p-3 rounded bg-gray-100 border border-gray-300">
+                    <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
+                    <p className="text-base font-bold text-gray-800">{(periodData.totals?.expected_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className="p-3 rounded bg-purple-50 border border-purple-200">
+                    <p className="text-[10px] text-purple-600 uppercase">Sayılan</p>
+                    <p className="text-base font-bold text-purple-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark Toplam</p>
+                    <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{(periodData.totals?.difference_total || 0).toFixed(2)} TL</p>
+                  </div>
+                  <div className="p-3 rounded bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase">İşlem</p>
+                    <p className="text-base font-bold text-slate-700">{periodData.totals?.transaction_count || 0}</p>
+                  </div>
+                  <div className="p-3 rounded bg-slate-50 border border-slate-200">
+                    <p className="text-[10px] text-slate-600 uppercase">Kapalı Vardiya</p>
+                    <p className="text-base font-bold text-slate-700">{periodData.totals?.closed_shift_count || 0}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">Yöntem Bazında</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr><th className="text-left px-3 py-2">Yöntem</th><th className="text-right px-3 py-2">Giriş</th><th className="text-right px-3 py-2">Çıkış</th><th className="text-right px-3 py-2">Net</th><th className="text-right px-3 py-2">Adet</th></tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(periodData.by_method || {}).length === 0 ? (
+                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        ) : Object.entries(periodData.by_method).map(([m, v]) => (
+                          <tr key={m} className="border-t">
+                            <td className="px-3 py-2">{methodLabel(m)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">İşlem Tipi Bazında</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr><th className="text-left px-3 py-2">Tip</th><th className="text-right px-3 py-2">Giriş</th><th className="text-right px-3 py-2">Çıkış</th><th className="text-right px-3 py-2">Adet</th></tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(periodData.by_type || {}).length === 0 ? (
+                          <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        ) : Object.entries(periodData.by_type).map(([ty, v]) => (
+                          <tr key={ty} className="border-t">
+                            <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">Kasiyer Bazında</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr><th className="text-left px-3 py-2">Kasiyer</th><th className="text-right px-3 py-2">Vardiya</th><th className="text-right px-3 py-2">Nakit Giriş</th><th className="text-right px-3 py-2">Nakit Çıkış</th><th className="text-right px-3 py-2">İşlem</th></tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(periodData.by_cashier || {}).length === 0 ? (
+                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        ) : Object.entries(periodData.by_cashier).map(([k, v]) => (
+                          <tr key={k} className="border-t">
+                            <td className="px-3 py-2">{v.name || k}</td>
+                            <td className="px-3 py-2 text-right">{v.shift_count || 0}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{(v.cash_in || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{(v.cash_out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{v.transaction_count || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">Para Birimi Bazında</p>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr><th className="text-left px-3 py-2">Birim</th><th className="text-right px-3 py-2">Giriş (TL)</th><th className="text-right px-3 py-2">Çıkış (TL)</th><th className="text-right px-3 py-2">Giriş (orj)</th><th className="text-right px-3 py-2">Çıkış (orj)</th><th className="text-right px-3 py-2">Adet</th></tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(periodData.by_currency || {}).length === 0 ? (
+                          <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        ) : Object.entries(periodData.by_currency).map(([cur, v]) => (
+                          <tr key={cur} className="border-t">
+                            <td className="px-3 py-2 font-medium">{cur}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in_try || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{(v.out_try || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{(v.in_original || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{(v.out_original || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

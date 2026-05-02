@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException
 
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
@@ -276,7 +276,10 @@ async def handover_shift(body: dict = Body(...), current_user: User = Depends(ge
 
 
 @router.post("/cashier/manual-transaction")
-async def manual_transaction(body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def manual_transaction(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     """
@@ -296,6 +299,16 @@ async def manual_transaction(body: dict = Body(...), current_user: User = Depend
         raise HTTPException(status_code=400, detail="Açıklama zorunludur")
     txn_type = body.get("type") or ("paid_out" if direction == "out" else "manual_in")
 
+    # Döviz: TRY default, fx_rate orijinal birim → TL çevrim katsayısı
+    currency = (body.get("currency") or "TRY").upper()
+    fx_rate = _safe_float(body.get("fx_rate", 1.0)) or 1.0
+    if currency != "TRY" and fx_rate <= 0:
+        raise HTTPException(status_code=400, detail="Yabancı para için kur 0'dan büyük olmalı")
+    original_amount = _safe_float(body.get("original_amount", amount)) or amount
+    # amount: TL karşılığı; eğer client original_amount gönderdiyse onu kullan
+    if currency != "TRY":
+        amount = round(original_amount * fx_rate, 2)
+
     # Aktif vardiya zorunlu (tüm manuel işlemler için)
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
@@ -314,8 +327,233 @@ async def manual_transaction(body: dict = Body(...), current_user: User = Depend
         ref_id=None,
         created_by=current_user.email,
         created_by_name=getattr(current_user, "name", None) or current_user.email,
+        currency=currency,
+        fx_rate=fx_rate,
+        original_amount=original_amount,
+        idempotency_key=idempotency_key or None,
+        require_open_shift=True,
     )
+    if not txn:
+        raise HTTPException(status_code=409, detail="İşlem kaydedilemedi: vardiya kapalı veya çakışma. Vardiyayı kontrol edip tekrar deneyin.")
     return {"ok": True, "transaction": txn}
+
+
+@router.post("/cashier/bank-deposit")
+async def bank_deposit(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+    _perm=Depends(require_op("post_payment")),
+):
+    """
+    Kasadan bankaya nakit yatırma. Aktif nakit vardiyası zorunlu.
+    Body: { amount, bank_name, account_no?, reference?, note? }
+    Header: X-Idempotency-Key (opsiyonel, retry güvenliği için önerilir)
+    """
+    from domains.pms.cashier_service import record_cash_transaction
+    amount = _safe_float(body.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Tutar 0'dan büyük olmalı")
+    bank_name = (body.get("bank_name") or "").strip()
+    if not bank_name:
+        raise HTTPException(status_code=400, detail="Banka adı zorunlu")
+    account_no = (body.get("account_no") or "").strip() or None
+    reference = (body.get("reference") or "").strip() or None
+    note = (body.get("note") or "").strip()
+
+    description_parts = [f"Bankaya yatırma: {bank_name}"]
+    if account_no:
+        description_parts.append(f"Hesap: {account_no}")
+    if reference:
+        description_parts.append(f"Ref: {reference}")
+    if note:
+        description_parts.append(note)
+    description = " | ".join(description_parts)
+
+    extra = {"bank_name": bank_name, "account_no": account_no, "bank_reference": reference, "bank_note": note or None}
+
+    txn = await record_cash_transaction(
+        tenant_id=current_user.tenant_id,
+        amount=amount,
+        method="cash",
+        direction="out",
+        description=description,
+        txn_type="bank_deposit",
+        ref_type="bank",
+        ref_id=reference,
+        created_by=current_user.email,
+        created_by_name=getattr(current_user, "name", None) or current_user.email,
+        require_open_shift=True,
+        extra=extra,
+        idempotency_key=idempotency_key or None,
+    )
+    if not txn:
+        raise HTTPException(status_code=409, detail="Banka yatırma kaydedilemedi: vardiya kapalı veya çakışma.")
+    return {"ok": True, "transaction": txn}
+
+
+@router.get("/cashier/period-report")
+async def period_report(
+    start_date: str,
+    end_date: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """
+    Tarih aralığı dönem raporu (yyyy-mm-dd, dahil).
+    Aralıkta opened_at olan tüm vardiyaların toplu özetini döner.
+    """
+    try:
+        s_dt = datetime.fromisoformat(start_date)
+        e_dt = datetime.fromisoformat(end_date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Tarih formatı YYYY-MM-DD olmalı")
+    if e_dt < s_dt:
+        raise HTTPException(status_code=400, detail="Bitiş tarihi başlangıçtan önce olamaz")
+    # Bitiş tarihinin sonuna kadar dahil
+    s_iso = s_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    e_iso = e_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
+    # Aralık ile ÇAKIŞAN tüm vardiyaları çek: opened_at <= e_iso (aralık bitişinden
+    # önce açılmış) ve (kapalı değil VEYA closed_at >= s_iso). Sonra her vardiyanın
+    # transactions array'inden created_at aralık içinde olanları sayarız — böylece
+    # tx-bazlı doğru filtreleme yapılır.
+    cursor = db.cashier_shifts.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "opened_at": {"$lte": e_iso},
+            "$or": [
+                {"closed_at": {"$exists": False}},
+                {"closed_at": None},
+                {"closed_at": {"$gte": s_iso}},
+            ],
+        },
+        sort=[("opened_at", 1)],
+    )
+
+    by_method: dict = {}
+    by_type: dict = {}
+    by_cashier: dict = {}
+    by_currency: dict = {}
+    totals = {
+        "opening_total": 0.0,
+        "cash_in_total": 0.0,
+        "cash_out_total": 0.0,
+        "expected_total": 0.0,
+        "closing_total": 0.0,
+        "difference_total": 0.0,
+        "transaction_count": 0,
+        "shift_count": 0,
+        "open_shift_count": 0,
+        "closed_shift_count": 0,
+    }
+    shifts_summary: list = []
+
+    def _in_range(ts: str | None) -> bool:
+        if not ts:
+            return False
+        return s_iso <= ts <= e_iso
+
+    async for s in cursor:
+        # Vardiya tx'lerinden aralıkta olanları filtrele
+        all_txns = s.get("transactions") or []
+        txns_in_range = [t for t in all_txns if _in_range(t.get("created_at") or t.get("timestamp"))]
+        if not txns_in_range and not _in_range(s.get("opened_at")):
+            # Vardiyanın hiçbir tx'i aralıkta değil ve açılışı da değilse atla
+            continue
+
+        totals["shift_count"] += 1
+        if s.get("status") == "open":
+            totals["open_shift_count"] += 1
+        else:
+            totals["closed_shift_count"] += 1
+
+        # Vardiya bazlı toplamları (opening/closing) yalnızca opened_at aralık
+        # içindeyse dahil et — yoksa önceki dönemden devreden vardiyanın açılışı
+        # bu döneme yanlışlıkla eklenir.
+        opening_in = float(s.get("opening_amount") or 0) if _in_range(s.get("opened_at")) else 0.0
+        # cash_in/cash_out yalnız aralıktaki nakit tx'lerden hesapla
+        c_in = sum(float(t.get("amount") or 0) for t in txns_in_range
+                   if (t.get("method") == "cash") and (t.get("direction") == "in"))
+        c_out = sum(float(t.get("amount") or 0) for t in txns_in_range
+                    if (t.get("method") == "cash") and (t.get("direction") == "out"))
+        totals["opening_total"] += opening_in
+        totals["cash_in_total"] += c_in
+        totals["cash_out_total"] += c_out
+        totals["expected_total"] += (opening_in + c_in - c_out)
+        # closing/difference yalnız closed_at aralıktaysa dahil
+        if s.get("closing_amount") is not None and _in_range(s.get("closed_at")):
+            totals["closing_total"] += float(s.get("closing_amount") or 0)
+        if s.get("difference") is not None and _in_range(s.get("closed_at")):
+            totals["difference_total"] += float(s.get("difference") or 0)
+
+        cashier_key = s.get("cashier_email") or s.get("cashier_name") or "?"
+        by_cashier.setdefault(cashier_key, {
+            "name": s.get("cashier_name") or cashier_key,
+            "shift_count": 0, "cash_in": 0.0, "cash_out": 0.0, "transaction_count": 0,
+        })
+        by_cashier[cashier_key]["shift_count"] += 1
+        by_cashier[cashier_key]["cash_in"] += c_in
+        by_cashier[cashier_key]["cash_out"] += c_out
+
+        totals["transaction_count"] += len(txns_in_range)
+        by_cashier[cashier_key]["transaction_count"] += len(txns_in_range)
+        for t in txns_in_range:
+            m = t.get("method") or "other"
+            ty = t.get("type") or "other"
+            cur = (t.get("currency") or "TRY").upper()
+            amt = float(t.get("amount") or 0)
+            sign = 1 if t.get("direction") == "in" else -1
+            by_method.setdefault(m, {"in": 0.0, "out": 0.0, "count": 0, "net": 0.0})
+            by_method[m]["count"] += 1
+            if sign > 0:
+                by_method[m]["in"] += amt
+            else:
+                by_method[m]["out"] += amt
+            by_method[m]["net"] += sign * amt
+            by_type.setdefault(ty, {"in": 0.0, "out": 0.0, "count": 0})
+            by_type[ty]["count"] += 1
+            if sign > 0:
+                by_type[ty]["in"] += amt
+            else:
+                by_type[ty]["out"] += amt
+            by_currency.setdefault(cur, {"in_try": 0.0, "out_try": 0.0, "in_original": 0.0, "out_original": 0.0, "count": 0})
+            by_currency[cur]["count"] += 1
+            orig = float(t.get("original_amount") or amt)
+            if sign > 0:
+                by_currency[cur]["in_try"] += amt
+                by_currency[cur]["in_original"] += orig
+            else:
+                by_currency[cur]["out_try"] += amt
+                by_currency[cur]["out_original"] += orig
+
+        shifts_summary.append({
+            "shift_id": str(s.get("_id") or s.get("id") or ""),
+            "cashier_name": s.get("cashier_name"),
+            "status": s.get("status"),
+            "opened_at": s.get("opened_at"),
+            "closed_at": s.get("closed_at"),
+            "opening_in_period": _in_range(s.get("opened_at")),
+            "opening_amount": float(s.get("opening_amount") or 0),
+            "cash_in_period": c_in,
+            "cash_out_period": c_out,
+            "transaction_count_period": len(txns_in_range),
+            "closing_amount": s.get("closing_amount"),
+            "difference": s.get("difference"),
+        })
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "generated_at": datetime.utcnow().isoformat(),
+        "generated_by": getattr(current_user, "name", None) or current_user.email,
+        "totals": totals,
+        "by_method": by_method,
+        "by_type": by_type,
+        "by_cashier": by_cashier,
+        "by_currency": by_currency,
+        "shifts": shifts_summary,
+    }
 
 
 def _build_shift_report(shift: dict) -> dict:

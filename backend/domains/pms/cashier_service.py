@@ -82,13 +82,17 @@ async def record_cash_transaction(
     method: str,
     direction: str,                       # "in" | "out"
     description: str,
-    txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund
-    ref_type: Optional[str] = None,       # folio|booking|payment|manual
+    txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
+    ref_type: Optional[str] = None,       # folio|booking|payment|manual|bank
     ref_id: Optional[str] = None,
     created_by: Optional[str] = None,
     created_by_name: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     require_open_shift: bool = False,
+    currency: str = "TRY",
+    fx_rate: float = 1.0,
+    original_amount: Optional[float] = None,
+    extra: Optional[dict] = None,
 ) -> Optional[dict]:
     """
     Kasa hareketi yazar (cashier_shifts.transactions array'ine push) ve
@@ -97,6 +101,10 @@ async def record_cash_transaction(
 
     require_open_shift=True ise ve method='cash' ise vardiya yoksa
     HTTPException(409) atar.
+
+    Döviz: currency != "TRY" ise original_amount yabancı tutarı, amount
+    TL karşılığını (original_amount × fx_rate) temsil eder. cash_in/out
+    her zaman TL bazında artar.
     """
     method_l = (method or "").lower()
     direction_l = (direction or "").lower()
@@ -109,6 +117,12 @@ async def record_cash_transaction(
     amount_f = float(amount or 0)
     if amount_f <= 0:
         return None
+
+    currency_u = (currency or "TRY").upper()
+    fx_rate_f = float(fx_rate or 1.0)
+    if fx_rate_f <= 0:
+        fx_rate_f = 1.0
+    original_amount_f = float(original_amount) if original_amount is not None else amount_f
 
     shift = await get_active_shift(tenant_id)
     if not shift:
@@ -138,7 +152,14 @@ async def record_cash_transaction(
         "created_by": created_by,
         "created_by_name": created_by_name,
         "idempotency_key": idempotency_key,
+        "currency": currency_u,
+        "fx_rate": fx_rate_f,
+        "original_amount": original_amount_f,
     }
+    if extra and isinstance(extra, dict):
+        for k, v in extra.items():
+            if k not in txn:
+                txn[k] = v
 
     # Atomik push + cash_in/out increment (idempotency: aynı key varsa hiç
     # push atma; matched_count=0 dönerse zaten kayıtlı demektir)
@@ -163,8 +184,7 @@ async def record_cash_transaction(
 
     if result.matched_count == 0:
         # idempotency engelledi (zaten kayıtlı) veya vardiya artık açık değil
-        logger.info(f"cashier txn idempotent skip key={idempotency_key}")
-        # Mevcut kaydı bul ve döndür (kullanıcıya aynı sonuç)
+        # Mevcut kaydı bul ve döndür (kullanıcıya aynı sonuç) — idempotent başarı
         if idempotency_key:
             existing_shift = await db.cashier_shifts.find_one(
                 {"tenant_id": tenant_id, "transactions.idempotency_key": idempotency_key},
@@ -173,7 +193,18 @@ async def record_cash_transaction(
             if existing_shift:
                 for t in (existing_shift.get("transactions") or []):
                     if t.get("idempotency_key") == idempotency_key:
+                        logger.info(f"cashier txn idempotent hit key={idempotency_key}")
                         return t
+        # Mevcut kayıt yok → race condition (vardiya bu arada kapandı/devredildi)
+        logger.warning(
+            f"cashier txn race: shift no longer open tenant={tenant_id} "
+            f"shift={shift.get('_id')} method={method_l}"
+        )
+        if require_open_shift and method_l in CASH_METHODS:
+            raise HTTPException(
+                status_code=409,
+                detail="Vardiya işlem sırasında kapandı/devredildi. Tekrar açıp deneyin.",
+            )
         return None
 
     return txn
