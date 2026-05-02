@@ -33,12 +33,25 @@ except ImportError:
     RoomBlock = RoomBlockCreate = RoomBlockUpdate = BlockStatus = None
 
 try:
-    from cache_manager import cached
+    from cache_manager import cache, cached
 except ImportError:
+    cache = None  # type: ignore
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
         return decorator
+
+
+def _invalidate_hk_caches(tenant_id: str) -> None:
+    """v95.2 — HK task değişikliklerinde aktif timer + performance cache temizle."""
+    if not cache:
+        return
+    try:
+        cache.invalidate_tenant_cache(tenant_id, "hk_active_timers")
+        cache.invalidate_tenant_cache(tenant_id, "housekeeping_performance")
+        cache.invalidate_tenant_cache(tenant_id, "housekeeping_room_status")
+    except Exception:
+        pass
 
 router = APIRouter(prefix="/api", tags=["housekeeping"])
 security = HTTPBearer()
@@ -139,6 +152,7 @@ async def create_housekeeping_task(
         task_dict['created_at'] = task_dict['created_at'].isoformat()
         await db.housekeeping_tasks.insert_one(task_dict.copy())
         task_dict.pop('_id', None)
+        _invalidate_hk_caches(current_user.tenant_id)  # v95.2
         if lock_id:
             await complete_idempotency(db, lock_id=lock_id, response_body=task_dict)
         return task
@@ -167,6 +181,7 @@ async def delete_housekeeping_task(
         "status": {"$ne": "in_progress"},
     })
     if result.deleted_count == 1:
+        _invalidate_hk_caches(current_user.tenant_id)  # v95.2
         return {"success": True, "task_id": task_id, "deleted": 1}
 
     # Disambiguate 404 vs 409: re-read without the status filter to see why
@@ -204,6 +219,7 @@ async def update_housekeeping_task(task_id: str, status: str | None = None, assi
     task = await db.housekeeping_tasks.find_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
     )
+    _invalidate_hk_caches(current_user.tenant_id)  # v95.2
     return task
 
 # rbac-allow: cache-rbac — oda durumu tablosu tüm rolelere açık (cross-departman koordinasyon)
@@ -506,11 +522,21 @@ async def get_staff_performance_detailed(
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests arriving today"""
     today = datetime.now(UTC).date()
+    today_iso = today.isoformat()
+    tomorrow_iso = (today + timedelta(days=1)).isoformat()
+    today_dt = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
+    tomorrow_dt = today_dt + timedelta(days=1)
 
-    # Find bookings checking in today
+    # v95.2 — DB-side check_in date range. Karma tip (string ISO + datetime)
+    # için $or; lex order ISO string'lerde tarih sırasını korur, böylece
+    # check_in indeksi varsa range scan kullanılır.
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'pending']}
+        'status': {'$in': ['confirmed', 'guaranteed', 'pending']},
+        '$or': [
+            {'check_in': {'$gte': today_iso, '$lt': tomorrow_iso}},
+            {'check_in': {'$gte': today_dt, '$lt': tomorrow_dt}},
+        ],
     }).to_list(1000)
 
     matched = []
@@ -632,6 +658,7 @@ async def assign_housekeeping_task(
     task_dict = task.model_dump()
     task_dict['created_at'] = task_dict['created_at'].isoformat()
     await db.housekeeping_tasks.insert_one(task_dict)
+    _invalidate_hk_caches(current_user.tenant_id)  # v95.2
 
     return {
         'message': f'Task assigned to {assigned_to}',

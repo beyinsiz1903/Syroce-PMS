@@ -40,8 +40,9 @@ except ImportError:
     Workbook = None
 
 try:
-    from cache_manager import cached
+    from cache_manager import cache, cached
 except ImportError:
+    cache = None  # type: ignore
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
@@ -1008,6 +1009,15 @@ async def start_cleaning_timer(
         }
     )
 
+    # v95.2 — yeni timer başlayınca aktif timer + performance cache invalidasyon
+    try:
+        if cache:
+            cache.invalidate_tenant_cache(current_user.tenant_id, "hk_active_timers")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "housekeeping_performance")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "housekeeping_room_status")
+    except Exception:
+        pass
+
     return {
         'success': True,
         'task_id': task_id,
@@ -1037,9 +1047,11 @@ async def complete_cleaning_timer(
     completed_at = datetime.now(UTC)
     duration = (completed_at - started_at).total_seconds() / 60  # minutes
 
-    # Update task
+    # v95.2 IDOR — tenant_id filter'ı eksikti; başka tenant'ın task_id'si
+    # tahmin edilirse (UUID4 zorlu ama prensibe aykırı) cross-tenant update
+    # yapabiliyordu. Atomik olarak tenant'a sabitle.
     await db.housekeeping_tasks.update_one(
-        {'id': task_id},
+        {'id': task_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
                 'completed_at': completed_at.isoformat(),
@@ -1063,6 +1075,15 @@ async def complete_cleaning_timer(
             }
         }
     )
+
+    # v95.2 — timer kapandıktan sonra cache invalidasyon
+    try:
+        if cache:
+            cache.invalidate_tenant_cache(current_user.tenant_id, "hk_active_timers")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "housekeeping_performance")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "housekeeping_room_status")
+    except Exception:
+        pass
 
     return {
         'success': True,
