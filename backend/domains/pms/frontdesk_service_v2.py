@@ -924,6 +924,14 @@ class FrontdeskServiceV2:
                 {"$inc": {"balance": -charge.get("total", 0)}},
             )
 
+        # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void)
+        try:
+            from cache_manager import cache as _cache
+            if _cache:
+                _cache.invalidate_tenant_cache(ctx.tenant_id, "folio_revenue_by_category")
+        except ImportError:
+            pass
+
         return ServiceResult.success(
             {
                 "message": "Charge voided",

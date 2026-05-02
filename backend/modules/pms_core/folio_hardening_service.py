@@ -57,6 +57,14 @@ class FolioHardeningService:
         await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_posted", posted_by,
                               {"folio_id": folio_id, "amount": total, "category": charge_data.get("category")})
 
+        # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge)
+        try:
+            from cache_manager import cache as _cache
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+        except ImportError:
+            pass
+
         charge_doc.pop("_id", None)
         return {"success": True, "charge": charge_doc}
 
@@ -164,6 +172,14 @@ class FolioHardeningService:
 
         await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_voided", voided_by,
                               {"folio_id": charge["folio_id"], "amount": charge.get("total"), "reason": reason})
+
+        # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void)
+        try:
+            from cache_manager import cache as _cache
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+        except ImportError:
+            pass
 
         return {"success": True, "charge_id": charge_id, "voided_amount": charge.get("total")}
 

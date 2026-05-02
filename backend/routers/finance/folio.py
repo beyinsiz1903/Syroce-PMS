@@ -39,8 +39,9 @@ from modules.pms_core.role_permission_service import require_op
 from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
-    from cache_manager import cached
+    from cache_manager import cache, cached
 except ImportError:
+    cache = None  # type: ignore
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
@@ -558,6 +559,10 @@ async def post_charge_to_folio(
         }
     )
 
+    # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
+    if cache:
+        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+
     return charge
 
 
@@ -643,6 +648,7 @@ async def post_payment_to_folio(
 
 
 @router.get("/folio/reports/revenue-by-category")
+@cached(ttl=300, key_prefix="folio_revenue_by_category")  # 5 dk cache; tarih+tenant key
 async def revenue_by_category(
     date_from: str,
     date_to: str,
@@ -870,6 +876,10 @@ async def void_charge(
     operation_dict = operation.model_dump()
     operation_dict['performed_at'] = operation_dict['performed_at'].isoformat()
     await db.folio_operations.insert_one(operation_dict)
+
+    # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void edilince)
+    if cache:
+        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
 
     return {"message": "Charge voided successfully"}
 
