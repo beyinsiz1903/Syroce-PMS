@@ -33,14 +33,24 @@ async def get_daily_briefing(
     try:
         # Get data from database — all 4 collections in parallel (1 RTT).
         # Exclude virtual rooms so the briefing matches the dashboard KPI cards.
+        # v95 — Projections: only fields actually used downstream (was full-doc fetch).
         rooms, all_bookings, invoices, tenant = await _asyncio.gather(
             db.rooms.find({
                 "tenant_id": current_user.tenant_id,
                 "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-            }).to_list(None),
-            db.bookings.find({"tenant_id": current_user.tenant_id}).to_list(None),
-            db.accounting_invoices.find({"tenant_id": current_user.tenant_id}).to_list(None),
-            db.tenants.find_one({"id": current_user.tenant_id}),
+            }, {"_id": 0, "id": 1}).to_list(None),
+            db.bookings.find(
+                {"tenant_id": current_user.tenant_id},
+                {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "total_amount": 1},
+            ).to_list(None),
+            db.accounting_invoices.find(
+                {"tenant_id": current_user.tenant_id},
+                {"_id": 0, "status": 1, "total": 1, "invoice_date": 1, "created_at": 1},
+            ).to_list(None),
+            db.tenants.find_one(
+                {"id": current_user.tenant_id},
+                {"_id": 0, "property_name": 1},
+            ),
         )
 
         total_rooms = len(rooms)

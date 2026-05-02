@@ -583,25 +583,35 @@ async def get_ai_activity_feed(
             'status': 'active'
         })
 
-    # 4. Revenue Anomaly Detection
-    today_revenue = 0
-    charges = await db.folio_charges.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
-        'voided': False
-    }).to_list(10000)
-    today_revenue = sum(c.get('total', 0) for c in charges)
-
-    # Get average daily revenue (last 30 days)
+    # 4. Revenue Anomaly Detection — v95 server-side $sum (was 100k-doc to_list)
     thirty_days_ago = today - timedelta(days=30)
-    all_charges = await db.folio_charges.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': thirty_days_ago.isoformat()},
-        'voided': False
-    }).to_list(100000)
+    rev_pipeline = [
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'date': {'$gte': thirty_days_ago.isoformat()},
+            'voided': False,
+        }},
+        {'$group': {
+            '_id': None,
+            'today_revenue': {'$sum': {'$cond': [
+                {'$and': [
+                    {'$gte': ['$date', today_start.isoformat()]},
+                    {'$lte': ['$date', today_end.isoformat()]},
+                ]},
+                {'$ifNull': ['$total', 0]},
+                0,
+            ]}},
+            'total_30d': {'$sum': {'$ifNull': ['$total', 0]}},
+            'count_30d': {'$sum': 1},
+        }},
+    ]
+    rev_agg = await db.folio_charges.aggregate(rev_pipeline).to_list(1)
+    today_revenue = rev_agg[0]['today_revenue'] if rev_agg else 0
+    total_30d = rev_agg[0]['total_30d'] if rev_agg else 0
+    count_30d = rev_agg[0]['count_30d'] if rev_agg else 0
 
-    if all_charges:
-        avg_daily_revenue = sum(c.get('total', 0) for c in all_charges) / 30
+    if count_30d > 0:
+        avg_daily_revenue = total_30d / 30
         variance = ((today_revenue - avg_daily_revenue) / avg_daily_revenue * 100) if avg_daily_revenue > 0 else 0
 
         if abs(variance) > 20:

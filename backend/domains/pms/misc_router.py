@@ -1892,42 +1892,45 @@ async def get_revenue_trend(
 
 
 @router.get("/analytics/booking-trends")
+@cached(ttl=300, key_prefix="analytics_booking_trends")  # v95 — 5 min cache
 async def get_booking_trends(
     days: int = 30,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get booking trends for the last N days"""
+    """Get booking trends for the last N days.
+
+    v95 — Replaced O(N×D) Python loop with single Mongo aggregation pipeline.
+    Was: fetch up to 10k bookings, parse ISO date for each × 30 iterations (~14k ops on 469 docs).
+    Now: $group on $substr(created_at, 0, 10) — server-side, single round-trip.
+    """
     current_user = await get_current_user(credentials)
 
     end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=days)
 
-    # Get all bookings created in date range
-    bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': start_date.isoformat(),
-            '$lte': end_date.isoformat()
-        }
-    }).to_list(length=10000)
+    # Aggregation: count bookings per day server-side.
+    # created_at is stored as ISO string ("YYYY-MM-DDTHH:MM:SS"), so $substr 0..10 = date.
+    pipeline = [
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'created_at': {
+                '$gte': start_date.isoformat(),
+                '$lte': end_date.isoformat(),
+            },
+        }},
+        {'$project': {'_id': 0, 'date': {'$substrCP': ['$created_at', 0, 10]}}},
+        {'$group': {'_id': '$date', 'count': {'$sum': 1}}},
+    ]
+    counts: dict[str, int] = {}
+    async for row in db.bookings.aggregate(pipeline):
+        counts[row['_id']] = row['count']
 
-    # Calculate daily booking counts
+    # Densify: emit a row for every day in range (zero-fill missing).
     trend_data = []
     current = start_date
-
     while current <= end_date:
-        # Count bookings created on this date
-        daily_bookings = 0
-        for booking in bookings:
-            booking_date = datetime.fromisoformat(booking['created_at'].replace('Z', '+00:00'))
-            if booking_date.date() == current.date():
-                daily_bookings += 1
-
-        trend_data.append({
-            'date': current.strftime('%Y-%m-%d'),
-            'bookings': daily_bookings
-        })
-
+        date_str = current.strftime('%Y-%m-%d')
+        trend_data.append({'date': date_str, 'bookings': counts.get(date_str, 0)})
         current += timedelta(days=1)
 
     total_bookings = sum(d['bookings'] for d in trend_data)

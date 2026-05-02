@@ -1209,22 +1209,34 @@ async def get_trend_kpis(
 
 
 @router.get("/dashboard/gm/anomaly-detection")
+@cached(ttl=300, key_prefix="anomaly_detection")  # v95 — 5 min TTL (was uncached → 0.82s every call)
 async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
     """Detect anomalies in hotel operations"""
+    import asyncio as _asyncio
     try:
-        # Get rooms data
-        rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-
-        # Get bookings data
-        bookings = await db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'status': {'$in': ['confirmed', 'checked_in']}
-        }, {'_id': 0}).to_list(1000)
-
-        # Get transactions
-        transactions = await db.transactions.find({
-            'tenant_id': current_user.tenant_id
-        }, {'_id': 0}).to_list(1000)
+        tid = current_user.tenant_id
+        # v95 — Parallel projected reads (was 3 sequential to_list(1000) full-doc fetches).
+        # Only fields we actually inspect are pulled.
+        rooms_task = db.rooms.find(
+            {'tenant_id': tid},
+            {'_id': 0, 'status': 1}
+        ).to_list(2000)
+        bookings_task = db.bookings.find(
+            {'tenant_id': tid, 'status': {'$in': ['confirmed', 'checked_in']}},
+            {'_id': 0, 'status': 1}
+        ).to_list(2000)
+        # Recent transactions only — anomaly check uses last 10 + overall mean (last 1000 is enough)
+        transactions_task = db.transactions.find(
+            {'tenant_id': tid},
+            {'_id': 0, 'amount': 1}
+        ).sort('created_at', -1).limit(1000).to_list(1000)
+        maintenance_task = db.maintenance_tasks.find(
+            {'tenant_id': tid, 'status': {'$ne': 'completed'}},
+            {'_id': 0, 'priority': 1}
+        ).to_list(2000)
+        rooms, bookings, transactions, maintenance_tasks = await _asyncio.gather(
+            rooms_task, bookings_task, transactions_task, maintenance_task
+        )
 
         anomalies = []
 
@@ -1254,12 +1266,7 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'detected_at': datetime.utcnow().isoformat()
             })
 
-        # 3. Check maintenance tasks
-        maintenance_tasks = await db.maintenance_tasks.find({
-            'tenant_id': current_user.tenant_id,
-            'status': {'$ne': 'completed'}
-        }, {'_id': 0}).to_list(1000)
-
+        # 3. Check maintenance tasks (already fetched in parallel block above)
         urgent_tasks = [t for t in maintenance_tasks if t.get('priority') == 'urgent']
         if len(urgent_tasks) > 5:
             anomalies.append({
@@ -1271,10 +1278,10 @@ async def get_anomaly_detection(current_user: User = Depends(get_current_user)):
                 'detected_at': datetime.utcnow().isoformat()
             })
 
-        # 4. Check revenue anomalies
+        # 4. Check revenue anomalies (transactions are sorted DESC by created_at, so newest first)
         if transactions:
             avg_transaction = sum(t.get('amount', 0) for t in transactions) / len(transactions)
-            recent_transactions = list(transactions[-10:])
+            recent_transactions = transactions[:10]  # newest 10 (already sorted DESC)
 
             if recent_transactions:
                 recent_avg = sum(t.get('amount', 0) for t in recent_transactions) / len(recent_transactions)
