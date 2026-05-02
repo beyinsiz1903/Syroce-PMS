@@ -144,6 +144,24 @@ export default defineConfig({
     target: 'es2020',
     cssMinify: true,
     chunkSizeWarningLimit: 500,
+    // Modulepreload kontrolü: Vite varsayılan olarak entry'den ulaşılan tüm
+    // vendor chunk'larını <link rel="modulepreload"> ile ilk paint'te indirir.
+    // Bu, lazy route'larda kullanılan ağır vendor'ları gizlice startup
+    // maliyetine ekler. Aşağıdaki filtre yalnızca gerçekten ilk render için
+    // gerekli vendor'ları preload listesinde bırakır; diğerleri lazy chunk
+    // dependency olarak kalır (sadece o page açılınca iner).
+    modulepreload: {
+      resolveDependencies(_filename, deps) {
+        const skip = [
+          'vendor-charts',  // recharts + d3 (~184 KB gzip), sadece dashboard'larda
+          'vendor-pdf',     // jspdf + html2canvas, sadece export'larda
+          'vendor-qr',      // html5-qrcode, sadece QR sayfalarında
+          'vendor-motion',  // framer-motion, sadece animasyonlu yüzeylerde
+          'vendor-socket',  // socket.io, login sonrası bağlanır
+        ];
+        return deps.filter((d) => !skip.some((s) => d.includes(s)));
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -154,15 +172,12 @@ export default defineConfig({
           if (id.includes('node_modules/@tanstack')) {
             return 'vendor-query';
           }
-          if (
-            id.includes('node_modules/recharts') ||
-            id.includes('node_modules/d3-') ||
-            id.includes('node_modules/victory-vendor') ||
-            id.includes('node_modules/chart.js') ||
-            id.includes('node_modules/react-chartjs-2')
-          ) {
-            return 'vendor-charts';
-          }
+          // recharts/d3/victory: manualChunks ile sabit "vendor-charts" yapmıyoruz.
+          // Tüm kullanıcılar (31 sayfa/component) lazy route arkasında olduğu
+          // için Rollup'ın doğal shared-chunk algoritması async chunk üretir
+          // ve entry modulepreload listesine düşmez. Manuel chunk adlandırması
+          // Vite'ın html transformation'ında bu chunk'ı "named static dep"
+          // olarak ele alıp ilk paint'e enjekte ediyordu (~184 KB gzip).
           if (
             id.includes('node_modules/jspdf') ||
             id.includes('node_modules/html2canvas') ||
