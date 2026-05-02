@@ -6,3 +6,9 @@ id = "2DJEC12LxcHeKjW0aaTYZ"
 uri = "file://.local/syroce_pms_audit_report.md"
 type = "text"
 title = "Syroce PMS — Kapsamlı Denetim Raporu (Düzeltilmiş v2)"
+
+[[outputs]]
+id = "0_gPOU7P0HTSvRg9y1rkv"
+uri = "file://.local/raporlar/UctanUcaTest_2026-05-02.md"
+type = "text"
+title = "Syroce PMS — Uçtan Uca Test Raporu (02.05.2026)"
