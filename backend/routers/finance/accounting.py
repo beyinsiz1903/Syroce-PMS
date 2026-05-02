@@ -703,11 +703,17 @@ async def get_cash_flow(
 @router.get("/accounting/reports/profit-loss")
 @cached(ttl=900, key_prefix="report_profit_loss")  # Cache for 15 min
 async def get_profit_loss_report(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
+    # Tur 3: defaults — last 30 days when params omitted
+    from datetime import date as _d, timedelta as _td
+    if not start_date:
+        start_date = (_d.today() - _td(days=30)).isoformat()
+    if not end_date:
+        end_date = _d.today().isoformat()
     # Get all income
     invoices = await db.accounting_invoices.find({
         'tenant_id': current_user.tenant_id,
@@ -753,10 +759,16 @@ async def get_profit_loss_report(
 
 @router.get("/accounting/reports/vat-report")
 async def get_vat_report(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
+    # Tur 3: defaults — last 30 days when params omitted
+    from datetime import date as _d, timedelta as _td
+    if not start_date:
+        start_date = (_d.today() - _td(days=30)).isoformat()
+    if not end_date:
+        end_date = _d.today().isoformat()
     # Sales VAT (collected)
     invoices = await db.accounting_invoices.find({
         'tenant_id': current_user.tenant_id,

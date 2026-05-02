@@ -1443,12 +1443,16 @@ async def kitchen_ticket(event_id: str,
 # ── Daily operations sheet (banquet team daily ops) ─────────────
 @router.get("/ops-sheet")
 async def ops_sheet(
-    date: str = Query(..., description="YYYY-MM-DD"),
+    date: str | None = Query(None, description="YYYY-MM-DD (default: today)"),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """All events whose date range covers *date*, with each space booking,
     setup style, pax, owner, and condensed agenda — printable per-day
     banquet team operations sheet."""
+    # Tur 3: default — today when omitted
+    if not date:
+        from datetime import date as _d
+        date = _d.today().isoformat()
     db = get_system_db()
     q = {
         "tenant_id": current_user.tenant_id,

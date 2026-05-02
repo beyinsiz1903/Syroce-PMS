@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -533,9 +534,19 @@ async def api_folio_detail(folio_id: str, current_user: User = Depends(get_curre
 # ══════════════════════════════════════════════
 
 @router.get("/dashboard/trends", tags=["dashboard"])
-async def api_dashboard_trends(start_date: str, end_date: str, current_user: User = Depends(get_current_user)):
+@cached(ttl=300, key_prefix="pms_dashboard_trends")  # Tur 3: tenant-aware cache (was timeout)
+async def api_dashboard_trends(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
     """Get operational trends for date range (arrivals, departures, occupancy, etc.)."""
-    from datetime import date as date_cls
+    from datetime import date as date_cls, timedelta as _td
+    # Tur 3: default range = last 7 days (30 caused timeout)
+    if not end_date:
+        end_date = date_cls.today().isoformat()
+    if not start_date:
+        start_date = (date_cls.today() - _td(days=7)).isoformat()
     try:
         sd = date_cls.fromisoformat(start_date)
         ed = date_cls.fromisoformat(end_date)

@@ -213,8 +213,8 @@ async def check_double_booking_conflicts(
 
 @router.get("/reservations/adr-visibility")
 async def get_adr_and_rate_visibility(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
@@ -224,6 +224,12 @@ async def get_adr_and_rate_visibility(
     - By rate code
     - By room type
     """
+    # Tur 3: defaults — last 30 days when omitted
+    from datetime import date as _d, timedelta as _td
+    if not start_date:
+        start_date = (_d.today() - _td(days=30)).isoformat()
+    if not end_date:
+        end_date = _d.today().isoformat()
     # Get all bookings in date range
     bookings = []
     async for booking in db.bookings.find({

@@ -180,13 +180,19 @@ async def cancel_room_block(
 @router.get("/pms/rooms/availability")
 @cached(ttl=120, key_prefix="rooms_availability")  # Cache for 2 min
 async def check_room_availability(
-    check_in: str,
-    check_out: str,
     request: Request,
+    check_in: str | None = None,
+    check_out: str | None = None,
     room_type: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Check room availability including blocks"""
+    # Tur 3: defaults — today / today+1 when omitted
+    from datetime import date as _d, timedelta as _td
+    if not check_in:
+        check_in = _d.today().isoformat()
+    if not check_out:
+        check_out = (_d.today() + _td(days=1)).isoformat()
     semantic_response = await availability_read_service.get_availability(
         tenant_id=current_user.tenant_id,
         check_in=check_in,

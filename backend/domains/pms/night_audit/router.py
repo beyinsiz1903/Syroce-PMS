@@ -237,10 +237,17 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 
 @router.get("/financial-report")
 async def get_financial_report(
-    start_date: str = Query(...), end_date: str = Query(...),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
+    # Tur 3: defaults — last 30 days when omitted
+    from datetime import date as _d, timedelta as _td
+    if not start_date:
+        start_date = (_d.today() - _td(days=30)).isoformat()
+    if not end_date:
+        end_date = _d.today().isoformat()
     from domains.pms.night_audit.financial_service import financial_service
     ctx = OperationContext.from_user(current_user)
     result = await financial_service.get_financial_report(ctx, start_date, end_date)

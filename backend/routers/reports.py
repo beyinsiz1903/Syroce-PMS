@@ -1529,10 +1529,14 @@ async def automatic_posting(
 
 @router.get("/night-audit/audit-report")
 async def get_audit_report(
-    audit_date: str,
+    audit_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get comprehensive night audit report"""
+    # Tur 3: default — today when omitted
+    if not audit_date:
+        from datetime import date as _d
+        audit_date = _d.today().isoformat()
     current_user = await get_current_user(credentials)
 
     # Get audit record

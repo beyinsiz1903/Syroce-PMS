@@ -738,7 +738,11 @@ async def get_staff_performance_table(
         'staff_performance': performance_table,
         'summary': {
             'total_tasks_completed': sum(s['tasks_completed'] for s in performance_table),
-            'avg_quality_score': round(sum(s['quality_score'] for s in performance_table) / len(performance_table), 1) if performance_table else 0,
+            'avg_quality_score': (
+                round(sum(s['quality_score'] for s in performance_table if s['quality_score'] is not None)
+                      / max(1, sum(1 for s in performance_table if s['quality_score'] is not None)), 1)
+                if any(s['quality_score'] is not None for s in performance_table) else 0
+            ),
             'top_performer': performance_table[0]['staff_name'] if performance_table else None,
             'needs_training': [s['staff_name'] for s in performance_table if s['overall_performance_score'] < 70]
         }
@@ -795,6 +799,7 @@ async def get_linen_inventory(
             linen_items.append(item_data)
 
     # If no items exist, create default inventory
+    seed_persist_failed = 0  # Tur 3: Atlas write fallback counter
     if not linen_items:
         default_items = [
             {'item_type': 'bed_sheet', 'size': 'single', 'reorder_level': 100},
@@ -821,7 +826,15 @@ async def get_linen_inventory(
 
             item_dict = new_item.model_dump()
             item_dict['created_at'] = item_dict['created_at'].isoformat()
-            await db.linen_inventory.insert_one(item_dict)
+            try:
+                await db.linen_inventory.insert_one(item_dict)
+            except Exception as e:
+                # Atlas 500-collection cap or write error: still return the seed payload
+                import logging
+                logging.getLogger(__name__).warning(
+                    "linen_inventory insert skipped (%s): %s", type(e).__name__, str(e)[:200]
+                )
+                seed_persist_failed += 1
 
             linen_items.append({
                 'id': new_item.id,
@@ -856,6 +869,8 @@ async def get_linen_inventory(
         'critical_items': critical_count,
         'total_reorder_cost': round(total_reorder_cost, 2),
         'inventory': linen_items,
+        'degraded': seed_persist_failed > 0,  # Tur 3: Atlas write fell back to in-memory seed
+        'seed_persist_failed_count': seed_persist_failed,
         'alerts': [
             f"🚨 {critical_count} items at critical stock level" if critical_count > 0 else None,
             f"⚠️ {low_stock_count} items need reordering" if low_stock_count > 0 else "✅ All items adequately stocked",

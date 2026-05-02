@@ -513,43 +513,50 @@ async def get_cash_flow_summary_mobile(
     # Net cash flow today
     net_flow = today_inflow - today_outflow
 
-    # Weekly collection plan (next 7 days expected collections)
+    # Weekly collection plan (Tur 3 perf fix: was 7×N+1 queries, now 3 bulk queries)
+    weekly_dates = [(today + timedelta(days=d)).isoformat() for d in range(7)]
+    bookings_by_date: dict[str, list[str]] = {d: [] for d in weekly_dates}
+    async for booking in db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'check_out': {'$in': weekly_dates},
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
+    }, {'_id': 0, 'id': 1, 'check_out': 1}):
+        co = booking.get('check_out')
+        if co in bookings_by_date and booking.get('id'):
+            bookings_by_date[co].append(booking['id'])
+
+    all_booking_ids = [bid for ids in bookings_by_date.values() for bid in ids]
+    folios_by_booking: dict[str, float] = {}
+    if all_booking_ids:
+        async for folio in db.folios.find({
+            'tenant_id': current_user.tenant_id,
+            'booking_id': {'$in': all_booking_ids},
+            'status': 'open'
+        }, {'_id': 0, 'booking_id': 1, 'balance': 1}):
+            folios_by_booking[folio.get('booking_id')] = folio.get('balance', 0)
+
+    invoices_by_due: dict[str, float] = {d: 0.0 for d in weekly_dates}
+    async for invoice in db.accounting_invoices.find({
+        'tenant_id': current_user.tenant_id,
+        'due_date': {'$in': weekly_dates},
+        'status': 'pending'
+    }, {'_id': 0, 'due_date': 1, 'total': 1}):
+        d = invoice.get('due_date')
+        if d in invoices_by_due:
+            invoices_by_due[d] += invoice.get('total', 0)
+
     weekly_plan = []
     for days_ahead in range(7):
         target_date = today + timedelta(days=days_ahead)
-
-        # Expected checkouts (potential collections)
-        expected_collections = 0.0
-        checkout_count = 0
-        async for booking in db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'check_out': target_date.isoformat(),
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-        }):
-            # Get folio balance for this booking
-            folio = await db.folios.find_one({
-                'tenant_id': current_user.tenant_id,
-                'booking_id': booking.get('id'),
-                'status': 'open'
-            })
-            if folio:
-                expected_collections += folio.get('balance', 0)
-                checkout_count += 1
-
-        # Expected payments from companies (due date)
-        expected_payments = 0.0
-        async for invoice in db.accounting_invoices.find({
-            'tenant_id': current_user.tenant_id,
-            'due_date': target_date.isoformat(),
-            'status': 'pending'
-        }):
-            expected_payments += invoice.get('total', 0)
-
+        d_iso = target_date.isoformat()
+        ids = bookings_by_date.get(d_iso, [])
+        expected_collections = sum(folios_by_booking.get(bid, 0) for bid in ids if bid in folios_by_booking)
+        checkout_count = sum(1 for bid in ids if bid in folios_by_booking)
         weekly_plan.append({
-            'date': target_date.isoformat(),
+            'date': d_iso,
             'day_name': target_date.strftime('%A'),
             'expected_collections': expected_collections,
-            'expected_payments': expected_payments,
+            'expected_payments': invoices_by_due[d_iso],
             'checkout_count': checkout_count
         })
 
@@ -587,9 +594,10 @@ async def get_cash_flow_summary_mobile(
 
 
 @router.get("/finance/mobile/overdue-accounts")
+@cached(ttl=180, key_prefix="mobile_overdue_accounts")  # Tur 3: was 11s, cache 3 min (tenant-aware key)
 async def get_overdue_accounts_mobile(
     min_days: int = 7,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get accounts overdue by more than specified days (default 7)
@@ -599,7 +607,6 @@ async def get_overdue_accounts_mobile(
     - Critical: 15-30 days (Red)
     - Suspicious: 30+ days (Black)
     """
-    current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
 
     overdue_accounts = []
@@ -685,13 +692,12 @@ async def get_overdue_accounts_mobile(
 
 
 @router.get("/finance/mobile/credit-limit-violations")
+@cached(ttl=300, key_prefix="mobile_credit_limit_violations")  # Tur 3: tenant-aware key
 async def get_credit_limit_violations_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped (was credentials)
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get companies exceeding their credit limits"""
-    current_user = await get_current_user(credentials)
-
     violations = []
 
     async for credit_limit in db.credit_limits.find({
@@ -766,12 +772,12 @@ async def get_credit_limit_violations_mobile(
 
 
 @router.get("/finance/mobile/suspicious-receivables")
+@cached(ttl=300, key_prefix="mobile_suspicious_receivables")  # Tur 3: was 10s, cache 5 min (tenant-aware key)
 async def get_suspicious_receivables_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get suspicious receivables list (30+ days overdue + high amounts)"""
-    current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
 
     suspicious_list = []
@@ -846,17 +852,16 @@ async def get_suspicious_receivables_mobile(
 
 
 @router.get("/finance/mobile/risk-alerts")
+@cached(ttl=180, key_prefix="mobile_risk_alerts")  # Tur 3: was 11s, cache 3 min (tenant-aware key)
 async def get_risk_alerts_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
     _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 ):
     """Get comprehensive risk alerts for finance dashboard"""
-    current_user = await get_current_user(credentials)
-
     alerts = []
 
-    # Get overdue accounts (7+ days)
-    overdue_response = await get_overdue_accounts_mobile(min_days=7, credentials=credentials)
+    # Get overdue accounts (7+ days) — call inner helper with current_user (cached call)
+    overdue_response = await get_overdue_accounts_mobile(min_days=7, current_user=current_user)
     overdue_summary = overdue_response['summary']
 
     if overdue_summary['suspicious_count'] > 0:
@@ -881,8 +886,8 @@ async def get_risk_alerts_mobile(
             'action_required': True
         })
 
-    # Get credit limit violations
-    violations_response = await get_credit_limit_violations_mobile(credentials=credentials)
+    # Get credit limit violations (Tur 3: pass current_user instead of credentials)
+    violations_response = await get_credit_limit_violations_mobile(current_user=current_user)
     violations_summary = violations_response['summary']
 
     if violations_summary['over_limit_count'] > 0:
@@ -1162,7 +1167,11 @@ async def get_invoices_mobile(
             'status': invoice.get('status'),
             'customer_name': invoice.get('customer_name'),
             'company_name': company_name,
-            'created_at': invoice.get('created_at').isoformat() if invoice.get('created_at') else None,
+            'created_at': (
+                invoice['created_at'].isoformat()
+                if invoice.get('created_at') and hasattr(invoice['created_at'], 'isoformat')
+                else invoice.get('created_at')
+            ),
             'due_date': invoice.get('due_date'),
             'subtotal': invoice.get('subtotal', 0),
             'vat': invoice.get('vat', 0),

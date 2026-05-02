@@ -633,12 +633,18 @@ async def get_rooms_with_filters(
 @router.get("/frontoffice/mobile/available-rooms")
 @cached(ttl=120, key_prefix="mobile_available_rooms")  # Cache for 2 min
 async def get_available_rooms_mobile(
-    check_in: str,
-    check_out: str,
+    check_in: str | None = None,
+    check_out: str | None = None,
     room_type: str | None = None,
     current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
 ):
     """Get available rooms for check-in"""
+    # Tur 3: defaults — today / today+1 when omitted
+    from datetime import date as _d, timedelta as _td
+    if not check_in:
+        check_in = _d.today().isoformat()
+    if not check_out:
+        check_out = (_d.today() + _td(days=1)).isoformat()
 
     query = {
         'tenant_id': current_user.tenant_id,

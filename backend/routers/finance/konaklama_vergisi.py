@@ -185,20 +185,34 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
 
 @router.get("/report")
 async def report(
-    year: int,
-    month: int,
+    year: int | None = None,
+    month: int | None = None,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
+    # Tur 3: defaults — current year/month when omitted
+    from datetime import date as _d
+    today = _d.today()
+    if year is None:
+        year = today.year
+    if month is None:
+        month = today.month
     return await _aggregate_period(current_user.tenant_id, year, month)
 
 
 @router.get("/declaration")
 async def declaration(
-    year: int,
-    month: int,
+    year: int | None = None,
+    month: int | None = None,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """GİB beyanname özeti — aylık konaklama vergisi beyannamesi."""
+    # Tur 3: defaults — current year/month when omitted
+    from datetime import date as _d
+    today = _d.today()
+    if year is None:
+        year = today.year
+    if month is None:
+        month = today.month
     agg = await _aggregate_period(current_user.tenant_id, year, month)
     tenant = await db.tenants.find_one(
         {"id": current_user.tenant_id}, {"_id": 0, "hotel_name": 1, "tax_no": 1, "hotel_id": 1}

@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/inventory")
 
 @router.get("/room-types", tags=["Room-Type Inventory"])
 async def get_room_type_inventory(
-    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    date: str | None = Query(None, description="Date in YYYY-MM-DD format (default: today)"),
     room_type: str | None = Query(None, description="Filter by room type"),
     tenant_id: str | None = Query(None, description="Tenant ID (auto-detected if omitted)"),
 ):
@@ -33,6 +33,9 @@ async def get_room_type_inventory(
     Returns sellable count per room type, broken down by lock category.
     If materialized view is empty, computes on-the-fly.
     """
+    # Tur 3: default date = today
+    if not date:
+        date = datetime.now(UTC).date().isoformat()
     # Validate date format
     try:
         datetime.fromisoformat(date)
@@ -77,11 +80,17 @@ async def get_room_type_inventory(
 
 @router.get("/room-types/summary", tags=["Room-Type Inventory"])
 async def get_inventory_summary(
-    start_date: str = Query(..., description="Start date YYYY-MM-DD"),
-    end_date: str = Query(..., description="End date YYYY-MM-DD"),
+    start_date: str | None = Query(None, description="Start date YYYY-MM-DD (default: today)"),
+    end_date: str | None = Query(None, description="End date YYYY-MM-DD (default: today + 30 days)"),
     tenant_id: str | None = Query(None, description="Tenant ID"),
 ):
     """Get aggregated inventory summary for a date range."""
+    # Tur 3: default range = today .. today + 30
+    today = datetime.now(UTC).date()
+    if not start_date:
+        start_date = today.isoformat()
+    if not end_date:
+        end_date = (today + timedelta(days=30)).isoformat()
     try:
         datetime.fromisoformat(start_date)
         datetime.fromisoformat(end_date)

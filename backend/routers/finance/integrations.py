@@ -163,7 +163,14 @@ async def get_integration_logs(limit: int = 20, current_user: User = Depends(get
 
 
 @router.get("/finance/budget-vs-actual")
-async def budget_vs_actual(month: str, current_user: User = Depends(get_current_user)):
+async def budget_vs_actual(
+    month: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    # Tur 3: default — current month YYYY-MM when omitted
+    if not month:
+        from datetime import date as _d
+        month = _d.today().strftime('%Y-%m')
     # Simulated budget data
     budget = {'rooms': 150000, 'fnb': 50000, 'other': 20000, 'total': 220000}
     actual = {'rooms': 165000, 'fnb': 48000, 'other': 22000, 'total': 235000}

@@ -94,11 +94,11 @@ async def kiosk_checkin(checkin_data: dict, current_user: User = Depends(get_cur
 
 
 @router.get("/frontdesk/audit-checklist")
+@cached(ttl=180, key_prefix="frontdesk_audit_checklist")  # Tur 3: was 7s, cache 3 min (tenant-aware)
 async def get_frontdesk_audit_checklist(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user)  # Tur 3: tenant-scoped cache key
 ):
     """Front desk için night audit öncesi checklist"""
-    current_user = await get_current_user(credentials)
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_audit_checklist(ctx)
     return result.data
