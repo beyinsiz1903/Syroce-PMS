@@ -445,11 +445,8 @@ const ReservationSidebar = ({
             variant="outline" 
             className="w-full"
             onClick={() => {
-              if (onEditReservation) {
-                onEditReservation(booking);
-              } else {
-                console.log('Edit reservation:', booking.id);
-              }
+              if (onEditReservation) onEditReservation(booking);
+              // else: parent did not wire handler — button is a no-op here
             }}
           >
             Edit Reservation
@@ -458,11 +455,8 @@ const ReservationSidebar = ({
             variant="outline" 
             className="w-full"
             onClick={() => {
-              if (onSendConfirmation) {
-                onSendConfirmation(booking);
-              } else {
-                console.log('Send confirmation for:', booking.id);
-              }
+              if (onSendConfirmation) onSendConfirmation(booking);
+              // else: parent did not wire handler — button is a no-op here
             }}
           >
             Send Confirmation

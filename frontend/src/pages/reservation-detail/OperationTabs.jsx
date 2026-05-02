@@ -25,7 +25,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
         const co = booking?.check_out?.toString().slice(0, 10) || '';
         const res = await axios.get(`/pms/available-rooms-by-type?check_in=${ci}&check_out=${co}`);
         setRoomTypes(res.data.room_types || []);
-      } catch (e) { console.log('Room load error:', e); }
+      } catch (_e) { /* room load failed — empty list is acceptable UX */ }
       setLoadingRooms(false);
     };
     loadRooms();

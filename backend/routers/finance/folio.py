@@ -175,63 +175,89 @@ async def get_pending_ar(
     """Get pending accounts receivable (company folios with outstanding balances)"""
 
     try:
-        # Get all companies
-        companies = await db.companies.find({
-            'tenant_id': current_user.tenant_id
-        }, {'_id': 0}).to_list(1000)
+        # v95 — Batch lookup: was N+1 (1 query per company × ~100 companies = 4.5s).
+        # Now: 1 companies query + 1 folios query, then in-memory grouping.
+        tenant_id = current_user.tenant_id
+        companies = await db.companies.find(
+            {'tenant_id': tenant_id}, {'_id': 0}
+        ).to_list(1000)
+        if not companies:
+            return []
 
+        company_ids = [c['id'] for c in companies]
+        company_map = {c['id']: c for c in companies}
+
+        # Single query for all open folios with balance > 0
+        all_folios = await db.folios.find(
+            {
+                'tenant_id': tenant_id,
+                'company_id': {'$in': company_ids},
+                'status': 'open',
+                'balance': {'$gt': 0},
+            },
+            {'_id': 0, 'company_id': 1, 'balance': 1, 'created_at': 1},
+        ).to_list(10000)
+
+        if not all_folios:
+            return []
+
+        # Group folios by company
+        folios_by_company: dict[str, list] = {}
+        for f in all_folios:
+            folios_by_company.setdefault(f['company_id'], []).append(f)
+
+        now = datetime.now(UTC)
         ar_data = []
 
-        for company in companies:
-            # Get company's open folios with balance
-            company_folios = await db.folios.find({
-                'tenant_id': current_user.tenant_id,
-                'company_id': company['id'],
-                'status': 'open'
-            }, {'_id': 0}).to_list(1000)
+        for cid, folios in folios_by_company.items():
+            company = company_map.get(cid)
+            if not company:
+                continue
 
-            # Use balance field directly
-            folios_with_balance = [f for f in company_folios if f.get('balance', 0) > 0]
-            total_outstanding = sum(f.get('balance', 0) for f in folios_with_balance)
+            total_outstanding = sum(f.get('balance', 0) for f in folios)
+            if total_outstanding <= 0:
+                continue
 
-            if total_outstanding > 0 and folios_with_balance:
-                # Find oldest folio
-                oldest_folio = min(folios_with_balance, key=lambda f: f.get('created_at', datetime.now(UTC).isoformat()))
-                oldest_date = datetime.fromisoformat(oldest_folio['created_at'].replace('Z', '+00:00'))
-                days_outstanding = (datetime.now(UTC) - oldest_date).days
+            # Aging calculation
+            aging = {'0-7': 0, '8-14': 0, '15-30': 0, '30+': 0}
+            oldest_iso = None
+            oldest_days = 0
+            for folio in folios:
+                created_at = folio.get('created_at') or now.isoformat()
+                try:
+                    folio_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    folio_dt = now
+                days = (now - folio_dt).days
+                balance = folio.get('balance', 0)
+                if days <= 7:
+                    aging['0-7'] += balance
+                elif days <= 14:
+                    aging['8-14'] += balance
+                elif days <= 30:
+                    aging['15-30'] += balance
+                else:
+                    aging['30+'] += balance
+                if oldest_iso is None or created_at < oldest_iso:
+                    oldest_iso = created_at
+                    oldest_days = days
 
-                # Calculate aging
-                aging = {'0-7': 0, '8-14': 0, '15-30': 0, '30+': 0}
-                for folio in folios_with_balance:
-                    days = (datetime.now(UTC) - datetime.fromisoformat(folio['created_at'].replace('Z', '+00:00'))).days
-                    balance = folio.get('balance', 0)
-                    if days <= 7:
-                        aging['0-7'] += balance
-                    elif days <= 14:
-                        aging['8-14'] += balance
-                    elif days <= 30:
-                        aging['15-30'] += balance
-                    else:
-                        aging['30+'] += balance
+            ar_data.append({
+                'company_id': cid,
+                'company_name': company.get('name', 'Unknown'),
+                'corporate_code': company.get('corporate_code', ''),
+                'contact_person': company.get('contact_person', ''),
+                'contact_email': company.get('contact_email', ''),
+                'contact_phone': company.get('contact_phone', ''),
+                'payment_terms': company.get('payment_terms', 'Net 30'),
+                'total_outstanding': round(total_outstanding, 2),
+                'open_folios_count': len(folios),
+                'oldest_invoice_date': oldest_iso,
+                'days_outstanding': oldest_days,
+                'aging': aging,
+            })
 
-                ar_data.append({
-                    'company_id': company['id'],
-                    'company_name': company.get('name', 'Unknown'),
-                    'corporate_code': company.get('corporate_code', ''),
-                    'contact_person': company.get('contact_person', ''),
-                    'contact_email': company.get('contact_email', ''),
-                    'contact_phone': company.get('contact_phone', ''),
-                    'payment_terms': company.get('payment_terms', 'Net 30'),
-                    'total_outstanding': round(total_outstanding, 2),
-                    'open_folios_count': len(folios_with_balance),
-                    'oldest_invoice_date': oldest_folio['created_at'],
-                    'days_outstanding': days_outstanding,
-                    'aging': aging
-                })
-
-        # Sort by days outstanding (oldest first)
         ar_data.sort(key=lambda x: x['days_outstanding'], reverse=True)
-
         return ar_data
 
     except Exception as e:

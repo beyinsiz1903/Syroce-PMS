@@ -132,13 +132,7 @@ const MobileHousekeeping = ({ user }) => {
       
       setStaffPerformance(perfRes.data);
       setCleaningRequests(cleaningReqRes.data.categories?.pending || []);
-      
-      console.log('🔍 Housekeeping Data Loaded:', {
-        departures: dueOutRooms.length,
-        arrivals: arrivalRooms.length,
-        cleaningRequests: cleaningReqRes.data.categories?.pending?.length || 0
-      });
-      
+
       // Get all rooms for filtering
       const roomsRes = await axios.get('/pms/rooms');
       setAllRooms(roomsRes.data || []);

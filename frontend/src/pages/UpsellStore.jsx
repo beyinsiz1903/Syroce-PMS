@@ -38,8 +38,8 @@ const UpsellStore = ({ bookingId }) => {
         setOffers(converted);
         setLoading(false);
         return;
-      } catch (err) {
-        console.log('AI products not available, trying guest endpoint');
+      } catch (_err) {
+        // AI products not available — fall back to guest upsell endpoint below
       }
       
       // Fallback to original endpoint

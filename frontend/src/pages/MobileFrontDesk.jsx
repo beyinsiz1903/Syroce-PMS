@@ -78,8 +78,6 @@ const MobileFrontDesk = ({ user }) => {
   // COLLAPSIBLE STATE
   const [arrivalsExpanded, setArrivalsExpanded] = useState(false);
   const [departuresExpanded, setDeparturesExpanded] = useState(false);
-  
-  console.log('🔍 Collapsible States:', { arrivalsExpanded, departuresExpanded });
 
   useEffect(() => {
     loadData();
@@ -106,12 +104,6 @@ const MobileFrontDesk = ({ user }) => {
       setInHouse(inHouseRes.data.in_house || []);
       setRoomAvailability(roomsRes.data);
       setAllRooms(roomsRes.data.rooms || []);
-      
-      console.log('🔍 Front Desk Data Loaded:', {
-        arrivals: arrivalsRes.data.count,
-        departures: departuresRes.data.count,
-        inHouse: inHouseRes.data.count
-      });
     } catch (error) {
       console.error('Failed to load front desk data:', error);
       toast.error('✗ Yükleme');

@@ -509,7 +509,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         old_check_in: moveData.oldCheckIn, new_check_in: moveData.newCheckIn,
         reason: moveReason, moved_by: user.name,
         timestamp: new Date().toISOString()
-      }).catch(err => console.log('History logging failed:', err));
+      }).catch(() => { /* history logging best-effort, silent on failure */ });
 
       toast.success(`Rezervasyon ${moveData.newRoom} numarali odaya tasindi!`);
       setShowMoveReasonDialog(false);

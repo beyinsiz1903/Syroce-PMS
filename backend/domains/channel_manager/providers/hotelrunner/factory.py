@@ -69,7 +69,39 @@ async def get_provider(tenant_id: str):
         )
         if fallback_conn and fallback_conn.get("token"):
             creds = {"token": fallback_conn["token"], "hr_id": fallback_conn.get("hr_id", "")}
-            logger.warning("Using legacy plaintext credentials for HotelRunner tenant=%s — migrate ASAP", tenant_id)
+            # v95 — Auto-migrate ONLY when vault is empty (create-if-absent guard).
+            # Never overwrite an existing vault secret with plaintext.
+            try:
+                existing = None
+                try:
+                    existing = await sm.get_provider_credentials(
+                        tenant_id, "hotelrunner", property_id
+                    )
+                except Exception:
+                    existing = None
+                if existing and existing.get("token"):
+                    logger.warning(
+                        "[HR-CREDS] Vault has token for tenant=%s property=%s but Tier-1 missed; "
+                        "using plaintext fallback transiently (no overwrite).",
+                        tenant_id, property_id,
+                    )
+                else:
+                    await sm.store_provider_credentials(
+                        tenant_id=tenant_id,
+                        provider="hotelrunner",
+                        property_id=property_id,
+                        credentials={"token": creds["token"], "hr_id": creds["hr_id"]},
+                        actor="hotelrunner.factory.auto_migrate",
+                    )
+                    logger.info(
+                        "[HR-CREDS] Auto-migrated plaintext token → vault for tenant=%s property=%s",
+                        tenant_id, property_id,
+                    )
+            except Exception as me:
+                logger.warning(
+                    "Using legacy plaintext credentials for HotelRunner tenant=%s — auto-migrate guard failed: %s",
+                    tenant_id, me,
+                )
         else:
             raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 

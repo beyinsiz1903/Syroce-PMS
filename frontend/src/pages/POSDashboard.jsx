@@ -201,7 +201,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <TabsContent value="menu" className="mt-6">
             <POSMenuItems
               outletId={currentOutletId}
-              onItemSelect={(item) => console.log('Selected:', item)}
+              onItemSelect={() => { /* hook for cart add — implemented in POSOrderEntry */ }}
             />
           </TabsContent>
 

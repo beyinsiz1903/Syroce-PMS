@@ -4,6 +4,7 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 """
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,6 +20,11 @@ from domains.channel_manager.providers.exely.provider import ExelyProvider
 logger = logging.getLogger(__name__)
 
 PROVIDER = "exely"
+
+# v95 — Per-(tenant,hotel) rate limit for plaintext-creds warning to stop log spam.
+# Format: {(tenant_id, hotel_code): epoch_seconds_of_last_warning}
+_PLAINTEXT_WARN_CACHE: dict[tuple[str, str], float] = {}
+_PLAINTEXT_WARN_INTERVAL_SEC = 3600  # warn at most once per hour per connection
 
 
 async def _resolve_exely_credentials(
@@ -62,15 +68,60 @@ async def _resolve_exely_credentials(
             {"tenant_id": tenant_id, "hotel_code": hotel_code}, {"_id": 0}
         )
     if conn and conn.get("username") and conn.get("password"):
-        logger.warning(
-            f"[EXELY-CREDS] Using legacy plaintext credentials for tenant {tenant_id}, "
-            f"hotel {hotel_code}. Re-save via /api/exely/connect to migrate to vault."
-        )
-        return {
+        plaintext = {
             "username": conn["username"],
             "password": conn["password"],
             "endpoint_url": conn.get("endpoint_url", ""),
         }
+
+        # v95 — Auto-migrate plaintext → SecretsManager only when vault is EMPTY
+        # (create-if-absent). We must never overwrite an existing vault secret —
+        # plaintext can be stale or for a different property_id alias.
+        cache_key = (tenant_id, hotel_code)
+        now = time.time()
+        try:
+            sm = get_secrets_manager()
+            existing = None
+            try:
+                existing = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
+            except Exception:
+                existing = None
+
+            if existing and (existing.get("username") or existing.get("password")):
+                # Vault already has a secret for this identity — do not overwrite.
+                # Tier 1 lookup must have failed transiently; just rate-limit the warning.
+                last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
+                if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
+                    logger.warning(
+                        "[EXELY-CREDS] Vault secret exists for %s/%s but Tier-1 lookup "
+                        "missed it; falling back to plaintext (transient).",
+                        tenant_id, hotel_code,
+                    )
+                    _PLAINTEXT_WARN_CACHE[cache_key] = now
+            else:
+                await sm.store_provider_credentials(
+                    tenant_id=tenant_id,
+                    provider=PROVIDER,
+                    property_id=hotel_code,
+                    credentials=plaintext,
+                    actor="exely_pull_worker.auto_migrate",
+                )
+                logger.info(
+                    "[EXELY-CREDS] Auto-migrated plaintext creds → vault for %s/%s",
+                    tenant_id, hotel_code,
+                )
+                _PLAINTEXT_WARN_CACHE[cache_key] = now
+        except Exception as me:
+            last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
+            if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
+                logger.warning(
+                    "[EXELY-CREDS] Using legacy plaintext for tenant %s, hotel %s "
+                    "(auto-migrate guard failed: %s). Re-save via /api/exely/connect.",
+                    tenant_id, hotel_code, me,
+                )
+                _PLAINTEXT_WARN_CACHE[cache_key] = now
+
+        return plaintext
 
     return None
 

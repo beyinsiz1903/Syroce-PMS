@@ -569,27 +569,36 @@ async def search_reservations(
         # Find bookings
         bookings = await db.bookings.find(filter_dict, {'_id': 0}).sort('check_in', -1).limit(50).to_list(50)
 
-        # Enrich with guest and room data — MUST be tenant-scoped to prevent IDOR
-        # (booking.guest_id/room_id come from the tenant-filtered bookings query, but
-        #  we still defense-in-depth filter the lookup itself in case of bad data)
-        for booking in bookings:
-            if booking.get('guest_id'):
-                guest = await db.guests.find_one(
-                    {'id': booking['guest_id'], 'tenant_id': current_user.tenant_id},
-                    {'_id': 0},
-                )
-                if guest:
-                    booking['guest_phone'] = guest.get('phone')
-                    booking['guest_email'] = guest.get('email')
+        # v95 — Batch enrich with guest/room data via single $in lookup (was N+1, ~14s).
+        # Tenant-scoped on both ends to prevent IDOR.
+        guest_ids = {b['guest_id'] for b in bookings if b.get('guest_id')}
+        room_ids = {b['room_id'] for b in bookings if b.get('room_id')}
 
-            if booking.get('room_id'):
-                room = await db.rooms.find_one(
-                    {'id': booking['room_id'], 'tenant_id': current_user.tenant_id},
-                    {'_id': 0},
-                )
-                if room:
-                    booking['room_number'] = room.get('room_number')
-                    booking['room_type'] = room.get('room_type')
+        guests_map: dict[str, dict] = {}
+        if guest_ids:
+            async for g in db.guests.find(
+                {'tenant_id': current_user.tenant_id, 'id': {'$in': list(guest_ids)}},
+                {'_id': 0, 'id': 1, 'phone': 1, 'email': 1},
+            ):
+                guests_map[g['id']] = g
+
+        rooms_map: dict[str, dict] = {}
+        if room_ids:
+            async for r in db.rooms.find(
+                {'tenant_id': current_user.tenant_id, 'id': {'$in': list(room_ids)}},
+                {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
+            ):
+                rooms_map[r['id']] = r
+
+        for booking in bookings:
+            guest = guests_map.get(booking.get('guest_id'))
+            if guest:
+                booking['guest_phone'] = guest.get('phone')
+                booking['guest_email'] = guest.get('email')
+            room = rooms_map.get(booking.get('room_id'))
+            if room:
+                booking['room_number'] = room.get('room_number')
+                booking['room_type'] = room.get('room_type')
 
         return {
             'bookings': bookings,

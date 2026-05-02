@@ -172,7 +172,7 @@ export function InvoiceTab({ booking, bookingId }) {
         const items = res.data?.charges || [];
         setCharges(items);
         setSelectedIds(new Set(items.map(c => c.id)));
-      } catch (e) { console.log('Charge load error:', e); }
+      } catch (_e) { /* charge load failed — empty list is acceptable UX */ }
       setLoadingCharges(false);
     };
     loadCharges();

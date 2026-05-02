@@ -272,24 +272,61 @@ class CacheWarmer:
                 {'_id': 0, 'check_in': 1, 'check_out': 1}
             ).to_list(5000)
 
-            booking_occupied = 0
+            # v95 — Track unique active rooms (not booking count) so that
+            # double-booked rooms or overlapping holds don't inflate occupancy.
+            active_room_ids: set[str] = set()
+            booking_occupied_count = 0  # for total_guests display
             today_checkins = 0
             for b in bookings_today:
                 ci = str(b.get('check_in', ''))[:10]
                 co = str(b.get('check_out', ''))[:10]
+                rid = b.get('room_id')
                 if ci <= today and co > today:
-                    booking_occupied += 1
+                    booking_occupied_count += 1
+                    if rid:
+                        active_room_ids.add(rid)
                 if ci == today:
                     today_checkins += 1
 
-            # Single source of truth: bookings overlapping today (date-only).
+            # Single source of truth: unique rooms with an overlapping booking.
+            booking_occupied = len(active_room_ids)
             occupied_rooms = booking_occupied
-            total_guests = booking_occupied
+            total_guests = booking_occupied_count
             if abs(physically_occupied - booking_occupied) >= 3:
-                logger.warning(
-                    "[OCCUPANCY-DRIFT] tenant=%s rooms.status=occupied=%d but booking_overlap=%d",
-                    tenant_id, physically_occupied, booking_occupied,
-                )
+                # v95 — Auto-reconcile: bring rooms.status in line with active bookings.
+                # active_room_ids already computed above (unique rooms truth).
+                try:
+                    # Mark active rooms as occupied
+                    if active_room_ids:
+                        await self.db.rooms.update_many(
+                            {
+                                'tenant_id': tenant_id,
+                                'id': {'$in': list(active_room_ids)},
+                                'status': {'$ne': 'occupied'},
+                            },
+                            {'$set': {'status': 'occupied',
+                                      'status_synced_at': datetime.now(UTC).isoformat()}},
+                        )
+                    # Free rooms previously marked occupied that are no longer in any booking
+                    await self.db.rooms.update_many(
+                        {
+                            'tenant_id': tenant_id,
+                            'status': 'occupied',
+                            'id': {'$nin': list(active_room_ids)} if active_room_ids else {'$exists': True},
+                            '$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}],
+                        },
+                        {'$set': {'status': 'available',
+                                  'status_synced_at': datetime.now(UTC).isoformat()}},
+                    )
+                    logger.info(
+                        "[OCCUPANCY-RECONCILE] tenant=%s reconciled rooms.status to %d active bookings (was %d marked occupied)",
+                        tenant_id, len(active_room_ids), physically_occupied,
+                    )
+                except Exception as recon_err:
+                    logger.warning(
+                        "[OCCUPANCY-DRIFT] tenant=%s drift=%d but auto-reconcile failed: %s",
+                        tenant_id, abs(physically_occupied - booking_occupied), recon_err,
+                    )
 
             # Tenant currency for unified display.
             try:
