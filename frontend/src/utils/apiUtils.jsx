@@ -28,7 +28,7 @@ export const fetchWithCache = async (endpoint, options = {}, cacheOptions = {}) 
   if (enabled && (!options.method || options.method === 'GET')) {
     const cached = getCache(cacheKey);
     if (cached) {
-      console.log(`🎯 Cache hit: ${endpoint}`);
+      if (import.meta.env.DEV) console.log(`🎯 Cache hit: ${endpoint}`);
       return cached;
     }
   }
@@ -54,7 +54,7 @@ export const fetchWithCache = async (endpoint, options = {}, cacheOptions = {}) 
     // Cache response if enabled and GET request
     if (enabled && (!options.method || options.method === 'GET')) {
       setCache(cacheKey, data, ttl);
-      console.log(`💾 Cached: ${endpoint}`);
+      if (import.meta.env.DEV) console.log(`💾 Cached: ${endpoint}`);
     }
     
     return data;

@@ -2577,4 +2577,134 @@ async def get_compliance_certifications(current_user: User = Depends(get_current
     }
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# v95.4 — Maintenance: Oda statüsü ↔ rezervasyon defteri sync
+# UctanUcaTest 2026-05-02: dashboard "OCCUPANCY-DRIFT" uyarısı için kalıcı
+# çözüm. KPI zaten booking ledger'ı kaynak alıyor, bu endpoint rooms.status
+# tarafındaki tortu veriyi (eski non-atomic flow'lardan kalan) düzeltir.
+# ──────────────────────────────────────────────────────────────────────────────
+@router.post("/admin/maintenance/sync-room-status")
+async def sync_room_status(
+    dry_run: bool = True,
+    current_user: User = Depends(require_super_admin),
+):
+    """Bookings ledger'ına göre rooms.status alanını yeniden hizala.
+
+    Kural: bugünü kapsayan aktif booking (checked_in / confirmed&today) varsa
+    ilgili oda 'occupied'; yoksa 'occupied' tortusu temizlenir.
+
+    Parametre:
+      dry_run=True (varsayılan) → sadece tespit, yazma yok.
+      dry_run=False             → fiili güncelleme.
+
+    Sadece SUPER_ADMIN. Tek tenant kapsamında çalışır.
+    """
+    tenant_id = current_user.tenant_id
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Aktif overlap booking'leri (date-only karşılaştırma — dashboard ile aynı)
+    bookings = await db.bookings.find(
+        {
+            'tenant_id': tenant_id,
+            'status': {'$in': ['checked_in', 'confirmed', 'guaranteed']},
+        },
+        {'_id': 0, 'room_id': 1, 'check_in': 1, 'check_out': 1, 'status': 1},
+    ).to_list(10000)
+
+    occupied_room_ids: set[str] = set()
+    for b in bookings:
+        rid = b.get('room_id')
+        if not rid:
+            continue
+        ci = str(b.get('check_in', ''))[:10]
+        co = str(b.get('check_out', ''))[:10]
+        if ci <= today and co > today:
+            occupied_room_ids.add(rid)
+
+    rooms = await db.rooms.find(
+        {'tenant_id': tenant_id},
+        {'_id': 0, 'id': 1, 'room_number': 1, 'status': 1},
+    ).to_list(5000)
+
+    # Hedef statüler:
+    #   - mark_occupied → 'occupied' (aktif booking var ama oda farklı statüde)
+    #   - clear_occupied → 'dirty' (aktif booking yok ama oda 'occupied' tortusu)
+    # 'dirty' tercih edildi çünkü atomic_checkin_checkout.checkout flow'u da
+    # check-out sonrası odayı 'dirty' yapar; housekeeping zorunlu kontrolü
+    # böylece atlanmaz. Doğrudan 'available' yapmak güvenli değil (önceki
+    # konuğun durumunu temizleme garantisi yok).
+    to_mark_occupied: list[dict[str, Any]] = []
+    to_clear_occupied: list[dict[str, Any]] = []
+
+    for r in rooms:
+        rid = r.get('id')
+        cur_status = r.get('status')
+        if rid in occupied_room_ids:
+            if cur_status != 'occupied':
+                to_mark_occupied.append({
+                    'id': rid,
+                    'room_number': r.get('room_number'),
+                    'old_status': cur_status,
+                })
+        else:
+            if cur_status == 'occupied':
+                to_clear_occupied.append({
+                    'id': rid,
+                    'room_number': r.get('room_number'),
+                    'old_status': cur_status,
+                })
+
+    applied_occupied = 0
+    applied_cleared = 0
+    if not dry_run:
+        for r in to_mark_occupied:
+            res = await db.rooms.update_one(
+                {'id': r['id'], 'tenant_id': tenant_id},
+                {'$set': {'status': 'occupied', 'updated_at': datetime.now(UTC).isoformat()}},
+            )
+            if res.modified_count:
+                applied_occupied += 1
+        for r in to_clear_occupied:
+            res = await db.rooms.update_one(
+                {'id': r['id'], 'tenant_id': tenant_id},
+                {'$set': {'status': 'dirty', 'current_booking_id': None,
+                          'updated_at': datetime.now(UTC).isoformat()}},
+            )
+            if res.modified_count:
+                applied_cleared += 1
+
+        await log_audit_event(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            action='sync_room_status',
+            entity_type='maintenance',
+            entity_id='rooms',
+            details=f"Oda statüsü senkronu: +{applied_occupied} occupied, -{applied_cleared} cleared",
+            db=db,
+        )
+
+    return {
+        'tenant_id': tenant_id,
+        'dry_run': dry_run,
+        'total_rooms': len(rooms),
+        'active_bookings_today': len(occupied_room_ids),
+        'drift_detected': {
+            'should_be_occupied': len(to_mark_occupied),
+            'should_be_freed': len(to_clear_occupied),
+        },
+        'preview': {
+            'mark_occupied': to_mark_occupied[:20],
+            'clear_occupied': to_clear_occupied[:20],
+        },
+        'applied': {
+            'marked_occupied': applied_occupied,
+            'cleared_occupied': applied_cleared,
+        } if not dry_run else None,
+        'message': (
+            'Drift tespit edildi, dry_run=true. Uygulamak için ?dry_run=false gönderin.'
+            if dry_run and (to_mark_occupied or to_clear_occupied)
+            else 'Drift yok, oda statüsü hizalı.' if dry_run
+            else f'Senkron tamamlandı: {applied_occupied} occupied + {applied_cleared} freed.'
+        ),
+    }
 

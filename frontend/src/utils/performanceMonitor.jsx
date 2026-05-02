@@ -196,9 +196,10 @@ class PerformanceMonitor {
   }
 
   /**
-   * Print performance report to console
+   * Print performance report to console (development only)
    */
   printReport() {
+    if (!import.meta.env.DEV) return;
     const summary = this.getSummary();
     
     console.log('📊 Performance Report');
@@ -245,7 +246,7 @@ class PerformanceMonitor {
 const performanceMonitor = new PerformanceMonitor();
 
 // Auto-print report every 5 minutes in development
-if (process.env.NODE_ENV === 'development') {
+if (import.meta.env.DEV) {
   setInterval(() => {
     performanceMonitor.printReport();
   }, 5 * 60 * 1000);

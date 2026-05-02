@@ -125,8 +125,8 @@ export function measurePerformance(componentName) {
       const duration = endTime - startTime;
       
       if (duration > 16) { // More than one frame (60fps)
-        console.warn(`⚠️ ${componentName} render took ${duration.toFixed(2)}ms`);
-      } else {
+        if (import.meta.env.DEV) console.warn(`⚠️ ${componentName} render took ${duration.toFixed(2)}ms`);
+      } else if (import.meta.env.DEV) {
         console.log(`✅ ${componentName} render took ${duration.toFixed(2)}ms`);
       }
       
