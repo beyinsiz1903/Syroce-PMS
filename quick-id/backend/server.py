@@ -1041,22 +1041,43 @@ async def startup_tasks():
 
 
 # ===== AUTH ROUTES =====
-@app.get("/api/health", tags=["Sağlık"], summary="Sistem sağlık kontrolü")
-async def health():
-    # MongoDB bağlantı kontrolü
+async def _health_payload():
+    """Ortak sağlık çıktısı — root /health ve /api/health için aynı yanıt."""
     db_status = "healthy"
     try:
         await client.admin.command("ping")
     except Exception:
         db_status = "unhealthy"
-
-    status = "healthy" if db_status == "healthy" else "degraded"
     return {
-        "status": status,
+        "status": "healthy" if db_status == "healthy" else "degraded",
         "service": "Quick ID Reader",
         "version": "3.1.0",
         "database": db_status,
     }
+
+
+@app.get("/", tags=["Sağlık"], summary="Servis kök bilgisi", include_in_schema=False)
+async def root():
+    """Servis kök sayfası — yön bulmak için kısa bilgi."""
+    return {
+        "service": "Quick ID Reader",
+        "version": "3.1.0",
+        "docs": "/api/docs",
+        "health": "/health",
+        "health_api": "/api/health",
+    }
+
+
+@app.get("/health", tags=["Sağlık"], summary="Sağlık kontrolü (kısa yol)", include_in_schema=False)
+async def health_short():
+    """k8s/load-balancer probe'ları için kısa /health yolu."""
+    return await _health_payload()
+
+
+@app.get("/api/health", tags=["Sağlık"], summary="Sistem sağlık kontrolü")
+async def health():
+    # MongoDB bağlantı kontrolü
+    return await _health_payload()
 
 @app.get("/api/rate-limits", tags=["Sağlık"], summary="Rate limit bilgileri")
 async def get_rate_limits():
