@@ -14,6 +14,7 @@ except ImportError:
 
 from core.database import db
 from core.helpers import require_module
+from core.sanitize import sanitize_plaintext
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import (
@@ -64,6 +65,14 @@ async def get_invoices(
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     invoices = await db.invoices.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    # v95 — render-time scrub for legacy rows that contain XML/HTML fragments
+    # (e.g. test seeds from earlier security probes). Persisted on next write.
+    _SCRUB_FIELDS = ('billing_name', 'billing_tax_id', 'customer_name',
+                     'customer_email', 'notes')
+    for inv in invoices:
+        for f in _SCRUB_FIELDS:
+            if f in inv and isinstance(inv[f], str):
+                inv[f] = sanitize_plaintext(inv[f], max_length=500)
     return invoices
 
 

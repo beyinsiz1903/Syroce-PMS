@@ -353,14 +353,23 @@ async def get_employee_performance(
 
     hk_performance = []
     async for staff in db.housekeeping_tasks.aggregate(hk_pipeline):
+        avg = staff.get('avg_duration')
+        if avg is None:
+            rating = 'N/A'
+        elif avg < 20:
+            rating = 'Excellent'
+        elif avg < 30:
+            rating = 'Good'
+        else:
+            rating = 'Needs Improvement'
         hk_performance.append({
-            'staff_name': staff['_id'] or 'Unassigned',
+            'staff_name': staff.get('_id') or 'Unassigned',
             'department': 'housekeeping',
-            'total_tasks': staff['total_tasks'],
-            'avg_duration_minutes': round(staff['avg_duration'], 1) if staff['avg_duration'] else 0,
-            'min_duration_minutes': round(staff['min_duration'], 1) if staff['min_duration'] else 0,
-            'max_duration_minutes': round(staff['max_duration'], 1) if staff['max_duration'] else 0,
-            'efficiency_rating': 'Excellent' if staff['avg_duration'] < 20 else 'Good' if staff['avg_duration'] < 30 else 'Needs Improvement'
+            'total_tasks': staff.get('total_tasks', 0),
+            'avg_duration_minutes': round(avg, 1) if avg is not None else 0,
+            'min_duration_minutes': round(staff['min_duration'], 1) if staff.get('min_duration') is not None else 0,
+            'max_duration_minutes': round(staff['max_duration'], 1) if staff.get('max_duration') is not None else 0,
+            'efficiency_rating': rating
         })
 
     # Front Desk Performance (Check-in duration)

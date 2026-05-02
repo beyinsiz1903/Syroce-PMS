@@ -1072,18 +1072,41 @@ async def get_active_cleaning_timers(current_user: User = Depends(get_current_us
         'status': 'in_progress'
     }).to_list(100)
 
+    # v95 — Resolve room_id → room_number via single batch lookup
+    room_ids = {t.get('room_id') for t in tasks if t.get('room_id') and not t.get('room_number')}
+    room_map: dict[str, str] = {}
+    if room_ids:
+        async for r in db.rooms.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': list(room_ids)}},
+            {'_id': 0, 'id': 1, 'room_number': 1}
+        ):
+            room_map[r['id']] = r.get('room_number', '?')
+
     now = datetime.now(UTC)
     active_timers = []
 
     for task in tasks:
-        started_at = datetime.fromisoformat(task['started_at'])
+        # Defensive: legacy tasks may miss started_at / room_number / assigned_to
+        started_raw = task.get('started_at')
+        if not started_raw:
+            continue
+        try:
+            started_at = datetime.fromisoformat(started_raw)
+        except (ValueError, TypeError):
+            continue
         elapsed = (now - started_at).total_seconds() / 60  # minutes
 
+        # Prefer denormalized room_number, fall back to lookup-resolved name
+        room_number = (
+            task.get('room_number')
+            or room_map.get(task.get('room_id'), '?')
+        )
+
         active_timers.append({
-            'task_id': task['id'],
-            'room_number': task['room_number'],
-            'assigned_to': task['assigned_to'],
-            'started_at': task['started_at'],
+            'task_id': task.get('id'),
+            'room_number': room_number,
+            'assigned_to': task.get('assigned_to'),
+            'started_at': started_raw,
             'elapsed_minutes': round(elapsed, 1),
             'status': 'in_progress'
         })
