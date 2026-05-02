@@ -698,14 +698,23 @@ async def get_occupancy_report(
 @router.get("/reports/revenue")
 @cached(ttl=600, key_prefix="report_revenue")  # Cache for 10 minutes
 async def get_revenue_report(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),  # v71 Bug DH
 ):
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
+    # Default: son 30 gün (Tur 2 fix)
+    if not end_date:
+        end = datetime.now(UTC)
+        end_date = end.date().isoformat()
+    else:
+        end = datetime.fromisoformat(end_date)
+    if not start_date:
+        start = end - timedelta(days=30)
+        start_date = start.date().isoformat()
+    else:
+        start = datetime.fromisoformat(start_date)
     bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['checked_in', 'checked_out']},
                                        'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}}, {'_id': 0}).to_list(1000)
     total_revenue = sum(float(b.get('total_amount') or 0) for b in bookings)

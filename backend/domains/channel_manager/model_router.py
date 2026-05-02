@@ -221,10 +221,11 @@ async def pause_connection(
 
 @router.get("/room-mappings")
 async def list_room_mappings(
-    property_id: str,
+    property_id: str | None = None,
     provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_room_mappings(
         current_user.tenant_id, property_id, provider,
     )
@@ -271,10 +272,11 @@ async def delete_room_mapping(
 
 @router.get("/rate-plan-mappings")
 async def list_rate_plan_mappings(
-    property_id: str,
+    property_id: str | None = None,
     provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_rate_plan_mappings(
         current_user.tenant_id, property_id, provider,
     )
@@ -321,12 +323,13 @@ async def delete_rate_plan_mapping(
 
 @router.get("/raw-events")
 async def list_raw_events(
-    property_id: str,
+    property_id: str | None = None,
     provider: str | None = None,
     processed: bool | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     events = await repo.get_raw_events(
         current_user.tenant_id, property_id, provider, processed, limit,
     )
@@ -337,12 +340,13 @@ async def list_raw_events(
 
 @router.get("/lineage")
 async def list_reservation_lineages(
-    property_id: str,
+    property_id: str | None = None,
     provider: str | None = None,
     status: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     lineages = await repo.get_reservation_lineages(
         current_user.tenant_id, property_id, provider, status, limit,
     )

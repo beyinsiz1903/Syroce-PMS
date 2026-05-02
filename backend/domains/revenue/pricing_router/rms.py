@@ -550,10 +550,13 @@ async def get_compset_analysis(
 
 @router.get("/rms/compset/real-time-prices")
 async def get_compset_real_time_prices(
-    check_in_date: str,
+    check_in_date: str | None = None,
     room_type: str = 'Standard',
     current_user: User = Depends(get_current_user)
 ):
+    if not check_in_date:
+        from datetime import datetime as _dt, UTC as _UTC
+        check_in_date = _dt.now(_UTC).date().isoformat()
     """Get competitor prices - REAL DATA from compset database
 
     Note: In production, this would integrate with:

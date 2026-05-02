@@ -2370,7 +2370,7 @@ async def get_fnb_notifications_mobile(
         })
 
     # End of day report ready notification
-    today = datetime.now(UTC).date()
+    today = datetime.now(UTC).date().isoformat()
     eod_report = await db.pos_eod_reports.find_one({
         'tenant_id': current_user.tenant_id,
         'report_date': today

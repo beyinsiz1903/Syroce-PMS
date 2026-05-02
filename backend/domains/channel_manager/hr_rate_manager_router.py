@@ -131,12 +131,16 @@ async def _push_with_retry(
 
 @router.get("/grid")
 async def get_hr_rate_grid(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """HotelRunner tarih aralığı için oda tipi x tarih grid'ini döndürür."""
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
@@ -636,12 +640,16 @@ async def hr_bulk_grid_update(
 
 @router.get("/stop-sale-summary")
 async def get_hr_stop_sale_summary(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """HotelRunner stop_sell=true olan kayıtları döndürür."""
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
     pipeline = [
         {

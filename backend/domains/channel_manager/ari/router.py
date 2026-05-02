@@ -23,6 +23,8 @@ from fastapi import (
     Query,
 )
 
+from core.security import get_current_user
+from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 from workers.ari_drift_worker import DRIFT_CONFIG, get_drift_mode, set_drift_mode
 
@@ -65,27 +67,33 @@ async def publish_event(req: PublishARIEventRequest,
 
 @router.get("/events")
 async def list_events(
-    tenant_id: str,
-    property_id: str,
+    tenant_id: str | None = None,
+    property_id: str | None = None,
     event_type: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
 ):
     """List recent ARI events."""
+    tenant_id = tenant_id or current_user.tenant_id
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     events = await repo.get_ari_events(tenant_id, property_id, limit, skip, event_type)
     return {"events": events, "count": len(events)}
 
 
 @router.get("/change-sets")
 async def list_change_sets(
-    tenant_id: str,
-    property_id: str,
+    tenant_id: str | None = None,
+    property_id: str | None = None,
     status: str | None = None,
     provider: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
 ):
     """List ARI change sets."""
+    tenant_id = tenant_id or current_user.tenant_id
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     change_sets = await repo.get_change_sets(tenant_id, property_id, status, provider, limit, skip)
     return {"change_sets": change_sets, "count": len(change_sets)}
 
@@ -123,26 +131,32 @@ async def resync(req: ResyncRequest,
 
 @router.get("/outbound-logs")
 async def list_outbound_logs(
-    tenant_id: str,
-    property_id: str,
+    tenant_id: str | None = None,
+    property_id: str | None = None,
     provider: str | None = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
 ):
     """List outbound push logs."""
+    tenant_id = tenant_id or current_user.tenant_id
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     logs = await repo.get_outbound_logs(tenant_id, property_id, provider, limit, skip)
     return {"logs": logs, "count": len(logs)}
 
 
 @router.get("/drift")
 async def list_drift_states(
-    tenant_id: str,
-    property_id: str,
+    tenant_id: str | None = None,
+    property_id: str | None = None,
     provider: str | None = None,
     drift_only: bool = False,
     limit: int = Query(50, le=200),
+    current_user: User = Depends(get_current_user),
 ):
     """List drift states."""
+    tenant_id = tenant_id or current_user.tenant_id
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     states = await repo.get_drift_states(tenant_id, property_id, provider, drift_only, limit)
     return {"drift_states": states, "count": len(states)}
 
@@ -191,8 +205,14 @@ async def set_drift_worker_mode(mode: str,
 
 
 @router.get("/stats")
-async def get_stats(tenant_id: str, property_id: str):
+async def get_stats(
+    tenant_id: str | None = None,
+    property_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
     """Get aggregate ARI push statistics."""
+    tenant_id = tenant_id or current_user.tenant_id
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     stats = await repo.get_ari_stats(tenant_id, property_id)
     return stats
 

@@ -575,8 +575,14 @@ async def get_table_layout(
             'duration_minutes': calculate_table_duration(table) if table.get('status') == 'occupied' else 0
         })
 
-    # If no tables exist, create default layout
+    # If no tables exist, only auto-create when outlet is real (avoid 500 for unknown ids)
     if not tables:
+        outlet = await db.pos_outlets.find_one({
+            'id': outlet_id,
+            'tenant_id': current_user.tenant_id,
+        })
+        if not outlet:
+            raise HTTPException(status_code=404, detail="Outlet bulunamadi")
         default_tables = create_default_table_layout(current_user.tenant_id, outlet_id)
         for table_data in default_tables:
             await db.table_layouts.insert_one(table_data)

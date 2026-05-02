@@ -235,10 +235,11 @@ async def api_set_flag_tenant_override(
 @router.get("/feature-flags/{flag_key}/check")
 async def api_check_flag_for_tenant(
     flag_key: str,
-    tenant_id: str = Query(...),
+    tenant_id: str | None = Query(None),
     current_user: User = Depends(require_super_admin),
 ):
     """Check if a flag is enabled for a specific tenant."""
+    tenant_id = tenant_id or current_user.tenant_id
     enabled = await is_flag_enabled(flag_key, tenant_id)
     return {"flag_key": flag_key, "tenant_id": tenant_id, "enabled": enabled}
 

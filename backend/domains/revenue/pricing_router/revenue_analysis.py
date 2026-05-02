@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
+from cache_manager import cached
 from core.database import db
 from core.security import (
     get_current_user,
@@ -203,6 +204,7 @@ async def get_pickup_analysis(
 
 
 @router.get("/revenue/pace-report")
+@cached(ttl=300, key_prefix="rev_pace_report")  # 5dk cache (Tur 2 fix)
 async def get_pace_report(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):

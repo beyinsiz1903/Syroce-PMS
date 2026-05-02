@@ -55,12 +55,16 @@ class BulkRateUpdateRequest(BaseModel):
 
 @router.get("/grid")
 async def get_rate_grid(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Return room type x date grid for the given date range."""
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
     # Get room type mappings
     mappings = await db.exely_room_mappings.find(
@@ -542,12 +546,16 @@ async def bulk_grid_update(
 
 @router.get("/stop-sale-summary")
 async def get_stop_sale_summary(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Lightweight endpoint: sadece stop_sell=true olan kayıtları döndürür."""
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
     pipeline = [
         {

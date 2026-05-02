@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
 
 @router.get("/revenue/pickup-report")
+@cached(ttl=300, key_prefix="rev_pickup_report")  # 5dk cache (Tur 2 fix)
 async def get_pickup_report(
     start_date: str | None = None,
     end_date: str | None = None,

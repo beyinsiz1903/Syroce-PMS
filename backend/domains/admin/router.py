@@ -522,12 +522,8 @@ async def list_tenant_users(
     hafif endpoint — tek tek `granted_permissions` da döner.
     """
     if _is_super_admin(current_user):
-        if not tenant_id:
-            raise HTTPException(
-                status_code=400,
-                detail="SUPER_ADMIN için tenant_id zorunlu.",
-            )
-        target_tenant = tenant_id
+        # SUPER_ADMIN: tenant_id verilmezse kendi tenant'ı default.
+        target_tenant = tenant_id or current_user.tenant_id
     else:
         role_value = getattr(current_user.role, "value", str(current_user.role))
         if role_value != UserRole.ADMIN.value:
@@ -669,11 +665,9 @@ async def get_web_push_metrics(
     `system_scheduled_pruned` alanında ayrıca döner.
     """
     if _is_super_admin(current_user):
+        # SUPER_ADMIN: tenant_id verilmezse kendi tenant'ı default.
         if not tenant_id:
-            raise HTTPException(
-                status_code=400,
-                detail="SUPER_ADMIN için tenant_id zorunlu.",
-            )
+            tenant_id = current_user.tenant_id
         target_tenant = tenant_id
     else:
         role_value = getattr(current_user.role, "value", str(current_user.role))

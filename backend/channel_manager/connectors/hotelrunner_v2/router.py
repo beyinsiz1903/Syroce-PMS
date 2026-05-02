@@ -73,6 +73,16 @@ async def _enforce_auth_and_tenant_match(
     return current_user
 
 
+# Helper: route imzalarındaki `tenant_id: str = Depends(_resolved_tenant)` yerine
+# `tenant_id: str = Depends(_resolved_tenant)` kullanılır. Boş geçilirse
+# kullanıcının kendi tenant'ına düşer (Tur 2 fix).
+async def _resolved_tenant(
+    tenant_id: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+) -> str:
+    return tenant_id or current_user.tenant_id
+
+
 router = APIRouter(
     prefix="/api/channel/hotelrunner-v2",
     tags=["HotelRunner v2 Connector"],
@@ -84,7 +94,7 @@ router = APIRouter(
 
 @router.get("/status")
 async def get_connector_status(
-    tenant_id: str = Query(..., description="Tenant ID"),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default", description="Property ID"),
 ):
     """Get connector health status, flags, and metrics."""
@@ -112,7 +122,7 @@ async def get_connector_status(
 @router.get("/trace/{reservation_id}")
 async def get_reservation_trace(
     reservation_id: str,
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Get full timeline trace for a reservation."""
     from core.database import db
@@ -157,7 +167,7 @@ async def get_reservation_trace(
 
 @router.post("/test-connection")
 async def test_connection(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     _perm=Depends(require_op("manage_channel_connectors")),  # v88 DW
 ):
@@ -176,7 +186,7 @@ async def test_connection(
 
 @router.post("/pull-reservations")
 async def pull_reservations(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     undelivered: bool = Query(True),
     from_date: str | None = Query(None, description="YYYY-MM-DD (max 30 days before)"),
@@ -202,7 +212,7 @@ async def pull_reservations(
 
 @router.post("/confirm-delivery")
 async def confirm_delivery(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     message_uid: str = Query(..., description="message_uid from reservation"),
     pms_number: str | None = Query(None),
@@ -216,7 +226,7 @@ async def confirm_delivery(
 @router.get("/verify-transaction/{transaction_id}")
 async def verify_transaction(
     transaction_id: str,
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
 ):
     """Check ARI push transaction status via HotelRunner."""
@@ -227,7 +237,7 @@ async def verify_transaction(
 
 @router.post("/ingest")
 async def ingest_reservation(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     payload: dict[str, Any] = Body(...),
 ):
@@ -245,7 +255,7 @@ async def ingest_reservation(
 
 @router.post("/push-ari")
 async def push_ari(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(...),
 ):
@@ -276,7 +286,7 @@ async def push_ari(
 
 @router.post("/reconcile")
 async def trigger_reconciliation(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     since_hours: int = Query(24),
     auto_fix: bool = Query(False),
@@ -290,7 +300,7 @@ async def trigger_reconciliation(
 
 @router.get("/reconciliation/history")
 async def reconciliation_history(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(20),
 ):
     from channel_manager.connectors.hotelrunner_v2.reconciliation import get_reconciliation_history
@@ -299,7 +309,7 @@ async def reconciliation_history(
 
 @router.get("/reconciliation/drifts")
 async def reconciliation_drifts(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(50),
 ):
     from channel_manager.connectors.hotelrunner_v2.reconciliation import get_recent_drifts
@@ -309,14 +319,14 @@ async def reconciliation_drifts(
 # ── Feature Flags ─────────────────────────────────────────────────────
 
 @router.get("/flags")
-async def get_flags_endpoint(tenant_id: str = Query(...)):
+async def get_flags_endpoint(tenant_id: str = Depends(_resolved_tenant)):
     from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
     return await get_flags(tenant_id)
 
 
 @router.put("/flags")
 async def update_flags(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     body: dict[str, Any] = Body(...),
 ):
     from channel_manager.connectors.hotelrunner_v2.feature_flags import set_flags
@@ -327,7 +337,7 @@ async def update_flags(
 
 @router.get("/metrics")
 async def get_metrics(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     hours: int = Query(24),
 ):
     from channel_manager.connectors.hotelrunner_v2.metrics import get_summary
@@ -338,7 +348,7 @@ async def get_metrics(
 
 @router.get("/dlq")
 async def get_dlq(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(50),
 ):
     from core.database import db
@@ -352,7 +362,7 @@ async def get_dlq(
 @router.post("/dlq/{dlq_id}/retry")
 async def retry_dlq_entry(
     dlq_id: str,
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
 ):
     """Retry a dead letter queue entry."""
@@ -606,7 +616,7 @@ async def get_ops_dashboard(
 
 @router.get("/readiness-score")
 async def get_readiness_score(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     hours: int = Query(24),
 ):
     """Calculate the Write Readiness Score (0-100)."""
@@ -620,7 +630,7 @@ async def get_readiness_score(
 
 @router.post("/observation/snapshot")
 async def collect_observation_snapshot(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Collect a daily observation snapshot (metrics, alerts, consistency)."""
     from core.tenant_db import set_tenant_context
@@ -631,7 +641,7 @@ async def collect_observation_snapshot(
 
 @router.get("/observation/history")
 async def get_observation_history_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     days: int = Query(7),
 ):
     """Get observation snapshot history (last N days)."""
@@ -643,7 +653,7 @@ async def get_observation_history_endpoint(
 
 @router.get("/observation/report")
 async def get_observation_report(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Generate a daily observation report with trends."""
     from core.tenant_db import set_tenant_context
@@ -670,7 +680,7 @@ async def get_transition_plan_endpoint():
 
 @router.get("/transition/status")
 async def get_transition_status(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Get current transition phase + readiness for next phase."""
     from core.tenant_db import set_tenant_context
@@ -681,7 +691,7 @@ async def get_transition_status(
 
 @router.get("/transition/history")
 async def get_transition_history_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(20),
 ):
     """Get transition history log."""
@@ -695,7 +705,7 @@ async def get_transition_history_endpoint(
 
 @router.post("/dry-run/ari-push")
 async def dry_run_ari_push_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(...),
 ):
@@ -726,7 +736,7 @@ async def dry_run_ari_push_endpoint(
 
 @router.post("/dry-run/confirm-delivery")
 async def dry_run_confirm_delivery_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(...),
 ):
@@ -744,7 +754,7 @@ async def dry_run_confirm_delivery_endpoint(
 
 @router.post("/dry-run/chain")
 async def dry_run_chain_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(default={}),
 ):
@@ -763,7 +773,7 @@ async def dry_run_chain_endpoint(
 
 @router.post("/dry-run/simulate-failure")
 async def dry_run_simulate_failure_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(...),
 ):
@@ -788,7 +798,7 @@ async def dry_run_simulate_failure_endpoint(
 
 @router.get("/dry-run/results")
 async def get_dry_run_results_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(50),
     operation: str | None = Query(None),
 ):
@@ -802,7 +812,7 @@ async def get_dry_run_results_endpoint(
 
 @router.get("/dry-run/stats")
 async def get_dry_run_stats_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Dry-run success rate, failure breakdown, chain status."""
     from core.tenant_db import set_tenant_context
@@ -813,7 +823,7 @@ async def get_dry_run_stats_endpoint(
 
 @router.get("/dry-run/write-criteria")
 async def get_write_criteria_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Write enable criteria check — tum kriterler saglanmadan write acilmaz."""
     from core.tenant_db import set_tenant_context
@@ -827,7 +837,7 @@ async def get_write_criteria_endpoint(
 
 @router.get("/automation/status")
 async def get_automation_status_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Shadow automation durumu ve son aktivite."""
     from core.tenant_db import set_tenant_context
@@ -838,7 +848,7 @@ async def get_automation_status_endpoint(
 
 @router.post("/automation/trigger")
 async def trigger_snapshot_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
 ):
     """Manuel olarak 6-saatlik snapshot tetikle."""
     from core.tenant_db import set_tenant_context
@@ -849,7 +859,7 @@ async def trigger_snapshot_endpoint(
 
 @router.get("/automation/trends")
 async def get_trend_data_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     hours: int = Query(168, description="Trend periyodu (saat)"),
 ):
     """Dashboard trend paneli verisi (readiness, drift, latency, failure)."""
@@ -861,7 +871,7 @@ async def get_trend_data_endpoint(
 
 @router.get("/automation/alerts")
 async def get_automation_alerts_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(50),
     severity: str | None = Query(None, description="critical veya warn"),
 ):
@@ -875,7 +885,7 @@ async def get_automation_alerts_endpoint(
 
 @router.post("/automation/alerts/acknowledge")
 async def acknowledge_alert_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     body: dict[str, Any] = Body(...),
 ):
     """Alert'i onayla (acknowledge)."""
@@ -891,7 +901,7 @@ async def acknowledge_alert_endpoint(
 
 @router.get("/automation/daily-summaries")
 async def get_daily_summaries_endpoint(
-    tenant_id: str = Query(...),
+    tenant_id: str = Depends(_resolved_tenant),
     limit: int = Query(30),
 ):
     """Gunluk ozet gecmisi."""

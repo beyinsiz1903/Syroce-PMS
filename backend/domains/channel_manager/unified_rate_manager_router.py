@@ -27,6 +27,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from cache_manager import cached
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pymongo import UpdateOne
@@ -210,8 +211,8 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
 
 @router.get("/grid")
 async def get_unified_grid(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
@@ -227,6 +228,10 @@ async def get_unified_grid(
     olusmaz.
     """
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
     explicit = provider in ("hotelrunner", "exely")
     detection = await _detect_active_provider(tenant_id, prefer=provider)
 
@@ -1086,6 +1091,7 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
 # ── Agency Endpoints ─────────────────────────────────────────────
 
 @router.get("/agencies")
+@cached(ttl=300, key_prefix="urm_agencies")  # 5dk cache (Tur 2 fix)
 async def list_agencies_for_rates(current_user: User = Depends(get_current_user)):
     """Fiyat iletilecek aktif acenteleri listele."""
     tenant_id = current_user.tenant_id
@@ -1300,10 +1306,15 @@ async def update_pricing_settings(
 
 @router.get("/stop-sale-summary")
 async def get_stop_sale_summary(
-    start_date: str, end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     tenant_id = current_user.tenant_id
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
     detection = await _detect_active_provider(tenant_id)
 
     cal_collection = "hr_rate_calendar" if detection["provider"] == "hotelrunner" else "rate_calendar"

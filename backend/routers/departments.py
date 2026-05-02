@@ -1947,11 +1947,15 @@ async def get_finance_snapshot(current_user: User = Depends(get_current_user),
 
 @router.get("/reports/revenue-detail/excel")
 async def export_revenue_detail_excel(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
+    if not end_date:
+        end_date = datetime.now(UTC).date().isoformat()
+    if not start_date:
+        start_date = (datetime.now(UTC) - timedelta(days=30)).date().isoformat()
     """Detailed room revenue by date, room type and rate code.
 
     NOTE: Uses bookings collection and groups by date, room_type and rate_code-like fields.
@@ -2007,11 +2011,15 @@ async def export_revenue_detail_excel(
 
 @router.get("/reports/forecast-detail/excel")
 async def export_forecast_detail_excel(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
+    if not start_date:
+        start_date = datetime.now(UTC).date().isoformat()
+    if not end_date:
+        end_date = (datetime.now(UTC) + timedelta(days=30)).date().isoformat()
     """Forecasted occupancy and revenue detail by date using existing forecast logic.
 
     NOTE: This uses get_forecast endpoint internally if available.
@@ -2031,11 +2039,19 @@ async def export_forecast_detail_excel(
     headers = ['Date', 'Expected Occupancy %', 'Expected Revenue']
     data: list[list[Any]] = []
 
-    for item in forecast_response.get('days', []):
+    if isinstance(forecast_response, list):
+        items = forecast_response
+    elif isinstance(forecast_response, dict):
+        items = forecast_response.get('days') or forecast_response.get('forecast') or []
+    else:
+        items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
         data.append([
             item.get('date'),
-            item.get('expected_occupancy_pct', 0),
-            item.get('expected_revenue', 0),
+            item.get('expected_occupancy_pct', item.get('occupancy_pct', 0)),
+            item.get('expected_revenue', item.get('revenue', 0)),
         ])
 
     title = f"Forecast Detail {start_date} to {end_date}"
@@ -2104,11 +2120,15 @@ async def export_operations_daily_summary_excel(
 
 @router.get("/reports/channel-distribution/excel")
 async def export_channel_distribution_excel(
-    start_date: str,
-    end_date: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
+    if not end_date:
+        end_date = datetime.now(UTC).date().isoformat()
+    if not start_date:
+        start_date = (datetime.now(UTC) - timedelta(days=30)).date().isoformat()
     """Sales channel distribution report (OTA, Direct, Corporate, etc.)."""
     _enforce(current_user.role, "view_finance_reports")  # Bug CU
     start = datetime.fromisoformat(start_date)

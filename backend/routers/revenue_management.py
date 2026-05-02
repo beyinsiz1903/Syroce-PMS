@@ -2,6 +2,7 @@
 Revenue Management Engine Router - Dynamic pricing, demand analysis, yield rules, channel strategy.
 All endpoints under /api/revenue-engine/
 """
+from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,18 +28,29 @@ class ApplyRateRequest(BaseModel):
 @router.get("/booking-pace")
 @cached(ttl=300, key_prefix="revenue_booking_pace")
 async def api_booking_pace(
-    target_date: str,
+    target_date: str | None = None,
     lookback_days: int = 30,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v73 Bug DI: booking pace = revenue intel
 ):
     """Get booking pace analysis for a target date."""
+    if not target_date:
+        target_date = datetime.now(UTC).date().isoformat()
     return await engine.get_booking_pace(current_user.tenant_id, target_date, lookback_days)
 
 
 @router.get("/pickup-trends")
-async def api_pickup_trends(start_date: str, end_date: str, current_user: User = Depends(get_current_user)):
+async def api_pickup_trends(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
     """Get reservation pickup trends."""
+    today = datetime.now(UTC).date()
+    if not start_date:
+        start_date = (today - timedelta(days=30)).isoformat()
+    if not end_date:
+        end_date = today.isoformat()
     try:
         sd = date_cls.fromisoformat(start_date)
         ed = date_cls.fromisoformat(end_date)
@@ -50,6 +62,7 @@ async def api_pickup_trends(start_date: str, end_date: str, current_user: User =
 
 
 @router.get("/occupancy-forecast")
+@cached(ttl=600, key_prefix="rev_occ_forecast")  # 10dk cache (Tur 2 fix)
 async def api_occupancy_forecast(days: int = 14, current_user: User = Depends(get_current_user)):
     """Get occupancy forecast."""
     if days > 60:
@@ -66,12 +79,18 @@ async def api_lead_time(days_back: int = 30, current_user: User = Depends(get_cu
 # ── RATE OPTIMIZATION ──
 
 @router.get("/ideal-adr")
-async def api_ideal_adr(target_date: str, current_user: User = Depends(get_current_user)):
+async def api_ideal_adr(
+    target_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
     """Calculate ideal ADR for a target date."""
+    if not target_date:
+        target_date = datetime.now(UTC).date().isoformat()
     return await engine.calculate_ideal_adr(current_user.tenant_id, target_date)
 
 
 @router.get("/rate-suggestions")
+@cached(ttl=600, key_prefix="rev_rate_suggestions")  # 10dk cache (Tur 2 fix)
 async def api_rate_suggestions(days: int = 7, current_user: User = Depends(get_current_user)):
     """Get rate suggestions for upcoming days."""
     if days > 30:
@@ -82,6 +101,7 @@ async def api_rate_suggestions(days: int = 7, current_user: User = Depends(get_c
 # ── YIELD RULES ──
 
 @router.get("/yield-recommendations")
+@cached(ttl=600, key_prefix="rev_yield_rec")  # 10dk cache (Tur 2 fix)
 async def api_yield_recommendations(current_user: User = Depends(get_current_user)):
     """Get yield management recommendations."""
     return await engine.get_yield_recommendations(current_user.tenant_id)
@@ -98,6 +118,7 @@ async def api_channel_performance(days_back: int = 30, current_user: User = Depe
 # ── DASHBOARD ──
 
 @router.get("/dashboard")
+@cached(ttl=300, key_prefix="rev_dashboard")  # 5dk cache (Tur 2 fix)
 async def api_revenue_dashboard(current_user: User = Depends(get_current_user)):
     """Get comprehensive revenue management dashboard."""
     return await engine.get_revenue_dashboard(current_user.tenant_id)

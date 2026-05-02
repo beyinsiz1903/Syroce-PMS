@@ -14,12 +14,14 @@ ikinci faktörü gerekir.
 GET    /api/admin/db/collections                              — liste + count
 DELETE /api/admin/db/collections/{name}?dry_run=true          — varsayılan
 """
+import asyncio
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.database import _raw_db
 from core.helpers import create_audit_log, require_super_admin_guard
 from models.schemas import User
@@ -66,15 +68,28 @@ class DropConfirm(BaseModel):
 
 
 @router.get("/collections")
+@cached(ttl=120, key_prefix="db_admin_collections")  # 2dk cache (Tur 2 fix)
 async def list_collections(
     include_stats: bool = Query(True),
     current_user: User = Depends(require_super_admin),
 ) -> dict[str, Any]:
     """Koleksiyonları listeler (yalnız platform süper-admin)."""
-    names = await _raw_db.list_collection_names()
+    names = sorted(await _raw_db.list_collection_names())
+
+    # Bulk count via asyncio.gather (was 500 sequential round-trips → parallel)
+    counts: dict[str, Any] = {}
+    if include_stats:
+        async def _count(n: str):
+            try:
+                return n, await _raw_db[n].estimated_document_count(), None
+            except Exception as e:
+                return n, None, str(e)[:120]
+        results = await asyncio.gather(*[_count(n) for n in names])
+        for n, c, err in results:
+            counts[n] = (c, err)
 
     items: list[dict[str, Any]] = []
-    for name in sorted(names):
+    for name in names:
         droppable, reason = _is_droppable(name)
         row: dict[str, Any] = {
             "name": name,
@@ -82,11 +97,10 @@ async def list_collections(
             "drop_reason": reason,
         }
         if include_stats:
-            try:
-                row["count"] = await _raw_db[name].estimated_document_count()
-            except Exception as e:
-                row["count"] = None
-                row["count_error"] = str(e)[:120]
+            c, err = counts.get(name, (None, None))
+            row["count"] = c
+            if err:
+                row["count_error"] = err
         items.append(row)
 
     droppable_count = sum(1 for r in items if r.get("droppable"))

@@ -392,6 +392,7 @@ async def get_total_revenue_mobile(
 
 
 @router.get("/revenue-mobile/segment-distribution")
+@cached(ttl=300, key_prefix="rev_mob_segment")  # 5dk (Tur 2 timeout fix)
 async def get_segment_distribution_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -568,6 +569,7 @@ async def get_pickup_graph_mobile(
 
 
 @router.get("/revenue-mobile/forecast")
+@cached(ttl=300, key_prefix="rev_mob_forecast")  # 5dk (Tur 2 timeout fix)
 async def get_revenue_forecast_mobile(
     days_ahead: int = 30,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -677,6 +679,7 @@ async def get_revenue_forecast_mobile(
 
 
 @router.get("/revenue-mobile/channel-distribution")
+@cached(ttl=300, key_prefix="rev_mob_channel_dist")  # 5dk (Tur 2 timeout fix)
 async def get_channel_distribution_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -717,8 +720,12 @@ async def get_channel_distribution_mobile(
 
         booking_revenue = sum(c.get('total', 0) for c in charges)
 
-        # Get OTA commission if applicable
-        commission_pct = booking.get('commission_pct', 0)
+        # Get OTA commission if applicable (None-safe)
+        commission_pct = booking.get('commission_pct') or 0
+        try:
+            commission_pct = float(commission_pct)
+        except (TypeError, ValueError):
+            commission_pct = 0.0
         commission_amount = booking_revenue * (commission_pct / 100)
         net_revenue = booking_revenue - commission_amount
 
