@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import * as Sentry from "@sentry/react";
 import "@/index.css";
-import "@/i18n";
+import { initI18n } from "@/i18n";
 import App from "@/App";
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
@@ -30,9 +30,13 @@ if (import.meta.env.DEV) {
   };
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// i18n init: kullanıcının dili + fallback indikten sonra render.
+// Toplam ~280 KB JSON (gzip ~50 KB) iniyor; eski statik 1.4 MB yerine.
+initI18n().finally(() => {
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+});

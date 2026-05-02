@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { changeLanguage as safeChangeLanguage } from '@/i18n';
 import {
   Select,
   SelectContent,
@@ -24,9 +25,11 @@ const languages = [
 const LanguageSelector = () => {
   const { i18n } = useTranslation();
 
-  const changeLanguage = (lng) => {
-    i18n.changeLanguage(lng);
+  const changeLanguage = async (lng) => {
+    // Paket indirilmeden önce localStorage'ı yaz (sayfa yenilenirse
+    // bir sonraki mount initI18n'i doğru dille başlatır).
     localStorage.setItem('language', lng);
+    await safeChangeLanguage(lng);
   };
 
   return (
