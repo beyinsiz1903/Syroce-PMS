@@ -1,0 +1,39 @@
+2. KRİTİK BUG'LAR — 3 ADET 500 HATASI
+Bug #1 — Dashboard çalışan performans ekranı çöküyor
+Endpoint: GET /api/dashboard/employee-performance Dosya: backend/domains/pms/dashboard_router.py:363 Hata:
+
+TypeError: '<' not supported between instances of 'NoneType' and 'int'
+'efficiency_rating': 'Excellent' if staff['avg_duration'] < 20 else ...
+
+Sebep: Bir önceki satırda staff['avg_duration'] için if staff['avg_duration'] else 0 güvenliği var, ama efficiency_rating satırında ham değer kullanılıyor. Bazı staff'larda avg_duration None (hiç tamamlanmış görev yok). Etki: GM Dashboard "Çalışan Performansı" sekmesi boş/hata gösterir. Fix zorluğu: 1 satır.
+
+Bug #2 — Housekeeping aktif zamanlayıcıları çöküyor
+Endpoint: GET /api/housekeeping/active-timers Dosya: backend/routers/departments.py:1084 Hata:
+
+KeyError: 'room_number'
+'room_number': task['room_number'],
+
+Sebep: housekeeping_tasks koleksiyonundaki bazı eski kayıtlarda room_number alanı yok (muhtemelen room_id ile referans veriyor). Doğrudan dict access kullanılmış. Etki: Housekeeping mobil ekranı + dashboard "Aktif zamanlayıcılar" widget'ı çöker. Fix zorluğu: 1 satır (task.get('room_number', '?') veya rooms join).
+
+Bug #3 — Fatura listesi çöküyor + güvenlik tortusu
+Endpoint: GET /api/invoices Dosya: backend/routers/finance/invoices.py:59 Hata:
+
+fastapi.exceptions.ResponseValidationError: 108 validation errors:
+  customer_name: Field required
+  customer_email: Field required
+  items: Field required
+  subtotal, tax, due_date: Field required
+
+İki ayrı sorun bir arada:
+
+A) Veri-Model uyumsuzluğu (500 sebebi): Mongo'daki invoice kayıtları yeni Pydantic Invoice modelinden 6 alan eksik. Yeni model eski seed verisini reddediyor.
+
+B) Güvenlik — XSS payload'ı veritabanında:
+
+'billing_name': '<img src=x onerror=alert(3)>'
+'billing_tax_id': '<svg onload=alert(4)>'
+
+Bu kayıtlar daha önceki güvenlik testlerinden kalmış payload'lar. Çıktıda sanitize ediliyor (sanitize_plaintext) ama Mongo'da hâlâ ham halde duruyor. Başka bir endpoint sanitize unutursa sızar. Toplu temizlik gerekli.
+
+Etki: Fatura sayfası açılmaz; XSS tortusu hâlâ DB'de. Fix zorluğu: Orta — model alanlarına Optional + default ekle ve veri migration script'i.
+
