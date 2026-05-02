@@ -685,6 +685,68 @@ async def get_guest_loyalty_by_id(guest_id: str, current_user: User = Depends(ge
     return {'program': program, 'transactions': transactions}
 
 
+@router.get("/guest/bookings/{booking_id}")
+async def get_guest_booking_detail(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Tek bir rezervasyonun detayı (SelfCheckin / DigitalKey sayfaları için).
+
+    Multi-tenant guest scope: kullanıcının e-postasıyla eşleşen TÜM tenant'lardaki
+    guest kayıtları taranır; talep edilen booking bunlardan birine aitse döner.
+    Aksi halde 404. Misafir başkasının rezervasyonunu okuyamaz.
+
+    Yanıt SelfCheckin.jsx'in beklediği şekildedir:
+    {id, check_in, check_out, room_type, room_number, guests_count,
+     status, hotel:{...}, guest:{email, phone, name}}
+    """
+    guest_records = []
+    async for guest in db.guests.find({'email': current_user.email}):
+        guest_records.append(guest)
+
+    guest_ids = [g['id'] for g in guest_records]
+
+    booking = await db.bookings.find_one({
+        'id': booking_id,
+        'guest_id': {'$in': guest_ids}
+    }, {'_id': 0}) if guest_ids else None
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    room = await db.rooms.find_one({'id': booking.get('room_id')}, {'_id': 0}) or {}
+    guest = await db.guests.find_one({'id': booking.get('guest_id')}, {'_id': 0}) or {}
+    tenant = await db.tenants.find_one({'id': booking.get('tenant_id')}, {'_id': 0}) or {}
+
+    return {
+        'id': booking.get('id'),
+        'tenant_id': booking.get('tenant_id'),
+        'confirmation_number': booking.get('confirmation_number') or (booking.get('id') or '')[:8].upper(),
+        'check_in': booking.get('check_in'),
+        'check_out': booking.get('check_out'),
+        'status': booking.get('status'),
+        'guests_count': (booking.get('adults') or 1) + (booking.get('children') or 0),
+        'adults': booking.get('adults', 1),
+        'children': booking.get('children', 0),
+        'total_amount': booking.get('total_amount', 0),
+        'paid_amount': booking.get('paid_amount', 0),
+        'room_number': room.get('room_number') or booking.get('room_number'),
+        'room_type': room.get('room_type') or booking.get('room_type') or 'Standard',
+        'floor': room.get('floor'),
+        'hotel': {
+            'id': tenant.get('id'),
+            'property_name': tenant.get('property_name') or tenant.get('hotel_name') or 'Hotel',
+            'hotel_name': tenant.get('hotel_name') or tenant.get('property_name') or 'Hotel',
+            'address': tenant.get('address') or '',
+        },
+        'guest': {
+            'name': guest.get('name') or current_user.name,
+            'email': guest.get('email') or current_user.email,
+            'phone': guest.get('phone'),
+        },
+    }
+
+
 @router.post("/guest/self-checkin/{booking_id}")
 async def guest_self_checkin(
     booking_id: str,

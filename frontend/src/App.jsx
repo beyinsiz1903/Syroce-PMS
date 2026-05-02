@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import "@/App.css";
 import "@/config/axiosConfig";
 import axios from "axios";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import PlanRouteGuard from "@/components/PlanRouteGuard";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
@@ -20,6 +20,26 @@ import {
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
 import { prefetchHeavyModules } from "@/lib/prefetch";
+
+// Misafir akışı için lazy yüklenen sayfa wrapper'ları
+const SelfCheckinPage = lazy(() => import("@/pages/SelfCheckin"));
+const DigitalKeyPage = lazy(() => import("@/pages/DigitalKey"));
+
+function SelfCheckinRoute() {
+  const { bookingId } = useParams();
+  const navigate = useNavigate();
+  return (
+    <SelfCheckinPage
+      bookingId={bookingId}
+      onComplete={() => navigate(`/guest/digital-key/${bookingId}`)}
+    />
+  );
+}
+
+function DigitalKeyRoute() {
+  const { bookingId } = useParams();
+  return <DigitalKeyPage bookingId={bookingId} />;
+}
 
 const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -213,6 +233,10 @@ function App() {
                   <Route path="/" element={<LandingPage />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   <Route path="/gizlilik" element={<PrivacyPolicy />} />
+                  {/* Misafir self-checkin / digital key akışı: GuestPortal'dan
+                      yönlendirilir, kendi rezervasyonu için tam ekran sayfa. */}
+                  <Route path="/guest/checkin/:bookingId" element={<SelfCheckinRoute />} />
+                  <Route path="/guest/digital-key/:bookingId" element={<DigitalKeyRoute />} />
                   <Route path="/guest-portal/*" element={<GuestPortal user={user} onLogout={handleLogout} />} />
                   <Route path="*" element={<Navigate to="/guest-portal" replace />} />
                 </Routes>
