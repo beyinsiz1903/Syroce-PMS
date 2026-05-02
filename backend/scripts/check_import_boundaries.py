@@ -44,7 +44,7 @@ KNOWN_EXCEPTIONS = frozenset({
     # Admin tenant push-metrics dashboard reads guest-domain rollup helper.
     # Proper fix: move `web_push_metrics` into `shared_kernel/` (domain-agnostic
     # Mongo upsert/aggregation helper used by both guest router and admin UI).
-    ("domains/admin/router.py", 650),
+    ("domains/admin/router.py", 684),
 })
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
