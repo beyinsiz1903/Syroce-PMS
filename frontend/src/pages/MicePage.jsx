@@ -6,7 +6,6 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // Tur 5: pipeline ve packages tab'ları sadece tıklanınca yüklenir.
@@ -17,28 +16,21 @@ const BanquetCompetitorTab = lazy(() => import('@/components/mice/BanquetCompeti
 import AccountsView from '@/components/mice/AccountsView';
 import DiaryView from '@/components/mice/DiaryView';
 import ResourcesView from '@/components/mice/ResourcesView';
-import OperationsPanel from '@/components/mice/OperationsPanel';
-import { Stat, Field, Info, Modal } from '@/components/mice/_shared';
+import { Stat } from '@/components/mice/_shared';
+// R4: Modal-bazlı render bloğu modals/ alt-paketine taşındı.
+import EventFormModal from '@/components/mice/modals/EventFormModal';
+import MenuFormModal from '@/components/mice/modals/MenuFormModal';
+import BeoModal from '@/components/mice/modals/BeoModal';
+import KitchenModal from '@/components/mice/modals/KitchenModal';
+import OpsModal from '@/components/mice/modals/OpsModal';
+import { STATUS } from '@/components/mice/modals/constants';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
-  Trash2, FileText, Users, Sparkles, ClipboardList, ChefHat, Briefcase,
+  Trash2, FileText, Sparkles, ClipboardList, ChefHat, Briefcase,
   History as HistoryIcon, Pencil,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import Layout from '@/components/Layout';
-
-const STATUS = {
-  lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
-  tentative: { label: 'Tentative', cls: 'bg-amber-100 text-amber-800' },
-  definite: { label: 'Definite', cls: 'bg-sky-100 text-sky-800' },
-  confirmed: { label: 'Confirmed', cls: 'bg-emerald-100 text-emerald-800' },
-  completed: { label: 'Tamamlandı', cls: 'bg-purple-100 text-purple-800' },
-  cancelled: { label: 'İptal', cls: 'bg-red-100 text-red-800' },
-};
-
-const SETUPS = ['theatre', 'classroom', 'banquet', 'cocktail', 'u_shape', 'boardroom'];
-const EVENT_TYPES = ['meeting', 'conference', 'wedding', 'gala', 'training', 'other'];
-const AGENDA_KINDS = ['session', 'meal', 'break', 'av', 'logistics', 'other'];
 
 const MicePage = ({ user, tenant, onLogout }) => {
   const [events, setEvents] = useState([]);
@@ -719,561 +711,35 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
       {/* Event create/edit */}
       {showEventForm && (
-        <Modal title={editing ? 'Etkinlik Düzenle' : 'Yeni Etkinlik'}
-               onClose={() => setShowEventForm(false)} wide>
-          <form onSubmit={submit} className="space-y-3">
-            <Tabs value={eventTab} onValueChange={setEventTab}>
-              <TabsList>
-                <TabsTrigger value="basics">Temel</TabsTrigger>
-                <TabsTrigger value="spaces">Mekan & Kaynak</TabsTrigger>
-                <TabsTrigger value="agenda">Fonksiyon Sheet</TabsTrigger>
-                <TabsTrigger value="operations">Operasyon</TabsTrigger>
-                <TabsTrigger value="payment">Ödeme Takvimi</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="basics" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Etkinlik Adı"><Input required value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-                  <Field label="Müşteri Adı"><Input required value={form.client_name}
-                    onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></Field>
-                  <Field label="Kurumsal Hesap (opsiyonel)">
-                    <select className="w-full border rounded px-2 py-1.5"
-                            value={form.client_account_id}
-                            onChange={(e) => {
-                              const id = e.target.value;
-                              const acct = accountById[id];
-                              setForm({ ...form, client_account_id: id,
-                                client_name: acct?.name || form.client_name });
-                            }}>
-                      <option value="">— Seçilmedi —</option>
-                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Organizatör Kullanıcı"><Input value={form.organizer_user}
-                    onChange={(e) => setForm({ ...form, organizer_user: e.target.value })} /></Field>
-                  <Field label="Müşteri E-posta"><Input value={form.client_email}
-                    onChange={(e) => setForm({ ...form, client_email: e.target.value })} /></Field>
-                  <Field label="Müşteri Telefon"><Input value={form.client_phone}
-                    onChange={(e) => setForm({ ...form, client_phone: e.target.value })} /></Field>
-                  <Field label="Tip">
-                    <select className="w-full border rounded px-2 py-1.5" value={form.event_type}
-                            onChange={(e) => setForm({ ...form, event_type: e.target.value })}>
-                      {EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Durum">
-                    <select className="w-full border rounded px-2 py-1.5" value={form.status}
-                            onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                      {Object.entries(STATUS).map(([k, v]) =>
-                        <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Beklenen Pax"><Input type="number" required value={form.expected_pax}
-                    onChange={(e) => setForm({ ...form, expected_pax: +e.target.value })} /></Field>
-                  <Field label="PMS Rezervasyon ID"><Input value={form.reservation_id}
-                    onChange={(e) => setForm({ ...form, reservation_id: e.target.value })} /></Field>
-                  <Field label="Başlangıç Tarihi"><Input type="date" required value={form.start_date}
-                    onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></Field>
-                  <Field label="Bitiş Tarihi"><Input type="date" required value={form.end_date}
-                    onChange={(e) => setForm({ ...form, end_date: e.target.value })} /></Field>
-                </div>
-                <Field label="Notlar">
-                  <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]"
-                            value={form.notes}
-                            onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-                </Field>
-              </TabsContent>
-
-              <TabsContent value="spaces" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-sm font-semibold">Mekan Rezervasyonları</Label>
-                    <Button type="button" size="sm" variant="outline" onClick={addSb}>
-                      <Plus className="w-3 h-3 mr-1" /> Mekan Ekle
-                    </Button>
-                  </div>
-                  {form.space_bookings.map((sb, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
-                              value={sb.space_id}
-                              onChange={(e) => setSb(i, { space_id: e.target.value })}>
-                        <option value="">Mekan…</option>
-                        {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                      <Input className="col-span-3 text-xs" type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''}
-                             onChange={(e) => setSb(i, { starts_at: e.target.value })} />
-                      <Input className="col-span-3 text-xs" type="datetime-local" value={sb.ends_at?.slice(0, 16) || ''}
-                             onChange={(e) => setSb(i, { ends_at: e.target.value })} />
-                      <select className="col-span-2 border rounded px-1 py-1 text-xs"
-                              value={sb.setup_style}
-                              onChange={(e) => setSb(i, { setup_style: e.target.value })}>
-                        {SETUPS.map((s) => <option key={s}>{s}</option>)}
-                      </select>
-                      <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                              onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-sm font-semibold">Kaynak / Menü Hatları</Label>
-                    <Button type="button" size="sm" variant="outline" onClick={addRes}>
-                      <Plus className="w-3 h-3 mr-1" /> Kaynak Ekle
-                    </Button>
-                  </div>
-                  {form.resources.map((r, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
-                              value={r.menu_id || ''}
-                              onChange={(e) => {
-                                const m = menus.find((x) => x.id === e.target.value);
-                                setRes(i, {
-                                  menu_id: e.target.value,
-                                  inventory_id: '',
-                                  name: m?.name || r.name,
-                                  type: m?.type || r.type,
-                                });
-                              }}>
-                        <option value="">— Menü —</option>
-                        {menus.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                      <select className="col-span-3 border rounded px-1 py-1 text-xs"
-                              value={r.inventory_id || ''}
-                              onChange={(e) => {
-                                const inv = resources.find((x) => x.id === e.target.value);
-                                setRes(i, {
-                                  inventory_id: e.target.value,
-                                  menu_id: '',
-                                  name: inv?.name || r.name,
-                                  type: inv?.type || r.type,
-                                  unit_price: inv?.unit_price || r.unit_price,
-                                });
-                              }}>
-                        <option value="">— Envanter —</option>
-                        {resources.map((x) => <option key={x.id} value={x.id}>{x.name} (stok {x.total_stock})</option>)}
-                      </select>
-                      <Input className="col-span-2 text-xs" placeholder="Ad" value={r.name}
-                             onChange={(e) => setRes(i, { name: e.target.value })} />
-                      <Input className="col-span-1 text-xs" type="number" placeholder="Adet" value={r.quantity}
-                             onChange={(e) => setRes(i, { quantity: +e.target.value })} />
-                      <Input className="col-span-2 text-xs" type="number" placeholder="Birim ₺" value={r.unit_price}
-                             onChange={(e) => setRes(i, { unit_price: +e.target.value })} />
-                      <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                              onClick={() => rmRes(i)}><Trash2 className="w-3 h-3" /></Button>
-                    </div>
-                  ))}
-                  {form.resources.length > 0 && (
-                    <p className="text-xs text-gray-500">
-                      Envanter seçilirse sistem tüm aktif etkinliklerdeki kullanım toplanır; stok aşılırsa 409.
-                    </p>
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="agenda" className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-semibold">
-                    Dakika Bazlı Fonksiyon Sheet ({form.agenda.length} kalem)
-                  </Label>
-                  <Button type="button" size="sm" variant="outline" onClick={addAg}>
-                    <Plus className="w-3 h-3 mr-1" /> Satır Ekle
-                  </Button>
-                </div>
-                {form.agenda.length === 0 && (
-                  <p className="text-xs text-gray-500 text-center p-4 border rounded">
-                    Karşılama, açılış, ana yemek, AV testi gibi kalemleri ekleyerek tam fonksiyon sheet oluşturun.
-                  </p>
-                )}
-                {form.agenda.map((a, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                    <Input className="col-span-2 text-xs" type="datetime-local"
-                           value={a.starts_at?.slice(0, 16) || ''}
-                           onChange={(e) => setAg(i, { starts_at: e.target.value })} required />
-                    <Input className="col-span-2 text-xs" type="datetime-local"
-                           value={a.ends_at?.slice(0, 16) || ''}
-                           onChange={(e) => setAg(i, { ends_at: e.target.value })} required />
-                    <Input className="col-span-3 text-xs" placeholder="Başlık" value={a.title}
-                           onChange={(e) => setAg(i, { title: e.target.value })} required />
-                    <select className="col-span-2 border rounded px-1 py-1 text-xs"
-                            value={a.kind}
-                            onChange={(e) => setAg(i, { kind: e.target.value })}>
-                      {AGENDA_KINDS.map((k) => <option key={k}>{k}</option>)}
-                    </select>
-                    <Input className="col-span-2 text-xs" placeholder="Sorumlu" value={a.owner || ''}
-                           onChange={(e) => setAg(i, { owner: e.target.value })} />
-                    <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                            onClick={() => rmAg(i)}><Trash2 className="w-3 h-3" /></Button>
-                  </div>
-                ))}
-              </TabsContent>
-
-              <TabsContent value="operations" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                <OperationsPanel form={form} setForm={setForm} />
-              </TabsContent>
-
-              <TabsContent value="payment" className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-semibold">
-                    Ödeme Takvimi ({form.payment_schedule.length} satır, toplam ₺{psTotal.toLocaleString('tr-TR')})
-                  </Label>
-                  <Button type="button" size="sm" variant="outline" onClick={addPs}>
-                    <Plus className="w-3 h-3 mr-1" /> Taksit Ekle
-                  </Button>
-                </div>
-                {form.payment_schedule.length === 0 && (
-                  <p className="text-xs text-gray-500 text-center p-4 border rounded">
-                    Depozito + bakiye taksit planı ekleyebilirsiniz.
-                  </p>
-                )}
-                {form.payment_schedule.map((p, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-                    <Input className="col-span-3 text-xs" type="date" value={p.due_date || ''}
-                           onChange={(e) => setPs(i, { due_date: e.target.value })} required />
-                    <Input className="col-span-4 text-xs" placeholder="Etiket (Depozito %30)"
-                           value={p.label}
-                           onChange={(e) => setPs(i, { label: e.target.value })} required />
-                    <Input className="col-span-3 text-xs" type="number" placeholder="Tutar ₺"
-                           value={p.amount}
-                           onChange={(e) => setPs(i, { amount: +e.target.value })} required />
-                    <label className="col-span-1 text-xs text-center flex items-center gap-1">
-                      <input type="checkbox" checked={p.paid || false}
-                             onChange={(e) => setPs(i, { paid: e.target.checked })} />
-                      Öd.
-                    </label>
-                    <Button type="button" size="sm" variant="ghost" className="col-span-1"
-                            onClick={() => rmPs(i)}><Trash2 className="w-3 h-3" /></Button>
-                  </div>
-                ))}
-              </TabsContent>
-            </Tabs>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button type="button" variant="ghost" onClick={() => setShowEventForm(false)}>İptal</Button>
-              <Button type="submit">{editing ? 'Güncelle' : 'Oluştur'}</Button>
-            </div>
-          </form>
-        </Modal>
+        <EventFormModal
+          editing={editing}
+          form={form} setForm={setForm}
+          eventTab={eventTab} setEventTab={setEventTab}
+          accounts={accounts} accountById={accountById}
+          spaces={spaces} menus={menus} resources={resources}
+          psTotal={psTotal}
+          addSb={addSb} setSb={setSb} rmSb={rmSb}
+          addRes={addRes} setRes={setRes} rmRes={rmRes}
+          addAg={addAg} setAg={setAg} rmAg={rmAg}
+          addPs={addPs} setPs={setPs} rmPs={rmPs}
+          submit={submit}
+          onClose={() => setShowEventForm(false)}
+        />
       )}
 
       {/* Menu / Package create-edit */}
       {showMenuForm && (
-        <Modal title={editingMenu ? 'Menü / Paket Düzenle' : 'Yeni Menü / Paket'}
-               onClose={() => setShowMenuForm(false)}>
-          <form onSubmit={submitMenu} className="space-y-3">
-            <Field label="Ad">
-              <Input required value={menuForm.name}
-                onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })} />
-            </Field>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Tip">
-                <select className="w-full border rounded px-2 py-1.5"
-                        value={menuForm.type}
-                        onChange={(e) => setMenuForm({ ...menuForm, type: e.target.value })}>
-                  <option value="fb">F&B (yiyecek-içecek)</option>
-                  <option value="av">AV (görsel-işitsel)</option>
-                  <option value="decor">Dekorasyon</option>
-                  <option value="ddr">DDR (Daily Delegate Rate)</option>
-                </select>
-              </Field>
-              <Field label="Para Birimi">
-                <Input value={menuForm.currency}
-                  onChange={(e) => setMenuForm({ ...menuForm, currency: e.target.value.toUpperCase() })} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Kişi Başı Fiyat (₺)">
-                <Input type="number" min="0" step="0.01"
-                  value={menuForm.price_per_person}
-                  onChange={(e) => setMenuForm({ ...menuForm, price_per_person: e.target.value })} />
-              </Field>
-              <Field label="Sabit Fiyat (₺)">
-                <Input type="number" min="0" step="0.01"
-                  value={menuForm.flat_price}
-                  onChange={(e) => setMenuForm({ ...menuForm, flat_price: e.target.value })} />
-              </Field>
-            </div>
-            <p className="text-xs text-gray-500 -mt-1">
-              Sadece birini doldurun. Kişi başı dolu ise pax ile çarpılır; sabit ise toplam tek seferdir.
-            </p>
-            <Field label="Açıklama (opsiyonel)">
-              <textarea className="w-full border rounded px-2 py-1.5 text-sm min-h-[60px]"
-                value={menuForm.description}
-                onChange={(e) => setMenuForm({ ...menuForm, description: e.target.value })} />
-            </Field>
-            <Field label="Diyet Etiketleri">
-              <div className="flex flex-wrap gap-1.5">
-                {['vegan', 'vegetarian', 'halal', 'kosher', 'gluten_free'].map((t) => (
-                  <button type="button" key={t}
-                    onClick={() => toggleTag('dietary_tags', t)}
-                    className={`px-2 py-1 text-xs rounded border ${
-                      menuForm.dietary_tags.includes(t)
-                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
-                        : 'bg-white border-gray-300 text-gray-600'
-                    }`}>{t}</button>
-                ))}
-              </div>
-            </Field>
-            <Field label="Alerjenler">
-              <div className="flex flex-wrap gap-1.5">
-                {['nuts', 'gluten', 'dairy', 'egg', 'soy', 'fish', 'shellfish', 'sesame'].map((t) => (
-                  <button type="button" key={t}
-                    onClick={() => toggleTag('allergens', t)}
-                    className={`px-2 py-1 text-xs rounded border ${
-                      menuForm.allergens.includes(t)
-                        ? 'bg-red-100 border-red-400 text-red-800'
-                        : 'bg-white border-gray-300 text-gray-600'
-                    }`}>{t}</button>
-                ))}
-              </div>
-            </Field>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Min. Kişi Sayısı">
-                <Input type="number" min="0" value={menuForm.min_guests}
-                  onChange={(e) => setMenuForm({ ...menuForm, min_guests: e.target.value })} />
-              </Field>
-              <Field label="Mutfak Hazırlık (dk)">
-                <Input type="number" min="0" value={menuForm.prep_lead_minutes}
-                  onChange={(e) => setMenuForm({ ...menuForm, prep_lead_minutes: e.target.value })} />
-              </Field>
-            </div>
-            <Field label="Durum">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={menuForm.active}
-                  onChange={(e) => setMenuForm({ ...menuForm, active: e.target.checked })} />
-                Aktif (etkinliklerde seçilebilir)
-              </label>
-            </Field>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setShowMenuForm(false)}>İptal</Button>
-              <Button type="submit">{editingMenu ? 'Güncelle' : 'Oluştur'}</Button>
-            </div>
-          </form>
-        </Modal>
+        <MenuFormModal editingMenu={editingMenu} menuForm={menuForm} setMenuForm={setMenuForm} toggleTag={toggleTag} submitMenu={submitMenu} onClose={() => setShowMenuForm(false)} />
       )}
 
       {/* BEO modal */}
       {beoData && (
-        <Modal title={`BEO — ${beoData.event.name}`} onClose={() => setBeoData(null)} wide>
-          <div className="space-y-3 text-sm">
-            <Card><CardContent className="p-3 grid grid-cols-2 gap-2 text-xs">
-              <Info l="Müşteri" v={beoData.event.client_name} />
-              <Info l="Tip" v={beoData.event.event_type} />
-              <Info l="Pax" v={beoData.event.expected_pax} />
-              <Info l="Tarih" v={`${beoData.event.start_date} → ${beoData.event.end_date}`} />
-              <Info l="E-posta" v={beoData.event.client_email} />
-              <Info l="Telefon" v={beoData.event.client_phone} />
-              {beoData.event.lost_reason && (
-                <Info l="Lost/Cancel Sebebi" v={beoData.event.lost_reason} cls="text-red-600" />
-              )}
-            </CardContent></Card>
-
-            <div>
-              <h4 className="font-semibold text-sm mb-1">Mekanlar</h4>
-              <table className="w-full text-xs border-collapse">
-                <thead className="bg-slate-50"><tr>
-                  <th className="border p-1 text-left">Mekan</th>
-                  <th className="border p-1">Düzen</th>
-                  <th className="border p-1">Pax</th>
-                  <th className="border p-1">Başla</th>
-                  <th className="border p-1">Bitir</th>
-                </tr></thead>
-                <tbody>
-                  {beoData.spaces.map((s, i) => (
-                    <tr key={i}>
-                      <td className="border p-1">{s.space_name}</td>
-                      <td className="border p-1 text-center">{s.setup_style}</td>
-                      <td className="border p-1 text-center">{s.expected_pax}</td>
-                      <td className="border p-1 font-mono">{s.starts_at?.slice(0, 16)}</td>
-                      <td className="border p-1 font-mono">{s.ends_at?.slice(0, 16)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {beoData.agenda?.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-sm mb-1">Fonksiyon Sheet</h4>
-                <table className="w-full text-xs border-collapse">
-                  <thead className="bg-slate-50"><tr>
-                    <th className="border p-1">Saat</th>
-                    <th className="border p-1 text-left">Başlık</th>
-                    <th className="border p-1">Tip</th>
-                    <th className="border p-1">Sorumlu</th>
-                  </tr></thead>
-                  <tbody>
-                    {beoData.agenda.map((a, i) => (
-                      <tr key={i}>
-                        <td className="border p-1 font-mono">
-                          {a.starts_at?.slice(11, 16)}–{a.ends_at?.slice(11, 16)}
-                        </td>
-                        <td className="border p-1">{a.title}</td>
-                        <td className="border p-1 text-center">{a.kind}</td>
-                        <td className="border p-1">{a.owner || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div>
-              <h4 className="font-semibold text-sm mb-1">Kaynaklar</h4>
-              <table className="w-full text-xs border-collapse">
-                <thead className="bg-slate-50"><tr>
-                  <th className="border p-1 text-left">Hat</th>
-                  <th className="border p-1">Tip</th>
-                  <th className="border p-1">Adet</th>
-                  <th className="border p-1">Birim ₺</th>
-                  <th className="border p-1 text-right">Toplam ₺</th>
-                </tr></thead>
-                <tbody>
-                  {beoData.resources.map((r, i) => (
-                    <tr key={i}>
-                      <td className="border p-1">{r.name}</td>
-                      <td className="border p-1 text-center">{r.type}</td>
-                      <td className="border p-1 text-center">{r.quantity}</td>
-                      <td className="border p-1 text-right">{r.unit_price?.toLocaleString('tr-TR')}</td>
-                      <td className="border p-1 text-right">
-                        ₺{(r.quantity * r.unit_price).toLocaleString('tr-TR')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {beoData.payment_schedule?.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-sm mb-1">Ödeme Takvimi</h4>
-                <table className="w-full text-xs border-collapse">
-                  <thead className="bg-slate-50"><tr>
-                    <th className="border p-1">Vade</th>
-                    <th className="border p-1 text-left">Etiket</th>
-                    <th className="border p-1 text-right">Tutar</th>
-                    <th className="border p-1">Durum</th>
-                    <th className="border p-1">Aksiyon</th>
-                  </tr></thead>
-                  <tbody>
-                    {beoData.payment_schedule.map((p, i) => (
-                      <tr key={i}>
-                        <td className="border p-1 font-mono">{p.due_date}</td>
-                        <td className="border p-1">{p.label}</td>
-                        <td className="border p-1 text-right">₺{p.amount?.toLocaleString('tr-TR')}</td>
-                        <td className="border p-1 text-center">
-                          {p.paid ? <Badge className="bg-emerald-100 text-emerald-800 border-0">Ödendi</Badge>
-                                  : <Badge className="bg-amber-100 text-amber-800 border-0">Bekliyor</Badge>}
-                          {p.reference && <div className="text-[10px] text-gray-500 mt-0.5">Ref: {p.reference}</div>}
-                        </td>
-                        <td className="border p-1 text-center">
-                          {!p.paid && (
-                            <Button size="sm" variant="ghost"
-                                    onClick={() => markPaid(beoData.event.id, i)}>
-                              Öde
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
-              <Info l="Mekan Toplamı" v={`₺${(beoData.event.totals?.space_total || 0).toLocaleString('tr-TR')}`} />
-              <Info l="Kaynak Toplamı" v={`₺${(beoData.event.totals?.resources_total || 0).toLocaleString('tr-TR')}`} />
-              <Info l="GRAND TOTAL" v={`₺${(beoData.event.totals?.grand_total || 0).toLocaleString('tr-TR')}`}
-                    cls="text-lg text-indigo-600 font-bold" />
-            </CardContent></Card>
-
-            <div className="text-right">
-              <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
-              <Button variant="ghost" onClick={() => setBeoData(null)}>Kapat</Button>
-            </div>
-          </div>
-        </Modal>
+        <BeoModal beoData={beoData} markPaid={markPaid} onClose={() => setBeoData(null)} />
       )}
 
       {/* Kitchen ticket modal */}
       {kitchenData && (
-        <Modal title={`Mutfak Fişi — ${kitchenData.event_name}`}
-               onClose={() => setKitchenData(null)} wide>
-          <div className="space-y-3 text-sm">
-            <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
-              <Info l="Beklenen Pax" v={kitchenData.expected_pax} />
-              <Info l="İlk Servis" v={kitchenData.first_service_at?.slice(0, 16) || '—'} />
-              <Info l="Toplam Hat" v={kitchenData.tickets.length} />
-            </CardContent></Card>
-
-            {kitchenData.all_allergens?.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded p-2 text-xs">
-                <strong className="text-red-700">⚠ Alerjenler:</strong> {kitchenData.all_allergens.join(', ')}
-              </div>
-            )}
-            {kitchenData.all_dietary_tags?.length > 0 && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-xs">
-                <strong className="text-emerald-700">Diyet Etiketleri:</strong> {kitchenData.all_dietary_tags.join(', ')}
-              </div>
-            )}
-
-            {kitchenData.tickets.length === 0 ? (
-              <p className="text-center text-gray-500 p-4">F&B menü hattı yok.</p>
-            ) : (
-              kitchenData.tickets.map((t, i) => (
-                <Card key={i}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <ChefHat className="w-4 h-4 text-amber-600" />
-                      {t.menu_name} × {t.qty_pax} pax
-                    </CardTitle>
-                    <CardDescription>
-                      Hazırlık tamamlanmalı: <span className="font-mono font-bold text-red-600">
-                        {t.prep_by?.slice(0, 16) || '—'}
-                      </span> ({t.prep_lead_minutes}dk lead)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {t.courses?.length > 0 && (
-                      <table className="w-full text-xs border-collapse">
-                        <thead className="bg-slate-50"><tr>
-                          <th className="border p-1">Kurs</th>
-                          <th className="border p-1 text-left">Yemek</th>
-                          <th className="border p-1 text-left">Açıklama</th>
-                        </tr></thead>
-                        <tbody>
-                          {t.courses.map((c, j) => (
-                            <tr key={j}>
-                              <td className="border p-1 text-center">{c.course_type}</td>
-                              <td className="border p-1 font-semibold">{c.name}</td>
-                              <td className="border p-1 text-gray-600">{c.description || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                    {t.allergens?.length > 0 && (
-                      <div className="text-xs text-red-600 mt-2">
-                        Alerjenler: {t.allergens.join(', ')}
-                      </div>
-                    )}
-                    {t.dietary_tags?.length > 0 && (
-                      <div className="text-xs text-emerald-600 mt-1">
-                        Diyet: {t.dietary_tags.join(', ')}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
-            )}
-
-            <div className="text-right">
-              <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
-              <Button variant="ghost" onClick={() => setKitchenData(null)}>Kapat</Button>
-            </div>
-          </div>
-        </Modal>
+        <KitchenModal kitchenData={kitchenData} onClose={() => setKitchenData(null)} />
       )}
 
       {/* Entity history drawer */}
@@ -1287,56 +753,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
       {/* Ops sheet modal */}
       {opsData && (
-        <Modal title={`Günün Ops Sheet'i — ${opsData.date}`}
-               onClose={() => setOpsData(null)} wide>
-          <div className="space-y-3 text-sm">
-            {opsData.rows.length === 0 ? (
-              <p className="text-center text-gray-500 p-4">Bu tarih için aktif etkinlik yok.</p>
-            ) : (
-              <table className="w-full text-xs border-collapse">
-                <thead className="bg-slate-50"><tr>
-                  <th className="border p-1">Saat</th>
-                  <th className="border p-1 text-left">Etkinlik</th>
-                  <th className="border p-1 text-left">Müşteri</th>
-                  <th className="border p-1">Mekan</th>
-                  <th className="border p-1">Düzen / Pax</th>
-                  <th className="border p-1">Sorumlu</th>
-                  <th className="border p-1 text-left">Ajanda Özeti</th>
-                </tr></thead>
-                <tbody>
-                  {opsData.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="border p-1 font-mono">
-                        {r.starts_at?.slice(11, 16)}–{r.ends_at?.slice(11, 16)}
-                      </td>
-                      <td className="border p-1 font-semibold">{r.event_name}</td>
-                      <td className="border p-1">{r.client_name}</td>
-                      <td className="border p-1">{r.space_name}</td>
-                      <td className="border p-1 text-center">{r.setup_style} / {r.expected_pax}</td>
-                      <td className="border p-1">{r.organizer_user || '—'}</td>
-                      <td className="border p-1">
-                        {r.agenda_summary?.length === 0 ? <span className="text-gray-400">—</span> : (
-                          <ul className="text-[11px] space-y-0.5">
-                            {r.agenda_summary.map((a, j) => (
-                              <li key={j}>
-                                <span className="font-mono">{a.starts_at?.slice(11, 16)}</span>
-                                {' '}{a.title} <span className="text-gray-400">[{a.kind}]</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <div className="text-right">
-              <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
-              <Button variant="ghost" onClick={() => setOpsData(null)}>Kapat</Button>
-            </div>
-          </div>
-        </Modal>
+        <OpsModal opsData={opsData} onClose={() => setOpsData(null)} />
       )}
     </div>
     </Layout>
