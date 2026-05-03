@@ -10,13 +10,26 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
+
+
+def _unique_operation_id(route: "APIRoute") -> str:
+    """Tag + method + path-based operation_id so every route gets a unique OpenAPI id."""
+
+    def _safe(value: str) -> str:
+        return "".join(c if c.isalnum() else "_" for c in value).strip("_").lower()
+
+    tag = route.tags[0] if route.tags else "default"
+    methods = "_".join(sorted(route.methods or ["any"])).lower()
+    return f"{_safe(tag)}__{methods}__{_safe(route.path)}"
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
 
     application = FastAPI(
+        generate_unique_id_function=_unique_operation_id,
         title="Syroce PMS - Otel Yönetim Sistemi",
         description="""
 ## Syroce PMS - Kapsamlı Otel Yönetim Platformu

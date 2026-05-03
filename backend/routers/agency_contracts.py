@@ -260,7 +260,7 @@ async def contract_list_mine(
 
 # Alias — Acente otomasyon SaaS'ı GET /contracts/ kullanıyor
 @agency_router.get("/contracts")
-@agency_router.get("/contracts/")
+@agency_router.get("/contracts/", include_in_schema=False)
 async def contract_list_root(
     status: str | None = Query(None, pattern="^(pending|approved|rejected|terminated|expired|withdrawn)$"),
     limit: int = Query(100, le=500),
