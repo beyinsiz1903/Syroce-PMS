@@ -243,6 +243,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
     ("domains.pms.block_management_router", "router", ["PMS / Block Management"], None, None),
     ("domains.pms.activity_scheduler_router", "router", ["Activity Scheduler"], None, None),
+    ("domains.pms.function_space_router", "router", ["Function Space"], None, None),
     ("domains.guest.loyalty_router", "router", ["Loyalty Program"], None, None),
     ("domains.revenue.forecast_router", "router", ["Revenue / Forecast"], None, None),
     # PMS Operations — Concierge, Banquet, KBS, KVKK, Guest Prefs, Room Features

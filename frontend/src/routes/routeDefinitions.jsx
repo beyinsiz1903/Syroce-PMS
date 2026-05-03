@@ -225,6 +225,7 @@ const LoyaltyAdminPage = lazy(() => import("@/pages/LoyaltyAdminPage"));
 const ActivitySchedulerPage = lazy(() => import("@/pages/ActivitySchedulerPage"));
 const BlockManagementPage = lazy(() => import("@/pages/BlockManagementPage"));
 const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));
+const FunctionSpacePage = lazy(() => import("@/pages/FunctionSpacePage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -552,5 +553,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/activities", ...p(ActivitySchedulerPage) },
     { path: "/block-management", ...p(BlockManagementPage) },
     { path: "/forecast-reports", ...p(ForecastReportsPage) },
+    { path: "/function-space", ...p(FunctionSpacePage) },
   ];
 }
