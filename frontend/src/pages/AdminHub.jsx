@@ -80,6 +80,7 @@ const SECTIONS = [
     descFallback: 'Kimlik bilgileri ve webhook',
     items: [
       { to: '/admin/integration-credentials', icon: KeyRound, labelKey: 'adminHub.items.integrationCredentials', labelFallback: 'Entegrasyon Anahtarları' },
+      { to: '/admin/capx-integration',        icon: KeyRound, labelKey: 'adminHub.items.capxIntegration',        labelFallback: 'CapX Entegrasyonu' },
       { to: '/admin/webhook-outbox',          icon: Webhook,  labelKey: 'adminHub.items.webhookOutbox',          labelFallback: 'Webhook Outbox' },
     ],
   },

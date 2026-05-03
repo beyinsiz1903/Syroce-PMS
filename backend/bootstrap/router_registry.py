@@ -143,6 +143,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("modules.inventory.router", "router", ["Semantic Inventory"], None, None),
     # 3rd-party integration credentials (super-admin)
     ("routers.integration_credentials", "router", ["Integration Credentials"], None, None),
+    ("routers.capx_integration", "router", ["CapX Integration"], None, None),
     ("modules.observability.alert_router", "router", ["Alert Enrichment"], None, None),
     ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),

@@ -219,6 +219,7 @@ const WebhookOutboxAdmin = lazy(() => import("@/pages/WebhookOutboxAdmin"));
 const EarlyWarningDashboard = lazy(() => import("@/pages/EarlyWarningDashboard"));
 const ModuleDiscovery = lazy(() => import("@/pages/ModuleDiscovery"));
 const IntegrationCredentials = lazy(() => import("@/pages/IntegrationCredentials"));
+const CapXIntegration = lazy(() => import("@/pages/CapXIntegration"));
 // Opera-parity additions
 const FolioRoutingPage = lazy(() => import("@/pages/FolioRoutingPage"));
 const LoyaltyAdminPage = lazy(() => import("@/pages/LoyaltyAdminPage"));
@@ -547,6 +548,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) },
     { path: "/admin/module-discovery", ...pa(ModuleDiscovery) },
     { path: "/admin/integration-credentials", ...pa(IntegrationCredentials) },
+    { path: "/admin/capx-integration", ...pa(CapXIntegration) },
     { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },

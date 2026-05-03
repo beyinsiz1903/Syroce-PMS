@@ -18,6 +18,7 @@ const CATEGORY_META = {
   infrastructure:{ label: "Altyapı",              icon: Database, color: "from-slate-500/10 to-slate-700/10",   border: "border-slate-500/30" },
   integrations:  { label: "3. Parti Servisler",   icon: Plug,     color: "from-emerald-500/10 to-teal-500/10",  border: "border-emerald-500/30" },
   aws:           { label: "AWS & KMS",            icon: Cloud,    color: "from-orange-500/10 to-red-500/10",    border: "border-orange-500/30" },
+  capx:          { label: "CapX B2B Network",     icon: Plug,     color: "from-emerald-500/10 to-green-500/10", border: "border-emerald-500/30" },
 };
 
 export default function IntegrationCredentials({ user, tenant, onLogout }) {

@@ -104,6 +104,17 @@ CREDENTIAL_DEFINITIONS: list[dict[str, Any]] = [
     {"key": "AWS_KMS_KEY_ARN", "name": "AWS KMS Key ARN", "category": "aws",
      "description": "Şifreleme için kullanılan KMS key ARN.",
      "doc_url": ""},
+    # --- CapX B2B Network ---
+    {"key": "CAPX_BASE_URL", "name": "CapX Base URL", "category": "capx",
+     "description": "CapX API tabanı (örn. https://api.capx.com). Sandbox için Replit dev URL'i.",
+     "doc_url": ""},
+    {"key": "CAPX_API_KEY", "name": "CapX API Key", "category": "capx",
+     "description": "CapX panel → 'PMS Bağlan' ile alınan ham API anahtarı (Bearer).",
+     "doc_url": ""},
+    {"key": "CAPX_WEBHOOK_SECRET", "name": "CapX Webhook Secret", "category": "capx",
+     "description": "Reservation event push için HMAC SHA-256 imza anahtarı.",
+     "doc_url": ""},
+
     {"key": "AWS_REGION", "name": "AWS Region", "category": "aws",
      "description": "AWS bölgesi (örn. eu-central-1).",
      "doc_url": ""},

@@ -604,6 +604,16 @@ export const NAV_ITEMS = [
     navGroup: "admin",
     requireSuperAdmin: true,
   },
+  {
+    key: "capx_integration",
+    label: "CapX Entegrasyonu",
+    path: "/admin/capx-integration",
+    moduleKey: "admin_panel",
+    tier: "professional",
+    group: "professional",
+    navGroup: "admin",
+    requireSuperAdmin: true,
+  },
 
   // ──── REPORTS GROUP ────────────────────────────────
   {
