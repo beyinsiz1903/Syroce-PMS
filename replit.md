@@ -5052,3 +5052,13 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
 - **audit_log**: folio_window_opened, folio_window_payor_changed.
 - **Frontend**: `frontend/src/components/folio/FolioWindowsPanel.jsx` (yeni Windows tab — payor seçim + window aç + bakiye listesi). `FolioDetailView.jsx`'a tab eklendi.
 - Smoke 200, ruff/eslint clean, architect 3 turdan sonra önemli sorun yok (sadece minor cooldown önerisi karşılandı).
+
+## 2026-05-03 — 10 büyük backend router AST-based bölme
+10 monolit (>2000 satır) router dosyası mantıklı kategori paketlerine bölündü:
+- routers/departments (3033 → 7 modül), routers/b2b_api (2259 → 13)
+- domains/ai/router (2849 → 9), domains/guest/experience_router (2825 → 8)
+- domains/admin/router (2711 → 11), domains/pms/pos_router (2695 → 7)
+- domains/pms/mobile_router (2398 → 6), domains/pms/dashboard_router (2187 → 3)
+- domains/pms/pos_fnb_router (2139 → 5), domains/revenue/analytics_router (2466 → 12)
+
+Her dosya `<orig_name>/` paketi olarak bölündü. `__init__.py` parent router'ı tutar; `from <orig_path> import router` korundu (bootstrap registry değişmedi). Stacked decorator (örn. `/ai/log-activity` + `/feedback/ai-sentiment`) ve inline class definitions (MenuItemCreate vs.) AST tabanlı splitter ile doğru şekilde taşındı. SHARED kod (imports + class/def/atama) her sub-modüle inline kopyalandı (yan etki riski olmayan tanımlar). Smoke 29/29 PASS, hepsi 200, route sayıları orijinaller ile birebir uyuştu.
