@@ -10,33 +10,41 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { websocket, useWebSocket } from '@/lib/websocket';
+import { useWebSocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
 import { canSendUrgentMessage } from '@/utils/authRoles';
 import { Send, RefreshCw, MessagesSquare, CheckCheck } from 'lucide-react';
 
-// R4 split: render-helpers extracted into sub-components.
+// R4 split: state'ler ve render orchestration burada kalır; ağır iş üç
+// yardımcı modüle çıkarıldı (visibility-aware polling, Socket.IO event
+// handler'ları, mesaj action factory'leri).
 import {
   STAFF_ROLES,
   CONVERSATION_DEPARTMENT_FILTERS,
   POLL_INTERVAL_MS,
-  TYPING_INDICATOR_TTL_MS,
   TYPING_EMIT_THROTTLE_MS,
 } from './internalChat/constants';
 import InboxList from './internalChat/InboxList';
 import ComposeForm from './internalChat/ComposeForm';
 import ConversationsList from './internalChat/ConversationsList';
 import ThreadView from './internalChat/ThreadView';
+import { useVisibilityAwarePoller } from './internalChat/hooks/useVisibilityAwarePoller';
+import { useChatRealtime } from './internalChat/hooks/useChatRealtime';
+import {
+  submitEditMessage,
+  recallMessage,
+  fetchEditHistoryFor,
+  markInboxMessageRead,
+  sendThreadReply,
+  sendNewMessage,
+} from './internalChat/messageActions';
 
 
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
-  const {
-    decrementInternalUnread,
-    markAllInternalRead,
-  } = useNotifications();
-  const { on: wsOn, socketEmit: wsSocketEmit } = useWebSocket('pms');
+  const { decrementInternalUnread, markAllInternalRead } = useNotifications();
+  const { socketEmit: wsSocketEmit } = useWebSocket('pms');
   const [composeOpen, setComposeOpen] = useState(false);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
@@ -45,10 +53,7 @@ const InternalChatTab = ({ currentUser }) => {
   // hiç görmesin — backend de aynı kontrolü yapıyor (defense-in-depth).
   // Task #28: rol-bazlı yetki yoksa kullanıcıya tek tek verilen
   // `granted_permissions: ["send_urgent_message"]` izni de kabul edilir.
-  const canSendUrgent = useMemo(
-    () => canSendUrgentMessage(currentUser),
-    [currentUser],
-  );
+  const canSendUrgent = useMemo(() => canSendUrgentMessage(currentUser), [currentUser]);
 
   const [inbox, setInbox] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -92,27 +97,19 @@ const InternalChatTab = ({ currentUser }) => {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
-  // Task #39: per-message edit-history cache. The popover is opened on
-  // demand so we don't prefetch history for every "(düzenlendi)" badge in
-  // a long thread; once loaded for a message we keep the result so
-  // re-opening the popover is instant.
-  // Shape: { [messageId]: { loading: boolean, error: string|null,
-  //                          history: Array, current_message: string } }
+  // Task #39: per-message edit-history cache (lazy populated by popover).
   const [editHistoryByMsg, setEditHistoryByMsg] = useState({});
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
   const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
-  // Task #30: badge tıklayınca dropdown'ı programmatik olarak kapatabilmek
-  // için Select'i controlled yapıyoruz.
+  // Task #30: badge tıklayınca dropdown'ı programmatik kapatabilmek için
+  // Select'i controlled tutuyoruz.
   const [conversationDeptOpen, setConversationDeptOpen] = useState(false);
 
   // Live "yazıyor…" indicator — partner_id of the user currently typing
   // to me in the open thread. Auto-clears after TYPING_INDICATOR_TTL_MS.
   const [typingPartnerName, setTypingPartnerName] = useState('');
 
-  const pollTimerRef = useRef(null);
-  const conversationPollTimerRef = useRef(null);
-  const threadPollTimerRef = useRef(null);
   const threadScrollRef = useRef(null);
   const isMountedRef = useRef(true);
   const inboxRequestIdRef = useRef(0);
@@ -124,7 +121,6 @@ const InternalChatTab = ({ currentUser }) => {
   // Refs that don't trigger re-renders — used by WS handlers and the
   // throttled typing emitter.
   const selectedConvUserIdRef = useRef(null);
-  const typingClearTimerRef = useRef(null);
   const lastTypingEmitRef = useRef(0);
 
   useEffect(() => {
@@ -132,18 +128,12 @@ const InternalChatTab = ({ currentUser }) => {
     // Switching threads clears any stale "yazıyor…" indicator from the
     // previous partner.
     setTypingPartnerName('');
-    if (typingClearTimerRef.current) {
-      clearTimeout(typingClearTimerRef.current);
-      typingClearTimerRef.current = null;
-    }
   }, [selectedConvUserId]);
 
   const loadInbox = useCallback(async (silent = false) => {
     // Cancel any in-flight inbox request — prevents stale responses from
     // overwriting state when the filter changes faster than the network.
-    if (inboxAbortRef.current) {
-      inboxAbortRef.current.abort();
-    }
+    if (inboxAbortRef.current) inboxAbortRef.current.abort();
     const controller = new AbortController();
     inboxAbortRef.current = controller;
     const requestId = ++inboxRequestIdRef.current;
@@ -154,21 +144,16 @@ const InternalChatTab = ({ currentUser }) => {
         params: { limit: 100, unread_only: showUnreadOnly },
         signal: controller.signal,
       });
-      // Drop the response if a newer request superseded this one or component unmounted
       if (
-        !isMountedRef.current ||
-        requestId !== inboxRequestIdRef.current ||
-        controller.signal.aborted
-      ) {
-        return;
-      }
+        !isMountedRef.current
+        || requestId !== inboxRequestIdRef.current
+        || controller.signal.aborted
+      ) return;
       setInbox(res.data?.messages || []);
       setUnreadCount(res.data?.unread_count || 0);
       setMyDepartment(res.data?.my_department || '');
     } catch (err) {
-      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') {
-        return;
-      }
+      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
       if (!silent) {
         toast({
           title: 'Gelen kutusu yüklenemedi',
@@ -177,20 +162,14 @@ const InternalChatTab = ({ currentUser }) => {
         });
       }
     } finally {
-      if (
-        !silent &&
-        isMountedRef.current &&
-        requestId === inboxRequestIdRef.current
-      ) {
+      if (!silent && isMountedRef.current && requestId === inboxRequestIdRef.current) {
         setLoadingInbox(false);
       }
     }
   }, [showUnreadOnly, toast]);
 
   const loadConversations = useCallback(async (silent = false) => {
-    if (conversationsAbortRef.current) {
-      conversationsAbortRef.current.abort();
-    }
+    if (conversationsAbortRef.current) conversationsAbortRef.current.abort();
     const controller = new AbortController();
     conversationsAbortRef.current = controller;
     const requestId = ++conversationsRequestIdRef.current;
@@ -201,17 +180,13 @@ const InternalChatTab = ({ currentUser }) => {
         signal: controller.signal,
       });
       if (
-        !isMountedRef.current ||
-        requestId !== conversationsRequestIdRef.current ||
-        controller.signal.aborted
-      ) {
-        return;
-      }
+        !isMountedRef.current
+        || requestId !== conversationsRequestIdRef.current
+        || controller.signal.aborted
+      ) return;
       setConversations(res.data?.conversations || []);
     } catch (err) {
-      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') {
-        return;
-      }
+      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
       if (!silent) {
         toast({
           title: 'Konuşmalar yüklenemedi',
@@ -220,11 +195,7 @@ const InternalChatTab = ({ currentUser }) => {
         });
       }
     } finally {
-      if (
-        !silent &&
-        isMountedRef.current &&
-        requestId === conversationsRequestIdRef.current
-      ) {
+      if (!silent && isMountedRef.current && requestId === conversationsRequestIdRef.current) {
         setLoadingConversations(false);
       }
     }
@@ -233,9 +204,7 @@ const InternalChatTab = ({ currentUser }) => {
   const loadThread = useCallback(
     async (userId, { silent = false, markRead = false } = {}) => {
       if (!userId) return;
-      if (threadAbortRef.current) {
-        threadAbortRef.current.abort();
-      }
+      if (threadAbortRef.current) threadAbortRef.current.abort();
       const controller = new AbortController();
       threadAbortRef.current = controller;
       const requestId = ++threadRequestIdRef.current;
@@ -247,12 +216,10 @@ const InternalChatTab = ({ currentUser }) => {
           { signal: controller.signal },
         );
         if (
-          !isMountedRef.current ||
-          requestId !== threadRequestIdRef.current ||
-          controller.signal.aborted
-        ) {
-          return;
-        }
+          !isMountedRef.current
+          || requestId !== threadRequestIdRef.current
+          || controller.signal.aborted
+        ) return;
         setThreadMessages(res.data?.messages || []);
 
         if (markRead) {
@@ -263,22 +230,15 @@ const InternalChatTab = ({ currentUser }) => {
               `/messaging/internal/conversation/${encodeURIComponent(userId)}/mark-read`,
             );
             if (isMountedRef.current) {
-              setConversations((prev) =>
-                prev.map((c) =>
-                  c.user_id === userId ? { ...c, unread_count: 0 } : c,
-                ),
-              );
-              // Inbox unread count may also change for DMs to me
+              setConversations((prev) => prev.map((c) => (
+                c.user_id === userId ? { ...c, unread_count: 0 } : c
+              )));
               loadInbox(true);
             }
-          } catch {
-            /* non-fatal */
-          }
+          } catch { /* non-fatal */ }
         }
       } catch (err) {
-        if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') {
-          return;
-        }
+        if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
         if (!silent) {
           toast({
             title: 'Konuşma yüklenemedi',
@@ -287,11 +247,7 @@ const InternalChatTab = ({ currentUser }) => {
           });
         }
       } finally {
-        if (
-          !silent &&
-          isMountedRef.current &&
-          requestId === threadRequestIdRef.current
-        ) {
+        if (!silent && isMountedRef.current && requestId === threadRequestIdRef.current) {
           setLoadingThread(false);
         }
       }
@@ -319,72 +275,24 @@ const InternalChatTab = ({ currentUser }) => {
 
   // Task #30: Departman dropdown badge'i tıklanınca dropdown'ı kapat,
   // o departmana filtre koy ve listede ilk okunmamış mesajı olan
-  // konuşmayı aç. Geleneksel Item.onSelect davranışı badge dışında
-  // (label/whitespace) kalır, dolayısıyla normal seçim yapısı bozulmaz.
+  // konuşmayı aç.
   const jumpToFirstUnreadInDepartment = useCallback(
     (deptValue) => {
       setConversationDeptFilter(deptValue);
       setConversationDeptOpen(false);
-      const opt = CONVERSATION_DEPARTMENT_FILTERS.find(
-        (o) => o.value === deptValue,
-      );
+      const opt = CONVERSATION_DEPARTMENT_FILTERS.find((o) => o.value === deptValue);
       const allowed = opt?.roles ? new Set(opt.roles) : null;
       const target = conversations.find((c) => {
         if (allowed && !allowed.has(c.user_role || '')) return false;
         return (c.unread_count || 0) > 0;
       });
-      if (target) {
-        handleSelectConversation(target);
-      }
+      if (target) handleSelectConversation(target);
     },
     [conversations, handleSelectConversation],
   );
 
-  const performSendThreadReply = useCallback(async () => {
-    const trimmed = threadReply.trim();
-    if (!trimmed || !selectedConvUserId) return;
-    setSendingThreadReply(true);
-    try {
-      await axios.post('/messaging/internal/send', null, {
-        params: {
-          message: trimmed,
-          to_user_id: selectedConvUserId,
-          priority: threadPriority,
-        },
-      });
-      setThreadReply('');
-      // Reset to normal so the next message doesn't accidentally inherit
-      // an "urgent" flag from a previous one-off alert.
-      setThreadPriority('normal');
-      // Refresh thread + conversation list
-      await loadThread(selectedConvUserId, { silent: true });
-      loadConversations(true);
-    } catch (err) {
-      const status = err.response?.status;
-      const serverDetail = err.response?.data?.detail;
-      let description = serverDetail || err.message;
-      if (status === 403) {
-        if (threadPriority === 'urgent') {
-          // Backend gates urgent priority behind a separate permission. Show
-          // the exact reason and reset the picker so a retry without urgent
-          // succeeds without the user having to manually flip it back.
-          description =
-            serverDetail ||
-            'Acil mesaj gönderme yetkiniz yok. Bu kanal yalnızca yönetici/süpervizör rollerine açıktır.';
-          setThreadPriority('normal');
-        } else {
-          description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
-        }
-      }
-      toast({ title: 'Yanıt gönderilemedi', description, variant: 'destructive' });
-    } finally {
-      setSendingThreadReply(false);
-    }
-  }, [threadReply, threadPriority, selectedConvUserId, loadThread, loadConversations, toast]);
-
   // Wrapper used by Send button / Enter key. For "urgent" priority we first
   // pop a quick confirmation so a misclick on Acil doesn't blast an alarm.
-  // Normal/High priorities are unaffected.
   const handleSendThreadReply = useCallback(() => {
     const trimmed = threadReply.trim();
     if (!trimmed || !selectedConvUserId || sendingThreadReply) return;
@@ -392,13 +300,21 @@ const InternalChatTab = ({ currentUser }) => {
       setUrgentConfirmOpen(true);
       return;
     }
-    performSendThreadReply();
-  }, [threadReply, selectedConvUserId, sendingThreadReply, threadPriority, performSendThreadReply]);
+    sendThreadReply({
+      threadReply, threadPriority, selectedConvUserId,
+      setThreadReply, setThreadPriority, setSendingThreadReply,
+      loadThread, loadConversations, toast,
+    });
+  }, [threadReply, threadPriority, selectedConvUserId, sendingThreadReply, loadThread, loadConversations, toast]);
 
   const handleConfirmUrgentSend = useCallback(() => {
     setUrgentConfirmOpen(false);
-    performSendThreadReply();
-  }, [performSendThreadReply]);
+    sendThreadReply({
+      threadReply, threadPriority, selectedConvUserId,
+      setThreadReply, setThreadPriority, setSendingThreadReply,
+      loadThread, loadConversations, toast,
+    });
+  }, [threadReply, threadPriority, selectedConvUserId, loadThread, loadConversations, toast]);
 
   // ── Inline edit handlers ────────────────────────────────────────────────
   // Begin editing: snapshot the current text into the draft so cancel is a
@@ -417,180 +333,45 @@ const InternalChatTab = ({ currentUser }) => {
     setSavingEdit(false);
   }, []);
 
-  // Task #39: lazy-load the edit history for the "(düzenlendi)" popover.
-  // Called when the user opens the popover for a message; subsequent opens
-  // for the same message reuse the cached payload. We do not retry on
-  // error — the popover surfaces the failure and the user can re-open it
-  // (which clears the entry) to retry.
   const fetchEditHistory = useCallback(
-    async (messageId) => {
-      if (!messageId) return;
-      setEditHistoryByMsg((prev) => ({
-        ...prev,
-        [messageId]: { loading: true, error: null, history: [], current_message: '' },
-      }));
-      try {
-        const res = await axios.get(`/messaging/internal/${messageId}/history`);
-        const data = res?.data || {};
-        setEditHistoryByMsg((prev) => ({
-          ...prev,
-          [messageId]: {
-            loading: false,
-            error: null,
-            history: Array.isArray(data.history) ? data.history : [],
-            current_message: data.current_message || '',
-          },
-        }));
-      } catch (err) {
-        const detail =
-          err?.response?.data?.detail ||
-          err?.message ||
-          'Geçmiş yüklenemedi';
-        setEditHistoryByMsg((prev) => ({
-          ...prev,
-          [messageId]: { loading: false, error: detail, history: [], current_message: '' },
-        }));
-      }
-    },
+    (messageId) => fetchEditHistoryFor({ messageId, setEditHistoryByMsg }),
     [],
   );
 
   const handleSubmitEditMessage = useCallback(
-    async (messageId) => {
-      if (!messageId) return;
-      const trimmed = (editingDraft || '').trim();
-      if (!trimmed) {
-        toast({
-          title: 'Boş mesaj',
-          description: 'Mesaj metni boş olamaz.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      // No-op short-circuit — saves a server round trip and avoids polluting
-      // the edit history with a "no change" entry.
-      const original = threadMessages.find((m) => m.id === messageId);
-      if (original && (original.message || '') === trimmed) {
-        cancelEditMessage();
-        return;
-      }
-      setSavingEdit(true);
-      try {
-        const res = await axios.patch(
-          `/messaging/internal/${encodeURIComponent(messageId)}`,
-          { message: trimmed },
-        );
-        const editedAt = res.data?.edited_at || new Date().toISOString();
-        // Optimistic update: stamp the bubble with the new text + badge so
-        // the change appears instantly. The silent thread refresh + the
-        // websocket update event will reconcile shortly.
-        setThreadMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? { ...m, message: trimmed, edited: true, edited_at: editedAt }
-              : m,
-          ),
-        );
-        setInbox((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? { ...m, message: trimmed, edited: true, edited_at: editedAt }
-              : m,
-          ),
-        );
-        cancelEditMessage();
-        toast({
-          title: 'Mesaj güncellendi',
-          description: 'Karşı tarafta "düzenlendi" etiketi ile görünecek.',
-        });
-        if (selectedConvUserId) {
-          loadThread(selectedConvUserId, { silent: true });
-        }
-        loadConversations(true);
-      } catch (err) {
-        const status = err.response?.status;
-        let description = err.response?.data?.detail || err.message;
-        if (status === 403) {
-          description = 'Sadece kendi gönderdiğiniz mesajları düzenleyebilirsiniz.';
-        }
-        toast({
-          title: 'Mesaj düzenlenemedi',
-          description,
-          variant: 'destructive',
-        });
-        setSavingEdit(false);
-      }
-    },
-    [
+    (messageId) => submitEditMessage({
+      messageId,
       editingDraft,
       threadMessages,
+      setThreadMessages,
+      setInbox,
+      setSavingEdit,
       cancelEditMessage,
       selectedConvUserId,
       loadThread,
       loadConversations,
       toast,
-    ],
+    }),
+    [editingDraft, threadMessages, cancelEditMessage, selectedConvUserId, loadThread, loadConversations, toast],
   );
 
   const handleRecallMessage = useCallback(
-    async (messageId) => {
-      if (!messageId) return;
-      // Plain confirm() keeps the surface area small and avoids dragging a
-      // dialog primitive into the per-message hot path. The action is
-      // destructive but reversible only by sending a new message.
-      const ok = window.confirm(
-        'Bu mesajı geri almak istediğinize emin misiniz? Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.',
-      );
-      if (!ok) return;
-      try {
-        const res = await axios.delete(
-          `/messaging/internal/${encodeURIComponent(messageId)}`,
-        );
-        // Optimistically mark the bubble as deleted so the UI reflects the
-        // change before the silent refresh lands.
-        setThreadMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? { ...m, deleted: true, message: '' }
-              : m,
-          ),
-        );
-        toast({
-          title: 'Mesaj geri alındı',
-          description: res.data?.alarm_cleared
-            ? 'Acil alarmı da otomatik kapatıldı.'
-            : 'Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.',
-        });
-        // Refresh thread + conversations preview so the tombstone is canonical.
-        if (selectedConvUserId) {
-          loadThread(selectedConvUserId, { silent: true });
-        }
-        loadConversations(true);
-      } catch (err) {
-        const status = err.response?.status;
-        let description = err.response?.data?.detail || err.message;
-        if (status === 403) {
-          description = 'Sadece kendi gönderdiğiniz mesajları geri alabilirsiniz.';
-        }
-        toast({
-          title: 'Mesaj geri alınamadı',
-          description,
-          variant: 'destructive',
-        });
-      }
-    },
+    (messageId) => recallMessage({
+      messageId,
+      setThreadMessages,
+      selectedConvUserId,
+      loadThread,
+      loadConversations,
+      toast,
+    }),
     [selectedConvUserId, loadThread, loadConversations, toast],
   );
 
   const handleStartConversationFromUser = useCallback(
     (user) => {
       const existing = conversations.find((c) => c.user_id === user.id);
-      if (existing) {
-        handleSelectConversation(existing);
-        return;
-      }
-      // Synthetic conversation row for a partner with no history yet.
-      handleSelectConversation({ user_id: user.id, user_name: user.name });
+      if (existing) handleSelectConversation(existing);
+      else handleSelectConversation({ user_id: user.id, user_name: user.name });
     },
     [conversations, handleSelectConversation],
   );
@@ -614,9 +395,7 @@ const InternalChatTab = ({ currentUser }) => {
     } catch (err) {
       if (!isMountedRef.current) return;
       const status = err.response?.status;
-      if (status === 401 || status === 403) {
-        setUsersAccessDenied(true);
-      }
+      if (status === 401 || status === 403) setUsersAccessDenied(true);
       setUsersLoaded(true);
     }
   }, [currentUser?.id]);
@@ -625,8 +404,7 @@ const InternalChatTab = ({ currentUser }) => {
   // Hata durumunda sessiz: presence bir UX ipucu, güvenlik sınırı değil.
   const loadOnlinePresence = useCallback(async () => {
     try {
-      // axios.defaults.baseURL zaten `/api` ile bitiyor — diğer
-      // mesajlaşma çağrılarıyla aynı şekilde göreli yol kullan,
+      // axios.defaults.baseURL zaten `/api` ile bitiyor — göreli yol kullan,
       // aksi halde `/api/api/...` çift prefix'i 404'e yol açar.
       const res = await axios.get('/messaging/internal/presence/online');
       if (!isMountedRef.current) return;
@@ -647,267 +425,41 @@ const InternalChatTab = ({ currentUser }) => {
     loadConversations();
     return () => {
       isMountedRef.current = false;
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-      if (conversationPollTimerRef.current) clearInterval(conversationPollTimerRef.current);
-      if (threadPollTimerRef.current) clearInterval(threadPollTimerRef.current);
       if (inboxAbortRef.current) inboxAbortRef.current.abort();
       if (conversationsAbortRef.current) conversationsAbortRef.current.abort();
       if (threadAbortRef.current) threadAbortRef.current.abort();
     };
   }, [loadInbox, loadUsers, loadConversations]);
 
-  // Polling timers — Socket.IO ana iletim, polling güvenlik ağı.
-  // Tarayıcı sekmesi arka plana geçince timer'lar duraklatılır,
-  // tekrar öne gelince hem hemen bir tetikleme yapılır hem timer
-  // yeniden başlatılır (boşta sekmelerden gereksiz yük olmasın).
-  useEffect(() => {
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollTimerRef.current = null;
-    const start = () => {
-      if (pollTimerRef.current !== null || document.hidden) return;
-      pollTimerRef.current = setInterval(() => loadInbox(true), POLL_INTERVAL_MS);
-    };
-    const stop = () => {
-      if (pollTimerRef.current !== null) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-    };
-    const onVis = () => {
-      if (document.hidden) stop();
-      else { loadInbox(true); start(); }
-    };
-    start();
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVis);
-    };
-  }, [loadInbox]);
-
-  useEffect(() => {
-    if (conversationPollTimerRef.current) clearInterval(conversationPollTimerRef.current);
-    conversationPollTimerRef.current = null;
-    const start = () => {
-      if (conversationPollTimerRef.current !== null || document.hidden) return;
-      conversationPollTimerRef.current = setInterval(
-        () => loadConversations(true),
-        POLL_INTERVAL_MS,
-      );
-    };
-    const stop = () => {
-      if (conversationPollTimerRef.current !== null) {
-        clearInterval(conversationPollTimerRef.current);
-        conversationPollTimerRef.current = null;
-      }
-    };
-    const onVis = () => {
-      if (document.hidden) stop();
-      else { loadConversations(true); start(); }
-    };
-    start();
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVis);
-    };
-  }, [loadConversations]);
-
-  // Poll the open thread every 60s so incoming messages from the partner
-  // appear without a manual refresh. Only runs while a thread is selected.
-  // (Socket.IO is the primary delivery mechanism — this is a safety net.)
-  useEffect(() => {
-    if (threadPollTimerRef.current) clearInterval(threadPollTimerRef.current);
-    threadPollTimerRef.current = null;
-    if (!selectedConvUserId) return;
-    const tick = () => loadThread(selectedConvUserId, { silent: true, markRead: true });
-    const start = () => {
-      if (threadPollTimerRef.current !== null || document.hidden) return;
-      threadPollTimerRef.current = setInterval(tick, POLL_INTERVAL_MS);
-    };
-    const stop = () => {
-      if (threadPollTimerRef.current !== null) {
-        clearInterval(threadPollTimerRef.current);
-        threadPollTimerRef.current = null;
-      }
-    };
-    const onVis = () => {
-      if (document.hidden) stop();
-      else { tick(); start(); }
-    };
-    start();
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVis);
-    };
-  }, [selectedConvUserId, loadThread]);
+  // Polling — Socket.IO ana iletim, polling güvenlik ağı (60s).
+  // Sekme arka plana geçince timer'lar duraklar, geri gelince hemen tetikler.
+  useVisibilityAwarePoller(useCallback(() => loadInbox(true), [loadInbox]), { intervalMs: POLL_INTERVAL_MS });
+  useVisibilityAwarePoller(useCallback(() => loadConversations(true), [loadConversations]), { intervalMs: POLL_INTERVAL_MS });
+  useVisibilityAwarePoller(
+    useCallback(() => {
+      if (selectedConvUserId) loadThread(selectedConvUserId, { silent: true, markRead: true });
+    }, [selectedConvUserId, loadThread]),
+    { enabled: !!selectedConvUserId, intervalMs: POLL_INTERVAL_MS },
+  );
 
   // Auto-scroll the thread to the bottom whenever new messages arrive.
   useEffect(() => {
     if (!threadScrollRef.current) return;
     const node = threadScrollRef.current;
-    // requestAnimationFrame ensures the DOM is painted before scrolling
     requestAnimationFrame(() => {
       node.scrollTop = node.scrollHeight;
     });
   }, [threadMessages]);
 
-  // ── Live updates: subscribe to Socket.IO so new messages appear instantly. ──
-  // The server-side `internal_message` event already filters by tenant + room
-  // (user / department / broadcast), so anything that lands here is for us.
-  // Updates the inbox AND, if a thread for the same partner is open, appends
-  // the message to the thread view so partner replies stream in live too.
-  useEffect(() => {
-    let teardown = null;
-    let cancelled = false;
-
-    const onMessage = (envelope) => {
-      const msg = envelope?.message;
-      if (!msg) return;
-
-      const fromMe = msg.from_user_id && currentUser?.id && msg.from_user_id === currentUser.id;
-
-      setInbox((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        const merged = [{ ...msg, time_ago: msg.time_ago || 'şimdi' }, ...prev];
-        return merged.slice(0, 200);
-      });
-
-      if (!fromMe && !msg.read) {
-        setUnreadCount((c) => c + 1);
-      }
-
-      // If the open thread is with the sender (or recipient, for echo of
-      // our own messages from another tab), append it live so the user
-      // doesn't have to wait for the 60s safety-net poll.
-      if (selectedConvUserId) {
-        const partnerId = fromMe ? msg.to_user_id : msg.from_user_id;
-        if (partnerId && partnerId === selectedConvUserId) {
-          setThreadMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, { ...msg, time_ago: msg.time_ago || 'şimdi' }];
-          });
-        }
-      }
-    };
-
-    // In-place updates (e.g. edits) — replace the existing entry rather than
-    // prepending a new bubble so the conversation stays in chronological
-    // order and the "düzenlendi" badge appears immediately for the recipient.
-    const onMessageUpdate = (envelope) => {
-      const msg = envelope?.message;
-      if (!msg || !msg.id) return;
-
-      setInbox((prev) =>
-        prev.map((m) =>
-          m.id === msg.id
-            ? {
-                ...m,
-                message: msg.message,
-                edited: !!msg.edited,
-                edited_at: msg.edited_at || m.edited_at,
-              }
-            : m,
-        ),
-      );
-      setThreadMessages((prev) =>
-        prev.map((m) =>
-          m.id === msg.id
-            ? {
-                ...m,
-                message: msg.message,
-                edited: !!msg.edited,
-                edited_at: msg.edited_at || m.edited_at,
-              }
-            : m,
-        ),
-      );
-    };
-
-    (async () => {
-      try {
-        await websocket.connect();
-        if (cancelled) return;
-        const off1 = websocket.on('internal_message', onMessage);
-        const off2 = websocket.on('internal_message_updated', onMessageUpdate);
-        teardown = () => {
-          if (off1) off1();
-          if (off2) off2();
-        };
-      } catch {
-        /* noop — falls back to polling */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (teardown) teardown();
-    };
-  }, [currentUser?.id, selectedConvUserId]);
-
-  // ── Live read receipts via WebSocket ───────────────────────────────
-  // When the partner reads my messages, flip the ✓✓ icon immediately
-  // instead of waiting for the next safety-net poll. The polling fallback
-  // remains in place so if WS is unavailable nothing breaks.
-  useEffect(() => {
-    const myId = currentUser?.id;
-    if (!myId) return undefined;
-    const off = wsOn('internal_message_read', (data) => {
-      if (!data || data.sender_id !== myId) return;
-      const readerId = data.reader_id;
-      const ids = Array.isArray(data.message_ids) ? data.message_ids : [];
-      // Update the open thread if it matches the reader.
-      if (selectedConvUserIdRef.current === readerId) {
-        setThreadMessages((prev) =>
-          prev.map((m) => {
-            if (!m.is_from_me) return m;
-            if (ids.length === 0 || ids.includes(m.id)) {
-              return { ...m, read: true };
-            }
-            return m;
-          }),
-        );
-      }
-    });
-    return off;
-  }, [wsOn, currentUser?.id]);
-
-  // ── Live "yazıyor…" indicator via WebSocket ───────────────────────
-  useEffect(() => {
-    const myId = currentUser?.id;
-    if (!myId) return undefined;
-    const off = wsOn('internal_user_typing', (data) => {
-      if (!data) return;
-      // Only react to typing events addressed to me from the open partner.
-      if (data.to_user_id !== myId) return;
-      if (data.from_user_id !== selectedConvUserIdRef.current) return;
-      if (data.is_typing === false) {
-        setTypingPartnerName('');
-        if (typingClearTimerRef.current) {
-          clearTimeout(typingClearTimerRef.current);
-          typingClearTimerRef.current = null;
-        }
-        return;
-      }
-      setTypingPartnerName(data.from_user_name || 'Kullanıcı');
-      if (typingClearTimerRef.current) {
-        clearTimeout(typingClearTimerRef.current);
-      }
-      typingClearTimerRef.current = setTimeout(() => {
-        setTypingPartnerName('');
-        typingClearTimerRef.current = null;
-      }, TYPING_INDICATOR_TTL_MS);
-    });
-    return off;
-  }, [wsOn, currentUser?.id]);
-
-  useEffect(
-    () => () => {
-      if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
-    },
-    [],
-  );
+  // ── Live updates: Socket.IO ile mesaj akışı + read receipt + typing ──
+  useChatRealtime({
+    currentUser,
+    selectedConvUserIdRef,
+    setInbox,
+    setUnreadCount,
+    setThreadMessages,
+    setTypingPartnerName,
+  });
 
   // Throttled emitter for the local user's typing activity. Called from
   // the reply textarea's onChange handler.
@@ -929,15 +481,11 @@ const InternalChatTab = ({ currentUser }) => {
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLocaleLowerCase('tr');
-    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find(
-      (opt) => opt.value === userDeptFilter,
-    );
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === userDeptFilter);
     const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
 
     const matches = users.filter((u) => {
       if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
-      // Task #25: çevrimiçi-yalnızca filtresi. Online listesi tenant
-      // kapsamlı geldiği için ekstra tenant kontrolüne gerek yok.
       if (onlineOnly && !onlineUsers.has(u.id)) return false;
       if (q) {
         const name = (u.name || '').toLocaleLowerCase('tr');
@@ -952,29 +500,20 @@ const InternalChatTab = ({ currentUser }) => {
 
   const filteredConversations = useMemo(() => {
     const q = conversationSearch.trim().toLocaleLowerCase('tr');
-    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find(
-      (opt) => opt.value === conversationDeptFilter,
-    );
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === conversationDeptFilter);
     const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
 
     return conversations.filter((c) => {
-      if (q && !(c.user_name || '').toLocaleLowerCase('tr').includes(q)) {
-        return false;
-      }
-      if (allowedRoles && !allowedRoles.has(c.user_role || '')) {
-        return false;
-      }
-      if (conversationOnlyUnread && (c.unread_count || 0) <= 0) {
-        return false;
-      }
+      if (q && !(c.user_name || '').toLocaleLowerCase('tr').includes(q)) return false;
+      if (allowedRoles && !allowedRoles.has(c.user_role || '')) return false;
+      if (conversationOnlyUnread && (c.unread_count || 0) <= 0) return false;
       return true;
     });
   }, [conversations, conversationSearch, conversationDeptFilter, conversationOnlyUnread]);
 
-  const conversationFiltersActive =
-    conversationDeptFilter !== 'all' ||
-    conversationOnlyUnread ||
-    !!conversationSearch.trim();
+  const conversationFiltersActive = conversationDeptFilter !== 'all'
+    || conversationOnlyUnread
+    || !!conversationSearch.trim();
 
   const totalConversationUnread = useMemo(
     () => conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0),
@@ -988,10 +527,7 @@ const InternalChatTab = ({ currentUser }) => {
     const counts = {};
     for (const opt of CONVERSATION_DEPARTMENT_FILTERS) {
       if (opt.value === 'all') {
-        counts[opt.value] = conversations.reduce(
-          (sum, c) => sum + (c.unread_count || 0),
-          0,
-        );
+        counts[opt.value] = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
         continue;
       }
       const allowed = opt.roles ? new Set(opt.roles) : null;
@@ -1021,20 +557,18 @@ const InternalChatTab = ({ currentUser }) => {
         await loadConversations(true);
         toast({
           title: 'İşaretleme başarısız',
-          description:
-            result?.error?.response?.data?.detail ||
-            result?.error?.message ||
-            'Mesajlar işaretlenirken bir sorun oluştu.',
+          description: result?.error?.response?.data?.detail
+            || result?.error?.message
+            || 'Mesajlar işaretlenirken bir sorun oluştu.',
           variant: 'destructive',
         });
         return;
       }
       toast({
         title: 'Tüm mesajlar okundu olarak işaretlendi',
-        description:
-          result.updated_count > 0
-            ? `${result.updated_count} mesaj güncellendi.`
-            : 'Okunmamış mesaj kalmamıştı.',
+        description: result.updated_count > 0
+          ? `${result.updated_count} mesaj güncellendi.`
+          : 'Okunmamış mesaj kalmamıştı.',
       });
       // Pull a fresh inbox so any messages that arrived during the request
       // (and so were not part of the bulk update) are reflected accurately.
@@ -1043,38 +577,13 @@ const InternalChatTab = ({ currentUser }) => {
     } finally {
       setMarkingAllRead(false);
     }
-  }, [
-    markingAllRead,
-    unreadCount,
-    markAllInternalRead,
-    loadInbox,
-    loadConversations,
-    toast,
-  ]);
+  }, [markingAllRead, unreadCount, markAllInternalRead, loadInbox, loadConversations, toast]);
 
   const markAsRead = useCallback(
-    async (messageId) => {
-      // Find current read state so we don't double-decrement the bell when
-      // the same message is clicked twice.
-      const wasUnread = inbox.find((m) => m.id === messageId)?.read === false;
-      try {
-        await axios.put(`/messaging/internal/${messageId}/mark-read`);
-        setInbox((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, read: true } : m)),
-        );
-        if (wasUnread) {
-          setUnreadCount((c) => Math.max(0, c - 1));
-          decrementInternalUnread(1);
-        }
-      } catch (err) {
-        toast({
-          title: 'İşaretleme başarısız',
-          description: err.response?.data?.detail || err.message,
-          variant: 'destructive',
-        });
-      }
-    },
-    [inbox, toast, decrementInternalUnread],
+    (messageId) => markInboxMessageRead({
+      messageId, inbox, setInbox, setUnreadCount, decrementInternalUnread, toast,
+    }),
+    [inbox, decrementInternalUnread, toast],
   );
 
   const handleReply = useCallback(
@@ -1106,66 +615,20 @@ const InternalChatTab = ({ currentUser }) => {
     [handleSelectConversation],
   );
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setMessageText('');
     setPriority('normal');
     setUserSearch('');
     setToUserId('');
-  };
+  }, []);
 
-  const handleSend = async () => {
-    const trimmed = messageText.trim();
-    if (!trimmed) {
-      toast({ title: 'Boş mesaj gönderilemez', variant: 'destructive' });
-      return;
-    }
-    if (recipientType === 'user' && !toUserId) {
-      toast({ title: 'Lütfen bir alıcı seçin', variant: 'destructive' });
-      return;
-    }
-
-    const params = { message: trimmed, priority };
-    if (recipientType === 'department') {
-      params.to_department = toDepartment;
-    } else if (recipientType === 'user') {
-      params.to_user_id = toUserId;
-    }
-    // 'broadcast' → ne to_department ne to_user_id (backend tüm departmanlara gönderir)
-
-    setSending(true);
-    try {
-      const res = await axios.post('/messaging/internal/send', null, { params });
-      toast({
-        title: 'Mesaj gönderildi',
-        description: `Alıcı: ${res.data?.delivered_to || 'Bilinmiyor'}`,
-      });
-      resetForm();
-      loadInbox(true);
-    } catch (err) {
-      const status = err.response?.status;
-      const serverDetail = err.response?.data?.detail;
-      let description = serverDetail || err.message;
-      if (status === 403) {
-        if (priority === 'urgent') {
-          // Surface the exact urgent-permission reason and roll the picker
-          // back to "normal" so the next attempt isn't auto-blocked again.
-          description =
-            serverDetail ||
-            'Acil mesaj gönderme yetkiniz yok. Bu kanal yalnızca yönetici/süpervizör rollerine açıktır.';
-          setPriority('normal');
-        } else {
-          description = 'Bu işlem için yetkiniz yok. Yöneticinizden "Mesajlaşma" izni isteyin.';
-        }
-      }
-      toast({ title: 'Gönderim başarısız', description, variant: 'destructive' });
-    } finally {
-      setSending(false);
-    }
-  };
-
-
-
-
+  const handleSend = useCallback(
+    () => sendNewMessage({
+      messageText, priority, recipientType, toDepartment, toUserId,
+      setPriority, setSending, resetForm, loadInbox, toast,
+    }),
+    [messageText, priority, recipientType, toDepartment, toUserId, resetForm, loadInbox, toast],
+  );
 
   const totalUnread = (unreadCount || 0) + (totalConversationUnread || 0);
 
