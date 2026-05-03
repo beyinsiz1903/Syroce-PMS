@@ -14,7 +14,7 @@ import {
 import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
 import { REC_STYLES, SummaryCard } from './shared';
 
-const AnalysisTab = ({ user, tenant, onLogout } = {}) => { // eslint-disable-line no-unused-vars
+const AnalysisTab = ({ user, tenant, onLogout } = {}) => {  
   const { t } = useTranslation();
   const [form, setForm] = useState({
     group_name: '',

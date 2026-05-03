@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { fmt } from './helpers';
 import { REC_STYLES, LoadingState, EmptyState } from './shared';
 
-const HistoryTab = ({ user, tenant, onLogout } = {}) => { // eslint-disable-line no-unused-vars
+const HistoryTab = ({ user, tenant, onLogout } = {}) => {  
   const { t } = useTranslation();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);

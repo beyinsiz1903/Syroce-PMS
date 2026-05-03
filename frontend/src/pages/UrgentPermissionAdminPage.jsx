@@ -71,7 +71,7 @@ export default function UrgentPermissionAdminPage() {
       setMetrics(res.data || null);
     } catch (err) {
       // Sessiz: panel kullanılamaz duruma düşmesin, ana liste çalışsın.
-      // eslint-disable-next-line no-console
+       
       console.warn("web-push metrics fetch failed", err?.message);
       setMetrics(null);
     } finally {

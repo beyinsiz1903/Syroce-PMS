@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Plus, Trash2, RefreshCw, GitCompare } from 'lucide-react';
 import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
 
-const CompareTab = ({ user, tenant, onLogout } = {}) => { // eslint-disable-line no-unused-vars
+const CompareTab = ({ user, tenant, onLogout } = {}) => {  
   const { t } = useTranslation();
   const [form, setForm] = useState({
     check_in: tomorrow(),

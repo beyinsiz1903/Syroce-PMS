@@ -8,7 +8,7 @@ import { Building2, DollarSign, Percent, BarChart3 } from 'lucide-react';
 import { RISK_COLORS, fmt } from './helpers';
 import { LoadingState, EmptyState, MetricCard } from './shared';
 
-const MarketOverviewTab = ({ user, tenant, onLogout } = {}) => { // eslint-disable-line no-unused-vars
+const MarketOverviewTab = ({ user, tenant, onLogout } = {}) => {  
   const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
