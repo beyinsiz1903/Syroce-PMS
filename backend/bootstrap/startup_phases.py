@@ -1007,7 +1007,51 @@ async def ensure_performance_indexes():
         ("housekeeping_tasks", [("tenant_id", 1), ("status", 1), ("room_id", 1)], "idx_hk_status_room", {}),
         # Audit trail
         ("pms_audit_trail", [("tenant_id", 1), ("entity_id", 1), ("timestamp", -1)], "idx_audit_entity", {}),
+        # R5 audit ek index'ler — `.local/r5_index_audit.md` referans.
+        # ESR (Equality, Sort, Range) sırası: tenant_id → equality → range/sort.
+        # UNIQUE constraint'ler veri çakışma riski nedeniyle eklenmedi; ayrı temizlik turu gerekir.
+        # Bookings — daily list & oda kullanım sorguları
+        # NOT: (tenant_id, check_in, status) Phase D'deki idx_bookings_tenant_status_checkin'i
+        # tamamlar (status önce). check_out için ESR doğrultusunda status equality önde.
+        ("bookings", [("tenant_id", 1), ("status", 1), ("check_out", 1)], "idx_booking_status_checkout", {}),
+        ("bookings", [("tenant_id", 1), ("room_id", 1), ("status", 1)], "idx_booking_room_status", {}),
+        # Guests — VIP arrival (email Phase D'de mevcut, tekrar etmiyoruz)
+        ("guests", [("tenant_id", 1), ("vip", 1)], "idx_guest_vip", {}),
+        # Folios — açık bakiye & type bazlı raporlar
+        ("folios", [("tenant_id", 1), ("status", 1), ("balance", 1)], "idx_folio_status_balance", {}),
+        ("folios", [("tenant_id", 1), ("folio_type", 1), ("status", 1)], "idx_folio_type_status", {}),
+        # Users — login lookup (en kritik) & rol bazlı listeler
+        ("users", [("tenant_id", 1), ("email", 1)], "idx_user_email", {}),
+        ("users", [("tenant_id", 1), ("role", 1), ("is_active", 1)], "idx_user_role_active", {}),
+        # Folio charges — tenant-first canonical (idx_charge_folio legacy folio-first kalıyor)
+        ("folio_charges", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_charge_tenant_folio", {}),
+        ("folio_charges", [("tenant_id", 1), ("voided", 1), ("date", 1)], "idx_charge_voided_date", {}),
+        ("folio_charges", [("tenant_id", 1), ("charge_category", 1), ("date", 1)], "idx_charge_category_date", {}),
+        # Housekeeping — staff bazlı & performans metric
+        ("housekeeping_tasks", [("tenant_id", 1), ("status", 1), ("assigned_to", 1)], "idx_hk_status_assigned", {}),
+        ("housekeeping_tasks", [("tenant_id", 1), ("completed_at", -1)], "idx_hk_completed", {}),
+        # Payments — tenant-first canonical & günlük revenue (ESR: voided eq önce, date range sonra)
+        ("payments", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_payment_tenant_folio", {}),
+        ("payments", [("tenant_id", 1), ("voided", 1), ("payment_date", -1)], "idx_payment_voided_date", {}),
+        ("payments", [("tenant_id", 1), ("booking_id", 1)], "idx_payment_booking", {}),
+        # Audit logs — tarih sıralı feed & eylem bazlı
+        ("audit_logs", [("tenant_id", 1), ("timestamp", -1)], "idx_audit_log_timestamp", {}),
+        ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
+        # Tenants — central office hiyerarşi
+        ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),
+        # Channel manager
+        ("hotelrunner_connections", [("tenant_id", 1), ("status", 1)], "idx_hr_status", {}),
+        ("cm_imported_reservations", [("tenant_id", 1), ("source_property_id", 1), ("channel", 1)], "idx_cm_source_channel", {}),
+        # Outbox events — worker polling (R5: processed+created_at)
+        ("outbox_events", [("processed", 1), ("created_at", 1)], "idx_outbox_processed_created", {}),
+        # Task queue — worker polling
+        ("task_queue", [("tenant_id", 1), ("status", 1), ("scheduled_for", 1)], "idx_task_queue_poll", {}),
+        # Night audit
+        ("night_audit_runs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_date", {}),
     ]
+    # NOT: idx_charge_folio ve idx_payment_folio (folio_id-first legacy) tenant-first
+    # canonical varyantların yanında bırakıldı. Production'da query planner birini seçer;
+    # ayrı bir temizlik turunda drop edilebilir.
     for coll_name, keys, name, kwargs in indexes:
         try:
             await _raw_db[coll_name].create_index(keys, name=name, background=True, **kwargs)
