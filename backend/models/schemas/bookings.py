@@ -63,6 +63,11 @@ class Booking(BaseModel):
     tenant_id: str
     guest_id: str
     room_id: str
+    # Folio Routing — kategori bazlı masraf yönlendirme kuralları.
+    # Her kural: {category, target, limit?, notes?, active?, split_type?, splits?}
+    # add_folio_charge bu listeyi okuyup hedef folyoya yönlendirir.
+    routing_rules: list[dict] | None = None
+    routing_updated_at: str | None = None
 
 REJECTED_STATUS = "rejected"
 

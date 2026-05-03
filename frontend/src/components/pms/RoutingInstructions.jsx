@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,25 +29,55 @@ const ROUTING_TARGETS = [
   { value: 'group_master', label: 'Grup Master Folyo', icon: CreditCard },
 ];
 
+// Backend'den dönen kayıtlı kurallarda label alanları yok — UI'da
+// göstermek için kategori/target değerinden yeniden hesaplıyoruz.
+const enrichRule = (rule) => {
+  const cat = CHARGE_CATEGORIES.find(c => c.value === rule.category);
+  const tgt = ROUTING_TARGETS.find(t => t.value === rule.target);
+  return {
+    ...rule,
+    category_label: rule.category_label || cat?.label || rule.category,
+    target_label: rule.target_label || tgt?.label || rule.target,
+  };
+};
+
 const RoutingInstructions = ({ booking, onSave }) => {
-  const [rules, setRules] = useState(booking?.routing_rules || []);
+  const [rules, setRules] = useState(() =>
+    (booking?.routing_rules || []).map(enrichRule),
+  );
   const [showAdd, setShowAdd] = useState(false);
   const [newRule, setNewRule] = useState({ category: '', target: '', limit: '', notes: '' });
   const [saving, setSaving] = useState(false);
+
+  // Booking değiştiğinde sunucudan kayıtlı kuralları çek — booking objesi
+  // listeleme endpoint'inden geldiyse routing_rules dahil olmayabilir.
+  useEffect(() => {
+    const id = booking?.id;
+    if (!id) return;
+    let cancelled = false;
+    axios.get(`/api/frontdesk/booking/${id}/routing-rules`)
+      .then(res => {
+        if (cancelled) return;
+        const fetched = res?.data?.rules || [];
+        setRules(fetched.map(enrichRule));
+      })
+      .catch(() => { /* sessiz fail — UI booking.routing_rules ile devam eder */ });
+    return () => { cancelled = true; };
+  }, [booking?.id]);
 
   const addRule = () => {
     if (!newRule.category || !newRule.target) return;
     const cat = CHARGE_CATEGORIES.find(c => c.value === newRule.category);
     const tgt = ROUTING_TARGETS.find(t => t.value === newRule.target);
     setRules(prev => [...prev, {
-      id: Date.now(),
+      id: `tmp-${Date.now()}`,
       category: newRule.category,
       category_label: cat?.label,
       target: newRule.target,
       target_label: tgt?.label,
       limit: newRule.limit ? parseFloat(newRule.limit) : null,
       notes: newRule.notes,
-      active: true
+      active: true,
     }]);
     setNewRule({ category: '', target: '', limit: '', notes: '' });
     setShowAdd(false);
@@ -56,13 +86,21 @@ const RoutingInstructions = ({ booking, onSave }) => {
   const removeRule = (id) => setRules(prev => prev.filter(r => r.id !== id));
 
   const saveRules = async () => {
+    if (!booking?.id) {
+      toast.error('Geçersiz rezervasyon');
+      return;
+    }
     setSaving(true);
     try {
-      await axios.post(`/frontdesk/booking/${booking?.id}/routing-rules`, { rules });
+      // Backend persist için label alanlarını çıkarıyoruz (her açılışta
+      // enrichRule yeniden hesaplıyor; veride tekrar tutmak gereksiz).
+      const payload = rules.map(({ category_label, target_label, ...rest }) => rest);
+      await axios.post(`/api/frontdesk/booking/${booking.id}/routing-rules`, { rules: payload });
       toast.success('Yonlendirme kuralları kaydedildi');
-      onSave?.(rules);
-    } catch {
-      toast.error('Kurallar kaydedilemedi');
+      onSave?.(payload);
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Kurallar kaydedilemedi';
+      toast.error(detail);
     } finally {
       setSaving(false);
     }

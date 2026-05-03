@@ -320,6 +320,28 @@ async def update_guest_preferences(guest_id: str, body: dict = Body(...), curren
     return {"id": guest_id, "status": "updated"}
 
 
+@router.get("/frontdesk/booking/{booking_id}/routing-rules")
+async def get_routing_rules(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
+    """Bir rezervasyona tanımlı masraf yönlendirme kurallarını döner.
+    Boş dönerse henüz tanım yok demektir; UI default akışı misafir folyosuna yansıtır.
+    """
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "routing_rules": 1, "routing_updated_at": 1},
+    )
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {
+        "booking_id": booking_id,
+        "rules": booking.get("routing_rules") or [],
+        "updated_at": booking.get("routing_updated_at"),
+    }
+
+
 @router.post("/frontdesk/booking/{booking_id}/routing-rules")
 async def save_routing_rules(booking_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
@@ -330,8 +352,10 @@ async def save_routing_rules(booking_id: str, body: dict = Body(...), current_us
             total_pct = sum(s.get("percentage", 0) for s in rule.get("splits", []))
             if abs(total_pct - 100) > 0.01:
                 raise HTTPException(status_code=400, detail=f"Routing percentages must sum to 100%, got {total_pct}%")
+    # Bug fix: bookings koleksiyonunda primary key `id` (UUID), `_id` değil.
+    # Eski sürüm `_id` arıyordu → her çağrı 404 dönüyordu.
     result = await db.bookings.update_one(
-        {"_id": booking_id, "tenant_id": current_user.tenant_id},
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
         {"$set": {"routing_rules": rules, "routing_updated_at": datetime.utcnow().isoformat()}}
     )
     if result.matched_count == 0:

@@ -171,7 +171,8 @@ async def _ensure_booking(tenant_id: str, booking_id: str) -> dict:
 
 async def _ensure_open_folio(tenant_id: str, booking_id: str, guest_id: str | None = None) -> dict:
     folio = await db.folios.find_one(
-        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"}, {"_id": 0}
+        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open", "folio_type": "guest"},
+        {"_id": 0},
     )
     if folio:
         return folio
@@ -192,6 +193,150 @@ async def _ensure_open_folio(tenant_id: str, booking_id: str, guest_id: str | No
     await db.folios.insert_one(dict(folio))
     folio.pop("_id", None)
     return folio
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Folio Routing helpers — booking.routing_rules içindeki kategori-bazlı
+# kuralları uygulayıp charge'ı doğru folio'ya yönlendirir. Routing kuralı
+# yoksa veya eşleşmiyorsa default (misafir folyo) döner.
+# ──────────────────────────────────────────────────────────────────────
+
+# RoutingInstructions UI kategorileri ↔ ChargeCategory enum eşleme.
+# UI tarafında 'fb' ve 'telephone'/'business_center' gibi kategoriler var;
+# backend ChargeCategory enum'una çevirip kuralı charge_category alanı
+# üzerinden eşleştirebilelim.
+_ROUTING_CATEGORY_ALIASES: dict[str, set[str]] = {
+    "room": {"room"},
+    "fb": {"food", "beverage"},
+    "minibar": {"minibar"},
+    "laundry": {"laundry"},
+    "telephone": {"phone"},
+    "spa": {"spa"},
+    "parking": {"other"},
+    "business_center": {"internet", "other"},
+    "other": {"other"},
+}
+
+
+def _rule_matches_category(rule_category: str | None, charge_category: str) -> bool:
+    """UI kategori → ChargeCategory eşleşmesi. Eşleşme yoksa False."""
+    if not rule_category:
+        return False
+    aliases = _ROUTING_CATEGORY_ALIASES.get(rule_category.lower(), {rule_category.lower()})
+    return charge_category.lower() in aliases
+
+
+async def _resolve_routed_folio(
+    tenant_id: str,
+    booking: dict,
+    target: str,
+) -> dict | None:
+    """Routing target ('company', 'travel_agent', 'group_master') için
+    açık folyoyu bulur veya gerekiyorsa oluşturur. 'guest' veya bilinmeyen
+    target için None döner (default akış misafir folyosu).
+    """
+    booking_id = booking.get("id")
+    if not booking_id or target == "guest":
+        return None
+
+    async def _lazy_upsert_folio(folio_type: str, party_id: str, note: str) -> dict:
+        """Atomik açık folyo bul-veya-oluştur. Eşzamanlı charge'larda
+        race condition'ı önlemek için find_one_and_update + upsert
+        kullanılır; aynı (tenant, booking, type, party) için yalnızca tek
+        açık folyo oluşur. AFTER document'ı döner.
+        """
+        from pymongo import ReturnDocument
+        filter_doc = {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "folio_type": folio_type,
+            "company_id": party_id,
+            "status": "open",
+        }
+        set_on_insert = {
+            "id": str(uuid.uuid4()),
+            "folio_number": await generate_folio_number(tenant_id),
+            "guest_id": booking.get("guest_id"),
+            "balance": 0.0,
+            "notes": note,
+            "created_at": datetime.now(UTC).isoformat(),
+            "closed_at": None,
+        }
+        doc = await db.folios.find_one_and_update(
+            filter_doc,
+            {"$setOnInsert": set_on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0},
+        )
+        return doc
+
+    if target == "company":
+        company_id = booking.get("company_id")
+        if not company_id:
+            return None
+        return await _lazy_upsert_folio("company", company_id, "Auto-created by routing rule")
+
+    if target == "travel_agent":
+        agency_id = booking.get("agency_id") or booking.get("travel_agent_id")
+        if not agency_id:
+            return None
+        return await _lazy_upsert_folio(
+            "agency", agency_id, "Auto-created by routing rule (travel agent)"
+        )
+
+    if target == "group_master":
+        group_id = booking.get("group_id") or booking.get("group_booking_id")
+        if not group_id:
+            return None
+        # Grup master folyosu booking_id yerine group_id ile saklanır.
+        existing = await db.folios.find_one(
+            {
+                "tenant_id": tenant_id,
+                "group_id": group_id,
+                "folio_type": "guest",
+                "status": "open",
+            },
+            {"_id": 0},
+        )
+        return existing  # Group master folyo manuel açılır; otomatik yaratmıyoruz.
+
+    return None
+
+
+async def _apply_routing_for_charge(
+    tenant_id: str,
+    booking: dict,
+    charge_category: str,
+    default_folio: dict,
+) -> dict:
+    """Booking.routing_rules içinden charge_category'ye uyan ilk aktif
+    kuralı bulup hedef folyoyu döner. Kural yoksa default_folio döner.
+    """
+    rules = booking.get("routing_rules") or []
+    if not rules:
+        return default_folio
+    for rule in rules:
+        if rule.get("active") is False:
+            continue
+        if not _rule_matches_category(rule.get("category"), charge_category):
+            continue
+        # Split (percentage/equal) henüz desteklenmiyor — tek folyoya
+        # tam yönlendirme yapılır. Split desteklenince burada birden çok
+        # folio_charges yazılması ve oranların ayrılması gerekir.
+        # MVP'de UI yalnızca tam yönlendirme kuralı üretiyor; defansif
+        # olarak split tanımlı kuralları sessizce atlamak yerine ilk
+        # split target'a yönlendiriyoruz (idempotent ve mevcut davranışı
+        # bozmaz).
+        target = rule.get("target")
+        if not target and isinstance(rule.get("splits"), list) and rule["splits"]:
+            target = rule["splits"][0].get("target")
+        if not target:
+            continue
+        routed = await _resolve_routed_folio(tenant_id, booking, target)
+        if routed:
+            return routed
+    return default_folio
 
 
 @router.post("/frontdesk/folio/{booking_id}/charge")
@@ -218,7 +363,14 @@ async def add_folio_charge(
         raise HTTPException(status_code=400, detail="charge_category gerekli")
 
     booking = await _ensure_booking(current_user.tenant_id, booking_id)
-    folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    default_folio = await _ensure_open_folio(
+        current_user.tenant_id, booking_id, booking.get("guest_id")
+    )
+    # Routing rules: kategori uyuşan kural varsa hedef folyoya yönlendir.
+    # Hedef yoksa veya resolve edilemezse default (misafir) folyo kullanılır.
+    target_folio = await _apply_routing_for_charge(
+        current_user.tenant_id, booking, category.value, default_folio
+    )
     unit_price = float(payload.amount)
     quantity = float(payload.quantity)
     net_amount = unit_price * quantity
@@ -226,7 +378,7 @@ async def add_folio_charge(
     charge_doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "folio_id": folio["id"],
+        "folio_id": target_folio["id"],
         "booking_id": booking_id,
         "charge_category": category.value,
         "description": payload.description,
@@ -239,9 +391,13 @@ async def add_folio_charge(
         "posted_at": now_iso,
         "date": now_iso,
     }
+    # Routed flag — UI'da "şirkete yönlendirildi" rozeti için.
+    if target_folio["id"] != default_folio["id"]:
+        charge_doc["routed_from_folio_id"] = default_folio["id"]
+        charge_doc["routed_to_folio_id"] = target_folio["id"]
     await db.folio_charges.insert_one(dict(charge_doc))
     await db.folios.update_one(
-        {"id": folio["id"], "tenant_id": current_user.tenant_id},
+        {"id": target_folio["id"], "tenant_id": current_user.tenant_id},
         {"$inc": {"balance": net_amount}},
     )
     return charge_doc
