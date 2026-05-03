@@ -1217,114 +1217,122 @@ async def get_monthly_profitability(
     }
 # ── GET /dashboard/trend-kpis ──
 @router.get("/dashboard/trend-kpis")
+@cached(ttl=300, key_prefix="trend_kpis")  # v96 — 5 min cache
 async def get_trend_kpis(
     period: str = "7days",  # 7days, 30days, 90days
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user)
 ):
-    """Get trending KPIs with comparison for dashboard"""
-    current_user = await get_current_user(credentials)
+    """Get trending KPIs with comparison for dashboard.
 
-    # Calculate periods
+    v96 perf:
+      - DB-side $sum/$avg via aggregate (no full-doc fetch + Python sum)
+      - count_documents for booking count (no doc materialization)
+      - asyncio.gather for both periods + intra-period parallel queries
+      - rooms count fetched once, reused across periods
+      - 5 min cache decorator
+    """
+    import asyncio as _asyncio
+
     days = int(period.replace('days', ''))
     current_end = datetime.now(UTC)
     current_start = current_end - timedelta(days=days)
-
     previous_end = current_start
     previous_start = previous_end - timedelta(days=days)
 
-    # Helper function to get metrics for a period
-    async def get_period_metrics(start, end):
-        # Revenue
-        charges = await db.folio_charges.find({
-            'tenant_id': current_user.tenant_id,
-            'voided': False,
-            'date': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(10000)
+    tid = current_user.tenant_id
 
-        revenue = sum(c.get('total', 0) for c in charges)
-        room_revenue = sum(c.get('total', 0) for c in charges if c.get('charge_category') == 'room')
-
-        # Bookings
-        bookings = await db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'created_at': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(10000)
-
-        bookings_count = len(bookings)
-
-        # Occupancy
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-        days_in_period = (end - start).days + 1
-        available_room_nights = total_rooms * days_in_period
-
-        occupied_bookings = await db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'status': {'$in': ['checked_in', 'checked_out']},
-            'check_in': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(10000)
-
-        def _parse_dt(val):
-            """Güvenli tarih parser: None/eksik/bozuk değerler için None döner."""
-            if val is None:
+    def _parse_dt(val):
+        if val is None:
+            return None
+        try:
+            if isinstance(val, str):
+                dt = datetime.fromisoformat(val.replace('Z', '+00:00'))
+            elif isinstance(val, datetime):
+                dt = val
+            else:
                 return None
-            try:
-                if isinstance(val, str):
-                    dt = datetime.fromisoformat(val.replace('Z', '+00:00'))
-                elif isinstance(val, datetime):
-                    dt = val
-                else:
-                    return None
-            except (ValueError, TypeError):
-                return None
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-            return dt
+        except (ValueError, TypeError):
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
 
-        occupied_room_nights = 0
-        for booking in occupied_bookings:
-            ci_raw = booking.get('check_in')
-            co_raw = booking.get('check_out')
-            ci = _parse_dt(ci_raw)
-            co = _parse_dt(co_raw)
-            if ci is None or co is None:
-                continue
-            if co <= ci:
-                # Bozuk kayıt (checkout <= checkin) — KPI'yi şişirmemek için atla
+    async def _revenue_agg(start, end):
+        """DB-side sum: total + room_revenue in one aggregate."""
+        pipeline = [
+            {'$match': {
+                'tenant_id': tid,
+                'voided': False,
+                'date': {'$gte': start.isoformat(), '$lte': end.isoformat()}
+            }},
+            {'$group': {
+                '_id': None,
+                'revenue': {'$sum': '$total'},
+                'room_revenue': {'$sum': {
+                    '$cond': [{'$eq': ['$charge_category', 'room']}, '$total', 0]
+                }}
+            }}
+        ]
+        cur = db.folio_charges.aggregate(pipeline)
+        rows = await cur.to_list(1)
+        if rows:
+            return rows[0].get('revenue', 0) or 0, rows[0].get('room_revenue', 0) or 0
+        return 0, 0
+
+    async def _rating_agg(start, end):
+        pipeline = [
+            {'$match': {
+                'tenant_id': tid,
+                'created_at': {'$gte': start.isoformat(), '$lte': end.isoformat()}
+            }},
+            {'$group': {'_id': None, 'avg': {'$avg': '$rating'}}}
+        ]
+        rows = await db.reviews.aggregate(pipeline).to_list(1)
+        if rows and rows[0].get('avg') is not None:
+            return float(rows[0]['avg'])
+        return 0.0
+
+    async def _occupied_nights(start, end):
+        """Project only check_in/check_out — minimize bandwidth."""
+        cur = db.bookings.find(
+            {
+                'tenant_id': tid,
+                'status': {'$in': ['checked_in', 'checked_out']},
+                'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}
+            },
+            {'_id': 0, 'check_in': 1, 'check_out': 1}
+        )
+        nights = 0
+        async for b in cur:
+            ci = _parse_dt(b.get('check_in'))
+            co = _parse_dt(b.get('check_out'))
+            if ci is None or co is None or co <= ci:
                 continue
             check_in = max(ci, start)
             check_out = min(co, end)
-            nights = (check_out - check_in).days
-            if nights <= 0:
-                continue
-            occupied_room_nights += nights
+            n = (check_out - check_in).days
+            if n > 0:
+                nights += n
+        return nights
+
+    async def get_period_metrics(start, end, total_rooms):
+        rev_task = _revenue_agg(start, end)
+        bookings_task = db.bookings.count_documents({
+            'tenant_id': tid,
+            'created_at': {'$gte': start.isoformat(), '$lte': end.isoformat()}
+        })
+        occ_task = _occupied_nights(start, end)
+        rating_task = _rating_agg(start, end)
+
+        (revenue, room_revenue), bookings_count, occupied_room_nights, avg_rating = \
+            await _asyncio.gather(rev_task, bookings_task, occ_task, rating_task)
+
+        days_in_period = (end - start).days + 1
+        available_room_nights = total_rooms * days_in_period
 
         occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
-
-        # ADR
         adr = round(room_revenue / occupied_room_nights, 2) if occupied_room_nights > 0 else 0
-
-        # RevPAR
         revpar = round(room_revenue / available_room_nights, 2) if available_room_nights > 0 else 0
-
-        # Guest satisfaction (from reviews)
-        reviews = await db.reviews.find({
-            'tenant_id': current_user.tenant_id,
-            'created_at': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(1000)
-
-        avg_rating = sum(r.get('rating', 0) for r in reviews) / len(reviews) if reviews else 0
 
         return {
             'revenue': revenue,
@@ -1335,8 +1343,14 @@ async def get_trend_kpis(
             'avg_rating': round(avg_rating, 2)
         }
 
-    current_metrics = await get_period_metrics(current_start, current_end)
-    previous_metrics = await get_period_metrics(previous_start, previous_end)
+    # rooms count is tenant-wide — fetch once
+    total_rooms = await db.rooms.count_documents({'tenant_id': tid})
+
+    # Run both periods in parallel
+    current_metrics, previous_metrics = await _asyncio.gather(
+        get_period_metrics(current_start, current_end, total_rooms),
+        get_period_metrics(previous_start, previous_end, total_rooms),
+    )
 
     # Calculate trends
     def calculate_trend(current, previous):

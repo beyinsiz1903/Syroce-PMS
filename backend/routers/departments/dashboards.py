@@ -133,21 +133,39 @@ router = APIRouter(prefix="/api", tags=["departments"])
 @router.get("/department/front-office/dashboard")
 @cached(ttl=180, key_prefix="front_office_dashboard")  # Cache for 3 minutes
 async def get_front_office_dashboard(current_user: User = Depends(get_current_user)):
-    """Front Office Manager Dashboard with overbooking alerts"""
+    """Front Office Manager Dashboard with overbooking alerts.
+
+    v96 perf: N+1 → batch lookups (rooms + guests in one $in query each).
+    """
     today = datetime.now(UTC)
     today_start = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC)
     today_end = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC)
+    tid = current_user.tenant_id
 
-    # Check-ins today with room ready status
-    checkins = []
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
+    # Check-ins today — fetch bookings first
+    bookings_today = await db.bookings.find({
+        'tenant_id': tid,
         'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
         'status': {'$in': ['confirmed', 'guaranteed']}
-    }).limit(50):
-        room = await db.rooms.find_one({'id': booking.get('room_id')})
-        guest = await db.guests.find_one({'id': booking.get('guest_id')})
+    }).limit(50).to_list(50)
 
+    # Batch-fetch rooms + guests in 2 queries instead of 100
+    room_ids = list({b.get('room_id') for b in bookings_today if b.get('room_id')})
+    guest_ids = list({b.get('guest_id') for b in bookings_today if b.get('guest_id')})
+
+    rooms_map = {}
+    guests_map = {}
+    if room_ids:
+        async for r in db.rooms.find({'id': {'$in': room_ids}}, {'_id': 0, 'id': 1, 'status': 1, 'room_number': 1}):
+            rooms_map[r['id']] = r
+    if guest_ids:
+        async for g in db.guests.find({'id': {'$in': guest_ids}}, {'_id': 0, 'id': 1, 'vip': 1}):
+            guests_map[g['id']] = g
+
+    checkins = []
+    for booking in bookings_today:
+        room = rooms_map.get(booking.get('room_id'))
+        guest = guests_map.get(booking.get('guest_id'))
         checkins.append({
             'booking_id': booking.get('id'),
             'guest_name': booking.get('guest_name'),
@@ -158,17 +176,27 @@ async def get_front_office_dashboard(current_user: User = Depends(get_current_us
             'actions': ['upgrade', 'late_checkout', 'message', 'print']
         })
 
-    # Overbooking detection
+    # Overbooking detection — project only needed fields
     next_7_days = today + timedelta(days=7)
     room_dates = {}
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$lte': next_7_days.isoformat()}
-    }):
+    async for booking in db.bookings.find(
+        {
+            'tenant_id': tid,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': next_7_days.isoformat()}
+        },
+        {'_id': 0, 'id': 1, 'room_id': 1, 'check_in': 1, 'check_out': 1, 'guest_name': 1, 'booking_source': 1}
+    ):
         room_id = booking.get('room_id')
-        check_in = datetime.fromisoformat(booking.get('check_in')).date()
-        check_out = datetime.fromisoformat(booking.get('check_out')).date()
+        ci_raw = booking.get('check_in')
+        co_raw = booking.get('check_out')
+        if not room_id or not ci_raw or not co_raw:
+            continue
+        try:
+            check_in = datetime.fromisoformat(ci_raw).date()
+            check_out = datetime.fromisoformat(co_raw).date()
+        except (ValueError, TypeError):
+            continue
 
         current = check_in
         while current < check_out:
@@ -182,11 +210,18 @@ async def get_front_office_dashboard(current_user: User = Depends(get_current_us
             })
             current += timedelta(days=1)
 
+    # Batch-fetch overbooking room numbers
+    conflict_room_ids = list({k.split('_', 1)[0] for k, v in room_dates.items() if len(v) > 1})
+    ob_rooms_map = {}
+    if conflict_room_ids:
+        async for r in db.rooms.find({'id': {'$in': conflict_room_ids}}, {'_id': 0, 'id': 1, 'room_number': 1}):
+            ob_rooms_map[r['id']] = r
+
     overbookings = []
     for key, bookings_list in room_dates.items():
         if len(bookings_list) > 1:
-            room_id, date_str = key.split('_')
-            room = await db.rooms.find_one({'id': room_id})
+            room_id, date_str = key.split('_', 1)
+            room = ob_rooms_map.get(room_id)
             overbookings.append({
                 'date': date_str,
                 'room_number': room.get('room_number') if room else 'Unknown',
