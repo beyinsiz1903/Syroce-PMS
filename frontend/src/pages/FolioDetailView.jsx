@@ -10,10 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import {
   ArrowRightLeft, FileText, DollarSign, CreditCard, AlertTriangle,
   ShieldCheck, RefreshCw, Ban, Receipt, ArrowUpRight,
-  Clock, Building2, Plus, Printer
+  Clock, Building2, Plus, Printer, Layers
 } from "lucide-react";
 import { printFolio, printProformaInvoice } from "@/components/pms/PrintTemplates";
 import { toast } from "sonner";
+import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
 
 const API = "";
 
@@ -291,7 +292,14 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
               <TabsTrigger data-testid="folio-tab-audit" value="audit" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
                 <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> {t("folio.audit")}
               </TabsTrigger>
+              <TabsTrigger data-testid="folio-tab-windows" value="windows" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
+                <Layers className="w-3.5 h-3.5 mr-1.5" /> Windows
+              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="windows">
+              <FolioWindowsPanel bookingId={folio?.booking_id} currentFolioId={folio?.id} />
+            </TabsContent>
 
             <TabsContent value="timeline">
               <Card className="bg-white border-gray-200 shadow-sm">

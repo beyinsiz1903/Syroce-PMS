@@ -5042,3 +5042,13 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
   - `DELETE /api/admin/db/collections/{name}?dry_run=true|false` → allowlist
     (`*_test`, `*_tmp`, `legacy_*`, `__obsolete__`); PROTECTED_PREFIXES guard
     kritik koleksiyonları korur. Admin rolü zorunlu, audit_log'a düşer.
+
+## 2026-05-03 — Opera #11 Multi-window Folio
+- **Backend**: `backend/domains/pms/folio_window_router.py` (yeni, 380 sat), `backend/models/schemas/folio.py` (Folio'ya `window_number` 1-8, `payor_type`, `payor_id` opsiyonel field).
+- **Endpoint'ler**: `POST /api/folio-windows`, `GET /api/folio-windows/booking/{id}`, `PATCH /api/folio-windows/{folio_id}/payor`.
+- **Race-safe**: partial unique index `(tenant_id, booking_id, window_number)` + `DuplicateKeyError` 3x retry. Index fail-closed (503) + 30sn cooldown.
+- **Authorization**: `require_op("post_charge")` mutating; `require_op("view_finance_reports")` listing.
+- **Legacy compat**: window_number=None folio'lar implicit slot atanır (eski→yeni); `_resolve_window_number` ortak helper hem list hem patch'te tutarlı window# döner.
+- **audit_log**: folio_window_opened, folio_window_payor_changed.
+- **Frontend**: `frontend/src/components/folio/FolioWindowsPanel.jsx` (yeni Windows tab — payor seçim + window aç + bakiye listesi). `FolioDetailView.jsx`'a tab eklendi.
+- Smoke 200, ruff/eslint clean, architect 3 turdan sonra önemli sorun yok (sadece minor cooldown önerisi karşılandı).

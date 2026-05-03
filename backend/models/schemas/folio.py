@@ -38,6 +38,12 @@ class Folio(BaseModel):
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: datetime | None = None
+    # Opera #11 — Multi-window Folio:
+    # Bir booking için 1-8 arası window numarası. Geriye uyumlu (eski folio'lar None).
+    # payor_type: "guest" | "company" | "agency" | "master"
+    window_number: int | None = Field(default=None, ge=1, le=8)
+    payor_type: str | None = None
+    payor_id: str | None = None
 
 class ChargeCreate(BaseModel):
     charge_category: ChargeCategory
