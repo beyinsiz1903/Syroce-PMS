@@ -181,22 +181,16 @@ async def get_role_based_dashboard(
         }
 
     elif current_user.role == 'housekeeping':
-        # Housekeeping specific
-        dirty_rooms = await db.rooms.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'status': 'dirty'
-        })
-
-        cleaning_rooms = await db.rooms.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'status': 'cleaning'
-        })
-
-        inspected_rooms = await db.rooms.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'status': 'inspected'
-        })
-
+        # 4 bagimsiz count paralel — N+1 fix
+        dirty_rooms, cleaning_rooms, inspected_rooms, departures_today = await asyncio.gather(
+            db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'dirty'}),
+            db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'cleaning'}),
+            db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'inspected'}),
+            db.bookings.count_documents({
+                'tenant_id': current_user.tenant_id,
+                'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
+            }),
+        )
         return {
             'role': current_user.role,
             'dashboard_type': 'housekeeping',
@@ -207,10 +201,7 @@ async def get_role_based_dashboard(
                 'ready': inspected_rooms
             },
             'occupancy': occupied_rooms,
-            'departures_today': await db.bookings.count_documents({
-                'tenant_id': current_user.tenant_id,
-                'check_out': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()}
-            })
+            'departures_today': departures_today,
         }
 
     else:
@@ -477,52 +468,43 @@ async def get_guest_satisfaction_trends(
         }
     ]
 
-    # Collect feedback from multiple sources
-    all_feedback = []
+    # 3 bagimsiz feedback kaynagi paralel cek — N+1 fix
+    survey_docs, review_docs, dept_docs = await asyncio.gather(
+        db.survey_responses.find({
+            'tenant_id': current_user.tenant_id,
+            'submitted_at': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+        }).to_list(5000),
+        db.external_reviews.find({
+            'tenant_id': current_user.tenant_id,
+            'review_date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+        }).to_list(5000),
+        db.department_feedback.find({
+            'tenant_id': current_user.tenant_id,
+            'created_at': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+        }).to_list(5000),
+    )
 
-    # 1. Survey responses
-    async for response in db.survey_responses.find({
-        'tenant_id': current_user.tenant_id,
-        'submitted_at': {
-            '$gte': start_dt.isoformat(),
-            '$lte': end_dt.isoformat()
-        }
-    }):
+    all_feedback = []
+    for response in survey_docs:
         all_feedback.append({
             'date': response.get('submitted_at', ''),
             'rating': response.get('overall_rating', 0),
             'source': 'survey',
-            'sentiment': response.get('sentiment', 'neutral')
+            'sentiment': response.get('sentiment', 'neutral'),
         })
-
-    # 2. External reviews
-    async for review in db.external_reviews.find({
-        'tenant_id': current_user.tenant_id,
-        'review_date': {
-            '$gte': start_dt.isoformat(),
-            '$lte': end_dt.isoformat()
-        }
-    }):
+    for review in review_docs:
         all_feedback.append({
             'date': review.get('review_date', ''),
             'rating': review.get('rating', 0),
             'source': review.get('platform', 'external'),
-            'sentiment': review.get('sentiment', 'neutral')
+            'sentiment': review.get('sentiment', 'neutral'),
         })
-
-    # 3. Department feedback
-    async for feedback in db.department_feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': start_dt.isoformat(),
-            '$lte': end_dt.isoformat()
-        }
-    }):
+    for feedback in dept_docs:
         all_feedback.append({
             'date': feedback.get('created_at', ''),
             'rating': feedback.get('rating', 0),
             'source': 'department',
-            'sentiment': feedback.get('sentiment', 'neutral')
+            'sentiment': feedback.get('sentiment', 'neutral'),
         })
 
     # Calculate NPS (Net Promoter Score)
@@ -755,24 +737,18 @@ async def get_revenue_expense_chart(
         start = end - timedelta(days=365)
         interval = "monthly"
 
-    # Get revenue from folio charges
-    charges = await db.folio_charges.find({
-        'tenant_id': current_user.tenant_id,
-        'voided': False,
-        'date': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
-
-    # Get expenses (simplified - from procurement, maintenance, etc.)
-    expenses = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {
-            '$gte': start.isoformat(),
-            '$lte': end.isoformat()
-        }
-    }).to_list(10000)
+    # 2 bagimsiz find paralel — N+1 fix
+    charges, expenses = await asyncio.gather(
+        db.folio_charges.find({
+            'tenant_id': current_user.tenant_id,
+            'voided': False,
+            'date': {'$gte': start.isoformat(), '$lte': end.isoformat()},
+        }).to_list(10000),
+        db.expenses.find({
+            'tenant_id': current_user.tenant_id,
+            'date': {'$gte': start.isoformat(), '$lte': end.isoformat()},
+        }).to_list(10000),
+    )
 
     # Group data by interval
     revenue_data = {}
@@ -1488,20 +1464,44 @@ async def get_executive_performance_alerts(
     yesterday = (today - timedelta(days=1)).isoformat()
     last_week = (today - timedelta(days=7)).isoformat()
 
-    # Check revenue trend
-    recent_revenue = 0
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': yesterday}
-    }):
-        recent_revenue += payment.get('amount', 0)
+    # 9 bagimsiz read paralel — N+1 fix.
+    # Sum'lar Mongo $sum aggregate ile (silent truncation onlemek icin) — to_list yok.
+    month_start = datetime.now(UTC).replace(day=1).isoformat()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    tid = current_user.tenant_id
 
-    week_ago_revenue = 0
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': last_week, '$lt': (today - timedelta(days=6)).isoformat()}
-    }):
-        week_ago_revenue += payment.get('amount', 0)
+    def _sum_pipeline(match: dict, field: str = 'amount') -> list:
+        return [{'$match': match}, {'$group': {'_id': None, 't': {'$sum': f'${field}'}}}]
+
+    recent_pay_doc, week_pay_doc, total_rooms, occupied_rooms, arrivals_tomorrow, available_rooms, pending_maintenance, bank_accounts, expense_doc = await asyncio.gather(
+        db.payments.aggregate(_sum_pipeline({
+            'tenant_id': tid, 'payment_date': {'$gte': yesterday},
+        })).to_list(1),
+        db.payments.aggregate(_sum_pipeline({
+            'tenant_id': tid,
+            'payment_date': {'$gte': last_week, '$lt': (today - timedelta(days=6)).isoformat()},
+        })).to_list(1),
+        db.rooms.count_documents({'tenant_id': tid}),
+        db.rooms.count_documents({'tenant_id': tid, 'status': 'occupied'}),
+        db.bookings.count_documents({
+            'tenant_id': tid, 'check_in': tomorrow,
+            'status': {'$in': ['confirmed', 'guaranteed']},
+        }),
+        db.rooms.count_documents({
+            'tenant_id': tid, 'status': {'$in': ['available', 'inspected']},
+        }),
+        db.maintenance_tasks.count_documents({
+            'tenant_id': tid, 'status': 'pending',
+            'priority': {'$in': ['high', 'urgent']},
+        }),
+        db.bank_accounts.find({'tenant_id': tid}, {'_id': 0, 'balance': 1}).to_list(1000),
+        db.expenses.aggregate(_sum_pipeline({
+            'tenant_id': tid, 'expense_date': {'$gte': month_start},
+        })).to_list(1),
+    )
+
+    recent_revenue = (recent_pay_doc[0]['t'] if recent_pay_doc else 0) or 0
+    week_ago_revenue = (week_pay_doc[0]['t'] if week_pay_doc else 0) or 0
 
     if week_ago_revenue > 0:
         revenue_change = ((recent_revenue - week_ago_revenue) / week_ago_revenue * 100)
@@ -1516,13 +1516,7 @@ async def get_executive_performance_alerts(
                 'created_at': datetime.now(UTC).isoformat()
             })
 
-    # Low occupancy alert
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'occupied'
-    })
-
+    # Low occupancy alert (above gather'dan geldi)
     if total_rooms > 0:
         occupancy_pct = (occupied_rooms / total_rooms * 100)
         if occupancy_pct < 50:
@@ -1536,20 +1530,7 @@ async def get_executive_performance_alerts(
                 'created_at': datetime.now(UTC).isoformat()
             })
 
-    # Overbooking risk
-    tomorrow = (today + timedelta(days=1)).isoformat()
-
-    arrivals_tomorrow = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': tomorrow,
-        'status': {'$in': ['confirmed', 'guaranteed']}
-    })
-
-    available_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['available', 'inspected']}
-    })
-
+    # Overbooking risk (above gather'dan geldi)
     if arrivals_tomorrow > available_rooms:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1561,13 +1542,7 @@ async def get_executive_performance_alerts(
             'created_at': datetime.now(UTC).isoformat()
         })
 
-    # Maintenance backlog
-    pending_maintenance = await db.maintenance_tasks.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'pending',
-        'priority': {'$in': ['high', 'urgent']}
-    })
-
+    # Maintenance backlog (above gather'dan geldi)
     if pending_maintenance > 5:
         alerts.append({
             'id': str(uuid.uuid4()),
@@ -1579,18 +1554,9 @@ async def get_executive_performance_alerts(
             'created_at': datetime.now(UTC).isoformat()
         })
 
-    # Cash flow warning
-    bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}).to_list(100)
+    # Cash flow warning (bank_accounts find + expense_doc aggregate'tan)
     total_cash = sum(account.get('balance', 0) for account in bank_accounts)
-
-    # Get monthly costs
-    month_start = datetime.now(UTC).replace(day=1).isoformat()
-    monthly_costs = 0
-    async for expense in db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'expense_date': {'$gte': month_start}
-    }):
-        monthly_costs += expense.get('amount', 0)
+    monthly_costs = (expense_doc[0]['t'] if expense_doc else 0) or 0
 
     if monthly_costs > 0 and total_cash < monthly_costs * 0.5:
         alerts.append({
@@ -1628,35 +1594,36 @@ async def get_executive_comp_set_summary(
     # Fetch hotel-level KPIs using existing snapshot logic for consistency
     today = datetime.now(UTC).date().isoformat()
 
-    # Get tenant rooms and bookings to estimate hotel metrics
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id}) or 0
-    occupied_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'occupied'
-    })
+    # 4 bagimsiz read paralel — N+1 fix. Bookings sum Mongo aggregate ile (truncation yok).
+    thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+    total_rooms, occupied_rooms, booking_agg, comp_stats = await asyncio.gather(
+        db.rooms.count_documents({'tenant_id': current_user.tenant_id}),
+        db.rooms.count_documents({'tenant_id': current_user.tenant_id, 'status': 'occupied'}),
+        db.bookings.aggregate([
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'status': {'$in': ['checked_in', 'checked_out']},
+                'check_in': {'$gte': thirty_days_ago},
+            }},
+            {'$group': {
+                '_id': None,
+                'rev': {'$sum': {'$ifNull': ['$total_amount', 0]}},
+                'nights': {'$sum': {'$max': [1, {'$ifNull': ['$nights', 1]}]}},
+            }},
+        ]).to_list(1),
+        db.comp_set_stats.find(
+            {'tenant_id': current_user.tenant_id},
+            {'_id': 0},
+        ).sort('period_start', -1).limit(1).to_list(1),
+    )
+    total_rooms = total_rooms or 0
     hotel_occupancy = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
-    # Use last 30 days revenue and room nights to approximate ADR/RevPAR
-    thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
-
-    total_revenue = 0
-    room_nights = 0
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['checked_in', 'checked_out']},
-        'check_in': {'$gte': thirty_days_ago}
-    }, {'_id': 0}):
-        total_revenue += booking.get('total_amount', 0)
-        room_nights += max(1, booking.get('nights', 1))
+    total_revenue = (booking_agg[0]['rev'] if booking_agg else 0) or 0
+    room_nights = (booking_agg[0]['nights'] if booking_agg else 0) or 0
 
     hotel_adr = (total_revenue / room_nights) if room_nights > 0 else 0
     hotel_revpar = (total_revenue / (total_rooms * 30)) if total_rooms > 0 else 0
-
-    # Fetch manual comp-set stats if available
-    comp_stats = await db.comp_set_stats.find(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0}
-    ).sort('period_start', -1).limit(1).to_list(1)
 
     if comp_stats:
         comp = comp_stats[0]
@@ -1960,14 +1927,38 @@ async def get_complaint_management(
     Active complaints, categories, resolution times
     """
     current_user = await get_current_user(credentials)
+    return await _build_complaint_management(current_user)
 
-    # Get active complaints (low ratings = complaints)
+
+async def _build_complaint_management(current_user) -> dict:
+    """Complaint management ortak helper — 3 feedback find'ı tek gather'da paralel."""
+    tid = current_user.tenant_id
+    active_docs, all_low_docs, resolved_docs = await asyncio.gather(
+        db.feedback.find({
+            'tenant_id': tid,
+            'rating': {'$lte': 2},
+            'resolved': {'$ne': True},
+        }).sort('created_at', -1).limit(20).to_list(20),
+        db.feedback.find(
+            {'tenant_id': tid, 'rating': {'$lte': 2}},
+            {'_id': 0, 'category': 1},
+        ).to_list(10000),
+        db.feedback.find({
+            'tenant_id': tid,
+            'rating': {'$lte': 2},
+            'resolved': True,
+            'resolved_at': {'$exists': True},
+        }).limit(50).to_list(50),
+    )
+
+    now_utc = datetime.now(UTC)
     active_complaints = []
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'resolved': {'$ne': True}
-    }).sort('created_at', -1).limit(20):
+    for feedback in active_docs:
+        try:
+            ca = feedback.get('created_at') or now_utc.isoformat()
+            days_open = (now_utc - datetime.fromisoformat(str(ca).replace('Z', '+00:00'))).days
+        except Exception:
+            days_open = 0
         active_complaints.append({
             'id': feedback.get('id', str(uuid.uuid4())),
             'guest_name': feedback.get('guest_name', 'Anonim'),
@@ -1975,15 +1966,11 @@ async def get_complaint_management(
             'category': feedback.get('category', 'general'),
             'comment': feedback.get('comment', ''),
             'created_at': feedback.get('created_at'),
-            'days_open': (datetime.now(UTC) - datetime.fromisoformat(feedback.get('created_at', datetime.now(UTC).isoformat()).replace('Z', '+00:00'))).days
+            'days_open': days_open,
         })
 
-    # Complaint categories
-    categories = {}
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2}
-    }):
+    categories: dict[str, int] = {}
+    for feedback in all_low_docs:
         category = feedback.get('category', 'general')
         categories[category] = categories.get(category, 0) + 1
 
@@ -1991,38 +1978,33 @@ async def get_complaint_management(
         {
             'category': cat,
             'category_tr': {
-                'room': 'Oda',
-                'service': 'Servis',
-                'cleanliness': 'Temizlik',
-                'fnb': 'Yiyecek & İçecek',
-                'general': 'Genel'
+                'room': 'Oda', 'service': 'Servis', 'cleanliness': 'Temizlik',
+                'fnb': 'Yiyecek & İçecek', 'general': 'Genel',
             }.get(cat, cat),
-            'count': count
+            'count': count,
         }
         for cat, count in categories.items()
     ]
 
-    # Resolution times
-    resolved_complaints = []
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'resolved': True,
-        'resolved_at': {'$exists': True}
-    }).limit(50):
-        created = datetime.fromisoformat(feedback['created_at'].replace('Z', '+00:00'))
-        resolved = datetime.fromisoformat(feedback['resolved_at'].replace('Z', '+00:00'))
-        resolution_hours = (resolved - created).total_seconds() / 3600
-        resolved_complaints.append(resolution_hours)
-
-    avg_resolution_time = sum(resolved_complaints) / len(resolved_complaints) if resolved_complaints else 24
+    resolution_hours_list = []
+    for feedback in resolved_docs:
+        try:
+            created = datetime.fromisoformat(feedback['created_at'].replace('Z', '+00:00'))
+            resolved = datetime.fromisoformat(feedback['resolved_at'].replace('Z', '+00:00'))
+            resolution_hours_list.append((resolved - created).total_seconds() / 3600)
+        except Exception:
+            continue
+    avg_resolution_time = (
+        sum(resolution_hours_list) / len(resolution_hours_list)
+        if resolution_hours_list else 24
+    )
 
     return {
         'active_complaints': active_complaints,
         'active_count': len(active_complaints),
         'category_breakdown': category_breakdown,
         'avg_resolution_time_hours': round(avg_resolution_time, 1),
-        'urgent_complaints': len([c for c in active_complaints if c['days_open'] > 2])
+        'urgent_complaints': len([c for c in active_complaints if c['days_open'] > 2]),
     }
 
 
@@ -2033,75 +2015,9 @@ async def get_complaint_management(
 async def get_complaint_management_v2(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """
-    Get complaint management overview
-    Active complaints, categories, resolution times
-    """
+    """v2 — _build_complaint_management helper'ını kullanır (DRY + N+1 fix)."""
     current_user = await get_current_user(credentials)
-
-    # Get active complaints (low ratings = complaints)
-    active_complaints = []
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'resolved': {'$ne': True}
-    }).sort('created_at', -1).limit(20):
-        active_complaints.append({
-            'id': feedback.get('id', str(uuid.uuid4())),
-            'guest_name': feedback.get('guest_name', 'Anonim'),
-            'rating': feedback.get('rating', 1),
-            'category': feedback.get('category', 'general'),
-            'comment': feedback.get('comment', ''),
-            'created_at': feedback.get('created_at'),
-            'days_open': (datetime.now(UTC) - datetime.fromisoformat(feedback.get('created_at', datetime.now(UTC).isoformat()).replace('Z', '+00:00'))).days
-        })
-
-    # Complaint categories
-    categories = {}
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2}
-    }):
-        category = feedback.get('category', 'general')
-        categories[category] = categories.get(category, 0) + 1
-
-    category_breakdown = [
-        {
-            'category': cat,
-            'category_tr': {
-                'room': 'Oda',
-                'service': 'Servis',
-                'cleanliness': 'Temizlik',
-                'fnb': 'Yiyecek & İçecek',
-                'general': 'Genel'
-            }.get(cat, cat),
-            'count': count
-        }
-        for cat, count in categories.items()
-    ]
-
-    # Resolution times
-    resolved_complaints = []
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'resolved': True,
-        'resolved_at': {'$exists': True}
-    }).limit(50):
-        created = datetime.fromisoformat(feedback['created_at'].replace('Z', '+00:00'))
-        resolved = datetime.fromisoformat(feedback['resolved_at'].replace('Z', '+00:00'))
-        resolution_hours = (resolved - created).total_seconds() / 3600
-        resolved_complaints.append(resolution_hours)
-
-    avg_resolution_time = sum(resolved_complaints) / len(resolved_complaints) if resolved_complaints else 24
-
-    return {
-        'active_complaints': active_complaints,
-        'active_count': len(active_complaints),
-        'category_breakdown': category_breakdown,
-        'avg_resolution_time_hours': round(avg_resolution_time, 1),
-        'urgent_complaints': len([c for c in active_complaints if c['days_open'] > 2])
-    }
+    return await _build_complaint_management(current_user)
 
 
 # 3. GET /api/gm/snapshot-enhanced - Enhanced snapshot mode
@@ -2137,47 +2053,38 @@ async def get_enhanced_snapshot(
     yesterday_metrics = get_metrics_for_date(yesterday)
     last_week_metrics = get_metrics_for_date(last_week)
 
-    # Calculate today's metrics
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied_today = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'occupied'
-    })
+    # 7 bagimsiz read paralel — N+1 fix. Revenue Mongo aggregate ile (truncation yok).
+    tid = current_user.tenant_id
+    today_iso = today.isoformat()
+    total_rooms, occupied_today, payment_agg, check_ins, check_outs, complaints, pending_tasks = await asyncio.gather(
+        db.rooms.count_documents({'tenant_id': tid}),
+        db.rooms.count_documents({'tenant_id': tid, 'status': 'occupied'}),
+        db.payments.aggregate([
+            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': today_iso}}},
+            {'$group': {'_id': None, 't': {'$sum': '$amount'}}},
+        ]).to_list(1),
+        db.bookings.count_documents({
+            'tenant_id': tid, 'check_in': today_iso, 'status': 'checked_in',
+        }),
+        db.bookings.count_documents({
+            'tenant_id': tid, 'check_out': today_iso, 'status': 'checked_out',
+        }),
+        db.feedback.count_documents({
+            'tenant_id': tid, 'rating': {'$lte': 2},
+            'created_at': {'$gte': today_iso},
+        }),
+        db.maintenance_tasks.count_documents({
+            'tenant_id': tid, 'status': 'pending',
+            'priority': {'$in': ['high', 'urgent']},
+        }),
+    )
+
     today_metrics['occupancy'] = round((occupied_today / total_rooms * 100) if total_rooms > 0 else 0, 1)
-
-    # Revenue
-    async for payment in db.payments.find({
-        'tenant_id': current_user.tenant_id,
-        'payment_date': {'$gte': today.isoformat()}
-    }):
-        today_metrics['revenue'] += payment.get('amount', 0)
-
-    # Check-ins/outs
-    today_metrics['check_ins'] = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': today.isoformat(),
-        'status': 'checked_in'
-    })
-
-    today_metrics['check_outs'] = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_out': today.isoformat(),
-        'status': 'checked_out'
-    })
-
-    # Complaints
-    today_metrics['complaints'] = await db.feedback.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'created_at': {'$gte': today.isoformat()}
-    })
-
-    # Pending tasks
-    today_metrics['pending_tasks'] = await db.maintenance_tasks.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'pending',
-        'priority': {'$in': ['high', 'urgent']}
-    })
+    today_metrics['revenue'] = (payment_agg[0]['t'] if payment_agg else 0) or 0
+    today_metrics['check_ins'] = check_ins
+    today_metrics['check_outs'] = check_outs
+    today_metrics['complaints'] = complaints
+    today_metrics['pending_tasks'] = pending_tasks
 
     # Simulated yesterday and last week data
     yesterday_metrics.update({
