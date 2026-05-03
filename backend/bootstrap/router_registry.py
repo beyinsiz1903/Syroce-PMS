@@ -239,6 +239,12 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms
     ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
+    # Opera-parity: Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast
+    ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
+    ("domains.pms.block_management_router", "router", ["PMS / Block Management"], None, None),
+    ("domains.pms.activity_scheduler_router", "router", ["Activity Scheduler"], None, None),
+    ("domains.guest.loyalty_router", "router", ["Loyalty Program"], None, None),
+    ("domains.revenue.forecast_router", "router", ["Revenue / Forecast"], None, None),
     # PMS Operations — Concierge, Banquet, KBS, KVKK, Guest Prefs, Room Features
     ("domains.pms.operations_router", "router", ["PMS / Operations"], None, None),
     # Ops Telemetry — Operational events, webhook DLQ, channel health

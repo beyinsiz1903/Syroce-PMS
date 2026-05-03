@@ -219,6 +219,12 @@ const WebhookOutboxAdmin = lazy(() => import("@/pages/WebhookOutboxAdmin"));
 const EarlyWarningDashboard = lazy(() => import("@/pages/EarlyWarningDashboard"));
 const ModuleDiscovery = lazy(() => import("@/pages/ModuleDiscovery"));
 const IntegrationCredentials = lazy(() => import("@/pages/IntegrationCredentials"));
+// Opera-parity additions
+const FolioRoutingPage = lazy(() => import("@/pages/FolioRoutingPage"));
+const LoyaltyAdminPage = lazy(() => import("@/pages/LoyaltyAdminPage"));
+const ActivitySchedulerPage = lazy(() => import("@/pages/ActivitySchedulerPage"));
+const BlockManagementPage = lazy(() => import("@/pages/BlockManagementPage"));
+const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -539,5 +545,12 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/admin/gm-enhanced", type: "redirect", to: "/executive" },
+
+    // ── Opera-parity (Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast) ──
+    { path: "/folio-routing", ...p(FolioRoutingPage) },
+    { path: "/loyalty-admin", ...p(LoyaltyAdminPage) },
+    { path: "/activities", ...p(ActivitySchedulerPage) },
+    { path: "/block-management", ...p(BlockManagementPage) },
+    { path: "/forecast-reports", ...p(ForecastReportsPage) },
   ];
 }
