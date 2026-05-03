@@ -227,6 +227,7 @@ const BlockManagementPage = lazy(() => import("@/pages/BlockManagementPage"));
 const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));
 const FunctionSpacePage = lazy(() => import("@/pages/FunctionSpacePage"));
 const TrialBalancePage = lazy(() => import("@/pages/TrialBalancePage"));
+const ProfileUdfPage = lazy(() => import("@/pages/ProfileUdfPage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -556,5 +557,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/forecast-reports", ...p(ForecastReportsPage) },
     { path: "/function-space", ...p(FunctionSpacePage) },
     { path: "/trial-balance", ...p(TrialBalancePage) },
+    { path: "/profile-udf", ...p(ProfileUdfPage) },
   ];
 }
