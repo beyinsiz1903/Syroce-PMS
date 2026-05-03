@@ -18,3 +18,9 @@ id = "MB6_3TWRgGwEpTZ0ryIga"
 uri = "file://.local/raporlar/AuthSayfaTesti_2026-05-02.md"
 type = "text"
 title = "Korumalı Sayfa Uçtan Uca Test Raporu (02.05.2026)"
+
+[[outputs]]
+id = "6DganWwJq5ctX5dIq0Nq9"
+uri = "file://.local/opera_vs_syroce.md"
+type = "text"
+title = "Opera Cloud PMS ↔ Syroce Karşılaştırma Raporu"
