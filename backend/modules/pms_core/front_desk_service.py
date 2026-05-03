@@ -62,13 +62,9 @@ class FrontDeskService:
 
         # Check open folios with outstanding balance
         folios = await db.folios.find({"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(10)
+        from core.utils import calculate_folio_balance
         for folio in folios:
-            charges = await db.folio_charges.find({"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-            payments = await db.payments.find({"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-
-            total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges)
-            total_payments = sum(p.get("amount", 0) for p in payments)
-            balance = round(total_charges - total_payments, 2)
+            balance = await calculate_folio_balance(folio["id"], tenant_id)
 
             if balance > 0.01:
                 blockers.append({
@@ -92,12 +88,23 @@ class FrontDeskService:
         total_charges = 0
         total_payments = 0
 
+        # Folio bazlı toplamlar (server-side $sum, limit yok)
         for folio in folios:
-            charges = await db.folio_charges.find({"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-            payments = await db.payments.find({"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-
-            f_charges = sum(c.get("total", c.get("amount", 0)) for c in charges)
-            f_payments = sum(p.get("amount", 0) for p in payments)
+            ch_pipe = [
+                {"$match": {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}},
+                {"$group": {"_id": None,
+                            "total": {"$sum": {"$ifNull": ["$total", "$amount"]}},
+                            "count": {"$sum": 1}}},
+            ]
+            pay_pipe = [
+                {"$match": {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}},
+                {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+            ]
+            ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)
+            pay_doc = await db.payments.aggregate(pay_pipe).to_list(1)
+            f_charges = float(ch_doc[0]["total"]) if ch_doc else 0.0
+            f_count = int(ch_doc[0]["count"]) if ch_doc else 0
+            f_payments = float(pay_doc[0]["total"]) if pay_doc else 0.0
             total_charges += f_charges
             total_payments += f_payments
 
@@ -109,7 +116,7 @@ class FrontDeskService:
                 "charges_total": round(f_charges, 2),
                 "payments_total": round(f_payments, 2),
                 "balance": round(f_charges - f_payments, 2),
-                "charge_count": len(charges),
+                "charge_count": f_count,
             })
 
         blockers = await self.get_checkout_blockers(tenant_id, booking_id)

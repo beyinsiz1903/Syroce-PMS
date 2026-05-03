@@ -23,28 +23,27 @@ async def generate_folio_number(tenant_id: str) -> str:
 
 
 async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
-    """Calculate folio balance (charges - payments) with proper 2-decimal rounding"""
-    try:
-        charges = await db.folio_charges.find({
-            'folio_id': folio_id,
-            'tenant_id': tenant_id,
-            'voided': False
-        }).to_list(1000)
+    """Folio bakiyesi (charges − payments) — server-side $sum aggregation.
 
-        payments = await db.payments.find({
-            'folio_id': folio_id,
-            'tenant_id': tenant_id,
-            'voided': False
-        }).to_list(1000)
-
-        total_charges = sum(float(c.get('total', 0)) for c in charges)
-        total_payments = sum(float(p.get('amount', 0)) for p in payments)
-
-        balance = total_charges - total_payments
-        return round(balance, 2)
-    except Exception as e:
-        logger.info(f"Error calculating folio balance: {str(e)}")
-        return 0.0
+    - to_list cap yok: 500/1000 hard limit'lerin sessiz veri kaybını engeller.
+    - charges.total yoksa amount fallback (schema esnek).
+    - Fail-closed: Mongo hatası → exception bubble (caller karar versin).
+      Önceki fail-open (return 0.0) yanlış pozitif "ödenmiş" durumu yaratıp
+      ödenmemiş folyoların kapatılmasına yol açıyordu.
+    """
+    ch_pipe = [
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
+    ]
+    pay_pipe = [
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]
+    ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)
+    pay_doc = await db.payments.aggregate(pay_pipe).to_list(1)
+    total_charges = float(ch_doc[0]["total"]) if ch_doc else 0.0
+    total_payments = float(pay_doc[0]["total"]) if pay_doc else 0.0
+    return round(total_charges - total_payments, 2)
 
 
 # ── Excel Helpers ──

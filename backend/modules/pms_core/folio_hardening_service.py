@@ -419,9 +419,11 @@ class FolioHardeningService:
 
     async def get_tax_breakdown(self, tenant_id: str, folio_id: str) -> dict:
         """Get detailed tax breakdown for a folio."""
-        charges = await db.folio_charges.find(
+        # Tax breakdown — limit kaldırıldı (500 → cursor iteration, batch=500)
+        cursor = db.folio_charges.find(
             {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}
-        ).to_list(500)
+        ).batch_size(500)
+        charges = [c async for c in cursor]
 
         by_category = {}
         total_net = 0
@@ -463,12 +465,9 @@ class FolioHardeningService:
         if not folio:
             return {"success": False, "error": "Folio not found"}
 
-        # Calculate balance
-        charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-        payments = await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-        total_charges = sum(c.get("total", 0) for c in charges)
-        total_payments = sum(p.get("amount", 0) for p in payments)
-        balance = round(total_charges - total_payments, 2)
+        # Calculate balance (server-side aggregation, limit yok)
+        from core.utils import calculate_folio_balance
+        balance = await calculate_folio_balance(folio_id, tenant_id)
 
         if balance <= 0:
             return {"success": False, "error": "No outstanding balance to transfer"}
@@ -513,11 +512,8 @@ class FolioHardeningService:
     # ── INTERNAL HELPERS ──
 
     async def _recalculate_folio_balance(self, tenant_id: str, folio_id: str):
-        charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-        payments = await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(500)
-        total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges)
-        total_payments = sum(p.get("amount", 0) for p in payments)
-        balance = round(total_charges - total_payments, 2)
+        from core.utils import calculate_folio_balance
+        balance = await calculate_folio_balance(folio_id, tenant_id)
         await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$set": {"balance": balance}})
 
     async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: dict = None):

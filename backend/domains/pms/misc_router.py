@@ -37,11 +37,9 @@ def has_permission(role: Any, permission: Permission) -> bool:
 
 
 async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
-    try:
-        from core.utils import calculate_folio_balance as _calc
-        return await _calc(folio_id, tenant_id)
-    except Exception:
-        return 0.0
+    """Folio bakiyesi — core helper'a delege (fail-closed: hata bubble eder)."""
+    from core.utils import calculate_folio_balance as _calc
+    return await _calc(folio_id, tenant_id)
 
 
 async def get_folio_details(folio_id: str, current_user: User) -> dict:

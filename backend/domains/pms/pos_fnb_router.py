@@ -82,12 +82,9 @@ def create_default_table_layout() -> list[dict[str, Any]]:
 
 
 async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
-    """Recompute folio balance after F&B post; lazy-imports core helper."""
-    try:
-        from core.utils import calculate_folio_balance
-        return await calculate_folio_balance(folio_id, tenant_id)
-    except Exception:
-        return 0.0
+    """F&B post sonrası bakiye yeniden hesabı — core helper'a delege (fail-closed)."""
+    from core.utils import calculate_folio_balance
+    return await calculate_folio_balance(folio_id, tenant_id)
 
 
 def get_menu_recommendation(_guest_profile: dict | None = None) -> list[str]:
