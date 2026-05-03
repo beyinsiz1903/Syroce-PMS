@@ -208,6 +208,25 @@ class CreateReservationService:
             except Exception:
                 pass
 
+            # CapX B2B Network: outbound booking event (best-effort, fire-and-forget)
+            try:
+                from integrations.capx import (
+                    fire_and_forget,
+                    push_booking_lifecycle_event,
+                )
+                fire_and_forget(push_booking_lifecycle_event(
+                    booking_id=booking_id,
+                    status=booking_dict.get("status", "confirmed"),
+                    tenant_id=tenant_context.tenant_id,
+                    guest_name=booking_dict.get("guest_name"),
+                    check_in=booking_dict.get("check_in", ""),
+                    check_out=booking_dict.get("check_out", ""),
+                    amount=booking_dict.get("total_amount"),
+                    currency=booking_dict.get("currency", "TRY"),
+                ))
+            except Exception:
+                pass
+
             await audit_log(
                 actor_id=current_user.id,
                 tenant_id=tenant_context.tenant_id,

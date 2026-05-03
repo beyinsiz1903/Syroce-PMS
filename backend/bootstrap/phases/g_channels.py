@@ -112,6 +112,23 @@ async def phase_g_channels_and_audit(app):
     except Exception as e:
         logger.warning(f"Web Push cleanup worker init warning: {e}")
 
+    # CapX Availability Scheduler (Faz 2: periodic snapshot push)
+    try:
+        from integrations.capx import availability_scheduler as capx_avail_sched
+        from integrations.capx import get_capx_client
+        if get_capx_client(refresh=True).configured:
+            _capx_int = int(os.getenv("CAPX_AVAIL_INTERVAL", "900"))
+            _capx_lookahead = int(os.getenv("CAPX_AVAIL_LOOKAHEAD_DAYS", "30"))
+            await capx_avail_sched.start(
+                interval_seconds=_capx_int,
+                lookahead_days=_capx_lookahead,
+            )
+            app.state.capx_availability_scheduler = capx_avail_sched
+        else:
+            logger.info("ℹ️ CapX not configured; availability scheduler not started")
+    except Exception as e:
+        logger.warning(f"CapX Availability Scheduler init warning: {e}")
+
     # Availability Reconciliation Worker
     try:
         has_channels = await _raw_db.exely_connections.find_one(

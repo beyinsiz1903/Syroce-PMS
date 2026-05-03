@@ -277,6 +277,29 @@ class UpdateReservationService:
                 except Exception:
                     pass
 
+                # CapX B2B Network: cancel/no_show transition push (best-effort)
+                if (
+                    new_status in ("cancelled", "no_show")
+                    and old_status not in ("cancelled", "no_show")
+                ):
+                    try:
+                        from integrations.capx import (
+                            fire_and_forget,
+                            push_booking_lifecycle_event,
+                        )
+                        fire_and_forget(push_booking_lifecycle_event(
+                            booking_id=booking_id,
+                            status=new_status,
+                            tenant_id=tenant_context.tenant_id,
+                            guest_name=updated_booking.get("guest_name"),
+                            check_in=updated_booking.get("check_in", ""),
+                            check_out=updated_booking.get("check_out", ""),
+                            amount=updated_booking.get("total_amount"),
+                            currency=updated_booking.get("currency", "TRY"),
+                        ))
+                    except Exception:
+                        pass
+
             # Channel availability auto-sync: müsaitlik güncelle ve kanallara push et
             _avail_sync_fields = {"status", "room_id", "check_in", "check_out"}
             if changes and _avail_sync_fields & set(changes.keys()):
