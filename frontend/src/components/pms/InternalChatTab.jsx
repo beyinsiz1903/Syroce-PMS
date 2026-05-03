@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -14,106 +9,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { websocket, useWebSocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
-import { canSendUrgentMessage, hasRole } from '@/utils/authRoles';
+import { canSendUrgentMessage } from '@/utils/authRoles';
+import { Send, RefreshCw, MessagesSquare, CheckCheck } from 'lucide-react';
+
+// R4 split: render-helpers extracted into sub-components.
 import {
-  Inbox, Send, RefreshCw, AlertCircle, CheckCircle, Building2,
-  Users, MessageSquare, Search, Reply, MessagesSquare, ArrowLeft, CheckCheck,
-  MoreVertical, Trash2, Pencil, X,
-} from 'lucide-react';
+  STAFF_ROLES,
+  CONVERSATION_DEPARTMENT_FILTERS,
+  POLL_INTERVAL_MS,
+  TYPING_INDICATOR_TTL_MS,
+  TYPING_EMIT_THROTTLE_MS,
+} from './internalChat/constants';
+import InboxList from './internalChat/InboxList';
+import ComposeForm from './internalChat/ComposeForm';
+import ConversationsList from './internalChat/ConversationsList';
+import ThreadView from './internalChat/ThreadView';
 
-const DEPARTMENTS = [
-  { value: 'Reception', label: 'Ön Büro' },
-  { value: 'Housekeeping', label: 'Kat Hizmetleri' },
-  { value: 'Maintenance', label: 'Teknik Servis' },
-  { value: 'Finance', label: 'Muhasebe' },
-  { value: 'Management', label: 'Yönetim' },
-  { value: 'General', label: 'Genel' },
-];
-
-const ROLE_LABELS = {
-  super_admin: 'Süper Yönetici',
-  admin: 'Yönetici',
-  supervisor: 'Süpervizör',
-  front_desk: 'Ön Büro',
-  housekeeping: 'Kat Hizmetleri',
-  maintenance: 'Teknik',
-  finance: 'Muhasebe',
-  sales: 'Satış',
-};
-
-const STAFF_ROLES = new Set([
-  'super_admin', 'admin', 'supervisor',
-  'front_desk', 'housekeeping', 'maintenance', 'finance', 'sales',
-]);
-
-// Department filter options for the conversations list. Each entry maps a
-// human-readable label to the set of backend `role` values it should match.
-// `value: 'all'` is the no-op default that keeps every conversation visible.
-const CONVERSATION_DEPARTMENT_FILTERS = [
-  { value: 'all', label: 'Tümü', roles: null },
-  { value: 'front_desk', label: 'Ön Büro', roles: ['front_desk'] },
-  { value: 'housekeeping', label: 'HK', roles: ['housekeeping'] },
-  { value: 'maintenance', label: 'Teknik', roles: ['maintenance'] },
-  { value: 'finance', label: 'Muhasebe', roles: ['finance'] },
-  { value: 'management', label: 'Yönetim', roles: ['super_admin', 'admin', 'supervisor'] },
-];
-
-// Real-time delivery happens via Socket.IO; this poll is now just a safety
-// net for missed events / cross-tab sync, so we can run it much less often.
-const POLL_INTERVAL_MS = 60000;
-
-// Mirror of the backend RECALL_WINDOW_SECONDS — keeps the recall menu hidden
-// once the message is past the window so we don't pretend the action is still
-// available. The backend remains the source of truth and will reject late
-// recalls with HTTP 400.
-const RECALL_WINDOW_MS = 5 * 60 * 1000;
-
-// How long after the last `typing` event we keep the indicator visible.
-// Slightly longer than the emit cadence so brief pauses don't flicker.
-const TYPING_INDICATOR_TTL_MS = 4000;
-// Throttle how often we emit `internal_typing` while the user is typing.
-const TYPING_EMIT_THROTTLE_MS = 1500;
-
-// Same 5-minute window applies to in-place edits — kept identical to the
-// recall window so the menu logic is straightforward (one age check covers
-// both actions). Backend enforces the same limit and rejects stale edits
-// with HTTP 400.
-const EDIT_WINDOW_MS = 5 * 60 * 1000;
 
 const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
   const {
     decrementInternalUnread,
-    refreshInternalUnread,
     markAllInternalRead,
   } = useNotifications();
   const { on: wsOn, socketEmit: wsSocketEmit } = useWebSocket('pms');
@@ -1243,1204 +1163,9 @@ const InternalChatTab = ({ currentUser }) => {
     }
   };
 
-  const renderInboxList = () => (
-    <div className="flex flex-col h-full border rounded-md bg-background overflow-hidden">
-      <div className="px-3 py-2 border-b flex items-center justify-between gap-2 bg-muted/20">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Inbox className="h-4 w-4" /> Gelen Kutusu
-          {unreadCount > 0 && (
-            <Badge variant="destructive" className="px-1.5 py-0 text-[10px] h-4" data-testid="badge-unread-count">
-              {unreadCount}
-            </Badge>
-          )}
-        </div>
-        <div className="text-[11px] text-muted-foreground">
-          {showUnreadOnly ? 'Sadece okunmamış' : 'Tümü'}
-        </div>
-      </div>
-      <div className="flex-1 overflow-hidden">
-        {loadingInbox && inbox.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">Yükleniyor…</div>
-        ) : inbox.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground px-4">
-            <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p>Henüz mesaj yok.</p>
-            <p className="text-sm mt-1">"Yeni Mesaj" düğmesinden departmanlara veya kişilere mesaj gönderebilirsiniz.</p>
-          </div>
-        ) : (
-          <ScrollArea className="h-full">
-            <div className="space-y-2 p-3">
-              {inbox.map((msg) => (
-                <div
-                  key={msg.id}
-                  data-testid={`inbox-message-${msg.id}`}
-                  className={`p-3 rounded-md border ${
-                    msg.read
-                      ? 'bg-background'
-                      : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm" data-testid={`text-from-${msg.id}`}>
-                          {msg.from_user_name || 'Bilinmeyen'}
-                        </span>
-                        {msg.from_department && (
-                          <Badge variant="outline" className="text-xs">
-                            {msg.from_department}
-                          </Badge>
-                        )}
-                        {msg.priority === 'urgent' && (
-                          <Badge variant="destructive" className="text-xs">
-                            <AlertCircle className="h-3 w-3 mr-0.5" /> Acil
-                          </Badge>
-                        )}
-                        {!msg.read && (
-                          <Badge variant="default" className="text-xs">Yeni</Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {msg.to_user_name
-                          ? `→ ${msg.to_user_name}`
-                          : `→ ${msg.to_department || 'Tüm departmanlar'}`}
-                        {' · '}
-                        {msg.time_ago || msg.created_at}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {!msg.read && !msg.deleted && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => markAsRead(msg.id)}
-                          data-testid={`button-mark-read-${msg.id}`}
-                          title="Okundu olarak işaretle"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {!msg.deleted && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleReply(msg)}
-                          data-testid={`button-reply-${msg.id}`}
-                          title="Yanıtla"
-                        >
-                          <Reply className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {msg.deleted ? (
-                    <p
-                      className="text-sm italic text-muted-foreground"
-                      data-testid={`text-inbox-recalled-${msg.id}`}
-                    >
-                      Bu mesaj kaldırıldı
-                    </p>
-                  ) : (
-                    <>
-                      <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
-                      {msg.edited && (
-                        <span
-                          className="text-[10px] text-muted-foreground italic mt-0.5 inline-block"
-                          data-testid={`text-inbox-edited-${msg.id}`}
-                          title={msg.edited_at ? `Son düzenleme: ${msg.edited_at}` : undefined}
-                        >
-                          (düzenlendi)
-                        </span>
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        )}
-      </div>
-    </div>
-  );
 
-  const renderCompose = () => (
-    <div className="space-y-4">
-        <div>
-          <Label className="mb-2 block">Alıcı Tipi</Label>
-          <div className="grid grid-cols-3 gap-2">
-            <Button
-              type="button"
-              variant={recipientType === 'department' ? 'default' : 'outline'}
-              onClick={() => setRecipientType('department')}
-              data-testid="button-recipient-department"
-            >
-              <Building2 className="h-4 w-4 mr-1" /> Departman
-            </Button>
-            <Button
-              type="button"
-              variant={recipientType === 'user' ? 'default' : 'outline'}
-              onClick={() => setRecipientType('user')}
-              disabled={usersAccessDenied}
-              data-testid="button-recipient-user"
-              title={usersAccessDenied ? 'Kullanıcı listesine erişim yetkiniz yok' : ''}
-            >
-              <Users className="h-4 w-4 mr-1" /> Kişi
-            </Button>
-            <Button
-              type="button"
-              variant={recipientType === 'broadcast' ? 'default' : 'outline'}
-              onClick={() => setRecipientType('broadcast')}
-              data-testid="button-recipient-broadcast"
-            >
-              <MessageSquare className="h-4 w-4 mr-1" /> Herkese
-            </Button>
-          </div>
-        </div>
 
-        {recipientType === 'department' && (
-          <div>
-            <Label htmlFor="dept-select" className="mb-1 block">Departman Seç</Label>
-            <Select value={toDepartment} onValueChange={setToDepartment}>
-              <SelectTrigger id="dept-select" data-testid="select-department">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DEPARTMENTS.map((d) => (
-                  <SelectItem key={d.value} value={d.value}>
-                    {d.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
-        {recipientType === 'user' && (
-          <div className="space-y-2">
-            <Label htmlFor="user-search" className="mb-1 block">Personel Ara</Label>
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="user-search"
-                  value={userSearch}
-                  onChange={(e) => {
-                    setUserSearch(e.target.value);
-                    setToUserId('');
-                  }}
-                  placeholder="İsim veya e-posta…"
-                  className="pl-8"
-                  data-testid="input-user-search"
-                />
-              </div>
-              <Select
-                value={userDeptFilter}
-                onValueChange={(v) => {
-                  setUserDeptFilter(v);
-                  setToUserId('');
-                }}
-              >
-                <SelectTrigger
-                  className="w-40 shrink-0"
-                  data-testid="select-user-department-filter"
-                >
-                  <SelectValue placeholder="Departman" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Task #25: Sadece çevrimiçi personeli göster filtresi.
-                Toggle her açıldığında presence listesini tazeleriz —
-                kullanıcı toggle'ı tıkladığında "az önce oturum kapatmış"
-                bir kişiyi yine de görmesinler. */}
-            <div className="flex items-center justify-between rounded-md border px-3 py-1.5">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="online-only-toggle"
-                  checked={onlineOnly}
-                  onCheckedChange={(checked) => {
-                    setOnlineOnly(checked);
-                    setToUserId('');
-                    if (checked) loadOnlinePresence();
-                  }}
-                  data-testid="switch-online-only"
-                />
-                <Label
-                  htmlFor="online-only-toggle"
-                  className="text-xs font-normal cursor-pointer"
-                >
-                  Sadece çevrimiçi personeli göster
-                </Label>
-              </div>
-              <span
-                className="text-[10px] text-muted-foreground"
-                data-testid="text-online-count"
-              >
-                {onlineUsers.size} çevrimiçi
-              </span>
-            </div>
-            {!usersLoaded ? (
-              <p className="text-xs text-muted-foreground">Personel listesi yükleniyor…</p>
-            ) : users.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Kullanıcı bulunamadı.</p>
-            ) : (
-              <ScrollArea className="h-48 border rounded-md">
-                <div className="p-1">
-                  {filteredUsers.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => {
-                        setToUserId(u.id);
-                        setUserSearch(u.name);
-                      }}
-                      data-testid={`option-user-${u.id}`}
-                      className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-accent ${
-                        toUserId === u.id ? 'bg-accent' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Task #25: küçük yeşil nokta = bu kullanıcı şu
-                            an WS'e bağlı. Sessiz, ekstra label yok —
-                            yardımcı bir işaret, dikkat dağıtıcı değil. */}
-                        {onlineUsers.has(u.id) && (
-                          <span
-                            className="inline-block h-2 w-2 rounded-full bg-green-500 shrink-0"
-                            title="Çevrimiçi"
-                            data-testid={`dot-online-${u.id}`}
-                          />
-                        )}
-                        <span className="font-medium">{u.name}</span>
-                        {u.role && ROLE_LABELS[u.role] && (
-                          <Badge
-                            variant="secondary"
-                            className="px-1.5 py-0 text-[10px] h-4 font-normal text-muted-foreground shrink-0"
-                            data-testid={`badge-user-role-${u.id}`}
-                          >
-                            {ROLE_LABELS[u.role]}
-                          </Badge>
-                        )}
-                      </div>
-                      {u.email && (
-                        <div className="text-xs text-muted-foreground">{u.email}</div>
-                      )}
-                    </button>
-                  ))}
-                  {filteredUsers.length === 0 && (
-                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                      Eşleşen kullanıcı yok.
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            )}
-            {toUserId && (
-              <p className="text-xs text-green-600 dark:text-green-400">
-                Seçilen: <span className="font-medium">{userSearch}</span>
-              </p>
-            )}
-          </div>
-        )}
-
-        {recipientType === 'broadcast' && (
-          <div className="text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-            Bu mesaj <strong>tüm departmanlara</strong> ve sistemdeki tüm personele iletilecek.
-          </div>
-        )}
-
-        <div>
-          <Label htmlFor="msg-text" className="mb-1 block">Mesaj</Label>
-          <Textarea
-            id="msg-text"
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            placeholder="Mesajınızı yazın…"
-            rows={5}
-            maxLength={2000}
-            data-testid="textarea-message"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            {messageText.length}/2000 karakter
-          </p>
-        </div>
-
-        <div>
-          <Label htmlFor="priority-select" className="mb-1 block">Öncelik</Label>
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger id="priority-select" className="w-48" data-testid="select-priority">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="normal">Normal</SelectItem>
-              <SelectItem value="high">Yüksek</SelectItem>
-              {canSendUrgent && (
-                <SelectItem value="urgent" data-testid="select-priority-urgent">
-                  Acil (alarm oluşturur)
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-          {!canSendUrgent && (
-            <p
-              className="text-xs text-muted-foreground mt-1"
-              data-testid="text-urgent-permission-hint"
-            >
-              Acil mesaj gönderme yetkisi yalnızca yönetici/süpervizör
-              rollerine açıktır.
-            </p>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={resetForm}
-            disabled={sending}
-            data-testid="button-reset"
-          >
-            Temizle
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSend}
-            disabled={sending || !messageText.trim()}
-            data-testid="button-send-message"
-          >
-            <Send className="h-4 w-4 mr-1" />
-            {sending ? 'Gönderiliyor…' : 'Gönder'}
-          </Button>
-        </div>
-    </div>
-  );
-
-  const renderConversationsList = () => (
-    <div className="flex flex-col h-full border rounded-md bg-background">
-      <div className="p-3 border-b space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-medium text-sm flex items-center gap-1.5">
-            <MessagesSquare className="h-4 w-4" />
-            Konuşmalar
-            {totalConversationUnread > 0 && (
-              <Badge
-                variant="destructive"
-                className="ml-1 px-1.5 py-0 text-xs"
-                data-testid="badge-conversations-total-unread"
-              >
-                {totalConversationUnread}
-              </Badge>
-            )}
-          </h3>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => loadConversations()}
-            disabled={loadingConversations}
-            data-testid="button-refresh-conversations"
-            title="Yenile"
-          >
-            <RefreshCw className={`h-4 w-4 ${loadingConversations ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={conversationSearch}
-            onChange={(e) => setConversationSearch(e.target.value)}
-            placeholder="İsim ara…"
-            className="pl-8 h-9"
-            data-testid="input-conversation-search"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={conversationDeptFilter}
-            onValueChange={setConversationDeptFilter}
-            open={conversationDeptOpen}
-            onOpenChange={setConversationDeptOpen}
-          >
-            <SelectTrigger
-              className="h-9 flex-1"
-              data-testid="select-conversation-department"
-            >
-              {/*
-                Task #29: Seçili departmanın okunmamış sayısını trigger
-                üzerinde göster. Dropdown açık değilken bile kullanıcı
-                hangi filtrenin kaç okunmamışı olduğunu görsün. SelectValue
-                children olarak veriliyor, böylece Radix kendi değerini
-                yazmak yerine bizim gösterdiğimizi yansıtır.
-              */}
-              <SelectValue placeholder="Departman">
-                {(() => {
-                  const opt = CONVERSATION_DEPARTMENT_FILTERS.find(
-                    (o) => o.value === conversationDeptFilter,
-                  );
-                  const label = opt?.label || 'Departman';
-                  const count = conversationUnreadByDept[conversationDeptFilter] || 0;
-                  return (
-                    <span className="flex items-center justify-between gap-2 w-full pr-1">
-                      <span className="truncate">{label}</span>
-                      {count > 0 && (
-                        <span
-                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px]"
-                          data-testid="badge-dept-unread-trigger"
-                        >
-                          {count > 99 ? '99+' : count}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })()}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => {
-                const count = conversationUnreadByDept[opt.value] || 0;
-                // Use the Radix primitive directly so the unread badge can sit
-                // outside of `ItemText` — that keeps the trigger label clean
-                // (no badge in the trigger) while still showing the count in
-                // the dropdown row.
-                return (
-                  <SelectPrimitive.Item
-                    key={opt.value}
-                    value={opt.value}
-                    className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-                  >
-                    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-                      <SelectPrimitive.ItemIndicator>
-                        <Check className="h-4 w-4" />
-                      </SelectPrimitive.ItemIndicator>
-                    </span>
-                    <span className="flex items-center justify-between gap-2 w-full pr-4">
-                      <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
-                      {count > 0 ? (
-                        // Task #30: Badge'i tıklanabilir yap. onPointerDown
-                        // ile Radix Item'in select handler'ını engelliyoruz
-                        // (onClick'te kullanırsak Item zaten seçilmiş oluyor).
-                        // Sonra kendi handler'ımızla filtre + ilk okunmamış
-                        // konuşmayı tek hamlede açıyoruz.
-                        <button
-                          type="button"
-                          className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 min-w-[18px] cursor-pointer transition-colors"
-                          data-testid={`badge-dept-unread-${opt.value}`}
-                          aria-label={`${opt.label} departmanındaki ilk okunmamış mesaja git (${count})`}
-                          onPointerDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            jumpToFirstUnreadInDepartment(opt.value);
-                          }}
-                        >
-                          {count > 99 ? '99+' : count}
-                        </button>
-                      ) : null}
-                    </span>
-                  </SelectPrimitive.Item>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          <label
-            className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-pointer select-none"
-            title="Sadece okunmamış mesajları göster"
-          >
-            <Switch
-              checked={conversationOnlyUnread}
-              onCheckedChange={setConversationOnlyUnread}
-              data-testid="switch-conversation-only-unread"
-            />
-            <span>Okunmamış</span>
-          </label>
-        </div>
-      </div>
-      {loadingConversations && conversations.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground text-sm">Yükleniyor…</div>
-      ) : filteredConversations.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground px-4">
-          <MessagesSquare className="h-10 w-10 mx-auto mb-2 opacity-30" />
-          {conversations.length === 0 ? (
-            <>
-              <p className="text-sm">Henüz birebir konuşmanız yok.</p>
-              <p className="text-xs mt-1">
-                Yeni Mesaj sekmesinden bir personele DM gönderdiğinizde burada görünecek.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm">Eşleşen konuşma bulunamadı.</p>
-              {conversationFiltersActive && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-7 text-xs"
-                  onClick={() => {
-                    setConversationSearch('');
-                    setConversationDeptFilter('all');
-                    setConversationOnlyUnread(false);
-                  }}
-                  data-testid="button-clear-conversation-filters"
-                >
-                  Filtreleri temizle
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        <ScrollArea className="flex-1">
-          <ul className="divide-y">
-            {filteredConversations.map((conv) => {
-              const isSelected = conv.user_id === selectedConvUserId;
-              return (
-                <li key={conv.user_id}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectConversation(conv)}
-                    data-testid={`conversation-item-${conv.user_id}`}
-                    className={`w-full text-left px-3 py-2.5 hover:bg-accent transition-colors ${
-                      isSelected ? 'bg-accent' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span
-                          className={`text-sm truncate ${
-                            conv.unread_count > 0 ? 'font-semibold' : 'font-medium'
-                          }`}
-                        >
-                          {conv.user_name}
-                        </span>
-                        {conv.user_role && ROLE_LABELS[conv.user_role] && (
-                          <Badge
-                            variant="secondary"
-                            className="px-1.5 py-0 text-[10px] h-4 font-normal text-muted-foreground shrink-0"
-                            data-testid={`badge-role-${conv.user_id}`}
-                          >
-                            {ROLE_LABELS[conv.user_role]}
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">
-                        {conv.time_ago || ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`text-xs truncate ${
-                          conv.unread_count > 0
-                            ? 'text-foreground'
-                            : 'text-muted-foreground'
-                        }`}
-                      >
-                        {conv.last_from_me && (
-                          <span className="text-muted-foreground">Sen: </span>
-                        )}
-                        {conv.last_message || '(boş mesaj)'}
-                      </span>
-                      {conv.unread_count > 0 && (
-                        <Badge
-                          variant="destructive"
-                          className="px-1.5 py-0 text-[10px] h-5 shrink-0"
-                          data-testid={`badge-unread-${conv.user_id}`}
-                        >
-                          {conv.unread_count}
-                        </Badge>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </ScrollArea>
-      )}
-    </div>
-  );
-
-  const renderThread = () => {
-    if (!selectedConvUserId) {
-      return (
-        <div className="flex flex-col h-full items-center justify-center border rounded-md bg-background text-muted-foreground p-6 text-center">
-          <MessagesSquare className="h-14 w-14 mb-3 opacity-30" />
-          <p className="text-sm font-medium">Bir konuşma seçin</p>
-          <p className="text-xs mt-1 max-w-xs">
-            Soldaki listeden bir personele tıklayarak mesaj geçmişinizi görüntüleyin
-            ve hızlı yanıt gönderin.
-          </p>
-          {!usersAccessDenied && users.length > 0 && (
-            <div className="mt-4 w-full max-w-xs text-left">
-              <p className="text-xs text-muted-foreground mb-1.5">
-                veya yeni bir konuşma başlatın:
-              </p>
-              <Select
-                value=""
-                onValueChange={(uid) => {
-                  const u = users.find((x) => x.id === uid);
-                  if (u) handleStartConversationFromUser(u);
-                }}
-              >
-                <SelectTrigger data-testid="select-start-conversation">
-                  <SelectValue placeholder="Personel seç…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.slice(0, 100).map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                      {u.role ? ` · ${ROLE_LABELS[u.role] || u.role}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex flex-col h-full border rounded-md bg-background overflow-hidden">
-        {/* Header */}
-        <div className="px-3 py-2 border-b flex items-center gap-2 bg-muted/40">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="md:hidden"
-            onClick={() => {
-              setSelectedConvUserId(null);
-              setSelectedConvUserName('');
-              setThreadMessages([]);
-            }}
-            data-testid="button-back-to-conversations"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div
-              className="font-medium text-sm truncate"
-              data-testid="text-thread-partner-name"
-            >
-              {selectedConvUserName || 'Konuşma'}
-            </div>
-            <div className="text-[11px] text-muted-foreground h-[14px]">
-              {typingPartnerName ? (
-                <span
-                  className="text-primary font-medium"
-                  data-testid="text-thread-typing-indicator"
-                >
-                  yazıyor…
-                </span>
-              ) : (
-                'Birebir mesaj · Otomatik yenileme: 15 sn'
-              )}
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => loadThread(selectedConvUserId, { markRead: true })}
-            disabled={loadingThread}
-            data-testid="button-refresh-thread"
-            title="Yenile"
-          >
-            <RefreshCw className={`h-4 w-4 ${loadingThread ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-
-        {/* Messages */}
-        <div
-          ref={threadScrollRef}
-          className="flex-1 overflow-y-auto p-3 space-y-2 bg-[linear-gradient(to_bottom,_hsl(var(--muted)/0.2),_transparent)]"
-          data-testid="thread-message-list"
-        >
-          {loadingThread && threadMessages.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Yükleniyor…
-            </div>
-          ) : threadMessages.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Henüz mesaj yok.</p>
-              <p className="text-xs mt-1">İlk mesajı aşağıdan gönderin.</p>
-            </div>
-          ) : (
-            threadMessages.map((m) => {
-              const fromMe = m.is_from_me;
-              const isDeleted = !!m.deleted;
-              const isEditing = editingMessageId === m.id;
-              // Recall + edit are only offered for the sender's own,
-              // non-deleted messages still inside the 5 min window. Parsing
-              // failures fall through as "not actionable" — better safe than
-              // sorry. Both actions share the same window so a single check
-              // controls the menu visibility.
-              let withinActionWindow = false;
-              if (fromMe && !isDeleted && m.created_at) {
-                const sentAt = Date.parse(m.created_at);
-                if (!Number.isNaN(sentAt)) {
-                  withinActionWindow =
-                    Date.now() - sentAt < Math.max(RECALL_WINDOW_MS, EDIT_WINDOW_MS);
-                }
-              }
-              return (
-                <div
-                  key={m.id}
-                  data-testid={`thread-message-${m.id}`}
-                  className={`group flex ${fromMe ? 'justify-end' : 'justify-start'}`}
-                >
-                  {/* Action menu sits outside the bubble for own messages so it
-                      doesn't affect the bubble width and stays clickable.
-                      Hidden while inline-edit mode is open to keep focus on
-                      the textarea. */}
-                  {fromMe && withinActionWindow && !isEditing && (
-                    <div className="self-center mr-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            data-testid={`button-message-menu-${m.id}`}
-                            title="Mesaj seçenekleri"
-                            aria-label="Mesaj seçenekleri"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              beginEditMessage(m);
-                            }}
-                            data-testid={`button-edit-message-${m.id}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5 mr-2" />
-                            Düzenle
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              handleRecallMessage(m.id);
-                            }}
-                            className="text-destructive focus:text-destructive"
-                            data-testid={`button-recall-message-${m.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 mr-2" />
-                            Geri al
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[78%] rounded-lg px-3 py-1.5 shadow-sm ${
-                      isDeleted
-                        ? 'bg-muted/60 text-muted-foreground italic border border-dashed'
-                        : fromMe
-                          ? 'bg-primary text-primary-foreground rounded-br-sm'
-                          : 'bg-muted rounded-bl-sm'
-                    } ${
-                      !isDeleted && m.priority === 'urgent'
-                        ? 'ring-2 ring-destructive'
-                        : ''
-                    }`}
-                  >
-                    {!isDeleted && m.priority === 'urgent' && (
-                      <div className="flex items-center gap-1 text-[10px] font-semibold mb-0.5 opacity-90">
-                        <AlertCircle className="h-3 w-3" /> Acil
-                      </div>
-                    )}
-                    {isDeleted ? (
-                      <p
-                        className="text-sm break-words"
-                        data-testid={`text-message-recalled-${m.id}`}
-                      >
-                        Bu mesaj kaldırıldı
-                      </p>
-                    ) : isEditing ? (
-                      // Inline edit mode — keyboard shortcuts mirror the reply
-                      // box (Enter saves, Shift+Enter newline, Esc cancels).
-                      <div
-                        className="flex flex-col gap-1.5 min-w-[220px]"
-                        data-testid={`edit-message-${m.id}`}
-                      >
-                        <Textarea
-                          value={editingDraft}
-                          onChange={(e) => setEditingDraft(e.target.value)}
-                          rows={2}
-                          maxLength={2000}
-                          autoFocus
-                          disabled={savingEdit}
-                          className="resize-none min-h-[40px] max-h-32 text-sm bg-background text-foreground"
-                          data-testid={`textarea-edit-message-${m.id}`}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              if (!savingEdit) handleSubmitEditMessage(m.id);
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault();
-                              cancelEditMessage();
-                            }
-                          }}
-                        />
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className={`h-6 px-2 text-[11px] ${
-                              fromMe ? 'text-primary-foreground hover:text-primary-foreground hover:bg-primary-foreground/10' : ''
-                            }`}
-                            onClick={cancelEditMessage}
-                            disabled={savingEdit}
-                            data-testid={`button-cancel-edit-${m.id}`}
-                          >
-                            <X className="h-3 w-3 mr-1" /> Vazgeç
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="h-6 px-2 text-[11px]"
-                            onClick={() => handleSubmitEditMessage(m.id)}
-                            disabled={savingEdit || !editingDraft.trim()}
-                            data-testid={`button-save-edit-${m.id}`}
-                          >
-                            {savingEdit ? 'Kaydediliyor…' : 'Kaydet'}
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap break-words">
-                        {m.message}
-                      </p>
-                    )}
-                    <div
-                      className={`flex items-center gap-1 mt-0.5 text-[10px] ${
-                        isDeleted
-                          ? 'text-muted-foreground'
-                          : fromMe
-                            ? 'opacity-80 justify-end'
-                            : 'text-muted-foreground'
-                      }`}
-                    >
-                      <span>{m.time_ago || ''}</span>
-                      {/* "düzenlendi" rozeti — recall edilmiş mesajlarda
-                          gösterilmez (mezar taşı tek sinyal kalmalı) ve
-                          edit modunda da gizlenir (textarea zaten görünüyor).
-                          Task #39: rozet bir Popover trigger'ı; tıklayınca
-                          tüm önceki sürümleri kronolojik sırada gösterir. */}
-                      {!isDeleted && !isEditing && m.edited && (
-                        <Popover
-                          onOpenChange={(open) => {
-                            // Lazy-fetch on first open. Refetch on reopen
-                            // if the previous attempt errored OR if the
-                            // message has been edited since the cache was
-                            // populated (compare cached current_message).
-                            if (!open) return;
-                            const cached = editHistoryByMsg[m.id];
-                            const isStale =
-                              cached &&
-                              !cached.loading &&
-                              !cached.error &&
-                              cached.current_message !== (m.message || '');
-                            if (!cached || cached.error || isStale) {
-                              fetchEditHistory(m.id);
-                            }
-                          }}
-                        >
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="italic underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                              data-testid={`text-thread-edited-${m.id}`}
-                              aria-label="Düzenleme geçmişini göster"
-                              title={m.edited_at ? `Son düzenleme: ${m.edited_at}` : 'Düzenleme geçmişini göster'}
-                            >
-                              (düzenlendi)
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            align={fromMe ? 'end' : 'start'}
-                            className="w-80 max-w-[90vw] p-0"
-                            data-testid={`popover-thread-edit-history-${m.id}`}
-                          >
-                            <div className="px-3 py-2 border-b text-xs font-medium">
-                              Düzenleme geçmişi
-                            </div>
-                            <div className="max-h-72 overflow-y-auto p-3 space-y-2 text-xs">
-                              {(() => {
-                                const entry = editHistoryByMsg[m.id];
-                                if (!entry || entry.loading) {
-                                  return (
-                                    <div className="text-muted-foreground italic">
-                                      Yükleniyor…
-                                    </div>
-                                  );
-                                }
-                                if (entry.error) {
-                                  return (
-                                    <div className="text-destructive">
-                                      {entry.error}
-                                    </div>
-                                  );
-                                }
-                                const versions = entry.history || [];
-                                if (versions.length === 0) {
-                                  return (
-                                    <div className="text-muted-foreground italic">
-                                      Önceki sürüm bulunamadı.
-                                    </div>
-                                  );
-                                }
-                                // Render oldest → newest, then the current
-                                // (live) text last so the user sees the
-                                // full timeline of "what was written when".
-                                return (
-                                  <>
-                                    {versions.map((v, i) => (
-                                      <div
-                                        key={`${m.id}-v-${i}`}
-                                        className="border-l-2 border-muted pl-2"
-                                        data-testid={`row-thread-edit-history-${m.id}-${i}`}
-                                      >
-                                        <div className="text-muted-foreground text-[10px]">
-                                          {(v.edited_by_name || 'Bilinmeyen')}
-                                          {v.edited_at ? ` · ${v.edited_at}` : ''}
-                                        </div>
-                                        <div className="whitespace-pre-wrap break-words">
-                                          {v.message || ''}
-                                        </div>
-                                      </div>
-                                    ))}
-                                    <div
-                                      className="border-l-2 border-primary pl-2"
-                                      data-testid={`row-thread-edit-current-${m.id}`}
-                                    >
-                                      <div className="text-muted-foreground text-[10px]">
-                                        Şu anki sürüm
-                                        {m.edited_at ? ` · ${m.edited_at}` : ''}
-                                      </div>
-                                      <div className="whitespace-pre-wrap break-words">
-                                        {entry.current_message || m.message || ''}
-                                      </div>
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                      {fromMe && !isDeleted && (
-                        <CheckCheck
-                          className={`h-3 w-3 ${
-                            m.read ? 'opacity-100' : 'opacity-40'
-                          }`}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Reply input */}
-        <div className="border-t p-2 flex flex-col gap-2 bg-background">
-          {/* Priority selector — defaults to "normal", resets after each send.
-              "Acil" gets a strong red treatment so users know it triggers an alarm. */}
-          <div
-            className="flex items-center gap-1.5 flex-wrap"
-            role="radiogroup"
-            aria-label="Mesaj önceliği"
-          >
-            <span className="text-xs text-muted-foreground mr-1">Öncelik:</span>
-            <Button
-              type="button"
-              size="sm"
-              variant={threadPriority === 'normal' ? 'default' : 'outline'}
-              className="h-7 px-2 text-xs"
-              onClick={() => setThreadPriority('normal')}
-              role="radio"
-              aria-checked={threadPriority === 'normal'}
-              data-testid="button-thread-priority-normal"
-            >
-              Normal
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={threadPriority === 'high' ? 'default' : 'outline'}
-              className="h-7 px-2 text-xs"
-              onClick={() => setThreadPriority('high')}
-              role="radio"
-              aria-checked={threadPriority === 'high'}
-              data-testid="button-thread-priority-high"
-            >
-              Yüksek
-            </Button>
-            {canSendUrgent && (
-              <Button
-                type="button"
-                size="sm"
-                variant={threadPriority === 'urgent' ? 'destructive' : 'outline'}
-                className={`h-7 px-2 text-xs ${
-                  threadPriority === 'urgent'
-                    ? 'ring-2 ring-destructive ring-offset-1'
-                    : 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                }`}
-                onClick={() => setThreadPriority('urgent')}
-                role="radio"
-                aria-checked={threadPriority === 'urgent'}
-                data-testid="button-thread-priority-urgent"
-                title="Acil — alıcıya alarm oluşturur"
-              >
-                <AlertCircle className="h-3 w-3 mr-1" />
-                Acil
-              </Button>
-            )}
-            {canSendUrgent && threadPriority === 'urgent' && (
-              <span
-                className="text-[11px] text-destructive font-medium"
-                data-testid="text-thread-priority-urgent-hint"
-              >
-                Alarm oluşturulacak
-              </span>
-            )}
-            {!canSendUrgent && (
-              <span
-                className="text-[11px] text-muted-foreground"
-                data-testid="text-thread-urgent-permission-hint"
-                title="Acil mesaj yalnızca yönetici/süpervizör rollerine açıktır"
-              >
-                Acil yetkisiz
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-end gap-2">
-            <Textarea
-              value={threadReply}
-              onChange={(e) => {
-                setThreadReply(e.target.value);
-                // Fire a throttled typing signal so the partner sees
-                // "yazıyor…" in their thread header. Empty input still
-                // counts as activity (e.g. backspacing) — that's fine
-                // since the indicator auto-clears after a few seconds.
-                if (e.target.value.length > 0) {
-                  emitTyping();
-                }
-              }}
-              placeholder="Mesajınızı yazın… (Enter göndermek için, Shift+Enter yeni satır)"
-              rows={1}
-              maxLength={2000}
-              className={`resize-none min-h-[40px] max-h-32 ${
-                threadPriority === 'urgent'
-                  ? 'border-destructive focus-visible:ring-destructive'
-                  : ''
-              }`}
-              data-testid="textarea-thread-reply"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (threadReply.trim() && !sendingThreadReply) {
-                    handleSendThreadReply();
-                  }
-                }
-              }}
-            />
-            <Button
-              type="button"
-              onClick={handleSendThreadReply}
-              disabled={sendingThreadReply || !threadReply.trim()}
-              variant={threadPriority === 'urgent' ? 'destructive' : 'default'}
-              data-testid="button-send-thread-reply"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Urgent confirmation: a single extra step to avoid accidental
-            alarms. The destructive action is auto-focused so a second Enter
-            keypress confirms — keeping the flow fast for intentional sends. */}
-        <AlertDialog
-          open={urgentConfirmOpen}
-          onOpenChange={(open) => {
-            if (!sendingThreadReply) setUrgentConfirmOpen(open);
-          }}
-        >
-          <AlertDialogContent
-            data-testid="dialog-urgent-confirm"
-            onOpenAutoFocus={(e) => {
-              e.preventDefault();
-              const node = e.currentTarget?.querySelector?.(
-                '[data-testid="button-urgent-confirm"]',
-              );
-              node?.focus();
-            }}
-          >
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-                Acil mesaj göndermek istediğinize emin misiniz?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Acil mesaj alıcıda alarm oluşturur. Onaylamak için Enter'a,
-                vazgeçmek için Esc'e basabilirsiniz.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-testid="button-urgent-cancel">
-                Vazgeç
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleConfirmUrgentSend}
-                disabled={sendingThreadReply}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                data-testid="button-urgent-confirm"
-              >
-                <AlertCircle className="h-4 w-4 mr-1" />
-                Acil Gönder
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    );
-  };
-
-  const renderConversations = () => (
-    <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-3 h-[600px]">
-      <div
-        className={`md:block ${selectedConvUserId ? 'hidden' : 'block'} h-full overflow-hidden`}
-      >
-        {renderConversationsList()}
-      </div>
-      <div
-        className={`md:block ${selectedConvUserId ? 'block' : 'hidden'} h-full overflow-hidden`}
-      >
-        {renderThread()}
-      </div>
-    </div>
-  );
 
   const totalUnread = (unreadCount || 0) + (totalConversationUnread || 0);
 
@@ -2515,13 +1240,78 @@ const InternalChatTab = ({ currentUser }) => {
           className={`${selectedConvUserId ? 'hidden md:block' : 'block'} h-[280px] md:h-full overflow-hidden`}
           data-testid="pane-conversations-list"
         >
-          {renderConversationsList()}
+          <ConversationsList
+            conversations={conversations}
+            filteredConversations={filteredConversations}
+            loadingConversations={loadingConversations}
+            loadConversations={loadConversations}
+            selectedConvUserId={selectedConvUserId}
+            handleSelectConversation={handleSelectConversation}
+            totalConversationUnread={totalConversationUnread}
+            conversationSearch={conversationSearch}
+            setConversationSearch={setConversationSearch}
+            conversationDeptFilter={conversationDeptFilter}
+            setConversationDeptFilter={setConversationDeptFilter}
+            conversationDeptOpen={conversationDeptOpen}
+            setConversationDeptOpen={setConversationDeptOpen}
+            conversationOnlyUnread={conversationOnlyUnread}
+            setConversationOnlyUnread={setConversationOnlyUnread}
+            conversationUnreadByDept={conversationUnreadByDept}
+            conversationFiltersActive={conversationFiltersActive}
+            jumpToFirstUnreadInDepartment={jumpToFirstUnreadInDepartment}
+          />
         </div>
         <div
           className="block h-[440px] md:h-full overflow-hidden"
           data-testid="pane-detail"
         >
-          {selectedConvUserId ? renderThread() : renderInboxList()}
+          {selectedConvUserId ? (
+            <ThreadView
+              selectedConvUserId={selectedConvUserId}
+              selectedConvUserName={selectedConvUserName}
+              setSelectedConvUserId={setSelectedConvUserId}
+              setSelectedConvUserName={setSelectedConvUserName}
+              setThreadMessages={setThreadMessages}
+              threadMessages={threadMessages}
+              loadingThread={loadingThread}
+              loadThread={loadThread}
+              threadScrollRef={threadScrollRef}
+              typingPartnerName={typingPartnerName}
+              usersAccessDenied={usersAccessDenied}
+              users={users}
+              handleStartConversationFromUser={handleStartConversationFromUser}
+              editingMessageId={editingMessageId}
+              editingDraft={editingDraft}
+              setEditingDraft={setEditingDraft}
+              savingEdit={savingEdit}
+              beginEditMessage={beginEditMessage}
+              cancelEditMessage={cancelEditMessage}
+              handleSubmitEditMessage={handleSubmitEditMessage}
+              handleRecallMessage={handleRecallMessage}
+              editHistoryByMsg={editHistoryByMsg}
+              fetchEditHistory={fetchEditHistory}
+              threadReply={threadReply}
+              setThreadReply={setThreadReply}
+              threadPriority={threadPriority}
+              setThreadPriority={setThreadPriority}
+              emitTyping={emitTyping}
+              handleSendThreadReply={handleSendThreadReply}
+              sendingThreadReply={sendingThreadReply}
+              canSendUrgent={canSendUrgent}
+              urgentConfirmOpen={urgentConfirmOpen}
+              setUrgentConfirmOpen={setUrgentConfirmOpen}
+              handleConfirmUrgentSend={handleConfirmUrgentSend}
+            />
+          ) : (
+            <InboxList
+              inbox={inbox}
+              unreadCount={unreadCount}
+              loadingInbox={loadingInbox}
+              showUnreadOnly={showUnreadOnly}
+              markAsRead={markAsRead}
+              handleReply={handleReply}
+            />
+          )}
         </div>
       </div>
 
@@ -2545,7 +1335,34 @@ const InternalChatTab = ({ currentUser }) => {
               Bir departmana, belirli bir personele veya tüm otele mesaj gönderin.
             </DialogDescription>
           </DialogHeader>
-          {renderCompose()}
+          <ComposeForm
+            recipientType={recipientType}
+            setRecipientType={setRecipientType}
+            toDepartment={toDepartment}
+            setToDepartment={setToDepartment}
+            usersAccessDenied={usersAccessDenied}
+            userSearch={userSearch}
+            setUserSearch={setUserSearch}
+            toUserId={toUserId}
+            setToUserId={setToUserId}
+            userDeptFilter={userDeptFilter}
+            setUserDeptFilter={setUserDeptFilter}
+            onlineOnly={onlineOnly}
+            setOnlineOnly={setOnlineOnly}
+            onlineUsers={onlineUsers}
+            loadOnlinePresence={loadOnlinePresence}
+            usersLoaded={usersLoaded}
+            users={users}
+            filteredUsers={filteredUsers}
+            messageText={messageText}
+            setMessageText={setMessageText}
+            priority={priority}
+            setPriority={setPriority}
+            canSendUrgent={canSendUrgent}
+            resetForm={resetForm}
+            handleSend={handleSend}
+            sending={sending}
+          />
         </DialogContent>
       </Dialog>
     </div>
