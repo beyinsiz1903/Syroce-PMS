@@ -31,7 +31,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
       
       // Fetch room info
       const roomsResponse = await fetch(
-        `/api/rooms`,
+        `/api/pms/rooms`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

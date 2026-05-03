@@ -38,7 +38,7 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       
       // Fetch room details
       const roomsResponse = await fetch(
-        `/api/rooms`,
+        `/api/pms/rooms`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

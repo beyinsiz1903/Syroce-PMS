@@ -28,7 +28,7 @@ const MessagingModuleAdvanced = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `/api/messaging/templates`,
+        `/api/messaging-center/templates`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

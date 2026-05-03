@@ -64,7 +64,7 @@ const FolioManagementPage = () => {
           
           // Get room info
           const roomsResponse = await fetch(
-            `/api/rooms`,
+            `/api/pms/rooms`,
             {
               headers: { 'Authorization': `Bearer ${token}` }
             }
