@@ -132,6 +132,27 @@ async def check_out_guest(
     if not result.ok:
         code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_OUT": 400, "OUTSTANDING_BALANCE": 402}
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
+    # Loyalty: konaklama puanı (idempotent — aynı booking için tekrar verilmez).
+    # Üye değilse veya tutar yoksa sessizce atlar; checkout akışını bloklamaz.
+    try:
+        from domains.guest.loyalty_router import award_points_for_stay
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "guest_id": 1, "total_amount": 1, "paid_amount": 1},
+        )
+        if booking:
+            # paid_amount öncelikli: ödenmemiş booking'e puan verme.
+            amount = float(booking.get("paid_amount") or booking.get("total_amount") or 0)
+            award = await award_points_for_stay(
+                current_user.tenant_id, booking.get("guest_id"), booking_id, amount
+            )
+            if award and isinstance(result.data, dict):
+                result.data["loyalty_award"] = award
+    except Exception as exc:
+        # Loyalty hata verse bile checkout başarılı sayılır — ama görünür logla.
+        logger.warning(
+            "Loyalty award failed for booking %s: %s", booking_id, exc, exc_info=True
+        )
     return result.data
 
 
