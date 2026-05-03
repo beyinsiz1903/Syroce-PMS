@@ -1,17 +1,72 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import api from "@/api/axios";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { CalendarDays, Plus, RefreshCw, X, Loader2 } from "lucide-react";
 
 const TYPES = ["golf", "tennis", "yoga", "fitness", "bike", "diving", "kids", "other"];
+const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i); // 08:00 → 20:00
 
+/**
+ * Opera #3 — Activity Scheduler.
+ * Backend `/api/activities/*`: aktivite + kaynak + booking + clash detection.
+ *
+ * Eski sürüm tek tablo + inline form. Bu sürüm:
+ * - Saatlik grid (kaynak × saat) → boş hücreye tıklayınca booking modal açılır
+ * - Aktivite/Kaynak yönetimi ayrı tab
+ * - shadcn/ui ile tutarlı görünüm, toast + dialog
+ */
 export default function ActivitySchedulerPage() {
+  const { toast } = useToast();
   const [tab, setTab] = useState("schedule");
   const [activities, setActivities] = useState([]);
   const [resources, setResources] = useState([]);
   const [bookings, setBookings] = useState([]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [err, setErr] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
+  // Booking modal
+  const [bookingOpen, setBookingOpen] = useState(false);
+  // İptal onay dialog'u (window.confirm yerine)
+  const [cancelTarget, setCancelTarget] = useState(null); // {id, label}
+  const [cancelling, setCancelling] = useState(false);
+  const [bkForm, setBkForm] = useState({
+    activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "",
+  });
+  const [submittingBk, setSubmittingBk] = useState(false);
+
+  // Tanım formları (tab içinde)
+  const [actForm, setActForm] = useState({
+    name: "", type: "golf", duration_min: 60, price: 0, capacity: 1,
+  });
+  const [resForm, setResForm] = useState({
+    name: "", kind: "instructor", activity_types: "", capacity: 1,
+  });
+
+  const handleErr = useCallback((title, e) => {
+    toast({
+      title,
+      description: e?.response?.data?.detail || e.message,
+      variant: "destructive",
+    });
+  }, [toast]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
       const [a, r, b] = await Promise.all([
         api.get("/api/activities"),
@@ -21,169 +76,575 @@ export default function ActivitySchedulerPage() {
       setActivities(a.data || []);
       setResources(r.data || []);
       setBookings(b.data || []);
-      setErr("");
-    } catch (e) {
-      setErr(e?.response?.data?.detail || "Yüklenemedi");
-    }
-  };
-  useEffect(() => { load(); }, [date]);
+    } catch (e) { handleErr("Yüklenemedi", e); }
+    finally { setLoading(false); }
+  }, [date, handleErr]);
 
-  const [actForm, setActForm] = useState({ name: "", type: "golf", duration_min: 60, price: 0, capacity: 1 });
+  useEffect(() => { load(); }, [load]);
+
   const addActivity = async (e) => {
     e.preventDefault();
-    await api.post("/api/activities", { ...actForm, duration_min: Number(actForm.duration_min), price: Number(actForm.price), capacity: Number(actForm.capacity) });
-    setActForm({ name: "", type: "golf", duration_min: 60, price: 0, capacity: 1 });
-    load();
+    try {
+      await api.post("/api/activities", {
+        ...actForm,
+        duration_min: Number(actForm.duration_min),
+        price: Number(actForm.price),
+        capacity: Number(actForm.capacity),
+      });
+      setActForm({ name: "", type: "golf", duration_min: 60, price: 0, capacity: 1 });
+      toast({ title: "Aktivite eklendi" });
+      load();
+    } catch (e2) { handleErr("Eklenemedi", e2); }
   };
 
-  const [resForm, setResForm] = useState({ name: "", kind: "instructor", activity_types: "", capacity: 1 });
   const addResource = async (e) => {
     e.preventDefault();
-    await api.post("/api/activities/resources", {
-      ...resForm,
-      capacity: Number(resForm.capacity),
-      activity_types: resForm.activity_types.split(",").map(s => s.trim()).filter(Boolean),
-    });
-    setResForm({ name: "", kind: "instructor", activity_types: "", capacity: 1 });
-    load();
+    try {
+      await api.post("/api/activities/resources", {
+        ...resForm,
+        capacity: Number(resForm.capacity),
+        activity_types: resForm.activity_types.split(",").map((s) => s.trim()).filter(Boolean),
+      });
+      setResForm({ name: "", kind: "instructor", activity_types: "", capacity: 1 });
+      toast({ title: "Kaynak eklendi" });
+      load();
+    } catch (e2) { handleErr("Eklenemedi", e2); }
   };
 
-  const [bkForm, setBkForm] = useState({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });
-  const book = async (e) => {
-    e.preventDefault();
+  const requestCancel = (b) => {
+    if (b.status === "cancelled") return;
+    const act = activityById[b.activity_id];
+    setCancelTarget({
+      id: b.id,
+      label: `${act?.name || b.activity_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)} · ${b.guest_id}`,
+    });
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await api.post(`/api/activities/bookings/${cancelTarget.id}/cancel`);
+      toast({ title: "Rezervasyon iptal edildi" });
+      setCancelTarget(null);
+      load();
+    } catch (e) { handleErr("İptal başarısız", e); }
+    finally { setCancelling(false); }
+  };
+
+  const submitBooking = async () => {
+    if (!bkForm.activity_id || !bkForm.resource_id || !bkForm.guest_id || !bkForm.starts_at) {
+      toast({ title: "Eksik alan", description: "Aktivite, kaynak, misafir ve saat zorunlu.", variant: "destructive" });
+      return;
+    }
+    setSubmittingBk(true);
     try {
       await api.post("/api/activities/bookings", bkForm);
+      toast({ title: "Rezervasyon oluşturuldu" });
+      setBookingOpen(false);
       setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });
       load();
-    } catch (e) {
-      alert(e?.response?.data?.detail || "Kayıt başarısız");
-    }
+    } catch (e) { handleErr("Rezervasyon başarısız", e); }
+    finally { setSubmittingBk(false); }
   };
 
-  const cancel = async (id) => {
-    if (!confirm("İptal edilsin mi?")) return;
-    await api.post(`/api/activities/bookings/${id}/cancel`);
-    load();
+  // Boş hücre tıklayınca form'u o saat + kaynakla önceden doldur.
+  const openSlot = (resourceId, hour) => {
+    const startsAt = `${date}T${String(hour).padStart(2, "0")}:00`;
+    setBkForm({
+      activity_id: activities[0]?.id || "",
+      resource_id: resourceId,
+      guest_id: "",
+      starts_at: startsAt,
+      note: "",
+    });
+    setBookingOpen(true);
   };
+
+  // Grid: her hücre için (resource_id, hour) → o saati işgal eden tüm
+  // booking'leri tut. Uzun rezervasyon (örn. 2h golf) starts..ends arası
+  // tüm hücrelere yayılır (span); ilk hücreye `isStart=true` flag konur ki
+  // ad/etiket sadece başlangıçta yazılsın, sonraki hücrelerde sade dolgu.
+  const bookingsByCell = useMemo(() => {
+    const map = new Map();
+    for (const b of bookings) {
+      if (!b.starts_at || !b.resource_id) continue;
+      const startH = parseInt(b.starts_at.slice(11, 13), 10);
+      // ends_at yoksa varsayılan 1 saat; HH:MM > :00 ise yukarı yuvarla
+      let endH = startH + 1;
+      if (b.ends_at) {
+        const eh = parseInt(b.ends_at.slice(11, 13), 10);
+        const em = parseInt(b.ends_at.slice(14, 16), 10);
+        endH = em > 0 ? eh + 1 : eh;
+      }
+      for (let h = startH; h < endH; h++) {
+        if (h < HOURS[0] || h > HOURS[HOURS.length - 1]) continue;
+        const key = `${b.resource_id}@${h}`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push({ booking: b, isStart: h === startH });
+      }
+    }
+    return map;
+  }, [bookings]);
+
+  // 08-20 grid'i dışına düşen rezervasyonlar (gece/erken sabah).
+  // Eski sürüm bunları tablo halinde gösteriyordu; grid view kaybetmesin.
+  const outOfGrid = useMemo(() => {
+    const lo = HOURS[0];
+    const hi = HOURS[HOURS.length - 1];
+    return bookings.filter((b) => {
+      if (!b.starts_at) return false;
+      const startH = parseInt(b.starts_at.slice(11, 13), 10);
+      const endH = b.ends_at ? parseInt(b.ends_at.slice(11, 13), 10) : startH;
+      // Hem başlangıç hem bitiş grid dışında ise listeye al
+      return (startH < lo && endH < lo) || (startH > hi && endH > hi);
+    });
+  }, [bookings]);
+
+  const activityById = useMemo(
+    () => Object.fromEntries(activities.map((a) => [a.id, a])),
+    [activities],
+  );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1300, margin: "0 auto" }}>
-      <h2>Aktivite Takvimi</h2>
-      <p style={{ color: "#666" }}>Golf, tenis, yoga, dalış, çocuk kulübü… Eğitmen / mekan / ekipman atayarak çakışmasız rezervasyon.</p>
-      {err && <div style={{ color: "crimson" }}>{err}</div>}
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {["schedule","activities","resources"].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{ fontWeight: tab === t ? 700 : 400 }}>
-            {t === "schedule" ? "Günlük Takvim" : t === "activities" ? "Aktivite Tanımları" : "Kaynaklar"}
-          </button>
-        ))}
+    <div className="container mx-auto p-6 space-y-4 max-w-7xl">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-2xl font-semibold flex items-center gap-2">
+            <CalendarDays className="h-6 w-6" /> Aktivite Takvimi
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Golf, tenis, yoga, dalış, çocuk kulübü… Eğitmen / mekan / ekipman atayarak çakışmasız rezervasyon.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-activities">
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+        </Button>
       </div>
 
-      {tab === "schedule" && (
-        <div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, alignItems: "center" }}>
-            <label>Tarih: <input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="schedule" data-testid="tab-schedule">Günlük Takvim</TabsTrigger>
+          <TabsTrigger value="activities" data-testid="tab-activities">Aktivite Tanımları</TabsTrigger>
+          <TabsTrigger value="resources" data-testid="tab-resources">Kaynaklar</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="schedule">
+          <Card>
+            <CardHeader>
+              <CardTitle>Saatlik Kaynak Takvimi</CardTitle>
+              <CardDescription>
+                Boş hücreye tıklayarak yeni rezervasyon ekleyebilirsiniz. Mevcut rezervasyona tıklamak iptal eder.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <Label>Tarih</Label>
+                  <Input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-[180px]"
+                    data-testid="input-schedule-date"
+                  />
+                </div>
+                <Button onClick={() => { setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" }); setBookingOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-1" /> Yeni Rezervasyon
+                </Button>
+              </div>
+
+              {resources.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  Henüz kaynak tanımlı değil. "Kaynaklar" sekmesinden eğitmen / kort / ekipman ekleyin.
+                </div>
+              ) : (
+                <div className="overflow-x-auto border rounded">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="px-2 py-1 text-left sticky left-0 bg-muted z-10">Kaynak</th>
+                        {HOURS.map((h) => (
+                          <th key={h} className="px-1 py-1 text-center font-medium border-l min-w-[60px]">
+                            {String(h).padStart(2, "0")}:00
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resources.map((r) => (
+                        <tr key={r.id} className="border-t">
+                          <td className="px-2 py-1 sticky left-0 bg-background z-10 font-medium whitespace-nowrap">
+                            {r.name}
+                            <span className="ml-1 text-[10px] text-muted-foreground">[{r.kind}]</span>
+                          </td>
+                          {HOURS.map((h) => {
+                            const slot = bookingsByCell.get(`${r.id}@${h}`) || [];
+                            return (
+                              <td
+                                key={h}
+                                className="border-l p-0.5 align-top h-12"
+                                data-testid={`cell-${r.id}-${h}`}
+                              >
+                                {slot.length === 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openSlot(r.id, h)}
+                                    className="w-full h-full hover:bg-blue-50 transition rounded text-blue-600 opacity-30 hover:opacity-100"
+                                    title="Yeni rezervasyon"
+                                  >
+                                    +
+                                  </button>
+                                ) : (
+                                  slot.map(({ booking: b, isStart }) => {
+                                    const act = activityById[b.activity_id];
+                                    const cancelled = b.status === "cancelled";
+                                    return (
+                                      <button
+                                        key={`${b.id}-${h}`}
+                                        type="button"
+                                        onClick={() => requestCancel(b)}
+                                        disabled={cancelled}
+                                        className={`w-full text-left px-1 py-0.5 mb-0.5 rounded text-[10px] truncate ${
+                                          cancelled
+                                            ? "bg-gray-100 line-through opacity-40"
+                                            : isStart
+                                              ? "bg-blue-200 hover:bg-blue-300 font-medium"
+                                              : "bg-blue-100 hover:bg-blue-200 italic opacity-80"
+                                        }`}
+                                        title={`${act?.name || b.activity_id} · ${b.guest_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)}${isStart ? "" : " (devam)"}`}
+                                      >
+                                        {isStart
+                                          ? `${act?.name || "?"} · ${b.guest_id?.slice(0, 6)}`
+                                          : "↳"}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {bookings.length > 0 && (
+                <div className="text-xs text-muted-foreground pt-2">
+                  {bookings.filter((b) => b.status !== "cancelled").length} aktif rezervasyon ·{" "}
+                  {bookings.filter((b) => b.status === "cancelled").length} iptal
+                </div>
+              )}
+
+              {outOfGrid.length > 0 && (
+                <div className="border rounded p-3 bg-amber-50">
+                  <div className="text-xs font-medium mb-2 text-amber-900">
+                    Grid Dışı Rezervasyonlar (08:00 öncesi / 20:00 sonrası)
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Saat</TableHead>
+                        <TableHead>Aktivite</TableHead>
+                        <TableHead>Kaynak</TableHead>
+                        <TableHead>Misafir</TableHead>
+                        <TableHead className="w-[80px]" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {outOfGrid.map((b) => {
+                        const act = activityById[b.activity_id];
+                        const res = resources.find((r) => r.id === b.resource_id);
+                        const cancelled = b.status === "cancelled";
+                        return (
+                          <TableRow key={b.id} className={cancelled ? "opacity-50" : ""}>
+                            <TableCell className="text-xs">
+                              {b.starts_at?.slice(11, 16)}-{b.ends_at?.slice(11, 16)}
+                            </TableCell>
+                            <TableCell>{act?.name || b.activity_id}</TableCell>
+                            <TableCell>{res?.name || b.resource_id}</TableCell>
+                            <TableCell className="text-xs">{b.guest_id}</TableCell>
+                            <TableCell>
+                              {!cancelled && (
+                                <Button size="sm" variant="ghost" onClick={() => requestCancel(b)}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="activities">
+          <Card>
+            <CardHeader>
+              <CardTitle>Aktivite Tanımları</CardTitle>
+              <CardDescription>
+                Sunulan aktivite çeşitleri (saat süresi, fiyat, kapasite).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form onSubmit={addActivity} className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+                <div className="md:col-span-2">
+                  <Label>Ad</Label>
+                  <Input
+                    value={actForm.name}
+                    onChange={(e) => setActForm({ ...actForm, name: e.target.value })}
+                    required
+                    data-testid="input-activity-name"
+                  />
+                </div>
+                <div>
+                  <Label>Tip</Label>
+                  <Select value={actForm.type} onValueChange={(v) => setActForm({ ...actForm, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Süre (dk)</Label>
+                  <Input
+                    type="number" min={5}
+                    value={actForm.duration_min}
+                    onChange={(e) => setActForm({ ...actForm, duration_min: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Fiyat</Label>
+                  <Input
+                    type="number" min={0}
+                    value={actForm.price}
+                    onChange={(e) => setActForm({ ...actForm, price: e.target.value })}
+                  />
+                </div>
+                <Button type="submit" data-testid="button-add-activity">
+                  <Plus className="h-4 w-4 mr-1" /> Ekle
+                </Button>
+              </form>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ad</TableHead>
+                    <TableHead className="text-center">Tip</TableHead>
+                    <TableHead className="text-center">Süre</TableHead>
+                    <TableHead className="text-right">Fiyat</TableHead>
+                    <TableHead className="text-right">Kapasite</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {activities.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                        Aktivite tanımlı değil.
+                      </TableCell>
+                    </TableRow>
+                  ) : activities.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary">{a.type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">{a.duration_min} dk</TableCell>
+                      <TableCell className="text-right">{a.price}</TableCell>
+                      <TableCell className="text-right">{a.capacity}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="resources">
+          <Card>
+            <CardHeader>
+              <CardTitle>Kaynaklar</CardTitle>
+              <CardDescription>
+                Eğitmen, mekan (kort/havuz/sahil), ekipman.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form onSubmit={addResource} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                <div>
+                  <Label>Ad</Label>
+                  <Input
+                    value={resForm.name}
+                    onChange={(e) => setResForm({ ...resForm, name: e.target.value })}
+                    placeholder="Hakan, Court 1"
+                    required
+                    data-testid="input-resource-name"
+                  />
+                </div>
+                <div>
+                  <Label>Tür</Label>
+                  <Select value={resForm.kind} onValueChange={(v) => setResForm({ ...resForm, kind: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="instructor">Eğitmen</SelectItem>
+                      <SelectItem value="venue">Mekan</SelectItem>
+                      <SelectItem value="equipment">Ekipman</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Aktivite tipleri (virgüllü)</Label>
+                  <Input
+                    value={resForm.activity_types}
+                    onChange={(e) => setResForm({ ...resForm, activity_types: e.target.value })}
+                    placeholder="golf, tennis"
+                  />
+                </div>
+                <div>
+                  <Label>Kapasite</Label>
+                  <Input
+                    type="number" min={1}
+                    value={resForm.capacity}
+                    onChange={(e) => setResForm({ ...resForm, capacity: e.target.value })}
+                  />
+                </div>
+                <Button type="submit" className="md:col-start-5" data-testid="button-add-resource">
+                  <Plus className="h-4 w-4 mr-1" /> Ekle
+                </Button>
+              </form>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ad</TableHead>
+                    <TableHead className="text-center">Tür</TableHead>
+                    <TableHead>Aktiviteler</TableHead>
+                    <TableHead className="text-right">Kapasite</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {resources.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                        Kaynak tanımlı değil.
+                      </TableCell>
+                    </TableRow>
+                  ) : resources.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.name}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">{r.kind}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(r.activity_types || []).join(", ") || "tümü"}
+                      </TableCell>
+                      <TableCell className="text-right">{r.capacity}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* İptal onay dialog'u */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rezervasyonu iptal et?</DialogTitle>
+            <DialogDescription>{cancelTarget?.label}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>
+              Vazgeç
+            </Button>
+            <Button variant="destructive" onClick={confirmCancel} disabled={cancelling} data-testid="button-confirm-cancel">
+              {cancelling && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              İptal Et
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Booking modal */}
+      <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Yeni Rezervasyon</DialogTitle>
+            <DialogDescription>
+              Aynı kaynak için çakışan saatler backend tarafından reddedilir.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Aktivite</Label>
+              <Select value={bkForm.activity_id} onValueChange={(v) => setBkForm({ ...bkForm, activity_id: v })}>
+                <SelectTrigger data-testid="select-booking-activity">
+                  <SelectValue placeholder="Aktivite seç" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activities.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name} ({a.type})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Kaynak</Label>
+              <Select value={bkForm.resource_id} onValueChange={(v) => setBkForm({ ...bkForm, resource_id: v })}>
+                <SelectTrigger data-testid="select-booking-resource">
+                  <SelectValue placeholder="Kaynak seç" />
+                </SelectTrigger>
+                <SelectContent>
+                  {resources.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name} [{r.kind}]</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Misafir ID</Label>
+              <Input
+                value={bkForm.guest_id}
+                onChange={(e) => setBkForm({ ...bkForm, guest_id: e.target.value })}
+                data-testid="input-booking-guest"
+              />
+            </div>
+            <div>
+              <Label>Başlangıç</Label>
+              <Input
+                type="datetime-local"
+                value={bkForm.starts_at}
+                onChange={(e) => setBkForm({ ...bkForm, starts_at: e.target.value })}
+                data-testid="input-booking-start"
+              />
+            </div>
+            <div>
+              <Label>Not</Label>
+              <Input
+                value={bkForm.note}
+                onChange={(e) => setBkForm({ ...bkForm, note: e.target.value })}
+              />
+            </div>
           </div>
-          <form onSubmit={book} style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 16, padding: 12, background: "#f7f7f7", borderRadius: 8 }}>
-            <select value={bkForm.activity_id} onChange={e => setBkForm({ ...bkForm, activity_id: e.target.value })} required>
-              <option value="">Aktivite seç</option>
-              {activities.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
-            </select>
-            <select value={bkForm.resource_id} onChange={e => setBkForm({ ...bkForm, resource_id: e.target.value })} required>
-              <option value="">Kaynak seç</option>
-              {resources.map(r => <option key={r.id} value={r.id}>{r.name} [{r.kind}]</option>)}
-            </select>
-            <input placeholder="Misafir ID" value={bkForm.guest_id} onChange={e => setBkForm({ ...bkForm, guest_id: e.target.value })} required />
-            <input type="datetime-local" value={bkForm.starts_at} onChange={e => setBkForm({ ...bkForm, starts_at: e.target.value })} required />
-            <input placeholder="Not" value={bkForm.note} onChange={e => setBkForm({ ...bkForm, note: e.target.value })} />
-            <button type="submit">Rezerve Et</button>
-          </form>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
-              <th style={{ padding: 8 }}>Saat</th>
-              <th style={{ padding: 8 }}>Aktivite</th>
-              <th style={{ padding: 8 }}>Kaynak</th>
-              <th style={{ padding: 8 }}>Misafir</th>
-              <th style={{ padding: 8 }}>Durum</th>
-              <th style={{ padding: 8 }}></th>
-            </tr></thead>
-            <tbody>{bookings.map(b => {
-              const act = activities.find(a => a.id === b.activity_id);
-              const res = resources.find(r => r.id === b.resource_id);
-              return (
-                <tr key={b.id} style={{ borderBottom: "1px solid #eee", opacity: b.status === "cancelled" ? 0.4 : 1 }}>
-                  <td style={{ padding: 8 }}>{b.starts_at?.slice(11, 16)} - {b.ends_at?.slice(11, 16)}</td>
-                  <td style={{ padding: 8 }}>{act?.name || b.activity_id}</td>
-                  <td style={{ padding: 8 }}>{res?.name || b.resource_id}</td>
-                  <td style={{ padding: 8 }}>{b.guest_id}</td>
-                  <td style={{ padding: 8 }}>{b.status}</td>
-                  <td style={{ padding: 8 }}>{b.status !== "cancelled" && <button onClick={() => cancel(b.id)}>İptal</button>}</td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "activities" && (
-        <div>
-          <form onSubmit={addActivity} style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 16 }}>
-            <input placeholder="Ad" value={actForm.name} onChange={e => setActForm({ ...actForm, name: e.target.value })} required />
-            <select value={actForm.type} onChange={e => setActForm({ ...actForm, type: e.target.value })}>
-              {TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-            <input type="number" placeholder="Süre (dk)" value={actForm.duration_min} onChange={e => setActForm({ ...actForm, duration_min: e.target.value })} />
-            <input type="number" placeholder="Fiyat" value={actForm.price} onChange={e => setActForm({ ...actForm, price: e.target.value })} />
-            <input type="number" placeholder="Kapasite" value={actForm.capacity} onChange={e => setActForm({ ...actForm, capacity: e.target.value })} />
-            <button type="submit">Ekle</button>
-          </form>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
-              <th style={{ padding: 8 }}>Ad</th><th style={{ padding: 8 }}>Tip</th>
-              <th style={{ padding: 8 }}>Süre</th><th style={{ padding: 8 }}>Fiyat</th>
-            </tr></thead>
-            <tbody>{activities.map(a => (
-              <tr key={a.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: 8 }}>{a.name}</td>
-                <td style={{ padding: 8, textAlign: "center" }}>{a.type}</td>
-                <td style={{ padding: 8, textAlign: "center" }}>{a.duration_min} dk</td>
-                <td style={{ padding: 8, textAlign: "right" }}>{a.price}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "resources" && (
-        <div>
-          <form onSubmit={addResource} style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
-            <input placeholder="Ad (Hakan, Court 1)" value={resForm.name} onChange={e => setResForm({ ...resForm, name: e.target.value })} required />
-            <select value={resForm.kind} onChange={e => setResForm({ ...resForm, kind: e.target.value })}>
-              <option value="instructor">Eğitmen</option>
-              <option value="venue">Mekan</option>
-              <option value="equipment">Ekipman</option>
-            </select>
-            <input placeholder="Aktivite tipleri (golf,tennis)" value={resForm.activity_types} onChange={e => setResForm({ ...resForm, activity_types: e.target.value })} />
-            <input type="number" placeholder="Kapasite" value={resForm.capacity} onChange={e => setResForm({ ...resForm, capacity: e.target.value })} />
-            <button type="submit">Ekle</button>
-          </form>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
-              <th style={{ padding: 8 }}>Ad</th><th style={{ padding: 8 }}>Tür</th>
-              <th style={{ padding: 8 }}>Aktiviteler</th><th style={{ padding: 8 }}>Kapasite</th>
-            </tr></thead>
-            <tbody>{resources.map(r => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: 8 }}>{r.name}</td>
-                <td style={{ padding: 8, textAlign: "center" }}>{r.kind}</td>
-                <td style={{ padding: 8 }}>{(r.activity_types || []).join(", ") || "tümü"}</td>
-                <td style={{ padding: 8, textAlign: "right" }}>{r.capacity}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBookingOpen(false)} disabled={submittingBk}>
+              <X className="h-4 w-4 mr-1" /> Vazgeç
+            </Button>
+            <Button onClick={submitBooking} disabled={submittingBk} data-testid="button-confirm-booking">
+              {submittingBk && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Rezerve Et
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
