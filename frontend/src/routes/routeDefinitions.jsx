@@ -228,6 +228,9 @@ const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));
 const FunctionSpacePage = lazy(() => import("@/pages/FunctionSpacePage"));
 const TrialBalancePage = lazy(() => import("@/pages/TrialBalancePage"));
 const ProfileUdfPage = lazy(() => import("@/pages/ProfileUdfPage"));
+const CateringMenuPage = lazy(() => import("@/pages/CateringMenuPage"));
+const SuiteConnectingPage = lazy(() => import("@/pages/SuiteConnectingPage"));
+const HurdleRatesPage = lazy(() => import("@/pages/HurdleRatesPage"));
 
 // ── Exported components for direct access ──────────────────────────
 export {
@@ -558,5 +561,8 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/function-space", ...p(FunctionSpacePage) },
     { path: "/trial-balance", ...p(TrialBalancePage) },
     { path: "/profile-udf", ...p(ProfileUdfPage) },
+    { path: "/catering", ...p(CateringMenuPage) },
+    { path: "/suite-connecting", ...p(SuiteConnectingPage) },
+    { path: "/hurdle-rates", ...p(HurdleRatesPage) },
   ];
 }
