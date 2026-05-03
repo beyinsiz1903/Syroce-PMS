@@ -254,6 +254,15 @@ export const NAV_ITEMS = [
     navGroup: "reservations",
   },
   {
+    key: "block_management",
+    label: "Blok Yönetimi",
+    path: "/block-management",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "reservations",
+  },
+  {
     key: "deposit_tracking",
     label: "Depozito Takibi",
     path: "/deposit-tracking",

@@ -8,7 +8,7 @@ import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -951,59 +951,93 @@ async def get_budget_vs_actual(
 @router.get("/dashboard/monthly-profitability", dependencies=[Depends(require_op("view_finance_reports"))])
 @cached(ttl=600, key_prefix="monthly_profitability")  # v63 Bug CY: finance authz hardening
 async def get_monthly_profitability(
-    months: int = 6,  # Last N months
+    months: int = Query(6, ge=1, le=36, description="Last N months (1-36)"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v86 DV: monthly profitability finans
 ):
-    """Get monthly profitability for dashboard"""
+    """Get monthly profitability for dashboard.
+
+    Single-pass: tüm ay aralığını 2 find çağrısıyla (charges + expenses)
+    çekip Python'da takvim ayı bazında gruplar. Önceki sürüm her ay için
+    ayrı find atıyordu (2N çağrı = N+1 anti-pattern).
+
+    Ay seçimi: `timedelta(days=30*i)` ay sonu drift yapıyordu (Mart 31'de
+    Şubat'ı atlıyordu). Şimdi takvim ayı geriye sayma kullanılır.
+    """
+    # Takvim ayı geriye sayma (drift-free)
+    now = datetime.now(UTC)
+    cur_year, cur_month = now.year, now.month
+
+    def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+        """delta ay öne (+) ya da geri (-) kaydır, normalize et."""
+        idx = (year * 12 + (month - 1)) + delta
+        return idx // 12, (idx % 12) + 1
+
+    # Window başlangıcı: en eski ayın 1'i (geri months-1 ay)
+    win_y, win_m = _shift_month(cur_year, cur_month, -(months - 1))
+    window_start = datetime(win_y, win_m, 1, tzinfo=UTC)
+
+    # Tek seferde charges + expenses (paralel)
+    charges_q = db.folio_charges.find({
+        'tenant_id': current_user.tenant_id,
+        'voided': False,
+        'date': {'$gte': window_start.isoformat()},
+    }).to_list(100000)
+    expenses_q = db.expenses.find({
+        'tenant_id': current_user.tenant_id,
+        'date': {'$gte': window_start.isoformat()},
+    }).to_list(100000)
+    charges, expenses = await asyncio.gather(charges_q, expenses_q)
+
+    def _month_key(date_val) -> str | None:
+        """Tarih → 'YYYY-MM'. Padless ISO ('2024-1-15') de tolere eder."""
+        if not date_val:
+            return None
+        try:
+            if isinstance(date_val, str):
+                # Önce ISO parse dene; başarısızsa ilk 10 char'dan elle çıkar
+                try:
+                    dt = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+                except ValueError:
+                    parts = date_val.split('T', 1)[0].split('-')
+                    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                        return f"{int(parts[0]):04d}-{int(parts[1]):02d}"
+                    return None
+                return dt.strftime('%Y-%m')
+            return date_val.strftime('%Y-%m')
+        except Exception:
+            return None
+
+    revenue_by_month: dict[str, float] = {}
+    for c in charges:
+        mk = _month_key(c.get('date'))
+        if mk:
+            revenue_by_month[mk] = revenue_by_month.get(mk, 0.0) + (c.get('total', 0) or 0)
+
+    expense_by_month: dict[str, float] = {}
+    for e in expenses:
+        mk = _month_key(e.get('date'))
+        if mk:
+            expense_by_month[mk] = expense_by_month.get(mk, 0.0) + (e.get('amount', 0) or 0)
+
     profitability_data = []
-
-    for i in range(months, 0, -1):
-        # Calculate month
-        target_date = datetime.now(UTC) - timedelta(days=30*i)
-        month_str = target_date.strftime('%Y-%m')
-
-        # v63 Bug CZ: UTC-aware
-        start = datetime.fromisoformat(f"{month_str}-01").replace(tzinfo=UTC)
-        if start.month == 12:
-            end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
-        else:
-            end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
-
-        # Get revenue
-        charges = await db.folio_charges.find({
-            'tenant_id': current_user.tenant_id,
-            'voided': False,
-            'date': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(10000)
-
-        revenue = sum(c.get('total', 0) for c in charges)
-
-        # Get expenses
-        expenses = await db.expenses.find({
-            'tenant_id': current_user.tenant_id,
-            'date': {
-                '$gte': start.isoformat(),
-                '$lte': end.isoformat()
-            }
-        }).to_list(10000)
-
-        expense = sum(e.get('amount', 0) for e in expenses)
-
-        # Calculate profitability
+    # En eskiden bugüne sırayla months ay üret
+    for i in range(months):
+        y, m = _shift_month(win_y, win_m, i)
+        month_str = f"{y:04d}-{m:02d}"
+        month_name = datetime(y, m, 1).strftime('%B %Y')
+        revenue = revenue_by_month.get(month_str, 0.0)
+        expense = expense_by_month.get(month_str, 0.0)
         profit = revenue - expense
         profit_margin = round((profit / revenue * 100), 2) if revenue > 0 else 0
 
         profitability_data.append({
             'month': month_str,
-            'month_name': target_date.strftime('%B %Y'),
+            'month_name': month_name,
             'revenue': round(revenue, 2),
             'expense': round(expense, 2),
             'profit': round(profit, 2),
-            'profit_margin': profit_margin
+            'profit_margin': profit_margin,
         })
 
     # Calculate averages
@@ -1084,12 +1118,40 @@ async def get_trend_kpis(
             }
         }).to_list(10000)
 
+        def _parse_dt(val):
+            """Güvenli tarih parser: None/eksik/bozuk değerler için None döner."""
+            if val is None:
+                return None
+            try:
+                if isinstance(val, str):
+                    dt = datetime.fromisoformat(val.replace('Z', '+00:00'))
+                elif isinstance(val, datetime):
+                    dt = val
+                else:
+                    return None
+            except (ValueError, TypeError):
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
+
         occupied_room_nights = 0
         for booking in occupied_bookings:
-            check_in = max(datetime.fromisoformat(booking['check_in']), start)
-            check_out = min(datetime.fromisoformat(booking['check_out']), end)
+            ci_raw = booking.get('check_in')
+            co_raw = booking.get('check_out')
+            ci = _parse_dt(ci_raw)
+            co = _parse_dt(co_raw)
+            if ci is None or co is None:
+                continue
+            if co <= ci:
+                # Bozuk kayıt (checkout <= checkin) — KPI'yi şişirmemek için atla
+                continue
+            check_in = max(ci, start)
+            check_out = min(co, end)
             nights = (check_out - check_in).days
-            occupied_room_nights += max(nights, 1)
+            if nights <= 0:
+                continue
+            occupied_room_nights += nights
 
         occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
 

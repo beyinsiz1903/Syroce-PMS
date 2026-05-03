@@ -1,5 +1,9 @@
 """Block Management — Cutoff alerts, Wash, Pickup raporları (Opera-uyumlu).
 Mevcut group_blocks koleksiyonu üzerine çalışır.
+
+Yetkilendirme:
+  - Listing/raporlar: require_op("view_finance_reports")
+  - Mutating (wash): require_op("post_charge")
 """
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from pydantic import BaseModel, Field
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/block-mgmt", tags=["PMS / Block Management"])
 
@@ -23,7 +28,9 @@ class WashBody(BaseModel):
 
 @router.get("/cutoff-alerts")
 async def cutoff_alerts(
-    days_ahead: int = 7, user: User = Depends(get_current_user)
+    days_ahead: int = 7,
+    user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
 ):
     """Önümüzdeki N gün içinde cutoff'u dolacak gruplar."""
     db = get_system_db()
@@ -61,7 +68,10 @@ async def cutoff_alerts(
 
 @router.post("/{block_id}/wash")
 async def wash_block(
-    block_id: str, body: WashBody, user: User = Depends(get_current_user)
+    block_id: str,
+    body: WashBody,
+    user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
 ):
     """Grup bloğundan kullanılmayacağı anlaşılan odaları envantere geri verir."""
     db = get_system_db()
@@ -105,7 +115,11 @@ async def wash_block(
 
 
 @router.get("/{block_id}/pickup")
-async def pickup_report(block_id: str, user: User = Depends(get_current_user)):
+async def pickup_report(
+    block_id: str,
+    user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
     """Bir grubun günlük pickup eğrisi: ne zaman kaç oda alındı."""
     db = get_system_db()
     g = await db.group_blocks.find_one({"id": block_id, "tenant_id": user.tenant_id})
@@ -142,7 +156,10 @@ async def pickup_report(block_id: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/summary")
-async def summary(user: User = Depends(get_current_user)):
+async def summary(
+    user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
     """Tüm aktif grupların özet pickup/wash tablosu."""
     db = get_system_db()
     cur = db.group_blocks.find({
