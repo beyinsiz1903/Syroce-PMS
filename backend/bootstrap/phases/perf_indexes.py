@@ -57,6 +57,9 @@ async def ensure_performance_indexes():
         ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
         ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),
         ("currency_rates", [("tenant_id", 1), ("base_currency", 1), ("date", -1)], "idx_currency_rates_tenant", {}),
+        # R-split 2026-05-03 follow-up: invoices koleksiyonu R5'te atlanmıştı.
+        ("invoices", [("tenant_id", 1), ("created_at", -1)], "idx_invoices_tenant_created", {}),
+        ("invoices", [("tenant_id", 1), ("status", 1), ("issue_date", -1)], "idx_invoices_tenant_status", {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
