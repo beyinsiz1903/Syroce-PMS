@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import _raw_db
-from integrations.capx import CapXError, get_capx_client
+from integrations.capx.client import CapXError, get_capx_client, get_capx_client_async
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,9 @@ class CapXAvailabilityScheduler:
                 continue  # interval doldu → sonraki cycle
 
     async def _push_cycle(self, lookahead_days: int) -> None:
-        client = get_capx_client(refresh=False)
-        if not client.configured:
-            return  # config olmadan sessiz
+        # Faz 3: env-default client'a bak; tenant'a özel client _per-tenant
+        # döngüde çözülür (env config yoksa bile tenant-creds varsa çalışsın).
+        env_client = get_capx_client(refresh=False)
 
         # Aktif tenant + room types
         tenants = []
@@ -88,6 +88,10 @@ class CapXAvailabilityScheduler:
         errors = 0
 
         for tid in tenants:
+            # Faz 3: tenant-aware client (tenant kayıtlı değilse env fallback).
+            client = await get_capx_client_async(tenant_id=tid)
+            if not client.configured:
+                continue  # env de tenant da config yok — sessiz
             # room_types collection'dan tipleri çek
             room_types: list[str] = []
             async for rt in _raw_db.room_types.find(

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.database import db
-from integrations.capx import CapXError, get_capx_client
+from integrations.capx.client import CapXError, get_capx_client_async
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,8 @@ async def push_booking_lifecycle_event(
     if not event_type:
         return
 
-    client = get_capx_client(refresh=False)
+    # Faz 3: tenant-aware client (tenant credentials yoksa env fallback)
+    client = await get_capx_client_async(tenant_id=tenant_id)
     if not client.configured or not client.webhook_secret:
         # CapX hiç yapılandırılmamış — sessizce çık (operasyona zarar yok)
         return

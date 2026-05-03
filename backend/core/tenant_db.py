@@ -79,6 +79,8 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
 GLOBAL_COLLECTIONS: set[str] = {
     "tenants", "hotel_chains", "system_config", "system_logs",
     "subscription_plans", "marketplace_extensions",
+    # CapX integration — cross-tenant admin views (super_admin only)
+    "capx_tenant_credentials", "capx_counter_offers", "capx_events",
 }
 
 

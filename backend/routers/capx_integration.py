@@ -1,7 +1,8 @@
 """CapX integration admin router.
 
-Super-admin only. Exposes status, manual sync, and test-event endpoints.
-Booking lifecycle hooks (auto-push) live in a separate module (faz 2).
+Super-admin only. Exposes status, manual sync, test-event, counter-offer ops,
+and tenant credential management.
+Booking lifecycle hooks (auto-push) live in integrations/capx/lifecycle.py.
 """
 from __future__ import annotations
 
@@ -10,11 +11,23 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.helpers import require_super_admin_guard
-from integrations.capx import CapXError, get_capx_client
+from core.security import get_current_user
+from integrations.capx import (
+    CapXError,
+    delete_tenant_credentials,
+    get_capx_client,
+    get_capx_client_async,
+    get_counter_offer,
+    get_tenant_status,
+    list_counter_offers,
+    list_tenant_status,
+    transition,
+    upsert_tenant_credentials,
+)
 
 logger = logging.getLogger(__name__)
 require_super_admin = require_super_admin_guard()
@@ -25,6 +38,8 @@ router = APIRouter(
     dependencies=[Depends(require_super_admin)],
 )
 
+
+# ── Pydantic models ──────────────────────────────────────────────
 
 class AvailabilityPayload(BaseModel):
     room_type: str
@@ -49,6 +64,19 @@ class ReservationEventPayload(BaseModel):
     currency: str = "TRY"
 
 
+class CounterOfferDecision(BaseModel):
+    notes: str = ""
+
+
+class TenantCredentialUpsert(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    base_url: str = Field(..., min_length=1)
+    api_key: str = Field(..., min_length=1)
+    webhook_secret: str = ""
+
+
+# ── Status / Ping / Manual sync ──────────────────────────────────
+
 @router.get("/status")
 async def get_status() -> dict[str, Any]:
     """Local config status — does not call CapX (use /ping for live check)."""
@@ -64,17 +92,11 @@ async def get_status() -> dict[str, Any]:
 
 @router.post("/ping")
 async def ping_capx() -> dict[str, Any]:
-    """Live connectivity test using a no-op HEAD-style call.
-
-    Pushes an empty availability snapshot to verify Bearer token works.
-    Returns CapX response or error detail without raising.
-    """
+    """Live connectivity test using a small probe push."""
     client = get_capx_client(refresh=True)
     if not client.configured:
         raise HTTPException(400, "CapX not configured (CAPX_BASE_URL + CAPX_API_KEY required)")
 
-    # Minimal probe — try a small availability post; CapX should validate and
-    # respond either OK or a structured 4xx that confirms auth works.
     probe = {
         "room_type": "_PROBE_",
         "start_date": "2026-01-01",
@@ -99,7 +121,7 @@ async def ping_capx() -> dict[str, Any]:
 
 @router.post("/sync/availability")
 async def sync_availability(payload: AvailabilityPayload) -> dict[str, Any]:
-    """Manual availability push (for testing / one-off corrections)."""
+    """Manual availability push (testing / one-off corrections)."""
     client = get_capx_client(refresh=True)
     if not client.configured:
         raise HTTPException(400, "CapX not configured")
@@ -115,7 +137,7 @@ async def sync_availability(payload: AvailabilityPayload) -> dict[str, Any]:
 
 @router.post("/test-event")
 async def test_reservation_event(payload: ReservationEventPayload) -> dict[str, Any]:
-    """Manual reservation event push (for testing HMAC signing)."""
+    """Manual reservation event push (testing HMAC signing)."""
     client = get_capx_client(refresh=True)
     if not client.configured or not client.webhook_secret:
         raise HTTPException(400, "CapX not configured (CAPX_WEBHOOK_SECRET required for events)")
@@ -129,3 +151,123 @@ async def test_reservation_event(payload: ReservationEventPayload) -> dict[str, 
             status_code=502,
             detail={"error": str(exc), "status_code": exc.status_code, "body": exc.body},
         )
+
+
+# ── Counter-offer ops (Faz 3) ────────────────────────────────────
+
+@router.get("/counter-offers")
+async def list_offers(
+    tenant_id: str | None = Query(default=None),
+    status: str | None = Query(default=None, pattern="^(pending|accepted|rejected|expired)$"),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    items = await list_counter_offers(tenant_id=tenant_id, status=status, limit=limit)
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/counter-offers/{offer_id}")
+async def get_offer(offer_id: str) -> dict[str, Any]:
+    offer = await get_counter_offer(offer_id)
+    if not offer:
+        raise HTTPException(404, "counter offer not found")
+    return offer
+
+
+async def _push_counter_decision(
+    *, offer: dict[str, Any], decision: str,
+) -> dict[str, Any]:
+    """Karar verildikten sonra CapX'e push (best-effort, hata yutulur)."""
+    tenant_id = offer.get("tenant_id")
+    client = await get_capx_client_async(tenant_id=tenant_id)
+    if not client.configured or not client.webhook_secret:
+        return {"pushed": False, "reason": "client_not_configured"}
+
+    body = {
+        "event_type": f"counter_offer_{decision}",
+        "pms_external_ref": offer.get("pms_external_ref"),
+        "booking_id": offer.get("booking_id"),
+        "counter_offer_id": offer.get("id"),
+        "amount": offer.get("counter_amount") if decision == "accepted"
+                  else offer.get("original_amount"),
+        "currency": offer.get("currency", "TRY"),
+        "occurred_at": datetime.now(UTC).isoformat(),
+    }
+    event_id = f"co-{decision}-{offer.get('id', '')[:24]}"
+    try:
+        resp = await client.push_reservation_event(body, event_id=event_id)
+        return {"pushed": True, "response": resp}
+    except CapXError as exc:
+        logger.warning("counter-offer %s push failed: %s", decision, exc)
+        return {"pushed": False, "error": str(exc), "status_code": exc.status_code}
+
+
+@router.post("/counter-offers/{offer_id}/accept")
+async def accept_offer(
+    offer_id: str,
+    payload: CounterOfferDecision,
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        updated = await transition(
+            offer_id=offer_id, new_status="accepted",
+            actor_id=getattr(user, "id", "unknown"), notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+    push_result = await _push_counter_decision(offer=updated, decision="accepted")
+    return {"ok": True, "offer": updated, "push": push_result}
+
+
+@router.post("/counter-offers/{offer_id}/reject")
+async def reject_offer(
+    offer_id: str,
+    payload: CounterOfferDecision,
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        updated = await transition(
+            offer_id=offer_id, new_status="rejected",
+            actor_id=getattr(user, "id", "unknown"), notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+    push_result = await _push_counter_decision(offer=updated, decision="rejected")
+    return {"ok": True, "offer": updated, "push": push_result}
+
+
+# ── Tenant credentials (Faz 3) ───────────────────────────────────
+
+@router.get("/tenant-credentials")
+async def list_tenant_creds() -> dict[str, Any]:
+    items = await list_tenant_status()
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/tenant-credentials/{tenant_id}")
+async def get_tenant_creds(tenant_id: str) -> dict[str, Any]:
+    return await get_tenant_status(tenant_id)
+
+
+@router.put("/tenant-credentials/{tenant_id}")
+async def upsert_tenant_creds(
+    tenant_id: str,
+    payload: TenantCredentialUpsert,
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    if payload.tenant_id != tenant_id:
+        raise HTTPException(400, "tenant_id mismatch between path and body")
+    return await upsert_tenant_credentials(
+        tenant_id=tenant_id, base_url=payload.base_url, api_key=payload.api_key,
+        webhook_secret=payload.webhook_secret, actor_id=getattr(user, "id", "unknown"),
+    )
+
+
+@router.delete("/tenant-credentials/{tenant_id}")
+async def delete_tenant_creds(tenant_id: str) -> dict[str, Any]:
+    return await delete_tenant_credentials(tenant_id)
