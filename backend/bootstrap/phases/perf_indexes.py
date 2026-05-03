@@ -48,6 +48,15 @@ async def ensure_performance_indexes():
         ("outbox_events", [("processed", 1), ("created_at", 1)], "idx_outbox_processed_created", {}),
         ("task_queue", [("tenant_id", 1), ("status", 1), ("scheduled_for", 1)], "idx_task_queue_poll", {}),
         ("night_audit_runs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_date", {}),
+        # R5 follow-up audit (2026-05-03): 7 yoğun koleksiyonda tenant_id'li
+        # bileşik index eksikti — kapsama tamamlandı.
+        ("exely_sync_logs", [("tenant_id", 1), ("created_at", -1)], "idx_exely_sync_tenant_created", {}),
+        ("hotelrunner_sync_logs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_sync_tenant_created", {}),
+        ("idempotency_keys", [("tenant_id", 1), ("created_at", -1)], "idx_idempotency_tenant_created", {}),
+        ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
+        ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
+        ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),
+        ("currency_rates", [("tenant_id", 1), ("base_currency", 1), ("date", -1)], "idx_currency_rates_tenant", {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
