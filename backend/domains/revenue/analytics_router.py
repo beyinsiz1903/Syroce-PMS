@@ -2209,11 +2209,15 @@ async def get_api_metrics(
         }
     }
 
+_SYSTEM_HEALTH_CACHE: dict = {"ts": 0.0, "payload": None}
+_SYSTEM_HEALTH_TTL = 5.0  # seconds
+
+
 @router.get("/monitoring/system-health")
 async def get_system_health_detailed(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get detailed system health metrics"""
+    """Get detailed system health metrics (cached for 5s)."""
     current_user = await get_current_user(credentials)
 
     # Only IT staff and admins
@@ -2221,12 +2225,17 @@ async def get_system_health_detailed(
         raise HTTPException(status_code=403, detail="Access denied")
 
     import platform
+    import time
 
     import psutil
 
-    # Get system info
+    now = time.time()
+    if _SYSTEM_HEALTH_CACHE["payload"] is not None and (now - _SYSTEM_HEALTH_CACHE["ts"]) < _SYSTEM_HEALTH_TTL:
+        return _SYSTEM_HEALTH_CACHE["payload"]
+
+    # Get system info — non-blocking cpu_percent (returns avg since last call)
     try:
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=None)
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
 
@@ -2281,12 +2290,15 @@ async def get_system_health_detailed(
     operational_count = sum(1 for s in services.values() if s['status'] == 'operational')
     health_score = (operational_count / len(services)) * 100
 
-    return {
+    payload = {
         'system': system_info,
         'services': services,
         'health_score': round(health_score, 1),
         'timestamp': datetime.now(UTC).isoformat()
     }
+    _SYSTEM_HEALTH_CACHE["ts"] = now
+    _SYSTEM_HEALTH_CACHE["payload"] = payload
+    return payload
 
 @router.get("/monitoring/alert-thresholds")
 async def get_alert_thresholds(
