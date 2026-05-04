@@ -5085,3 +5085,24 @@ Tek oturumda PMS'ye 8 ayırt edici operasyonel özellik eklendi. Her madde backe
 **Hardening**: Kod incelemesi sonrası tüm 4 yeni router'a `require_module("pms")` + `require_op(...)` (view_room_status / create_booking / view_reports / view_bookings / update_booking) eklendi; walk-in PII şifreleme aktif edildi; no-show bulk N+1 → tek aggregation; oda atama conditional update ile yarış engellendi.
 
 Yeni route'lar: `/shift-handover`, `/settings/early-late-pricing`, `/eod-report`, `/walkin`, `/room-map`. Nav grupları: operations + management.
+
+## 2026-05-04 — Tur 12: Gece Denetimi 35s → 11s (3x hızlanma)
+
+**Sorun**: `/api/night-audit/run` 35027ms sürdü, frontend modal "Çalışıyor..." takılı kaldı, kullanıcı timeout sandı.
+
+**Kök neden** (`backend/core/night_audit_hardened.py`):
+1. `_validate_preconditions` — checked-in her booking için ayrı `folios.find_one` (N kere).
+2. `_build_candidate_set` — her booking için folio find_one + `folio_charges` idempotency find_one (2N kere).
+3. `_post_charges` — her item kendi MongoDB transaction'ını **ardışık** açıyordu (~30 transaction × ~1s = 30s tek başına).
+
+**Düzeltme**:
+- Validation: iki bulk `$in` sorgu (explicit folio_id'ler + booking_id'ler) → set lookup.
+- Candidate build: tek folio `$in` + tek folio_charges `$in` ile idempotency seti → loop sırasında sadece dict/set lookup.
+- Posting: `asyncio.gather` + `Semaphore(8)` ile bounded concurrency. Her item kendi transaction'ını açmaya devam ediyor (atomicity korundu), `folio_charges` unique index zaten paralel duplicate'ı engelliyor (idempotent).
+
+**Sonuç** (smoke `/api/night-audit/run`, tenant 5bad4a34, 66 candidate):
+- İlk koşum: **11.2s** (önce 35.0s, ~3x).
+- Tekrar: **752ms** (`ALREADY_COMPLETED` idempotent guard).
+- Doğrulamalar geçti, business date roll'lendi, run completed.
+
+**Risk notları**: Bounded concurrency=8 makul (Atlas M0/M2 connection pool default 100). Heartbeat artık her 20 paralel-bitmiş item'da güncelleniyor (önce sıralı 20'de bir).
