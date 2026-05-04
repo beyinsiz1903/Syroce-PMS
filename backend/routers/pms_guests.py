@@ -114,7 +114,10 @@ async def create_guest(
 @router.get("/pms/guests", response_model=list[Guest])
 @cached(ttl=300, key_prefix="pms_guests")  # Cache for 5 minutes
 async def get_guests(
-    p: PaginationParams = Depends(paginate(default_limit=1000, max_limit=5000)),
+    # v97 perf — default 1000 → 50. 373 guest x _decrypt_guest sırf
+    # liste için 940ms harcıyordu. Frontend zaten paginate ediyor;
+    # max_limit 5000 olarak duruyor (export gibi nadir durumlar için).
+    p: PaginationParams = Depends(paginate(default_limit=50, max_limit=5000)),
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_guest_list")),  # v71 Bug DH (PII)

@@ -589,12 +589,30 @@ async def get_ai_activity_feed(
 
     activities = []
 
-    # 1. Price Optimization Suggestions
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'checked_in'
-    })
+    # v97 perf — 4 sequential count_documents (rooms + occupied +
+    # maintenance_due + week + prev_week) 1.6s'in büyük kısmıydı.
+    # Tek asyncio.gather ile 4 paralel call'a indirgendi.
+    import asyncio as _asyncio
+    tid = current_user.tenant_id
+    _90d_ago = (today - timedelta(days=90)).isoformat()
+    _7d_ago = (today - timedelta(days=7)).isoformat()
+    _14d_ago = (today - timedelta(days=14)).isoformat()
+    (
+        total_rooms,
+        occupied,
+        maintenance_due,
+        week_bookings,
+        prev_week_bookings,
+    ) = await _asyncio.gather(
+        db.rooms.count_documents({'tenant_id': tid}),
+        db.bookings.count_documents({'tenant_id': tid, 'status': 'checked_in'}),
+        db.rooms.count_documents({'tenant_id': tid, 'last_maintenance': {'$lt': _90d_ago}}),
+        db.bookings.count_documents({'tenant_id': tid, 'created_at': {'$gte': _7d_ago}}),
+        db.bookings.count_documents({
+            'tenant_id': tid,
+            'created_at': {'$gte': _14d_ago, '$lt': _7d_ago},
+        }),
+    )
     occupancy = (occupied / total_rooms * 100) if total_rooms > 0 else 0
 
     if occupancy > 85:
@@ -751,12 +769,7 @@ async def get_ai_activity_feed(
                 'status': 'active'
             })
 
-    # 5. Predictive Maintenance
-    maintenance_due = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'last_maintenance': {'$lt': (today - timedelta(days=90)).isoformat()}
-    })
-
+    # 5. Predictive Maintenance — v97 perf: count yukarı taşındı (gather)
     if maintenance_due > 0:
         activities.append({
             'id': str(uuid.uuid4()),
@@ -771,19 +784,7 @@ async def get_ai_activity_feed(
             'status': 'active'
         })
 
-    # 6. Booking Trend Insight
-    week_bookings = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {'$gte': (today - timedelta(days=7)).isoformat()}
-    })
-    prev_week_bookings = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': (today - timedelta(days=14)).isoformat(),
-            '$lt': (today - timedelta(days=7)).isoformat()
-        }
-    })
-
+    # 6. Booking Trend Insight — v97 perf: counts yukarı taşındı (gather)
     if week_bookings > 0 and prev_week_bookings > 0:
         booking_trend = ((week_bookings - prev_week_bookings) / prev_week_bookings * 100)
         if abs(booking_trend) > 15:
