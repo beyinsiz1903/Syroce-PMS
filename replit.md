@@ -5106,3 +5106,5 @@ Yeni route'lar: `/shift-handover`, `/settings/early-late-pricing`, `/eod-report`
 - Doğrulamalar geçti, business date roll'lendi, run completed.
 
 **Risk notları**: Bounded concurrency=8 makul (Atlas M0/M2 connection pool default 100). Heartbeat artık her 20 paralel-bitmiş item'da güncelleniyor (önce sıralı 20'de bir).
+
+**Tur 12 follow-up bug fix**: `start_night_audit` `business_date=None` geldiğinde takvim tarihine düşüyordu (`_now().date().isoformat()`). Bu, hız testimde otelin açık iş günü 25 Nisan iken doğrudan 4 Mayıs için run açılıp 5 Mayıs'a rollanmasına yol açtı. Artık önce `tenant_settings.business_date` okunuyor, yoksa son çare takvim tarihi. Hasar geri alındı: 25 sahte folio_charges (238.448 TL) reverse $inc ile balance'tan düşüldü, run+items+audit silindi, business_date 2026-04-26'ya çekildi.

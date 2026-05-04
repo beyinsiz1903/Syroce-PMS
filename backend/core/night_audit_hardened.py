@@ -167,7 +167,16 @@ async def start_night_audit(
     Returns dict with success flag and run document.
     """
     prop_id = property_id or DEFAULT_PROPERTY
-    bd = business_date or _now().date().isoformat()
+    # Bug fix: business_date verilmediginde takvim tarihine dusulmemeli; otelin
+    # acik is gunu (tenant_settings.business_date) kullanilmali. Aksi halde gece
+    # denetimi gercek is gununden farkli bir tarihi kapatir ve tarih ileri sicrar.
+    if not business_date:
+        ts = await db.tenant_settings.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1},
+        )
+        bd = (ts or {}).get("business_date") or _now().date().isoformat()
+    else:
+        bd = business_date
     actor = actor or {}
     run_id = str(uuid.uuid4())
     now = _now_iso()
