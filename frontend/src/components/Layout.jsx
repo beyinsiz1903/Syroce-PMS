@@ -27,6 +27,7 @@ import {
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
+import PMSDateBadge from '@/components/PMSDateBadge';
 import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 
@@ -540,6 +541,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       <main className="flex-1 max-w-7xl w-full mx-auto overflow-auto">
         {children}
       </main>
+
+      <PMSDateBadge />
     </div>
   );
 };
