@@ -657,3 +657,228 @@ async def daily_summary(
         "by_status": by_status,
         "revenue": round(revenue, 2),
     }
+
+
+# ── v97: Resource scheduling depth — availability grid + waitlist ──
+# Opera Cloud parity gap'inden gelen iki eksik:
+# 1) Real-time terapist+oda müsaitlik penceresi (dashboard rezervasyon UX'i)
+# 2) Slot dolu ise misafiri kuyruğa al, slot açıldıkça öneri ver
+
+@router.get("/availability")
+async def availability_grid(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    service_id: str | None = Query(None),
+    slot_minutes: int = Query(30, ge=15, le=120),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Terapist x zaman dilimi şeklinde müsaitlik tablosu döndürür.
+
+    Bir slot 'available' ise ilgili terapist o pencerede başka bir
+    randevuya atanmamış demektir. service_id verilirse o servisin
+    süresi kadar (slot_minutes yerine) blok kontrol edilir.
+    """
+    db = get_system_db()
+    tenant_id = current_user.tenant_id
+
+    try:
+        day = datetime.fromisoformat(date).date()
+    except ValueError:
+        raise HTTPException(400, "Geçersiz tarih (YYYY-MM-DD bekleniyor)")
+
+    # Aktif terapistler
+    therapists = [t async for t in db.spa_therapists.find(
+        {"tenant_id": tenant_id, "active": True}, {"_id": 0})]
+    if not therapists:
+        return {"date": date, "slots": [], "therapists": [], "stats": {
+            "total_slots": 0, "available_slots": 0, "utilization_pct": 0,
+        }}
+
+    duration = slot_minutes
+    if service_id:
+        svc = await db.spa_services.find_one(
+            {"id": service_id, "tenant_id": tenant_id})
+        if svc:
+            duration = int(svc.get("duration_minutes") or slot_minutes)
+
+    # Çalışma penceresi: terapist working_hours min/max'i
+    work_start_h = min(int((t.get("work_start") or "09:00").split(":")[0])
+                       for t in therapists)
+    work_end_h = max(int((t.get("work_end") or "21:00").split(":")[0])
+                     for t in therapists)
+    if work_end_h <= work_start_h:
+        work_end_h = work_start_h + 1
+
+    base = datetime.combine(day, datetime.min.time()).replace(
+        hour=work_start_h, tzinfo=UTC)
+    end_of_day = datetime.combine(day, datetime.min.time()).replace(
+        hour=work_end_h, tzinfo=UTC)
+
+    # Günün tüm randevularını tek seferde çek
+    appts = [a async for a in db.spa_appointments.find({
+        "tenant_id": tenant_id,
+        "starts_at": {"$gte": base.isoformat(),
+                      "$lt": end_of_day.isoformat()},
+        "status": {"$in": ["scheduled", "in_progress", "completed"]},
+    }, {"_id": 0, "therapist_id": 1, "starts_at": 1, "ends_at": 1})]
+
+    # Therapist-bazında randevu pencerelerini çıkar
+    busy: dict[str, list[tuple[datetime, datetime]]] = {}
+    for a in appts:
+        tid = a.get("therapist_id")
+        if not tid:
+            continue
+        try:
+            s = datetime.fromisoformat(a["starts_at"])
+            e = datetime.fromisoformat(a["ends_at"])
+        except (KeyError, ValueError):
+            continue
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=UTC)
+        if e.tzinfo is None:
+            e = e.replace(tzinfo=UTC)
+        busy.setdefault(tid, []).append((s, e))
+
+    # Slot grid'i kur
+    slots: list[dict[str, Any]] = []
+    cur_t = base
+    while cur_t < end_of_day:
+        slot_end = cur_t + timedelta(minutes=duration)
+        therapist_slots: list[dict[str, Any]] = []
+        for t in therapists:
+            tid = t["id"]
+            available = True
+            for (bs, be) in busy.get(tid, []):
+                if cur_t < be and bs < slot_end:
+                    available = False
+                    break
+            therapist_slots.append({
+                "therapist_id": tid,
+                "therapist_name": t.get("name"),
+                "color": t.get("color"),
+                "available": available,
+            })
+        slots.append({
+            "starts_at": cur_t.isoformat(),
+            "ends_at": slot_end.isoformat(),
+            "therapists": therapist_slots,
+            "any_available": any(s["available"] for s in therapist_slots),
+        })
+        cur_t += timedelta(minutes=slot_minutes)
+
+    total_cells = len(slots) * len(therapists)
+    avail_cells = sum(1 for s in slots for ts in s["therapists"] if ts["available"])
+    return {
+        "date": date,
+        "duration_minutes": duration,
+        "therapists": [{"id": t["id"], "name": t.get("name"),
+                        "color": t.get("color")} for t in therapists],
+        "slots": slots,
+        "stats": {
+            "total_slots": len(slots),
+            "any_available_slots": sum(1 for s in slots if s["any_available"]),
+            "total_cells": total_cells,
+            "available_cells": avail_cells,
+            "utilization_pct": round(
+                (1 - avail_cells / total_cells) * 100, 1) if total_cells else 0,
+        },
+    }
+
+
+# ── Waitlist ─────────────────────────────────────────────────────
+class WaitlistEntryIn(BaseModel):
+    service_id: str
+    guest_name: str
+    guest_phone: str | None = None
+    guest_id: str | None = None
+    preferred_date: str  # YYYY-MM-DD
+    preferred_window: str = "any"  # any / morning / afternoon / evening
+    therapist_id: str | None = None  # opsiyonel tercih
+    notes: str | None = None
+
+
+@router.get("/waitlist")
+async def list_waitlist(
+    date: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    db = get_system_db()
+    q: dict[str, Any] = {"tenant_id": current_user.tenant_id,
+                         "status": {"$in": ["waiting", "notified"]}}
+    if date:
+        q["preferred_date"] = date
+    cur = db.spa_waitlist.find(q, {"_id": 0}).sort("created_at", 1).limit(200)
+    return {"waitlist": [d async for d in cur]}
+
+
+@router.post("/waitlist")
+async def add_to_waitlist(body: WaitlistEntryIn,
+                          current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+) -> dict:
+    require_spa_ops(current_user)
+    db = get_system_db()
+    svc = await db.spa_services.find_one(
+        {"id": body.service_id, "tenant_id": current_user.tenant_id})
+    if not svc:
+        raise HTTPException(404, "Hizmet bulunamadı")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        **body.model_dump(),
+        "service_name": svc.get("name"),
+        "duration_minutes": svc.get("duration_minutes"),
+        "status": "waiting",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.username,
+    }
+    await db.spa_waitlist.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.delete("/waitlist/{entry_id}")
+async def remove_waitlist(entry_id: str,
+                          current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+) -> dict:
+    require_spa_ops(current_user)
+    db = get_system_db()
+    res = await db.spa_waitlist.delete_one(
+        {"id": entry_id, "tenant_id": current_user.tenant_id})
+    if not res.deleted_count:
+        raise HTTPException(404, "Bekleme listesi kaydı bulunamadı")
+    return {"ok": True}
+
+
+# ── v97 architect-DL: Waitlist update (full CRUD) ──────────────
+class WaitlistUpdate(BaseModel):
+    status: str | None = None  # waiting / notified / fulfilled / cancelled
+    preferred_window: str | None = None
+    therapist_id: str | None = None
+    notes: str | None = None
+
+
+_WAITLIST_STATUSES = {"waiting", "notified", "fulfilled", "cancelled"}
+
+
+@router.patch("/waitlist/{entry_id}")
+async def update_waitlist(
+    entry_id: str, body: WaitlistUpdate,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+) -> dict:
+    require_spa_ops(current_user)
+    db = get_system_db()
+    if body.status is not None and body.status not in _WAITLIST_STATUSES:
+        raise HTTPException(400, f"Geçersiz durum: {body.status}")
+    update = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if not update:
+        raise HTTPException(400, "Güncellenecek alan yok")
+    update["updated_at"] = datetime.now(UTC).isoformat()
+    res = await db.spa_waitlist.update_one(
+        {"id": entry_id, "tenant_id": current_user.tenant_id},
+        {"$set": update},
+    )
+    if not res.matched_count:
+        raise HTTPException(404, "Bekleme listesi kaydı bulunamadı")
+    return {"ok": True, **update}

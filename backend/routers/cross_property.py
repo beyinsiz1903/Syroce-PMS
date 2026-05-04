@@ -46,33 +46,46 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     chain (matching `chain_id` on the tenants doc). If no chain_id is set,
     they see only their own tenant.
     """
-    # Honor both `role` and `roles[]` representations of super_admin.
+    # v97 fix — tenants koleksiyonu üyelerin büyük kısmı `id` field'ı
+    # kullanıyor (sadece 1/40 doc'ta `tenant_id` mevcut). İkisini birden
+    # destekle ki super_admin chain view ve chain_id resolution çalışsın.
+    def _tid(t: dict) -> str | None:
+        return t.get("tenant_id") or t.get("id")
+
     if _is_super_admin(current_user):
-        cursor = db.tenants.find({}, {"_id": 0, "tenant_id": 1})
-        ids = [t["tenant_id"] async for t in cursor if t.get("tenant_id")]
+        cursor = db.tenants.find({}, {"_id": 0, "tenant_id": 1, "id": 1})
+        ids = [_tid(t) async for t in cursor]
+        ids = [x for x in ids if x]
         return ids or [current_user.tenant_id]
 
     own = await db.tenants.find_one(
-        {"tenant_id": current_user.tenant_id},
+        {"$or": [{"tenant_id": current_user.tenant_id},
+                 {"id": current_user.tenant_id}]},
         {"_id": 0, "chain_id": 1},
     )
     chain_id = (own or {}).get("chain_id")
     if not chain_id:
         return [current_user.tenant_id]
 
-    cursor = db.tenants.find({"chain_id": chain_id}, {"_id": 0, "tenant_id": 1})
-    ids = [t["tenant_id"] async for t in cursor if t.get("tenant_id")]
+    cursor = db.tenants.find(
+        {"chain_id": chain_id},
+        {"_id": 0, "tenant_id": 1, "id": 1},
+    )
+    ids = [_tid(t) async for t in cursor]
+    ids = [x for x in ids if x]
     return ids or [current_user.tenant_id]
 
 
 async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
+    # v97 fix — match by either tenant_id or id (see above).
     cursor = db.tenants.find(
-        {"tenant_id": {"$in": tenant_ids}},
-        {"_id": 0, "tenant_id": 1, "hotel_name": 1, "name": 1},
+        {"$or": [{"tenant_id": {"$in": tenant_ids}},
+                 {"id": {"$in": tenant_ids}}]},
+        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
     )
     out: dict[str, str] = {}
     async for t in cursor:
-        tid = t.get("tenant_id")
+        tid = t.get("tenant_id") or t.get("id")
         if tid:
             out[tid] = t.get("hotel_name") or t.get("name") or tid
     return out
@@ -448,4 +461,254 @@ async def merge_guest_profiles(
         "archived_id": payload.target_guest_id,
         "bookings_repointed": booking_res.modified_count,
         "folios_repointed": folio_res.modified_count,
+    }
+
+
+# ── v97 Opera-parity: Fuzzy duplicate detection ─────────────────
+# Mevcut merge endpoint'i operatör hangi iki kaydı birleştireceğini
+# ZATEN biliyor varsayar. Opera Cloud Profile altyapısı ek olarak:
+# (a) tüm kayıtları otomatik tarayıp olası duplikat çiftleri puanlar
+# (b) tek bir guest için "bu olabilir mi?" candidate listesi sunar
+# Bu iki endpoint o boşluğu kapatır. difflib stdlib (rapidfuzz yok).
+
+import difflib as _difflib
+from collections import defaultdict as _dd
+
+
+def _norm_email(e: str | None) -> str:
+    return (e or "").strip().lower()
+
+
+def _norm_phone(p: str | None) -> str:
+    if not p:
+        return ""
+    return "".join(ch for ch in p if ch.isdigit())[-10:]  # son 10 hane
+
+
+def _full_name(g: dict) -> str:
+    n = g.get("name")
+    if n:
+        return n.strip().lower()
+    parts = [g.get("first_name") or "", g.get("last_name") or ""]
+    return " ".join(p.strip() for p in parts if p).strip().lower()
+
+
+def _name_similarity(a: str, b: str) -> float:
+    """0..1 arası bayağı eşleşme oranı (SequenceMatcher)."""
+    if not a or not b:
+        return 0.0
+    return _difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _score_pair(a: dict, b: dict) -> tuple[float, list[str]]:
+    """İki guest doc için duplicate skoru + neden listesi.
+
+    Skorlama (Opera profile match heuristics'a yakın):
+      email birebir   → 0.50
+      telefon birebir → 0.35
+      isim ratio>=.85 → 0.25 * ratio
+      isim ratio>=.70 → 0.10 * ratio
+    """
+    score = 0.0
+    reasons: list[str] = []
+    ea, eb = _norm_email(a.get("email")), _norm_email(b.get("email"))
+    if ea and ea == eb:
+        score += 0.50
+        reasons.append("email_exact")
+    pa, pb = _norm_phone(a.get("phone")), _norm_phone(b.get("phone"))
+    if pa and pa == pb:
+        score += 0.35
+        reasons.append("phone_exact")
+    na, nb = _full_name(a), _full_name(b)
+    nr = _name_similarity(na, nb)
+    if nr >= 0.85:
+        score += 0.25 * nr
+        reasons.append(f"name_high({nr:.2f})")
+    elif nr >= 0.70:
+        score += 0.10 * nr
+        reasons.append(f"name_medium({nr:.2f})")
+    return min(score, 1.0), reasons
+
+
+@router.get("/duplicates/scan")
+@_cached(ttl=600, key_prefix="cross_dup_scan")
+async def scan_duplicates(
+    min_score: float = Query(0.6, ge=0.3, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
+    """Zincir genelinde olası duplikat çiftleri puanla.
+
+    Önce email/phone üzerinde blocking yaparız (CPU optimum), sonra blok
+    içindeki her çift için _score_pair hesaplanır. min_score altındakiler
+    elenir. Sonuç merge UI'sındaki 'Önerilen birleştirmeler' listesine
+    direkt beslenir.
+    """
+    require_roles(current_user, {
+        UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPERVISOR,
+    })
+    tenant_ids = await _chain_tenant_ids(current_user)
+    name_map = await _tenant_name_map(tenant_ids)
+
+    # 1) Tüm guest'leri tek pass çek (sınırlı projeksiyon, archived hariç)
+    cursor = db.guests.find(
+        {"tenant_id": {"$in": tenant_ids},
+         "$or": [{"archived": {"$exists": False}}, {"archived": False}]},
+        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1,
+         "name": 1, "first_name": 1, "last_name": 1,
+         "email": 1, "phone": 1, "loyalty_tier": 1},
+    ).limit(20000)
+    all_guests = [g async for g in cursor]
+
+    # 2) Blocking — email + phone son 10 hane bucket'ları
+    by_email: dict[str, list[int]] = _dd(list)
+    by_phone: dict[str, list[int]] = _dd(list)
+    for idx, g in enumerate(all_guests):
+        e = _norm_email(g.get("email"))
+        p = _norm_phone(g.get("phone"))
+        if e:
+            by_email[e].append(idx)
+        if p:
+            by_phone[p].append(idx)
+
+    # 3) Aday çiftleri topla (her bucket içindeki tüm çiftler)
+    candidate_pairs: set[tuple[int, int]] = set()
+    for buckets in (by_email, by_phone):
+        for indices in buckets.values():
+            if len(indices) < 2:
+                continue
+            for i in range(len(indices)):
+                for j in range(i + 1, len(indices)):
+                    a_i, b_i = indices[i], indices[j]
+                    if a_i == b_i:
+                        continue
+                    pair = (a_i, b_i) if a_i < b_i else (b_i, a_i)
+                    candidate_pairs.add(pair)
+
+    # 4) Çiftleri puanla, min_score üstündekileri tut
+    scored: list[dict[str, Any]] = []
+    for (i, j) in candidate_pairs:
+        a, b = all_guests[i], all_guests[j]
+        if a.get("tenant_id") == b.get("tenant_id") and \
+           (a.get("id") or a.get("guest_id")) == (b.get("id") or b.get("guest_id")):
+            continue
+        score, reasons = _score_pair(a, b)
+        if score < min_score:
+            continue
+        scored.append({
+            "score": round(score, 3),
+            "reasons": reasons,
+            "cross_property": a.get("tenant_id") != b.get("tenant_id"),
+            "left": {
+                "id": a.get("id") or a.get("guest_id"),
+                "tenant_id": a.get("tenant_id"),
+                "property_name": name_map.get(a.get("tenant_id"), a.get("tenant_id")),
+                "name": _full_name(a) or "(isimsiz)",
+                "email": a.get("email"), "phone": a.get("phone"),
+                "loyalty_tier": a.get("loyalty_tier"),
+            },
+            "right": {
+                "id": b.get("id") or b.get("guest_id"),
+                "tenant_id": b.get("tenant_id"),
+                "property_name": name_map.get(b.get("tenant_id"), b.get("tenant_id")),
+                "name": _full_name(b) or "(isimsiz)",
+                "email": b.get("email"), "phone": b.get("phone"),
+                "loyalty_tier": b.get("loyalty_tier"),
+            },
+        })
+
+    scored.sort(key=lambda r: r["score"], reverse=True)
+    truncated = len(scored) > limit
+    return {
+        "chain_size": len(tenant_ids),
+        "scanned_guests": len(all_guests),
+        "candidate_pairs": len(candidate_pairs),
+        "matches_count": len(scored),
+        "truncated": truncated,
+        "min_score": min_score,
+        "matches": scored[:limit],
+    }
+
+
+@router.get("/duplicates/suggest/{guest_id}")
+async def suggest_duplicates_for(
+    guest_id: str,
+    min_score: float = Query(0.5, ge=0.3, le=1.0),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
+    """Belirli bir misafir için olası duplikat adayları döndür.
+
+    Misafir profil sayfasındaki 'Bu kişi şu kayıtlarla aynı olabilir'
+    panelini besler. Aday havuzu önce email/phone bucket'ı, yoksa aynı
+    soyad bucket'ı ile sınırlanır.
+    """
+    tenant_ids = await _chain_tenant_ids(current_user)
+    seed = await db.guests.find_one(
+        {"$or": [{"id": guest_id}, {"guest_id": guest_id}],
+         "tenant_id": {"$in": tenant_ids}},
+        {"_id": 0},
+    )
+    if not seed:
+        raise HTTPException(404, "Misafir zincirde bulunamadı")
+    name_map = await _tenant_name_map(tenant_ids)
+
+    se, sp = _norm_email(seed.get("email")), _norm_phone(seed.get("phone"))
+    sl = (seed.get("last_name") or "").strip().lower()
+
+    or_clauses: list[dict[str, Any]] = []
+    if se:
+        or_clauses.append({"email": {"$regex": f"^{re.escape(se)}$", "$options": "i"}})
+    if sp:
+        # phone son 10 hane benzerliği için son 7 haneye sufix-match deneriz
+        # (tam blocking için dataset taraması gerekir; bu pratik bir yaklaşım)
+        suffix = sp[-7:]
+        or_clauses.append({"phone": {"$regex": re.escape(suffix)}})
+    if sl and len(sl) >= 3:
+        or_clauses.append({"last_name": {"$regex": f"^{re.escape(sl)}",
+                                          "$options": "i"}})
+    if not or_clauses:
+        return {"seed_id": guest_id, "candidates": [], "checked": 0}
+
+    seed_id = seed.get("id") or seed.get("guest_id")
+    cursor = db.guests.find(
+        {"tenant_id": {"$in": tenant_ids},
+         "$or": or_clauses,
+         "$and": [
+             {"$or": [{"archived": {"$exists": False}}, {"archived": False}]},
+         ]},
+        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1,
+         "name": 1, "first_name": 1, "last_name": 1,
+         "email": 1, "phone": 1, "loyalty_tier": 1},
+    ).limit(500)
+    candidates_raw = [g async for g in cursor]
+
+    candidates: list[dict[str, Any]] = []
+    for c in candidates_raw:
+        cid = c.get("id") or c.get("guest_id")
+        if cid == seed_id:
+            continue
+        score, reasons = _score_pair(seed, c)
+        if score < min_score:
+            continue
+        candidates.append({
+            "score": round(score, 3),
+            "reasons": reasons,
+            "cross_property": c.get("tenant_id") != seed.get("tenant_id"),
+            "id": cid,
+            "tenant_id": c.get("tenant_id"),
+            "property_name": name_map.get(c.get("tenant_id"), c.get("tenant_id")),
+            "name": _full_name(c) or "(isimsiz)",
+            "email": c.get("email"), "phone": c.get("phone"),
+            "loyalty_tier": c.get("loyalty_tier"),
+        })
+
+    candidates.sort(key=lambda r: r["score"], reverse=True)
+    return {
+        "seed_id": seed_id,
+        "seed_name": _full_name(seed),
+        "checked": len(candidates_raw),
+        "candidates": candidates[:limit],
     }
