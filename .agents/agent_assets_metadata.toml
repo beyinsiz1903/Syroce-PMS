@@ -24,3 +24,9 @@ id = "6DganWwJq5ctX5dIq0Nq9"
 uri = "file://.local/opera_vs_syroce.md"
 type = "text"
 title = "Opera Cloud PMS ↔ Syroce Karşılaştırma Raporu"
+
+[[outputs]]
+id = "4dbLAw7iiXZ9NFf166c0Q"
+uri = "file://UCTAN_UCA_AUDIT_RAPORU.md"
+type = "text"
+title = "Syroce PMS — Uçtan Uca Audit + Opera Cloud Karşılaştırması"
