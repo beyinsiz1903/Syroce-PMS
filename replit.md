@@ -5108,3 +5108,29 @@ Yeni route'lar: `/shift-handover`, `/settings/early-late-pricing`, `/eod-report`
 **Risk notları**: Bounded concurrency=8 makul (Atlas M0/M2 connection pool default 100). Heartbeat artık her 20 paralel-bitmiş item'da güncelleniyor (önce sıralı 20'de bir).
 
 **Tur 12 follow-up bug fix**: `start_night_audit` `business_date=None` geldiğinde takvim tarihine düşüyordu (`_now().date().isoformat()`). Bu, hız testimde otelin açık iş günü 25 Nisan iken doğrudan 4 Mayıs için run açılıp 5 Mayıs'a rollanmasına yol açtı. Artık önce `tenant_settings.business_date` okunuyor, yoksa son çare takvim tarihi. Hasar geri alındı: 25 sahte folio_charges (238.448 TL) reverse $inc ile balance'tan düşüldü, run+items+audit silindi, business_date 2026-04-26'ya çekildi.
+
+## Tur 13 — Gece Denetimi Operasyonel Boşlukları (2026-05-04)
+
+**Hedef**: Modal'daki üç anahtarı (skip_validations / dry_run / force_rerun) ve kritik validation eksiklerini backend'e gerçekten plumb et.
+
+**Yeni BLOCKING validation'lar** (`_validate_preconditions`):
+- Overdue check-out: `check_out <= business_date` ve `status='checked_in'` olan rezervasyonlar — gece denetimi engellenir.
+- Pending arrival: `confirmed`/`guaranteed` ve `check_in <= business_date` olan rezervasyonlar — engelleme öncesi açıkça uyarır.
+
+**Modal toggle plumbing**:
+- `RunNightAuditRequest` → `start_night_audit` → `_execute_pipeline` imzalarına `skip_validations` / `dry_run` / `force_rerun` / `reason` eklendi; run document'a yazılıyor.
+- `skip_validations=True` → validation aşaması atlanır, run'a `"Validations skipped by operator"` warning'i yazılır.
+- `dry_run=True` → candidate set kurulur (read-only), `_post_charges` / `_reconcile` / `_roll_business_date` çağrılmaz, `status='dry_run_completed'` ile `would_post` + `would_skip` döner. Folio'ya tek satır yazılmaz, business_date değişmez.
+- `force_rerun=True` → mevcut `completed`/`failed`/`partial`/`blocked`/`rerun_superseded` run, `superseded_by`/`superseded_at` eklenip `property_id` `$unset` edilerek partial unique index'in dışına çıkarılır; aynı `business_date` için yeni run insert edilir.
+
+**Smoke kanıtları** (tenant 5bad4a34, business_date 2026-04-28):
+- Normal run → `HTTP 422 VALIDATION_BLOCKED`, blocker: "24 rezervasyonun cikis tarihi gectigi halde hala 'checked-in'".
+- Dry run + skip + force → `HTTP 200`, candidate=27, would_post=25, folio_writes=0, business_date 2026-04-28 sabit.
+
+**Tur 12 follow-up tamamlandı**: `_handle_duplicate_run` BLOCKED durumlarını da `force_rerun` kapsamına alıyor; supersede sonrası unique key çakışması fix edildi (`property_id` $unset).
+
+**Tur 13 follow-up (architect bulguları)**:
+- `_handle_duplicate_run` artık `dry_run_completed` durumunu otomatik supersede ediyor (`property_id` `$unset` + `supersede_reason='auto_after_dry_run'`); `start_night_audit` `code='RETRY'` döndüğünde tek seferlik insert retry yapıyor. Sonuç: dry-run sonrası gerçek run, kullanıcının force_rerun'u açmasını gerektirmeden çalışıyor.
+- `force_rerun` whitelist'ine `dry_run_completed` da eklendi (eski operatör bayrak akışı geriye dönük uyumlu).
+- Güvenlik: `quick-id/backups/` altındaki PII içeren JSON yedekleri (misafir adı + fotoğraf base64 + audit log) repodan silindi, `.gitignore`'a `quick-id/backups/` eklendi. İleride canlı yedekler repoya yazılmayacak.
+- Açık risk (kabul edildi): force_rerun supersede update+insert akışı transaction'sız; admin tetikli ve nadir olduğu için ileri tura.

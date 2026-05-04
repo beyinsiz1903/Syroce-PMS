@@ -169,3 +169,6 @@ android-sdk/
 # Environment files
 *.env
 *.env.*
+
+# Quick-ID local PII backups (never commit)
+quick-id/backups/

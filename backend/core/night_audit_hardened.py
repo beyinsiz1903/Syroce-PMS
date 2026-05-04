@@ -160,11 +160,19 @@ async def start_night_audit(
     business_date: str = None,
     trigger_source: str = "manual",
     actor: dict = None,
+    skip_validations: bool = False,
+    dry_run: bool = False,
+    force_rerun: bool = False,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """
     Main entry point. Creates a run, validates, builds candidates,
     posts charges transactionally, reconciles, and rolls business date.
-    Returns dict with success flag and run document.
+
+    Modal toggle bayraklari:
+    - skip_validations: ön kontrolleri atla (ön açık folio/overdue check-out/pending arrival uyarılarını yok say).
+    - dry_run: aday seti olustur ama gercek folio_charges/balance/booking guncellemesi yapma; tarih rollanmaz.
+    - force_rerun: ayni is gunu icin mevcut completed/failed run varsa yeni run aç (idempotency yine folio_charges unique index ile korunur).
     """
     prop_id = property_id or DEFAULT_PROPERTY
     # Bug fix: business_date verilmediginde takvim tarihine dusulmemeli; otelin
@@ -188,6 +196,8 @@ async def start_night_audit(
         "lock_token": str(uuid.uuid4()),
         "candidate_count": 0, "processed_count": 0, "failed_count": 0, "skipped_count": 0,
         "warnings": [], "errors": [],
+        "skip_validations": skip_validations, "dry_run": dry_run,
+        "force_rerun": force_rerun, "reason": reason,
         "started_at": now, "completed_at": None,
         "last_heartbeat_at": now, "created_at": now, "updated_at": now,
     }
@@ -196,12 +206,117 @@ async def start_night_audit(
     try:
         await db.night_audit_runs.insert_one({**run_doc})
     except DuplicateKeyError:
-        return await _handle_duplicate_run(tenant_id, prop_id, bd)
+        if force_rerun:
+            # Tamamlanmis veya basarisiz onceki run icin acik kapi: eski run'i
+            # 'rerun_superseded' olarak isaretle ve yeni run icin yeniden insert dene.
+            existing = await db.night_audit_runs.find_one(
+                {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd},
+                {"_id": 0, "id": 1, "status": 1},
+            )
+            if existing and existing["status"] in (S_COMPLETED, S_FAILED, S_PARTIAL, S_BLOCKED, "rerun_superseded", "dry_run_completed"):
+                # property_id'yi unset ediyoruz cunku unique index partial filter
+                # `property_id: {$exists: true}` icerir — boylece supersede edilen
+                # eski run unique constraint'ten cikar, yeni insert calisir.
+                # Orijinal property_id'yi superseded_property_id'ye tasiyoruz.
+                await db.night_audit_runs.update_one(
+                    {"id": existing["id"]},
+                    {
+                        "$set": {
+                            "status": "rerun_superseded", "updated_at": _now_iso(),
+                            "superseded_by": run_id, "superseded_at": _now_iso(),
+                            "superseded_property_id": prop_id,
+                        },
+                        "$unset": {"property_id": ""},
+                    },
+                )
+                try:
+                    await db.night_audit_runs.insert_one({**run_doc})
+                except DuplicateKeyError:
+                    return await _handle_duplicate_run(tenant_id, prop_id, bd)
+            else:
+                return await _handle_duplicate_run(tenant_id, prop_id, bd)
+        else:
+            dup = await _handle_duplicate_run(tenant_id, prop_id, bd)
+            # Dry-run kayitlari otomatik supersede edildi → tek seferlik retry insert.
+            if dup.get("code") == "RETRY":
+                try:
+                    await db.night_audit_runs.insert_one({**run_doc})
+                except DuplicateKeyError:
+                    return await _handle_duplicate_run(tenant_id, prop_id, bd)
+            else:
+                return dup
 
     run_doc.pop("_id", None)
 
     # ── Execute pipeline stages ──
-    return await _execute_pipeline(run_id, tenant_id, prop_id, bd)
+    return await _execute_pipeline(
+        run_id, tenant_id, prop_id, bd,
+        skip_validations=skip_validations, dry_run=dry_run,
+    )
+
+
+async def _execute_pipeline(
+    run_id: str, tenant_id: str, prop_id: str, bd: str,
+    skip_validations: bool = False, dry_run: bool = False,
+) -> dict:
+    """Execute the full night audit pipeline for a run."""
+
+    # ── Stage: Validate ──
+    if not skip_validations:
+        try:
+            validation = await _validate_preconditions(tenant_id, prop_id, bd)
+            if validation["blocking_errors"]:
+                await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
+                    "status": S_BLOCKED, "stage": ST_VALIDATING,
+                    "errors": validation["blocking_errors"],
+                    "warnings": validation["warnings"],
+                    "updated_at": _now_iso(), "completed_at": _now_iso(),
+                }})
+                return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED",
+                        "run_id": run_id, "blockers": validation["blocking_errors"]}
+            if validation["warnings"]:
+                await db.night_audit_runs.update_one(
+                    {"id": run_id}, {"$set": {"warnings": validation["warnings"]}},
+                )
+        except Exception as e:
+            await _fail_run(run_id, ST_VALIDATING, f"Validation error: {e}")
+            return {"success": False, "error": str(e), "code": "VALIDATION_ERROR", "run_id": run_id}
+    else:
+        await db.night_audit_runs.update_one(
+            {"id": run_id}, {"$set": {"warnings": ["Validations skipped by operator"]}},
+        )
+
+    # ── Stage: Build candidates ──
+    try:
+        await _set_stage(run_id, ST_CANDIDATE)
+        candidate_count = await _build_candidate_set(tenant_id, prop_id, bd, run_id)
+        await db.night_audit_runs.update_one(
+            {"id": run_id}, {"$set": {"candidate_count": candidate_count}},
+        )
+    except Exception as e:
+        await _fail_run(run_id, ST_CANDIDATE, f"Candidate build error: {e}")
+        return {"success": False, "error": str(e), "code": "CANDIDATE_ERROR", "run_id": run_id}
+
+    # ── Dry run: aday seti olusturuldu, gercek post yapilmadan ozet don ──
+    if dry_run:
+        # Pending item'lari bilgi amacli sayalim, ama folio'lara yazmayalim.
+        pending = await db.night_audit_run_items.count_documents(
+            {"run_id": run_id, "status": IS_PENDING},
+        )
+        skipped = await db.night_audit_run_items.count_documents(
+            {"run_id": run_id, "status": IS_SKIPPED},
+        )
+        await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
+            "status": "dry_run_completed", "stage": ST_COMPLETED,
+            "processed_count": 0, "failed_count": 0, "skipped_count": skipped,
+            "completed_at": _now_iso(), "updated_at": _now_iso(),
+        }})
+        run = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
+        return {"success": True, "dry_run": True, "would_post": pending,
+                "would_skip": skipped, "run": run}
+
+    # ── Stage: Post charges ──
+    return await _posting_and_close(run_id, tenant_id, bd)
 
 
 async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
@@ -212,6 +327,23 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
         return {"success": False, "error": "Concurrent insert conflict", "code": "CONFLICT"}
 
     st = existing["status"]
+    if st == "dry_run_completed":
+        # Dry-run kayitlari finansal yan etki uretmedigi icin otomatik supersede edilir;
+        # bu sayede operator dry-run sonrasi gercek run'i ayrica force_rerun
+        # gerektirmeden baslatabilir. Eski kayit unique index disina cikarilir.
+        await db.night_audit_runs.update_one(
+            {"id": existing["id"]},
+            {
+                "$set": {
+                    "status": "rerun_superseded", "updated_at": _now_iso(),
+                    "superseded_at": _now_iso(),
+                    "superseded_property_id": prop_id,
+                    "supersede_reason": "auto_after_dry_run",
+                },
+                "$unset": {"property_id": ""},
+            },
+        )
+        return {"success": False, "error": "RETRY_AFTER_DRY_RUN_SUPERSEDE", "code": "RETRY"}
     if st == S_COMPLETED:
         return {"success": False, "error": f"Night audit already completed for {bd}", "code": "ALREADY_COMPLETED", "run": existing}
     if st == S_BLOCKED:
@@ -231,44 +363,6 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
     if st in (S_FAILED, S_PARTIAL):
         return {"success": False, "error": f"Previous run in {st}. Use resume endpoint.", "code": "NEEDS_RESUME", "run_id": existing["id"]}
     return {"success": False, "error": f"Unexpected state: {st}", "code": "UNEXPECTED"}
-
-
-async def _execute_pipeline(run_id: str, tenant_id: str, prop_id: str, bd: str) -> dict:
-    """Execute the full night audit pipeline for a run."""
-
-    # ── Stage: Validate ──
-    try:
-        validation = await _validate_preconditions(tenant_id, prop_id, bd)
-        if validation["blocking_errors"]:
-            await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-                "status": S_BLOCKED, "stage": ST_VALIDATING,
-                "errors": validation["blocking_errors"],
-                "warnings": validation["warnings"],
-                "updated_at": _now_iso(), "completed_at": _now_iso(),
-            }})
-            return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED",
-                    "run_id": run_id, "blockers": validation["blocking_errors"]}
-        if validation["warnings"]:
-            await db.night_audit_runs.update_one(
-                {"id": run_id}, {"$set": {"warnings": validation["warnings"]}},
-            )
-    except Exception as e:
-        await _fail_run(run_id, ST_VALIDATING, f"Validation error: {e}")
-        return {"success": False, "error": str(e), "code": "VALIDATION_ERROR", "run_id": run_id}
-
-    # ── Stage: Build candidates ──
-    try:
-        await _set_stage(run_id, ST_CANDIDATE)
-        candidate_count = await _build_candidate_set(tenant_id, prop_id, bd, run_id)
-        await db.night_audit_runs.update_one(
-            {"id": run_id}, {"$set": {"candidate_count": candidate_count}},
-        )
-    except Exception as e:
-        await _fail_run(run_id, ST_CANDIDATE, f"Candidate build error: {e}")
-        return {"success": False, "error": str(e), "code": "CANDIDATE_ERROR", "run_id": run_id}
-
-    # ── Stage: Post charges ──
-    return await _posting_and_close(run_id, tenant_id, bd)
 
 
 async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
@@ -384,7 +478,35 @@ async def _validate_preconditions(
         if missing_folio_count > 0:
             blocking.append(f"{missing_folio_count} checked-in booking(s) without an open folio")
 
-    # 4. Warning: open POS transactions
+    # 4. BLOCKING: overdue check-outs (still checked_in past their check_out date)
+    # Bu misafirler ya cikis yapmali ya da konaklama uzatilmali; sessizce ek bir gece
+    # yazilmasi musafire fazla fatura ve veri tutarsizligi yaratir.
+    overdue_checkouts = await db.bookings.count_documents({
+        "tenant_id": tenant_id, "status": "checked_in",
+        "check_out": {"$lte": bd},
+    })
+    if overdue_checkouts > 0:
+        blocking.append(
+            f"{overdue_checkouts} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. "
+            f"Gece denetiminden once cikis yapin veya konaklamayi uzatin."
+        )
+
+    # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
+    # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
+    # bayragi ile bilerek bypass edilirse mevcut akis no-show yazar.
+    pending_arrivals = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "status": {"$in": ["confirmed", "guaranteed"]},
+        "check_in": {"$lte": bd},
+    })
+    if pending_arrivals > 0:
+        blocking.append(
+            f"{pending_arrivals} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
+            f"Misafirleri check-in edin, manuel no-show isaretleyin veya rezervasyonu iptal edin. "
+            f"Otomatik no-show istenirse 'Dogrulamalari Atla' ile devam edin."
+        )
+
+    # 6. Warning: open POS transactions
     try:
         open_pos = await db.pos_transactions.count_documents({"tenant_id": tenant_id, "status": "open"})
         if open_pos > 0:
@@ -392,7 +514,7 @@ async def _validate_preconditions(
     except Exception:
         pass
 
-    # 5. Warning: housekeeping in progress
+    # 7. Warning: housekeeping in progress
     try:
         hk = await db.housekeeping_tasks.count_documents({"tenant_id": tenant_id, "status": "in_progress"})
         if hk > 0:

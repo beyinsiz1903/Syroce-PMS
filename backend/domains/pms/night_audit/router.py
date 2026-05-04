@@ -45,6 +45,10 @@ async def run_night_audit(request: RunNightAuditRequest, current_user: User = De
         business_date=request.business_date,
         trigger_source=request.trigger_source,
         actor={"id": current_user.id, "email": getattr(current_user, "email", "")},
+        skip_validations=request.skip_validations,
+        dry_run=request.dry_run,
+        force_rerun=request.force_rerun,
+        reason=request.reason,
     )
     if not result.get("success"):
         code = result.get("code", "UNKNOWN")
