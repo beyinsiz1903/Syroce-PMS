@@ -1,26 +1,17 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
-import html as _html
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
-from typing import Any
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
 
 from core.database import db
-from core.helpers import require_module
-from core.security import get_current_user, security
-from models.enums import ROLE_PERMISSIONS, CompanyStatus, Permission, UserRole
-from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
-from modules.pms_core.role_permission_service import require_module as require_module_v101
+from core.security import get_current_user
+from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
 from ._common import (
-    DEFAULT_PUSH_CHANNELS, PingTestRequest,
-    has_permission, calculate_folio_balance, get_folio_details,
-    _scrub_encrypted, cached,
+    _scrub_encrypted,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,13 +40,6 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
     await db.staff_members.insert_one(staff)
     return {'success': True, 'staff_id': staff['id']}
 
-
-
-def _scrub_encrypted(value):
-    """v95.5 — aes256gcm: prefixli ham şifreli blob'ları UI'a yollama."""
-    if isinstance(value, str) and value.startswith('aes256gcm:'):
-        return ''
-    return value or ''
 
 
 @sub_router.get("/hr/staff")

@@ -1,26 +1,17 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
-import html as _html
 import logging
-import uuid
-from datetime import UTC, datetime, timedelta
-from typing import Any
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
 
 from core.database import db
-from core.helpers import require_module
-from core.security import get_current_user, security
-from models.enums import ROLE_PERMISSIONS, CompanyStatus, Permission, UserRole
-from models.schemas import Company, CompanyCreate, CreatePropertyRequest, User
-from modules.pms_core.role_permission_service import require_module as require_module_v101
+from core.security import get_current_user
+from models.enums import CompanyStatus
+from models.schemas import Company, CompanyCreate, User
 from modules.pms_core.role_permission_service import require_op
 
 from ._common import (
-    DEFAULT_PUSH_CHANNELS, PingTestRequest,
-    has_permission, calculate_folio_balance, get_folio_details,
-    _scrub_encrypted, cached,
+    cached,
 )
 
 logger = logging.getLogger(__name__)

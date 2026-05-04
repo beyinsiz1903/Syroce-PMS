@@ -9,11 +9,10 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import asyncio
 import logging
-import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 

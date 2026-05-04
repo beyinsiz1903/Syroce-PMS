@@ -9,14 +9,12 @@ Domain Router: Guest Experience
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
 import logging
-import math
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
-from core.cache import cached
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
@@ -24,18 +22,10 @@ from models.schemas import (
     CreateDepartmentFeedbackRequest,
     CreateSurveyRequest,
     ExternalReviewWebhookRequest,
-    RMSSuggestion,
     SubmitSurveyResponseRequest,
     User,
 )
 from modules.pms_core.role_permission_service import require_op  # v98 DW
-from shared_kernel.idempotency import (
-    claim_idempotency,
-    complete_idempotency,
-    get_idempotency_key,
-    release_idempotency,
-)
-
 
 DEFAULT_UPSELL_PRICES = {
     "early_checkin": 25.00,

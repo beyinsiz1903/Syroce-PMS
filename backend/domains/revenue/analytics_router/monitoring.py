@@ -12,15 +12,11 @@ import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from core.cache import cached
 from core.database import db
-from core.helpers import require_module
 from core.security import _is_super_admin, get_current_user, security
-from models.enums import ChannelType
-from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.role_permission_service import require_role as _require_role
 
@@ -54,7 +50,6 @@ except Exception:  # pragma: no cover
 
 
 
-from integrations.booking_adapter import BookingAdapter
 
 
 

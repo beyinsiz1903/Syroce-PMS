@@ -8,7 +8,6 @@ AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -17,9 +16,6 @@ from pydantic import BaseModel
 from pydantic import Field as _PydField
 
 from core.database import db
-from core.helpers import (
-    require_module,
-)
 from core.security import (
     get_current_user,
 )

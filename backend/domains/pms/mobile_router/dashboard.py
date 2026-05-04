@@ -8,25 +8,14 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
-import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
-from models.schemas import User
-from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
-    require_op,
-)
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
-
-
 
 # ============================================================================
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs

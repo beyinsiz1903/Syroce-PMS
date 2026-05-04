@@ -1,32 +1,19 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
-import asyncio
-import html as _html
 import logging
-import re as _re
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import require_module as require_module_v97
 from modules.pms_core.role_permission_service import require_module as require_module_v99
-from modules.pms_core.role_permission_service import require_module as require_module_v101
 from modules.pms_core.role_permission_service import require_op
 
 from ._common import (
-    _e, _safe_logo_src, _clean_doc,
-    RoomStatusUpdate,
-    WakeUpCallCreate, WakeUpCallUpdate, _fire_due_wake_up_alerts, _annotate_due,
-    LostFoundCreate, LostFoundUpdate,
     HotelSettingsUpdate,
-    GroupFolioMerge, GroupPaymentRequest, GroupBulkPaymentRequest,
-    CancelReservationRequest,
-    InvoiceItemSelection,
-    CreateCariAccount,
+    RoomStatusUpdate,
 )
 
 logger = logging.getLogger(__name__)

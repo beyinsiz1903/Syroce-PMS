@@ -8,11 +8,10 @@ AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
-import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from pydantic import Field as _PydField
 

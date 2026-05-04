@@ -4,13 +4,13 @@ Public API: from routers.departments import router
 """
 from fastapi import APIRouter
 
-from .dashboards import router as _dashboards_r
 from .bookings import router as _bookings_r
+from .dashboards import router as _dashboards_r
 from .housekeeping import router as _housekeeping_r
-from .rms_rates import router as _rms_rates_r
-from .reports import router as _reports_r
-from .pos import router as _pos_r
 from .misc import router as _misc_r
+from .pos import router as _pos_r
+from .reports import router as _reports_r
+from .rms_rates import router as _rms_rates_r
 
 router = APIRouter()
 router.include_router(_dashboards_r)

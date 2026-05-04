@@ -4,13 +4,13 @@ Public API: from domains.pms.pos_router import router
 """
 from fastapi import APIRouter
 
-from .pos_core import router as _pos_core_r
-from .pos_admin import router as _pos_admin_r
-from .gm_forecast import router as _gm_forecast_r
 from .frontdesk import router as _frontdesk_r
-from .revenue_mobile import router as _revenue_mobile_r
+from .gm_forecast import router as _gm_forecast_r
 from .housekeeping import router as _housekeeping_r
 from .maintenance import router as _maintenance_r
+from .pos_admin import router as _pos_admin_r
+from .pos_core import router as _pos_core_r
+from .revenue_mobile import router as _revenue_mobile_r
 
 router = APIRouter()
 router.include_router(_pos_core_r)

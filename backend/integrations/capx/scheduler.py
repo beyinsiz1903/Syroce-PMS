@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from core.database import _raw_db
 from integrations.capx.client import CapXError, get_capx_client, get_capx_client_async
@@ -39,7 +37,7 @@ class CapXAvailabilityScheduler:
         if self._task:
             try:
                 await asyncio.wait_for(self._task, timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
 
     async def _loop(self, interval: int, lookahead: int) -> None:
@@ -51,7 +49,7 @@ class CapXAvailabilityScheduler:
         try:
             await asyncio.wait_for(self._stop.wait(), timeout=30)
             return  # stop() erken çağrıldı
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # 30sn doldu, normal akış
 
         while not self._stop.is_set():
@@ -62,13 +60,13 @@ class CapXAvailabilityScheduler:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
                 break  # stop() çağrıldı → graceful exit
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue  # interval doldu → sonraki cycle
 
     async def _push_cycle(self, lookahead_days: int) -> None:
         # Faz 3: env-default client'a bak; tenant'a özel client _per-tenant
         # döngüde çözülür (env config yoksa bile tenant-creds varsa çalışsın).
-        env_client = get_capx_client(refresh=False)
+        get_capx_client(refresh=False)
 
         # Aktif tenant + room types
         tenants = []

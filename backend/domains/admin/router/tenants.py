@@ -10,7 +10,6 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -21,9 +20,7 @@ from core.helpers import (
 )
 from core.security import (
     _is_super_admin,
-    get_current_user,
 )
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 try:
     from cache_manager import cache as _cache_mgr
@@ -48,9 +45,9 @@ def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
 
 require_super_admin = require_super_admin_guard()
 from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings
-from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
+from domains.admin.subscription_models import get_plan_default_modules
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
-from models.schemas import Tenant, TenantRegister, UpdateUserRoleRequest, User
+from models.schemas import Tenant, TenantRegister, User
 
 
 def _has_permission(role: UserRole | str, perm: Permission) -> bool:
@@ -90,27 +87,14 @@ def is_role_allowed_for_tier(role: str, tier: str) -> bool:
     return role in allowed
 
 
-from core.audit import log_audit_event  # Task #28
 from core.security import hash_password
 from domains.admin.schemas import (  # noqa: E402
     AdminCreateTeamMemberRequest,
     AdminUpdateTenantInfoRequest,
-    ChangePlanRequest,
-    CreateTeamMemberRequest,
-    DemoRequest,
-    PermissionCheckRequest,
-    PmsLiteLeadAdminUpdateRequest,
-    PmsLiteLeadStatus,
-    SLAConfig,
     SubscriptionUpdateRequest,
     TenantModulesUpdate,
-    UpdateGrantedPermissionsRequest,
-    UpdateHotelInfoRequest,
     UpdateTeamMemberRoleRequest,
 )
-
-
-
 
 # ============= CHANNEL MANAGER & RMS =============
 
@@ -267,7 +251,6 @@ def _require_admin_for_target_user(
 
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
 
-from demo_data_generator import DemoDataGenerator
 
 
 
@@ -308,15 +291,12 @@ from demo_data_generator import DemoDataGenerator
 # SYSTEM MONITORING & PERFORMANCE - APM INTEGRATED
 # ============================================================================
 
-import time
 
-import psutil
 
 # api_metrics is now provided by apm_store from apm_middleware.py
 # Backward compat: alias api_metrics to apm_store.requests
 try:
     from apm_middleware import apm_store as _apm_store_ref
-    from apm_middleware import get_rate_limit_stats as _get_rl_stats
     api_metrics = _apm_store_ref.requests
 except ImportError:
     from collections import deque

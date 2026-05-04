@@ -5,13 +5,13 @@ Public API: from domains.guest.experience_router import router
 from fastapi import APIRouter
 
 from .crm_guest import router as _crm_guest_r
-from .upsell import router as _upsell_r
-from .messaging import router as _messaging_r
-from .rms import router as _rms_r
-from .reviews import router as _reviews_r
 from .feedback import router as _feedback_r
 from .guest_app import router as _guest_app_r
 from .logs import router as _logs_r
+from .messaging import router as _messaging_r
+from .reviews import router as _reviews_r
+from .rms import router as _rms_r
+from .upsell import router as _upsell_r
 
 router = APIRouter()
 router.include_router(_crm_guest_r)

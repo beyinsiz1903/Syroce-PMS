@@ -18,10 +18,12 @@ from .tenant_creds import (
     CapXCreds,
     delete_tenant_credentials,
     get_tenant_status,
-    invalidate as invalidate_tenant_creds,
     list_tenant_status,
     resolve_credentials,
     upsert_tenant_credentials,
+)
+from .tenant_creds import (
+    invalidate as invalidate_tenant_creds,
 )
 
 __all__ = [

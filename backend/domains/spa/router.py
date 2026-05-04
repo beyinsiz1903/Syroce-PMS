@@ -871,7 +871,7 @@ async def update_waitlist(
     db = get_system_db()
     if body.status is not None and body.status not in _WAITLIST_STATUSES:
         raise HTTPException(400, f"Geçersiz durum: {body.status}")
-    update = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    update = dict(body.model_dump(exclude_none=True).items())
     if not update:
         raise HTTPException(400, "Güncellenecek alan yok")
     update["updated_at"] = datetime.now(UTC).isoformat()

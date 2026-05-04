@@ -4,17 +4,17 @@ Public API: from domains.revenue.analytics_router import router
 """
 from fastapi import APIRouter
 
-from .gm import router as _gm_r
-from .revenue import router as _revenue_r
-from .channel_mgr import router as _channel_mgr_r
-from .frontdesk import router as _frontdesk_r
-from .pos_inventory import router as _pos_inventory_r
-from .maintenance import router as _maintenance_r
-from .housekeeping import router as _housekeeping_r
-from .crm import router as _crm_r
 from .approvals import router as _approvals_r
-from .notifications import router as _notifications_r
+from .channel_mgr import router as _channel_mgr_r
+from .crm import router as _crm_r
+from .frontdesk import router as _frontdesk_r
+from .gm import router as _gm_r
+from .housekeeping import router as _housekeeping_r
+from .maintenance import router as _maintenance_r
 from .monitoring import router as _monitoring_r
+from .notifications import router as _notifications_r
+from .pos_inventory import router as _pos_inventory_r
+from .revenue import router as _revenue_r
 from .security import router as _security_r
 
 router = APIRouter()

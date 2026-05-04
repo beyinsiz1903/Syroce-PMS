@@ -4,17 +4,17 @@ Public API: from domains.admin.router import router
 """
 from fastapi import APIRouter
 
+from .compliance import router as _compliance_r
+from .demo import router as _demo_r
+from .hotel import router as _hotel_r
+from .leads import router as _leads_r
+from .ops import router as _ops_r
 from .rbac import router as _rbac_r
+from .sla import router as _sla_r
+from .subscription import router as _subscription_r
+from .system import router as _system_r
 from .tenants import router as _tenants_r
 from .users import router as _users_r
-from .subscription import router as _subscription_r
-from .hotel import router as _hotel_r
-from .demo import router as _demo_r
-from .leads import router as _leads_r
-from .sla import router as _sla_r
-from .system import router as _system_r
-from .compliance import router as _compliance_r
-from .ops import router as _ops_r
 
 router = APIRouter()
 router.include_router(_rbac_r)

@@ -4,15 +4,15 @@ Public API: from domains.ai.router import router
 """
 from fastapi import APIRouter
 
-from .core_chat import router as _core_chat_r
-from .pricing_reputation import router as _pricing_reputation_r
-from .concierge_social import router as _concierge_social_r
-from .predictions import router as _predictions_r
 from .autopilot_reco import router as _autopilot_reco_r
-from .guest_intel import router as _guest_intel_r
-from .ops import router as _ops_r
+from .concierge_social import router as _concierge_social_r
+from .core_chat import router as _core_chat_r
 from .feedback import router as _feedback_r
+from .guest_intel import router as _guest_intel_r
 from .ml_training import router as _ml_training_r
+from .ops import router as _ops_r
+from .predictions import router as _predictions_r
+from .pricing_reputation import router as _pricing_reputation_r
 
 router = APIRouter()
 router.include_router(_core_chat_r)

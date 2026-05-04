@@ -87,17 +87,14 @@ Webhooks — API Key Auth:
   POST   /api/b2b/webhooks/{webhook_id}/test     - Webhook test
 """
 import hashlib
-import hmac
-import json
 import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import set_tenant_context
