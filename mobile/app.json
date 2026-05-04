@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Syroce PMS",
+    "slug": "syroce-pms-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "syrocepms",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "backgroundColor": "#0b0f1a",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.syroce.pms",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Kimlik tarama ve QR okuma için kamera kullanılır.",
+        "NSPhotoLibraryUsageDescription": "Kimlik fotoğrafı seçmek için galeriye erişim gerekir."
+      }
+    },
+    "android": {
+      "package": "com.syroce.pms",
+      "permissions": ["CAMERA"]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Kimlik tarama ve QR okuma için kamera kullanılır."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
