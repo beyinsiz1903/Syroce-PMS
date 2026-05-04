@@ -12,16 +12,28 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import MODULE_ROLES  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 
 router = APIRouter(prefix="/api", tags=["checkin-domain"])
 
 
+def _allow_frontdesk_or_guest(current_user: User = Depends(get_current_user)) -> User:
+    """Allow staff with frontdesk module access OR a guest_app user (own check-in)."""
+    role = getattr(current_user.role, "value", str(current_user.role))
+    allowed = {getattr(r, "value", str(r)) for r in MODULE_ROLES.get("frontdesk", set())}
+    allowed.add("guest_app")
+    if role not in allowed:
+        from core.security import _is_super_admin
+        if not _is_super_admin(current_user):
+            raise HTTPException(status_code=403, detail="Online check-in yetkisi yok")
+    return current_user
+
+
 @router.post("/checkin/online")
 async def submit_online_checkin(
     checkin_data: dict,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    current_user: User = Depends(_allow_frontdesk_or_guest),
 ):
     """Online check-in submission"""
     from domains.guest.online_checkin_models import OnlineCheckinRequest
@@ -33,6 +45,43 @@ async def submit_online_checkin(
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    # Guest-app callers may only submit for their own booking, with the canonical
+    # 06:00-on-check-in-day eligibility gate (mirror of the mobile UI rule).
+    role = getattr(current_user.role, "value", str(current_user.role))
+    if role == "guest_app":
+        guest_doc = await db.guests.find_one(
+            {"email": current_user.email, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
+        )
+        if not guest_doc or booking.get("guest_id") != guest_doc.get("id"):
+            raise HTTPException(status_code=403, detail="Bu rezervasyon size ait değil")
+        # Digital-signature contract: typed name + explicit consent both required.
+        if not (request.signature_consent and (request.signature_text or "").strip()):
+            raise HTTPException(status_code=400, detail="Dijital imza onayı gerekli")
+        # 06:00 eligibility: online check-in opens at 06:00 on the check-in
+        # day in the property's local timezone. Mobile uses device-local time
+        # (Turkish guests in Türkiye), so we evaluate the gate in
+        # Europe/Istanbul to keep client and server consistent.
+        ci_raw = booking.get("check_in")
+        if ci_raw:
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo("Europe/Istanbul")
+            except Exception:
+                tz = None
+            try:
+                ci_str = ci_raw if isinstance(ci_raw, str) else ci_raw.isoformat()
+                ci_date = datetime.fromisoformat(ci_str.replace("Z", "+00:00")).date()
+            except Exception:
+                ci_date = None
+            if ci_date is not None:
+                now_local = datetime.now(tz) if tz else datetime.now(UTC)
+                today = now_local.date()
+                if today < ci_date or (today == ci_date and now_local.hour < 6):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Online check-in giriş günü saat 06:00'dan itibaren açılır",
+                    )
 
     checkin_record = {
         "id": str(uuid.uuid4()),
@@ -59,6 +108,12 @@ async def submit_online_checkin(
         "quiet_room": request.quiet_room,
         "mobile_number": request.mobile_number,
         "whatsapp_number": request.whatsapp_number,
+        # Identity & digital signature
+        "id_photo_base64": request.id_photo_base64,
+        "id_photo_uploaded": bool(request.id_photo_base64),
+        "signature_text": (request.signature_text or "").strip() or None,
+        "signature_consent": bool(request.signature_consent),
+        "signed_at": datetime.now(UTC).isoformat() if request.signature_consent else None,
         "status": "pending",
         "submitted_at": datetime.now(UTC).isoformat(),
         "processed": False,

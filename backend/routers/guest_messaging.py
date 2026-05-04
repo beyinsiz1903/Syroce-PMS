@@ -23,6 +23,13 @@ def init_guest_messaging(db, get_current_user_dep):
     _get_current_user = get_current_user_dep
 
 
+def _is_guest_role(user) -> bool:
+    """True for both legacy 'guest' and the V2 mobile 'guest_app' role."""
+    role = getattr(user, "role", None)
+    role_s = getattr(role, "value", str(role))
+    return role_s in ("guest", "guest_app")
+
+
 class SendMessageRequest(BaseModel):
     booking_id: str | None = None
     message: str
@@ -42,7 +49,7 @@ async def get_guest_messages(
     current_user = await _get_current_user(credentials)
 
 
-    if current_user.role == "guest":
+    if _is_guest_role(current_user):
         query_filter = {
             "tenant_id": current_user.tenant_id,
             "guest_user_id": current_user.id
@@ -72,7 +79,12 @@ async def get_guest_messages(
                 "last_message_at": msg.get("created_at"),
             }
         conversations[conv_key]["messages"].append(msg)
-        if not msg.get("read") and msg.get("sender") == "guest":
+        # Unread = messages addressed TO the current viewer (opposite sender).
+        # Guest viewers count incoming staff messages; staff viewers count
+        # incoming guest messages.
+        viewer_is_guest = _is_guest_role(current_user)
+        incoming_sender = "staff" if viewer_is_guest else "guest"
+        if not msg.get("read") and msg.get("sender") == incoming_sender:
             conversations[conv_key]["unread_count"] += 1
 
     return {
@@ -92,7 +104,7 @@ async def send_guest_message(
     current_user = await _get_current_user(credentials)
 
     # Determine sender type
-    is_guest = current_user.role == "guest"
+    is_guest = _is_guest_role(current_user)
 
     # Get guest info if staff is sending
     guest_name = getattr(current_user, 'name', 'Misafir')
@@ -146,7 +158,7 @@ async def reply_to_message(
     if not original:
         raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
 
-    is_guest = current_user.role == "guest"
+    is_guest = _is_guest_role(current_user)
 
     reply_doc = {
         "id": str(uuid.uuid4()),
@@ -199,8 +211,9 @@ async def mark_all_read(
     query = {"tenant_id": current_user.tenant_id, "read": False}
     if booking_id:
         query["booking_id"] = booking_id
-    if current_user.role == "guest":
+    if _is_guest_role(current_user):
         query["sender"] = "staff"
+        query["guest_user_id"] = current_user.id
     else:
         query["sender"] = "guest"
 
@@ -217,8 +230,9 @@ async def get_unread_count(credentials=Depends(HTTPBearer())):
     current_user = await _get_current_user(credentials)
 
     query = {"tenant_id": current_user.tenant_id, "read": False}
-    if current_user.role == "guest":
+    if _is_guest_role(current_user):
         query["sender"] = "staff"
+        query["guest_user_id"] = current_user.id
     else:
         query["sender"] = "guest"
 

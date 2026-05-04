@@ -84,6 +84,14 @@ class OnlineCheckinRequest(BaseModel):
     mobile_number: str | None = None
     whatsapp_number: str | None = None
 
+    # Identity & Digital Signature (mobile guest app)
+    # id_photo_base64: base64-encoded JPEG/PNG of the ID document (no data URL prefix expected).
+    # signature_text: typed full-name digital signature consent.
+    # signature_consent: explicit boolean acknowledgement.
+    id_photo_base64: str | None = None
+    signature_text: str | None = None
+    signature_consent: bool = False
+
 class OnlineCheckinResponse(BaseModel):
     """Online check-in yanıtı"""
     checkin_id: str

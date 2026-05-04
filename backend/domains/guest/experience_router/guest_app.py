@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.cache import cached
 from core.database import db
@@ -598,14 +599,21 @@ async def get_room_service_menu(
         ]
     }
 # ── POST /guest/room-service-order ──
+class _RoomServiceOrderBody(BaseModel):
+    booking_id: str
+    items: list[dict]
+    special_instructions: str | None = None
+
+
 @router.post("/guest/room-service-order")
 async def create_room_service_order(
-    booking_id: str,
-    items: list[dict],
-    special_instructions: str | None = None,
+    body: _RoomServiceOrderBody,
     current_user: User = Depends(get_current_user)
 ):
     """Create room service order"""
+    booking_id = body.booking_id
+    items = body.items
+    special_instructions = body.special_instructions
     # Verify booking
     booking = await db.bookings.find_one({
         'id': booking_id,

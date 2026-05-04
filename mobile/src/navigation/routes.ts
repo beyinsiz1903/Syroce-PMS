@@ -10,6 +10,16 @@ export const ROUTES = {
   checkin: '/(frontdesk)/checkin',
   checkout: '/(frontdesk)/checkout',
   walkin: '/(frontdesk)/walkin',
+  guestBookings: '/(guest)',
+  guestOnlineCheckin: '/(guest)/checkin',
+  guestRoomService: '/(guest)/roomservice',
+  guestCart: '/(guest)/cart',
+  guestOrders: '/(guest)/orders',
+  guestMessages: '/(guest)/messages',
+  guestMessageThread: '/(guest)/messageThread',
+  guestLoyalty: '/(guest)/loyalty',
+  guestBookingDetail: '/(guest)/booking',
+  guestEarlyLate: '/(guest)/earlylate',
 } as const satisfies Record<string, Href>;
 
 export function rootForRole(role: AppRole): Href {
