@@ -3,8 +3,9 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft } from 'lucide-react';
+import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock } from 'lucide-react';
 import { API, fmtDate, fmtTL, fmtTs, FormField, SelectField } from './helpers';
+import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 
 export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
   const [editMode, setEditMode] = useState(false);
@@ -54,6 +55,7 @@ export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
 export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, allBookings }) {
   const [showAdd, setShowAdd] = useState(false);
   const [showSplit, setShowSplit] = useState(null);
+  const [elDirection, setElDirection] = useState(null);
   const [form, setForm] = useState({ description: '', category: 'other', amount: '', quantity: '1' });
   const [splitForm, setSplitForm] = useState({ target_booking_id: '', split_amount: '', reason: '' });
   const [loading, setLoading] = useState(false);
@@ -84,8 +86,20 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
     <div data-testid="extra-charges-tab" className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">Ek Ücretler</span>
-        <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> Ekle</Button>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> Erken Giriş</Button>
+          <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> Geç Çıkış</Button>
+          <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> Ekle</Button>
+        </div>
       </div>
+      <EarlyLateChargeModal
+        open={!!elDirection}
+        onClose={() => setElDirection(null)}
+        bookingId={booking?.id}
+        direction={elDirection || 'early_checkin'}
+        defaultHour={elDirection === 'late_checkout' ? 14 : 10}
+        onApplied={onRefresh}
+      />
       {showAdd && (
         <div className="border rounded-lg p-4 bg-amber-50/50 space-y-3">
           <div className="grid grid-cols-2 gap-3">

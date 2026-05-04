@@ -7,15 +7,37 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Calendar as CalendarIcon, MapPin, Loader2, ScanLine } from 'lucide-react';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Calendar as CalendarIcon, MapPin, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat } from 'lucide-react';
 import { API, fmtDate, fmtDateTime, InfoField, Avatar, EmptyState, statusLabel } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+import api from '@/api/axios';
+
+const ALERT_LEVEL_BG = {
+  danger: 'bg-red-50 border-red-300 text-red-800',
+  warning: 'bg-amber-50 border-amber-300 text-amber-800',
+  gold: 'bg-yellow-50 border-yellow-300 text-yellow-900',
+  info: 'bg-blue-50 border-blue-300 text-blue-800',
+};
+const ALERT_ICON = { vip: Crown, repeat: Repeat, blacklist: ShieldAlert, allergy: AlertTriangle, note: AlertTriangle, special_date: Cake };
 
 export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [guestForm, setGuestForm] = useState({});
+  const [highlights, setHighlights] = useState(null);
+  const [risk, setRisk] = useState(null);
   useEffect(() => { if (guest) setGuestForm({ ...guest }); }, [guest]);
+  useEffect(() => {
+    const gid = guest?.id || booking?.guest_id;
+    if (!gid) return;
+    api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch(() => setHighlights(null));
+  }, [guest?.id, booking?.guest_id]);
+  useEffect(() => {
+    if (!booking?.id) return;
+    const st = (booking.status || '').toLowerCase();
+    if (['checked_in', 'in_house', 'checked_out', 'cancelled', 'no_show'].includes(st)) { setRisk(null); return; }
+    api.get(`/pms/no-show-risk/${booking.id}`).then(r => setRisk(r.data)).catch(() => setRisk(null));
+  }, [booking?.id, booking?.status]);
 
   const handleSave = async () => {
     try {
@@ -29,6 +51,38 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
       <div className="lg:col-span-2 space-y-4">
+        {risk && (
+          <div className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${
+            risk.level === 'high' ? 'bg-red-50 border-red-300 text-red-800'
+            : risk.level === 'medium' ? 'bg-amber-50 border-amber-300 text-amber-800'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          }`} data-testid="no-show-risk-banner">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold">No-Show Risk Skoru: {risk.score}/100 — {risk.level === 'high' ? 'Yüksek' : risk.level === 'medium' ? 'Orta' : 'Düşük'}</div>
+              {risk.factors?.length > 0 && (
+                <div className="text-xs mt-1 opacity-90">
+                  {risk.factors.slice(0, 4).map((f, i) => (
+                    <span key={i} className="mr-2">· {f.label} ({f.delta > 0 ? '+' : ''}{f.delta})</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {highlights?.has_alerts && (
+          <div className="space-y-1.5" data-testid="guest-highlights-banner">
+            {highlights.alerts.map((a, i) => {
+              const Icon = ALERT_ICON[a.type] || AlertTriangle;
+              return (
+                <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${ALERT_LEVEL_BG[a.level] || ALERT_LEVEL_BG.info}`}>
+                  <Icon className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span className="font-medium">{a.message}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {/* Sisteme dusme / olusturulma zamani */}
         {booking?.created_at && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800">
@@ -87,7 +141,33 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
               <Input value={guestForm.name || ''} onChange={e => setGuestForm(p => ({ ...p, name: e.target.value }))} placeholder="Ad Soyad" className="h-8 text-sm" />
               <Input value={guestForm.email || ''} onChange={e => setGuestForm(p => ({ ...p, email: e.target.value }))} placeholder="E-posta" className="h-8 text-sm" />
               <Input value={guestForm.phone || ''} onChange={e => setGuestForm(p => ({ ...p, phone: e.target.value }))} placeholder="Telefon" className="h-8 text-sm" />
-              <Button size="sm" onClick={handleSave} className="w-full h-8"><Check className="w-3 h-3 mr-1" /> Kaydet</Button>
+              <div className="border-t pt-2 mt-2 space-y-1.5">
+                <Label className="text-[10px] uppercase text-gray-500 tracking-wide">VIP / Tercihler</Label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={!!guestForm.vip_status} onChange={e => setGuestForm(p => ({ ...p, vip_status: e.target.checked }))} />
+                  <span>VIP misafir</span>
+                </label>
+                <Input value={guestForm.allergies || ''} onChange={e => setGuestForm(p => ({ ...p, allergies: e.target.value }))} placeholder="Alerjiler (Ananas, fındık)" className="h-8 text-xs" />
+                <Input value={guestForm.dietary_restrictions || ''} onChange={e => setGuestForm(p => ({ ...p, dietary_restrictions: e.target.value }))} placeholder="Beslenme tercihi (Vejeteryan)" className="h-8 text-xs" />
+                <Input value={guestForm.pillow_preference || ''} onChange={e => setGuestForm(p => ({ ...p, pillow_preference: e.target.value }))} placeholder="Yastık tercihi" className="h-8 text-xs" />
+                <Input value={guestForm.room_preference || ''} onChange={e => setGuestForm(p => ({ ...p, room_preference: e.target.value }))} placeholder="Oda tercihi" className="h-8 text-xs" />
+                <Input value={guestForm.important_notes || ''} onChange={e => setGuestForm(p => ({ ...p, important_notes: e.target.value }))} placeholder="Resepsiyon önemli notu" className="h-8 text-xs" />
+                <div className="border-t pt-2 mt-2 space-y-1.5 bg-red-50 -mx-1 px-1 py-1.5 rounded">
+                  <Label className="text-[10px] uppercase text-red-700 tracking-wide">Kara Liste</Label>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" checked={!!guestForm.blacklisted} onChange={e => setGuestForm(p => ({ ...p, blacklisted: e.target.checked }))} />
+                    <span className="text-red-700 font-medium">Misafiri kara listeye al</span>
+                  </label>
+                  {guestForm.blacklisted && (
+                    <Input value={guestForm.blacklist_reason || ''} onChange={e => setGuestForm(p => ({ ...p, blacklist_reason: e.target.value }))} placeholder="Sebep (zorunlu)" className="h-8 text-xs border-red-300" />
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Input value={guestForm.birthday || ''} onChange={e => setGuestForm(p => ({ ...p, birthday: e.target.value }))} placeholder="Doğum (MM-DD)" className="h-8 text-xs" />
+                  <Input value={guestForm.anniversary_date || ''} onChange={e => setGuestForm(p => ({ ...p, anniversary_date: e.target.value }))} placeholder="Yıldönümü (MM-DD)" className="h-8 text-xs" />
+                </div>
+              </div>
+              <Button size="sm" onClick={async () => { await handleSave(); /* highlights refresh */ const gid = guest?.id || booking?.guest_id; if (gid) api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch(() => {}); }} className="w-full h-8"><Check className="w-3 h-3 mr-1" /> Kaydet</Button>
             </div>
           ) : (
             <div className="space-y-2">

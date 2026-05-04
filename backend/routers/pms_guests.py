@@ -260,6 +260,12 @@ async def update_guest(
         "nationality", "date_of_birth", "address", "city",
         "postal_code", "country", "gender", "notes",
         "id_issue_date", "id_expiry_date", "id_issuing_authority",
+        # v95+ VIP / Alarm alanları
+        "vip_status", "allergies", "dietary_restrictions",
+        "pillow_preference", "room_preference", "important_notes",
+        "anniversary_date", "birthday",
+        # v95+ Kara liste (madde 7)
+        "blacklisted", "blacklist_reason",
     }
     update_fields = {k: v for k, v in data.items() if k in allowed}
     if not update_fields:
@@ -321,3 +327,165 @@ async def delete_guest(
         }},
     )
     return {"success": True, "guest_id": guest_id, "soft_deleted": True}
+
+
+@router.get("/pms/guests-blacklist-scan")
+async def blacklist_scan(
+    id_number: str = "",
+    email: str = "",
+    phone: str = "",
+    name: str = "",
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Yeni rezervasyon/misafir oncesinde kara liste taramasi.
+    Verilen kimlik/email/telefon ile eslesen blacklisted misafir varsa dondurur.
+    """
+    or_clauses: list[dict] = []
+    # PII alanlari sifreli olabilir; _fenc varsa build_search_query kullan
+    enc_pairs: list[tuple[str, str]] = []
+    if id_number:
+        enc_pairs.append(("id_number", id_number.strip()))
+    if email:
+        enc_pairs.append(("email", email.strip().lower()))
+    if phone:
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        if digits:
+            enc_pairs.append(("phone", digits[-9:] if len(digits) >= 9 else digits))
+    if _fenc:
+        for field, val in enc_pairs:
+            try:
+                or_clauses.extend(_fenc.build_search_query(
+                    collection=_GUEST_COLLECTION,
+                    search_fields=[field],
+                    search_value=val,
+                ))
+            except Exception:
+                or_clauses.append({field: val})
+    else:
+        for field, val in enc_pairs:
+            or_clauses.append({field: val})
+    if name and len(name.strip()) >= 4:
+        or_clauses.append({"name": {"$regex": name.strip(), "$options": "i"}})
+    if not or_clauses:
+        return {"matches": [], "blacklisted": False}
+    q = {
+        "tenant_id": current_user.tenant_id,
+        "blacklisted": True,
+        "$or": or_clauses,
+    }
+    matches = []
+    async for g in db.guests.find(q, {"_id": 0}).limit(10):
+        g = _decrypt_guest(g)
+        matches.append({
+            "id": g.get("id"),
+            "name": g.get("name"),
+            "email": g.get("email"),
+            "phone": g.get("phone"),
+            "id_number": g.get("id_number"),
+            "blacklist_reason": g.get("blacklist_reason"),
+        })
+    return {"matches": matches, "blacklisted": bool(matches)}
+
+
+@router.get("/pms/guests/{guest_id}/highlights")
+async def get_guest_highlights(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Misafir alarm ve onemli bilgiler — check-in oncesi pop-up icin.
+
+    Donus: vip / repeat / blacklist / allergies / preferences /
+    special_dates_today (yildonumu/dogum gunu yakin mi) / total_stays /
+    last_visit_date / important_notes / has_alerts (en az bir uyari var mi).
+    """
+    from datetime import UTC, date, datetime, timedelta
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+    guest = _decrypt_guest(guest)
+
+    # Tekrar misafir tespiti — total_stays alanı yoksa bookings'ten say
+    total_stays = guest.get("total_stays") or 0
+    if not total_stays:
+        total_stays = await db.bookings.count_documents({
+            "tenant_id": current_user.tenant_id,
+            "guest_id": guest_id,
+            "status": {"$in": ["checked_out", "checked_in"]},
+        })
+
+    # Son ziyaret
+    last_visit = guest.get("last_visit_date")
+    if not last_visit:
+        last = await db.bookings.find_one(
+            {"tenant_id": current_user.tenant_id, "guest_id": guest_id,
+             "status": {"$in": ["checked_out", "checked_in"]}},
+            sort=[("check_out", -1)],
+            projection={"check_out": 1, "_id": 0},
+        )
+        if last:
+            co = last.get("check_out")
+            last_visit = co[:10] if isinstance(co, str) else None
+
+    # Yildonumu / dogum gunu yakinligi (±3 gun)
+    today = datetime.now(UTC).date()
+    special_today = []
+    for label, key in (("Doğum Günü", "birthday"), ("Yıldönümü", "anniversary_date")):
+        raw = guest.get(key)
+        if not raw or len(raw) < 4:
+            continue
+        try:
+            mm, dd = raw[:5].split("-") if "-" in raw[:5] else (raw[:2], raw[2:4])
+            ev = date(today.year, int(mm), int(dd))
+            delta = (ev - today).days
+            if -3 <= delta <= 3:
+                special_today.append({
+                    "type": label,
+                    "date": ev.isoformat(),
+                    "days_until": delta,
+                })
+        except (ValueError, TypeError):
+            continue
+
+    alerts = []
+    if guest.get("blacklisted"):
+        alerts.append({"level": "danger", "type": "blacklist",
+                       "message": "Kara liste: " + (guest.get("blacklist_reason") or "Sebep belirtilmedi")})
+    if guest.get("vip_status"):
+        alerts.append({"level": "gold", "type": "vip", "message": "VIP misafir"})
+    if total_stays >= 2:
+        alerts.append({"level": "info", "type": "repeat",
+                       "message": f"Tekrar misafir — {total_stays}. ziyareti"})
+    if guest.get("allergies"):
+        alerts.append({"level": "warning", "type": "allergy",
+                       "message": "Alerji: " + guest["allergies"]})
+    if guest.get("important_notes"):
+        alerts.append({"level": "warning", "type": "note",
+                       "message": guest["important_notes"]})
+    for sp in special_today:
+        when = "bugün" if sp["days_until"] == 0 else (
+            f"{abs(sp['days_until'])} gün {'sonra' if sp['days_until'] > 0 else 'önce'}")
+        alerts.append({"level": "gold", "type": "special_date",
+                       "message": f"{sp['type']} {when} ({sp['date']})"})
+
+    return {
+        "guest_id": guest_id,
+        "vip_status": bool(guest.get("vip_status")),
+        "blacklisted": bool(guest.get("blacklisted")),
+        "blacklist_reason": guest.get("blacklist_reason"),
+        "total_stays": total_stays,
+        "last_visit_date": last_visit,
+        "allergies": guest.get("allergies"),
+        "dietary_restrictions": guest.get("dietary_restrictions"),
+        "pillow_preference": guest.get("pillow_preference"),
+        "room_preference": guest.get("room_preference"),
+        "important_notes": guest.get("important_notes"),
+        "anniversary_date": guest.get("anniversary_date"),
+        "birthday": guest.get("birthday"),
+        "special_dates": special_today,
+        "alerts": alerts,
+        "has_alerts": len(alerts) > 0,
+    }

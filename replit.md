@@ -5062,3 +5062,26 @@ Lint clean on both pages. Vite HMR picked up locale + page updates without error
 - domains/pms/pos_fnb_router (2139 → 5), domains/revenue/analytics_router (2466 → 12)
 
 Her dosya `<orig_name>/` paketi olarak bölündü. `__init__.py` parent router'ı tutar; `from <orig_path> import router` korundu (bootstrap registry değişmedi). Stacked decorator (örn. `/ai/log-activity` + `/feedback/ai-sentiment`) ve inline class definitions (MenuItemCreate vs.) AST tabanlı splitter ile doğru şekilde taşındı. SHARED kod (imports + class/def/atama) her sub-modüle inline kopyalandı (yan etki riski olmayan tanımlar). Smoke 29/29 PASS, hepsi 200, route sayıları orijinaller ile birebir uyuştu.
+
+## 2026-05-04 — Operasyonel diferansiyatör 8 madde (T1-T8 TAMAM)
+Tek oturumda PMS'ye 8 ayırt edici operasyonel özellik eklendi. Her madde backend smoke + frontend build doğrulandı, Türkçe arayüz, jargonsuz, emoji yok.
+
+**T1 VIP/Tekrar Misafir Alarmı**: `pms_guests.py` Guest fields (allergies, dietary_restrictions, pillow_preference, room_preference, important_notes, blacklist+reason, birthday, anniversary) + `/pms/guests/{id}/highlights` + `GuestAlertModal` + `InfoTabs` banner+edit.
+
+**T2 Vardiya Devir Notu**: `routers/shift_handover.py` (CRUD + acknowledge + open-count) + `frontend/src/pages/ShiftHandoverPage.jsx` + nav `/shift-handover` (operations).
+
+**T3 Cross-Property Kara Liste**: `GET /api/pms/guests-blacklist-scan` (route conflict için tireli isim), `_fenc.build_search_query` ile şifreli alan sorgusu. `InfoTabs` edit'te kırmızı blacklist toggle+reason.
+
+**T4 Erken/Geç Çıkış Otomatik Fiyat**: `routers/early_late_pricing.py` (GET/PUT settings + POST calculate, charge_types: flat/percent_of_nightly/percent_of_total/free) + `EarlyLatePricingSettings.jsx` (`/settings/early-late-pricing`) + `EarlyLateChargeModal.jsx` (PricingTabs ExtraChargesTab içinde "Erken Giriş"/"Geç Çıkış" butonları, manuel override).
+
+**T5 Tek-Tık Gün Sonu Raporu**: `routers/eod_report.py` — `_collect()` (rooms, bookings, payments, extras, folios, handovers) + `_build_html()` Türkçe + `weasyprint` PDF + `core/email.send_email` (Resend) + audit log `eod_report_log`. Frontend `EodReportPage.jsx` (`/eod-report`), preview metrikleri + recipients input + PDF indir + e-posta gönder.
+
+**T6 No-Show Risk Skoru**: `routers/no_show_risk.py` — geçmiş no-show, ödeme/depozit, OTA kanal, lead-time, gece sayısı, hafta sonu faktörlerinden 0-100 skor (low/medium/high). Tek booking + bulk endpoint (aggregation pipeline ile N+1 önlendi). `InfoTabs` üstünde renkli risk banner (sadece pending booking'lerde).
+
+**T7 Walk-in 30-saniye akışı**: `routers/walkin.py` — `available-rooms` (bugünkü müsait listele) + `checkin` (atomic guest+booking+folio+payment+room status). PII alanları `_encrypt_guest` ile şifreleniyor. Çift overlap kontrolü (sorgu-insert arası yarış penceresi daraltıldı). `WalkinPage.jsx` (`/walkin`) — tek ekran 3 step.
+
+**T8 Oda Haritası (sürükle-bırak)**: `routers/room_map.py` — tarih bazlı kat-kat oda + booking listesi, `assign` endpoint conditional update (eski room_id eşleşmezse 409). `RoomMapPage.jsx` (`/room-map`) HTML5 native drag-drop, kat grupları, atanmamış rezervasyonlar paneli, VIP rozeti, oda taşıma `room_move_history` audit.
+
+**Hardening**: Kod incelemesi sonrası tüm 4 yeni router'a `require_module("pms")` + `require_op(...)` (view_room_status / create_booking / view_reports / view_bookings / update_booking) eklendi; walk-in PII şifreleme aktif edildi; no-show bulk N+1 → tek aggregation; oda atama conditional update ile yarış engellendi.
+
+Yeni route'lar: `/shift-handover`, `/settings/early-late-pricing`, `/eod-report`, `/walkin`, `/room-map`. Nav grupları: operations + management.

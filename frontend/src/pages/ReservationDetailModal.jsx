@@ -19,11 +19,13 @@ import { CommunicationTab, NotesTab, HistoryTab } from './reservation-detail/Gue
 import { DepositsTab, VoucherTab, InvoiceTab } from './reservation-detail/DocumentTabs';
 import { OnlinePaymentTab } from './reservation-detail/OnlinePaymentTab';
 import { VCCTab } from './reservation-detail/VCCTab';
+import GuestAlertModal from '@/components/GuestAlertModal';
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
+  const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!bookingId) return;
@@ -171,12 +173,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </div>
               <div className="space-y-1.5">
                 {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
-                  <Button size="sm" variant="outline" onClick={async () => {
-                    try {
-                      await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
-                      toast.success('Giriş yapıldı'); loadData();
-                    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
-                  }} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giriş Yap</Button>
+                  <Button size="sm" variant="outline" onClick={() => setCheckinAlertOpen(true)} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giriş Yap</Button>
                 )}
                 {booking?.status === 'checked_in' && (
                   <Button size="sm" variant="outline" onClick={async () => {
@@ -245,6 +242,20 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           </div>
         </div>
       </div>
+
+      <GuestAlertModal
+        guestId={guest?.id || booking?.guest_id}
+        open={checkinAlertOpen}
+        onClose={() => setCheckinAlertOpen(false)}
+        confirmLabel="Girişi Onayla"
+        onConfirm={async () => {
+          setCheckinAlertOpen(false);
+          try {
+            await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
+            toast.success('Giriş yapıldı'); loadData();
+          } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+        }}
+      />
     </div>
   );
 }

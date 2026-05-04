@@ -202,6 +202,11 @@ const ControlPlane = lazy(() => import("@/pages/ControlPlane"));
 const GroupBookingsPage = lazy(() => import("@/pages/GroupBookings"));
 const DepositTrackingPage = lazy(() => import("@/pages/DepositTracking"));
 const HousekeepingStatusPage = lazy(() => import("@/pages/HousekeepingStatusPage"));
+const ShiftHandoverPage = lazy(() => import("@/pages/ShiftHandoverPage"));
+const EarlyLatePricingSettings = lazy(() => import("@/pages/EarlyLatePricingSettings"));
+const EodReportPage = lazy(() => import("@/pages/EodReportPage"));
+const WalkinPage = lazy(() => import("@/pages/WalkinPage"));
+const RoomMapPage = lazy(() => import("@/pages/RoomMapPage"));
 const WakeUpCallsPage = lazy(() => import("@/pages/WakeUpCallsPage"));
 const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
 const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
@@ -302,6 +307,11 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/folio-detail", ...p(FolioDetailView) },
     { path: "/folio-detail/:folioId", ...p(FolioDetailView) },
     { path: "/housekeeping-status", ...p(HousekeepingStatusPage) },
+    { path: "/shift-handover", ...p(ShiftHandoverPage) },
+    { path: "/settings/early-late-pricing", ...p(EarlyLatePricingSettings) },
+    { path: "/eod-report", ...p(EodReportPage) },
+    { path: "/walkin", ...p(WalkinPage) },
+    { path: "/room-map", ...p(RoomMapPage) },
     { path: "/wake-up-calls", ...p(WakeUpCallsPage) },
     { path: "/lost-found", ...p(LostFoundPage) },
     { path: "/guest-journey", ...p(GuestJourney) },
