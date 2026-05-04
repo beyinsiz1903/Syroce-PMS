@@ -138,20 +138,30 @@ async def get_agency_breakdown(
         {"_id": 0, "id": 1, "name": 1, "status": 1, "commission_rate": 1, "contact_name": 1},
     ).to_list(200)
 
+    # N+1 fix: tum agency'ler icin tek aggregation
+    agency_ids = [a.get("id", "") for a in agencies]
+    stats_map: dict = {}
+    if agency_ids:
+        async for r in db.agency_booking_requests.aggregate([
+            {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": agency_ids},
+                        "created_at": {"$gte": sd, "$lte": ed}}},
+            {"$group": {
+                "_id": "$agency_id",
+                "total": {"$sum": 1},
+                "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
+                "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
+                "commission": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$commission_amount", 0]}},
+            }},
+        ]):
+            stats_map[r["_id"]] = r
+
     result = []
     for agency in agencies:
         aid = agency.get("id", "")
-        match = {"tenant_id": tenant_id, "agency_id": aid, "created_at": {"$gte": sd, "$lte": ed}}
-
-        booking_count = await db.agency_booking_requests.count_documents(match)
-        approved_count = await db.agency_booking_requests.count_documents({**match, "status": "approved"})
-
-        rev_pipeline = [
-            {"$match": {**match, "status": "approved"}},
-            {"$group": {"_id": None, "revenue": {"$sum": "$total_amount"}, "commission": {"$sum": "$commission_amount"}}},
-        ]
-        rev_result = await db.agency_booking_requests.aggregate(rev_pipeline).to_list(1)
-        rev = rev_result[0] if rev_result else {"revenue": 0, "commission": 0}
+        s = stats_map.get(aid, {})
+        booking_count = s.get("total", 0)
+        approved_count = s.get("approved", 0)
+        rev = {"revenue": s.get("revenue", 0) or 0, "commission": s.get("commission", 0) or 0}
 
         result.append({
             "agency_id": aid,
@@ -337,16 +347,26 @@ async def export_b2b_data(
             {"_id": 0, "id": 1, "name": 1, "status": 1, "commission_rate": 1},
         ).to_list(500)
 
+        # N+1 fix: tek aggregation
+        ag_ids = [ag.get("id", "") for ag in agencies]
+        ag_stats: dict = {}
+        if ag_ids:
+            async for r in db.agency_booking_requests.aggregate([
+                {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": ag_ids},
+                            "created_at": {"$gte": sd, "$lte": ed}}},
+                {"$group": {
+                    "_id": "$agency_id",
+                    "total": {"$sum": 1},
+                    "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
+                    "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
+                }},
+            ]):
+                ag_stats[r["_id"]] = r
         for ag in agencies:
-            match = {"tenant_id": tenant_id, "agency_id": ag.get("id", ""), "created_at": {"$gte": sd, "$lte": ed}}
-            total = await db.agency_booking_requests.count_documents(match)
-            approved = await db.agency_booking_requests.count_documents({**match, "status": "approved"})
-            rev_pipeline = [
-                {"$match": {**match, "status": "approved"}},
-                {"$group": {"_id": None, "revenue": {"$sum": "$total_amount"}}},
-            ]
-            rev = await db.agency_booking_requests.aggregate(rev_pipeline).to_list(1)
-            revenue = rev[0]["revenue"] if rev else 0
+            s = ag_stats.get(ag.get("id", ""), {})
+            total = s.get("total", 0)
+            approved = s.get("approved", 0)
+            revenue = s.get("revenue", 0) or 0
             safe_writerow(writer, [ag.get("name", ""), ag.get("status", ""), ag.get("commission_rate", 0), total, approved, revenue])
 
     elif export_type == "usage":

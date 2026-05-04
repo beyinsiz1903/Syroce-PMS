@@ -198,33 +198,37 @@ async def get_allotment_utilization(
     # Get all companies with contracted rates
     utilization_data = []
 
-    async for company in db.companies.find(match_criteria):
-        if not company.get('contracted_rate'):
-            continue
+    # N+1 fix: companies, allotments, bookings tek seferde
+    companies_list = await db.companies.find(match_criteria).to_list(5000)
+    companies_with_rate = [c for c in companies_list if c.get('contracted_rate')]
+    util_company_ids = [c.get('id') for c in companies_with_rate if c.get('id')]
+    allot_map: dict = {}
+    bookings_count_map: dict = {}
+    if util_company_ids:
+        async for a in db.contracted_allotments.find({
+            'company_id': {'$in': util_company_ids},
+            'tenant_id': current_user.tenant_id,
+        }):
+            allot_map[a.get('company_id')] = a
+        async for r in db.bookings.aggregate([
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'company_id': {'$in': util_company_ids},
+                'check_in': {
+                    '$gte': start_dt.date().isoformat(),
+                    '$lte': end_dt.date().isoformat(),
+                },
+            }},
+            {'$group': {'_id': '$company_id', 'n': {'$sum': 1}}},
+        ]):
+            bookings_count_map[r['_id']] = r['n']
 
-        # Get allotment data (if configured)
-        allotment = await db.contracted_allotments.find_one({
-            'company_id': company.get('id'),
-            'tenant_id': current_user.tenant_id
-        })
-
+    for company in companies_with_rate:
+        allotment = allot_map.get(company.get('id'))
         if not allotment:
             continue
-
         allocated_rooms = allotment.get('rooms_allocated', 0)
-
-        # Count bookings from this company in date range
-        bookings_count = 0
-        async for booking in db.bookings.find({
-            'company_id': company.get('id'),
-            'tenant_id': current_user.tenant_id,
-            'check_in': {
-                '$gte': start_dt.date().isoformat(),
-                '$lte': end_dt.date().isoformat()
-            }
-        }):
-            bookings_count += 1
-
+        bookings_count = bookings_count_map.get(company.get('id'), 0)
         utilization_pct = (bookings_count / allocated_rooms * 100) if allocated_rooms > 0 else 0
 
         utilization_data.append({
@@ -271,28 +275,35 @@ async def get_pickup_vs_allocation_alerts(
     """
     alerts = []
 
-    # Get all contracted allotments
-    async for allotment in db.contracted_allotments.find({
+    # N+1 fix: allotments, companies, bookings tek toplu sorgu
+    allotments_list = await db.contracted_allotments.find({
         'tenant_id': current_user.tenant_id,
-        'status': 'active'
-    }):
-        company_id = allotment.get('company_id')
-        company = await db.companies.find_one({'id': company_id})
+        'status': 'active',
+    }).to_list(5000)
+    pa_company_ids = list({a.get('company_id') for a in allotments_list if a.get('company_id')})
+    pa_companies_map: dict = {}
+    if pa_company_ids:
+        async for c in db.companies.find({'id': {'$in': pa_company_ids}}):
+            pa_companies_map[c['id']] = c
+    # Booking sayilari per (company_id, start, end) — allotment'a ozgu, ayrı pipelinelarla pratik degil
+    # Tum company'ler icin tek sorgu sonra Python'da kontrol et
+    pa_bookings_all = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'company_id': {'$in': pa_company_ids},
+    }, {'_id': 0, 'company_id': 1, 'check_in': 1}).to_list(50000) if pa_company_ids else []
 
+    for allotment in allotments_list:
+        company_id = allotment.get('company_id')
+        company = pa_companies_map.get(company_id)
         allocated = allotment.get('rooms_allocated', 0)
         start_date = allotment.get('start_date')
         end_date = allotment.get('end_date')
-
-        # Count actual bookings
-        bookings_count = await db.bookings.count_documents({
-            'company_id': company_id,
-            'tenant_id': current_user.tenant_id,
-            'check_in': {
-                '$gte': start_date,
-                '$lte': end_date
-            }
-        })
-
+        bookings_count = sum(
+            1 for b in pa_bookings_all
+            if b.get('company_id') == company_id
+            and start_date and end_date
+            and start_date <= (b.get('check_in') or '') <= end_date
+        )
         pickup_pct = (bookings_count / allocated * 100) if allocated > 0 else 0
 
         # Calculate expected pickup (time-based)
@@ -430,36 +441,39 @@ async def get_realization_report(
     if company_id:
         match_criteria['company_id'] = company_id
 
-    # Get all active allotments in period
+    # Get all active allotments in period — N+1 fix: bulk realize+revenue+companies
     allotments = []
-    async for allot in db.contracted_allotments.find(match_criteria):
-        allot_start = allot.get('start_date')
-        allot_end = allot.get('end_date')
-
-        # Check if allotment overlaps with requested period
-        if allot_start <= end_date and allot_end >= start_date:
-            # Count realized bookings
-            realized = await db.bookings.count_documents({
-                'company_id': allot.get('company_id'),
+    allots_raw = await db.contracted_allotments.find(match_criteria).to_list(5000)
+    overlapping = [a for a in allots_raw
+                   if (a.get('start_date') or '') <= end_date
+                   and (a.get('end_date') or '') >= start_date]
+    rl_company_ids = list({a.get('company_id') for a in overlapping if a.get('company_id')})
+    rl_realized_map: dict = {}
+    rl_revenue_map: dict = {}
+    rl_companies_map: dict = {}
+    if rl_company_ids:
+        async for r in db.bookings.aggregate([
+            {'$match': {
                 'tenant_id': current_user.tenant_id,
-                'check_in': {'$gte': start_date, '$lte': end_date}
-            })
+                'company_id': {'$in': rl_company_ids},
+                'check_in': {'$gte': start_date, '$lte': end_date},
+            }},
+            {'$group': {'_id': '$company_id',
+                        'n': {'$sum': 1},
+                        'rev': {'$sum': '$total_amount'}}},
+        ]):
+            rl_realized_map[r['_id']] = r['n']
+            rl_revenue_map[r['_id']] = r['rev'] or 0
+        async for c in db.companies.find({'id': {'$in': rl_company_ids}}):
+            rl_companies_map[c['id']] = c
 
+    for allot in overlapping:
+            cid = allot.get('company_id')
+            realized = rl_realized_map.get(cid, 0)
             allocated = allot.get('rooms_allocated', 0)
             realization_pct = (realized / allocated * 100) if allocated > 0 else 0
-
-            # Calculate revenue
-            revenue = 0
-            async for booking in db.bookings.find({
-                'company_id': allot.get('company_id'),
-                'tenant_id': current_user.tenant_id,
-                'check_in': {'$gte': start_date, '$lte': end_date}
-            }):
-                revenue += booking.get('total_amount', 0)
-
-            # Get company details
-            company = await db.companies.find_one({'id': allot.get('company_id')})
-
+            revenue = rl_revenue_map.get(cid, 0)
+            company = rl_companies_map.get(cid)
             allotments.append({
                 'company_name': company.get('name') if company else 'Unknown',
                 'company_id': allot.get('company_id'),

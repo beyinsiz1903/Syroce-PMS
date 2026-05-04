@@ -132,32 +132,47 @@ async def get_pickup_analysis(
 
     today = datetime.now(UTC).date()
 
-    # Historical data (last 30 days)
+    # N+1 fix: total_rooms tek sefer; per-day metrics tek aggregation
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+
+    start_str = (today - timedelta(days=days_back)).isoformat()
+    end_str = today.isoformat()
+    # Per-day check_in revenue
+    revenue_by_day: dict = {}
+    async for r in db.bookings.aggregate([
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$gte': start_str, '$lt': end_str},
+        }},
+        {'$group': {'_id': '$check_in', 'rev': {'$sum': '$total_amount'}}},
+    ]):
+        revenue_by_day[r['_id']] = r['rev'] or 0
+
+    # Per-day occupancy: tek facet ile her gun bookings sayisi
+    occupancy_by_day: dict = {}
+    facet = {}
+    days_list = [(today - timedelta(days=i)).isoformat() for i in range(days_back, 0, -1)]
+    for d in days_list:
+        facet[f"d_{d}"] = [
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'check_in': {'$lte': d}, 'check_out': {'$gt': d},
+                'status': {'$in': ['confirmed', 'checked_in']},
+            }},
+            {'$count': 'n'},
+        ]
+    if facet:
+        agg = await db.bookings.aggregate([{'$facet': facet}]).to_list(1)
+        row = agg[0] if agg else {}
+        for d in days_list:
+            arr = row.get(f"d_{d}", [])
+            occupancy_by_day[d] = arr[0]['n'] if arr else 0
+
     historical = []
-    for i in range(days_back, 0, -1):
-        date = today - timedelta(days=i)
-        date_str = date.isoformat()
-
-        # Get bookings for this date
-        bookings = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': {'$lte': date_str},
-            'check_out': {'$gt': date_str},
-            'status': {'$in': ['confirmed', 'checked_in']}
-        })
-
-        # Calculate occupancy
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    for date_str in days_list:
+        bookings = occupancy_by_day.get(date_str, 0)
         occupancy_pct = (bookings / total_rooms * 100) if total_rooms > 0 else 0
-
-        # Get revenue
-        revenue = 0
-        async for booking in db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'check_in': date_str
-        }):
-            revenue += booking.get('total_amount', 0)
-
+        revenue = revenue_by_day.get(date_str, 0)
         historical.append({
             'date': date_str,
             'occupancy': round(occupancy_pct, 1),
@@ -216,23 +231,24 @@ async def get_pace_report(
 
     today = datetime.now(UTC).date()
 
-    # Next 30 days
+    # Next 30 days — N+1 fix: tek aggregation ile 30 gun
+    days_list = [(today + timedelta(days=i)).isoformat() for i in range(30)]
+    by_day: dict = {}
+    async for r in db.bookings.aggregate([
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$in': days_list},
+            'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']},
+        }},
+        {'$group': {'_id': '$check_in', 'n': {'$sum': 1}}},
+    ]):
+        by_day[r['_id']] = r['n']
+
     pace_data = []
     for i in range(30):
-        date = today + timedelta(days=i)
-        date_str = date.isoformat()
-        (date - timedelta(days=365)).isoformat()
-
-        # This year bookings
-        this_year = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': date_str,
-            'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']}
-        })
-
-        # Last year bookings (simulated)
-        last_year = this_year - (5 if i % 3 == 0 else -3)  # Simulated comparison
-
+        date_str = days_list[i]
+        this_year = by_day.get(date_str, 0)
+        last_year = this_year - (5 if i % 3 == 0 else -3)
         pace_data.append({
             'date': date_str,
             'this_year': this_year,
@@ -268,19 +284,25 @@ async def get_rate_recommendations(
 
     today = datetime.now(UTC).date()
 
+    # N+1 fix: total_rooms tek sefer + 7-gun bookings tek aggregation
+    rec_total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    rec_days = [(today + timedelta(days=i)).isoformat() for i in range(7)]
+    rec_by_day: dict = {}
+    async for r in db.bookings.aggregate([
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$in': rec_days},
+            'status': {'$in': ['confirmed', 'guaranteed']},
+        }},
+        {'$group': {'_id': '$check_in', 'n': {'$sum': 1}}},
+    ]):
+        rec_by_day[r['_id']] = r['n']
+
     recommendations = []
     for i in range(7):
-        date = today + timedelta(days=i)
-        date_str = date.isoformat()
-
-        # Get current bookings
-        bookings = await db.bookings.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'check_in': date_str,
-            'status': {'$in': ['confirmed', 'guaranteed']}
-        })
-
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+        date_str = rec_days[i]
+        bookings = rec_by_day.get(date_str, 0)
+        total_rooms = rec_total_rooms
         occupancy_pct = (bookings / total_rooms * 100) if total_rooms > 0 else 0
 
         # Simple pricing algorithm

@@ -264,17 +264,29 @@ async def get_guest_bookings(
         # No guest records found, return empty
         return {'active_bookings': [], 'past_bookings': []}
 
-    # Get ALL bookings across all tenants for these guest IDs
+    # Get ALL bookings across all tenants for these guest IDs — N+1 fix: bulk fetch
     all_bookings = []
-    async for booking in db.bookings.find({'guest_id': {'$in': guest_ids}}).sort('check_in', -1):
-        # Get room details
-        room = await db.rooms.find_one({'id': booking.get('room_id')})
+    bookings_list = await db.bookings.find({'guest_id': {'$in': guest_ids}}).sort('check_in', -1).to_list(5000)
+    b_room_ids = list({b.get('room_id') for b in bookings_list if b.get('room_id')})
+    b_guest_ids = list({b.get('guest_id') for b in bookings_list if b.get('guest_id')})
+    b_tenant_ids = list({b.get('tenant_id') for b in bookings_list if b.get('tenant_id')})
+    rooms_map: dict = {}
+    guests_map: dict = {}
+    tenants_map: dict = {}
+    if b_room_ids:
+        async for r in db.rooms.find({'id': {'$in': b_room_ids}}):
+            rooms_map[r['id']] = r
+    if b_guest_ids:
+        async for g in db.guests.find({'id': {'$in': b_guest_ids}}):
+            guests_map[g['id']] = g
+    if b_tenant_ids:
+        async for t in db.tenants.find({'id': {'$in': b_tenant_ids}}):
+            tenants_map[t['id']] = t
 
-        # Get guest details
-        guest = await db.guests.find_one({'id': booking.get('guest_id')})
-
-        # Get tenant/hotel details for THIS booking
-        tenant = await db.tenants.find_one({'id': booking.get('tenant_id')})
+    for booking in bookings_list:
+        room = rooms_map.get(booking.get('room_id'))
+        guest = guests_map.get(booking.get('guest_id'))
+        tenant = tenants_map.get(booking.get('tenant_id'))
 
         # Helper to make datetime timezone-aware
         def make_aware(dt_str):
@@ -369,21 +381,26 @@ async def get_guest_loyalty(
             'global_tier': 'bronze'
         }
 
-    # Build loyalty programs array - one per hotel
+    # Build loyalty programs array - one per hotel — N+1 fix: bulk fetch
     loyalty_programs = []
     total_points_all_hotels = 0
 
+    g_tenant_ids = list({g.get('tenant_id') for g in guest_records if g.get('tenant_id')})
+    l_tenants_map: dict = {}
+    benefits_map: dict = {}
+    if g_tenant_ids:
+        async for t in db.tenants.find({'id': {'$in': g_tenant_ids}}):
+            l_tenants_map[t['id']] = t
+        async for b in db.loyalty_benefits.find({'tenant_id': {'$in': g_tenant_ids}}):
+            benefits_map[(b.get('tenant_id'), b.get('tier'))] = b
+
     for guest in guest_records:
-        tenant = await db.tenants.find_one({'id': guest.get('tenant_id')})
+        tenant = l_tenants_map.get(guest.get('tenant_id'))
         loyalty_points = guest.get('loyalty_points', 0)
         loyalty_tier = guest.get('loyalty_tier', 'bronze')
         total_points_all_hotels += loyalty_points
 
-        # Get loyalty program benefits for this hotel
-        benefits = await db.loyalty_benefits.find_one({
-            'tenant_id': guest.get('tenant_id'),
-            'tier': loyalty_tier
-        })
+        benefits = benefits_map.get((guest.get('tenant_id'), loyalty_tier))
 
         # Calculate points to next tier
 

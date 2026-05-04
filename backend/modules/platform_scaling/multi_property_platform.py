@@ -28,30 +28,44 @@ class CentralReservationService:
         today = date.today().isoformat()
         portfolio_data = []
 
+        # N+1 fix: tum property'ler icin tek aggregation
+        pids = [p["id"] for p in properties]
+        rooms_total_map: dict = {}
+        booked_map: dict = {}
+        arrivals_map: dict = {}
+        departures_map: dict = {}
+        if pids:
+            async for r in db.rooms.aggregate([
+                {"$match": {"tenant_id": {"$in": pids},
+                            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                rooms_total_map[r["_id"]] = r["n"]
+            async for r in db.bookings.aggregate([
+                {"$match": {"tenant_id": {"$in": pids},
+                            "check_in": {"$lte": today}, "check_out": {"$gt": today},
+                            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                booked_map[r["_id"]] = r["n"]
+            async for r in db.bookings.aggregate([
+                {"$match": {"tenant_id": {"$in": pids}, "check_in": today,
+                            "status": {"$in": ["confirmed", "guaranteed"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                arrivals_map[r["_id"]] = r["n"]
+            async for r in db.bookings.aggregate([
+                {"$match": {"tenant_id": {"$in": pids}, "check_out": today, "status": "checked_in"}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                departures_map[r["_id"]] = r["n"]
+
         for prop in properties:
             pid = prop["id"]
-            total_rooms = await db.rooms.count_documents({
-                "tenant_id": pid,
-                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-            })
-            if total_rooms == 0:
-                total_rooms = 1
-
-            today_booked = await db.bookings.count_documents({
-                "tenant_id": pid,
-                "check_in": {"$lte": today},
-                "check_out": {"$gt": today},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            })
-
-            arrivals = await db.bookings.count_documents({
-                "tenant_id": pid, "check_in": today,
-                "status": {"$in": ["confirmed", "guaranteed"]},
-            })
-            departures = await db.bookings.count_documents({
-                "tenant_id": pid, "check_out": today, "status": "checked_in",
-            })
-
+            total_rooms = rooms_total_map.get(pid, 0) or 1
+            today_booked = booked_map.get(pid, 0)
+            arrivals = arrivals_map.get(pid, 0)
+            departures = departures_map.get(pid, 0)
             occ = round((today_booked / total_rooms) * 100, 1)
 
             portfolio_data.append({
@@ -193,26 +207,44 @@ class CentralRevenueManagement:
         cutoff = (date.today() - timedelta(days=days)).isoformat()
         portfolio_revenue = []
 
+        # N+1 fix: charges/rooms/bookings tek aggregation
+        rev_pids = [p["id"] for p in properties]
+        rev_charges_map: dict = {}
+        rev_rooms_map: dict = {}
+        rev_nights_map: dict = {}
+        if rev_pids:
+            async for r in db.folio_charges.aggregate([
+                {"$match": {"tenant_id": {"$in": rev_pids},
+                            "posted_at": {"$gte": cutoff}, "voided": {"$ne": True}}},
+                {"$group": {
+                    "_id": "$tenant_id",
+                    "total": {"$sum": "$amount"},
+                    "room": {"$sum": {"$cond": [{"$eq": ["$category", "room"]}, "$amount", 0]}},
+                    "fnb": {"$sum": {"$cond": [{"$in": ["$category", ["food", "beverage", "fnb"]]}, "$amount", 0]}},
+                }},
+            ]):
+                rev_charges_map[r["_id"]] = r
+            async for r in db.rooms.aggregate([
+                {"$match": {"tenant_id": {"$in": rev_pids},
+                            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                rev_rooms_map[r["_id"]] = r["n"]
+            async for r in db.bookings.aggregate([
+                {"$match": {"tenant_id": {"$in": rev_pids}, "check_in": {"$gte": cutoff},
+                            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                rev_nights_map[r["_id"]] = r["n"]
+
         for prop in properties:
             pid = prop["id"]
-            charges = await db.folio_charges.find(
-                {"tenant_id": pid, "posted_at": {"$gte": cutoff}, "voided": {"$ne": True}},
-                {"_id": 0, "amount": 1, "category": 1},
-            ).to_list(10000)
-
-            total_rev = sum(c.get("amount", 0) for c in charges)
-            room_rev = sum(c.get("amount", 0) for c in charges if c.get("category") == "room")
-            fnb_rev = sum(c.get("amount", 0) for c in charges if c.get("category") in ("food", "beverage", "fnb"))
-
-            total_rooms = await db.rooms.count_documents({
-                "tenant_id": pid,
-                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-            })
-            room_nights = await db.bookings.count_documents({
-                "tenant_id": pid, "check_in": {"$gte": cutoff},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            })
-
+            ch = rev_charges_map.get(pid, {})
+            total_rev = ch.get("total", 0)
+            room_rev = ch.get("room", 0)
+            fnb_rev = ch.get("fnb", 0)
+            total_rooms = rev_rooms_map.get(pid, 0)
+            room_nights = rev_nights_map.get(pid, 0)
             adr = round(room_rev / room_nights, 2) if room_nights > 0 else 0
             revpar = round(room_rev / (max(total_rooms, 1) * days), 2)
 
@@ -306,20 +338,44 @@ class GlobalAlertSystem:
         today = date.today().isoformat()
         alerts = []
 
+        # N+1 fix: rooms / bookings / complaints / housekeeping tek aggregation
+        a_pids = [p["id"] for p in properties]
+        a_rooms_map: dict = {}
+        a_booked_map: dict = {}
+        a_complaints_map: dict = {}
+        a_overdue_map: dict = {}
+        if a_pids:
+            async for r in db.rooms.aggregate([
+                {"$match": {"tenant_id": {"$in": a_pids},
+                            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                a_rooms_map[r["_id"]] = r["n"]
+            async for r in db.bookings.aggregate([
+                {"$match": {"tenant_id": {"$in": a_pids},
+                            "check_in": {"$lte": today}, "check_out": {"$gt": today},
+                            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                a_booked_map[r["_id"]] = r["n"]
+            async for r in db.guest_requests.aggregate([
+                {"$match": {"tenant_id": {"$in": a_pids}, "request_type": "complaint",
+                            "status": {"$in": ["open", "assigned"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                a_complaints_map[r["_id"]] = r["n"]
+            async for r in db.housekeeping_tasks.aggregate([
+                {"$match": {"tenant_id": {"$in": a_pids},
+                            "status": {"$in": ["pending", "assigned"]}}},
+                {"$group": {"_id": "$tenant_id", "n": {"$sum": 1}}},
+            ]):
+                a_overdue_map[r["_id"]] = r["n"]
+
         for prop in properties:
             pid = prop["id"]
             prop_name = prop.get("hotel_name") or prop.get("name", pid)
-
-            # Occupancy alert
-            total_rooms = await db.rooms.count_documents({
-                "tenant_id": pid,
-                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-            })
-            booked = await db.bookings.count_documents({
-                "tenant_id": pid,
-                "check_in": {"$lte": today}, "check_out": {"$gt": today},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            })
+            total_rooms = a_rooms_map.get(pid, 0)
+            booked = a_booked_map.get(pid, 0)
             occ = round((booked / max(total_rooms, 1)) * 100, 1)
 
             if occ >= 95:
@@ -340,10 +396,7 @@ class GlobalAlertSystem:
                 })
 
             # Open complaints
-            open_complaints = await db.guest_requests.count_documents({
-                "tenant_id": pid, "request_type": "complaint",
-                "status": {"$in": ["open", "assigned"]},
-            })
+            open_complaints = a_complaints_map.get(pid, 0)
             if open_complaints > 3:
                 alerts.append({
                     "id": str(uuid.uuid4()),
@@ -354,9 +407,7 @@ class GlobalAlertSystem:
                 })
 
             # HK overdue
-            overdue_tasks = await db.housekeeping_tasks.count_documents({
-                "tenant_id": pid, "status": {"$in": ["pending", "assigned"]},
-            })
+            overdue_tasks = a_overdue_map.get(pid, 0)
             if overdue_tasks > 10:
                 alerts.append({
                     "id": str(uuid.uuid4()),

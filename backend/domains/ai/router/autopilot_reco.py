@@ -463,10 +463,17 @@ async def recommend_room_moves(
         'check_out': {'$gte': start_of_day.isoformat()}
     }, {'_id': 0}).to_list(1000)
 
+    # N+1 fix: tum guest'leri bulk al
+    rm_guest_ids = list({b['guest_id'] for b in bookings if b.get('guest_id')})
+    rm_guests_map: dict = {}
+    if rm_guest_ids:
+        async for g in db.guests.find({'id': {'$in': rm_guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
+            rm_guests_map[g['id']] = g
+
     recommendations = []
 
     for booking in bookings:
-        guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
+        guest = rm_guests_map.get(booking.get('guest_id'))
         if not guest:
             continue
 

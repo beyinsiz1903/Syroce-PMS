@@ -188,20 +188,26 @@ async def get_gm_notifications_mobile(
 
     notifications = []
 
-    # VIP Check-ins today
+    # VIP Check-ins today — N+1 fix: bulk guest fetch
     vip_checkins = 0
-    async for booking in db.bookings.find({
+    gm_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today.replace(hour=0, minute=0, second=0),
             '$lte': today.replace(hour=23, minute=59, second=59)
         },
         'status': {'$in': ['confirmed', 'guaranteed']}
-    }):
-        guest = await db.guests.find_one({
-            'id': booking.get('guest_id'),
-            'tenant_id': current_user.tenant_id
-        })
+    }).to_list(1000)
+    gm_guest_ids = list({b.get('guest_id') for b in gm_bookings if b.get('guest_id')})
+    gm_guests_map: dict = {}
+    if gm_guest_ids:
+        async for g in db.guests.find({
+            'id': {'$in': gm_guest_ids},
+            'tenant_id': current_user.tenant_id,
+        }):
+            gm_guests_map[g['id']] = g
+    for booking in gm_bookings:
+        guest = gm_guests_map.get(booking.get('guest_id'))
         if guest and guest.get('vip_status'):
             vip_checkins += 1
             notifications.append({
@@ -267,19 +273,25 @@ async def get_frontdesk_notifications_mobile(
 
     notifications = []
 
-    # VIP arrivals today
-    async for booking in db.bookings.find({
+    # VIP arrivals today — N+1 fix: bulk guest fetch
+    fd_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today.replace(hour=0, minute=0, second=0),
             '$lte': today.replace(hour=23, minute=59, second=59)
         },
         'status': {'$in': ['confirmed', 'guaranteed']}
-    }):
-        guest = await db.guests.find_one({
-            'id': booking.get('guest_id'),
-            'tenant_id': current_user.tenant_id
-        })
+    }).to_list(1000)
+    fd_guest_ids = list({b.get('guest_id') for b in fd_bookings if b.get('guest_id')})
+    fd_guests_map: dict = {}
+    if fd_guest_ids:
+        async for g in db.guests.find({
+            'id': {'$in': fd_guest_ids},
+            'tenant_id': current_user.tenant_id,
+        }):
+            fd_guests_map[g['id']] = g
+    for booking in fd_bookings:
+        guest = fd_guests_map.get(booking.get('guest_id'))
         if guest and guest.get('vip_status'):
             notifications.append({
                 'id': str(uuid.uuid4()),
@@ -350,16 +362,22 @@ async def get_housekeeping_notifications_mobile(
 
     notifications = []
 
-    # Damage reports
-    async for report in db.damage_reports.find({
+    # Damage reports — N+1 fix: bulk room fetch
+    dmg_reports = await db.damage_reports.find({
         'tenant_id': current_user.tenant_id,
         'status': 'new',
         'created_at': {'$gte': datetime.now(UTC) - timedelta(days=1)}
-    }):
-        room = await db.rooms.find_one({
-            'id': report.get('room_id'),
-            'tenant_id': current_user.tenant_id
-        })
+    }).to_list(1000)
+    dmg_room_ids = list({r.get('room_id') for r in dmg_reports if r.get('room_id')})
+    dmg_rooms_map: dict = {}
+    if dmg_room_ids:
+        async for r in db.rooms.find({
+            'id': {'$in': dmg_room_ids},
+            'tenant_id': current_user.tenant_id,
+        }):
+            dmg_rooms_map[r['id']] = r
+    for report in dmg_reports:
+        room = dmg_rooms_map.get(report.get('room_id'))
         notifications.append({
             'id': str(uuid.uuid4()),
             'type': 'damage_report',
@@ -369,9 +387,9 @@ async def get_housekeeping_notifications_mobile(
             'created_at': report.get('created_at').isoformat()
         })
 
-    # Rush room requests (early check-in)
+    # Rush room requests (early check-in) — N+1 fix: bulk rooms by room_number
     today = datetime.now(UTC)
-    async for booking in db.bookings.find({
+    rush_bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {
             '$gte': today.replace(hour=0, minute=0, second=0),
@@ -379,12 +397,18 @@ async def get_housekeeping_notifications_mobile(
         },
         'early_checkin_requested': True,
         'status': {'$in': ['confirmed', 'guaranteed']}
-    }):
-        room = await db.rooms.find_one({
-            'room_number': booking.get('room_number'),
+    }).to_list(500)
+    rush_nums = list({b.get('room_number') for b in rush_bookings if b.get('room_number')})
+    rush_rooms_set: set = set()
+    if rush_nums:
+        async for r in db.rooms.find({
+            'room_number': {'$in': rush_nums},
             'tenant_id': current_user.tenant_id,
-            'status': {'$nin': ['available', 'inspected']}
-        })
+            'status': {'$nin': ['available', 'inspected']},
+        }, {'_id': 0, 'room_number': 1}):
+            rush_rooms_set.add(r.get('room_number'))
+    for booking in rush_bookings:
+        room = booking.get('room_number') in rush_rooms_set
         if room:
             notifications.append({
                 'id': str(uuid.uuid4()),

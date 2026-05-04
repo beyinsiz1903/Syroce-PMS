@@ -67,14 +67,19 @@ async def post_room_charges(current_user: User = Depends(get_current_user),
         charges_posted = 0
         total_amount = 0.0
 
+        # N+1 fix: tum folios tek $in
+        na_booking_ids = [b['id'] for b in bookings if b.get('id')]
+        na_folios_map: dict = {}
+        if na_booking_ids:
+            async for f in db.folios.find({
+                'booking_id': {'$in': na_booking_ids},
+                'folio_type': 'guest', 'status': 'open',
+            }):
+                na_folios_map[f['booking_id']] = f
+
         for booking in bookings:
             try:
-                # Get guest folio for this booking
-                folio = await db.folios.find_one({
-                    'booking_id': booking['id'],
-                    'folio_type': 'guest',
-                    'status': 'open'
-                })
+                folio = na_folios_map.get(booking['id'])
 
                 if folio:
                     # Post room charge
@@ -401,13 +406,19 @@ async def automatic_posting(
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
 
+    # N+1 fix: tum folios tek $in (bookings ID listesinden)
+    na2_booking_ids = [b['id'] for b in bookings if b.get('id')]
+    na2_folios_map: dict = {}
+    if na2_booking_ids:
+        async for f in db.folios.find({
+            'booking_id': {'$in': na2_booking_ids},
+            'folio_type': 'guest',
+        }):
+            na2_folios_map[f['booking_id']] = f
+
     for booking in bookings:
         try:
-            # Get or create folio
-            folio = await db.folios.find_one({
-                'booking_id': booking['id'],
-                'folio_type': 'guest'
-            })
+            folio = na2_folios_map.get(booking['id'])
 
             if not folio:
                 # Create folio
@@ -675,8 +686,15 @@ async def post_room_rates(
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
 
+    # N+1 fix: tum folios tek $in
+    na3_ids = [b['id'] for b in bookings if b.get('id')]
+    na3_folios_map: dict = {}
+    if na3_ids:
+        async for f in db.folios.find({'booking_id': {'$in': na3_ids}, 'folio_type': 'guest'}):
+            na3_folios_map[f['booking_id']] = f
+
     for booking in bookings:
-        folio = await db.folios.find_one({'booking_id': booking['id'], 'folio_type': 'guest'})
+        folio = na3_folios_map.get(booking['id'])
 
         if folio:
             rate = booking.get('base_rate', 0)
@@ -721,8 +739,15 @@ async def post_taxes(
         'check_out': {'$gt': audit_date}
     }).to_list(10000)
 
+    # N+1 fix: tum folios tek $in
+    na4_ids = [b['id'] for b in bookings if b.get('id')]
+    na4_folios_map: dict = {}
+    if na4_ids:
+        async for f in db.folios.find({'booking_id': {'$in': na4_ids}, 'folio_type': 'guest'}):
+            na4_folios_map[f['booking_id']] = f
+
     for booking in bookings:
-        folio = await db.folios.find_one({'booking_id': booking['id'], 'folio_type': 'guest'})
+        folio = na4_folios_map.get(booking['id'])
 
         if folio:
             rate = booking.get('base_rate', 0)
