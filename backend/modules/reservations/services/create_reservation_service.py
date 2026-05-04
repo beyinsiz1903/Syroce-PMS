@@ -77,7 +77,10 @@ class CreateReservationService:
                 "business_date", datetime.now(timezone.utc).date().isoformat()
             )
             today_str = datetime.now(timezone.utc).date().isoformat()
-            effective_min_date = max(business_date_str, today_str)
+            # Gun sonu yapilmadiysa PMS hala dunde; gece gec gelen misafir
+            # dun girisli rezervasyon yapabilmeli. Bu nedenle alt sinir =
+            # min(business_date, today) — yani PMS'in bulundugu gun.
+            effective_min_date = min(business_date_str, today_str)
             effective_min_dt = datetime.fromisoformat(effective_min_date + "T00:00:00+00:00")
             if check_in_dt.replace(tzinfo=timezone.utc) < effective_min_dt:
                 raise HTTPException(

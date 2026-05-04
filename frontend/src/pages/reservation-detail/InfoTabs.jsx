@@ -40,6 +40,18 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
           <InfoField label="Giriş Saati" value={booking?.check_in_time || booking?.checkin_time || '14:00'} />
           <InfoField label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} />
           <InfoField label="Çıkış Saati" value={booking?.check_out_time || booking?.checkout_time || '12:00'} />
+          {booking?.checked_in_at && (
+            <InfoField
+              label="Gerçekleşen Giriş"
+              value={new Date(booking.checked_in_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}
+            />
+          )}
+          {booking?.checked_out_at && (
+            <InfoField
+              label="Gerçekleşen Çıkış"
+              value={new Date(booking.checked_out_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })}
+            />
+          )}
         </div>
         <div className="grid grid-cols-2 gap-4">
           <InfoField label="Yetiskin" value={booking?.adults || booking?.guests_count || 1} />
