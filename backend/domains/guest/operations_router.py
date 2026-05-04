@@ -295,6 +295,16 @@ async def get_upcoming_celebrations(
     upcoming = []
     today = date.today()
 
+    # N+1 fix: tum guest bilgilerini tek $in sorgusuyla topla
+    guest_ids = list({c['guest_id'] for c in celebrations if c.get('guest_id')})
+    guests_map = {}
+    if guest_ids:
+        async for g in db.guests.find(
+            {'id': {'$in': guest_ids}},
+            {'_id': 0, 'id': 1, 'name': 1, 'email': 1, 'phone': 1},
+        ):
+            guests_map[g['id']] = g
+
     for celeb in celebrations:
         # Check birthday
         if celeb.get('birthday'):
@@ -305,10 +315,7 @@ async def get_upcoming_celebrations(
             days_until = (this_year_bday - today).days
 
             if 0 <= days_until <= days:
-                guest = await db.guests.find_one(
-                    {'id': celeb['guest_id']},
-                    {'_id': 0, 'name': 1, 'email': 1, 'phone': 1}
-                )
+                guest = guests_map.get(celeb['guest_id'])
                 if guest:
                     upcoming.append({
                         'type': 'birthday',
@@ -329,10 +336,7 @@ async def get_upcoming_celebrations(
             days_until = (this_year_anniv - today).days
 
             if 0 <= days_until <= days:
-                guest = await db.guests.find_one(
-                    {'id': celeb['guest_id']},
-                    {'_id': 0, 'name': 1, 'email': 1}
-                )
+                guest = guests_map.get(celeb['guest_id'])
                 if guest:
                     upcoming.append({
                         'type': 'anniversary',
@@ -534,9 +538,21 @@ async def get_guest_bookings_old(
     active_bookings = []
     past_bookings = []
 
+    # N+1 fix: tum tenant + room bilgilerini tek seferde getir
+    tenant_ids = list({b.get('tenant_id') for b in all_bookings if b.get('tenant_id')})
+    room_ids = list({b.get('room_id') for b in all_bookings if b.get('room_id')})
+    tenants_map = {}
+    if tenant_ids:
+        async for t in db.tenants.find({'id': {'$in': tenant_ids}}, {'_id': 0}):
+            tenants_map[t['id']] = t
+    rooms_map = {}
+    if room_ids:
+        async for r in db.rooms.find({'id': {'$in': room_ids}}, {'_id': 0}):
+            rooms_map[r['id']] = r
+
     for booking in all_bookings:
-        tenant = await db.tenants.find_one({'id': booking['tenant_id']}, {'_id': 0})
-        room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
+        tenant = tenants_map.get(booking.get('tenant_id'))
+        room = rooms_map.get(booking.get('room_id'))
 
         booking_data = {**booking, 'hotel': tenant, 'room': room}
 
@@ -571,8 +587,15 @@ async def get_guest_loyalty_old(
     enriched_programs = []
     total_points = 0
 
+    # N+1 fix: tum tenants tek $in
+    p_tenant_ids = list({p.get('tenant_id') for p in loyalty_programs if p.get('tenant_id')})
+    p_tenants_map = {}
+    if p_tenant_ids:
+        async for t in db.tenants.find({'id': {'$in': p_tenant_ids}}, {'_id': 0}):
+            p_tenants_map[t['id']] = t
+
     for program in loyalty_programs:
-        tenant = await db.tenants.find_one({'id': program['tenant_id']}, {'_id': 0})
+        tenant = p_tenants_map.get(program.get('tenant_id'))
         enriched_programs.append({**program, 'hotel': tenant})
         total_points += program['points']
 
@@ -1020,15 +1043,32 @@ async def get_guest_profile_enhanced(
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
-    # Stay history
+    # Stay history — N+1 fix: rooms + folios tek $in sorgusuyla
     stay_history = []
     total_spent_all_time = 0
-    async for booking in db.bookings.find({
+    bookings_list = await db.bookings.find({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['checked_out', 'checked_in']}
-    }).sort('check_in', -1).limit(10):
-        room = await db.rooms.find_one({'id': booking.get('room_id')})
+    }).sort('check_in', -1).limit(10).to_list(10)
+
+    sh_room_ids = list({b.get('room_id') for b in bookings_list if b.get('room_id')})
+    sh_booking_ids = [b.get('id') for b in bookings_list if b.get('id')]
+    sh_rooms_map = {}
+    if sh_room_ids:
+        async for r in db.rooms.find({'id': {'$in': sh_room_ids}}):
+            sh_rooms_map[r['id']] = r
+    sh_folios_map = {}
+    if sh_booking_ids:
+        async for f in db.folios.find({
+            'booking_id': {'$in': sh_booking_ids},
+            'tenant_id': current_user.tenant_id,
+            'folio_type': 'guest',
+        }):
+            sh_folios_map[f['booking_id']] = f
+
+    for booking in bookings_list:
+        room = sh_rooms_map.get(booking.get('room_id'))
 
         check_in = booking.get('check_in')
         check_out = booking.get('check_out')
@@ -1045,13 +1085,7 @@ async def get_guest_profile_enhanced(
 
         nights = (check_out_dt - check_in_dt).days
 
-        # Get total spent from folio
-        folio = await db.folios.find_one({
-            'booking_id': booking.get('id'),
-            'tenant_id': current_user.tenant_id,
-            'folio_type': 'guest'
-        })
-
+        folio = sh_folios_map.get(booking.get('id'))
         total_spent = folio.get('balance', 0) if folio else booking.get('total_amount', 0)
         total_spent_all_time += abs(total_spent) if folio else booking.get('total_amount', 0)
 
@@ -1448,15 +1482,24 @@ async def get_complete_guest_profile(
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
-    # Get stay history (all bookings)
+    # Get stay history (all bookings) — N+1 fix: rooms tek $in
     stay_history = []
-    async for booking in db.bookings.find({
+    sh_bookings = await db.bookings.find({
         'guest_id': guest_id,
         'tenant_id': current_user.tenant_id,
         'status': {'$in': ['checked_out', 'checked_in']}
-    }).sort('check_in', -1):
+    }).sort('check_in', -1).to_list(5000)
+    full_room_ids = list({b.get('room_id') for b in sh_bookings if b.get('room_id')})
+    full_rooms_map = {}
+    if full_room_ids:
+        async for r in db.rooms.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': full_room_ids}}
+        ):
+            full_rooms_map[r['id']] = r
+
+    for booking in sh_bookings:
         try:
-            room = await db.rooms.find_one({'id': booking['room_id'], 'tenant_id': current_user.tenant_id})
+            room = full_rooms_map.get(booking.get('room_id'))
 
             # Calculate nights - handle both datetime and string
             check_in = booking.get('check_in')

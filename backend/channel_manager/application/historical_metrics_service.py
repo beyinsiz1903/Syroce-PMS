@@ -46,36 +46,33 @@ class HistoricalMetricsService:
             recon = ReconciliationService(self._repo)
             health = await recon.get_health_score(tenant_id, cid)
 
-            # ACK metrics
-            total_imports = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid}
-            )
-            ack_sent = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_sent"}
-            )
-            ack_failed = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_failed"}
-            )
-
-            # Reservation import metrics
-            import_created = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "created"}
-            )
-            import_modified = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "modified"}
-            )
-            import_cancelled = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "cancelled"}
-            )
-            import_failed = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"}
-            )
-            import_review = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
-            )
-            import_duplicate = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "duplicate"}
-            )
+            # ACK + import metrics — tek aggregation ile (8 count_documents yerine 1 sorgu)
+            ack_pipeline = [
+                {"$match": {"tenant_id": tenant_id, "connector_id": cid}},
+                {"$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "ack_sent": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_sent"]}, 1, 0]}},
+                    "ack_failed": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_failed"]}, 1, 0]}},
+                    "import_created": {"$sum": {"$cond": [{"$eq": ["$import_status", "created"]}, 1, 0]}},
+                    "import_modified": {"$sum": {"$cond": [{"$eq": ["$import_status", "modified"]}, 1, 0]}},
+                    "import_cancelled": {"$sum": {"$cond": [{"$eq": ["$import_status", "cancelled"]}, 1, 0]}},
+                    "import_failed": {"$sum": {"$cond": [{"$eq": ["$import_status", "failed"]}, 1, 0]}},
+                    "import_review": {"$sum": {"$cond": [{"$in": ["$import_status", ["review", "conflict", "out_of_order"]]}, 1, 0]}},
+                    "import_duplicate": {"$sum": {"$cond": [{"$eq": ["$import_status", "duplicate"]}, 1, 0]}},
+                }},
+            ]
+            ack_rows = await db.cm_imported_reservations.aggregate(ack_pipeline).to_list(1)
+            ack_row = ack_rows[0] if ack_rows else {}
+            total_imports = ack_row.get("total", 0)
+            ack_sent = ack_row.get("ack_sent", 0)
+            ack_failed = ack_row.get("ack_failed", 0)
+            import_created = ack_row.get("import_created", 0)
+            import_modified = ack_row.get("import_modified", 0)
+            import_cancelled = ack_row.get("import_cancelled", 0)
+            import_failed = ack_row.get("import_failed", 0)
+            import_review = ack_row.get("import_review", 0)
+            import_duplicate = ack_row.get("import_duplicate", 0)
             import_success = import_created + import_modified + import_cancelled
             import_success_rate = round(import_success / max(total_imports, 1) * 100, 1)
 
@@ -84,10 +81,9 @@ class HistoricalMetricsService:
             total_sync = sum(jobs.values())
             succeeded_sync = jobs.get("succeeded", 0)
             failed_sync = jobs.get("failed", 0)
-            retry_jobs = sum(1 for _ in await db.cm_sync_jobs.find(
-                {"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}},
-                {"_id": 0, "id": 1}
-            ).to_list(1000))
+            retry_jobs = await db.cm_sync_jobs.count_documents(
+                {"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}}
+            )
 
             # Mapping
             mappings = await self._repo.get_mappings(tenant_id, cid)

@@ -466,60 +466,63 @@ async def get_connectors_health(
 
     health_reports = []
 
+    # N+1 fix: tum connector'lar icin batch sorgular (her connector icin 5 sorgu yerine 4 toplu sorgu)
+    h_connector_ids = [c.get("id", "") for c in connectors]
+    # Tek aggregation: connector basina last success + last failure + counts (1h)
+    last_success_map: dict = {}
+    last_failure_map: dict = {}
+    push_counts_map: dict = {}
+    if h_connector_ids:
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": True}},
+            {"$sort": {"recorded_at": -1}},
+            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+        ]):
+            last_success_map[r["_id"]] = r["doc"]
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": False}},
+            {"$sort": {"recorded_at": -1}},
+            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+        ]):
+            last_failure_map[r["_id"]] = r["doc"]
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids},
+                        "recorded_at": {"$gte": since_1h}}},
+            {"$group": {"_id": "$connector_id",
+                        "total": {"$sum": 1},
+                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+        ]):
+            push_counts_map[r["_id"]] = r
+    # Retry backlog ve DLQ count tenant geneli — her connector icin ayni, bir kez al
+    retry_backlog = await sysdb.webhook_deliveries.count_documents({
+        "tenant_id": tenant_id, "status": "retrying",
+    })
+    dlq_count = await sysdb.webhook_dlq.count_documents({
+        "tenant_id": tenant_id, "status": "pending",
+    })
+    # Throttle event'leri tek sorgu ile, Python'da provider'a gore filtrele
+    throttle_events_all = await db.ops_events.find({
+        "tenant_id": tenant_id,
+        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+        "created_at": {"$gte": since_1h},
+    }, {"_id": 0, "channel": 1}).to_list(2000)
+
     for conn in connectors:
         provider = conn.get("provider", "unknown")
         connector_id = conn.get("id", "")
         property_name = conn.get("property_name", "")
+        prov_lower = provider.lower()
 
-        # Last success
-        last_success = await db.cm_rate_push_metrics.find_one(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "success": True},
-            {"_id": 0},
-            sort=[("recorded_at", -1)]
-        )
-        last_success_at = last_success.get("recorded_at") if last_success else None
-
-        # Last failure
-        last_failure = await db.cm_rate_push_metrics.find_one(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "success": False},
-            {"_id": 0},
-            sort=[("recorded_at", -1)]
-        )
-        last_failure_at = last_failure.get("recorded_at") if last_failure else None
-
-        # Failure rate (1h)
-        total_1h = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "recorded_at": {"$gte": since_1h},
-        })
-        failed_1h = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "success": False,
-            "recorded_at": {"$gte": since_1h},
-        })
+        ls_doc = last_success_map.get(connector_id)
+        last_success_at = ls_doc.get("recorded_at") if ls_doc else None
+        lf_doc = last_failure_map.get(connector_id)
+        last_failure_at = lf_doc.get("recorded_at") if lf_doc else None
+        pc = push_counts_map.get(connector_id, {})
+        total_1h = pc.get("total", 0)
+        failed_1h = pc.get("failed", 0)
         failure_rate_1h = round(failed_1h / max(total_1h, 1) * 100, 1)
-
-        # Retry backlog (deliveries in retrying status)
-        retry_backlog = await sysdb.webhook_deliveries.count_documents({
-            "tenant_id": tenant_id,
-            "status": "retrying",
-        })
-
-        # DLQ count (pending)
-        dlq_count = await sysdb.webhook_dlq.count_documents({
-            "tenant_id": tenant_id,
-            "status": "pending",
-        })
-
-        # Throttle status
-        throttle_events = await db.ops_events.count_documents({
-            "tenant_id": tenant_id,
-            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-            "channel": {"$regex": provider, "$options": "i"},
-            "created_at": {"$gte": since_1h},
-        })
+        throttle_events = sum(1 for e in throttle_events_all
+                              if prov_lower in (e.get("channel") or "").lower())
         throttle_active = throttle_events > 0
 
         # Calculate health score (0-100)
@@ -578,7 +581,7 @@ async def get_connectors_health(
         # Next available (for throttled connectors)
         next_available_at = None
         if throttle_active:
-            # Get last throttle event details
+            # Tek find_one tek connector icin aci degil; kalmasina izin ver
             last_throttle = await db.ops_events.find_one(
                 {
                     "tenant_id": tenant_id,

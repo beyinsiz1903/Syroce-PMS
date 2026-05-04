@@ -611,16 +611,29 @@ async def get_overdue_accounts_mobile(
 
     overdue_accounts = []
 
-    async for folio in db.folios.find({
+    # N+1 fix: tum acik folyolari, sonra tek seferde booking + guest'leri yukle
+    open_folios = await db.folios.find({
         'tenant_id': current_user.tenant_id,
         'status': 'open',
         'balance': {'$gt': 0}
-    }):
-        booking = await db.bookings.find_one({
-            'id': folio.get('booking_id'),
-            'tenant_id': current_user.tenant_id
-        })
+    }).to_list(5000)
+    booking_ids = list({f.get('booking_id') for f in open_folios if f.get('booking_id')})
+    bookings_map = {}
+    if booking_ids:
+        async for b in db.bookings.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': booking_ids}}
+        ):
+            bookings_map[b['id']] = b
+    guest_ids = list({b.get('guest_id') for b in bookings_map.values() if b.get('guest_id')})
+    guests_map = {}
+    if guest_ids:
+        async for g in db.guests.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': guest_ids}}
+        ):
+            guests_map[g['id']] = g
 
+    for folio in open_folios:
+        booking = bookings_map.get(folio.get('booking_id'))
         if booking:
             checkout = booking.get('check_out')
             if checkout:
@@ -633,7 +646,6 @@ async def get_overdue_accounts_mobile(
                     days_overdue = (today - checkout_date).days
 
                     if days_overdue >= min_days:
-                        # Determine risk level
                         if days_overdue >= 30:
                             risk_level = RiskLevel.SUSPICIOUS
                             risk_color = "black"
@@ -647,10 +659,7 @@ async def get_overdue_accounts_mobile(
                             risk_level = RiskLevel.NORMAL
                             risk_color = "green"
 
-                        guest = await db.guests.find_one({
-                            'id': booking.get('guest_id'),
-                            'tenant_id': current_user.tenant_id
-                        })
+                        guest = guests_map.get(booking.get('guest_id'))
 
                         overdue_accounts.append({
                             'folio_id': folio.get('id'),
@@ -700,27 +709,40 @@ async def get_credit_limit_violations_mobile(
     """Get companies exceeding their credit limits"""
     violations = []
 
-    async for credit_limit in db.credit_limits.find({
+    credit_limits = await db.credit_limits.find({
         'tenant_id': current_user.tenant_id
-    }):
-        company = await db.companies.find_one({
-            'id': credit_limit.get('company_id'),
-            'tenant_id': current_user.tenant_id
-        })
+    }).to_list(10000)
+    company_ids = list({cl.get('company_id') for cl in credit_limits if cl.get('company_id')})
 
+    # N+1 fix: companies tek $in sorgusu
+    companies_map = {}
+    if company_ids:
+        async for c in db.companies.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': company_ids}}
+        ):
+            companies_map[c['id']] = c
+
+    # N+1 fix: company_id basina open folio toplami tek aggregation
+    debt_map = {}
+    if company_ids:
+        debt_pipeline = [
+            {'$match': {
+                'tenant_id': current_user.tenant_id,
+                'company_id': {'$in': company_ids},
+                'status': 'open',
+                'balance': {'$gt': 0},
+            }},
+            {'$group': {'_id': '$company_id', 'debt': {'$sum': '$balance'}}},
+        ]
+        async for r in db.folios.aggregate(debt_pipeline):
+            debt_map[r['_id']] = r['debt']
+
+    for credit_limit in credit_limits:
+        company = companies_map.get(credit_limit.get('company_id'))
         if not company:
             continue
 
-        # Calculate current debt from open folios
-        current_debt = 0.0
-        async for folio in db.folios.find({
-            'tenant_id': current_user.tenant_id,
-            'company_id': credit_limit.get('company_id'),
-            'status': 'open',
-            'balance': {'$gt': 0}
-        }):
-            current_debt += folio.get('balance', 0)
-
+        current_debt = debt_map.get(credit_limit.get('company_id'), 0.0)
         credit_limit_amount = credit_limit.get('credit_limit', 0)
         available_credit = credit_limit_amount - current_debt
         utilization_pct = (current_debt / credit_limit_amount * 100) if credit_limit_amount > 0 else 0
@@ -782,16 +804,37 @@ async def get_suspicious_receivables_mobile(
 
     suspicious_list = []
 
-    async for folio in db.folios.find({
+    # N+1 fix: folyolar -> bookings/guests/payment counts toplu cek
+    folios_list = await db.folios.find({
         'tenant_id': current_user.tenant_id,
         'status': 'open',
-        'balance': {'$gt': 1000}  # Only significant amounts
-    }):
-        booking = await db.bookings.find_one({
-            'id': folio.get('booking_id'),
-            'tenant_id': current_user.tenant_id
-        })
+        'balance': {'$gt': 1000}
+    }).to_list(5000)
+    bk_ids = list({f.get('booking_id') for f in folios_list if f.get('booking_id')})
+    bookings_map = {}
+    if bk_ids:
+        async for b in db.bookings.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': bk_ids}}
+        ):
+            bookings_map[b['id']] = b
+    g_ids = list({b.get('guest_id') for b in bookings_map.values() if b.get('guest_id')})
+    guests_map = {}
+    if g_ids:
+        async for g in db.guests.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': g_ids}}
+        ):
+            guests_map[g['id']] = g
+    folio_ids = [f.get('id') for f in folios_list if f.get('id')]
+    pay_count_map = {}
+    if folio_ids:
+        async for r in db.payments.aggregate([
+            {'$match': {'tenant_id': current_user.tenant_id, 'folio_id': {'$in': folio_ids}}},
+            {'$group': {'_id': '$folio_id', 'n': {'$sum': 1}}},
+        ]):
+            pay_count_map[r['_id']] = r['n']
 
+    for folio in folios_list:
+        booking = bookings_map.get(folio.get('booking_id'))
         if booking:
             checkout = booking.get('check_out')
             if checkout:
@@ -802,22 +845,12 @@ async def get_suspicious_receivables_mobile(
                         checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
 
                     days_overdue = (today - checkout_date).days
-
-                    # Suspicious criteria: 30+ days OR high amount with 15+ days
                     balance = folio.get('balance', 0)
                     is_suspicious = (days_overdue >= 30) or (days_overdue >= 15 and balance > 5000)
 
                     if is_suspicious:
-                        guest = await db.guests.find_one({
-                            'id': booking.get('guest_id'),
-                            'tenant_id': current_user.tenant_id
-                        })
-
-                        # Get payment history
-                        payment_count = await db.payments.count_documents({
-                            'tenant_id': current_user.tenant_id,
-                            'folio_id': folio.get('id')
-                        })
+                        guest = guests_map.get(booking.get('guest_id'))
+                        payment_count = pay_count_map.get(folio.get('id'), 0)
 
                         suspicious_list.append({
                             'folio_id': folio.get('id'),
@@ -1136,8 +1169,18 @@ async def get_invoices_mobile(
     total_amount = 0.0
     unpaid_amount = 0.0
 
-    async for invoice in db.accounting_invoices.find(query).sort('created_at', -1).limit(100):
-        # If department filter is specified, check invoice items
+    # N+1 fix: tum faturalari oku, ilgili sirketleri tek $in sorgusuyla cek
+    raw_invoices = await db.accounting_invoices.find(query).sort('created_at', -1).limit(100).to_list(100)
+    inv_company_ids = list({i.get('company_id') for i in raw_invoices if i.get('company_id')})
+    company_name_map: dict = {}
+    if inv_company_ids:
+        async for c in db.companies.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': inv_company_ids}},
+            {'_id': 0, 'id': 1, 'name': 1},
+        ):
+            company_name_map[c['id']] = c.get('name')
+
+    for invoice in raw_invoices:
         if department:
             items = invoice.get('items', [])
             has_department = any(item.get('department') == department for item in items)
@@ -1150,15 +1193,7 @@ async def get_invoices_mobile(
         if invoice.get('status') == 'pending':
             unpaid_amount += invoice_total
 
-        # Get company details if available
-        company_name = None
-        if invoice.get('company_id'):
-            company = await db.companies.find_one({
-                'id': invoice.get('company_id'),
-                'tenant_id': current_user.tenant_id
-            })
-            if company:
-                company_name = company.get('name')
+        company_name = company_name_map.get(invoice.get('company_id')) if invoice.get('company_id') else None
 
         invoices.append({
             'id': invoice.get('id'),

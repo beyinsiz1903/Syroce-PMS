@@ -259,17 +259,28 @@ async def get_availability_heatmap(
         else:
             intensity = 'low'  # Green
 
-        # Get room type breakdown
+        # Get room type breakdown — N+1 fix: tek aggregation ile room_type basina occupied
+        room_id_to_type = {r['id']: r['room_type'] for r in rooms}
+        all_room_ids = list(room_id_to_type.keys())
+        rt_occupied_map: dict = {}
+        if all_room_ids:
+            async for r in db.bookings.aggregate([
+                {'$match': {
+                    'tenant_id': current_user.tenant_id,
+                    'room_id': {'$in': all_room_ids},
+                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                    'check_in': {'$lte': end_of_day.isoformat()},
+                    'check_out': {'$gte': start_of_day.isoformat()},
+                }},
+                {'$group': {'_id': '$room_id', 'n': {'$sum': 1}}},
+            ]):
+                rt = room_id_to_type.get(r['_id'])
+                if rt:
+                    rt_occupied_map[rt] = rt_occupied_map.get(rt, 0) + r['n']
         rt_breakdown = {}
         for rt in room_types:
             rt_rooms = [r for r in rooms if r['room_type'] == rt]
-            rt_occupied = await db.bookings.count_documents({
-                'tenant_id': current_user.tenant_id,
-                'room_id': {'$in': [r['id'] for r in rt_rooms]},
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$lte': end_of_day.isoformat()},
-                'check_out': {'$gte': start_of_day.isoformat()}
-            })
+            rt_occupied = rt_occupied_map.get(rt, 0)
             rt_breakdown[rt] = {
                 'occupied': rt_occupied,
                 'total': len(rt_rooms),
@@ -351,16 +362,19 @@ async def get_group_bookings(
         groups[key]['room_count'] += 1
         groups[key]['total_revenue'] += booking.get('total_amount', 0)
 
-    # Filter groups with min_rooms or more
+    # Filter groups with min_rooms or more — N+1 fix: companies tek $in sorgusu
+    qualified = [(k, g) for k, g in groups.items() if g['room_count'] >= min_rooms]
+    qualified_company_ids = list({g['company_id'] for _, g in qualified})
+    companies_map = {}
+    if qualified_company_ids:
+        async for c in db.companies.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': qualified_company_ids}},
+            {'_id': 0, 'id': 1, 'name': 1},
+        ):
+            companies_map[c['id']] = c
     group_bookings = []
-    for key, group in groups.items():
-        if group['room_count'] >= min_rooms:
-            # Get company info
-            company = await db.companies.find_one({
-                'id': group['company_id'],
-                'tenant_id': current_user.tenant_id
-            }, {'_id': 0})
-
+    for key, group in qualified:
+            company = companies_map.get(group['company_id'])
             group_bookings.append({
                 'group_id': key,
                 'company_id': group['company_id'],
@@ -693,15 +707,21 @@ async def get_grouped_conflicts(
 
     conflicts_raw = await db.bookings.aggregate(pipeline).to_list(1000)
 
-    # Group by room
+    # Group by room — N+1 fix: tum room'lari tek $in sorgusuyla
     room_conflicts = {}
     total_conflicts = 0
+    conflict_room_ids = list({c['_id']['room_id'] for c in conflicts_raw})
+    rooms_map = {}
+    if conflict_room_ids:
+        async for r in db.rooms.find(
+            {'tenant_id': current_user.tenant_id, 'id': {'$in': conflict_room_ids}}, {'_id': 0},
+        ):
+            rooms_map[r['id']] = r
 
     for conflict in conflicts_raw:
         room_id = conflict['_id']['room_id']
         if room_id not in room_conflicts:
-            # Get room details
-            room = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+            room = rooms_map.get(room_id)
             room_conflicts[room_id] = {
                 'room_number': room.get('room_number', 'Unknown') if room else 'Unknown',
                 'room_type': room.get('room_type', 'N/A') if room else 'N/A',
@@ -1025,16 +1045,19 @@ async def get_calendar_tooltip(
         if booking_charges:
             rate_code_revenue[rate_code] = rate_code_revenue.get(rate_code, 0) + sum(c.get('total', 0) for c in booking_charges)
 
-    # Room type breakdown (if no filter)
+    # Room type breakdown (if no filter) — N+1 fix: tek aggregation
     room_type_occupancy = {}
     if not room_type_filter:
         room_types = await db.room_types.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(100)
+        rt_total_map: dict = {}
+        async for r in db.rooms.aggregate([
+            {'$match': {'tenant_id': current_user.tenant_id}},
+            {'$group': {'_id': '$room_type', 'n': {'$sum': 1}}},
+        ]):
+            rt_total_map[r['_id']] = r['n']
         for rt in room_types:
             rt_bookings = [b for b in bookings if b.get('room_type') == rt['name']]
-            rt_total = await db.rooms.count_documents({
-                'tenant_id': current_user.tenant_id,
-                'room_type': rt['name']
-            })
+            rt_total = rt_total_map.get(rt['name'], 0)
             rt_occ = (len(rt_bookings) / rt_total * 100) if rt_total > 0 else 0
             room_type_occupancy[rt['name']] = {
                 'occupied': len(rt_bookings),
@@ -1046,9 +1069,14 @@ async def get_calendar_tooltip(
     group_bookings = [b for b in bookings if b.get('group_id')]
     group_ids = list({b['group_id'] for b in group_bookings if b.get('group_id')})
 
+    # N+1 fix: group_reservations tek $in sorgusu
     groups_info = []
+    grp_map = {}
+    if group_ids:
+        async for g in db.group_reservations.find({'id': {'$in': group_ids}}, {'_id': 0}):
+            grp_map[g['id']] = g
     for group_id in group_ids:
-        group = await db.group_reservations.find_one({'id': group_id}, {'_id': 0})
+        group = grp_map.get(group_id)
         if group:
             group_rooms = len([b for b in group_bookings if b.get('group_id') == group_id])
             groups_info.append({
@@ -1105,31 +1133,42 @@ async def get_calendar_group_view(
     end = datetime.fromisoformat(end_date)
     days = (end - start).days + 1
 
+    # N+1 fix: total_rooms doneminden bagimsiz, tek sefer
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+
     for day in range(days):
         current_date = (start + timedelta(days=day)).date().isoformat()
 
-        # Get groups active on this date
+        # Get groups active on this date — N+1 fix: tek $facet ile her grup icin overlap count
+        active_group_objs = [g for g in groups
+                             if g.get('check_in_date') <= current_date <= g.get('check_out_date')]
         active_groups = []
-        for group in groups:
-            if group.get('check_in_date') <= current_date <= group.get('check_out_date'):
-                # Get bookings for this group on this date
-                group_bookings = await db.bookings.find({
-                    'tenant_id': current_user.tenant_id,
-                    'group_id': group['id'],
-                    'check_in_date': {'$lte': current_date},
-                    'check_out_date': {'$gt': current_date}
-                }, {'_id': 0}).to_list(1000)
-
+        if active_group_objs:
+            facet = {}
+            for g in active_group_objs:
+                facet[g['id']] = [
+                    {'$match': {
+                        'tenant_id': current_user.tenant_id,
+                        'group_id': g['id'],
+                        'check_in_date': {'$lte': current_date},
+                        'check_out_date': {'$gt': current_date},
+                    }},
+                    {'$count': 'n'},
+                ]
+            agg = await db.bookings.aggregate([{'$facet': facet}]).to_list(1)
+            row = agg[0] if agg else {}
+            for g in active_group_objs:
+                arr = row.get(g['id'], [])
+                cnt = arr[0]['n'] if arr else 0
                 active_groups.append({
-                    'group_id': group['id'],
-                    'group_name': group.get('group_name'),
-                    'group_type': group.get('group_type'),
-                    'total_rooms': group.get('total_rooms'),
-                    'rooms_active_today': len(group_bookings),
-                    'contact_person': group.get('contact_person')
+                    'group_id': g['id'],
+                    'group_name': g.get('group_name'),
+                    'group_type': g.get('group_type'),
+                    'total_rooms': g.get('total_rooms'),
+                    'rooms_active_today': cnt,
+                    'contact_person': g.get('contact_person'),
                 })
 
-        # Get regular (non-group) bookings
         regular_bookings = await db.bookings.count_documents({
             'tenant_id': current_user.tenant_id,
             'check_in_date': {'$lte': current_date},
@@ -1138,7 +1177,6 @@ async def get_calendar_group_view(
             'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
         })
 
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
         group_rooms = sum(g['rooms_active_today'] for g in active_groups)
 
         calendar_data.append({

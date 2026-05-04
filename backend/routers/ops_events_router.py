@@ -62,17 +62,16 @@ async def list_ops_events(
         query, {"_id": 0}
     ).sort("created_at", -1).limit(limit).to_list(limit)
 
-    # Count by severity (last 24h)
+    # Count by severity (last 24h) — N+1 fix: tek aggregation
     from datetime import timedelta
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    severity_counts = {}
-    for sev in ["info", "warning", "critical", "success"]:
-        count = await db.ops_events.count_documents({
-            "tenant_id": tenant_id,
-            "severity": sev,
-            "created_at": {"$gte": since_24h},
-        })
-        severity_counts[sev] = count
+    severity_counts = {sev: 0 for sev in ("info", "warning", "critical", "success")}
+    async for r in db.ops_events.aggregate([
+        {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": since_24h},
+                    "severity": {"$in": list(severity_counts.keys())}}},
+        {"$group": {"_id": "$severity", "n": {"$sum": 1}}},
+    ]):
+        severity_counts[r["_id"]] = r["n"]
 
     return {
         "events": events,
@@ -268,44 +267,47 @@ async def get_channel_health(
         {"_id": 0, "id": 1, "provider": 1, "status": 1, "property_name": 1, "last_sync_at": 1},
     ).to_list(50)
 
+    # N+1 fix: tum connector push metriklerini tek aggregation, eventleri tek query ile cek
+    connector_ids = [c.get("id", "") for c in connectors]
+    push_map: dict = {}
+    if connector_ids:
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": connector_ids},
+                        "recorded_at": {"$gte": since_24h}}},
+            {"$group": {"_id": "$connector_id",
+                        "total": {"$sum": 1},
+                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+        ]):
+            push_map[r["_id"]] = r
+    # Tum import event'lerini tek seferde, sonra Python'da provider regex eslestir
+    import_events = await db.ops_events.find({
+        "tenant_id": tenant_id,
+        "event_type": {"$regex": "^import"},
+        "created_at": {"$gte": since_24h},
+    }, {"_id": 0, "event_type": 1, "channel": 1}).to_list(5000)
+    # Recent events cache: per provider basina son 5 event - tek call ile, en az 5*N
+    recent_events_all = await db.ops_events.find({
+        "tenant_id": tenant_id,
+        "created_at": {"$gte": since_24h},
+    }, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+
     channels = []
     for conn in connectors:
         provider = conn.get("provider", "unknown")
         connector_id = conn.get("id", "")
+        prov_lower = provider.lower()
 
-        # Push metrics
-        total_pushes = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "recorded_at": {"$gte": since_24h},
-        })
-        failed_pushes = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "success": False,
-            "recorded_at": {"$gte": since_24h},
-        })
+        pm = push_map.get(connector_id, {})
+        total_pushes = pm.get("total", 0)
+        failed_pushes = pm.get("failed", 0)
 
-        # Recent ops events for this channel
-        recent_events = await db.ops_events.find({
-            "tenant_id": tenant_id,
-            "channel": {"$regex": provider, "$options": "i"},
-            "created_at": {"$gte": since_24h},
-        }, {"_id": 0}).sort("created_at", -1).limit(5).to_list(5)
-
-        # Import status
-        recent_imports = await db.ops_events.count_documents({
-            "tenant_id": tenant_id,
-            "event_type": {"$regex": "^import"},
-            "channel": {"$regex": provider, "$options": "i"},
-            "created_at": {"$gte": since_24h},
-        })
-        failed_imports = await db.ops_events.count_documents({
-            "tenant_id": tenant_id,
-            "event_type": "import.failed",
-            "channel": {"$regex": provider, "$options": "i"},
-            "created_at": {"$gte": since_24h},
-        })
+        recent_events = [e for e in recent_events_all
+                         if prov_lower in (e.get("channel") or "").lower()][:5]
+        recent_imports = sum(1 for e in import_events
+                             if prov_lower in (e.get("channel") or "").lower())
+        failed_imports = sum(1 for e in import_events
+                             if e.get("event_type") == "import.failed"
+                             and prov_lower in (e.get("channel") or "").lower())
 
         # Calculate health score
         push_success_rate = round((total_pushes - failed_pushes) / max(total_pushes, 1) * 100, 1)
@@ -391,19 +393,26 @@ async def get_dashboard_summary(
         {"_id": 0, "id": 1, "provider": 1, "status": 1, "property_name": 1, "last_sync_at": 1},
     ).to_list(50)
 
+    # N+1 fix: tum connectorlar icin tek aggregation
+    cs_connector_ids = [c.get("id", "") for c in connectors]
+    cs_push_map: dict = {}
+    if cs_connector_ids:
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids},
+                        "recorded_at": {"$gte": since_24h}}},
+            {"$group": {"_id": "$connector_id",
+                        "total": {"$sum": 1},
+                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+        ]):
+            cs_push_map[r["_id"]] = r
+
     channel_summary = []
     for conn in connectors:
         provider = conn.get("provider", "unknown")
         connector_id = conn.get("id", "")
-
-        total_pushes = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id, "connector_id": connector_id,
-            "recorded_at": {"$gte": since_24h},
-        })
-        failed_pushes = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id, "connector_id": connector_id,
-            "success": False, "recorded_at": {"$gte": since_24h},
-        })
+        pm = cs_push_map.get(connector_id, {})
+        total_pushes = pm.get("total", 0)
+        failed_pushes = pm.get("failed", 0)
         push_rate = round((total_pushes - failed_pushes) / max(total_pushes, 1) * 100, 1)
 
         health = "healthy"
@@ -436,21 +445,25 @@ async def get_dashboard_summary(
         {"_id": 0},
     ).sort("created_at", -1).limit(10).to_list(10)
 
-    # ── Last successful push per channel ──
+    # ── Last successful push per channel ── N+1 fix: tek aggregation (group by connector, max recorded_at)
     last_pushes = []
-    for conn in connectors:
-        last_push = await db.cm_rate_push_metrics.find_one(
-            {"tenant_id": tenant_id, "connector_id": conn.get("id", ""), "success": True},
-            {"_id": 0},
-            sort=[("recorded_at", -1)],
-        )
-        if last_push:
-            last_pushes.append({
-                "provider": conn.get("provider", ""),
-                "connector_id": conn.get("id", ""),
-                "last_success_at": last_push.get("recorded_at"),
-                "latency_ms": last_push.get("latency_ms", 0),
-            })
+    if cs_connector_ids:
+        last_push_map: dict = {}
+        async for r in db.cm_rate_push_metrics.aggregate([
+            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids}, "success": True}},
+            {"$sort": {"recorded_at": -1}},
+            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+        ]):
+            last_push_map[r["_id"]] = r["doc"]
+        for conn in connectors:
+            doc = last_push_map.get(conn.get("id", ""))
+            if doc:
+                last_pushes.append({
+                    "provider": conn.get("provider", ""),
+                    "connector_id": conn.get("id", ""),
+                    "last_success_at": doc.get("recorded_at"),
+                    "latency_ms": doc.get("latency_ms", 0),
+                })
 
     return {
         "webhook_delivery": {
