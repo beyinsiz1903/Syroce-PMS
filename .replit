@@ -94,6 +94,10 @@ externalPort = 8000
 localPort = 8080
 externalPort = 8080
 
+[[ports]]
+localPort = 8099
+externalPort = 8099
+
 [deployment]
 deploymentTarget = "static"
 build = ["bash", "-c", "cd frontend && yarn install && yarn build"]
