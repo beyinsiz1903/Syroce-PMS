@@ -60,6 +60,12 @@ async def ensure_performance_indexes():
         # R-split 2026-05-03 follow-up: invoices koleksiyonu R5'te atlanmıştı.
         ("invoices", [("tenant_id", 1), ("created_at", -1)], "idx_invoices_tenant_created", {}),
         ("invoices", [("tenant_id", 1), ("status", 1), ("issue_date", -1)], "idx_invoices_tenant_status", {}),
+        # R5 final pass 2026-05-04: monitoring_metrics_history (~2.6k docs)
+        # tek index'siz top-25 koleksiyondu — time-series query coverage.
+        ("monitoring_metrics_history", [("tenant_id", 1), ("metric_name", 1), ("timestamp", -1)],
+         "idx_monitoring_metrics_tenant_name_ts", {}),
+        ("monitoring_metrics_history", [("timestamp", -1)],
+         "idx_monitoring_metrics_ts", {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
