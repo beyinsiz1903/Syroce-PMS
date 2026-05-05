@@ -177,16 +177,70 @@ class CapXClient:
 
     # ── Public API ────────────────────────────────────────────────
 
+    @staticmethod
+    def _to_capx_availability(snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Internal flat snapshot → CapX availability/sync şeması.
+
+        CapX bekler: { date_start, date_end, rooms: [{room_type, available_count,
+        price_min, price_max, currency}], auto_publish, pms_external_ref }
+        """
+        if "rooms" in snapshot and ("date_start" in snapshot or "date_end" in snapshot):
+            return snapshot  # already in CapX shape
+        room = {
+            "room_type": snapshot.get("room_type"),
+            "available_count": snapshot.get("available_count", 0),
+            "price_min": snapshot.get("price_min", 0),
+            "currency": snapshot.get("currency", "TRY"),
+            "pax": snapshot.get("pax", 2),
+        }
+        if snapshot.get("price_max") is not None:
+            room["price_max"] = snapshot["price_max"]
+        if snapshot.get("rates"):
+            room["rates"] = snapshot["rates"]
+        out: dict[str, Any] = {
+            "date_start": snapshot.get("start_date") or snapshot.get("date_start"),
+            "date_end": snapshot.get("end_date") or snapshot.get("date_end"),
+            "rooms": [room],
+            "auto_publish": snapshot.get("auto_publish", True),
+        }
+        if snapshot.get("pms_external_ref"):
+            out["pms_external_ref"] = snapshot["pms_external_ref"]
+        return out
+
+    @staticmethod
+    def _to_capx_reservation_event(event: dict[str, Any]) -> dict[str, Any]:
+        """Internal event → CapX reservation/event şeması.
+
+        - event_type: created/updated/cancelled → reservation.<x>; no_show
+          CapX şemasında yoksa reservation.cancelled'e map'lenir.
+        - pms_external_ref → external_id
+        """
+        et_raw = (event.get("event_type") or "").strip()
+        if et_raw.startswith("reservation."):
+            et = et_raw
+        elif et_raw == "no_show":
+            et = "reservation.cancelled"
+        elif et_raw in ("created", "updated", "cancelled"):
+            et = f"reservation.{et_raw}"
+        else:
+            et = et_raw  # counter_offer_* gibi özel tipler dokunulmaz
+        out = dict(event)
+        out["event_type"] = et
+        if "external_id" not in out and "pms_external_ref" in out:
+            out["external_id"] = out.pop("pms_external_ref")
+        return out
+
     async def push_availability(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         """Push PMS availability snapshot."""
-        return await self._post(self.PATH_AVAILABILITY, snapshot)
+        return await self._post(self.PATH_AVAILABILITY, self._to_capx_availability(snapshot))
 
     async def push_reservation_event(self, event: dict[str, Any], *,
                                       event_id: str | None = None) -> dict[str, Any]:
         """Push booking lifecycle event (created / cancelled / no_show /
         counter_offer_accepted / counter_offer_rejected)."""
         return await self._post(
-            self.PATH_RESERVATION, event, sign=True, event_id=event_id
+            self.PATH_RESERVATION, self._to_capx_reservation_event(event),
+            sign=True, event_id=event_id,
         )
 
     async def push_rate_update(self, payload: dict[str, Any]) -> dict[str, Any]:

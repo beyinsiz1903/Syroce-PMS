@@ -126,7 +126,9 @@ async def phase_g_channels_and_audit(app):
     try:
         from integrations.capx import availability_scheduler as capx_avail_sched
         from integrations.capx import get_capx_client
-        if get_capx_client(refresh=True).configured:
+        env_ok = get_capx_client(refresh=True).configured
+        tenant_ok = bool(await _raw_db["capx_tenant_credentials"].find_one({}, {"_id": 1}))
+        if env_ok or tenant_ok:
             _capx_int = int(os.getenv("CAPX_AVAIL_INTERVAL", "900"))
             _capx_lookahead = int(os.getenv("CAPX_AVAIL_LOOKAHEAD_DAYS", "30"))
             await capx_avail_sched.start(
@@ -134,8 +136,12 @@ async def phase_g_channels_and_audit(app):
                 lookahead_days=_capx_lookahead,
             )
             app.state.capx_availability_scheduler = capx_avail_sched
+            logger.info(
+                f"✅ CapX availability scheduler started ({_capx_int}s, "
+                f"lookahead={_capx_lookahead}d, source={'env' if env_ok else 'tenant'})"
+            )
         else:
-            logger.info("ℹ️ CapX not configured; availability scheduler not started")
+            logger.info("ℹ️ CapX not configured (env+tenant boş); availability scheduler not started")
     except Exception as e:
         logger.warning(f"CapX Availability Scheduler init warning: {e}")
 

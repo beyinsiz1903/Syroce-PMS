@@ -113,11 +113,12 @@ async def get_status() -> dict[str, Any]:
 
 
 @router.post("/ping")
-async def ping_capx() -> dict[str, Any]:
+async def ping_capx(user=Depends(get_current_user)) -> dict[str, Any]:
     """Live connectivity test using a small probe push."""
-    client = get_capx_client(refresh=True)
+    tenant_id = getattr(user, "tenant_id", None)
+    client = await get_capx_client_async(tenant_id=tenant_id, refresh=True)
     if not client.configured:
-        raise HTTPException(400, "CapX not configured (CAPX_BASE_URL + CAPX_API_KEY required)")
+        raise HTTPException(400, "CapX not configured (tenant credentials veya CAPX_BASE_URL+CAPX_API_KEY gerekli)")
 
     probe = {
         "room_type": "_PROBE_",
@@ -142,9 +143,12 @@ async def ping_capx() -> dict[str, Any]:
 
 
 @router.post("/sync/availability")
-async def sync_availability(payload: AvailabilityPayload) -> dict[str, Any]:
+async def sync_availability(
+    payload: AvailabilityPayload, user=Depends(get_current_user),
+) -> dict[str, Any]:
     """Manual availability push (testing / one-off corrections)."""
-    client = get_capx_client(refresh=True)
+    tenant_id = getattr(user, "tenant_id", None)
+    client = await get_capx_client_async(tenant_id=tenant_id, refresh=True)
     if not client.configured:
         raise HTTPException(400, "CapX not configured")
     try:
@@ -158,11 +162,14 @@ async def sync_availability(payload: AvailabilityPayload) -> dict[str, Any]:
 
 
 @router.post("/test-event")
-async def test_reservation_event(payload: ReservationEventPayload) -> dict[str, Any]:
+async def test_reservation_event(
+    payload: ReservationEventPayload, user=Depends(get_current_user),
+) -> dict[str, Any]:
     """Manual reservation event push (testing HMAC signing)."""
-    client = get_capx_client(refresh=True)
+    tenant_id = getattr(user, "tenant_id", None)
+    client = await get_capx_client_async(tenant_id=tenant_id, refresh=True)
     if not client.configured or not client.webhook_secret:
-        raise HTTPException(400, "CapX not configured (CAPX_WEBHOOK_SECRET required for events)")
+        raise HTTPException(400, "CapX not configured (webhook_secret + base_url + api_key gerekli)")
     body = payload.model_dump(exclude_none=True)
     body["occurred_at"] = datetime.now(UTC).isoformat()
     try:

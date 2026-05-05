@@ -66,16 +66,25 @@ class CapXAvailabilityScheduler:
     async def _push_cycle(self, lookahead_days: int) -> None:
         # Faz 3: env-default client'a bak; tenant'a özel client _per-tenant
         # döngüde çözülür (env config yoksa bile tenant-creds varsa çalışsın).
-        get_capx_client(refresh=False)
+        env_client = get_capx_client(refresh=False)
+        env_ok = env_client.configured
 
-        # Aktif tenant + room types
-        tenants = []
-        async for t in _raw_db.organizations.find(
-            {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
-            {"_id": 0, "id": 1},
-        ):
-            if t.get("id"):
-                tenants.append(t["id"])
+        # Aktif tenant'ları topla. env yapılandırılmamışsa SADECE
+        # capx_tenant_credentials kaydı olan tenant'ları gez (gereksiz tarama
+        # yok). env yapılandırılmışsa tüm aktif organizasyonlar.
+        tenants: list[str] = []
+        if env_ok:
+            async for t in _raw_db.organizations.find(
+                {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+                {"_id": 0, "id": 1},
+            ):
+                if t.get("id"):
+                    tenants.append(t["id"])
+        else:
+            tenants = [
+                tid for tid in await _raw_db["capx_tenant_credentials"].distinct("tenant_id")
+                if tid
+            ]
 
         if not tenants:
             return
