@@ -35,10 +35,13 @@ async def phase_f_hardening_and_observability(app):
                 instance_id,
                 local_handler=_ws_local_broadcast,
             )
-            try:
-                await ws_redis_adapter.subscribe("pms")
-            except Exception as e:
-                logger.warning(f"WS Redis subscribe('pms') warning: {e}")
+            # Task #43: PMS broadcasts now route to ``pms:{tenant_id}``
+            # rooms which each authenticated socket subscribes to at
+            # connect time (see ``websocket_server.connect``). The legacy
+            # global ``'pms'`` channel is no longer used — subscribing to
+            # it on bootstrap kept a dead Redis subscription open and
+            # could re-open the cross-tenant leak surface if anything
+            # ever published back to it.
             try:
                 await auth_cache_pubsub.initialize(
                     redis_cluster.get_pubsub_client(),

@@ -106,10 +106,12 @@ sio = socketio.AsyncServer(
     engineio_logger=True
 )
 
-# Track connected clients by room
+# Track connected clients by room. Task #43 removed the legacy global
+# ``'pms'`` bucket: PMS broadcasts now target ``pms:{tenant_id}`` rooms
+# which clients are auto-enrolled in at connect time, so nothing should
+# ever be added to a global pms bucket again.
 connected_clients: dict[str, set[str]] = {
     'dashboard': set(),
-    'pms': set(),
     'notifications': set(),
     'kitchen': set(),
     'system-health': set(),

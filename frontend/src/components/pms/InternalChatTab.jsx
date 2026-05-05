@@ -44,7 +44,11 @@ const InternalChatTab = ({ currentUser }) => {
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
   const { decrementInternalUnread, markAllInternalRead } = useNotifications();
-  const { socketEmit: wsSocketEmit } = useWebSocket('pms');
+  // Task #43: no explicit room — the server auto-enrols the socket in
+  // tenant-scoped internal_chat / pms rooms at connect time based on the
+  // JWT identity. Passing the legacy global 'pms' room here used to
+  // trigger a `room_join_denied` from the protected-room guard.
+  const { socketEmit: wsSocketEmit } = useWebSocket();
   const [composeOpen, setComposeOpen] = useState(false);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 

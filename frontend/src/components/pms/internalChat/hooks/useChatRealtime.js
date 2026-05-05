@@ -16,7 +16,11 @@ export function useChatRealtime({
   setThreadMessages,
   setTypingPartnerName,
 }) {
-  const { on: wsOn } = useWebSocket('pms');
+  // Task #43: pass no room — the server auto-enrols the socket in
+  // tenant-scoped internal_chat / pms rooms at connect time based on
+  // the JWT identity. Passing the legacy global 'pms' room used to
+  // be silently denied by the protected-room guard.
+  const { on: wsOn } = useWebSocket();
   const typingClearTimerRef = useRef(null);
 
   // Yeni mesaj + güncellenen mesaj akışı (`internal_message`, `internal_message_updated`).
