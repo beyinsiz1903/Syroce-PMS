@@ -135,7 +135,7 @@ async def check_out_guest(
     # Loyalty: konaklama puanı (idempotent — aynı booking için tekrar verilmez).
     # Üye değilse veya tutar yoksa sessizce atlar; checkout akışını bloklamaz.
     try:
-        from domains.guest.loyalty_router import award_points_for_stay
+        from shared_kernel.loyalty_award import award_points_for_stay
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": current_user.tenant_id},
             {"_id": 0, "guest_id": 1, "total_amount": 1, "paid_amount": 1},
