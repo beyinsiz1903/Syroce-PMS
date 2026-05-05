@@ -60,6 +60,15 @@ class WebSocketRedisAdapter:
         # could tune them without touching the loop.
         self._reconnect_min_backoff: float = 1.0
         self._reconnect_max_backoff: float = 30.0
+        # ── Circuit-breaker tunables (see _listen). When the listener
+        # exits in <1s ``_breaker_threshold`` times in a row we stop
+        # logging WARNINGs and force a ``_breaker_cooldown_s`` sleep
+        # before the next reconnect attempt. The breaker auto-resets
+        # after ``_breaker_window_s`` so a transient storm cannot
+        # permanently silence real outages. Tests can shrink these.
+        self._breaker_threshold: int = 5
+        self._breaker_cooldown_s: float = 30.0
+        self._breaker_window_s: float = 300.0
         # ── Task #47: rolling per-minute snapshots so the System Health
         # dashboard can render a 1-hour trend / sparkline for the bridge.
         # We keep the last ``_snapshot_max`` samples (default 60 → ~1h at
@@ -237,13 +246,28 @@ class WebSocketRedisAdapter:
         cause double-delivery.
         """
         backoff = self._reconnect_min_backoff
+        # ── Circuit breaker: prevent log/CPU spam when listen() returns
+        # immediately in a tight loop (e.g. no channels subscribed yet,
+        # or the broker keeps closing the subscription cleanly). After
+        # ``_breaker_threshold`` consecutive fast exits we suppress
+        # WARNINGs (logger.debug instead) and force a longer cool-down
+        # sleep until either a real message arrives or _breaker_window_s
+        # elapses, then reset the counter.
+        breaker_count = 0
+        breaker_suppressed_logged = False
+        loop = asyncio.get_event_loop()
+        last_reset = loop.time()
         while self._active:
+            cycle_start = loop.time()
             pubsub = self._pubsub
+            saw_message = False
+            exit_reason = "clean"  # clean | idle | error
             if pubsub is not None:
                 try:
                     async for message in pubsub.listen():
                         if message["type"] != "message":
                             continue
+                        saw_message = True
                         try:
                             payload = json.loads(message["data"])
                             # Skip own messages
@@ -267,9 +291,10 @@ class WebSocketRedisAdapter:
                     # listen() returned without raising → server closed
                     # the subscription cleanly. Treat as a transient
                     # drop and rebuild so bridged events keep flowing.
-                    logger.warning(
-                        "WS pubsub listener exited; attempting reconnect"
-                    )
+                    if breaker_count < self._breaker_threshold:
+                        logger.warning(
+                            "WS pubsub listener exited; attempting reconnect"
+                        )
                 except asyncio.CancelledError:
                     return
                 except (TimeoutError, RedisTimeoutError) as e:
@@ -284,6 +309,7 @@ class WebSocketRedisAdapter:
                         datetime.now(UTC).isoformat()
                     )
                     logger.debug("WS pubsub idle timeout; reconnecting")
+                    exit_reason = "idle"
                 except Exception as e:
                     self._metrics["last_listen_error"] = (
                         f"{type(e).__name__}: {str(e)[:200]}"
@@ -291,17 +317,51 @@ class WebSocketRedisAdapter:
                     self._metrics["last_listen_error_at"] = (
                         datetime.now(UTC).isoformat()
                     )
+                    exit_reason = "error"
                     # Genuine connection failure (network blip, Redis restart)
-                    # — keep WARNING so operators still notice real outages.
-                    logger.warning(
-                        f"WS pubsub listener error: {e}; attempting reconnect"
-                    )
+                    # — WARNING the first few times, then suppress to debug
+                    # so a stuck remote endpoint cannot flood the log.
+                    if breaker_count < self._breaker_threshold:
+                        logger.warning(
+                            f"WS pubsub listener error: {e}; attempting reconnect"
+                        )
+                    else:
+                        logger.debug(
+                            f"WS pubsub listener error (suppressed): {e}"
+                        )
             # else: previous reconnect attempt cleared _pubsub but
             # failed to rebuild it — fall through and keep retrying so
             # we don't permanently drop into local-only mode.
 
             if not self._active or self._redis is None:
                 return
+
+            # Circuit-breaker bookkeeping. A "fast exit" is any cycle that
+            # finished in < 1s without forwarding a real message — that's
+            # what creates the log/CPU spam. Real traffic or genuine idle
+            # (>=1s) resets the counter.
+            now = loop.time()
+            cycle_dur = now - cycle_start
+            if saw_message or cycle_dur >= 1.0:
+                breaker_count = 0
+                breaker_suppressed_logged = False
+                last_reset = now
+            else:
+                breaker_count += 1
+                if breaker_count == self._breaker_threshold and not breaker_suppressed_logged:
+                    logger.warning(
+                        f"WS pubsub: {breaker_count} fast reconnects in a row "
+                        f"(reason={exit_reason}); suppressing further warnings "
+                        f"and applying {self._breaker_cooldown_s:.0f}s cool-down. "
+                        f"Check Redis connectivity if this persists."
+                    )
+                    breaker_suppressed_logged = True
+                # Auto-reset the breaker after a window so a transient
+                # storm doesn't permanently silence real outages.
+                if (now - last_reset) >= self._breaker_window_s:
+                    breaker_count = 0
+                    breaker_suppressed_logged = False
+                    last_reset = now
 
             if await self._reconnect_pubsub():
                 backoff = self._reconnect_min_backoff
@@ -312,6 +372,14 @@ class WebSocketRedisAdapter:
                 except asyncio.CancelledError:
                     return
                 backoff = min(backoff * 2, self._reconnect_max_backoff)
+
+            # When tripped, force a long cool-down regardless of
+            # reconnect outcome so we cannot busy-loop.
+            if breaker_count >= self._breaker_threshold:
+                try:
+                    await asyncio.sleep(self._breaker_cooldown_s)
+                except asyncio.CancelledError:
+                    return
 
     async def _reconnect_pubsub(self) -> bool:
         """Rebuild the pub/sub connection and re-subscribe to every
