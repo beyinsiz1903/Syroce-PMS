@@ -75,7 +75,7 @@ const AuthPage = ({ onLogin }) => {
         setLoading(false);
         return;
       }
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
@@ -93,7 +93,7 @@ const AuthPage = ({ onLogin }) => {
         challenge_token: twoFAChallenge.challenge_token,
         code: twoFACode.trim(),
       });
-      onLogin(r.data.access_token, r.data.user, r.data.tenant);
+      onLogin(r.data.access_token, r.data.user, r.data.tenant, r.data.refresh_token);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Doğrulama başarısız');
     } finally {
@@ -108,7 +108,7 @@ const AuthPage = ({ onLogin }) => {
       const response = await axios.post('/auth/login', guestLoginData);
       toast.success(t('auth.welcomeBack'));
       sessionStorage.setItem('postLoginRedirect', '/guest-portal');
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.loginFailed'));
     } finally {
@@ -150,7 +150,7 @@ const AuthPage = ({ onLogin }) => {
       const response = await axios.post('/auth/register-guest', guestRegisterData);
       toast.success(t('auth.accountCreatedWelcome'));
       sessionStorage.setItem('postLoginRedirect', '/guest-portal');
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.registerFailed'));
     } finally {
@@ -192,7 +192,7 @@ const AuthPage = ({ onLogin }) => {
       });
       
       toast.success(t('auth.accountCreated'));
-      onLogin(response.data.access_token, response.data.user, response.data.tenant);
+      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
       
       setTimeout(() => {
         window.location.href = '/';

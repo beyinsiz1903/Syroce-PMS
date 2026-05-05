@@ -41,11 +41,14 @@ function DigitalKeyRoute() {
   return <DigitalKeyPage bookingId={bookingId} />;
 }
 
-const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// 7 gün — silent-refresh akışı varken bile, refresh token ömrü dolmuş
+// (30 gün) bir cihazda yerel kontrol ek bir savunma katmanı sağlıyor.
+const TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function clearAuthStorage() {
   localStorage.removeItem("token");
   localStorage.removeItem("token_ts");
+  localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
@@ -102,10 +105,13 @@ function App() {
     }
   }, []);
 
-  const handleLogin = async (token, userData, tenantData) => {
+  const handleLogin = async (token, userData, tenantData, refreshToken) => {
     clearAuthStorage();
     localStorage.setItem("token", token);
     localStorage.setItem("token_ts", String(Date.now()));
+    if (refreshToken) {
+      localStorage.setItem("refresh_token", refreshToken);
+    }
     localStorage.setItem("tenant", tenantData ? JSON.stringify(tenantData) : "null");
     axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
@@ -172,6 +178,14 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Best-effort: backend'e refresh_token'ı bildir → server-side revoke list'e
+    // yazılır, çalınmış token çıkış sonrası kullanılamaz. Hata olsa bile
+    // local clear yapılır (network down olsa bile kullanıcı çıkmış sayılır).
+    const refreshToken = localStorage.getItem("refresh_token");
+    try {
+      axios.post("/auth/logout", refreshToken ? { refresh_token: refreshToken } : {})
+        .catch(() => { /* non-fatal: local clear yine de uygulanır */ });
+    } catch { /* ignore */ }
     clearAuthStorage();
     try { sessionStorage.clear(); } catch { /* ignore */ }
     delete axios.defaults.headers.common["Authorization"];

@@ -46,21 +46,97 @@ axios.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// ─── Silent refresh state ─────────────────────────────────────────────
+// Aynı anda gelen birden çok 401, tek bir refresh isteği bekler;
+// başarılıysa hepsi yeni token ile retry edilir.
+let _refreshInFlight = null;
+const _isRefreshableUrl = (url = "") =>
+  !url.includes("/auth/login") &&
+  !url.includes("/auth/refresh-token") &&
+  !url.includes("/auth/register") &&
+  !url.includes("/auth/forgot-password") &&
+  !url.includes("/auth/reset-password");
+
+function _hardLogout() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("token_ts");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("tenant");
+  localStorage.removeItem("modules");
+  delete axios.defaults.headers.common["Authorization"];
+  if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
+    window.location.assign("/auth");
+  }
+}
+
+// Refresh sonucu üç durumdan biri:
+//   { token: string }  — başarılı, retry yapılır
+//   { transient: true } — 5xx/ağ; oturum SİLİNMEZ, istek reddedilir
+//   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
+async function _attemptRefresh() {
+  const refreshToken = localStorage.getItem("refresh_token");
+  if (!refreshToken) return { invalid: true };
+  if (!_refreshInFlight) {
+    _refreshInFlight = axios
+      .post(
+        "/auth/refresh-token",
+        { refresh_token: refreshToken },
+        { headers: { Authorization: undefined }, _skipAuthRetry: true },
+      )
+      .then((r) => {
+        const newAccess = r?.data?.access_token;
+        const newRefresh = r?.data?.refresh_token;
+        if (!newAccess) return { invalid: true };
+        localStorage.setItem("token", newAccess);
+        localStorage.setItem("token_ts", String(Date.now()));
+        if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
+        axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
+        return { token: newAccess };
+      })
+      .catch((err) => {
+        const status = err?.response?.status;
+        // 5xx veya ağ hatası → transient; oturum korunur, çağıran reddedilir.
+        // 4xx (özellikle 401/400) → refresh token gerçekten geçersiz/expired.
+        if (!status || status >= 500) return { transient: true };
+        return { invalid: true };
+      })
+      .finally(() => {
+        _refreshInFlight = null;
+      });
+  }
+  return _refreshInFlight;
+}
+
 // Response interceptor — 401 handling + Pydantic error normalization
 axios.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      console.warn("401 Unauthorized - clearing session");
-      localStorage.removeItem("token");
-      localStorage.removeItem("token_ts");
-      localStorage.removeItem("user");
-      localStorage.removeItem("tenant");
-      localStorage.removeItem("modules");
-      delete axios.defaults.headers.common["Authorization"];
-      if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
-        window.location.assign("/auth");
+  async (error) => {
+    const original = error.config || {};
+    if (
+      error.response?.status === 401 &&
+      !original._skipAuthRetry &&
+      !original._retried &&
+      _isRefreshableUrl(original.url || "")
+    ) {
+      original._retried = true;
+      const result = await _attemptRefresh();
+      if (result?.token) {
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${result.token}`;
+        return axios(original);
       }
+      if (result?.transient) {
+        // Geçici sunucu/ağ hatası — oturumu silme; çağıran kendi
+        // hata akışını çalıştırsın (toast, retry, vs.).
+        console.warn("Refresh transient failure (5xx/network); session preserved");
+        return Promise.reject(error);
+      }
+      console.warn("401 Unauthorized - refresh failed, clearing session");
+      _hardLogout();
+    } else if (error.response?.status === 401) {
+      console.warn("401 Unauthorized - clearing session");
+      _hardLogout();
     }
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;

@@ -83,7 +83,7 @@ _Populate as you build_
 
 - **API Call Conventions**: Use relative paths WITHOUT `/api/` for `axios` calls (Vite proxy handles it). Use `/api/` explicitly for native `fetch` calls. Mixing these will lead to double prefixes or missing prefixes.
 - **MongoDB Atlas 500-Collection Limit**: Workarounds like embedded arrays (`price_tiers`/`promotions` in `supplies_market_products`) or discriminator fields (`_kind` for `kbs_reports`) are used to avoid creating new collections.
-- **JWT Lifespan**: Access tokens last 7 days (168 hours) by default; users remain logged in unless explicitly logged out or token expires. Revocation is implemented.
+- **JWT Lifespan**: Backend default `JWT_EXPIRATION_MINUTES=15` (security.py `_V3_DEFAULT_ACCESS_MINUTES`). Bu env Replit Secrets'ta `10080` (7 gün) olarak override edildi — kullanıcı arada atılmasın diye. Refresh token 30 gün (`REFRESH_TOKEN_EXPIRATION_DAYS`). Frontend `axiosConfig.js` 401 alınca **silent refresh** dener: `POST /api/auth/refresh-token` ile yeni access token alıp orijinal isteği tek sefer retry eder; başarısızsa `localStorage` temizlenip `/auth`'a atılır. Login response'u `refresh_token` döndürür → `App.handleLogin` `localStorage.refresh_token`'a yazar (clearAuthStorage da bu key'i siler). Revocation aktif (`auth_revoked_tokens`).
 - **CORS Configuration**: Ensure `CORS_ORIGINS` is correctly set in `.replit` to prevent subdomain bypass.
 - **Image Uploads**: Strict validation is in place for image files (type, size, dimensions). Attempts to upload non-image files or oversized images will result in 400/413 errors.
 - **Exely Webhook**: Requires `EXELY_IP_WHITELIST` to be explicitly set in production; otherwise, it will return a 503 error.
