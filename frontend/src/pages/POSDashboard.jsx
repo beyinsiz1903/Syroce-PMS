@@ -18,7 +18,7 @@ import {
 } from '../components/ui/tabs';
 import {
   UtensilsCrossed, Menu, ArrowLeft, BarChart3, Sparkles,
-  Store, LayoutGrid, AlertCircle,
+  Store, LayoutGrid, AlertCircle, Coffee,
 } from 'lucide-react';
 
 const POSDashboard = ({ user, tenant, onLogout }) => {
@@ -90,6 +90,11 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">{t('posDashboard.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <Button variant="outline" onClick={() => navigate('/staff/room-service')}
+              data-testid="nav-staff-room-service">
+              <Coffee className="w-4 h-4 mr-2" />
+              {t('staffRoomService.title')}
+            </Button>
             <Button variant="outline" onClick={() => navigate('/fnb-complete')}
               data-testid="nav-fnb-complete">
               <UtensilsCrossed className="w-4 h-4 mr-2" />

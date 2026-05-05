@@ -663,6 +663,9 @@ async def create_room_service_order(
     # booking so the order list lights up immediately on the placing
     # device *and* on a second device the same guest may have logged in
     # on. Best-effort — a broken broadcast must not roll back the order.
+    # Task #69: also enrich with room_number so the staff dashboard can
+    # render the new row immediately, without a follow-up REST refetch.
+    await _enrich_order_with_room_number(order)
     await emit_order_event(order, event_type="created")
 
     # Post charge to folio
@@ -759,6 +762,7 @@ async def update_room_service_order_status(
     # logged inside emit_order_event and never bubble up to the staff
     # caller — the DB write is the source of truth, polling will catch
     # up if the channel is down.
+    await _enrich_order_with_room_number(order)
     await emit_order_event(order, event_type="status_changed")
 
     return {
@@ -766,6 +770,131 @@ async def update_room_service_order_status(
         'order_id': order_id,
         'status': body.status,
     }
+
+
+async def _enrich_order_with_room_number(order: dict) -> None:
+    """Mutate ``order`` to add a ``room_number`` field by looking up
+    the room from ``order.room_id`` (with a fallback through
+    ``bookings.room_id`` for older order docs that didn't store it).
+    Best-effort — a missing room is not an error and leaves the field
+    as ``None``. Used so WS broadcasts include the human-friendly room
+    number without staff dashboards needing a follow-up REST fetch."""
+    if order.get('room_number'):
+        return
+    tenant_id = order.get('tenant_id')
+    if not tenant_id:
+        return
+    room_id = order.get('room_id')
+    booking_id = order.get('booking_id')
+    try:
+        if not room_id and booking_id:
+            booking = await db.bookings.find_one(
+                {'id': booking_id, 'tenant_id': tenant_id},
+                {'_id': 0, 'room_id': 1, 'room_number': 1},
+            )
+            if booking:
+                room_id = booking.get('room_id') or room_id
+                if booking.get('room_number'):
+                    order['room_number'] = booking['room_number']
+        if room_id and not order.get('room_number'):
+            room = await db.rooms.find_one(
+                {'id': room_id, 'tenant_id': tenant_id},
+                {'_id': 0, 'room_number': 1, 'number': 1},
+            )
+            if room:
+                order['room_number'] = room.get('room_number') or room.get('number')
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "room_number enrichment failed tenant=%s order=%s: %s",
+            tenant_id, order.get('id'), e,
+        )
+
+
+# ── GET /guest/staff/room-service-orders ──
+# Task #69: tenant-wide staff list of today's open room-service orders so
+# kitchen / front-desk dashboards can drive the PATCH status endpoint
+# without first asking the guest which booking they're on.
+_STAFF_OPEN_STATUSES = {"pending", "confirmed", "preparing"}
+
+
+@router.get("/guest/staff/room-service-orders")
+async def list_staff_room_service_orders(
+    include_completed: bool = False,
+    current_user: User = Depends(get_current_user),
+    _role: None = Depends(require_role(*_ROOM_SERVICE_STAFF_ROLES)),
+):
+    """Staff dashboard list. Returns today's room-service orders for
+    the caller's tenant, enriched with `room_number`. By default only
+    open statuses (pending/confirmed/preparing) are returned;
+    `include_completed=true` also returns delivered/cancelled."""
+    today_start = datetime.now(UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+
+    query: dict = {
+        'tenant_id': current_user.tenant_id,
+        'ordered_at': {'$gte': today_start},
+    }
+    if not include_completed:
+        query['status'] = {'$in': sorted(_STAFF_OPEN_STATUSES)}
+
+    raw_orders = await db.room_service_orders.find(
+        query, {'_id': 0}
+    ).sort('ordered_at', 1).to_list(500)
+
+    # 1) Booking fallback first: for any order missing a `room_id`,
+    #    look up the booking's `room_id` / `room_number`. Older docs
+    #    may not have stored `room_id` on the order.
+    booking_ids = sorted({
+        o.get('booking_id') for o in raw_orders
+        if o.get('booking_id') and not o.get('room_id')
+    })
+    booking_room_map: dict = {}
+    if booking_ids:
+        async for b in db.bookings.find(
+            {'id': {'$in': list(booking_ids)},
+             'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1},
+        ):
+            booking_room_map[b['id']] = {
+                'room_id': b.get('room_id'),
+                'room_number': b.get('room_number'),
+            }
+
+    # 2) Single bulk rooms lookup that spans both the direct
+    #    `order.room_id` and the booking-fallback `room_id` (N+1 fix).
+    room_ids: set[str] = set()
+    for o in raw_orders:
+        if o.get('room_id'):
+            room_ids.add(o['room_id'])
+        elif o.get('booking_id') in booking_room_map:
+            br_room = booking_room_map[o['booking_id']].get('room_id')
+            if br_room:
+                room_ids.add(br_room)
+
+    rooms_map: dict = {}
+    if room_ids:
+        async for r in db.rooms.find(
+            {'id': {'$in': sorted(room_ids)},
+             'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'id': 1, 'room_number': 1, 'number': 1},
+        ):
+            rooms_map[r['id']] = r.get('room_number') or r.get('number')
+
+    orders_out = []
+    for o in raw_orders:
+        room_number = rooms_map.get(o.get('room_id'))
+        if not room_number and o.get('booking_id') in booking_room_map:
+            br = booking_room_map[o['booking_id']]
+            room_number = (
+                rooms_map.get(br.get('room_id')) or br.get('room_number')
+            )
+        orders_out.append({
+            **o,
+            'room_number': room_number,
+        })
+
+    return {'orders': orders_out}
 
 
 async def _authenticate_ws_token(token: str | None) -> dict | None:
@@ -926,6 +1055,45 @@ async def ws_room_service_orders(websocket: WebSocket, booking_id: str):
         )
     finally:
         await order_stream.disconnect(websocket, tenant_id, booking_id)
+
+
+# ── WS /guest/staff/ws/room-service-orders ──
+# Task #69: tenant-wide staff stream so a kitchen / front-desk dashboard
+# stays in sync with every PATCH status across every active booking
+# without opening one socket per booking. Auth parity with the
+# per-booking WS via the same JWT-in-query path; staff role required.
+@router.websocket("/guest/staff/ws/room-service-orders")
+async def ws_staff_room_service_orders(websocket: WebSocket):
+    identity = await _authenticate_ws_token(websocket.query_params.get("token"))
+    if not identity:
+        await websocket.close(code=4401, reason="unauthorized")
+        return
+
+    role_value = getattr(identity.get('role'), 'value', identity.get('role'))
+    allowed = {r.value for r in _ROOM_SERVICE_STAFF_ROLES}
+    if role_value not in allowed and role_value != 'super_admin':
+        await websocket.close(code=4403, reason="forbidden")
+        return
+
+    tenant_id = identity['tenant_id']
+    await order_stream.connect_staff(websocket, tenant_id)
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                try:
+                    await websocket.send_text('{"type":"pong"}')
+                except Exception:
+                    break
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "room-service staff WS loop error tenant=%s: %s",
+            tenant_id, e,
+        )
+    finally:
+        await order_stream.disconnect_staff(websocket, tenant_id)
 
 
 # ── POST /guest/request ──

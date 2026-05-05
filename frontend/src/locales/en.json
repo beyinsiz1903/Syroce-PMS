@@ -3588,5 +3588,33 @@
       "suite": "Suite",
       "ops": "Operations"
     }
+  },
+  "staffRoomService": {
+    "title": "Room Service Orders",
+    "subtitle": "Today's open orders. Tap to advance the status.",
+    "openOrders": "Open Orders",
+    "statusPending": "Pending",
+    "statusConfirmed": "Confirmed",
+    "statusPreparing": "Preparing",
+    "statusDelivered": "Delivered",
+    "statusCancelled": "Cancelled",
+    "actionConfirm": "Confirm",
+    "actionPrepare": "Start Preparing",
+    "actionDeliver": "Mark Delivered",
+    "cancel": "Cancel",
+    "confirmCancel": "Cancel this order?",
+    "statusUpdated": "Status updated to {{status}}",
+    "loadError": "Could not load room service orders",
+    "updateError": "Could not update order status",
+    "live": "Live",
+    "polling": "Polling",
+    "empty": "No open room service orders",
+    "emptyHint": "New guest orders show up here in real time.",
+    "room": "Room {{number}}",
+    "roomUnknown": "Room —",
+    "minutesAgo_one": "{{count}} min",
+    "minutesAgo_other": "{{count}} min",
+    "total": "Total",
+    "backToPos": "POS Dashboard"
   }
 }

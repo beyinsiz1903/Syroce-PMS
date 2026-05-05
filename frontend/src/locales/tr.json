@@ -3588,5 +3588,33 @@
       "suite": "Suite",
       "ops": "Operasyon"
     }
+  },
+  "staffRoomService": {
+    "title": "Oda Servisi Siparişleri",
+    "subtitle": "Bugünün açık siparişleri. Durumu ilerletmek için dokunun.",
+    "openOrders": "Açık Siparişler",
+    "statusPending": "Beklemede",
+    "statusConfirmed": "Onaylandı",
+    "statusPreparing": "Hazırlanıyor",
+    "statusDelivered": "Teslim Edildi",
+    "statusCancelled": "İptal",
+    "actionConfirm": "Onayla",
+    "actionPrepare": "Hazırlamaya Başla",
+    "actionDeliver": "Teslim Edildi",
+    "cancel": "İptal",
+    "confirmCancel": "Bu sipariş iptal edilsin mi?",
+    "statusUpdated": "Durum {{status}} olarak güncellendi",
+    "loadError": "Oda servisi siparişleri yüklenemedi",
+    "updateError": "Sipariş durumu güncellenemedi",
+    "live": "Canlı",
+    "polling": "Yoklama",
+    "empty": "Açık oda servisi siparişi yok",
+    "emptyHint": "Yeni misafir siparişleri burada anlık görünür.",
+    "room": "Oda {{number}}",
+    "roomUnknown": "Oda —",
+    "minutesAgo_one": "{{count}} dk",
+    "minutesAgo_other": "{{count}} dk",
+    "total": "Toplam",
+    "backToPos": "POS Paneli"
   }
 }

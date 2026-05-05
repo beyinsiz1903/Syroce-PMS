@@ -52,6 +52,7 @@ const PreCheckinPage = lazy(() => import("@/pages/PreCheckinPage"));
 const DigitalKey = lazy(() => import("@/pages/DigitalKey"));
 const UpsellStore = lazy(() => import("@/pages/UpsellStore"));
 const StaffMobileApp = lazy(() => import("@/pages/StaffMobileApp"));
+const StaffRoomServiceOrders = lazy(() => import("@/pages/StaffRoomServiceOrders"));
 const OTAMessagingHub = lazy(() => import("@/pages/OTAMessagingHub"));
 const EFaturaModule = lazy(() => import("@/pages/EFaturaModule"));
 const MessagingCenter = lazy(() => import("@/pages/MessagingCenter"));
@@ -426,6 +427,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
     // ── Staff & OTA ────────────────────────────────────
     { path: "/staff/mobile", ...p(StaffMobileApp) },
+    { path: "/staff/room-service", ...p(StaffRoomServiceOrders) },
     { path: "/ota-messaging-hub", ...p(OTAMessagingHub) },
     { path: "/messaging-center", ...p(MessagingCenter) },
     { path: "/sales", ...p(SalesModule) },

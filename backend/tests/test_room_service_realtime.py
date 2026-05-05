@@ -531,3 +531,308 @@ def _async_return(value):
     async def _stub(*_a, **_kw):
         return value
     return _stub
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Task #69 — Staff (tenant-wide) fan-out + GET /guest/staff/...
+# ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_staff_broadcast_reaches_every_tenant_subscriber():
+    from domains.guest.experience_router.room_service_realtime import (
+        RoomServiceOrderStream,
+    )
+
+    stream = RoomServiceOrderStream()
+    staff1 = _FakeWebSocket()
+    staff2 = _FakeWebSocket()
+    other_tenant_staff = _FakeWebSocket()
+    await stream.connect_staff(staff1, "t1")
+    await stream.connect_staff(staff2, "t1")
+    await stream.connect_staff(other_tenant_staff, "t2")
+
+    delivered = await stream.broadcast_staff(
+        "t1", {"type": "room_service_order", "order": {"id": "o1"}}
+    )
+    assert delivered == 2
+    assert len(staff1.sent) == 1 and len(staff2.sent) == 1
+    assert other_tenant_staff.sent == [], (
+        "tenant2 staff must not see tenant1 events"
+    )
+
+
+@pytest.mark.asyncio
+async def test_staff_dead_socket_pruned_on_broadcast():
+    from domains.guest.experience_router.room_service_realtime import (
+        RoomServiceOrderStream,
+    )
+
+    stream = RoomServiceOrderStream()
+    healthy = _FakeWebSocket()
+    broken = _FakeWebSocket(fail_on_send=True)
+    await stream.connect_staff(healthy, "t1")
+    await stream.connect_staff(broken, "t1")
+    assert stream.staff_connection_count("t1") == 2
+
+    delivered = await stream.broadcast_staff("t1", {"type": "x"})
+    assert delivered == 1
+    assert stream.staff_connection_count("t1") == 1
+
+
+@pytest.mark.asyncio
+async def test_staff_disconnect_removes_subscriber():
+    from domains.guest.experience_router.room_service_realtime import (
+        RoomServiceOrderStream,
+    )
+
+    stream = RoomServiceOrderStream()
+    ws = _FakeWebSocket()
+    await stream.connect_staff(ws, "t1")
+    await stream.disconnect_staff(ws, "t1")
+    assert stream.staff_connection_count("t1") == 0
+    # idempotent — finally-block must not raise on a second disconnect.
+    await stream.disconnect_staff(ws, "t1")
+
+
+@pytest.mark.asyncio
+async def test_emit_order_event_fans_out_to_both_booking_and_staff():
+    """A single order change must reach both the guest's per-booking
+    subscriber and every tenant-staff subscriber, so a kitchen
+    dashboard can be wired without per-booking sockets."""
+    from domains.guest.experience_router import room_service_realtime as rsr
+
+    stream = rsr.order_stream
+    guest_ws = _FakeWebSocket()
+    staff_ws = _FakeWebSocket()
+    wrong_tenant_staff = _FakeWebSocket()
+    await stream.connect(guest_ws, "tenantE", "bookingE")
+    await stream.connect_staff(staff_ws, "tenantE")
+    await stream.connect_staff(wrong_tenant_staff, "tenantOther")
+    try:
+        delivered = await rsr.emit_order_event(
+            {
+                "id": "ord-1",
+                "tenant_id": "tenantE",
+                "booking_id": "bookingE",
+                "status": "confirmed",
+            },
+            event_type="status_changed",
+        )
+        # 1 guest + 1 staff = 2 (and NOT the wrong-tenant staff).
+        assert delivered == 2
+        assert len(guest_ws.sent) == 1
+        assert len(staff_ws.sent) == 1
+        assert wrong_tenant_staff.sent == []
+
+        staff_payload = json.loads(staff_ws.sent[0])
+        assert staff_payload["event"] == "status_changed"
+        assert staff_payload["order"]["id"] == "ord-1"
+    finally:
+        await stream.disconnect(guest_ws, "tenantE", "bookingE")
+        await stream.disconnect_staff(staff_ws, "tenantE")
+        await stream.disconnect_staff(wrong_tenant_staff, "tenantOther")
+
+
+@pytest.mark.asyncio
+async def test_staff_open_statuses_are_three_pre_delivery_states():
+    """The staff dashboard hides delivered/cancelled by default —
+    pin the set so the UI's ``STATUS_FLOW`` (pending → confirmed →
+    preparing → delivered) stays in lock-step with what we list."""
+    from domains.guest.experience_router.guest_app import _STAFF_OPEN_STATUSES
+
+    assert _STAFF_OPEN_STATUSES == {"pending", "confirmed", "preparing"}
+
+
+@pytest.mark.asyncio
+async def test_staff_list_filters_today_open_and_enriches_room_number(monkeypatch):
+    """End-to-end shape check on `list_staff_room_service_orders`:
+    it must scope to the caller's tenant, restrict to today's open
+    orders by default, and enrich each row with `room_number` via the
+    rooms collection (with a booking-row fallback)."""
+    from domains.guest.experience_router import guest_app as ga
+    from datetime import UTC, datetime
+
+    today_iso = datetime.now(UTC).isoformat()
+
+    captured_query: dict = {}
+
+    class _OrdersCursor:
+        def __init__(self, docs):
+            self._docs = docs
+        def sort(self, *_a, **_kw):
+            return self
+        async def to_list(self, _limit):
+            return self._docs
+
+    class _Orders:
+        def find(self, query, _proj=None):
+            captured_query.update(query)
+            return _OrdersCursor([
+                # Open + room_id resolves via rooms_map.
+                {
+                    "id": "o1", "tenant_id": "t1", "booking_id": "bk1",
+                    "room_id": "r1", "items": [{"name": "Coffee", "price": 4, "quantity": 1}],
+                    "total_amount": 4, "status": "pending", "ordered_at": today_iso,
+                },
+                # Open + missing room_id, falls back via booking lookup.
+                {
+                    "id": "o2", "tenant_id": "t1", "booking_id": "bk2",
+                    "room_id": None, "items": [{"name": "Tea", "price": 3, "quantity": 1}],
+                    "total_amount": 3, "status": "preparing", "ordered_at": today_iso,
+                },
+            ])
+
+    class _Rooms:
+        def find(self, query, _proj=None):
+            assert query.get("tenant_id") == "t1", "rooms lookup must be tenant-scoped"
+            wanted = set(query["id"]["$in"])
+            async def _gen():
+                for r in [
+                    {"id": "r1", "room_number": "101"},
+                    {"id": "r2", "room_number": "202"},
+                ]:
+                    if r["id"] in wanted:
+                        yield r
+            return _gen()
+
+    class _Bookings:
+        def find(self, query, _proj=None):
+            assert query.get("tenant_id") == "t1", "bookings lookup must be tenant-scoped"
+            wanted = set(query["id"]["$in"])
+            async def _gen():
+                for b in [{"id": "bk2", "room_id": "r2", "room_number": None}]:
+                    if b["id"] in wanted:
+                        yield b
+            return _gen()
+
+    class _Db:
+        room_service_orders = _Orders()
+        rooms = _Rooms()
+        bookings = _Bookings()
+
+    monkeypatch.setattr(ga, "db", _Db())
+
+    class _U:
+        tenant_id = "t1"
+        id = "staff1"
+
+    result = await ga.list_staff_room_service_orders(
+        include_completed=False, current_user=_U(), _role=None,
+    )
+    orders = result["orders"]
+    assert {o["id"] for o in orders} == {"o1", "o2"}
+    by_id = {o["id"]: o for o in orders}
+    assert by_id["o1"]["room_number"] == "101"
+    assert by_id["o2"]["room_number"] == "202", (
+        "missing room_id must fall back to booking → room_id → rooms"
+    )
+    # tenant scoping + today filter on the orders query
+    assert captured_query["tenant_id"] == "t1"
+    assert captured_query["status"]["$in"] == ["confirmed", "pending", "preparing"]
+    assert "ordered_at" in captured_query
+
+
+def test_staff_ws_role_check_rejects_guest_role():
+    """The staff WS endpoint must close 4403 for non-staff identities,
+    so a guest-issued JWT can't tap the tenant-wide stream."""
+    from domains.guest.experience_router.guest_app import (
+        _ROOM_SERVICE_STAFF_ROLES,
+    )
+    from models.enums import UserRole
+
+    allowed = {r.value for r in _ROOM_SERVICE_STAFF_ROLES}
+    assert UserRole.GUEST.value not in allowed
+    assert UserRole.AGENCY_AGENT.value not in allowed
+
+
+@pytest.mark.asyncio
+async def test_enrich_order_with_room_number_uses_room_id(monkeypatch):
+    """Status broadcasts must carry room_number so the staff dashboard
+    can render brand-new rows without a follow-up REST refetch."""
+    from domains.guest.experience_router import guest_app as ga
+
+    class _Rooms:
+        async def find_one(self, query, _proj=None):
+            assert query.get("tenant_id") == "t1"
+            assert query.get("id") == "r1"
+            return {"room_number": "404"}
+
+    class _Db:
+        rooms = _Rooms()
+        bookings = None  # not used on this code path
+
+    monkeypatch.setattr(ga, "db", _Db())
+
+    order = {"id": "o", "tenant_id": "t1", "room_id": "r1"}
+    await ga._enrich_order_with_room_number(order)
+    assert order["room_number"] == "404"
+
+
+@pytest.mark.asyncio
+async def test_enrich_order_falls_back_to_booking_when_room_id_missing(monkeypatch):
+    """Older order docs may not have stored room_id; we must walk
+    booking → room_id → rooms before giving up."""
+    from domains.guest.experience_router import guest_app as ga
+
+    class _Bookings:
+        async def find_one(self, query, _proj=None):
+            assert query.get("tenant_id") == "t1"
+            assert query.get("id") == "bk1"
+            return {"room_id": "r9"}
+
+    class _Rooms:
+        async def find_one(self, query, _proj=None):
+            assert query.get("id") == "r9"
+            return {"room_number": "909"}
+
+    class _Db:
+        bookings = _Bookings()
+        rooms = _Rooms()
+
+    monkeypatch.setattr(ga, "db", _Db())
+
+    order = {"id": "o", "tenant_id": "t1", "booking_id": "bk1"}
+    await ga._enrich_order_with_room_number(order)
+    assert order["room_number"] == "909"
+
+
+@pytest.mark.asyncio
+async def test_enrich_order_swallows_db_errors(monkeypatch):
+    """A failing room lookup must NOT bubble up — emit_order_event is
+    on the HTTP happy path and a raise here would roll back the user's
+    status update."""
+    from domains.guest.experience_router import guest_app as ga
+
+    class _Rooms:
+        async def find_one(self, *_a, **_kw):
+            raise RuntimeError("db down")
+
+    class _Db:
+        rooms = _Rooms()
+
+    monkeypatch.setattr(ga, "db", _Db())
+
+    order = {"id": "o", "tenant_id": "t1", "room_id": "r1"}
+    await ga._enrich_order_with_room_number(order)  # must not raise
+    assert "room_number" not in order  # left absent on failure
+
+
+@pytest.mark.asyncio
+async def test_enrich_order_is_noop_when_room_number_already_present(monkeypatch):
+    """If the order already carries a room_number, we must NOT do an
+    extra DB round-trip — keeps emit_order_event cheap on the hot path."""
+    from domains.guest.experience_router import guest_app as ga
+
+    class _Rooms:
+        async def find_one(self, *_a, **_kw):  # pragma: no cover - guarded
+            raise AssertionError("rooms.find_one must not be called")
+
+    class _Db:
+        rooms = _Rooms()
+
+    monkeypatch.setattr(ga, "db", _Db())
+
+    order = {"id": "o", "tenant_id": "t1", "room_id": "r1", "room_number": "preset"}
+    await ga._enrich_order_with_room_number(order)
+    assert order["room_number"] == "preset"
