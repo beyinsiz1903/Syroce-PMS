@@ -140,6 +140,16 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    // Task #83: KVKK kapsamında resepsiyonun açtığı kimlik fotoğrafı
+    // görüntülemelerini denetim için listeleyen rapor.
+    key: "id_photo_view_report",
+    label: "Kimlik Fotoğrafı Raporu",
+    path: "/id-photo-view-report",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
     key: "urgent_permission_admin",
     label: "Acil Mesaj İzinleri",

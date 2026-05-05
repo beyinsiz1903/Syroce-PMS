@@ -3,10 +3,13 @@ Audit Timeline — API Foundations
 Provides timeline-friendly audit log queries, entity audit trails,
 and summary endpoints for the upcoming Audit Timeline Panel.
 """
+import csv
+import io
 import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 
 from common.context import OperationContext
 from core.database import db
@@ -520,6 +523,292 @@ async def get_recalled_messages_report(
         },
         "pagination": {"limit": limit, "offset": offset},
     }
+
+
+def _build_id_photo_view_match(
+    tenant_id: str,
+    start_date: str | None,
+    end_date: str | None,
+    actor_id: str | None,
+    booking_id: str | None,
+    checkin_id: str | None,
+) -> dict:
+    """
+    Task #83 — KVKK kimlik fotoğrafı raporu için ortak `$match` üreteci.
+
+    `view_online_checkin_id_photo` audit eylemi resepsiyon her kimlik
+    fotoğrafı görüntülediğinde yazılıyor (bkz. `checkin_router.py`).
+    Burada match aşaması hem JSON listeleme hem CSV dışa aktarımı için
+    aynı şekilde kurulur, böylece iki uç noktanın filtre semantiği
+    birbirinden ayrışmaz.
+
+    - `target_type` = "online_checkin"  → audit kaydındaki entity_type.
+    - `target_id`                       → checkin_id filtresi.
+    - `after_snapshot.booking_id`       → booking filtresi.
+    - `actor_id`                        → personel (tam eşleşme).
+    """
+    match: dict = {
+        "tenant_id": tenant_id,
+        "operation_name": "view_online_checkin_id_photo",
+    }
+    if start_date:
+        match.setdefault("timestamp", {})["$gte"] = start_date
+    if end_date:
+        match.setdefault("timestamp", {})["$lte"] = end_date
+    if actor_id:
+        match["actor_id"] = actor_id
+    if booking_id:
+        match["after_snapshot.booking_id"] = booking_id
+    if checkin_id:
+        match["target_id"] = checkin_id
+    return match
+
+
+def _validate_id_photo_view_date_range(
+    start_date: str | None, end_date: str | None
+) -> None:
+    """`start_date > end_date` durumu admin'in farkında olmadan filtre
+    uyguladığı bir tuzaktır — sessizce boş sonuç döner ve "kayıt yok"
+    izlenimi uyandırır. Bunu 422 ile reddederek erken hata fırlatırız.
+
+    Karşılaştırma string üzerinden yapılır çünkü ISO 8601 timestamp'ler
+    leksikografik olarak da sıralı.
+    """
+    if start_date and end_date and start_date > end_date:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Tarih aralığı geçersiz: start_date ({start_date!r}) "
+                f"end_date ({end_date!r}) değerinden sonra olamaz."
+            ),
+        )
+
+
+@router.get("/id-photo-views")
+async def get_id_photo_view_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actor_id: str | None = None,
+    booking_id: str | None = None,
+    checkin_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    # Task #83 — yönetici sınırı. Kimlik fotoğrafı görüntüleme kayıtları
+    # KVKK kapsamında kişisel veri olduğu için sıradan personelin
+    # erişimine kapalı. SUPERVISOR/ADMIN/SUPER_ADMIN dışındaki roller
+    # 403 alır.
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """
+    Task #83 — KVKK Kimlik Fotoğrafı Görüntüleme Raporu.
+
+    `audit_logs` koleksiyonundaki `view_online_checkin_id_photo`
+    eylemlerini yöneticilere özet + sayfalı liste şeklinde sunar.
+
+    Filtreler (hepsi opsiyonel):
+      - start_date / end_date  : ISO timestamp string (`>=` / `<=`).
+      - actor_id               : `actor_id` tam eşleşmesi (görüntüleyen
+                                 personel).
+      - booking_id             : `after_snapshot.booking_id` tam eşleşmesi.
+      - checkin_id             : `target_id` tam eşleşmesi.
+
+    Yanıt:
+      {
+        "events":  [...],            # paginated liste (timestamp DESC)
+        "total":   N,
+        "summary": {
+          "by_actor":      [{actor_id, count}],
+          "by_booking":    [{booking_id, count}],
+          "by_hour_of_day":[{hour, count}],   # "00".."23"
+        },
+        "filters": {start_date, end_date, actor_id, booking_id, checkin_id},
+        "pagination": {limit, offset},
+      }
+
+    Multi-tenant: yalnızca çağıranın tenant'ına ait kayıtlar döner.
+    """
+    _validate_id_photo_view_date_range(start_date, end_date)
+    ctx = OperationContext.from_user(current_user)
+    match_stage = _build_id_photo_view_match(
+        tenant_id=ctx.tenant_id,
+        start_date=start_date,
+        end_date=end_date,
+        actor_id=actor_id,
+        booking_id=booking_id,
+        checkin_id=checkin_id,
+    )
+
+    pipeline = [
+        {"$match": match_stage},
+        {"$facet": {
+            "events": [
+                {"$sort": {"timestamp": -1}},
+                {"$skip": int(offset)},
+                {"$limit": int(limit)},
+                {"$project": {
+                    "_id": 0,
+                    "id": 1,
+                    "timestamp": 1,
+                    "actor_id": 1,
+                    "actor_role": 1,
+                    "target_id": 1,
+                    "after_snapshot": 1,
+                }},
+            ],
+            "by_actor": [
+                {"$group": {"_id": "$actor_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 10},
+            ],
+            "by_booking": [
+                {"$group": {
+                    "_id": "$after_snapshot.booking_id",
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"count": -1}},
+                {"$limit": 10},
+            ],
+            "by_hour_of_day": [
+                # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
+                # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
+                # UTC olduğu için bucket'lar tutarlı.
+                {"$group": {
+                    "_id": {"$substr": ["$timestamp", 11, 2]},
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ],
+            "total": [{"$count": "count"}],
+        }},
+    ]
+
+    try:
+        result = await db.audit_logs.aggregate(pipeline).to_list(1)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("id-photo-view-report aggregation failed")
+        result = []
+
+    data = result[0] if result else {}
+    total = (data.get("total") or [{}])[0].get("count", 0) if data.get("total") else 0
+
+    by_actor = [
+        {"actor_id": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_actor") or [])
+        if d.get("_id")
+    ]
+
+    by_booking = [
+        {"booking_id": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_booking") or [])
+        if d.get("_id")
+    ]
+
+    by_hour_of_day = [
+        {"hour": d.get("_id"), "count": d.get("count", 0)}
+        for d in (data.get("by_hour_of_day") or [])
+        if d.get("_id")
+    ]
+
+    return {
+        "events": data.get("events", []),
+        "total": total,
+        "summary": {
+            "by_actor": by_actor,
+            "by_booking": by_booking,
+            "by_hour_of_day": by_hour_of_day,
+        },
+        "filters": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "actor_id": actor_id,
+            "booking_id": booking_id,
+            "checkin_id": checkin_id,
+        },
+        "pagination": {"limit": limit, "offset": offset},
+    }
+
+
+# CSV dışa aktarımı için üst sınır. KVKK denetimlerinde uzun aralıklı
+# raporlar istenebileceği için JSON ucundan (500) daha geniş tutulur,
+# fakat bellek koruması için sınırlandırılır.
+_ID_PHOTO_VIEW_CSV_MAX_ROWS = 10000
+
+
+@router.get("/id-photo-views.csv")
+async def export_id_photo_view_report_csv(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actor_id: str | None = None,
+    booking_id: str | None = None,
+    checkin_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """
+    Task #83 — KVKK Kimlik Fotoğrafı Görüntüleme Raporu (CSV dışa aktar).
+
+    Aynı filtre semantiği ile JSON ucundan ayrı tutulur; tek bir akış
+    içinde CSV üretir. Her satır KVKK denetimi için yeterli bilgiyi
+    içerir: zaman, kullanıcı, booking, check-in, photo_id ve fotoğrafın
+    SHA-256 imzası (entegrite kanıtı).
+
+    Filtre semantiği `/id-photo-views` ile birebir aynıdır. Sayfalama
+    yoktur; bunun yerine güvenlik için sabit bir üst sınır vardır
+    (`_ID_PHOTO_VIEW_CSV_MAX_ROWS`).
+    """
+    _validate_id_photo_view_date_range(start_date, end_date)
+    ctx = OperationContext.from_user(current_user)
+    match_stage = _build_id_photo_view_match(
+        tenant_id=ctx.tenant_id,
+        start_date=start_date,
+        end_date=end_date,
+        actor_id=actor_id,
+        booking_id=booking_id,
+        checkin_id=checkin_id,
+    )
+
+    cursor = db.audit_logs.find(match_stage, {"_id": 0}).sort(
+        "timestamp", -1
+    ).limit(_ID_PHOTO_VIEW_CSV_MAX_ROWS)
+    rows = await cursor.to_list(_ID_PHOTO_VIEW_CSV_MAX_ROWS)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "timestamp",
+        "actor_id",
+        "actor_role",
+        "checkin_id",
+        "booking_id",
+        "photo_id",
+        "sha256",
+        "content_type",
+    ])
+    for row in rows:
+        snap = row.get("after_snapshot") or {}
+        writer.writerow([
+            row.get("timestamp") or "",
+            row.get("actor_id") or "",
+            row.get("actor_role") or "",
+            row.get("target_id") or "",
+            snap.get("booking_id") or "",
+            snap.get("photo_id") or "",
+            snap.get("sha256") or "",
+            snap.get("content_type") or "",
+        ])
+
+    csv_bytes = buf.getvalue().encode("utf-8-sig")  # Excel'in TR karakterler için BOM beklemesi
+    filename = f"kvkk-id-photo-views-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store, max-age=0",
+        },
+    )
 
 
 def _group_by_time(logs: list) -> list:
