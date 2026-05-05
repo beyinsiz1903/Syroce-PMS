@@ -5241,3 +5241,92 @@ Worker `bootstrap/phases/c_domain.py` Phase C içinde `subscription-expiry`
 yanına eklendi. Kapsam: 24 mock-only test (`tests/test_id_photo_view_alert_worker.py`)
 + 7 test (`tests/test_notifications_visibility_filter.py`, list+mark-read+
 mark-all-read authz dahil).
+
+## Tur 15 — Mobil QR Rozet (kart/bileklik yok, sadece telefon) (2026-05-05)
+
+Misafir cebinde otel rozeti: Expo uygulaması her 30s'de bir yenilenen 60s
+TTL'lik QR token üretir, ekran parlaklığını maksimuma çeker (Brightness
+API). POS personeli bu QR'ı tarar → backend pending_qr_charge oluşturur →
+misafire push gider → misafir biyometrik (parmak izi / Face ID, Expo
+LocalAuthentication) ile **onay/red** verir. Onay → folyoya `[QR] {outlet}
+— {açıklama}` olarak post; red → personele anlık bildirim + audit
+warning. Kart/bileklik bütçesi sıfır.
+
+**Backend** (`backend/domains/guest/qr_badge/`):
+- `service.py`: token state-machine (active → rotated/expired/consumed),
+  pending_charge state-machine (pending_approval → approved/rejected/
+  expired/failed), folyo postu `FolioHardeningService.post_charge`
+  üzerinden (`posted_by="qr-approval:{guest_user_id}"`, `category=outlet`).
+- Token formatı: 16 char base32 (`A-Z + 2-9` — 0/1/I/O hariç,
+  okunabilirlik), TTL **60s**. Pending charge TTL **300s** (5 dk),
+  amount tavanı **50.000**. ALLOWED_OUTLETS sözlüğü:
+  `restaurant / bar / spa / pool / minibar / room_service / laundry /
+  shop / other`.
+- `router.py` — misafir uçları (guest auth):
+  `GET  /api/guest/qr/me?booking_id=` → `{token, expires_at, ttl_seconds,
+   booking_id}`
+  `GET  /api/guest/qr/charges/pending` → bekleyen + son 50 charge
+  `POST /api/guest/qr/charges/{id}/approve`
+  `POST /api/guest/qr/charges/{id}/reject` (`{reason?}`)
+- Personel uçları (`SUPER_ADMIN/ADMIN/SUPERVISOR/FRONT_DESK/STAFF`):
+  `POST /api/qr-badge/validate` → guest_name, room, booking_id, folio_id
+  `POST /api/qr-badge/charge` → pending_qr_charge oluşturur, push gönderir
+- Token rotasyonu: yeni token → eski aktifler `rotated`. `validate_token`
+  her tarayışta `scan_count++` (replay metriği).
+- Audit: `qr_charge_approved` (info), `qr_charge_rejected` (warning).
+- Push: `fire_and_forget_expo_push` ile high-priority, fail-soft.
+
+**Router registry** (`backend/bootstrap/router_registry.py`): `operations_router`
+sonrası `domains.guest.qr_badge.router` eklendi.
+
+**Mobil** (`mobile/`):
+- `src/api/guestQrBadge.ts` — myToken / pending / approve / reject
+  fetch'leri (Expo `EXPO_PUBLIC_API_URL` üzerinden).
+- `app/(guest)/qrBadge.tsx` — `react-native-qrcode-svg` ile QR çizimi,
+  `expo-brightness` ile ekran %100, 30s setInterval token refresh,
+  5s setInterval pending charge poll, `expo-local-authentication`
+  ile parmak izi/Face ID onayı; biyometrik fallback PIN destekli.
+- `app/(guest)/_layout.tsx` — `qrBadge` tab eklendi (`tabs.qrBadge: 'Rozet'`).
+- `src/i18n/tr.ts` — qrBadge.* stringleri (giriş, onay, red, hata mesajları).
+
+**E2E doğrulama** (`backend` → `domains.guest.qr_badge.service` üzerinden,
+HTTP login throttle'ı bypass için service katmanından koşturuldu):
+1. issue_or_refresh_token → 60s aktif token
+2. validate_token → guest_name + booking_id döner
+3. create_pending_charge → pending status, push tetiklenir
+4. list_pending_charges_for_guest → misafir kendi listede görür
+5. approve_pending_charge → folio_charges'e `[QR] Restoran — Akşam yemeği
+   — 2 kişilik` total=450, posted_by=`qr-approval:guest-test-…`,
+   folio.balance=450
+6. reject_pending_charge → status=rejected, audit warning yazıldı
+
+**Architect Round-1 düzeltmeleri (kritik) — uygulandı**:
+1. **Approve idempotency** (kritik): `approve_pending_charge` artık
+   atomic `find_one_and_update` ile pending_approval → processing
+   geçişi yapar; folyo postu yalnız claim'i kazanan instance'da
+   çalışır. Concurrency testi (5 paralel approve) kanıtladı: tek
+   folyo postu, diğer 4 `not_pending` alıyor.
+2. **State-machine atomicity**: pending_approval → processing →
+   approved/failed (folyo başarısı) veya pending_approval → rejected
+   (atomic). `processing` ara durumu eklendi; rejected/failed
+   geçişleri de atomic find_one_and_update ile.
+3. **Tenant izolasyonu** (kritik): `_resolve_guest_active_booking`
+   artık `user.tenant_id` ile guests/bookings sorgusunu kısıtlar —
+   e-posta paylaşan başka tenant kazara seçilemez. `created_at`
+   sıralı seçim deterministik.
+4. **`consumed` ölü kod**: token statü enum'u (active/rotated/expired)
+   içermediği `consumed` yolu router map'inden ve service raise
+   listesinden kaldırıldı.
+
+**Eşzamanlılık testi** (`backend/domains/guest/qr_badge/service.py`
+import edip):
+- 5 paralel approve → 1 OK + 4 not_pending (folio_charges'de tek
+  satır)
+- approve sonrası re-approve → not_pending
+- approve sonrası reject → not_pending
+- cross-tenant approve → not_found
+
+**Hafta 2 (sonraki tur)**: POS web ekranı (kamera tarama),
+davranış izleme + şüpheli işlem alarmı (anomaly detection: zaman /
+miktar / outlet kombinasyonları). **Hafta 3**: SMS yedek (push fail
+→ otomatik OTP + SMS link), refakatçi/eş hesap, manuel resepsiyon onayı.

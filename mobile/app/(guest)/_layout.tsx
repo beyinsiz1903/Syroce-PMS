@@ -22,6 +22,7 @@ export default function GuestLayout() {
       <Tabs.Screen name="roomservice" options={{ title: tr.tabs.roomService }} />
       <Tabs.Screen name="messages" options={{ title: tr.tabs.messages }} />
       <Tabs.Screen name="loyalty" options={{ title: tr.tabs.loyalty }} />
+      <Tabs.Screen name="qrBadge" options={{ title: tr.tabs.qrBadge }} />
       <Tabs.Screen name="more" options={{ href: null, title: tr.more.profile }} />
       <Tabs.Screen name="booking" options={{ href: null, title: tr.guest.bookingDetail }} />
       <Tabs.Screen name="cart" options={{ href: null, title: tr.guest.cart }} />

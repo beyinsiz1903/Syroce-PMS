@@ -119,6 +119,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.housekeeping_router", "router", ["PMS / Housekeeping"], None, None),
     ("domains.pms.maintenance_router", "router", ["PMS / Maintenance"], None, None),
     ("domains.guest.operations_router", "router", ["Guest / Operations"], None, None),
+    ("domains.guest.qr_badge", "router", ["Guest / QR Badge"], None, None),
     ("domains.pms.groups_router", "router", ["PMS / Groups"], None, None),
     ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
     ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
