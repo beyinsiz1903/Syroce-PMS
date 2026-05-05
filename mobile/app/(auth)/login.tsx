@@ -49,6 +49,7 @@ export default function LoginScreen() {
               value={email}
               onChangeText={setEmail}
               accessibilityLabel={tr.auth.email}
+              testID="smoke-login-email"
               textContentType="emailAddress"
             />
             <Field
@@ -57,6 +58,7 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               accessibilityLabel={tr.auth.password}
+              testID="smoke-login-password"
               textContentType="password"
             />
             {error ? (
@@ -69,6 +71,7 @@ export default function LoginScreen() {
               title={tr.auth.submit}
               loading={submitting || loading}
               onPress={onSubmit}
+              testID="smoke-login-submit"
               fullWidth
             />
             <Muted style={{ textAlign: 'center', marginTop: spacing.lg }}>

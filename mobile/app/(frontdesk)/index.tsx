@@ -96,6 +96,7 @@ export default function TodayScreen() {
             <Button
               title={tr.today.quickCheckin}
               onPress={() => router.push(ROUTES.checkin)}
+              testID="smoke-today-quick-checkin"
               fullWidth
             />
           </View>

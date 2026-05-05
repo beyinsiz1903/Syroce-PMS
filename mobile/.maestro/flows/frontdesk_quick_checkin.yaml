@@ -1,0 +1,31 @@
+appId: com.syroce.pms
+name: "Frontdesk: Hızlı check-in başlangıcı (smoke)"
+tags:
+  - smoke
+  - frontdesk
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+
+# Wait for the Today screen to settle, then start the quick check-in
+# flow from the primary CTA on the home tab.
+- assertVisible:
+    id: "smoke-today-quick-checkin"
+    timeout: 30000
+- tapOn:
+    id: "smoke-today-quick-checkin"
+
+# Header rendered by mobile/app/(frontdesk)/checkin.tsx (tr.checkin.title).
+- assertVisible:
+    text: "Hızlı Check-in"
+    timeout: 20000
+
+# Scan CTA must be present so QR / kimlik tarama akışı tetiklenebilir.
+- assertVisible:
+    text: "QR / Kimlik Tara"

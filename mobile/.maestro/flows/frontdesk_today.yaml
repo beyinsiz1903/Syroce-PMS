@@ -1,0 +1,27 @@
+appId: com.syroce.pms
+name: "Frontdesk: Bugün açılışı (smoke)"
+tags:
+  - smoke
+  - frontdesk
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+
+# After login the front_desk role lands on the "Bugün" tab. We assert
+# the canonical labels rendered by mobile/app/(frontdesk)/index.tsx so
+# regressions in the home screen surface fail this smoke check.
+- assertVisible:
+    text: "Bugün Giriş"
+    timeout: 30000
+- assertVisible:
+    text: "Bugün Çıkış"
+- assertVisible:
+    text: "Hızlı check-in"
+- assertVisible:
+    text: "Hızlı check-out"

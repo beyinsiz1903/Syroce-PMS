@@ -1,0 +1,8 @@
+flows:
+  - flows/*.yaml
+
+# Each individual flow declares the appId and any required env vars.
+# Override credentials at the CLI:
+#   maestro test .maestro/flows -e SMOKE_EMAIL=... -e SMOKE_PASSWORD=...
+#   maestro test .maestro/flows/guest_digital_key.yaml \
+#     -e SMOKE_GUEST_EMAIL=... -e SMOKE_GUEST_PASSWORD=...

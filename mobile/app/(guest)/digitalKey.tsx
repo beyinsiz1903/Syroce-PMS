@@ -115,7 +115,10 @@ export default function GuestDigitalKey() {
 
   if (!booking) {
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, gap: spacing.md }}>
+      <View
+        testID="smoke-digital-key"
+        style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, gap: spacing.md }}
+      >
         <H1>{tr.guest.digitalKeyTitle}</H1>
         <Muted>{tr.guest.digitalKeyNoBooking}</Muted>
       </View>
@@ -129,6 +132,7 @@ export default function GuestDigitalKey() {
 
   return (
     <ScrollView
+      testID="smoke-digital-key"
       contentContainerStyle={{
         padding: spacing.lg,
         gap: spacing.lg,

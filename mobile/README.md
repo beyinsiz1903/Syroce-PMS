@@ -233,10 +233,30 @@ mutlaka yeni bir EAS Build ister.
 2. `CHANGELOG` (kök) yeni sürüm bölümünü ekle (Türkçe).
 3. `eas build --profile preview` ile iç dağıtım build'ini al; iOS ve
    Android için `buildNumber` / `versionCode` otomatik artar.
-4. `eas submit --profile preview` ile TestFlight + Play Internal'a yükle.
-5. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
-   `--profile production` ile üretim build'i ve submission.
-6. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
+4. **Smoke test** — build'i yerel iOS Simulator veya Android Emulator'a
+   yükleyin, ardından `npm run smoke` ile Maestro akışlarını koşturun.
+   Tüm akışlar yeşil olmadan TestFlight / Play Internal yüklemesine
+   geçmeyin. Detay ve sorun giderme: [`.maestro/README.md`](.maestro/README.md).
+5. `eas submit --profile preview` ile TestFlight + Play Internal'a yükle.
+6. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
+   `--profile production` ile üretim build'i ve submission. Üretim
+   build'inde de `npm run smoke` adımı tekrarlanır (gerçek QA hesapları
+   için `SMOKE_EMAIL` / `SMOKE_GUEST_EMAIL` env override).
+7. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
+
+### Smoke test akışları
+
+`mobile/.maestro/flows/` altında dört adet Maestro akışı tanımlıdır:
+
+| Akış                               | Doğruladığı                                          |
+| ---------------------------------- | ---------------------------------------------------- |
+| `login.yaml`                       | Uygulama açılır + login formu gönderilir + JWT alınır |
+| `frontdesk_today.yaml`             | "Bugün" tabı yüklenir (giriş/çıkış başlıkları)        |
+| `frontdesk_quick_checkin.yaml`     | Hızlı check-in ekranı açılır (QR/Kimlik tara CTA)     |
+| `guest_digital_key.yaml`           | Misafir dijital anahtar ekranı render olur            |
+
+Maestro CLI yüklü değilse `npm run smoke` net bir hata mesajıyla 127 ile
+çıkar; `npm run smoke:doctor` kurulumun varlığını doğrular.
 
 ---
 
