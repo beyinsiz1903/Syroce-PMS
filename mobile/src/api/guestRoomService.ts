@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, getApiUrl, getToken } from './client';
 
 export type MenuItem = {
   id: string;
@@ -72,4 +72,94 @@ export async function listRoomServiceOrders(bookingId: string): Promise<RoomServ
   } catch {
     return [];
   }
+}
+
+export type RoomServiceOrderEvent = {
+  type: 'room_service_order';
+  event: 'created' | 'status_changed' | string;
+  order: RoomServiceOrder;
+  timestamp?: string;
+};
+
+export type RoomServiceStreamHandlers = {
+  onEvent: (ev: RoomServiceOrderEvent) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (err: unknown) => void;
+};
+
+function httpToWs(url: string): string {
+  if (url.startsWith('https://')) return 'wss://' + url.slice('https://'.length);
+  if (url.startsWith('http://')) return 'ws://' + url.slice('http://'.length);
+  return url;
+}
+
+// Open the per-booking order WS. Returns an unsubscribe that closes the
+// socket and suppresses further callbacks. JWT goes in `?token=` since
+// RN's WebSocket can't set headers; no token / no booking → no-op.
+export async function subscribeRoomServiceOrders(
+  bookingId: string,
+  handlers: RoomServiceStreamHandlers,
+): Promise<() => void> {
+  const token = await getToken();
+  if (!token || !bookingId) {
+    return () => undefined;
+  }
+  const base = httpToWs(getApiUrl());
+  const url = `${base}/api/guest/ws/room-service-orders/${encodeURIComponent(bookingId)}?token=${encodeURIComponent(
+    token,
+  )}`;
+
+  let closedByCaller = false;
+  let ws: WebSocket | null = null;
+  try {
+    ws = new WebSocket(url);
+  } catch (err) {
+    handlers.onError?.(err);
+    return () => undefined;
+  }
+
+  ws.onopen = () => {
+    if (closedByCaller) return;
+    handlers.onOpen?.();
+  };
+  ws.onmessage = (msg: { data?: unknown }) => {
+    if (closedByCaller) return;
+    if (typeof msg?.data !== 'string') return;
+    try {
+      const parsed = JSON.parse(msg.data);
+      if (parsed && parsed.type === 'room_service_order' && parsed.order) {
+        handlers.onEvent(parsed as RoomServiceOrderEvent);
+      }
+    } catch {
+      /* non-JSON frame ignored */
+    }
+  };
+  ws.onerror = (err: unknown) => {
+    if (closedByCaller) return;
+    handlers.onError?.(err);
+  };
+  ws.onclose = () => {
+    if (closedByCaller) return;
+    handlers.onClose?.();
+  };
+
+  return () => {
+    closedByCaller = true;
+    try {
+      ws?.close();
+    } catch {
+      /* ignore */
+    }
+  };
+}
+
+export async function updateRoomServiceOrderStatus(
+  orderId: string,
+  status: 'pending' | 'confirmed' | 'preparing' | 'delivered' | 'cancelled',
+): Promise<{ success: boolean; order_id: string; status: string }> {
+  return api.patch<{ success: boolean; order_id: string; status: string }>(
+    `/api/guest/room-service-orders/${orderId}/status`,
+    { status },
+  );
 }

@@ -13,7 +13,7 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from core.cache import cached
@@ -21,6 +21,22 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import (
     User,
+)
+
+from models.enums import UserRole
+from modules.pms_core.role_permission_service import require_role
+
+from .room_service_realtime import emit_order_event, order_stream
+
+# Staff-only allow-list for PATCH /room-service-orders/{id}/status.
+# Module-level so tests can pin it.
+_ROOM_SERVICE_STAFF_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.SUPERVISOR,
+    UserRole.FRONT_DESK,
+    UserRole.HOUSEKEEPING,
+    UserRole.STAFF,
 )
 
 DEFAULT_UPSELL_PRICES = {
@@ -643,6 +659,12 @@ async def create_room_service_order(
 
     await db.room_service_orders.insert_one(order)
 
+    # Task #64: push the new order to every guest WS subscribed to this
+    # booking so the order list lights up immediately on the placing
+    # device *and* on a second device the same guest may have logged in
+    # on. Best-effort — a broken broadcast must not roll back the order.
+    await emit_order_event(order, event_type="created")
+
     # Post charge to folio
     folio = await db.folios.find_one({
         'booking_id': booking_id,
@@ -691,6 +713,221 @@ async def get_room_service_orders(
         orders.append(order)
 
     return {'orders': orders}
+# ── PATCH /guest/room-service-orders/{order_id}/status ──
+_VALID_ORDER_STATUSES = {
+    "pending", "confirmed", "preparing", "delivered", "cancelled",
+}
+
+
+class _UpdateOrderStatusBody(BaseModel):
+    status: str
+
+
+@router.patch("/guest/room-service-orders/{order_id}/status")
+async def update_room_service_order_status(
+    order_id: str,
+    body: _UpdateOrderStatusBody,
+    current_user: User = Depends(get_current_user),
+    _role: None = Depends(require_role(*_ROOM_SERVICE_STAFF_ROLES)),
+):
+    """Staff-only: update order status and broadcast `status_changed`
+    over the per-booking WS channel. Tenant-scoped."""
+    if body.status not in _VALID_ORDER_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status; expected one of {sorted(_VALID_ORDER_STATUSES)}",
+        )
+    order = await db.room_service_orders.find_one({
+        'id': order_id,
+        'tenant_id': current_user.tenant_id,
+    })
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    update = {
+        'status': body.status,
+        'updated_at': datetime.now(UTC).isoformat(),
+        'updated_by': current_user.id,
+    }
+    await db.room_service_orders.update_one(
+        {'id': order_id, 'tenant_id': current_user.tenant_id},
+        {'$set': update},
+    )
+    order.update(update)
+
+    # Best-effort fan-out to subscribed guest WS clients. Failures are
+    # logged inside emit_order_event and never bubble up to the staff
+    # caller — the DB write is the source of truth, polling will catch
+    # up if the channel is down.
+    await emit_order_event(order, event_type="status_changed")
+
+    return {
+        'success': True,
+        'order_id': order_id,
+        'status': body.status,
+    }
+
+
+async def _authenticate_ws_token(token: str | None) -> dict | None:
+    """Mirror of ``get_current_user`` for a JWT passed as a WS query
+    param (RN's WebSocket can't set Authorization headers). Returns
+    ``{'user_id', 'tenant_id', 'role'}`` or ``None``."""
+    if not token:
+        return None
+    if isinstance(token, str) and token.lower().startswith("bearer "):
+        token = token[7:]
+
+    try:
+        from jose import jwt
+        from core.security import (
+            JWT_ALGORITHM,
+            JWT_SECRET,
+            _user_doc_cache_get,
+            _user_doc_cache_set,
+            is_jti_revoked,
+        )
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except Exception as e:
+        logging.getLogger(__name__).debug(
+            "room-service WS auth decode failed: %s", e
+        )
+        return None
+
+    user_id = payload.get("user_id")
+    jwt_tenant = payload.get("tenant_id")
+    if not user_id or not jwt_tenant:
+        return None
+
+    # jti revocation parity with HTTP path.
+    jti = payload.get("jti")
+    try:
+        if jti and await is_jti_revoked(jti):
+            return None
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "room-service WS jti check failed: %s", e
+        )
+        return None
+
+    # User-doc lookup (cached) — guards deleted users + tenant mismatch.
+    try:
+        user_doc = _user_doc_cache_get(user_id)
+        if user_doc is None:
+            user_doc = await db.users.find_one(
+                {'$or': [{'id': user_id}, {'user_id': user_id}]},
+                {'_id': 0, 'id': 1, 'user_id': 1, 'role': 1, 'tenant_id': 1,
+                 'email': 1, 'tokens_invalid_before': 1},
+            )
+            if user_doc:
+                _user_doc_cache_set(user_id, user_doc)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "room-service WS user lookup failed: %s", e
+        )
+        return None
+
+    if not user_doc:
+        return None
+
+    doc_tenant = user_doc.get('tenant_id')
+    if doc_tenant and jwt_tenant != doc_tenant:
+        logging.getLogger(__name__).warning(
+            "room-service WS tenant mismatch: user=%s jwt=%s doc=%s",
+            user_id, jwt_tenant, doc_tenant,
+        )
+        return None
+
+    # Mass-revocation watermark (token iat must be >= tokens_invalid_before).
+    invalid_before = user_doc.get('tokens_invalid_before')
+    if invalid_before:
+        iat = payload.get('iat')
+        if not iat or int(iat) < int(invalid_before):
+            return None
+
+    return {
+        'user_id': user_id,
+        'tenant_id': jwt_tenant,
+        'role': user_doc.get('role'),
+        'email': user_doc.get('email'),
+    }
+
+
+async def _user_can_subscribe_to_booking(identity: dict, booking_id: str) -> bool:
+    """Booking-level authz for the room-service WS.
+
+    Staff roles in `_ROOM_SERVICE_STAFF_ROLES` may subscribe to any
+    booking in their tenant (kitchen display, front desk monitoring).
+    Guest principals must own the booking — i.e. one of their
+    email-keyed `db.guests` records is referenced by `booking.guest_id`.
+    """
+    role = identity.get('role')
+    tenant_id = identity['tenant_id']
+    role_value = getattr(role, 'value', role)
+
+    if role_value in {r.value for r in _ROOM_SERVICE_STAFF_ROLES} or role_value == 'super_admin':
+        return True
+
+    booking = await db.bookings.find_one(
+        {'id': booking_id, 'tenant_id': tenant_id},
+        {'_id': 0, 'id': 1, 'guest_id': 1},
+    )
+    if not booking:
+        return False
+
+    email = identity.get('email')
+    if not email:
+        return False
+
+    # Tenant-scope the guest lookup so an attacker can't piggy-back a
+    # same-email guest record from another tenant onto this booking.
+    guest_ids = []
+    async for g in db.guests.find(
+        {'email': email, 'tenant_id': tenant_id}, {'_id': 0, 'id': 1}
+    ):
+        gid = g.get('id')
+        if gid:
+            guest_ids.append(gid)
+
+    return booking.get('guest_id') in guest_ids
+
+
+# ── WS /guest/ws/room-service-orders/{booking_id} ──
+@router.websocket("/guest/ws/room-service-orders/{booking_id}")
+async def ws_room_service_orders(websocket: WebSocket, booking_id: str):
+    """Per-booking room-service order stream. JWT in `?token=` query
+    param. Auth parity with HTTP via `_authenticate_ws_token`. Closes
+    4401 on auth failure, 4403 if the caller is not the booking guest
+    or staff in the booking's tenant."""
+    identity = await _authenticate_ws_token(websocket.query_params.get("token"))
+    if not identity:
+        await websocket.close(code=4401, reason="unauthorized")
+        return
+    tenant_id = identity['tenant_id']
+
+    if not await _user_can_subscribe_to_booking(identity, booking_id):
+        await websocket.close(code=4403, reason="forbidden")
+        return
+
+    await order_stream.connect(websocket, tenant_id, booking_id)
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                try:
+                    await websocket.send_text('{"type":"pong"}')
+                except Exception:
+                    break
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "room-service WS loop error tenant=%s booking=%s: %s",
+            tenant_id, booking_id, e,
+        )
+    finally:
+        await order_stream.disconnect(websocket, tenant_id, booking_id)
+
+
 # ── POST /guest/request ──
 @router.post("/guest/request")
 async def create_guest_request(
