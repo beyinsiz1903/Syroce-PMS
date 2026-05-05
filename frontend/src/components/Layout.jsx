@@ -538,7 +538,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       </header>
 
       {/* Main Content - fills remaining viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto overflow-auto">
+      <main className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
         {children}
       </main>
 

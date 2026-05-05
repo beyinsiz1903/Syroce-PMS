@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +13,7 @@ import {
 
 const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
-  checkout_or_extend: 'Çıkış / uzat',
+  checkout_or_extend: 'Folyoya git',
   checkin_or_no_show: 'Check-in / no-show',
   open_run: 'Açık denetimi aç',
 };
@@ -21,6 +22,22 @@ function bookingHref(item) {
   if (item.run_id) return null;
   if (item.id) return `/pms?edit=${item.id}#bookings`;
   return null;
+}
+
+async function openFolioForBooking(bookingId, navigate) {
+  try {
+    const { data } = await axios.get(`/folio/booking/${bookingId}`);
+    const list = Array.isArray(data) ? data : (data?.folios || []);
+    const open = list.find((f) => f.status === 'open') || list[0];
+    const folioId = open?.id || open?.folio_id;
+    if (folioId) {
+      navigate(`/folio-detail/${folioId}`);
+    } else {
+      toast.error('Bu rezervasyon için açık folyo bulunamadı');
+    }
+  } catch (e) {
+    toast.error('Folyo açılamadı: ' + (e.response?.data?.detail || e.message));
+  }
 }
 
 function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
@@ -217,11 +234,17 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                   </Badge>
                                 )}
                               </div>
-                              {href && (
+                              {(href || (b.action === 'checkout_or_extend' && it.id)) && (
                                 <Button
                                   size="sm" variant="ghost"
                                   className="h-7 px-2 text-indigo-700 hover:text-indigo-900"
-                                  onClick={() => navigate(href)}
+                                  onClick={() => {
+                                    if (b.action === 'checkout_or_extend' && it.id) {
+                                      openFolioForBooking(it.id, navigate);
+                                    } else if (href) {
+                                      navigate(href);
+                                    }
+                                  }}
                                 >
                                   {ACTION_LABELS[b.action] || 'Aç'}
                                   <ArrowRight className="w-3.5 h-3.5 ml-1" />
