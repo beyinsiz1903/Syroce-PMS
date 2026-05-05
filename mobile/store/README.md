@@ -12,7 +12,8 @@ App Store / Play Store global liste için **İngilizce yerelleştirme** de
 
 ```
 store/
-├── generate_assets.py     # Tüm varlıkları yeniden üretir (PIL tabanlı, deterministik)
+├── generate_assets.py     # Statik ekran görüntüleri + ikonlar (PIL, deterministik)
+├── generate_videos.py     # 15-30 sn'lik mağaza tanıtım videoları (PIL + ffmpeg)
 ├── README.md              # Bu dosya
 └── screenshots/
     ├── ios/                            # Türkçe (varsayılan)
@@ -31,10 +32,17 @@ store/
         ├── <flow>_<size>_light.png     # her boyut için light tema
         └── en/                          # İngilizce yerelleştirme (aynı boyutlar)
             └── <flow>_<size>[_light].png
+├── videos/
+    ├── ios/
+    │   ├── <flow>_6_7.mp4         # 1080 × 1920   iPhone 6.7" preview (App Store)
+    │   └── <flow>_12_9.mp4        # 1200 × 1600   iPad Pro 12.9" preview
+    └── android/
+        ├── <flow>_phone.mp4       # 1080 × 1920   telefon (Play / YouTube 9:16)
+        └── <flow>_tablet_10.mp4   # 1200 × 1920   10" tablet
 ```
 
-Toplamda her akış için her dilde **16 mağaza görseli** üretilir
-(iOS: 5 boyut × 2 tema = 10, Android: 3 boyut × 2 tema = 6). İki dil için
+Toplamda her akış için her dilde **16 mağaza görseli + 4 tanıtım videosu** üretilir
+(iOS: 5 boyut × 2 tema = 10, Android: 3 boyut × 2 tema = 6 görsel; 4 video boyutu). İki dil için
 toplam **32 görsel/akış**, 6 akışta **192 mağaza görseli** üretilir.
 
 ## Akışlar ve başlıklar
@@ -87,23 +95,67 @@ eklemek yeterlidir. Türkçe varsayılan kabul edildiği için `out_subdir=""`
 ile mevcut yola yazılır; diğer diller `ios/<lang>/` ve `android/<lang>/`
 altına yazılır.
 
+## Tanıtım videoları (App Preview / Promo Video)
+
+Statik ekran görüntülerinin yanı sıra, App Store Connect ve Google Play her
+cihaz boyutu için kısa **tanıtım videosu** da kabul eder. Bu videolar
+tıklama oranını ve mağaza dönüşümünü ciddi şekilde artırır.
+
+`generate_videos.py` her akış için **18 saniyelik** (App Store'un 15-30 sn
+aralığında), animasyonlu, sessiz **H.264 MP4** çıktıları üretir. Her video şu
+fazlardan oluşur:
+
+1. **Intro (0 – 2.5 sn)** — Türkçe başlık ve vurgu çubuğu fade-in,
+   cihaz aşağıdan yukarı süzülerek yerleşir.
+2. **Showcase (3 – 15 sn)** — Cihaz ekranı boyunca aşağıya inen, marka mavisi
+   yumuşak bir spotlight bandı dolaşır (2 döngü) — kullanıcının dikkatini
+   ekran içeriğinde gezdirir.
+3. **Outro (15.5 – 18 sn)** — Aşağıdan yukarı süzülen "App Store ve Google
+   Play'de" CTA rozeti.
+
+### Video boyutları
+
+| Dosya                       | Çözünürlük   | Hedef yuva                         |
+| --------------------------- | ------------ | ---------------------------------- |
+| `ios/<flow>_6_7.mp4`        | 1080 × 1920  | App Store — iPhone 6.7" App Preview |
+| `ios/<flow>_12_9.mp4`       | 1200 × 1600  | App Store — iPad Pro 12.9" App Preview |
+| `android/<flow>_phone.mp4`  | 1080 × 1920  | Play / YouTube — telefon (9:16)     |
+| `android/<flow>_tablet_10.mp4` | 1200 × 1920 | Play / YouTube — 10" tablet         |
+
+Her video ~600 KB – 1.2 MB arası, libx264 + yuv420p + `+faststart`
+(iOS uyumlu) ile kodlanmıştır. Sessizdir: App Store sessiz preview kabul
+eder, Play Store ise zaten doğrudan MP4 değil YouTube linki bekler.
+
 ## Yeniden üretmek
 
-Görseller deterministiktir (rastgele tohumlar sabit). Marka renklerini
-değiştirmek, başlıkları güncellemek, yeni dil veya yeni boyut eklemek için
+Görseller ve videolar deterministiktir (rastgele tohumlar sabit). Marka
+renklerini değiştirmek, başlıkları güncellemek, yeni dil veya yeni boyut eklemek için
 `generate_assets.py` içindeki sabitleri (`DARK`, `LIGHT`, `COPY_TR`,
 `COPY_EN`, `LOCALES`, `IOS_PHONE_SIZES`, `IOS_TABLET_SIZES`,
-`ANDROID_PHONE_SIZE`, `ANDROID_TABLET_SIZES`) düzenleyin ve tekrar
-çalıştırın:
+`ANDROID_PHONE_SIZE`, `ANDROID_TABLET_SIZES`) düzenleyin
+ve tekrar çalıştırın:
 
 ```bash
 cd mobile
-python3 store/generate_assets.py
+python3 store/generate_assets.py     # ikon + ekran görüntüleri
+python3 store/generate_videos.py     # mağaza tanıtım videoları (24 MP4 ~ 7 dk)
 ```
 
-Komut hem `mobile/assets/` (icon, adaptive-icon, splash, notification-icon,
-favicon) hem de `mobile/store/screenshots/` altındaki tüm boyut × tema
-kombinasyonlarını yeniden oluşturur.
+`generate_assets.py` hem `mobile/assets/` (icon, adaptive-icon, splash,
+notification-icon, favicon) hem de `mobile/store/screenshots/` altındaki tüm
+boyut × tema kombinasyonlarını yeniden oluşturur.
+
+`generate_videos.py` aynı `screen_*` fonksiyonlarını yeniden kullanır;
+her akışı tek seferde render edip animasyon katmanını her kare için yeniden
+çizer ve ffmpeg pipe üzerinden MP4'e kodlar. Faydalı bayraklar:
+
+```bash
+python3 store/generate_videos.py --flow 02_today    # tek akış (4 video)
+python3 store/generate_videos.py --light            # light tema da üret
+python3 store/generate_videos.py --smoke            # küçük test (540×960, 6 sn)
+```
+
+Bağımlılıklar: Pillow (zaten gerekiyor) ve `ffmpeg` (libx264).
 
 > Komutun yalnızca standart kütüphane + **Pillow 12.1.1** ve sistem
 > üzerinde **DejaVu Sans / DejaVu Sans Bold** yazı tiplerinin kurulu
@@ -133,17 +185,29 @@ commit ederek de düzeltebilirsiniz.
 
 ## App Store Connect / Play Console'a yükleme
 
-- **iOS**: App Store Connect → Uygulamanız → "App Store" sekmesi.
+- **iOS — Ekran görüntüleri**: App Store Connect → Uygulamanız → "App Store"
+  sekmesi → Türkçe yerelleştirmesi → "Önizlemeler ve Ekran Görüntüleri".
   - Türkçe yerelleştirme için `screenshots/ios/` altındaki PNG'leri,
     İngilizce (English U.S./U.K.) yerelleştirme için `screenshots/ios/en/`
-    altındaki PNG'leri "Önizlemeler ve Ekran Görüntüleri" alanına yükleyin.
+    altındaki PNG'leri yükleyin.
   - 6.7" iPhone yuvası **zorunlu**, diğer iPhone boyutları opsiyonel.
   - iPad 12.9" yuvası, App Store'da iPad'i destekleyen uygulamalar için
     **zorunlu**; 11" yuvası opsiyoneldir.
   - Tema olarak koyu varyantları yüklemek yeterlidir; light varyantları
     pazarlama materyali olarak kullanılabilir.
+- **iOS — App Previews (videolar)**: Aynı ekranda her boyut yuvasının
+  üst kısmındaki "App Previews" alanına en fazla 3 video yüklenebilir.
+  - `mobile/store/videos/ios/<flow>_6_7.mp4` → iPhone 6.7" yuvası
+  - `mobile/store/videos/ios/<flow>_12_9.mp4` → iPad Pro 12.9" yuvası
+  - Her preview 15-30 sn arası olmalı (videolarımız 18 sn'dir).
 - **Android**: Play Console → Uygulamanız → "Mağaza profili" → Telefon
   ekran görüntüleri (1080 × 1920) **ve** "7 inç tablet" / "10 inç tablet"
   yuvaları. Türkçe varsayılan listeleme için `screenshots/android/`,
   İngilizce ek listeleme için `screenshots/android/en/` altındaki PNG'ler
   doğrudan yüklenebilir.
+- **Android — Tanıtım videosu**: Play Console "Tanıtım videosu" alanı
+  yalnızca **YouTube linki** kabul eder, doğrudan MP4 yüklenmez. Önerilen
+  akış: `videos/android/<flow>_phone.mp4` (veya `_tablet_10`) dosyasını
+  pazarlama hesabınızdan YouTube'a yükleyin (gizli/genel) ve linki Play
+  Console'a yapıştırın. Aynı dosyalar Instagram Reels / TikTok / LinkedIn
+  reklamlarında doğrudan kullanılabilir.
