@@ -281,9 +281,15 @@ async def get_booking_folios(
         'tenant_id': current_user.tenant_id
     }, {'_id': 0}).to_list(1000)
 
-    # Calculate current balance for each folio
+    # Calculate current balance + backfill legacy folios that pre-date the
+    # folio_number / folio_type schema fields (Pydantic response model would
+    # otherwise raise 500 ResponseValidationError on rows missing these keys).
     for folio in folios:
         folio['balance'] = await calculate_folio_balance(folio['id'], current_user.tenant_id)
+        if not folio.get('folio_number'):
+            folio['folio_number'] = f"F-{(folio.get('id') or '')[:8] or 'LEGACY'}"
+        if not folio.get('folio_type'):
+            folio['folio_type'] = 'guest'
 
     return folios
 
