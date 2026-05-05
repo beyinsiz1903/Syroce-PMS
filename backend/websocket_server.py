@@ -615,7 +615,41 @@ async def local_broadcast(room: str, event: str, data: dict[str, Any]) -> None:
     received from other instances via Redis pub/sub. Wrapping `sio.emit`
     keeps the adapter agnostic of socket.io and lets startup wire the
     bridge with a single function reference.
+
+    Task #70: room-service order channels live on raw FastAPI WebSockets
+    (not socket.io), so events whose room name uses the
+    ``room_service:{tenant}:{booking}`` format are dispatched into the
+    per-(tenant, booking) ``order_stream`` instead of `sio.emit`. This is
+    the dispatcher half of the cross-pod bridge — when pod B publishes
+    an order status change, every pod's listener calls back into here
+    and delivers it to that pod's local guest sockets.
     """
+    # Room-service prefix → raw-WebSocket dispatcher (Task #70).
+    try:
+        from domains.guest.experience_router.room_service_realtime import (
+            order_stream as _rs_order_stream,
+            parse_room_key as _rs_parse_room_key,
+        )
+    except Exception as e:
+        # If the room-service module ever fails to import, fall through
+        # to the socket.io path — at worst the room-service event is
+        # delivered to no one (better than crashing the listener).
+        logger.error(f"room-service dispatcher import failed: {e}")
+        _rs_parse_room_key = None  # type: ignore[assignment]
+        _rs_order_stream = None  # type: ignore[assignment]
+
+    if _rs_parse_room_key is not None:
+        parsed = _rs_parse_room_key(room)
+        if parsed is not None:
+            tenant_id, booking_id = parsed
+            try:
+                await _rs_order_stream.broadcast(tenant_id, booking_id, data)
+            except Exception as e:
+                logger.error(
+                    f"Failed room-service local fan-out ({room}): {e}"
+                )
+            return
+
     try:
         await sio.emit(event, data, room=room)
     except Exception as e:

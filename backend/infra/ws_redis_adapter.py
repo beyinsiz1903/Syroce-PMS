@@ -187,23 +187,40 @@ class WebSocketRedisAdapter:
                 logger.error(f"WS local handler error ({room}): {e}")
 
         # 2) Cross-instance fan-out via Redis pub/sub (best-effort).
-        if self._active and self._redis:
-            try:
-                channel = f"{self.CHANNEL_PREFIX}{room}"
-                message = json.dumps({
-                    "room": room,
-                    "event": event,
-                    "data": data,
-                    "source_instance": self._instance_id,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                })
-                await self._redis.publish(channel, message)
-                self._metrics["messages_published"] += 1
-            except Exception as e:
-                self._metrics["publish_errors"] += 1
-                self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
-                self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
-                logger.error(f"WS publish error ({room}): {e}")
+        await self.publish_remote_only(room, event, data)
+
+    async def publish_remote_only(
+        self, room: str, event: str, data: dict[str, Any]
+    ) -> None:
+        """Publish ONLY to other instances via Redis pub/sub — skip the
+        local-handler invocation that :meth:`publish` performs.
+
+        Useful for callers that have already done their own local
+        fan-out and only need cross-instance delivery (e.g. the
+        room-service order stream which broadcasts directly to its own
+        FastAPI WebSockets so it can return an accurate per-socket
+        delivery count). Best-effort: when Redis is inactive this is a
+        no-op, exactly mirroring the cross-instance branch of
+        :meth:`publish`.
+        """
+        if not (self._active and self._redis):
+            return
+        try:
+            channel = f"{self.CHANNEL_PREFIX}{room}"
+            message = json.dumps({
+                "room": room,
+                "event": event,
+                "data": data,
+                "source_instance": self._instance_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            })
+            await self._redis.publish(channel, message)
+            self._metrics["messages_published"] += 1
+        except Exception as e:
+            self._metrics["publish_errors"] += 1
+            self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
+            logger.error(f"WS publish error ({room}): {e}")
 
     async def _listen(self):
         """Listen for messages from other instances.
