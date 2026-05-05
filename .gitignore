@@ -4,6 +4,9 @@
 backend/uploads/
 frontend/uploads/
 
+# Secure storage (encrypted ID photos, etc. — never commit)
+backend/secure_storage/
+
 # IDE and editors
 .idea/
 .vscode/
