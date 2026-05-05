@@ -380,6 +380,88 @@ async def submit_online_checkin(
     }
 
 
+# Route order matters: the static `/checkin/online/id-photos` GET must be
+# declared BEFORE the dynamic `/checkin/online/{booking_id}` GET below.
+# FastAPI matches in declaration order, so if the dynamic route ran first
+# a list-call would silently dispatch into `get_online_checkin_status` with
+# booking_id="id-photos" and return the guest status payload instead of the
+# staff list.
+@router.get("/checkin/online/id-photos")
+async def list_online_checkin_id_photos(
+    booking_id: str | None = Query(default=None),
+    guest_id: str | None = Query(default=None),
+    claimed: bool | None = Query(
+        default=None,
+        description=(
+            "true → yalnızca check-in formuna bağlanmış kayıtlar; "
+            "false → yetim (henüz claim edilmemiş) yüklemeler; "
+            "atlandığında her ikisi de döner."
+        ),
+    ),
+    uploaded_after: str | None = Query(
+        default=None,
+        description="ISO timestamp; uploaded_at >= filtresi.",
+    ),
+    uploaded_before: str | None = Query(
+        default=None,
+        description="ISO timestamp; uploaded_at <= filtresi.",
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #86 — Bekleyen kimlik fotoğrafları listesi (resepsiyon paneli).
+
+    Otomatik temizlik (Task #72) 90 gün sonra ve yetim yüklemeleri 24
+    saatte siliyor; ancak personelin **bekleyen kayıtları görmesi**,
+    yanlış yüklenen ya da KVKK silme talebi gelen bir fotoğrafı
+    süresinden önce manuel silmesi için bir UI yok. Bu uç söz konusu
+    listeyi tenant kapsamında, sayfalı ve filtreli döner. Fotoğraf
+    bayt'ları KVKK gereği yanıtın bir parçası değildir; her satır
+    yalnızca metadata içerir.
+    """
+    query: dict = {"tenant_id": current_user.tenant_id}
+    if booking_id:
+        query["booking_id"] = booking_id
+    if guest_id:
+        query["guest_id"] = guest_id
+    if claimed is not None:
+        query["claimed"] = bool(claimed)
+    if uploaded_after or uploaded_before:
+        ts: dict = {}
+        if uploaded_after:
+            ts["$gte"] = uploaded_after
+        if uploaded_before:
+            ts["$lte"] = uploaded_before
+        query["uploaded_at"] = ts
+
+    retention_days = _id_photo_retention_days()
+    cursor = (
+        db.online_checkin_id_photos
+        .find(query, {"_id": 0})
+        .sort("uploaded_at", -1)
+        .skip(int(offset))
+        .limit(int(limit))
+    )
+    docs = await cursor.to_list(int(limit))
+    total = await db.online_checkin_id_photos.count_documents(query)
+
+    return {
+        "items": [_public_id_photo_row(d, retention_days) for d in docs],
+        "total": total,
+        "retention_days": retention_days,
+        "filters": {
+            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "claimed": claimed,
+            "uploaded_after": uploaded_after,
+            "uploaded_before": uploaded_before,
+        },
+        "pagination": {"limit": limit, "offset": offset},
+    }
+
+
 @router.get("/checkin/online/{booking_id}")
 async def get_online_checkin_status(
     booking_id: str, current_user: User = Depends(get_current_user)
@@ -558,82 +640,6 @@ def _public_id_photo_row(doc: dict, retention_days: int) -> dict:
         "size_bytes": doc.get("size_bytes"),
         "sha256": doc.get("sha256"),
         "source": doc.get("source"),
-    }
-
-
-@router.get("/checkin/online/id-photos")
-async def list_online_checkin_id_photos(
-    booking_id: str | None = Query(default=None),
-    guest_id: str | None = Query(default=None),
-    claimed: bool | None = Query(
-        default=None,
-        description=(
-            "true → yalnızca check-in formuna bağlanmış kayıtlar; "
-            "false → yetim (henüz claim edilmemiş) yüklemeler; "
-            "atlandığında her ikisi de döner."
-        ),
-    ),
-    uploaded_after: str | None = Query(
-        default=None,
-        description="ISO timestamp; uploaded_at >= filtresi.",
-    ),
-    uploaded_before: str | None = Query(
-        default=None,
-        description="ISO timestamp; uploaded_at <= filtresi.",
-    ),
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
-):
-    """Task #86 — Bekleyen kimlik fotoğrafları listesi (resepsiyon paneli).
-
-    Otomatik temizlik (Task #72) 90 gün sonra ve yetim yüklemeleri 24
-    saatte siliyor; ancak personelin **bekleyen kayıtları görmesi**,
-    yanlış yüklenen ya da KVKK silme talebi gelen bir fotoğrafı
-    süresinden önce manuel silmesi için bir UI yok. Bu uç söz konusu
-    listeyi tenant kapsamında, sayfalı ve filtreli döner. Fotoğraf
-    bayt'ları KVKK gereği yanıtın bir parçası değildir; her satır
-    yalnızca metadata içerir.
-    """
-    query: dict = {"tenant_id": current_user.tenant_id}
-    if booking_id:
-        query["booking_id"] = booking_id
-    if guest_id:
-        query["guest_id"] = guest_id
-    if claimed is not None:
-        query["claimed"] = bool(claimed)
-    if uploaded_after or uploaded_before:
-        ts: dict = {}
-        if uploaded_after:
-            ts["$gte"] = uploaded_after
-        if uploaded_before:
-            ts["$lte"] = uploaded_before
-        query["uploaded_at"] = ts
-
-    retention_days = _id_photo_retention_days()
-    cursor = (
-        db.online_checkin_id_photos
-        .find(query, {"_id": 0})
-        .sort("uploaded_at", -1)
-        .skip(int(offset))
-        .limit(int(limit))
-    )
-    docs = await cursor.to_list(int(limit))
-    total = await db.online_checkin_id_photos.count_documents(query)
-
-    return {
-        "items": [_public_id_photo_row(d, retention_days) for d in docs],
-        "total": total,
-        "retention_days": retention_days,
-        "filters": {
-            "booking_id": booking_id,
-            "guest_id": guest_id,
-            "claimed": claimed,
-            "uploaded_after": uploaded_after,
-            "uploaded_before": uploaded_before,
-        },
-        "pagination": {"limit": limit, "offset": offset},
     }
 
 
