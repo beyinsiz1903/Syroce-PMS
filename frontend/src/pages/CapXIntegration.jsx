@@ -54,7 +54,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/api/capx/status");
+      const { data } = await axios.get("/capx/status");
       setStatus(data);
     } catch (e) {
       toast.error("Durum okunamadı");
@@ -66,7 +66,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const loadCallbackUrl = useCallback(async () => {
     try {
       const params = tenant?.id ? { tenant_id: tenant.id } : {};
-      const { data } = await axios.get("/api/capx/callback/url", { params });
+      const { data } = await axios.get("/capx/callback/url", { params });
       setCallbackUrl(data?.callback_url || "");
     } catch (e) {
       // sessiz: tenant_id yoksa endpoint 400 döner
@@ -82,7 +82,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
       if (callbackUrl) body.callback_url = callbackUrl;
       if (tenant?.id) body.tenant_id = tenant.id;
       if (callbackJwt) body.jwt_token = callbackJwt;
-      const { data } = await axios.post("/api/capx/callback/register", body);
+      const { data } = await axios.post("/capx/callback/register", body);
       setCallbackResult(data);
       toast.success("Callback URL CapX'e bildirildi");
     } catch (e) {
@@ -110,7 +110,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const ping = async () => {
     setPinging(true); setPingResult(null);
     try {
-      const { data } = await axios.post("/api/capx/ping");
+      const { data } = await axios.post("/capx/ping");
       setPingResult(data);
       if (data.ok) toast.success("CapX bağlantısı başarılı");
       else toast.error(`Ping başarısız: ${data.error || "?"}`);
@@ -126,7 +126,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const sendAvailability = async () => {
     setAvailResult(null);
     try {
-      const { data } = await axios.post("/api/capx/sync/availability", avail);
+      const { data } = await axios.post("/capx/sync/availability", avail);
       setAvailResult(data);
       toast.success("Müsaitlik gönderildi");
     } catch (e) {
@@ -139,7 +139,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const sendEvent = async () => {
     setEventResult(null);
     try {
-      const { data } = await axios.post("/api/capx/test-event", event);
+      const { data } = await axios.post("/capx/test-event", event);
       setEventResult(data);
       toast.success("Olay gönderildi (HMAC imzalı)");
     } catch (e) {
