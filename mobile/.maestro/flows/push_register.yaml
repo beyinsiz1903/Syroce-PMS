@@ -1,0 +1,62 @@
+appId: com.syroce.pms
+name: "Push: bildirim kaydı (smoke)"
+tags:
+  - smoke
+  - push
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+
+# Login lands on the front_desk Today tab. Wait for it so registerForPush
+# (fired by AuthGate the moment `user` is set) has a chance to run.
+- assertVisible:
+    text: "Bugün Giriş"
+    timeout: 30000
+
+# registerForPush asks for permission, fetches an Expo push token, POSTs
+# it to /api/notifications/push/register, and updates the in-memory
+# status flag read by the More screen indicator. Give it up to ~10s on
+# slower simulators.
+- extendedWaitUntil:
+    visible:
+      id: "smoke-today-quick-checkin"
+    timeout: 10000
+
+# Open the "Daha" (Settings/More) tab where the push status row lives.
+- tapOn:
+    text: "Daha"
+
+# The status card uses the shared `pushStatus` label and exposes a
+# stable testID. The card is *always* rendered (initial value is
+# "Bekleniyor"), so card presence alone proves nothing — we have to
+# assert that the status transitioned away from the pending sentinel
+# AND landed on one of the explicit terminal outcomes the
+# registration pipeline can produce.
+- assertVisible:
+    text: "Push bildirim"
+    timeout: 10000
+
+# The pending sentinel ("Bekleniyor") MUST disappear within the
+# registration timeout. If it stays visible, registerForPush() never
+# resolved — that's the silent breakage we want to catch.
+- extendedWaitUntil:
+    notVisible:
+      text: "Bekleniyor"
+    timeout: 20000
+
+# Status must land on one of the four terminal labels emitted by
+# registerForPush() (registered / denied / unavailable / error). We
+# express this as four independent assertions tied to the same
+# testID — the row matches a single Body element, so the assertion
+# below is "this row's text equals one of the allowed values" via
+# Maestro's regex anchor on the testID-scoped text content.
+- assertVisible:
+    id: "smoke-push-status"
+    text: "Açık|İzin reddedildi|Kayıt hatası|Kapalı / Devre dışı"
+    timeout: 5000

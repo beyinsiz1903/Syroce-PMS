@@ -10,6 +10,10 @@ import {
   authenticateBiometric,
   getBiometricCapability,
 } from '../../src/biometrics/lock';
+import {
+  getLastPushStatus,
+  type PushRegistrationStatus,
+} from '../../src/notifications/push';
 
 export default function MoreScreen() {
   const c = useTheme();
@@ -19,6 +23,9 @@ export default function MoreScreen() {
 
   const [bioAvailable, setBioAvailable] = useState<boolean>(false);
   const [bioLabel, setBioLabel] = useState<string>('Biyometrik');
+  const [pushStatus, setPushStatus] = useState<PushRegistrationStatus>(
+    getLastPushStatus(),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +39,22 @@ export default function MoreScreen() {
       cancelled = true;
     };
   }, []);
+
+  // Poll the push registration outcome so the indicator updates without
+  // a screen reload — `registerForPush()` runs asynchronously in
+  // AuthGate after sign-in, so it may finish a few seconds after this
+  // tab is first opened. Stops polling once we have a definitive result.
+  useEffect(() => {
+    if (pushStatus !== 'unknown') return;
+    const t = setInterval(() => {
+      const next = getLastPushStatus();
+      if (next !== 'unknown') {
+        setPushStatus(next);
+        clearInterval(t);
+      }
+    }, 500);
+    return () => clearInterval(t);
+  }, [pushStatus]);
 
   const onLogout = () => {
     Alert.alert(tr.more.logout, '', [
@@ -79,6 +102,7 @@ export default function MoreScreen() {
             </Muted>
           </View>
           <Switch
+            testID="smoke-biometric-toggle"
             value={biometricLock}
             disabled={!bioAvailable && !biometricLock}
             onValueChange={onToggleBiometric}
@@ -86,6 +110,21 @@ export default function MoreScreen() {
             trackColor={{ true: c.primary, false: c.border }}
           />
         </View>
+      </Card>
+
+      <Card>
+        <H2>{tr.more.pushStatus}</H2>
+        <Body testID="smoke-push-status">
+          {pushStatus === 'registered'
+            ? tr.more.pushOn
+            : pushStatus === 'denied'
+            ? tr.more.pushDenied
+            : pushStatus === 'error'
+            ? tr.more.pushError
+            : pushStatus === 'unavailable'
+            ? tr.more.pushOff
+            : tr.more.pushPending}
+        </Body>
       </Card>
 
       <Card>

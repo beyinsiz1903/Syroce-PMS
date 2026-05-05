@@ -25,6 +25,24 @@ let _handlerSet = false;
 let _tapSub: Notifications.Subscription | null = null;
 let _fgSub: Notifications.Subscription | null = null;
 
+/**
+ * Tracks the outcome of the most recent `registerForPush()` call so the
+ * Settings ("Daha") screen can surface a status indicator without having
+ * to re-run the registration flow on every mount. Pure in-memory; reset
+ * on app restart.
+ */
+export type PushRegistrationStatus =
+  | 'unknown'
+  | 'registered'
+  | 'denied'
+  | 'unavailable'
+  | 'error';
+let _lastPushStatus: PushRegistrationStatus = 'unknown';
+
+export function getLastPushStatus(): PushRegistrationStatus {
+  return _lastPushStatus;
+}
+
 function setForegroundHandler() {
   if (_handlerSet) return;
   _handlerSet = true;
@@ -59,13 +77,19 @@ export async function registerForPush(): Promise<string | null> {
   setForegroundHandler();
   await ensureAndroidChannel();
 
-  if (Platform.OS === 'web') return null;
+  if (Platform.OS === 'web') {
+    _lastPushStatus = 'unavailable';
+    return null;
+  }
 
   let perms = await Notifications.getPermissionsAsync();
   if (perms.status !== 'granted') {
     perms = await Notifications.requestPermissionsAsync();
   }
-  if (perms.status !== 'granted') return null;
+  if (perms.status !== 'granted') {
+    _lastPushStatus = 'denied';
+    return null;
+  }
 
   // EAS builds and the legacy Constants.manifest both expose the projectId.
   // We tolerate it being missing (Expo Go on first run) — the call still
@@ -81,21 +105,42 @@ export async function registerForPush(): Promise<string | null> {
       projectId ? { projectId } : undefined,
     );
   } catch {
+    _lastPushStatus = 'error';
     return null;
   }
   const token = tokenResp?.data;
-  if (!token) return null;
+  if (!token) {
+    _lastPushStatus = 'unavailable';
+    return null;
+  }
 
-  const deviceId = await getOrCreateDeviceId();
-  await registerPushDevice({
-    device_id: deviceId,
-    push_token: token,
-    platform: Platform.OS,
-    app_version: Constants.expoConfig?.version,
-    os_version: String(Platform.Version),
-    device_name: Constants.deviceName ?? undefined,
-  });
+  // Backend POST failure must surface as 'error' so the More-screen
+  // indicator (and the smoke test that asserts on it) doesn't silently
+  // collapse a broken /push/register endpoint into "not yet attempted".
+  // `registerPushDevice` returns false on HTTP failure; we additionally
+  // try/catch in case a future refactor lets a SecureStore error escape
+  // `getOrCreateDeviceId()`.
+  let posted = false;
+  try {
+    const deviceId = await getOrCreateDeviceId();
+    posted = await registerPushDevice({
+      device_id: deviceId,
+      push_token: token,
+      platform: Platform.OS,
+      app_version: Constants.expoConfig?.version,
+      os_version: String(Platform.Version),
+      device_name: Constants.deviceName ?? undefined,
+    });
+  } catch {
+    _lastPushStatus = 'error';
+    return null;
+  }
+  if (!posted) {
+    _lastPushStatus = 'error';
+    return null;
+  }
 
+  _lastPushStatus = 'registered';
   return token;
 }
 

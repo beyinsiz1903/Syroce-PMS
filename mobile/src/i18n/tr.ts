@@ -111,6 +111,9 @@ export const tr = {
     pushStatus: 'Push bildirim',
     pushOn: 'Açık',
     pushOff: 'Kapalı / Devre dışı',
+    pushPending: 'Bekleniyor',
+    pushDenied: 'İzin reddedildi',
+    pushError: 'Kayıt hatası',
   },
   errors: {
     generic: 'Bir hata oluştu, lütfen tekrar dene',

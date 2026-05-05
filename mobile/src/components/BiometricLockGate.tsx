@@ -104,6 +104,8 @@ export const BiometricLockGate: React.FC<{ children: React.ReactNode }> = ({ chi
       {children}
       {locked ? (
         <View
+          testID="smoke-biometric-lock"
+          accessibilityLabel="Doğrulama gerekli"
           style={{
             position: 'absolute',
             top: 0,
@@ -119,6 +121,9 @@ export const BiometricLockGate: React.FC<{ children: React.ReactNode }> = ({ chi
         >
           <Text style={{ color: c.text, fontSize: 22, fontWeight: '700' }}>
             Syroce PMS kilitli
+          </Text>
+          <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>
+            Doğrulama gerekli
           </Text>
           <Text style={{ color: c.textMuted, textAlign: 'center' }}>
             Devam etmek için biyometrik doğrulamayı tamamlayın.

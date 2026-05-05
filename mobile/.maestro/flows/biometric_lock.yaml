@@ -1,0 +1,59 @@
+appId: com.syroce.pms
+name: "Biyometrik kilit re-lock (smoke)"
+tags:
+  - smoke
+  - security
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+# NOTE: requires an Android emulator with at least one fingerprint
+# enrolled (id=1). See README → "Biometric flow prerequisites".
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+
+# Wait for the Today tab so we know AuthGate has hydrated the user
+# session and SecureStore is reachable from BiometricLockGate.
+- assertVisible:
+    text: "Bugün Giriş"
+    timeout: 30000
+
+# Open Settings → Biyometrik kilit toggle.
+- tapOn:
+    text: "Daha"
+- assertVisible:
+    text: "Biyometrik kilit"
+    timeout: 10000
+
+# Flip the switch ON. The OS biometric prompt is then dismissed by the
+# adb-driven fingerprint touch in simulate_fingerprint.js. Verifying
+# that the switch flipped on is implicit: if the toggle never persisted,
+# BiometricLockGate won't re-lock after the relaunch below and the
+# "smoke-biometric-lock" assertion will fail with a clear timeout.
+- tapOn:
+    id: "smoke-biometric-toggle"
+- runScript: ../scripts/simulate_fingerprint.js
+
+# Background the app for longer than RELOCK_GRACE_MS (5s in
+# BiometricLockGate.tsx) so the gate decides to re-lock on resume.
+- pressKey: Home
+- runScript: ../scripts/wait_relock_grace.js
+
+# Bring the app back. We deliberately keep clearState/clearKeychain off
+# so the SecureStore-backed biometric pref survives the warm relaunch
+# and BiometricLockGate's initial-mount effect re-locks the UI.
+- launchApp:
+    clearState: false
+    clearKeychain: false
+
+# Lock overlay must render — assert by both testID (structural) and
+# the visible "Doğrulama gerekli" header (textual). Either failure
+# would surface a regression in BiometricLockGate's lock semantics.
+- assertVisible:
+    id: "smoke-biometric-lock"
+    timeout: 15000
+- assertVisible:
+    text: "Doğrulama gerekli"

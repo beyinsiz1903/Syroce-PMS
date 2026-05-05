@@ -113,10 +113,15 @@ export async function registerPushDevice(payload: {
   app_version?: string;
   os_version?: string;
   device_name?: string;
-}): Promise<void> {
+}): Promise<boolean> {
+  // Returns true on success and false (instead of throwing) on backend
+  // failure so the caller — `registerForPush()` — can update the
+  // user-visible status indicator without crashing the post-login flow.
+  // Push is a best-effort enhancement; the app stays usable either way.
   try {
     await api.post('/api/notifications/push/register', payload);
+    return true;
   } catch {
-    // not critical — push is a best-effort enhancement, app still works
+    return false;
   }
 }
