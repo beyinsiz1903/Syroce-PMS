@@ -360,10 +360,12 @@ check" olarak ayarlanmalıdır.
 
 2. **Otomatik (`repository_dispatch`, `eas-build-finished`)** — EAS
    webhook'u doğrudan GitHub Actions'ı tetikleyemez; arada küçük bir
-   röle servisi konur:
+   röle servisi konur. Röle servisinin kodu, K8s manifesti, Dockerfile'ı
+   ve operasyonel runbook'u repo içinde:
+   [`infra/eas-webhook-relay/`](../infra/eas-webhook-relay/README.md).
 
    ```text
-   EAS build webhook  ──HMAC-SHA1──▶  röle (Cloud Function / Lambda)
+   EAS build webhook  ──HMAC-SHA1──▶  röle (infra/eas-webhook-relay)
                                          │
                                          ▼
                        POST /repos/<owner>/<repo>/dispatches
@@ -374,14 +376,36 @@ check" olarak ayarlanmalıdır.
    ```
 
    Röle:
-   - `expo-signature` başlığını `EAS_WEBHOOK_SECRET` ile doğrular,
-   - `status != "finished"` olan webhook'ları yutar,
-   - `client_payload`'ı yukarıdaki şemaya çevirip GitHub API'ye gönderir
-     (PAT veya GitHub App token, `repo` scope).
+   - `expo-signature` başlığını `EAS_WEBHOOK_SECRET` ile HMAC-SHA1
+     doğrular (sabit zamanlı karşılaştırma),
+   - `status != "finished"` olan webhook'ları yutar (in-queue,
+     in-progress, errored, canceled — hiçbiri smoke tetiklemez),
+   - `payload.artifacts.applicationArchiveUrl`, `payload.id`,
+     `payload.platform` ve `payload.metadata.buildProfile` alanlarını
+     yukarıdaki `client_payload` şemasına çevirip GitHub API'ye gönderir
+     (PAT veya GitHub App installation token, `repo` scope).
+   - `issue_number` opsiyoneldir; commit mesajı / branch adı içinde
+     `PR-<n>`, `#<n>` veya `pr-<n>/...` deseni varsa otomatik çıkarılır,
+     yoksa atlanır ve workflow yorum adımını sessizce atlar.
 
-   Webhook'u kurmak için: `eas webhook:create --event BUILD --url
-   https://<röle>/eas` (URL ile birlikte secret üretilir; aynı secret
-   röleye `EAS_WEBHOOK_SECRET` olarak verilir).
+   **Üretim deploy URL'si:** `https://eas-relay.syroce.com/eas`
+   (ingress + cert-manager üzerinden; healthcheck `/health`).
+
+   Webhook'u kurmak için:
+
+   ```bash
+   export EAS_WEBHOOK_SECRET=$(openssl rand -hex 32)
+   eas webhook:create \
+     --event BUILD \
+     --url https://eas-relay.syroce.com/eas \
+     --secret "$EAS_WEBHOOK_SECRET"
+   # Aynı secret röleye `EAS_WEBHOOK_SECRET` env değişkeni olarak verilir
+   # (k8s: secret/eas-webhook-relay-secrets, bkz. infra/eas-webhook-relay/k8s/deployment.yml).
+   ```
+
+   Token / secret rotasyonu, gözden geçirme ve "build bitti ama smoke
+   çalışmadı" runbook'u için
+   [`infra/eas-webhook-relay/README.md`](../infra/eas-webhook-relay/README.md#operations-runbook).
 
 ### Runner gereksinimleri
 
