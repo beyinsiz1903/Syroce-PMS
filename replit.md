@@ -5200,3 +5200,44 @@ App Store / Play Store publishing.
 - `to_list(2000)` sınırı: 2000 üstü checked-in olan tenantlarda no-folio sayımı eksik gösterilebilir.
 
 **Tur 14 dışı (sonraki tura)**: Provizyon (dry_run) sonucunun HotelRunner'ın sol menüsü gibi `room_charge` / `no_show_fee` / `late_check_out` kategorilerine ayrılması (UI ve backend rollup) — kullanıcı onayladı, henüz yapılmadı.
+
+## Task #105 — KVKK kimlik fotoğrafı görüntüleme uyarı işçisi (2026-05-05)
+
+`backend/workers/id_photo_view_alert.py` periyodik olarak (varsayılan 600s,
+`KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS` ile override edilebilir) `audit_logs`
+koleksiyonundaki `view_online_checkin_id_photo` olaylarını tenant + actor
+bazında gruplar; bir personel yapılandırılan eşiği aştığında:
+
+1. `id_photo_view_burst_alert` adıyla **`severity=critical`** audit kaydı yazar
+   (mevcut audit timeline / KVKK raporu UI'larında otomatik görünür).
+2. `notifications` koleksiyonuna `priority=high`, `user_id=null` ve
+   `target_roles=["super_admin","admin","supervisor"]` taşıyan
+   `kvkk_id_photo_alert` kaydı düşer — yönetici çanı bunu mevcut akışında
+   okur, **resepsiyon/clerk rolleri görmez**.
+
+**Konfigürasyon (`kvkk_id_photo_alert_config` koleksiyonu, kiracı bazlı):**
+`enabled` (bool, vars. `true`), `threshold` (vars. **20** görüntüleme),
+`window_minutes` (vars. **60**), `cooldown_minutes` (vars. **60** — aynı
+aktör için aynı pencerede tekrar uyarı vermemek için), `alert_roles`
+(opsiyonel string listesi, vars. yöneticiler). Sayısal alanlar `_safe_int`
+ile güvenli şekilde coerce edilir (string/None/`"abc"` gibi değerler
+varsayılana düşer) ve sonra güvenli aralığa clamp edilir; bozuk bir
+config dökümanı diğer kiracıları etkilemez (per-doc try/except).
+
+`kvkk_id_photo_alert_state` koleksiyonu `(tenant_id, actor_id)` başına son
+uyarı zamanını tutar (cooldown gating). Index'ler ilk tikte best-effort
+oluşturulur.
+
+`backend/domains/notifications_router.py` artık `target_roles` alanını
+saygılı bir şekilde filtreler: alan yok / `null` / boş liste → eski
+yayın davranışı (tüm kullanıcılar görür); doluysa yalnız listedeki
+rollere ait kullanıcılar görür. **Aynı görünürlük filtresi `/list`,
+`unread_count`, `/mark-read` ve `/mark-all-read` endpoint'lerinde
+tutarlı olarak uygulanır** — yani manager-only KVKK alarmlarını bir
+clerk ne görebilir ne de toplu okundu yapıp yöneticilerden
+gizleyebilir.
+
+Worker `bootstrap/phases/c_domain.py` Phase C içinde `subscription-expiry`
+yanına eklendi. Kapsam: 24 mock-only test (`tests/test_id_photo_view_alert_worker.py`)
++ 7 test (`tests/test_notifications_visibility_filter.py`, list+mark-read+
+mark-all-read authz dahil).

@@ -53,6 +53,28 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Subscription expiry worker start error: {e}")
 
+    # Task #105 — KVKK kimlik fotoğrafı görüntüleme uyarı işçisi.
+    # Resepsiyonun tek vardiyada olağandışı sayıda kimlik fotoğrafı
+    # açması durumunda yöneticiye yüksek-öncelikli audit + bildirim
+    # gönderir. Eşik/pencere `kvkk_id_photo_alert_config` ile kiracı
+    # bazında özelleştirilebilir.
+    try:
+        import asyncio as _asyncio
+
+        from workers.id_photo_view_alert import (
+            DEFAULT_INTERVAL_SECONDS as _IDP_INTERVAL,
+            run_loop as _idp_loop,
+        )
+        _asyncio.create_task(
+            _idp_loop(_IDP_INTERVAL), name="kvkk-id-photo-alert"
+        )
+        logger.info(
+            "KVKK ID photo view alert worker started (%ss interval)",
+            _IDP_INTERVAL,
+        )
+    except Exception as e:
+        logger.warning(f"KVKK ID photo view alert worker start error: {e}")
+
     # V3 — Syroce mobil push scheduler (VIP arrivals + no-show risk).
     # Polling endpoints already surface these but only while the app is
     # open; this worker fans them out as real OS-level push notifications.
