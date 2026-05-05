@@ -70,6 +70,16 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
     return await get_run_status(current_user.tenant_id)
 
 
+@router.get("/preview")
+async def preview_night_audit(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Gece denetimi Hazirlik ozeti — engelleyiciler, uyarilar, oda/misafir durumu."""
+    from core.night_audit_hardened import build_audit_preview
+    return await build_audit_preview(current_user.tenant_id)
+
+
 @router.get("/runs")
 async def list_runs(
     limit: int = Query(20, ge=1, le=100),

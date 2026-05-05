@@ -23,6 +23,7 @@ import {
   statusConfig, severityConfig, categoryLabels, paymentMethodLabels,
 } from '@/components/night-audit/badges';
 import OverviewTab from '@/components/night-audit/tabs/OverviewTab';
+import PreparationTab from '@/components/night-audit/tabs/PreparationTab';
 import FinancialTab from '@/components/night-audit/tabs/FinancialTab';
 import ReconciliationTab from '@/components/night-audit/tabs/ReconciliationTab';
 import IntegrityTab from '@/components/night-audit/tabs/IntegrityTab';
@@ -40,7 +41,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("preparation");
   const [financialSummary, setFinancialSummary] = useState(null);
   const [reconciliation, setReconciliation] = useState(null);
   const [integrityCheck, setIntegrityCheck] = useState(null);
@@ -341,6 +342,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="bg-gray-100/80 p-1">
+            <TabsTrigger data-testid="tab-preparation" value="preparation" className="text-xs gap-1.5">
+              <Shield className="w-3.5 h-3.5" /> Hazırlık
+            </TabsTrigger>
             <TabsTrigger data-testid="tab-overview" value="overview" className="text-xs gap-1.5">
               <Moon className="w-3.5 h-3.5" /> Genel Bakış
             </TabsTrigger>
@@ -357,6 +361,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               <FileText className="w-3.5 h-3.5" /> Rapor
             </TabsTrigger>
           </TabsList>
+
+          {/* ═══ Preparation Tab ═══ */}
+          <TabsContent value="preparation" className="space-y-4 mt-4">
+            <PreparationTab onStartRun={() => setShowRunDialog(true)} />
+          </TabsContent>
 
           {/* ═══ Overview Tab ═══ */}
           <TabsContent value="overview" className="space-y-4 mt-4">

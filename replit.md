@@ -5170,3 +5170,33 @@ V3 hardens the Expo mobile app at `mobile/` for production-grade staff and guest
 
 ### Out of scope (V4)
 App Store / Play Store publishing.
+
+## Tur 14 — Gece Denetimi "Hazırlık" Ekranı (2026-05-05)
+
+**Hedef**: HotelRunner'ın "Gün Sonu Genel Bakış" mantığını taklit eden ön kontrol ekranı — operatör Denetim Başlat'a basmadan önce neyi yapması gerektiğini görsün, sorunlu rezervasyona tek tıkla atlayabilsin.
+
+**Backend** (`backend/core/night_audit_hardened.py` + `backend/domains/pms/night_audit/router.py`):
+- Yeni `build_audit_preview(tenant_id, property_id)` helper'ı (§8b PRE-AUDIT PREVIEW). Döner: `business_date` / `calendar_date` / `date_drift_days`, `ready` (engelleyici yoksa true), `blockers[]`, `warnings[]`, `rooms` özet (toplam/dolu/müsait/kirli/arıza/blok), `guests` özet (in_house/arrival/departure/cancellation), `last_run` (UI Son Denetim Özeti'ni doldurmak için).
+- `blockers[]` kategorileri (her biri ≤25 örnek rezervasyon + `action` ipucu — UI Düzelt linki için): `active_run_other_date` (open_run), `checked_in_no_room` (edit_booking), `checked_in_no_open_folio` (edit_booking), `overdue_checkouts` (checkout_or_extend), `pending_arrivals` (checkin_or_no_show).
+- `warnings[]`: `housekeeping_in_progress`, `pos_open_orders` (try/except — koleksiyon yoksa atlar).
+- Yeni endpoint: `GET /api/night-audit/preview` — `view_finance_reports` permission'ı, tenant scope'lu.
+- Smoke (tenant 5bad4a34, business_date 2026-04-28, calendar 2026-05-05): drift=7 gün, 24 overdue blocker (24 örnek), housekeeping uyarısı 2, 30 oda / 27 in_house. HTTP 200, 3.1s.
+
+**Frontend** (`frontend/src/components/night-audit/tabs/PreparationTab.jsx` + `frontend/src/pages/NightAuditDashboard.jsx`):
+- Yeni "Hazırlık" sekmesi (Shield ikonu) artık varsayılan tab — `activeTab` default'u `"preparation"` yapıldı.
+- PreparationTab içerik:
+  1. **Sistem tarihi rozeti** — `date_drift_days != 0` ise amber banner ("Takvim 2026-05-05 · PMS iş günü 2026-04-28 (7 gün geride)").
+  2. **Durum + tek dokunuş Başlat** — emerald (hazır) ya da rose (engelli) ikon, "Yenile" + "Denetim Başlat" butonları (Başlat aynı `showRunDialog` modalını açıyor).
+  3. **4 stat tile** — Oda toplam, kirli oda, içerideki misafir, iş günü.
+  4. **Engelleyiciler** — accordion: kategori + sayı + mesaj; açıldığında 25 örnek rezervasyon (misafir adı, oda, tarih aralığı, durum) + "Rezervasyona git" butonu navigate eder.
+  5. **Uyarılar** — sadece liste (engellemez).
+- Deep-link: `/pms?edit=<bookingId>#bookings` — PMSModule'ün `?edit=` query + `#bookings` hash konvansiyonuyla uyumlu (Tur 14 architect bulgusu sonrası `?tab=bookings&bookingId=` deseninden düzeltildi).
+- `data-testid` markerlar: `tab-preparation`, `prep-start-btn`, `date-drift-banner`, `blockers-card`, `blocker-<category>`, `warnings-card`, `ready-card`.
+
+**Architect bulguları (kabul edildi, follow-up)**:
+- `build_audit_preview` ile `_validate_preconditions` aynı sorguları (overdue / pending / no-room / no-folio) iki kez çalıştırıyor — ortak helper'a çıkarılabilir (kod drift riski azalır, refresh + start çift trip yerine tek olabilir).
+- `cancellations_today` `updated_at: {$regex: "^bd"}` brittle — normalize datetime range filtresine geçilebilir.
+- POS / housekeeping uyarı kaynakları preview ile gerçek run validation arasında farklı (preview `pos_orders`, validation `pos_transactions`) — hizalanmalı.
+- `to_list(2000)` sınırı: 2000 üstü checked-in olan tenantlarda no-folio sayımı eksik gösterilebilir.
+
+**Tur 14 dışı (sonraki tura)**: Provizyon (dry_run) sonucunun HotelRunner'ın sol menüsü gibi `room_charge` / `no_show_fee` / `late_check_out` kategorilerine ayrılması (UI ve backend rollup) — kullanıcı onayladı, henüz yapılmadı.

@@ -1006,6 +1006,252 @@ async def abort_night_audit(
 
 
 # ═══════════════════════════════════════════════════════════════
+#  8b. PRE-AUDIT PREVIEW (Hazirlik / Genel Bakis)
+# ═══════════════════════════════════════════════════════════════
+
+async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
+    """Engelleyici/uyari listeleri icin orneklem rezervasyonlar (Duzelt linki)."""
+    cursor = db.bookings.find(
+        query,
+        {
+            "_id": 0, "id": 1, "guest_name": 1, "room_id": 1, "room_no": 1,
+            "check_in": 1, "check_out": 1, "status": 1, "confirmation_code": 1,
+        },
+    ).limit(limit)
+    return [b async for b in cursor]
+
+
+async def build_audit_preview(tenant_id: str, property_id: str | None = None) -> dict:
+    """Gece denetimi 'Hazirlik' ekrani icin yapisal ozet.
+
+    HotelRunner'in Genel Bakis sayfasinin mantigi: gece denetimini baslatmadan
+    once kullanici neyi yapip neyi yapmadigini gorur, sorunlu rezervasyonlara
+    direkt atlar (action=edit_booking + booking_id).
+
+    Doner:
+      business_date / calendar_date / date_drift_days
+      blockers[] : engelleyici sorunlar (kategori, mesaj, sayi, ornek 25 kayit)
+      warnings[] : engellemeyen uyarilar
+      rooms      : oda durumlari ozeti
+      guests     : misafir hareketleri ozeti
+      last_run   : son night_audit_run (varsa) — UI Son Denetim Ozeti'ni dolu tutmak icin
+    """
+    prop_id = property_id or DEFAULT_PROPERTY
+
+    settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    bd = (settings or {}).get("business_date") or _now().date().isoformat()
+    cal = _now().date().isoformat()
+    drift = (dt_date.fromisoformat(cal) - dt_date.fromisoformat(bd)).days
+
+    blockers: list[dict] = []
+    warnings: list[dict] = []
+
+    # 1) Baska bir is gunu icin running/blocked/partial run var mi?
+    active = await db.night_audit_runs.find_one(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": [S_RUNNING, S_BLOCKED, S_PARTIAL]},
+            "business_date": {"$ne": bd},
+        },
+        {"_id": 0, "id": 1, "business_date": 1, "status": 1},
+    )
+    if active:
+        blockers.append({
+            "category": "active_run_other_date",
+            "label": "Baska tarih icin aktif denetim var",
+            "message": (
+                f"Farkli is gunu ({active['business_date']}, durum: {active['status']}) icin "
+                f"acik bir denetim mevcut. Once o denetimi tamamlayin/iptal edin."
+            ),
+            "count": 1,
+            "items": [{"run_id": active["id"], "business_date": active["business_date"], "status": active["status"]}],
+            "action": "open_run",
+        })
+
+    # 2) Oda atamasi olmayan checked-in rezervasyonlar
+    orphans_q = {"tenant_id": tenant_id, "status": "checked_in", "room_id": {"$in": [None, ""]}}
+    orphans_count = await db.bookings.count_documents(orphans_q)
+    if orphans_count > 0:
+        blockers.append({
+            "category": "checked_in_no_room",
+            "label": "Oda atanmamis check-in",
+            "message": f"{orphans_count} check-in misafire oda atanmamis.",
+            "count": orphans_count,
+            "items": await _sample_bookings(orphans_q),
+            "action": "edit_booking",
+        })
+
+    # 3) Acik folio'su olmayan checked-in rezervasyonlar
+    checked_in = await db.bookings.find(
+        {"tenant_id": tenant_id, "status": "checked_in"},
+        {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1, "room_no": 1, "check_in": 1, "check_out": 1},
+    ).to_list(2000)
+    if checked_in:
+        explicit_folio_ids = [bk.get("folio_id") for bk in checked_in if bk.get("folio_id")]
+        booking_ids_no_folio = [bk["id"] for bk in checked_in if not bk.get("folio_id")]
+
+        valid_folio_id_set: set = set()
+        if explicit_folio_ids:
+            async for f in db.folios.find(
+                {"id": {"$in": explicit_folio_ids}, "tenant_id": tenant_id, "status": "open"},
+                {"_id": 0, "id": 1},
+            ):
+                valid_folio_id_set.add(f["id"])
+
+        booking_with_open_folio_set: set = set()
+        if booking_ids_no_folio:
+            async for f in db.folios.find(
+                {"booking_id": {"$in": booking_ids_no_folio}, "tenant_id": tenant_id, "status": "open"},
+                {"_id": 0, "booking_id": 1},
+            ):
+                booking_with_open_folio_set.add(f["booking_id"])
+
+        missing = [
+            bk for bk in checked_in
+            if (bk.get("folio_id") and bk["folio_id"] not in valid_folio_id_set)
+            or (not bk.get("folio_id") and bk["id"] not in booking_with_open_folio_set)
+        ]
+        if missing:
+            blockers.append({
+                "category": "checked_in_no_open_folio",
+                "label": "Acik folyosuz check-in",
+                "message": f"{len(missing)} check-in misafirin acik bir folyosu yok.",
+                "count": len(missing),
+                "items": [
+                    {
+                        "id": bk["id"], "guest_name": bk.get("guest_name"),
+                        "room_no": bk.get("room_no"), "check_in": bk.get("check_in"),
+                        "check_out": bk.get("check_out"),
+                    } for bk in missing[:25]
+                ],
+                "action": "edit_booking",
+            })
+
+    # 4) Cikis tarihi gecmis ama hala checked_in
+    overdue_q = {"tenant_id": tenant_id, "status": "checked_in", "check_out": {"$lte": bd}}
+    overdue_count = await db.bookings.count_documents(overdue_q)
+    if overdue_count > 0:
+        blockers.append({
+            "category": "overdue_checkouts",
+            "label": "Gec cikis (overdue)",
+            "message": (
+                f"{overdue_count} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. "
+                f"Cikis yapin veya konaklamayi uzatin."
+            ),
+            "count": overdue_count,
+            "items": await _sample_bookings(overdue_q),
+            "action": "checkout_or_extend",
+        })
+
+    # 5) Geliş tarihi gecmis confirmed/guaranteed (no-check-in)
+    pending_arr_q = {
+        "tenant_id": tenant_id,
+        "status": {"$in": ["confirmed", "guaranteed"]},
+        "check_in": {"$lte": bd},
+    }
+    pending_count = await db.bookings.count_documents(pending_arr_q)
+    if pending_count > 0:
+        blockers.append({
+            "category": "pending_arrivals",
+            "label": "Bekleyen geliş (no-check-in)",
+            "message": (
+                f"{pending_count} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
+                f"Check-in yapin, no-show isaretleyin veya iptal edin."
+            ),
+            "count": pending_count,
+            "items": await _sample_bookings(pending_arr_q),
+            "action": "checkin_or_no_show",
+        })
+
+    # 6) Devam eden housekeeping (uyari, engellemez)
+    inprog_hk = await db.housekeeping_tasks.count_documents({
+        "tenant_id": tenant_id, "status": {"$in": ["in_progress", "started"]},
+    })
+    if inprog_hk > 0:
+        warnings.append({
+            "category": "housekeeping_in_progress",
+            "label": "Devam eden kat hizmetleri",
+            "message": f"{inprog_hk} oda kat hizmetleri devam ediyor.",
+            "count": inprog_hk,
+        })
+
+    # 7) Acik POS / SPA siparişleri (varsa)
+    try:
+        open_pos = await db.pos_orders.count_documents({
+            "tenant_id": tenant_id, "status": {"$in": ["open", "pending"]},
+        })
+        if open_pos > 0:
+            warnings.append({
+                "category": "pos_open_orders",
+                "label": "Acik POS siparişleri",
+                "message": f"{open_pos} POS siparişi hala acik (folyoya henüz yansimamis olabilir).",
+                "count": open_pos,
+            })
+    except Exception:
+        pass
+
+    # 8) Oda durumlari ozeti
+    rooms_pipeline = [
+        {"$match": {"tenant_id": tenant_id}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+    ]
+    room_status_counts: dict[str, int] = {}
+    try:
+        async for row in db.rooms.aggregate(rooms_pipeline):
+            room_status_counts[(row.get("_id") or "unknown").lower()] = row["count"]
+    except Exception:
+        pass
+    rooms_total = sum(room_status_counts.values())
+    rooms_summary = {
+        "total": rooms_total,
+        "occupied": room_status_counts.get("occupied", 0),
+        "available": room_status_counts.get("available", 0) + room_status_counts.get("clean", 0),
+        "dirty": room_status_counts.get("dirty", 0),
+        "out_of_order": room_status_counts.get("out_of_order", 0) + room_status_counts.get("ooo", 0),
+        "blocked": room_status_counts.get("blocked", 0),
+    }
+
+    # 9) Misafir hareketleri ozeti
+    in_house = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
+    arriving_today = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "status": {"$in": ["confirmed", "guaranteed"]},
+        "check_in": bd,
+    })
+    departing_today = await db.bookings.count_documents({
+        "tenant_id": tenant_id, "status": "checked_in", "check_out": bd,
+    })
+    cancellations_today = await db.bookings.count_documents({
+        "tenant_id": tenant_id, "status": "cancelled",
+        "$or": [{"cancelled_at": {"$regex": f"^{bd}"}}, {"updated_at": {"$regex": f"^{bd}"}}],
+    })
+    guests_summary = {
+        "in_house": in_house,
+        "arriving_today": arriving_today,
+        "departing_today": departing_today,
+        "cancellations_today": cancellations_today,
+    }
+
+    # 10) Bu is gunu icin son run (UI Son Denetim Ozeti'ni doldurmak icin)
+    last_run = await db.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd},
+        {"_id": 0}, sort=[("started_at", -1)],
+    )
+
+    return {
+        "business_date": bd,
+        "calendar_date": cal,
+        "date_drift_days": drift,
+        "ready": len(blockers) == 0,
+        "blockers": blockers,
+        "warnings": warnings,
+        "rooms": rooms_summary,
+        "guests": guests_summary,
+        "last_run": last_run,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
 #  9. QUERIES
 # ═══════════════════════════════════════════════════════════════
 
