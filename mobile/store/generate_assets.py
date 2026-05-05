@@ -298,7 +298,9 @@ def tab_bar(d: ImageDraw.ImageDraw, w: int, h: int, theme: Theme, items: list[tu
 
 
 # --- Specific screens -----------------------------------------------------
-def screen_login(w, h, theme: Theme):
+def screen_login(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_login_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     # logo merkez üst
@@ -336,7 +338,9 @@ def screen_login(w, h, theme: Theme):
     return im
 
 
-def screen_today(w, h, theme: Theme):
+def screen_today(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_today_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     app_header(d, w, theme, "Bugün", "5 Mayıs 2026 · Resepsiyon")
@@ -390,7 +394,9 @@ def screen_today(w, h, theme: Theme):
     return im
 
 
-def screen_quick_checkin(w, h, theme: Theme):
+def screen_quick_checkin(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_quick_checkin_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     app_header(d, w, theme, "Hızlı Check-in", "QR + kimlik tarama")
@@ -458,7 +464,9 @@ def screen_quick_checkin(w, h, theme: Theme):
     return im
 
 
-def screen_housekeeping(w, h, theme: Theme):
+def screen_housekeeping(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_housekeeping_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     app_header(d, w, theme, "Kat hizmetleri", "Kat 4 · 14 oda")
@@ -519,7 +527,9 @@ def screen_housekeeping(w, h, theme: Theme):
     return im
 
 
-def screen_guest_bookings(w, h, theme: Theme):
+def screen_guest_bookings(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_guest_bookings_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     app_header(d, w, theme, "Rezervasyonlarım", "Aydın · Sadakat: Altın")
@@ -576,7 +586,9 @@ def screen_guest_bookings(w, h, theme: Theme):
     return im
 
 
-def screen_digital_key(w, h, theme: Theme):
+def screen_digital_key(w, h, theme: Theme, kind: str = "phone"):
+    if kind == "tablet":
+        return _screen_digital_key_tablet(w, h, theme)
     im, d = base_screen(w, h, theme)
     status_bar(d, w, theme)
     app_header(d, w, theme, "Dijital anahtar", "Oda 521 · Bodrum Sahil Suite")
@@ -628,6 +640,694 @@ def screen_digital_key(w, h, theme: Theme):
     d.text(((w // 2 + 16 + w - 48) // 2 - bw2 // 2, by + 55 - bh // 2), bt2, fill=PRIMARY, font=f)
 
     tab_bar(d, w, h, theme, [("Ana", False), ("Rez.", False), ("Anahtar", True), ("Daha", False)])
+    return im
+
+
+# --- Tablet (iPad / Android tablet) varyantları ---------------------------
+# Tablet baz çözünürlüğü 1668x2224 (3:4 portrait). Telefon ekranlarını
+# büyütmek yerine gerçek tablet düzeni kullanırız: solda iPadOS tarzı
+# yan navigasyon, sağda master-detail iki sütun.
+TABLET_RAIL_W = 220
+TABLET_PAD = 32
+
+
+def _tablet_side_rail(
+    im: Image.Image,
+    d: ImageDraw.ImageDraw,
+    h: int,
+    theme: Theme,
+    items: list[tuple[str, bool]],
+) -> int:
+    """iPadOS tarzı sol navigasyon. Aktif öğe vurgulanır."""
+    rail_w = TABLET_RAIL_W
+    d.rectangle((0, 0, rail_w, h), fill=theme.surface)
+    d.rectangle((rail_w - 2, 0, rail_w, h), fill=theme.border)
+    # Logo + marka adı
+    draw_logo_mark(im, rail_w // 2, 130, 110)
+    f_brand = font(30, bold=True)
+    bw, _ = text_size(d, "Syroce", f_brand)
+    d.text(((rail_w - bw) // 2, 210), "Syroce", fill=theme.text, font=f_brand)
+    # Navigasyon öğeleri
+    y = 320
+    for label, active in items:
+        if active:
+            d.rounded_rectangle((16, y, rail_w - 16, y + 96), radius=20, fill=PRIMARY)
+            color = WHITE
+        else:
+            color = theme.muted
+        d.ellipse((44, y + 26, 104, y + 86), outline=color, width=4)
+        if active:
+            d.ellipse((62, y + 44, 86, y + 68), fill=color)
+        d.text((124, y + 38), label, fill=color, font=font(28, bold=active))
+        y += 112
+    # Alt: kullanıcı kartı
+    uy = h - 160
+    d.ellipse((44, uy, 124, uy + 80), fill=theme.surface_alt)
+    d.text((68, uy + 18), "AY", fill=PRIMARY, font=font(36, bold=True))
+    d.text((140, uy + 8), "Aydın Y.", fill=theme.text, font=font(26, bold=True))
+    d.text((140, uy + 46), "Resepsiyon", fill=theme.muted, font=font(22))
+    return rail_w
+
+
+def _tablet_header(
+    d: ImageDraw.ImageDraw,
+    rail_w: int,
+    theme: Theme,
+    title: str,
+    subtitle: str,
+    *,
+    chip_label: str | None = None,
+) -> int:
+    """Sağ alanın üstüne büyük başlık + opsiyonel durum çipi koyar."""
+    x0 = rail_w + TABLET_PAD
+    d.text((x0, 70), title, fill=theme.text, font=font(64, bold=True))
+    d.text((x0, 158), subtitle, fill=theme.muted, font=font(32))
+    if chip_label:
+        chip(d, x0 + text_size(d, title, font(64, bold=True))[0] + 28, 92, chip_label, color=PRIMARY)
+    return 240  # content y_start
+
+
+def _screen_login_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    # Sol marketing alanı
+    left_w = int(w * 0.55)
+    # Hafif gradyan vurgusu
+    grad = Image.new("RGBA", (left_w, h), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    gd.ellipse((-200, h // 3 - 350, left_w + 200, h // 3 + 350), fill=(*PRIMARY, 38))
+    grad = grad.filter(ImageFilter.GaussianBlur(110))
+    im.paste(grad, (0, 0), grad)
+    d = ImageDraw.Draw(im)
+    draw_logo_mark(im, 220, 260, 240)
+    d.text((400, 220), "Syroce PMS", fill=theme.text, font=font(72, bold=True))
+    d.text((400, 320), "iPad için optimize edilmiş", fill=theme.muted, font=font(34))
+    # Slogan
+    d.text((140, 540), "Otelinizi cebinizden", fill=theme.text, font=font(72, bold=True))
+    d.text((140, 630), "ve iPad'inizden yönetin.", fill=theme.text, font=font(72, bold=True))
+    # Özellik listesi
+    feats = [
+        ("Split View", "Misafir listesi ve detayını yan yana"),
+        ("Apple Pencil", "Hızlı imza ve notlar"),
+        ("Klavye kısayolları", "30 saniyede check-in"),
+        ("Çoklu görev", "Slide Over desteği"),
+    ]
+    fy = 800
+    for title_, sub in feats:
+        d.ellipse((140, fy + 12, 188, fy + 60), outline=PRIMARY, width=4)
+        d.line([(152, fy + 38), (164, fy + 50), (180, fy + 22)], fill=PRIMARY, width=5)
+        d.text((220, fy), title_, fill=theme.text, font=font(36, bold=True))
+        d.text((220, fy + 50), sub, fill=theme.muted, font=font(28))
+        fy += 110
+
+    # Sağ form kartı
+    cw = w - left_w - 120
+    cx = left_w + 60
+    ch = 1100
+    cy = (h - ch) // 2
+    card(d, cx, cy, cw, ch, theme)
+    d.text((cx + 48, cy + 56), "Hoş geldiniz", fill=theme.text, font=font(52, bold=True))
+    d.text((cx + 48, cy + 130), "Lütfen hesabınızla giriş yapın", fill=theme.muted, font=font(28))
+
+    d.text((cx + 48, cy + 230), "E-posta", fill=theme.muted, font=font(28))
+    d.rounded_rectangle((cx + 48, cy + 270, cx + cw - 48, cy + 360), radius=16, fill=theme.surface_alt)
+    d.text((cx + 70, cy + 296), "info@syroce.com", fill=theme.text, font=font(34))
+    d.text((cx + 48, cy + 410), "Parola", fill=theme.muted, font=font(28))
+    d.rounded_rectangle((cx + 48, cy + 450, cx + cw - 48, cy + 540), radius=16, fill=theme.surface_alt)
+    d.text((cx + 70, cy + 476), "•••••••••••", fill=theme.text, font=font(34))
+
+    d.rounded_rectangle((cx + 48, cy + 620, cx + cw - 48, cy + 730), radius=20, fill=PRIMARY)
+    f = font(38, bold=True)
+    bt = "Giriş yap"
+    btw, bth = text_size(d, bt, f)
+    d.text((cx + cw // 2 - btw // 2, cy + 655), bt, fill=WHITE, font=f)
+
+    d.rounded_rectangle((cx + 48, cy + 760, cx + cw - 48, cy + 870), radius=20, outline=PRIMARY, width=3)
+    bt2 = "Touch ID ile giriş"
+    btw2, _ = text_size(d, bt2, f)
+    d.text((cx + cw // 2 - btw2 // 2, cy + 795), bt2, fill=PRIMARY, font=f)
+
+    d.text((cx + 48, cy + ch - 90), "Demo: info@syroce.com / Syroce2026", fill=theme.muted, font=font(26))
+    return im
+
+
+def _screen_today_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    rail_w = _tablet_side_rail(
+        im, d, h, theme,
+        [("Bugün", True), ("Misafirler", False), ("Walk-in", False),
+         ("Mesajlar", False), ("Raporlar", False), ("Daha", False)],
+    )
+    d = ImageDraw.Draw(im)
+    y0 = _tablet_header(d, rail_w, theme, "Bugün", "5 Mayıs 2026 · Resepsiyon · Aydın Y.")
+
+    x0 = rail_w + TABLET_PAD
+    content_w = w - x0 - TABLET_PAD
+
+    # Üst özet kartları (4'lü grid)
+    summaries = [
+        ("12", "Check-in", PRIMARY),
+        ("8", "Check-out", INFO),
+        ("3", "No-show", WARNING),
+        ("87%", "Doluluk", SUCCESS),
+    ]
+    sw = (content_w - 16 * 3) // 4
+    for i, (val, lbl, col) in enumerate(summaries):
+        sx = x0 + i * (sw + 16)
+        card(d, sx, y0, sw, 200, theme)
+        d.text((sx + 24, y0 + 24), val, fill=col, font=font(72, bold=True))
+        d.text((sx + 24, y0 + 130), lbl, fill=theme.muted, font=font(28))
+
+    # Master-detail
+    md_y = y0 + 240
+    md_h = h - md_y - TABLET_PAD
+    left_w = int(content_w * 0.58)
+    right_x = x0 + left_w + 24
+    right_w = content_w - left_w - 24
+
+    # Sol: bekleyen check-in listesi
+    card(d, x0, md_y, left_w, md_h, theme)
+    d.text((x0 + 32, md_y + 28), "Bekleyen check-in'ler", fill=theme.text, font=font(40, bold=True))
+    d.text((x0 + 32, md_y + 88), "Bugünün önceliği · 4 misafir", fill=theme.muted, font=font(26))
+    rows = [
+        ("Aydın Yılmaz", "Oda 412 · 2 yetişkin", "VIP", VIP, True),
+        ("Selin Demir", "Oda 207 · 1 yetişkin", "Erken giriş", INFO, False),
+        ("Mert Karaca", "Oda 318 · 2 yet · 1 ç.", "Standart", MUTED, False),
+        ("Hannah Becker", "Oda 521 · 2 yetişkin", "Geç kalmış", WARNING, False),
+    ]
+    ry = md_y + 150
+    for name, sub, tag, color, selected in rows:
+        # Satır arka planı (seçili olan vurgulanır)
+        if selected:
+            d.rounded_rectangle((x0 + 16, ry, x0 + left_w - 16, ry + 160), radius=18, fill=theme.surface_alt)
+            d.rounded_rectangle((x0 + 16, ry, x0 + 22, ry + 160), radius=4, fill=PRIMARY)
+        d.ellipse((x0 + 48, ry + 30, x0 + 148, ry + 130), fill=theme.surface)
+        ini = "".join(p[0] for p in name.split()[:2])
+        iw, ih = text_size(d, ini, font(40, bold=True))
+        d.text((x0 + 98 - iw // 2, ry + 80 - ih // 2), ini, fill=PRIMARY, font=font(40, bold=True))
+        d.text((x0 + 180, ry + 30), name, fill=theme.text, font=font(32, bold=True))
+        d.text((x0 + 180, ry + 76), sub, fill=theme.muted, font=font(26))
+        chip(d, x0 + 180, ry + 112, tag, color=color)
+        ry += 175
+
+    # Sağ: seçili misafir detayı
+    card(d, right_x, md_y, right_w, md_h, theme)
+    d.text((right_x + 28, md_y + 28), "Misafir detayı", fill=theme.muted, font=font(26))
+    d.ellipse((right_x + 28, md_y + 80, right_x + 188, md_y + 240), fill=theme.surface_alt)
+    iw, ih = text_size(d, "AY", font(64, bold=True))
+    d.text((right_x + 108 - iw // 2, md_y + 160 - ih // 2), "AY", fill=PRIMARY, font=font(64, bold=True))
+    d.text((right_x + 220, md_y + 92), "Aydın Yılmaz", fill=theme.text, font=font(40, bold=True))
+    d.text((right_x + 220, md_y + 148), "Sadakat: Altın · Tekrar misafir", fill=theme.muted, font=font(26))
+    chip(d, right_x + 220, md_y + 188, "VIP", color=VIP)
+
+    # Detay grid (2x2)
+    items = [
+        ("Oda", "412 · Deluxe"),
+        ("Konuk", "2 yetişkin"),
+        ("Konaklama", "5 – 10 May"),
+        ("Toplam", "₺22.400"),
+    ]
+    iy = md_y + 290
+    iw_ = (right_w - 80) // 2
+    for i, (lbl, val) in enumerate(items):
+        ix = right_x + 28 + (i % 2) * (iw_ + 24)
+        iiy = iy + (i // 2) * 110
+        d.text((ix, iiy), lbl, fill=theme.muted, font=font(24))
+        d.text((ix, iiy + 32), val, fill=theme.text, font=font(32, bold=True))
+
+    # Bugünün notları
+    ny = iy + 240
+    d.text((right_x + 28, ny), "Bugünün notları", fill=theme.text, font=font(30, bold=True))
+    notes = [
+        ("Erken giriş onaylandı", SUCCESS),
+        ("Yüksek katı tercih ediyor", INFO),
+        ("Pasta hazırlığı 19:00", WARNING),
+    ]
+    for i, (n, c) in enumerate(notes):
+        ny2 = ny + 60 + i * 60
+        d.ellipse((right_x + 28, ny2 + 12, right_x + 56, ny2 + 40), fill=c)
+        d.text((right_x + 76, ny2 + 6), n, fill=theme.text, font=font(26))
+
+    # Aksiyon butonları (alt)
+    by = md_y + md_h - 220
+    d.rounded_rectangle((right_x + 28, by, right_x + right_w - 28, by + 96), radius=20, fill=PRIMARY)
+    f = font(34, bold=True)
+    bt = "Check-in başlat"
+    bw, bh = text_size(d, bt, f)
+    d.text((right_x + right_w // 2 - bw // 2, by + 48 - bh // 2), bt, fill=WHITE, font=f)
+    by2 = by + 116
+    d.rounded_rectangle((right_x + 28, by2, right_x + right_w - 28, by2 + 86), radius=20, outline=PRIMARY, width=3)
+    bt2 = "Misafire mesaj"
+    bw2, _ = text_size(d, bt2, f)
+    d.text((right_x + right_w // 2 - bw2 // 2, by2 + 42 - bh // 2), bt2, fill=PRIMARY, font=f)
+    return im
+
+
+def _screen_quick_checkin_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    rail_w = _tablet_side_rail(
+        im, d, h, theme,
+        [("Bugün", False), ("Misafirler", False), ("Walk-in", True),
+         ("Mesajlar", False), ("Raporlar", False), ("Daha", False)],
+    )
+    d = ImageDraw.Draw(im)
+    y0 = _tablet_header(d, rail_w, theme, "Hızlı Check-in", "QR + kimlik tarama · Walk-in")
+
+    x0 = rail_w + TABLET_PAD
+    content_w = w - x0 - TABLET_PAD
+    left_w = int(content_w * 0.56)
+    right_x = x0 + left_w + 24
+    right_w = content_w - left_w - 24
+    panel_h = h - y0 - TABLET_PAD
+
+    # Sol: kamera viewfinder
+    card(d, x0, y0, left_w, panel_h, theme, fill=(8, 12, 20), border=theme.border)
+    pad = 70
+    L = 70
+    th = 8
+    cy0 = y0
+    ch = panel_h
+    for (cx_, cy_) in [
+        (x0 + pad, cy0 + pad),
+        (x0 + left_w - pad, cy0 + pad),
+        (x0 + pad, cy0 + ch - pad),
+        (x0 + left_w - pad, cy0 + ch - pad),
+    ]:
+        sx = -1 if cx_ > x0 + left_w // 2 else 1
+        sy = -1 if cy_ > cy0 + ch // 2 else 1
+        d.line([(cx_, cy_), (cx_ + sx * L, cy_)], fill=PRIMARY, width=th)
+        d.line([(cx_, cy_), (cx_, cy_ + sy * L)], fill=PRIMARY, width=th)
+
+    # QR (merkez)
+    qs = 540
+    qx = x0 + left_w // 2 - qs // 2
+    qy = cy0 + ch // 2 - qs // 2 - 60
+    d.rectangle((qx, qy, qx + qs, qy + qs), fill=WHITE)
+    import random
+    random.seed(42)
+    cell = qs // 25
+    for i in range(25):
+        for j in range(25):
+            if (i, j) in [(0, 0), (0, 24), (24, 0)]:
+                continue
+            if random.random() > 0.55:
+                d.rectangle(
+                    (qx + i * cell, qy + j * cell, qx + (i + 1) * cell, qy + (j + 1) * cell),
+                    fill=(15, 23, 42),
+                )
+    for (cx_, cy_) in [(qx + 8, qy + 8), (qx + qs - 78, qy + 8), (qx + 8, qy + qs - 78)]:
+        d.rectangle((cx_, cy_, cx_ + 70, cy_ + 70), outline=(15, 23, 42), width=10)
+        d.rectangle((cx_ + 24, cy_ + 24, cx_ + 46, cy_ + 46), fill=(15, 23, 42))
+
+    d.text((x0 + pad, cy0 + ch - pad - 50), "QR'ı çerçeveye hizalayın",
+           fill=WHITE, font=font(34, bold=True))
+    # Mod düğmeleri
+    mb_y = qy + qs + 60
+    mods = [("QR", True), ("Kimlik", False), ("Pasaport", False)]
+    mx = x0 + left_w // 2 - 350
+    for label, active in mods:
+        bw_ = 220
+        if active:
+            d.rounded_rectangle((mx, mb_y, mx + bw_, mb_y + 70), radius=18, fill=PRIMARY)
+            color = WHITE
+        else:
+            d.rounded_rectangle((mx, mb_y, mx + bw_, mb_y + 70), radius=18, outline=WHITE, width=3)
+            color = WHITE
+        f_ = font(28, bold=True)
+        tw_, th_ = text_size(d, label, f_)
+        d.text((mx + bw_ // 2 - tw_ // 2, mb_y + 35 - th_ // 2), label, fill=color, font=f_)
+        mx += bw_ + 16
+
+    # Sağ: bulunan misafir paneli
+    card(d, right_x, y0, right_w, panel_h, theme)
+    d.text((right_x + 32, y0 + 28), "Misafir bulundu", fill=SUCCESS, font=font(32, bold=True))
+    d.text((right_x + 32, y0 + 80), "Aydın Yılmaz", fill=theme.text, font=font(50, bold=True))
+    d.text((right_x + 32, y0 + 150), "TR · Doğum 12.04.1987", fill=theme.muted, font=font(28))
+    chip(d, right_x + 32, y0 + 210, "VIP", color=VIP)
+    chip(d, right_x + 32 + 130, y0 + 210, "Tekrar misafir", color=INFO)
+
+    # Bilgi blokları
+    info = [
+        ("Rezervasyon", "RES-2026-0541"),
+        ("Oda", "412 · Deluxe"),
+        ("Konaklama", "5 – 10 Mayıs 2026"),
+        ("Toplam", "₺22.400"),
+        ("Ödenmiş", "₺11.200"),
+        ("Bakiye", "₺11.200"),
+    ]
+    iy = y0 + 300
+    for i, (lbl, val) in enumerate(info):
+        d.text((right_x + 32, iy), lbl, fill=theme.muted, font=font(24))
+        d.text((right_x + 32, iy + 32), val, fill=theme.text, font=font(32, bold=True))
+        iy += 92
+
+    # Geçmiş konaklama özeti
+    hy = iy + 30
+    d.text((right_x + 32, hy), "Geçmiş konaklamalar: 4", fill=theme.text, font=font(28, bold=True))
+    d.text((right_x + 32, hy + 44), "Son: 12 – 14 Eylül 2025", fill=theme.muted, font=font(26))
+
+    # Aksiyon butonları (alt)
+    by = y0 + panel_h - 230
+    d.rounded_rectangle((right_x + 32, by, right_x + right_w - 32, by + 100), radius=20, fill=SUCCESS)
+    f = font(36, bold=True)
+    bt = "Onayla ve check-in"
+    bw, bh = text_size(d, bt, f)
+    d.text((right_x + right_w // 2 - bw // 2, by + 50 - bh // 2), bt, fill=WHITE, font=f)
+    by2 = by + 120
+    d.rounded_rectangle((right_x + 32, by2, right_x + right_w - 32, by2 + 86), radius=20, outline=theme.border, width=3)
+    bt2 = "Manuel kayıt"
+    bw2, _ = text_size(d, bt2, f)
+    d.text((right_x + right_w // 2 - bw2 // 2, by2 + 42 - bh // 2), bt2, fill=theme.text, font=f)
+    return im
+
+
+def _screen_housekeeping_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    rail_w = _tablet_side_rail(
+        im, d, h, theme,
+        [("Odalar", True), ("Hasar", False), ("Stok", False),
+         ("Görevler", False), ("Raporlar", False), ("Daha", False)],
+    )
+    d = ImageDraw.Draw(im)
+    y0 = _tablet_header(d, rail_w, theme, "Kat hizmetleri", "Kat 4 · 14 oda · 6 temiz · 3 kirli")
+
+    x0 = rail_w + TABLET_PAD
+    content_w = w - x0 - TABLET_PAD
+    left_w = int(content_w * 0.62)
+    right_x = x0 + left_w + 24
+    right_w = content_w - left_w - 24
+    panel_h = h - y0 - TABLET_PAD
+
+    # Sol: filtre çipleri + 4 sütun oda grid
+    card(d, x0, y0, left_w, panel_h, theme)
+    fy = y0 + 24
+    fx = x0 + 24
+    for label, active in [("Tüm katlar", False), ("4. kat", True), ("Kirli", False),
+                          ("Temiz", False), ("Bakım", False)]:
+        f = font(26, bold=True)
+        tw, th = text_size(d, label, f)
+        pad = 22
+        bw = tw + pad * 2
+        if active:
+            d.rounded_rectangle((fx, fy, fx + bw, fy + th + 20), radius=24, fill=PRIMARY)
+            d.text((fx + pad, fy + 10), label, fill=WHITE, font=f)
+        else:
+            d.rounded_rectangle((fx, fy, fx + bw, fy + th + 20), radius=24, outline=theme.border, width=2)
+            d.text((fx + pad, fy + 10), label, fill=theme.muted, font=f)
+        fx += bw + 14
+
+    rooms = [
+        ("401", "Temiz", SUCCESS, "Standart", False),
+        ("402", "Kirli", WARNING, "Standart", False),
+        ("403", "Temizleniyor", INFO, "Standart", False),
+        ("404", "Bakım", DANGER, "Suite", False),
+        ("405", "Temiz", SUCCESS, "Standart", False),
+        ("406", "Dolu", PRIMARY, "Deluxe", False),
+        ("407", "Kirli", WARNING, "Standart", False),
+        ("408", "Temiz", SUCCESS, "Standart", False),
+        ("409", "İnceleme", INFO, "Standart", False),
+        ("410", "Temiz", SUCCESS, "Standart", False),
+        ("411", "Kirli", WARNING, "Suite", False),
+        ("412", "Dolu", PRIMARY, "Deluxe", True),
+        ("414", "Temiz", SUCCESS, "Standart", False),
+        ("415", "Bakım", DANGER, "Standart", False),
+        ("416", "Temiz", SUCCESS, "Standart", False),
+        ("417", "Kirli", WARNING, "Standart", False),
+    ]
+    cols = 4
+    grid_x = x0 + 24
+    grid_y = y0 + 110
+    cell_w = (left_w - 48 - (cols - 1) * 16) // cols
+    cell_h = 220
+    for idx, (no, status, color, kind_, selected) in enumerate(rooms):
+        col = idx % cols
+        row = idx // cols
+        cx = grid_x + col * (cell_w + 16)
+        cy = grid_y + row * (cell_h + 16)
+        if cy + cell_h > y0 + panel_h - 20:
+            break
+        if selected:
+            d.rounded_rectangle((cx, cy, cx + cell_w, cy + cell_h), radius=22, fill=theme.surface_alt, outline=PRIMARY, width=4)
+        else:
+            card(d, cx, cy, cell_w, cell_h, theme)
+        d.ellipse((cx + cell_w - 50, cy + 22, cx + cell_w - 22, cy + 50), fill=color)
+        d.text((cx + 24, cy + 24), no, fill=theme.text, font=font(56, bold=True))
+        d.text((cx + 24, cy + 110), status, fill=color, font=font(26, bold=True))
+        d.text((cx + 24, cy + 152), kind_, fill=theme.muted, font=font(22))
+
+    # Sağ: seçili oda detay paneli
+    card(d, right_x, y0, right_w, panel_h, theme)
+    d.text((right_x + 28, y0 + 28), "Oda 412", fill=theme.text, font=font(64, bold=True))
+    d.text((right_x + 28, y0 + 110), "Deluxe · Kat 4 · Bahçe manzaralı", fill=theme.muted, font=font(28))
+    chip(d, right_x + 28, y0 + 160, "Dolu", color=PRIMARY)
+    chip(d, right_x + 28 + 140, y0 + 160, "Konuk içeride", color=INFO)
+
+    # Görev listesi
+    ty = y0 + 240
+    d.text((right_x + 28, ty), "Bekleyen görevler", fill=theme.text, font=font(32, bold=True))
+    tasks = [
+        ("Yatak değiştir", True),
+        ("Banyo dezenfekte", True),
+        ("Mini bar yenile", False),
+        ("Havlu yenile", False),
+        ("Karşılama jesti", False),
+    ]
+    for i, (task, done) in enumerate(tasks):
+        ty2 = ty + 60 + i * 64
+        d.rounded_rectangle((right_x + 28, ty2 + 6, right_x + 70, ty2 + 48), radius=8,
+                            outline=PRIMARY if done else theme.border, width=3,
+                            fill=PRIMARY if done else None)
+        if done:
+            d.line([(right_x + 38, ty2 + 28), (right_x + 48, ty2 + 38), (right_x + 62, ty2 + 18)],
+                   fill=WHITE, width=4)
+        d.text((right_x + 90, ty2 + 8), task,
+               fill=theme.muted if done else theme.text,
+               font=font(28, bold=not done))
+
+    # Atanan personel
+    ay = ty + 60 + len(tasks) * 64 + 30
+    d.text((right_x + 28, ay), "Atanan personel", fill=theme.text, font=font(28, bold=True))
+    d.ellipse((right_x + 28, ay + 50, right_x + 108, ay + 130), fill=theme.surface_alt)
+    iw, ih = text_size(d, "ED", font(36, bold=True))
+    d.text((right_x + 68 - iw // 2, ay + 90 - ih // 2), "ED", fill=PRIMARY, font=font(36, bold=True))
+    d.text((right_x + 130, ay + 56), "Elif Doğan", fill=theme.text, font=font(32, bold=True))
+    d.text((right_x + 130, ay + 100), "Tahmini bitiş: 11:45", fill=theme.muted, font=font(24))
+
+    # Aksiyon
+    by = y0 + panel_h - 200
+    d.rounded_rectangle((right_x + 28, by, right_x + right_w - 28, by + 96), radius=20, fill=SUCCESS)
+    f = font(32, bold=True)
+    bt = "Temiz olarak işaretle"
+    bw, bh = text_size(d, bt, f)
+    d.text((right_x + right_w // 2 - bw // 2, by + 48 - bh // 2), bt, fill=WHITE, font=f)
+    by2 = by + 116
+    d.rounded_rectangle((right_x + 28, by2, right_x + right_w - 28, by2 + 86), radius=20, outline=PRIMARY, width=3)
+    bt2 = "Bakım talep et"
+    bw2, _ = text_size(d, bt2, f)
+    d.text((right_x + right_w // 2 - bw2 // 2, by2 + 42 - bh // 2), bt2, fill=PRIMARY, font=f)
+    return im
+
+
+def _screen_guest_bookings_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    rail_w = _tablet_side_rail(
+        im, d, h, theme,
+        [("Ana sayfa", False), ("Rezervasyonlar", True), ("Mesajlar", False),
+         ("Anahtar", False), ("Hesap", False), ("Daha", False)],
+    )
+    d = ImageDraw.Draw(im)
+    y0 = _tablet_header(d, rail_w, theme, "Rezervasyonlarım", "Aydın · Sadakat: Altın · 4 geçmiş konaklama")
+
+    x0 = rail_w + TABLET_PAD
+    content_w = w - x0 - TABLET_PAD
+    left_w = int(content_w * 0.42)
+    right_x = x0 + left_w + 24
+    right_w = content_w - left_w - 24
+    panel_h = h - y0 - TABLET_PAD
+
+    # Sol: rezervasyon listesi
+    card(d, x0, y0, left_w, panel_h, theme)
+    d.text((x0 + 28, y0 + 24), "Rezervasyonlarım", fill=theme.text, font=font(32, bold=True))
+    bookings = [
+        ("Bodrum Sahil Suite", "10 – 14 May 2026", "Aktif", SUCCESS, True),
+        ("Kapadokya Cave Hotel", "22 – 25 Haz 2026", "Onaylandı", PRIMARY, False),
+        ("İstanbul Boğaz", "12 – 14 Eyl 2025", "Tamamlandı", MUTED, False),
+        ("Antalya Riviera", "01 – 08 Tem 2025", "Tamamlandı", MUTED, False),
+        ("İzmir Marina", "14 – 16 Mar 2025", "İptal", DANGER, False),
+    ]
+    by = y0 + 90
+    for title_, date, status, color, selected in bookings:
+        if selected:
+            d.rounded_rectangle((x0 + 16, by, x0 + left_w - 16, by + 150),
+                                radius=20, fill=theme.surface_alt)
+            d.rounded_rectangle((x0 + 16, by, x0 + 22, by + 150), radius=4, fill=PRIMARY)
+        d.text((x0 + 40, by + 22), title_, fill=theme.text, font=font(30, bold=True))
+        d.text((x0 + 40, by + 70), date, fill=theme.muted, font=font(26))
+        chip(d, x0 + 40, by + 108, status, color=color)
+        by += 165
+
+    # Sağ: aktif rezervasyon detayı
+    card(d, right_x, y0, right_w, panel_h, theme)
+    chip(d, right_x + 28, y0 + 28, "Aktif", color=SUCCESS)
+    d.text((right_x + 28, y0 + 90), "Bodrum Sahil Suite", fill=theme.text, font=font(56, bold=True))
+    d.text((right_x + 28, y0 + 170), "10 – 14 Mayıs 2026 · Oda 521 · 2 yetişkin",
+           fill=theme.muted, font=font(30))
+
+    # Konaklama bilgi grid (4 sütun)
+    items = [
+        ("Toplam", "₺18.400"),
+        ("Ödenen", "₺9.200"),
+        ("Bakiye", "₺9.200"),
+        ("Konuk", "2 yetişkin"),
+    ]
+    iy = y0 + 250
+    iw_ = (right_w - 80) // 4
+    for i, (lbl, val) in enumerate(items):
+        ix = right_x + 28 + i * (iw_ + 12)
+        d.rounded_rectangle((ix, iy, ix + iw_, iy + 130), radius=18, fill=theme.surface_alt)
+        d.text((ix + 18, iy + 18), lbl, fill=theme.muted, font=font(22))
+        d.text((ix + 18, iy + 56), val, fill=theme.text, font=font(34, bold=True))
+
+    # Aksiyonlar
+    ay_ = iy + 170
+    actions = [("Dijital anahtar", PRIMARY), ("Mesaj gönder", INFO),
+               ("Erken giriş", WARNING), ("Faturayı gör", MUTED)]
+    ax = right_x + 28
+    for label, color in actions:
+        f_ = font(26, bold=True)
+        tw_, _ = text_size(d, label, f_)
+        bw_ = tw_ + 56
+        d.rounded_rectangle((ax, ay_, ax + bw_, ay_ + 76), radius=22,
+                            fill=color if color != MUTED else None,
+                            outline=theme.border if color == MUTED else None,
+                            width=2 if color == MUTED else 0)
+        d.text((ax + 28, ay_ + 24), label,
+               fill=WHITE if color != MUTED else theme.text, font=f_)
+        ax += bw_ + 14
+
+    # Konaklama zaman çizelgesi
+    ty = ay_ + 130
+    d.text((right_x + 28, ty), "Konaklama planı", fill=theme.text, font=font(30, bold=True))
+    timeline = [
+        ("10 May · 15:00", "Check-in", PRIMARY),
+        ("11 May · 09:00", "Kahvaltı dahil", INFO),
+        ("12 May · 19:00", "Restoran rezervasyonu", VIP),
+        ("13 May · 10:00", "Spa randevusu", SUCCESS),
+        ("14 May · 11:00", "Check-out", WARNING),
+    ]
+    for i, (when, what, color) in enumerate(timeline):
+        ly = ty + 60 + i * 60
+        d.ellipse((right_x + 28, ly + 12, right_x + 56, ly + 40), fill=color)
+        if i < len(timeline) - 1:
+            d.line([(right_x + 42, ly + 40), (right_x + 42, ly + 90)], fill=theme.border, width=3)
+        d.text((right_x + 76, ly + 6), when, fill=theme.muted, font=font(22))
+        d.text((right_x + 220, ly + 4), what, fill=theme.text, font=font(26, bold=True))
+    return im
+
+
+def _screen_digital_key_tablet(w: int, h: int, theme: Theme) -> Image.Image:
+    im, d = base_screen(w, h, theme)
+    rail_w = _tablet_side_rail(
+        im, d, h, theme,
+        [("Ana sayfa", False), ("Rezervasyonlar", False), ("Mesajlar", False),
+         ("Anahtar", True), ("Hesap", False), ("Daha", False)],
+    )
+    d = ImageDraw.Draw(im)
+    y0 = _tablet_header(d, rail_w, theme, "Dijital anahtar", "Oda 521 · Bodrum Sahil Suite")
+
+    x0 = rail_w + TABLET_PAD
+    content_w = w - x0 - TABLET_PAD
+    left_w = int(content_w * 0.52)
+    right_x = x0 + left_w + 24
+    right_w = content_w - left_w - 24
+    panel_h = h - y0 - TABLET_PAD
+
+    # Sol: büyük QR kartı
+    card(d, x0, y0, left_w, panel_h, theme)
+    d.text((x0 + 32, y0 + 28), "QR ile aç", fill=theme.text, font=font(36, bold=True))
+    d.text((x0 + 32, y0 + 80), "Kapı okuyucusuna gösterin", fill=theme.muted, font=font(26))
+    qs = min(left_w - 120, panel_h - 600)
+    qx = x0 + (left_w - qs) // 2
+    qy = y0 + 180
+    d.rectangle((qx, qy, qx + qs, qy + qs), fill=WHITE)
+    import random
+    random.seed(7)
+    cell = qs // 29
+    for i in range(29):
+        for j in range(29):
+            if random.random() > 0.5:
+                d.rectangle(
+                    (qx + i * cell, qy + j * cell, qx + (i + 1) * cell, qy + (j + 1) * cell),
+                    fill=(15, 23, 42),
+                )
+    for (cx_, cy_) in [(qx + 8, qy + 8), (qx + qs - 110, qy + 8), (qx + 8, qy + qs - 110)]:
+        d.rectangle((cx_, cy_, cx_ + 100, cy_ + 100), outline=(15, 23, 42), width=14)
+        d.rectangle((cx_ + 30, cy_ + 30, cx_ + 70, cy_ + 70), fill=(15, 23, 42))
+
+    # Geçerlilik
+    iy = qy + qs + 40
+    d.text((x0 + 32, iy), "Geçerlilik", fill=theme.muted, font=font(26))
+    d.text((x0 + 32, iy + 36), "14 Mayıs 11:00'a kadar", fill=theme.text, font=font(36, bold=True))
+
+    # Aksiyon (alt)
+    by = y0 + panel_h - 130
+    d.rounded_rectangle((x0 + 32, by, x0 + left_w - 32, by + 96), radius=22, fill=PRIMARY)
+    f = font(32, bold=True)
+    bt = "Anahtarı paylaş"
+    bw, bh = text_size(d, bt, f)
+    d.text((x0 + left_w // 2 - bw // 2, by + 48 - bh // 2), bt, fill=WHITE, font=f)
+
+    # Sağ: bilgi paneli
+    card(d, right_x, y0, right_w, panel_h, theme)
+    d.text((right_x + 28, y0 + 28), "Konaklama özeti", fill=theme.text, font=font(36, bold=True))
+    info = [
+        ("Otel", "Bodrum Sahil Suite"),
+        ("Oda", "521 · Deluxe"),
+        ("Konaklama", "10 – 14 Mayıs 2026"),
+        ("Konuk", "2 yetişkin"),
+        ("Kat", "5 · Asansör B"),
+    ]
+    iy = y0 + 100
+    for lbl, val in info:
+        d.text((right_x + 28, iy), lbl, fill=theme.muted, font=font(24))
+        d.text((right_x + 28, iy + 32), val, fill=theme.text, font=font(32, bold=True))
+        iy += 90
+
+    # Bluetooth NFC bilgi
+    by2 = iy + 30
+    d.rounded_rectangle((right_x + 28, by2, right_x + right_w - 28, by2 + 200),
+                        radius=22, fill=theme.surface_alt)
+    d.ellipse((right_x + 60, by2 + 50, right_x + 160, by2 + 150), fill=PRIMARY)
+    d.text((right_x + 88, by2 + 76), "B", fill=WHITE, font=font(48, bold=True))
+    d.text((right_x + 200, by2 + 50), "Bluetooth ile yaklaşın",
+           fill=theme.text, font=font(32, bold=True))
+    d.text((right_x + 200, by2 + 100), "Kapı kilidini otomatik açar",
+           fill=theme.muted, font=font(26))
+    d.text((right_x + 200, by2 + 138), "iOS Cüzdan ve Apple Watch desteği",
+           fill=theme.muted, font=font(24))
+
+    # İpuçları
+    ty = by2 + 240
+    d.text((right_x + 28, ty), "Hızlı ipuçları", fill=theme.text, font=font(28, bold=True))
+    tips = [
+        "Telefonu kilitliyken bile çalışır",
+        "Apple Watch ile bileğinizden açın",
+        "Anahtarı eşinizle paylaşabilirsiniz",
+    ]
+    for i, tip in enumerate(tips):
+        ty2 = ty + 50 + i * 56
+        d.ellipse((right_x + 28, ty2 + 12, right_x + 50, ty2 + 34), outline=PRIMARY, width=3)
+        d.line([(right_x + 34, ty2 + 22), (right_x + 39, ty2 + 28), (right_x + 46, ty2 + 18)],
+               fill=PRIMARY, width=3)
+        d.text((right_x + 70, ty2 + 6), tip, fill=theme.text, font=font(24))
+
+    # Yardım butonu (alt)
+    by3 = y0 + panel_h - 130
+    d.rounded_rectangle((right_x + 28, by3, right_x + right_w - 28, by3 + 96),
+                        radius=22, outline=PRIMARY, width=3)
+    f = font(32, bold=True)
+    bt = "Yardım & SSS"
+    bw, bh = text_size(d, bt, f)
+    d.text((right_x + right_w // 2 - bw // 2, by3 + 48 - bh // 2), bt, fill=PRIMARY, font=f)
     return im
 
 
@@ -767,8 +1467,8 @@ def make_screenshots():
     for key, (headline, builder) in SCREENS.items():
         for theme in themes:
             theme_suffix = "" if theme.name == "dark" else "_light"
-            phone_base = builder(*PHONE_BASE, theme)
-            tablet_base = builder(*TABLET_BASE, theme)
+            phone_base = builder(*PHONE_BASE, theme, kind="phone")
+            tablet_base = builder(*TABLET_BASE, theme, kind="tablet")
 
             # iOS telefon
             for size_key, sz in IOS_PHONE_SIZES.items():
