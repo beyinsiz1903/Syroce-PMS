@@ -12,6 +12,10 @@ from .counter_offers import (
     record_counter_offer,
     transition,
 )
+from .inbound_match import (
+    handle_match_cancelled,
+    handle_match_created,
+)
 from .lifecycle import fire_and_forget, push_booking_lifecycle_event
 from .scheduler import availability_scheduler
 from .tenant_creds import (
@@ -37,6 +41,8 @@ __all__ = [
     "get_capx_client_async",
     "get_counter_offer",
     "get_tenant_status",
+    "handle_match_cancelled",
+    "handle_match_created",
     "invalidate_client_cache",
     "invalidate_tenant_creds",
     "list_counter_offers",

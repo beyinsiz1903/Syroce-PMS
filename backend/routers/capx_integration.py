@@ -75,6 +75,28 @@ class TenantCredentialUpsert(BaseModel):
     webhook_secret: str = ""
 
 
+class CallbackRegisterPayload(BaseModel):
+    callback_url: str | None = Field(
+        default=None,
+        description=(
+            "PMS'in CapX'e bildireceği inbound webhook URL'si. Boş bırakılırsa "
+            "REPLIT_DEV_DOMAIN/PUBLIC_BASE_URL üzerinden tenant-aware path "
+            "(/api/webhooks/capx/by-tenant/{tenant_id}) otomatik üretilir."
+        ),
+    )
+    tenant_id: str | None = Field(
+        default=None,
+        description="Hangi tenant'ın CapX kimliği ile çağrılacağı. Boş ise env fallback.",
+    )
+    jwt_token: str | None = Field(
+        default=None,
+        description=(
+            "Otelin CapX hesabı için JWT (login token). Verilmezse Bearer api_key "
+            "fallback denenir; spec §1 JWT bekliyor."
+        ),
+    )
+
+
 # ── Status / Ping / Manual sync ──────────────────────────────────
 
 @router.get("/status")
@@ -271,3 +293,73 @@ async def upsert_tenant_creds(
 @router.delete("/tenant-credentials/{tenant_id}")
 async def delete_tenant_creds(tenant_id: str) -> dict[str, Any]:
     return await delete_tenant_credentials(tenant_id)
+
+
+# ── Callback URL register (CapX → PMS yönü) ──────────────────────
+
+def _build_callback_url(tenant_id: str) -> str:
+    """Public callback URL'i ortam değişkenlerinden üretir.
+
+    Öncelik: PUBLIC_BASE_URL > REPLIT_DEV_DOMAIN (https eklenir) > localhost.
+    """
+    import os as _os
+    base = _os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    if not base:
+        dev = _os.getenv("REPLIT_DEV_DOMAIN", "").strip()
+        if dev:
+            base = f"https://{dev}".rstrip("/")
+    if not base:
+        base = "http://localhost:8000"
+    return f"{base}/api/webhooks/capx/by-tenant/{tenant_id}"
+
+
+@router.post("/callback/register")
+async def register_callback(
+    payload: CallbackRegisterPayload,
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    """PMS'in inbound webhook URL'sini CapX'e bildirir.
+
+    Spec PMS_INCELEME_RAPORU.md §1: PUT {CAPX_BASE_URL}/api/integrations/v1/pms/callback
+    body {"callback_url": "<PMS public webhook>"}.
+    """
+    tenant_id = payload.tenant_id or getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(400, "tenant_id required (payload veya kullanıcıdan)")
+
+    callback_url = payload.callback_url or _build_callback_url(tenant_id)
+
+    client = await get_capx_client_async(tenant_id=tenant_id)
+    if not client.configured:
+        raise HTTPException(400, "CapX yapılandırması eksik (CAPX_BASE_URL + API key)")
+
+    try:
+        resp = await client.register_callback(
+            callback_url, jwt_token=payload.jwt_token,
+        )
+        return {
+            "ok": True, "callback_url": callback_url,
+            "tenant_id": tenant_id, "response": resp,
+        }
+    except CapXError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": str(exc),
+                "status_code": exc.status_code,
+                "body": exc.body,
+                "callback_url": callback_url,
+            },
+        ) from exc
+
+
+@router.get("/callback/url")
+async def get_callback_url(
+    tenant_id: str | None = Query(default=None),
+    user=Depends(get_current_user),
+) -> dict[str, Any]:
+    """Hangi callback URL üretileceğini önizleme — PUT yapmadan."""
+    effective = tenant_id or getattr(user, "tenant_id", None)
+    if not effective:
+        raise HTTPException(400, "tenant_id required")
+    return {"tenant_id": effective, "callback_url": _build_callback_url(effective)}

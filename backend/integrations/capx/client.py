@@ -51,6 +51,7 @@ class CapXClient:
     PATH_RESERVATION = "/api/integrations/v1/pms/reservation/event"
     PATH_STATUS = "/api/integrations/v1/pms/status"
     PATH_RECENT = "/api/integrations/v1/pms/recent"
+    PATH_CALLBACK = "/api/integrations/v1/pms/callback"
 
     def __init__(self, *, base_url: str | None = None, api_key: str | None = None,
                  webhook_secret: str | None = None, timeout: float = 15.0,
@@ -122,6 +123,33 @@ class CapXClient:
         except Exception:
             return {"raw": resp.text, "status_code": resp.status_code}
 
+    async def _put(self, path: str, body: dict[str, Any], *,
+                   jwt_token: str | None = None) -> dict[str, Any]:
+        if not self.base_url:
+            raise CapXError("CAPX_BASE_URL not set")
+        url = f"{self.base_url}{path}"
+        body_bytes = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if jwt_token:
+            headers["Authorization"] = f"Bearer {jwt_token}"
+        else:
+            headers.update(self._bearer_headers())
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.put(url, content=body_bytes, headers=headers)
+        except httpx.HTTPError as exc:
+            raise CapXError(f"network error: {exc}") from exc
+        if resp.status_code >= 400:
+            try:
+                err_body = resp.json()
+            except Exception:
+                err_body = resp.text
+            raise CapXError(f"{resp.status_code} {path}", status_code=resp.status_code, body=err_body)
+        try:
+            return resp.json()
+        except Exception:
+            return {"raw": resp.text, "status_code": resp.status_code}
+
     async def _get(self, path: str, *, jwt_token: str | None = None) -> dict[str, Any]:
         if not self.base_url:
             raise CapXError("CAPX_BASE_URL not set")
@@ -186,6 +214,20 @@ class CapXClient:
 
     async def get_recent(self, jwt_token: str) -> dict[str, Any]:
         return await self._get(self.PATH_RECENT, jwt_token=jwt_token)
+
+    async def register_callback(
+        self, callback_url: str, *, jwt_token: str | None = None,
+    ) -> dict[str, Any]:
+        """CapX'e PMS'in `callback_url`'ini bildirir.
+
+        Spec PMS_INCELEME_RAPORU.md §1: PUT /api/integrations/v1/pms/callback
+        body {"callback_url": "..."}. Otelin CapX JWT'si tercih edilir; verilmezse
+        Bearer api_key fallback (CapX api_key'i de kabul ederse).
+        """
+        return await self._put(
+            self.PATH_CALLBACK, {"callback_url": callback_url},
+            jwt_token=jwt_token,
+        )
 
 
 # ── Tenant-aware factory ─────────────────────────────────────────

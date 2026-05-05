@@ -5380,3 +5380,47 @@ miktar / outlet kombinasyonları). **Hafta 3**: SMS yedek (push fail
 **Architect Round-1**: PASS (ek bulgu yok; useCallback bağımlılıkları
 doğru, infinite loop koruması var, stale closure yok, prop drilling
 makul seviyede).
+
+**CapX → PMS Inbound Webhook (2026-05-05)**:
+Spec: PMS_INCELEME_RAPORU.md §1-6 (CapX `match.created` / `match.cancelled`
+event'leri PMS'e push eder; PMS bunları booking veya outgoing transfer
+olarak yansıtır).
+
+1. **Yeni endpoint**: `POST /api/webhooks/capx/by-tenant/{tenant_id}` —
+   tenant secret path'ten resolve edilir; eski `POST /api/webhooks/capx`
+   (counter_offer/rate_update) geriye uyumlu olarak korundu.
+2. **HMAC-SHA256 raw body** doğrulama: `X-CapX-Signature: sha256=<hex>`,
+   `X-CapX-Event-Id` zorunlu, `hmac.compare_digest` (timing-safe).
+3. **Atomik idempotency**: `capx_events` koleksiyonunda
+   `(event_id, direction)` unique index lazy-ensure; insert_one
+   DuplicateKeyError → 200 + `duplicate=True` (find_one+insert race
+   penceresi kapalı).
+4. **Handler dispatch** (`backend/integrations/capx/inbound_match.py`):
+   - `direction=incoming` → `ReservationService.create_reservation` ile
+     bookings'e `channel="capx" / origin="capx"` confirmed rezervasyon;
+     terminal status'larda noop; capx_match_id/reference_code/direction/
+     counterparty alanları cancel-lookup için saklanır.
+   - `direction=outgoing` → bookings'e dokunmaz, sadece
+     `capx_outgoing_transfers` koleksiyonuna log.
+   - `match.cancelled` → incoming için `cancel_reservation` (terminal
+     status'lar noop); outgoing için transfer status="cancelled".
+5. **Ack-with-error (Spec §6)**: handler exception'ları 200 +
+   `handler.error` döner (CapX retry'lamasın); imza/header/JSON hatası
+   401/400 (CapX retry tetikler).
+6. **Callback register** (`POST /api/capx/callback/register`): PMS'in
+   public webhook URL'ini CapX'e PUT bildirir (spec §1
+   `/api/integrations/v1/pms/callback`); URL boşsa
+   `PUBLIC_BASE_URL`/`REPLIT_DEV_DOMAIN` env'inden tenant-aware path
+   üretilir. JWT verilmezse Bearer api_key fallback. Önizleme:
+   `GET /api/capx/callback/url`.
+7. **Frontend**: `CapXIntegration.jsx` "Inbound Callback URL" kartı —
+   URL input + kopyala butonu + JWT input + "Aktive Et" CTA + sonuç
+   payload'ı; status.configured false ise buton disabled.
+8. **Test coverage**: `backend/tests/test_capx_inbound_match.py` 19 unit
+   test (HMAC verify byte-sensitivity, match.created
+   incoming/outgoing/idempotency, match.cancelled
+   noop/terminal/outgoing, payload mapping fallback'leri, callback URL
+   builder env override). All PASS.
+9. **Architect Round-1**: PASS, Critical/High yok. Medium#1 (idempotency
+   atomicity) aynı oturumda atomic insert + unique index pattern'i ile
+   kapatıldı.

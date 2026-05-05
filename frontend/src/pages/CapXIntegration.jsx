@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw } from "lucide-react";
+import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from "lucide-react";
 
 const isoDate = (offset = 0) => {
   const d = new Date();
@@ -20,6 +20,11 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState(null);
+
+  const [callbackUrl, setCallbackUrl] = useState("");
+  const [callbackJwt, setCallbackJwt] = useState("");
+  const [callbackBusy, setCallbackBusy] = useState(false);
+  const [callbackResult, setCallbackResult] = useState(null);
 
   const [avail, setAvail] = useState({
     room_type: "DBL_STD",
@@ -58,7 +63,49 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
     }
   }, []);
 
-  useEffect(() => { loadStatus(); }, [loadStatus]);
+  const loadCallbackUrl = useCallback(async () => {
+    try {
+      const params = tenant?.id ? { tenant_id: tenant.id } : {};
+      const { data } = await axios.get("/api/capx/callback/url", { params });
+      setCallbackUrl(data?.callback_url || "");
+    } catch (e) {
+      // sessiz: tenant_id yoksa endpoint 400 döner
+    }
+  }, [tenant?.id]);
+
+  useEffect(() => { loadStatus(); loadCallbackUrl(); }, [loadStatus, loadCallbackUrl]);
+
+  const registerCallback = async () => {
+    setCallbackBusy(true); setCallbackResult(null);
+    try {
+      const body = {};
+      if (callbackUrl) body.callback_url = callbackUrl;
+      if (tenant?.id) body.tenant_id = tenant.id;
+      if (callbackJwt) body.jwt_token = callbackJwt;
+      const { data } = await axios.post("/api/capx/callback/register", body);
+      setCallbackResult(data);
+      toast.success("Callback URL CapX'e bildirildi");
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      const msg = typeof detail === "string"
+        ? detail
+        : (detail?.error || e.message || "Bilinmeyen hata");
+      setCallbackResult({ ok: false, error: detail || msg });
+      toast.error(`Callback bildirimi başarısız: ${msg}`);
+    } finally {
+      setCallbackBusy(false);
+    }
+  };
+
+  const copyCallback = async () => {
+    if (!callbackUrl) return;
+    try {
+      await navigator.clipboard.writeText(callbackUrl);
+      toast.success("URL panoya kopyalandı");
+    } catch {
+      toast.error("Kopyalama başarısız");
+    }
+  };
 
   const ping = async () => {
     setPinging(true); setPingResult(null);
@@ -148,6 +195,76 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
             </Button>
             {pingResult && (
               <pre className="text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">{JSON.stringify(pingResult, null, 2)}</pre>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Inbound callback (CapX → PMS) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link2 className="w-5 h-5" /> Inbound Callback URL (CapX → PMS)
+            </CardTitle>
+            <p className="text-xs text-slate-500">
+              CapX'in eşleşme olaylarını (match.created / match.cancelled) bu otele
+              push edeceği herkese açık webhook adresi. "Aktive Et" CapX'e
+              <code className="mx-1 px-1 bg-slate-100 dark:bg-slate-800 rounded">
+                PUT /api/integrations/v1/pms/callback
+              </code>
+              ile bildirir.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Webhook URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={callbackUrl}
+                  onChange={(e) => setCallbackUrl(e.target.value)}
+                  placeholder="https://pms.example.com/api/webhooks/capx/by-tenant/<tenant-id>"
+                />
+                <Button
+                  type="button" variant="outline" size="icon"
+                  onClick={copyCallback} disabled={!callbackUrl}
+                  aria-label="Kopyala"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Boş bırakırsanız ortam değişkenlerinden
+                (PUBLIC_BASE_URL/REPLIT_DEV_DOMAIN) tenant-aware varsayılan üretilir.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">CapX JWT (opsiyonel)</Label>
+              <Input
+                type="password"
+                value={callbackJwt}
+                onChange={(e) => setCallbackJwt(e.target.value)}
+                placeholder="otel hesabınızın CapX paneli login token'ı"
+              />
+              <p className="text-xs text-slate-500">
+                Spec §1 JWT bekliyor. Boş bırakırsanız Bearer API key fallback
+                denenir; CapX kabul etmezse 401/403 döner.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={registerCallback}
+                disabled={callbackBusy || !status?.configured}
+              >
+                <Send className="w-4 h-4 mr-1" />
+                {callbackBusy ? "Bildiriliyor…" : "Aktive Et"}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={loadCallbackUrl}>
+                <RefreshCw className="w-3.5 h-3.5 mr-1" /> Varsayılanı Yenile
+              </Button>
+            </div>
+            {callbackResult && (
+              <pre className="text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">
+                {JSON.stringify(callbackResult, null, 2)}
+              </pre>
             )}
           </CardContent>
         </Card>
