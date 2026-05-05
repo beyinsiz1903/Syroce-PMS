@@ -40,6 +40,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [exceptions, setExceptions] = useState({});
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [prepRefreshKey, setPrepRefreshKey] = useState(0);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("preparation");
   const [financialSummary, setFinancialSummary] = useState(null);
@@ -198,10 +200,27 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       setShowRunDialog(false);
       setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
       await loadAll();
+      setPrepRefreshKey((k) => k + 1);
     } catch (err) {
       const detail = err.response?.data?.detail;
-      if (typeof detail === "object" && detail?.message) {
-        toast.error(detail.message);
+      // BLOCKED: backend yapılandırılmış nesne döner ({success:false, code:"BLOCKED", error, run:{errors,warnings}})
+      if (typeof detail === "object" && detail) {
+        if (detail.code === "BLOCKED") {
+          const errs = detail.run?.errors || [];
+          const warns = detail.run?.warnings || [];
+          toast.error(
+            `Gece denetimi engellendi (${errs.length} hata${warns.length ? `, ${warns.length} uyarı` : ""}). Hazırlık sekmesinden detayları görüp çözebilirsiniz.`,
+            { duration: 6000 }
+          );
+          setActiveTab("preparation");
+          setPrepRefreshKey((k) => k + 1);
+        } else if (detail.message) {
+          toast.error(detail.message);
+        } else if (detail.error) {
+          toast.error(detail.error);
+        } else {
+          toast.error("Gece denetimi başarısız oldu");
+        }
       } else if (typeof detail === "string") {
         toast.error(detail);
       } else {
@@ -219,6 +238,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       toast.success(schedule.enabled ? "Otomatik zamanlama aktif edildi" : "Otomatik zamanlama devre dışı bırakıldı");
       setShowScheduleDialog(false);
       await fetchScheduleStatus();
+      setPrepRefreshKey((k) => k + 1);
     } catch (err) {
       toast.error("Zamanlama kaydedilemedi");
     } finally {
@@ -233,10 +253,18 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       setSchedule((prev) => ({ ...prev, enabled: newEnabled }));
       toast.success(newEnabled ? "Otomatik zamanlama aktif" : "Otomatik zamanlama devre dışı");
       await fetchScheduleStatus();
+      setPrepRefreshKey((k) => k + 1);
     } catch (err) {
       toast.error("Durum değiştirilemedi");
     }
   };
+
+  const handlePreviewLoaded = useCallback((data) => {
+    setPreviewData(data);
+    if (data?.business_date && data.business_date !== businessDate) {
+      setBusinessDate(data.business_date);
+    }
+  }, [businessDate]);
 
   const toggleExpand = async (auditId) => {
     if (expandedRun === auditId) {
@@ -277,7 +305,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           <div>
             <h1 data-testid="night-audit-title" className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Moon className="w-6 h-6 text-indigo-600" />
-              Gece Denetimi (Night Audit)
+              Gece Denetimi
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               Gün sonu işlemleri: oda masrafı kaydı, no-show işleme, folio bakiye kontrolü, finansal raporlama
@@ -364,7 +392,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
           {/* ═══ Preparation Tab ═══ */}
           <TabsContent value="preparation" className="space-y-4 mt-4">
-            <PreparationTab onStartRun={() => setShowRunDialog(true)} />
+            <PreparationTab
+              onStartRun={() => setShowRunDialog(true)}
+              onPreviewLoaded={handlePreviewLoaded}
+              refreshKey={prepRefreshKey}
+            />
           </TabsContent>
 
           {/* ═══ Overview Tab ═══ */}
@@ -569,8 +601,33 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </p>
                 <p className="text-xs text-indigo-600 mt-1">
                   Bu tarih için gece denetimi çalıştırılacak
+                  {previewData?.calendar_date && previewData?.business_date && (
+                    previewData.calendar_date === previewData.business_date
+                      ? " · Takvim ile aynı"
+                      : ` · Takvim: ${previewData.calendar_date} (${previewData.date_drift_days > 0 ? `${previewData.date_drift_days} gün geride` : `${-previewData.date_drift_days} gün ileride`})`
+                  )}
                 </p>
               </div>
+
+              {/* Engelleyici uyarısı */}
+              {previewData && (previewData.blockers?.length > 0) && !runOptions.skip_validations && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2" data-testid="modal-blockers-warn">
+                  <AlertOctagon className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-rose-800">
+                    <p className="font-medium">{previewData.blockers.length} engelleyici sorun var</p>
+                    <p className="mt-0.5">
+                      Hazırlık sekmesinden çözmeden başlatma engellenecek. Acil durumda &quot;Doğrulamaları Atla&quot; seçeneğini kullanabilirsiniz.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-1 text-rose-700 underline hover:text-rose-900"
+                      onClick={() => { setShowRunDialog(false); setActiveTab("preparation"); }}
+                    >
+                      Hazırlık sekmesine git
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Options */}
               <div className="space-y-3">
@@ -584,7 +641,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <div>
                     <p className="text-sm font-medium text-gray-800">Simülasyon (Dry Run)</p>
-                    <p className="text-xs text-gray-500">Degisiklik yapmadan test et</p>
+                    <p className="text-xs text-gray-500">Değişiklik yapmadan test et</p>
                   </div>
                 </label>
 
@@ -597,8 +654,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     className="w-4 h-4 rounded border-gray-300 text-amber-600"
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">Tekrar Calistir</p>
-                    <p className="text-xs text-gray-500">Daha once tamamlanmissa bile tekrar calistir</p>
+                    <p className="text-sm font-medium text-gray-800">Tekrar Çalıştır</p>
+                    <p className="text-xs text-gray-500">Daha önce tamamlanmış olsa bile tekrar çalıştır</p>
                   </div>
                 </label>
 
@@ -612,7 +669,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   />
                   <div>
                     <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
-                    <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır (dikkatli kullanin)</p>
+                    <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır (dikkatli kullanın)</p>
                   </div>
                 </label>
 

@@ -5347,3 +5347,36 @@ miktar / outlet kombinasyonları). **Hafta 3**: SMS yedek (push fail
    `qr_charge_rejected` case'leri + `ROUTES.guestQrBadge` sabiti.
    Misafir bildirime tıklayınca direkt `/(guest)/qrBadge` ekranına
    düşer; personel home'da kalır (mobilde PMS ekranı yok).
+
+**Night Audit UI hardening (2026-05-05)**:
+1. **Tek tarih kaynağı**: `PreparationTab` artık `onPreviewLoaded` callback'i
+   ile preview verisini parent'a aktarır; parent `previewData` state'i tutar
+   ve preview'in `business_date`'i header `businessDate` ile farklıysa
+   sessizce eşitler. Modal artık preview verisinden takvim drift bilgisini
+   ("Takvim ile aynı" / "N gün geride") gösterir → header/banner/modal
+   tutarsızlığı kalkar.
+2. **Otomatik refresh**: `prepRefreshKey` state, `handleRunAudit` /
+   `handleSaveSchedule` / `handleQuickToggleSchedule` sonrasında artar,
+   `PreparationTab` `useEffect` bağımlılığında olduğu için preview yeniden
+   yüklenir. Sayfayı F5 etmeden engelleyici listesi güncellenir.
+3. **BLOCKED hatası UX**: handleRunAudit `detail.code === "BLOCKED"`
+   yakalar; ham JSON yerine `"X hata, Y uyarı. Hazırlık sekmesinden
+   detayları görüp çözebilirsiniz"` toast'u + tab'i Hazırlık'a geçirip
+   refresh tetikler.
+4. **Modal iyileştirmeleri**: blocker uyarı bandı + drift bilgisi +
+   "Hazırlık sekmesine git" linki; "tamamlanmissa/calistir/aciklamasi"
+   yazımları Türkçe normalize edildi.
+5. **Duplicate banner kaldırıldı**: PreparationTab içindeki "Tüm ön
+   kontroller temiz" yeşil kartı (ana durum kartı zaten söylüyordu)
+   kaldırıldı; yerine ince bir "Simülasyon ile başlamayı deneyin"
+   ipucu metni geldi.
+6. **Operasyonel temizlik (DB)**: 2 stuck HK görevi (oda a121a3c6 +
+   bcade118, 24 Nis'ten beri in_progress) ve 25 stuck check-in (demo
+   seed verisi, çıkış tarihi ≤ business_date) toplu olarak `completed` /
+   `checked_out` + `closed` yapıldı; bağlı 25 folyo `closed`. Eski
+   blocked NA run (`0b5a1f7c`) abort edildi. Sonraki dry-run:
+   `dry_run_completed`, candidate=2, errors=0, warnings=0.
+
+**Architect Round-1**: PASS (ek bulgu yok; useCallback bağımlılıkları
+doğru, infinite loop koruması var, stale closure yok, prop drilling
+makul seviyede).

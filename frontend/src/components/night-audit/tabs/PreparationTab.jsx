@@ -46,7 +46,7 @@ function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
   );
 }
 
-export default function PreparationTab({ onStartRun }) {
+export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey = 0 }) {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,14 +57,17 @@ export default function PreparationTab({ onStartRun }) {
     try {
       const res = await axios.get('/night-audit/preview');
       setData(res.data);
+      if (typeof onPreviewLoaded === 'function') {
+        onPreviewLoaded(res.data);
+      }
     } catch (e) {
       console.error('preview failed', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onPreviewLoaded]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   if (loading && !data) {
     return (
@@ -262,19 +265,11 @@ export default function PreparationTab({ onStartRun }) {
         </Card>
       )}
 
-      {/* Hazır rozeti — engelleyici yoksa */}
-      {blockers.length === 0 && (
-        <Card className="border-emerald-200 bg-emerald-50/40" data-testid="ready-card">
-          <CardContent className="py-4 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5" />
-            <div className="text-sm">
-              <p className="font-semibold text-emerald-900">Tüm ön kontroller temiz.</p>
-              <p className="text-emerald-800">
-                Provizyonu (kuru çalıştırma) önce çalıştırıp ne yazılacağını kontrol etmek isteyebilirsiniz.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Hazır rozeti — engelleyici yoksa: yalnızca öneri notu, durum kartı yukarıda zaten gösteriyor */}
+      {blockers.length === 0 && warnings.length === 0 && (
+        <p className="text-xs text-gray-500 px-1" data-testid="ready-hint">
+          İpucu: ilk kez çalıştırıyorsanız önce Simülasyon (kuru çalıştırma) yapıp ne yazılacağını kontrol etmenizi öneririz.
+        </p>
       )}
     </div>
   );
