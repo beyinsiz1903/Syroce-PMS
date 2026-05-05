@@ -182,6 +182,7 @@ const AuditTimelinePage = lazy(() => import("@/pages/AuditTimelinePage"));
 const UrgentMessageReportPage = lazy(() => import("@/pages/UrgentMessageReportPage"));
 const RecalledMessagesReportPage = lazy(() => import("@/pages/RecalledMessagesReportPage"));
 const IdPhotoViewReportPage = lazy(() => import("@/pages/IdPhotoViewReportPage"));
+const IdPhotoAdminPage = lazy(() => import("@/pages/IdPhotoAdminPage"));
 const UrgentPermissionAdminPage = lazy(() => import("@/pages/UrgentPermissionAdminPage"));
 const PilotReadinessPage = lazy(() => import("@/pages/PilotReadinessPage"));
 const IncidentDashboardPage = lazy(() => import("@/pages/IncidentDashboardPage"));
@@ -499,6 +500,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}) },
     { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) },
     { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}) },
+    { path: "/id-photo-admin", ...p(IdPhotoAdminPage, {}) },
     { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) },
     { path: "/pilot-readiness", ...p(PilotReadinessPage, {}) },
     { path: "/incident-dashboard", ...p(IncidentDashboardPage, {}) },

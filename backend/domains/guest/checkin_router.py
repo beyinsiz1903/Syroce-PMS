@@ -7,6 +7,7 @@ upsell acceptance, pre-arrival communications.
 import base64
 import binascii
 import logging
+import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -506,6 +507,281 @@ async def download_online_checkin_id_photo(
             ),
         },
     )
+
+
+def _id_photo_retention_days() -> int:
+    """Saklama süresini tek noktadan oku (cleanup worker ile aynı kaynak).
+
+    Worker `ID_PHOTO_RETENTION_DAYS` env değişkenini kullanıyor; UI'da
+    "sona erme tarihi" kolonu burada hesaplanıyor — değer eşitsizliği
+    olmasın diye aynı env adına bağlandık.
+    """
+    raw = os.getenv("ID_PHOTO_RETENTION_DAYS")
+    if not raw:
+        return 90
+    try:
+        v = int(raw)
+        return v if v > 0 else 90
+    except ValueError:
+        return 90
+
+
+def _expires_at_iso(uploaded_at: str | None, retention_days: int) -> str | None:
+    """`uploaded_at + retention_days` ISO çıktısı; geçersiz girişte None."""
+    if not uploaded_at:
+        return None
+    try:
+        from datetime import timedelta
+        ts = uploaded_at if isinstance(uploaded_at, str) else uploaded_at.isoformat()
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return (dt + timedelta(days=retention_days)).isoformat()
+    except Exception:
+        return None
+
+
+def _public_id_photo_row(doc: dict, retention_days: int) -> dict:
+    """Listeleme cevabı için güvenli proje — DB'deki dahili alanlardan
+    arındır, UI'nın ihtiyacı olan alanları aç."""
+    uploaded_at = doc.get("uploaded_at")
+    return {
+        "photo_id": doc.get("photo_id"),
+        "booking_id": doc.get("booking_id"),
+        "guest_id": doc.get("guest_id"),
+        "checkin_id": doc.get("checkin_id"),
+        "claimed": bool(doc.get("claimed")),
+        "uploaded_at": uploaded_at,
+        "expires_at": _expires_at_iso(uploaded_at, retention_days),
+        "uploaded_by": doc.get("uploaded_by"),
+        "uploaded_by_role": doc.get("uploaded_by_role"),
+        "content_type": doc.get("content_type"),
+        "extension": doc.get("extension"),
+        "size_bytes": doc.get("size_bytes"),
+        "sha256": doc.get("sha256"),
+        "source": doc.get("source"),
+    }
+
+
+@router.get("/checkin/online/id-photos")
+async def list_online_checkin_id_photos(
+    booking_id: str | None = Query(default=None),
+    guest_id: str | None = Query(default=None),
+    claimed: bool | None = Query(
+        default=None,
+        description=(
+            "true → yalnızca check-in formuna bağlanmış kayıtlar; "
+            "false → yetim (henüz claim edilmemiş) yüklemeler; "
+            "atlandığında her ikisi de döner."
+        ),
+    ),
+    uploaded_after: str | None = Query(
+        default=None,
+        description="ISO timestamp; uploaded_at >= filtresi.",
+    ),
+    uploaded_before: str | None = Query(
+        default=None,
+        description="ISO timestamp; uploaded_at <= filtresi.",
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #86 — Bekleyen kimlik fotoğrafları listesi (resepsiyon paneli).
+
+    Otomatik temizlik (Task #72) 90 gün sonra ve yetim yüklemeleri 24
+    saatte siliyor; ancak personelin **bekleyen kayıtları görmesi**,
+    yanlış yüklenen ya da KVKK silme talebi gelen bir fotoğrafı
+    süresinden önce manuel silmesi için bir UI yok. Bu uç söz konusu
+    listeyi tenant kapsamında, sayfalı ve filtreli döner. Fotoğraf
+    bayt'ları KVKK gereği yanıtın bir parçası değildir; her satır
+    yalnızca metadata içerir.
+    """
+    query: dict = {"tenant_id": current_user.tenant_id}
+    if booking_id:
+        query["booking_id"] = booking_id
+    if guest_id:
+        query["guest_id"] = guest_id
+    if claimed is not None:
+        query["claimed"] = bool(claimed)
+    if uploaded_after or uploaded_before:
+        ts: dict = {}
+        if uploaded_after:
+            ts["$gte"] = uploaded_after
+        if uploaded_before:
+            ts["$lte"] = uploaded_before
+        query["uploaded_at"] = ts
+
+    retention_days = _id_photo_retention_days()
+    cursor = (
+        db.online_checkin_id_photos
+        .find(query, {"_id": 0})
+        .sort("uploaded_at", -1)
+        .skip(int(offset))
+        .limit(int(limit))
+    )
+    docs = await cursor.to_list(int(limit))
+    total = await db.online_checkin_id_photos.count_documents(query)
+
+    return {
+        "items": [_public_id_photo_row(d, retention_days) for d in docs],
+        "total": total,
+        "retention_days": retention_days,
+        "filters": {
+            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "claimed": claimed,
+            "uploaded_after": uploaded_after,
+            "uploaded_before": uploaded_before,
+        },
+        "pagination": {"limit": limit, "offset": offset},
+    }
+
+
+@router.delete("/checkin/online/id-photos/{photo_id}")
+async def manual_delete_online_checkin_id_photo(
+    photo_id: str,
+    reason: str = Query(
+        default="",
+        description=(
+            "Manuel silme gerekçesi (KVKK / iç denetim). "
+            "Boş veya yalnızca boşluk olamaz; en fazla 500 karakter."
+        ),
+        max_length=500,
+    ),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #86 — Bir kimlik fotoğrafını süresinden önce manuel sil.
+
+    Audit kaydı bırakılır (`action="manual_delete"`, metadata.reason =
+    `"manual_delete:<gerekçe>"`); şifrelenmiş dosya ve metadata kaydı
+    cleanup ile aynı yolla silinir (`_delete_one`).
+    """
+    reason_clean = (reason or "").strip()
+    if not reason_clean:
+        raise HTTPException(
+            status_code=400,
+            detail="Manuel silme için gerekçe zorunludur",
+        )
+
+    doc = await db.online_checkin_id_photos.find_one(
+        {"photo_id": photo_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail="Kimlik fotoğrafı bulunamadı veya bu kiracıya ait değil",
+        )
+
+    from domains.guest.checkin_id_photo_cleanup import _delete_one
+    deleted = await _delete_one(
+        db=db,
+        doc=doc,
+        reason=f"manual_delete:{reason_clean}",
+        actor_id=current_user.id,
+    )
+    if not deleted:
+        # Hem dosya hem metadata silme başarısız oldu — diskte ya
+        # da DB'de kalıntı olabileceğini bildir, hata yutma.
+        raise HTTPException(
+            status_code=500,
+            detail="Kimlik fotoğrafı silinemedi (dosya veya metadata).",
+        )
+    return {
+        "photo_id": photo_id,
+        "deleted": True,
+        "reason": reason_clean,
+    }
+
+
+@router.post("/checkin/online/id-photos/bulk-delete")
+async def bulk_delete_online_checkin_id_photos(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #86 — KVKK silme talebi için booking_id veya guest_id
+    bazlı toplu manuel silme.
+
+    İstek gövdesi::
+
+        {
+          "booking_id": "...",   # ya bu
+          "guest_id":   "...",   # ya bu (en az biri)
+          "reason":     "KVKK silme talebi #2026-..."
+        }
+
+    Her silinen kayıt için ayrı bir audit kaydı düşer; toplu silmenin
+    sayısı yanıtta döner. Hiç eşleşme olmazsa 0 döner — 404 değil
+    (operasyon idempotent).
+    """
+    booking_id = (payload.get("booking_id") or "").strip() or None
+    guest_id = (payload.get("guest_id") or "").strip() or None
+    reason_clean = (payload.get("reason") or "").strip()
+
+    if not (booking_id or guest_id):
+        raise HTTPException(
+            status_code=400,
+            detail="booking_id veya guest_id alanlarından en az biri zorunludur",
+        )
+    if not reason_clean:
+        raise HTTPException(
+            status_code=400,
+            detail="Toplu silme için gerekçe zorunludur (KVKK izlenebilirlik)",
+        )
+    if len(reason_clean) > 500:
+        raise HTTPException(
+            status_code=400,
+            detail="Gerekçe metni çok uzun (en fazla 500 karakter)",
+        )
+
+    query: dict = {"tenant_id": current_user.tenant_id}
+    if booking_id:
+        query["booking_id"] = booking_id
+    if guest_id:
+        query["guest_id"] = guest_id
+
+    # KVKK kapsamında **kısmi silme kabul edilemez** — bir misafirin
+    # silme talebi gelmişse koleksiyondaki TÜM eşleşen kayıtlar
+    # silinmeli. Bu yüzden cursor'u sonuna kadar async iterate ederiz;
+    # ne `to_list(N)` cap'i ne de sayfalama eşiği vardır. Tek bir doküman
+    # ~150-200 byte (file path + metadata) olduğundan binlerce doküman
+    # bile bellek baskısı yaratmaz; yine de cursor üzerinden işlediğimiz
+    # için tek seferde tüm dokümanlar belleğe yüklenmez.
+    from domains.guest.checkin_id_photo_cleanup import _delete_one
+    cursor = db.online_checkin_id_photos.find(query, {"_id": 0})
+    matched = 0
+    deleted_count = 0
+    failed_ids: list[str] = []
+    async for doc in cursor:
+        matched += 1
+        try:
+            ok = await _delete_one(
+                db=db,
+                doc=doc,
+                reason=f"manual_delete:{reason_clean}",
+                actor_id=current_user.id,
+            )
+            if ok:
+                deleted_count += 1
+            else:
+                failed_ids.append(str(doc.get("photo_id") or ""))
+        except Exception:
+            logger.exception(
+                "bulk_delete_online_checkin_id_photos: delete failed for photo_id=%s",
+                doc.get("photo_id"),
+            )
+            failed_ids.append(str(doc.get("photo_id") or ""))
+
+    return {
+        "matched": matched,
+        "deleted": deleted_count,
+        "failed_photo_ids": failed_ids,
+        "booking_id": booking_id,
+        "guest_id": guest_id,
+        "reason": reason_clean,
+    }
 
 
 @router.post("/upsell/accept")

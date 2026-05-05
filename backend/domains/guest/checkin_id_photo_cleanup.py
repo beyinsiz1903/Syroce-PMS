@@ -73,16 +73,23 @@ async def _audit_delete(
     reason: str,
     file_deleted: bool,
     metadata_deleted: bool,
+    actor_id: str | None = None,
 ) -> None:
-    """Best-effort audit entry; sessizce yutar — temizliği bloklamamalı."""
+    """Best-effort audit entry; sessizce yutar — temizliği bloklamamalı.
+
+    ``actor_id`` Task #86 ile eklendi: manuel silme uçları (resepsiyon
+    ön-görüntüleme paneli, KVKK toplu silme) silmeyi yapan personeli
+    audit kaydına yazabilsin diye opsiyonel parametre olarak alınır.
+    Otomatik temizlikte (worker) ``None`` kalır.
+    """
     try:
         from shared_kernel.audit_helper import build_audit_entry
         entry = build_audit_entry(
-            actor_id=None,  # otomatik silme — kullanıcı yok
+            actor_id=actor_id,
             tenant_id=str(doc.get("tenant_id") or ""),
             entity_type="online_checkin_id_photo",
             entity_id=str(doc.get("photo_id") or ""),
-            action="auto_delete",
+            action="auto_delete" if actor_id is None else "manual_delete",
             metadata={
                 "reason": reason,
                 "file_deleted": bool(file_deleted),
@@ -91,6 +98,7 @@ async def _audit_delete(
                 "uploaded_at": doc.get("uploaded_at"),
                 "booking_id": doc.get("booking_id"),
                 "checkin_id": doc.get("checkin_id"),
+                "guest_id": doc.get("guest_id"),
             },
         )
         await db.audit_logs.insert_one(entry)
@@ -101,7 +109,13 @@ async def _audit_delete(
         )
 
 
-async def _delete_one(*, db: Any, doc: dict[str, Any], reason: str) -> bool:
+async def _delete_one(
+    *,
+    db: Any,
+    doc: dict[str, Any],
+    reason: str,
+    actor_id: str | None = None,
+) -> bool:
     """Bir kaydı sil: önce şifrelenmiş dosya, sonra metadata, sonra audit.
 
     Sırayla yapılması önemli — dosya silme başarısız olsa bile metadata
@@ -144,6 +158,7 @@ async def _delete_one(*, db: Any, doc: dict[str, Any], reason: str) -> bool:
         reason=reason,
         file_deleted=file_deleted,
         metadata_deleted=metadata_deleted,
+        actor_id=actor_id,
     )
     return file_deleted or metadata_deleted
 

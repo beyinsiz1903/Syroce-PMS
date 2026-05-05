@@ -150,6 +150,16 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    // Task #86: bekleyen kimlik fotoğraflarını listeleyen ve manuel /
+    // KVKK toplu silme yapılabilen resepsiyon paneli.
+    key: "id_photo_admin",
+    label: "Bekleyen Kimlik Fotoğrafları",
+    path: "/id-photo-admin",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+  },
+  {
     // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
     key: "urgent_permission_admin",
     label: "Acil Mesaj İzinleri",
