@@ -20,6 +20,7 @@ import { DepositsTab, VoucherTab, InvoiceTab } from './reservation-detail/Docume
 import { OnlinePaymentTab } from './reservation-detail/OnlinePaymentTab';
 import { VCCTab } from './reservation-detail/VCCTab';
 import GuestAlertModal from '@/components/GuestAlertModal';
+import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
   const [data, setData] = useState(null);
@@ -172,6 +173,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <div className="border-t pt-2 flex justify-between text-xs"><span className="text-gray-500">BAKIYE</span><span className={`font-bold ${(summary?.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtTL(summary?.balance)} TL</span></div>
               </div>
               <div className="space-y-1.5">
+                <IdPhotoViewerButton
+                  bookingId={bookingId}
+                  guestName={guest?.name || booking?.guest_name}
+                  onlineCheckinCompleted={booking?.online_checkin_completed}
+                  idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
+                  className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                />
                 {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
                   <Button size="sm" variant="outline" onClick={() => setCheckinAlertOpen(true)} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giriş Yap</Button>
                 )}

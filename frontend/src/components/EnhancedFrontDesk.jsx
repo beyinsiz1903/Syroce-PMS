@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -149,6 +150,12 @@ const EnhancedFrontDesk = () => {
                   >
                     🔔 {t('frontDeskEnhanced.alerts')}
                   </button>
+                  <IdPhotoViewerButton
+                    bookingId={booking.id}
+                    guestName={booking.guest_name}
+                    onlineCheckinCompleted={booking.online_checkin_completed}
+                    idPhotoUploaded={booking.online_checkin_id_photo_uploaded}
+                  />
                   {booking.status === 'confirmed' && (
                     <button
                       onClick={() => handleQuickCheckin(booking.id)}
