@@ -91,6 +91,8 @@ _Populate as you build_
 - **Night Audit N+1 Issues**: Performance-sensitive areas in night audit have been optimized with `asyncio.gather` and bulk operations. Avoid sequential DB calls in loops.
 - **Outbound HTTP Calls**: All tenant-configurable outbound URLs are protected with DNS-rebinding-safe transport, IP allowlisting, and transport pinning to prevent SSRF.
 - **Auth Cache Invalidation**: In multi-worker environments, user and tenant document cache invalidation is handled via Redis pub/sub to ensure consistency across instances.
+- **CapX Integration (UAT GREEN, May 2026)**: A-plan ile uçtan uca canlı. Tenant credential paketi (`base_url`, `api_key`, `webhook_secret`) `capx_tenant_credentials` koleksiyonunda AES-256-GCM şifreli; `PUT /api/capx/tenant-credentials/{tenant_id}` ile yazılır. Adapter şeması: availability `{date_start, date_end, rooms:[{room_type, available_count, price_min, price_max, currency, pax}], auto_publish, pms_external_ref}`; reservation event `event_type` regex `^reservation\.(created|updated|cancelled)$` + zorunlu `external_id`. Callback URL formatı `{PUBLIC_BASE_URL}/api/webhooks/capx/by-tenant/{tenant_id}` (HMAC iki yönlü). Scheduler env yoksa SADECE tenant credential olan tenant'ları gezer (`backend/integrations/capx/scheduler.py:_push_cycle`).
+- **WS Redis Pub/Sub Circuit Breaker**: `backend/infra/ws_redis_adapter.py` listener `<1s` içinde 5 kez ardarda fast-exit ederse WARNING log'ları susturup 30s zorunlu cool-down uygular; 5 dk sonra otomatik reset. Gerçek arızayı maskelemez, sadece tight-loop log/CPU spam'ini engeller. Tunable: `_breaker_threshold/_breaker_cooldown_s/_breaker_window_s`.
 
 ## Pointers
 
