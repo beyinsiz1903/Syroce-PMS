@@ -210,6 +210,17 @@ function routeForRole(payload: PushPayload, role: AppRole): RouteTarget | null {
       // Only GM receives EOD pushes; for any other role just go home.
       return home;
 
+    case 'qr_charge_approval':
+    case 'qr_charge_rejected':
+      // QR Rozet — misafir telefonuna onay isteği veya personele red
+      // bildirimi düşer. Misafir tap ederse direkt kendi rozet ekranına
+      // gitsin (5sn polling zaten bekleyen şarjı yakalar). Personel
+      // şu an mobil uygulamada PMS ekranı yok — home'a gitsin.
+      if (role === 'guest_app') {
+        return ROUTES.guestQrBadge;
+      }
+      return home;
+
     default:
       return null;
   }

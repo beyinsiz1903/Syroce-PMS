@@ -5330,3 +5330,20 @@ import edip):
 davranış izleme + şüpheli işlem alarmı (anomaly detection: zaman /
 miktar / outlet kombinasyonları). **Hafta 3**: SMS yedek (push fail
 → otomatik OTP + SMS link), refakatçi/eş hesap, manuel resepsiyon onayı.
+
+**Post-merge polish (2026-05-05)**:
+1. **MongoDB index'leri** (`backend/domains/guest/qr_badge/indexes.py`,
+   `phase_d_perf_and_marketplace`'a kayıtlı): `guest_qr_tokens` →
+   `(tenant_id, token)` UNIQUE + `(tenant_id, booking_id, status)` +
+   `(tenant_id, expires_at)`; `pending_qr_charges` → `(id, tenant_id)`
+   UNIQUE + `(tenant_id, guest_user_id, status, created_at desc)` +
+   `(tenant_id, status, expires_at)`. Atomic find_one_and_update ve
+   "kendi pending'lerimi listele" sorgularının O(log n) çalışmasını
+   garanti eder; token validate replay'leri unique sayesinde double
+   insert'i önler. 6 index Atlas'ta `syroce-pms` DB'sinde doğrulandı.
+2. **Push deep-link**: backend `create_pending_charge` / `reject` push
+   payload'larına `type` alanı eklendi (`kind` backward-compat için
+   bırakıldı). Mobil `routeForRole` switch'ine `qr_charge_approval` /
+   `qr_charge_rejected` case'leri + `ROUTES.guestQrBadge` sabiti.
+   Misafir bildirime tıklayınca direkt `/(guest)/qrBadge` ekranına
+   düşer; personel home'da kalır (mobilde PMS ekranı yok).

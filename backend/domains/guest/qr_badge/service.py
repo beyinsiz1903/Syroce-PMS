@@ -295,12 +295,15 @@ async def create_pending_charge(
     await db.pending_qr_charges.insert_one(doc)
 
     # Misafire anlık bildirim gönder (best-effort).
+    # Mobil push handler `data.type` üzerinden routing yapar — `kind`
+    # backward-compat için (ilerideki analytics) bırakıldı.
     try:
         fire_and_forget_expo_push(
             tenant_id,
             title=f"{doc['outlet_name']} — Onay bekliyor",
             body=f"{doc['description']} • {doc['amount']:.2f} {currency}",
             data={
+                "type": "qr_charge_approval",
                 "kind": "qr_charge_approval",
                 "charge_id": charge_id,
                 "outlet": outlet,
@@ -588,6 +591,7 @@ async def reject_pending_charge(
                 title="Misafir şarjı reddetti",
                 body=f"{charge.get('outlet_name', '')} • {float(charge['amount']):.2f} {charge.get('currency', 'TRY')}",
                 data={
+                    "type": "qr_charge_rejected",
                     "kind": "qr_charge_rejected",
                     "charge_id": charge_id,
                     "outlet": charge.get("outlet"),

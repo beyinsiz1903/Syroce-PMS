@@ -58,6 +58,13 @@ async def phase_d_perf_and_marketplace(app):
     except Exception as e:
         logger.warning(f"CM 9-collection indexes error: {e}")
 
+    # QR Rozet (Tur 15) index'leri
+    try:
+        from domains.guest.qr_badge.indexes import ensure_qr_badge_indexes
+        await ensure_qr_badge_indexes()
+    except Exception as e:
+        logger.warning(f"QR badge index init error: {e}")
+
     # Tenant uniqueness indexes
     try:
         await db.tenants.create_index(
