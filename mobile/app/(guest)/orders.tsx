@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
@@ -38,6 +38,7 @@ export default function GuestOrdersScreen() {
   );
 
   const [streamConnected, setStreamConnected] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const ordersQueryKey = ['room-service-orders', activeBooking?.id] as const;
 
   const ordersQ = useQuery({
@@ -91,7 +92,15 @@ export default function GuestOrdersScreen() {
       setStreamConnected(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBooking?.id]);
+  }, [activeBooking?.id, retryNonce]);
+
+  const handleRetryStream = () => {
+    if (streamConnected) return;
+    setRetryNonce((n) => n + 1);
+    if (activeBooking) {
+      ordersQ.refetch();
+    }
+  };
 
   return (
     <ScrollView
@@ -105,7 +114,23 @@ export default function GuestOrdersScreen() {
         />
       }
     >
-      <H1>{tr.guest.orderHistory}</H1>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <H1>{tr.guest.orderHistory}</H1>
+        {activeBooking ? (
+          streamConnected ? (
+            <Badge label="Canlı" tone="success" />
+          ) : (
+            <Pressable
+              onPress={handleRetryStream}
+              accessibilityRole="button"
+              accessibilityLabel="Çevrimdışı, yeniden bağlanmak için dokun"
+              hitSlop={8}
+            >
+              <Badge label="Çevrimdışı • Yenile" tone="warning" />
+            </Pressable>
+          )
+        ) : null}
+      </View>
       {!activeBooking ? (
         <Card>
           <Muted>{tr.guest.selectActiveBooking}</Muted>
