@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { Badge, Body, Button, Card, Field, H1, H2, Muted } from '../../src/components/ui';
+import { SignaturePad } from '../../src/components/SignaturePad';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -43,8 +44,10 @@ export default function OnlineCheckinScreen() {
 
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId ?? null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [signatureSvg, setSignatureSvg] = useState<string | null>(null);
   const [signatureName, setSignatureName] = useState('');
   const [signatureConsent, setSignatureConsent] = useState(false);
+  const [showTypedFallback, setShowTypedFallback] = useState(false);
   const [arrivalTime, setArrivalTime] = useState('');
   const [flightNumber, setFlightNumber] = useState('');
   const [nationality, setNationality] = useState('');
@@ -63,6 +66,9 @@ export default function OnlineCheckinScreen() {
     [eligibleBookings, bookingId],
   );
   const checkinOpen = isCheckinOpen(booking);
+  const hasDrawnSignature = !!signatureSvg;
+  const hasTypedSignature = signatureName.trim().length >= 3;
+  const hasAnySignature = hasDrawnSignature || hasTypedSignature;
 
   useEffect(() => {
     if (!bookingId && eligibleBookings.length === 1) {
@@ -103,8 +109,8 @@ export default function OnlineCheckinScreen() {
       setError(tr.guest.idPhotoTake);
       return;
     }
-    if (!signatureConsent || signatureName.trim().length < 3) {
-      setError(tr.guest.signatureHint);
+    if (!signatureConsent || !hasAnySignature) {
+      setError(tr.guest.signatureNeeded);
       return;
     }
     setBusy(true);
@@ -135,7 +141,8 @@ export default function OnlineCheckinScreen() {
         flight_number: flightNumber || undefined,
         special_requests: specialRequests || undefined,
         id_photo_id: idPhotoId,
-        signature_text: signatureName.trim(),
+        signature_svg: hasDrawnSignature ? signatureSvg ?? undefined : undefined,
+        signature_text: hasTypedSignature ? signatureName.trim() : undefined,
         signature_consent: true,
       });
       // Success: wipe the local raw photo per privacy requirement.
@@ -252,18 +259,32 @@ export default function OnlineCheckinScreen() {
         <H2>{tr.guest.signature}</H2>
         <Muted>{tr.guest.signatureHint}</Muted>
         <View style={{ height: spacing.sm }} />
-        <Field
-          label={tr.guest.signatureName}
-          value={signatureName}
-          onChangeText={setSignatureName}
-          autoCapitalize="words"
-        />
+        <SignaturePad onChange={setSignatureSvg} clearLabel={tr.guest.signatureClear} />
+        <Pressable
+          onPress={() => setShowTypedFallback((v) => !v)}
+          accessibilityRole="button"
+          style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
+        >
+          <Body style={{ color: c.primary, fontWeight: '600' }}>
+            {showTypedFallback ? '−' : '+'} {tr.guest.signatureFallbackToggle}
+          </Body>
+        </Pressable>
+        {showTypedFallback ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Field
+              label={tr.guest.signatureName}
+              value={signatureName}
+              onChangeText={setSignatureName}
+              autoCapitalize="words"
+            />
+          </View>
+        ) : null}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             gap: spacing.sm,
-            marginTop: spacing.sm,
+            marginTop: spacing.md,
           }}
         >
           <Switch

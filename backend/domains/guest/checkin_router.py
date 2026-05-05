@@ -6,6 +6,7 @@ upsell acceptance, pre-arrival communications.
 """
 import base64
 import binascii
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -21,6 +22,47 @@ from modules.pms_core.role_permission_service import require_module as require_m
 from security.upload_validator import MAX_IMAGE_BYTES
 
 router = APIRouter(prefix="/api", tags=["checkin-domain"])
+
+# --- Signature SVG sanitization ----------------------------------------------
+# The mobile guest app sends a handwritten signature as an SVG string. Any
+# admin/front-desk surface that renders this SVG inline (e.g. inside a
+# WebView, an HTML report, or a registration card PDF) would otherwise be
+# vulnerable to stored XSS. We strip the obvious vectors here before persist.
+_SIG_SVG_MAX_BYTES = 256 * 1024  # 256 KiB is plenty for a stroke-only SVG
+_SIG_SCRIPT_RE = re.compile(r"<\s*script\b[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)
+_SIG_OPEN_SCRIPT_RE = re.compile(r"<\s*script\b[^>]*/?\s*>", re.IGNORECASE)
+_SIG_FOREIGN_OBJECT_RE = re.compile(
+    r"<\s*foreignObject\b[^>]*>.*?<\s*/\s*foreignObject\s*>", re.IGNORECASE | re.DOTALL
+)
+_SIG_EVENT_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+_SIG_JS_URI_RE = re.compile(r"(?:href|xlink:href)\s*=\s*([\"'])\s*javascript:[^\"']*\1", re.IGNORECASE)
+
+
+def _sanitize_signature_svg(raw: str | None) -> str | None:
+    """Best-effort sanitization of guest-supplied signature SVG.
+
+    Returns the cleaned SVG, or None if the input is missing / not a plausible
+    SVG / would be empty after cleaning. We do *not* attempt full XML parsing
+    because the signature pad emits a strictly-controlled subset (svg + path
+    elements only); we just remove the script-style attack surface defensively.
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    if len(s.encode("utf-8")) > _SIG_SVG_MAX_BYTES:
+        return None
+    # Must look like an SVG document; reject anything else outright.
+    if "<svg" not in s.lower():
+        return None
+    s = _SIG_SCRIPT_RE.sub("", s)
+    s = _SIG_OPEN_SCRIPT_RE.sub("", s)
+    s = _SIG_FOREIGN_OBJECT_RE.sub("", s)
+    s = _SIG_EVENT_HANDLER_RE.sub("", s)
+    s = _SIG_JS_URI_RE.sub("", s)
+    cleaned = s.strip()
+    return cleaned or None
 
 
 def _allow_frontdesk_or_guest(current_user: User = Depends(get_current_user)) -> User:
@@ -116,12 +158,23 @@ async def submit_online_checkin(
 
     booking = await _assert_booking_accessible(request.booking_id, current_user)
 
+    # Sanitize any drawn signature once, up front; both validation and
+    # persistence below use the cleaned value so a malicious-only payload
+    # (e.g. <svg><script>...</script></svg>) cannot satisfy the contract or
+    # be stored. Staff submissions go through the same scrubbing.
+    sanitized_svg = _sanitize_signature_svg(request.signature_svg)
+
     # Guest-app callers must satisfy the digital-signature contract and the
     # 06:00-on-check-in-day eligibility gate (mirror of the mobile UI rule).
     role = getattr(current_user.role, "value", str(current_user.role))
     if role == "guest_app":
-        # Digital-signature contract: typed name + explicit consent both required.
-        if not (request.signature_consent and (request.signature_text or "").strip()):
+        # Digital-signature contract: explicit consent + either a drawn
+        # signature (sanitized SVG) or a typed full name (accessibility
+        # fallback). Booking ownership is already enforced by
+        # _assert_booking_accessible.
+        has_drawn = sanitized_svg is not None
+        has_typed = bool((request.signature_text or "").strip())
+        if not (request.signature_consent and (has_drawn or has_typed)):
             raise HTTPException(status_code=400, detail="Dijital imza onayı gerekli")
         # 06:00 eligibility: online check-in opens at 06:00 on the check-in
         # day in the property's local timezone. Mobile uses device-local time
@@ -235,6 +288,11 @@ async def submit_online_checkin(
         "id_photo": id_photo_meta,
         "id_photo_uploaded": id_photo_meta is not None,
         "signature_text": (request.signature_text or "").strip() or None,
+        "signature_svg": sanitized_svg,
+        "signature_method": (
+            "drawn" if sanitized_svg
+            else ("typed" if (request.signature_text or "").strip() else None)
+        ),
         "signature_consent": bool(request.signature_consent),
         "signed_at": datetime.now(UTC).isoformat() if request.signature_consent else None,
         "status": "pending",

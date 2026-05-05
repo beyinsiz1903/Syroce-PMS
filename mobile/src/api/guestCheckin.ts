@@ -20,6 +20,7 @@ export type OnlineCheckinPayload = {
   id_photo_id?: string;
   id_photo_base64?: string;
   signature_text?: string;
+  signature_svg?: string;
   signature_consent?: boolean;
 };
 

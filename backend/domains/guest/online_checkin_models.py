@@ -90,11 +90,13 @@ class OnlineCheckinRequest(BaseModel):
     # id_photo_base64: legacy inline base64-encoded JPEG/PNG of the ID document
     #              (no data URL prefix expected). Will be re-encrypted server-side
     #              and persisted to secure storage; never stored inline anymore.
-    # signature_text: typed full-name digital signature consent.
+    # signature_text: typed full-name digital signature consent (accessibility fallback).
+    # signature_svg: handwritten signature drawn on a canvas, stored as an SVG string.
     # signature_consent: explicit boolean acknowledgement.
     id_photo_id: str | None = None
     id_photo_base64: str | None = None
     signature_text: str | None = None
+    signature_svg: str | None = None
     signature_consent: bool = False
 
 class OnlineCheckinResponse(BaseModel):
