@@ -10,16 +10,23 @@ Syroce PMS mobile — asset generator.
     notification-icon.png    96x96      (Android notification, beyaz monochrome)
     favicon.png              48x48
   mobile/store/screenshots/
-    ios/<flow>_<size>.png    6.7" (1290x2796) / 6.5" (1284x2778) / 5.5" (1242x2208)
-    android/<flow>_phone.png 1080x1920
+    ios/<flow>_<size>.png            koyu tema (varsayılan)
+        boyutlar: 6_7 (1290x2796), 6_5 (1284x2778), 5_5 (1242x2208),
+                  12_9 (2048x2732 — iPad 12.9"), 11 (1668x2388 — iPad 11")
+    ios/<flow>_<size>_light.png      light tema (aynı boyutlar)
+    android/<flow>_phone.png         1080x1920 telefon — koyu
+    android/<flow>_phone_light.png   1080x1920 telefon — light
+    android/<flow>_tablet_7.png      1200x1920 tablet 7" — koyu
+    android/<flow>_tablet_10.png     1600x2560 tablet 10" — koyu
+    android/<flow>_tablet_*_light.png  light varyantları
 
 Tüm görseller Syroce kurumsal kimliğine (lacivert + mavi vurgu) uygundur ve
-karanlık moda uyumludur. Türkçe başlıklar kullanılır.
+hem koyu hem light şemada Türkçe başlıklar kullanılır.
 """
 
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -30,7 +37,7 @@ ASSETS.mkdir(parents=True, exist_ok=True)
 (SHOTS / "ios").mkdir(parents=True, exist_ok=True)
 (SHOTS / "android").mkdir(parents=True, exist_ok=True)
 
-# --- Marka palette ---------------------------------------------------------
+# --- Marka palette (sabit accent renkleri) ---------------------------------
 BG_DARK = (11, 15, 26)
 SURFACE = (18, 24, 38)
 SURFACE_ALT = (26, 34, 54)
@@ -48,6 +55,45 @@ WHITE = (255, 255, 255)
 
 FONT_REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+# --- Tema sistemi ----------------------------------------------------------
+@dataclass(frozen=True)
+class Theme:
+    name: str
+    bg: tuple
+    surface: tuple
+    surface_alt: tuple
+    border: tuple
+    text: tuple
+    muted: tuple
+    bezel: tuple                # cihaz çerçevesi (compose_marketing)
+    grad_top_offset: tuple      # marketing arka plan gradient offseti
+
+
+DARK = Theme(
+    name="dark",
+    bg=BG_DARK,
+    surface=SURFACE,
+    surface_alt=SURFACE_ALT,
+    border=BORDER,
+    text=TEXT,
+    muted=MUTED,
+    bezel=(30, 35, 50),
+    grad_top_offset=(20, 25, 50),
+)
+
+LIGHT = Theme(
+    name="light",
+    bg=(247, 248, 251),
+    surface=(255, 255, 255),
+    surface_alt=(235, 240, 248),
+    border=(215, 222, 235),
+    text=(15, 23, 42),
+    muted=(91, 100, 120),
+    bezel=(190, 196, 210),
+    grad_top_offset=(8, 7, 4),
+)
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -182,33 +228,33 @@ def make_splash():
 
 
 # --- Mockup screen helpers ------------------------------------------------
-def base_screen(w: int, h: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-    im = Image.new("RGB", (w, h), BG_DARK)
+def base_screen(w: int, h: int, theme: Theme) -> tuple[Image.Image, ImageDraw.ImageDraw]:
+    im = Image.new("RGB", (w, h), theme.bg)
     d = ImageDraw.Draw(im)
     return im, d
 
 
-def status_bar(d: ImageDraw.ImageDraw, w: int, time: str = "09:41"):
+def status_bar(d: ImageDraw.ImageDraw, w: int, theme: Theme, time: str = "09:41"):
     fnt = font(34, bold=True)
-    d.text((48, 28), time, fill=TEXT, font=fnt)
+    d.text((48, 28), time, fill=theme.text, font=fnt)
     # sağ: sinyal/wifi/batarya — basit bar'lar
     bx = w - 48
     # batarya
-    d.rounded_rectangle((bx - 70, 38, bx, 64), radius=4, outline=TEXT, width=2)
-    d.rounded_rectangle((bx - 67, 41, bx - 18, 61), radius=2, fill=TEXT)
-    d.rectangle((bx, 46, bx + 4, 56), fill=TEXT)
+    d.rounded_rectangle((bx - 70, 38, bx, 64), radius=4, outline=theme.text, width=2)
+    d.rounded_rectangle((bx - 67, 41, bx - 18, 61), radius=2, fill=theme.text)
+    d.rectangle((bx, 46, bx + 4, 56), fill=theme.text)
     # wifi (üç bar)
     for i, hh in enumerate([10, 16, 22]):
-        d.rectangle((bx - 110 + i * 8, 64 - hh, bx - 104 + i * 8, 64), fill=TEXT)
+        d.rectangle((bx - 110 + i * 8, 64 - hh, bx - 104 + i * 8, 64), fill=theme.text)
     # sinyal
     for i, hh in enumerate([8, 14, 20, 26]):
-        d.rectangle((bx - 180 + i * 9, 64 - hh, bx - 174 + i * 9, 64), fill=TEXT)
+        d.rectangle((bx - 180 + i * 9, 64 - hh, bx - 174 + i * 9, 64), fill=theme.text)
 
 
-def app_header(d: ImageDraw.ImageDraw, w: int, title: str, subtitle: str | None = None):
-    d.text((48, 110), title, fill=TEXT, font=font(54, bold=True))
+def app_header(d: ImageDraw.ImageDraw, w: int, theme: Theme, title: str, subtitle: str | None = None):
+    d.text((48, 110), title, fill=theme.text, font=font(54, bold=True))
     if subtitle:
-        d.text((48, 178), subtitle, fill=MUTED, font=font(32))
+        d.text((48, 178), subtitle, fill=theme.muted, font=font(32))
 
 
 def chip(d, x, y, label, color=PRIMARY, bg=None):
@@ -222,21 +268,27 @@ def chip(d, x, y, label, color=PRIMARY, bg=None):
     return box[2] - x
 
 
-def card(d, x, y, w, h, *, fill=SURFACE, border=BORDER):
-    d.rounded_rectangle((x, y, x + w, y + h), radius=24, fill=fill, outline=border, width=2)
+def card(d, x, y, w, h, theme: Theme, *, fill=None, border=None):
+    d.rounded_rectangle(
+        (x, y, x + w, y + h),
+        radius=24,
+        fill=fill if fill is not None else theme.surface,
+        outline=border if border is not None else theme.border,
+        width=2,
+    )
 
 
-def tab_bar(d: ImageDraw.ImageDraw, w: int, h: int, items: list[tuple[str, bool]]):
+def tab_bar(d: ImageDraw.ImageDraw, w: int, h: int, theme: Theme, items: list[tuple[str, bool]]):
     bar_h = 160
     y0 = h - bar_h
-    d.rectangle((0, y0, w, h), fill=SURFACE)
-    d.rectangle((0, y0, w, y0 + 2), fill=BORDER)
+    d.rectangle((0, y0, w, h), fill=theme.surface)
+    d.rectangle((0, y0, w, y0 + 2), fill=theme.border)
     n = len(items)
     cell = w // n
     for i, (label, active) in enumerate(items):
         cx = i * cell + cell // 2
         # ikon olarak basit daire/yuvarlak
-        color = PRIMARY if active else MUTED
+        color = PRIMARY if active else theme.muted
         d.ellipse((cx - 22, y0 + 32, cx + 22, y0 + 76), outline=color, width=4)
         if active:
             d.ellipse((cx - 8, y0 + 46, cx + 8, y0 + 62), fill=color)
@@ -246,9 +298,9 @@ def tab_bar(d: ImageDraw.ImageDraw, w: int, h: int, items: list[tuple[str, bool]
 
 
 # --- Specific screens -----------------------------------------------------
-def screen_login(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
+def screen_login(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
     # logo merkez üst
     draw_logo_mark(im, w // 2, h // 2 - 480, 260)
     d_ = ImageDraw.Draw(im)
@@ -256,18 +308,18 @@ def screen_login(w, h):
     sub = "Otelinizi cebinizden yönetin"
     tw, _ = text_size(d_, title, font(64, bold=True))
     sw_, _ = text_size(d_, sub, font(34))
-    d_.text(((w - tw) // 2, h // 2 - 290), title, fill=TEXT, font=font(64, bold=True))
-    d_.text(((w - sw_) // 2, h // 2 - 210), sub, fill=MUTED, font=font(34))
+    d_.text(((w - tw) // 2, h // 2 - 290), title, fill=theme.text, font=font(64, bold=True))
+    d_.text(((w - sw_) // 2, h // 2 - 210), sub, fill=theme.muted, font=font(34))
 
     # Form kartı
     cx, cy, cw, ch = 80, h // 2 - 100, w - 160, 760
-    card(d_, cx, cy, cw, ch)
-    d_.text((cx + 40, cy + 40), "E-posta", fill=MUTED, font=font(28))
-    d_.rounded_rectangle((cx + 40, cy + 80, cx + cw - 40, cy + 160), radius=14, fill=SURFACE_ALT)
-    d_.text((cx + 60, cy + 102), "info@syroce.com", fill=TEXT, font=font(34))
-    d_.text((cx + 40, cy + 200), "Parola", fill=MUTED, font=font(28))
-    d_.rounded_rectangle((cx + 40, cy + 240, cx + cw - 40, cy + 320), radius=14, fill=SURFACE_ALT)
-    d_.text((cx + 60, cy + 262), "•••••••••••", fill=TEXT, font=font(34))
+    card(d_, cx, cy, cw, ch, theme)
+    d_.text((cx + 40, cy + 40), "E-posta", fill=theme.muted, font=font(28))
+    d_.rounded_rectangle((cx + 40, cy + 80, cx + cw - 40, cy + 160), radius=14, fill=theme.surface_alt)
+    d_.text((cx + 60, cy + 102), "info@syroce.com", fill=theme.text, font=font(34))
+    d_.text((cx + 40, cy + 200), "Parola", fill=theme.muted, font=font(28))
+    d_.rounded_rectangle((cx + 40, cy + 240, cx + cw - 40, cy + 320), radius=14, fill=theme.surface_alt)
+    d_.text((cx + 60, cy + 262), "•••••••••••", fill=theme.text, font=font(34))
     # buton
     d_.rounded_rectangle((cx + 40, cy + 400, cx + cw - 40, cy + 500), radius=18, fill=PRIMARY)
     f = font(38, bold=True)
@@ -280,14 +332,14 @@ def screen_login(w, h):
     btw2, _ = text_size(d_, btxt2, f)
     d_.text((cx + cw // 2 - btw2 // 2, cy + 570), btxt2, fill=PRIMARY, font=f)
 
-    d_.text((80, h - 200), "Demo: info@syroce.com / Syroce2026", fill=MUTED, font=font(26))
+    d_.text((80, h - 200), "Demo: info@syroce.com / Syroce2026", fill=theme.muted, font=font(26))
     return im
 
 
-def screen_today(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
-    app_header(d, w, "Bugün", "5 Mayıs 2026 · Resepsiyon")
+def screen_today(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
+    app_header(d, w, theme, "Bugün", "5 Mayıs 2026 · Resepsiyon")
 
     # Özet kartları (3'lü grid)
     y = 240
@@ -295,14 +347,14 @@ def screen_today(w, h):
     summaries = [("12", "Check-in", PRIMARY), ("8", "Check-out", INFO), ("3", "No-show", WARNING)]
     for i, (val, lbl, col) in enumerate(summaries):
         x = 48 + i * (box_w + 16)
-        card(d, x, y, box_w, 200)
+        card(d, x, y, box_w, 200, theme)
         d.text((x + 24, y + 24), val, fill=col, font=font(72, bold=True))
-        d.text((x + 24, y + 130), lbl, fill=MUTED, font=font(28))
+        d.text((x + 24, y + 130), lbl, fill=theme.muted, font=font(28))
 
     # Bölüm başlığı
     y2 = y + 240
-    d.text((48, y2), "Bekleyen check-in'ler", fill=TEXT, font=font(40, bold=True))
-    d.text((48, y2 + 60), "Bugünün önceliği", fill=MUTED, font=font(28))
+    d.text((48, y2), "Bekleyen check-in'ler", fill=theme.text, font=font(40, bold=True))
+    d.text((48, y2 + 60), "Bugünün önceliği", fill=theme.muted, font=font(28))
 
     # Liste
     rows = [
@@ -313,14 +365,14 @@ def screen_today(w, h):
     ]
     ry = y2 + 130
     for name, sub, tag, color in rows:
-        card(d, 48, ry, w - 96, 180)
+        card(d, 48, ry, w - 96, 180, theme)
         # avatar
-        d.ellipse((72, ry + 30, 192, ry + 150), fill=SURFACE_ALT)
+        d.ellipse((72, ry + 30, 192, ry + 150), fill=theme.surface_alt)
         ini = "".join(p[0] for p in name.split()[:2])
         iw, ih = text_size(d, ini, font(48, bold=True))
         d.text((132 - iw // 2, 90 + ry - ih // 2), ini, fill=PRIMARY, font=font(48, bold=True))
-        d.text((220, ry + 30), name, fill=TEXT, font=font(36, bold=True))
-        d.text((220, ry + 80), sub, fill=MUTED, font=font(28))
+        d.text((220, ry + 30), name, fill=theme.text, font=font(36, bold=True))
+        d.text((220, ry + 80), sub, fill=theme.muted, font=font(28))
         chip(d, 220, ry + 120, tag, color=color)
         # check-in butonu
         d.rounded_rectangle((w - 320, ry + 60, w - 80, ry + 140), radius=16, fill=PRIMARY)
@@ -334,19 +386,19 @@ def screen_today(w, h):
     d.ellipse((w - 200, h - 360, w - 60, h - 220), fill=PRIMARY)
     d.text((w - 158, h - 332), "+", fill=WHITE, font=font(72, bold=True))
 
-    tab_bar(d, w, h, [("Bugün", True), ("Misafirler", False), ("Walk-in", False), ("Daha", False)])
+    tab_bar(d, w, h, theme, [("Bugün", True), ("Misafirler", False), ("Walk-in", False), ("Daha", False)])
     return im
 
 
-def screen_quick_checkin(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
-    app_header(d, w, "Hızlı Check-in", "QR + kimlik tarama")
+def screen_quick_checkin(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
+    app_header(d, w, theme, "Hızlı Check-in", "QR + kimlik tarama")
 
-    # Kamera frame mock
+    # Kamera frame mock — kameranın görüntüsü gerçekçi olması için her temada koyu kalır
     cy0 = 280
     ch = 1100
-    card(d, 48, cy0, w - 96, ch, fill=(8, 12, 20))
+    card(d, 48, cy0, w - 96, ch, theme, fill=(8, 12, 20), border=theme.border)
     # köşe ayraçları
     pad = 80
     L = 60
@@ -384,14 +436,15 @@ def screen_quick_checkin(w, h):
         d.rectangle((cx_, cy_, cx_ + 70, cy_ + 70), outline=(15, 23, 42), width=10)
         d.rectangle((cx_ + 24, cy_ + 24, cx_ + 46, cy_ + 46), fill=(15, 23, 42))
 
-    d.text((48 + pad, cy0 + ch - pad - 80), "QR'ı çerçeveye hizalayın", fill=TEXT, font=font(32, bold=True))
+    # Kamera viewfinder beyaz kalır (her zaman koyu kamera arka planı üstünde)
+    d.text((48 + pad, cy0 + ch - pad - 80), "QR'ı çerçeveye hizalayın", fill=WHITE, font=font(32, bold=True))
 
     # Alt panel
     py = cy0 + ch + 40
-    card(d, 48, py, w - 96, 300)
+    card(d, 48, py, w - 96, 300, theme)
     d.text((48 + 32, py + 28), "Misafir bulundu", fill=SUCCESS, font=font(32, bold=True))
-    d.text((48 + 32, py + 80), "Aydın Yılmaz", fill=TEXT, font=font(44, bold=True))
-    d.text((48 + 32, py + 140), "TR · Doğum 12.04.1987", fill=MUTED, font=font(28))
+    d.text((48 + 32, py + 80), "Aydın Yılmaz", fill=theme.text, font=font(44, bold=True))
+    d.text((48 + 32, py + 140), "TR · Doğum 12.04.1987", fill=theme.muted, font=font(28))
     chip(d, 48 + 32, py + 200, "VIP", color=VIP)
     chip(d, 48 + 32 + 130, py + 200, "Tekrar misafir", color=INFO)
     # Onay butonu
@@ -401,14 +454,14 @@ def screen_quick_checkin(w, h):
     bw, bh = text_size(d, bt, f)
     d.text((w - 220 - bw // 2, py + 150 - bh // 2), bt, fill=WHITE, font=f)
 
-    tab_bar(d, w, h, [("Bugün", False), ("Misafirler", False), ("Walk-in", True), ("Daha", False)])
+    tab_bar(d, w, h, theme, [("Bugün", False), ("Misafirler", False), ("Walk-in", True), ("Daha", False)])
     return im
 
 
-def screen_housekeeping(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
-    app_header(d, w, "Kat hizmetleri", "Kat 4 · 14 oda")
+def screen_housekeeping(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
+    app_header(d, w, theme, "Kat hizmetleri", "Kat 4 · 14 oda")
 
     # Filtre çipleri
     y = 240
@@ -422,8 +475,8 @@ def screen_housekeeping(w, h):
             d.rounded_rectangle((x, y, x + bw, y + th + 20), radius=24, fill=PRIMARY)
             d.text((x + pad, y + 10), label, fill=WHITE, font=f)
         else:
-            d.rounded_rectangle((x, y, x + bw, y + th + 20), radius=24, outline=BORDER, width=2)
-            d.text((x + pad, y + 10), label, fill=MUTED, font=f)
+            d.rounded_rectangle((x, y, x + bw, y + th + 20), radius=24, outline=theme.border, width=2)
+            d.text((x + pad, y + 10), label, fill=theme.muted, font=f)
         x += bw + 16
 
     # Oda grid (3 sütun)
@@ -455,29 +508,29 @@ def screen_housekeeping(w, h):
         cy = gy + row * (cell_h + 20)
         if cy + cell_h > h - 200:
             break
-        card(d, cx, cy, cell_w, cell_h)
+        card(d, cx, cy, cell_w, cell_h, theme)
         # status dot
         d.ellipse((cx + cell_w - 60, cy + 24, cx + cell_w - 28, cy + 56), fill=color)
-        d.text((cx + 28, cy + 28), no, fill=TEXT, font=font(58, bold=True))
+        d.text((cx + 28, cy + 28), no, fill=theme.text, font=font(58, bold=True))
         d.text((cx + 28, cy + 110), status, fill=color, font=font(28, bold=True))
-        d.text((cx + 28, cy + 160), "Standart", fill=MUTED, font=font(24))
+        d.text((cx + 28, cy + 160), "Standart", fill=theme.muted, font=font(24))
 
-    tab_bar(d, w, h, [("Odalar", True), ("Hasar", False), ("Daha", False)])
+    tab_bar(d, w, h, theme, [("Odalar", True), ("Hasar", False), ("Daha", False)])
     return im
 
 
-def screen_guest_bookings(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
-    app_header(d, w, "Rezervasyonlarım", "Aydın · Sadakat: Altın")
+def screen_guest_bookings(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
+    app_header(d, w, theme, "Rezervasyonlarım", "Aydın · Sadakat: Altın")
 
     # Aktif rezervasyon
     y = 260
-    card(d, 48, y, w - 96, 600)
+    card(d, 48, y, w - 96, 600, theme)
     chip(d, 80, y + 32, "Aktif", color=SUCCESS)
-    d.text((80, y + 100), "Bodrum Sahil Suite", fill=TEXT, font=font(46, bold=True))
-    d.text((80, y + 170), "10 – 14 Mayıs 2026", fill=MUTED, font=font(32))
-    d.text((80, y + 220), "Oda 521 · 2 yetişkin", fill=MUTED, font=font(28))
+    d.text((80, y + 100), "Bodrum Sahil Suite", fill=theme.text, font=font(46, bold=True))
+    d.text((80, y + 170), "10 – 14 Mayıs 2026", fill=theme.muted, font=font(32))
+    d.text((80, y + 220), "Oda 521 · 2 yetişkin", fill=theme.muted, font=font(28))
 
     # Detay grid
     items = [
@@ -490,8 +543,8 @@ def screen_guest_bookings(w, h):
     iw = (w - 96 - 64) // 4
     for i, (lbl, val) in enumerate(items):
         ix = 80 + i * (iw + 16)
-        d.text((ix, iy), lbl, fill=MUTED, font=font(24))
-        d.text((ix, iy + 32), val, fill=TEXT, font=font(34, bold=True))
+        d.text((ix, iy), lbl, fill=theme.muted, font=font(24))
+        d.text((ix, iy + 32), val, fill=theme.text, font=font(34, bold=True))
 
     # Aksiyonlar
     bx = 80
@@ -506,32 +559,32 @@ def screen_guest_bookings(w, h):
 
     # Geçmiş
     y2 = y + 660
-    d.text((48, y2), "Geçmiş konaklamalar", fill=TEXT, font=font(38, bold=True))
+    d.text((48, y2), "Geçmiş konaklamalar", fill=theme.text, font=font(38, bold=True))
     past = [
         ("İstanbul Boğaz", "12 – 14 Eylül 2025", "Tamamlandı"),
         ("Antalya Riviera", "01 – 08 Temmuz 2025", "Tamamlandı"),
     ]
     py = y2 + 80
     for title, date, status in past:
-        card(d, 48, py, w - 96, 160)
-        d.text((80, py + 30), title, fill=TEXT, font=font(34, bold=True))
-        d.text((80, py + 80), date, fill=MUTED, font=font(28))
+        card(d, 48, py, w - 96, 160, theme)
+        d.text((80, py + 30), title, fill=theme.text, font=font(34, bold=True))
+        d.text((80, py + 80), date, fill=theme.muted, font=font(28))
         d.text((80, py + 118), status, fill=SUCCESS, font=font(26, bold=True))
         py += 180
 
-    tab_bar(d, w, h, [("Ana", False), ("Rez.", True), ("Mesaj", False), ("Daha", False)])
+    tab_bar(d, w, h, theme, [("Ana", False), ("Rez.", True), ("Mesaj", False), ("Daha", False)])
     return im
 
 
-def screen_digital_key(w, h):
-    im, d = base_screen(w, h)
-    status_bar(d, w)
-    app_header(d, w, "Dijital anahtar", "Oda 521 · Bodrum Sahil Suite")
+def screen_digital_key(w, h, theme: Theme):
+    im, d = base_screen(w, h, theme)
+    status_bar(d, w, theme)
+    app_header(d, w, theme, "Dijital anahtar", "Oda 521 · Bodrum Sahil Suite")
 
     # Büyük QR / NFC kartı
     cy0 = 320
     ch = 1400
-    card(d, 48, cy0, w - 96, ch, fill=SURFACE)
+    card(d, 48, cy0, w - 96, ch, theme)
 
     # QR
     qx, qy, qs = w // 2 - 380, cy0 + 100, 760
@@ -552,14 +605,14 @@ def screen_digital_key(w, h):
 
     # Süre + bilgi
     iy = qy + qs + 60
-    d.text((qx, iy), "Geçerlilik", fill=MUTED, font=font(28))
-    d.text((qx, iy + 40), "14 Mayıs 11:00'a kadar", fill=TEXT, font=font(38, bold=True))
+    d.text((qx, iy), "Geçerlilik", fill=theme.muted, font=font(28))
+    d.text((qx, iy + 40), "14 Mayıs 11:00'a kadar", fill=theme.text, font=font(38, bold=True))
 
     # Bluetooth/NFC indicator
-    d.rounded_rectangle((48 + 60, cy0 + ch - 220, w - 48 - 60, cy0 + ch - 80), radius=24, fill=SURFACE_ALT)
+    d.rounded_rectangle((48 + 60, cy0 + ch - 220, w - 48 - 60, cy0 + ch - 80), radius=24, fill=theme.surface_alt)
     d.ellipse((48 + 100, cy0 + ch - 200, 48 + 200, cy0 + ch - 100), fill=PRIMARY)
-    d.text((48 + 230, cy0 + ch - 195), "Bluetooth ile yaklaşın", fill=TEXT, font=font(34, bold=True))
-    d.text((48 + 230, cy0 + ch - 145), "Kapı kilidini otomatik açar", fill=MUTED, font=font(26))
+    d.text((48 + 230, cy0 + ch - 195), "Bluetooth ile yaklaşın", fill=theme.text, font=font(34, bold=True))
+    d.text((48 + 230, cy0 + ch - 145), "Kapı kilidini otomatik açar", fill=theme.muted, font=font(26))
 
     # Aksiyon butonları
     by = cy0 + ch + 40
@@ -574,7 +627,7 @@ def screen_digital_key(w, h):
     bw2, _ = text_size(d, bt2, f)
     d.text(((w // 2 + 16 + w - 48) // 2 - bw2 // 2, by + 55 - bh // 2), bt2, fill=PRIMARY, font=f)
 
-    tab_bar(d, w, h, [("Ana", False), ("Rez.", False), ("Anahtar", True), ("Daha", False)])
+    tab_bar(d, w, h, theme, [("Ana", False), ("Rez.", False), ("Anahtar", True), ("Daha", False)])
     return im
 
 
@@ -588,31 +641,54 @@ SCREENS = {
 }
 
 # Mağaza boyutları
-IOS_SIZES = {
+# iPhone (mevcut) — telefon çerçevesi
+IOS_PHONE_SIZES = {
     "6_7": (1290, 2796),
     "6_5": (1284, 2778),
     "5_5": (1242, 2208),
 }
-ANDROID_SIZE = (1080, 1920)
+# iPad (yeni) — tablet çerçevesi
+IOS_TABLET_SIZES = {
+    "12_9": (2048, 2732),
+    "11": (1668, 2388),
+}
+# Android telefon (mevcut) ve tabletler (yeni)
+ANDROID_PHONE_SIZE = (1080, 1920)
+ANDROID_TABLET_SIZES = {
+    "tablet_7": (1200, 1920),
+    "tablet_10": (1600, 2560),
+}
+
+# Telefon ve tablet için ayrı baz çözünürlükler — frame içinde stretch olmasın diye
+PHONE_BASE = (1242, 2688)     # 9:19.5 portrait
+TABLET_BASE = (1668, 2224)    # 3:4 portrait
 
 
-def compose_marketing(screen: Image.Image, headline: str, target_size: tuple[int, int]) -> Image.Image:
+def compose_marketing(
+    screen: Image.Image,
+    headline: str,
+    target_size: tuple[int, int],
+    theme: Theme,
+    kind: str = "phone",
+) -> Image.Image:
     """
-    Telefon mockup + üstte Türkçe başlık + altta cihazın içine yerleşmiş ekran.
-    Hedef boyut store gereksinimine göre değişir.
+    Cihaz mockup + üstte Türkçe başlık + altta cihazın içine yerleşmiş ekran.
+    `kind` = "phone" (9:19.5, çentikli) ya da "tablet" (3:4, çentiksiz).
+    Tema, başlık metni / arka plan / bezel rengini belirler.
     """
     tw, th_ = target_size
-    canvas = Image.new("RGB", (tw, th_), BG_DARK)
+    canvas = Image.new("RGB", (tw, th_), theme.bg)
     d = ImageDraw.Draw(canvas)
 
     # Hafif gradient arka plan
-    grad = Image.new("RGB", (tw, th_), BG_DARK)
+    grad = Image.new("RGB", (tw, th_), theme.bg)
     gd = ImageDraw.Draw(grad)
+    off = theme.grad_top_offset
     for y in range(th_):
         t = y / max(th_ - 1, 1)
-        r = int(BG_DARK[0] + 20 * (1 - t))
-        g = int(BG_DARK[1] + 25 * (1 - t))
-        b = int(BG_DARK[2] + 50 * (1 - t))
+        r = max(0, min(255, int(theme.bg[0] + off[0] * (1 - t))))
+        g = max(0, min(255, int(theme.bg[1] + off[1] * (1 - t))))
+        b = max(0, min(255, int(theme.bg[2] + off[2] * (1 - t))))
         gd.line([(0, y), (tw, y)], fill=(r, g, b))
     canvas.paste(grad)
     d = ImageDraw.Draw(canvas)
@@ -631,7 +707,7 @@ def compose_marketing(screen: Image.Image, headline: str, target_size: tuple[int
     ty = (title_h - total_h) // 2 + 80
     for ln in lines:
         lw, _ = text_size(d, ln, f_title)
-        d.text(((tw - lw) // 2, ty), ln, fill=TEXT, font=f_title)
+        d.text(((tw - lw) // 2, ty), ln, fill=theme.text, font=f_title)
         ty += line_h
     # Vurgu çubuğu
     d.rounded_rectangle(((tw - 120) // 2, title_h + 50, (tw + 120) // 2, title_h + 62), radius=6, fill=PRIMARY)
@@ -640,8 +716,7 @@ def compose_marketing(screen: Image.Image, headline: str, target_size: tuple[int
     device_top = title_h + 110
     device_bottom = th_ - 80
     device_h = device_bottom - device_top
-    # Telefon en/boy oranı 9:19.5 (yaklaşık)
-    aspect = 9 / 19.5
+    aspect = (9 / 19.5) if kind == "phone" else (3 / 4)
     device_w = int(device_h * aspect)
     if device_w > tw - 160:
         device_w = tw - 160
@@ -651,10 +726,18 @@ def compose_marketing(screen: Image.Image, headline: str, target_size: tuple[int
     device_x = (tw - device_w) // 2
 
     # Frame
-    bezel = max(int(device_w * 0.025), 14)
-    radius = int(device_w * 0.13)
-    # Outer (gümüş)
-    d.rounded_rectangle((device_x - bezel, device_top - bezel, device_x + device_w + bezel, device_bottom + bezel), radius=radius + bezel, fill=(30, 35, 50))
+    if kind == "phone":
+        bezel = max(int(device_w * 0.025), 14)
+        radius = int(device_w * 0.13)
+    else:
+        bezel = max(int(device_w * 0.018), 12)
+        radius = int(device_w * 0.05)
+    # Outer (gümüş veya koyu metalik — temaya göre)
+    d.rounded_rectangle(
+        (device_x - bezel, device_top - bezel, device_x + device_w + bezel, device_bottom + bezel),
+        radius=radius + bezel,
+        fill=theme.bezel,
+    )
     # Inner ekran çerçevesi
     d.rounded_rectangle((device_x, device_top, device_x + device_w, device_bottom), radius=radius, fill=(0, 0, 0))
 
@@ -662,31 +745,49 @@ def compose_marketing(screen: Image.Image, headline: str, target_size: tuple[int
     inner = screen.resize((device_w - 4, device_h - 4), Image.LANCZOS)
     # Yuvarlatılmış maske
     mask = Image.new("L", (device_w - 4, device_h - 4), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, device_w - 4, device_h - 4), radius=radius - 2, fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, device_w - 4, device_h - 4), radius=max(radius - 2, 1), fill=255)
     canvas.paste(inner, (device_x + 2, device_top + 2), mask)
 
-    # Çentik (notch)
-    notch_w = int(device_w * 0.32)
-    notch_h = int(device_w * 0.06)
-    nx = device_x + (device_w - notch_w) // 2
-    d.rounded_rectangle((nx, device_top + 6, nx + notch_w, device_top + 6 + notch_h), radius=notch_h // 2, fill=(0, 0, 0))
+    # Çentik (notch) sadece telefonda
+    if kind == "phone":
+        notch_w = int(device_w * 0.32)
+        notch_h = int(device_w * 0.06)
+        nx = device_x + (device_w - notch_w) // 2
+        d.rounded_rectangle((nx, device_top + 6, nx + notch_w, device_top + 6 + notch_h), radius=notch_h // 2, fill=(0, 0, 0))
 
     return canvas
 
 
 def make_screenshots():
-    # Her flow için yüksek çözünürlüklü base "screen" üret (1242x2688 referans)
-    BASE_W, BASE_H = 1242, 2688
+    """
+    Her flow için iki tema × (telefon + tablet baz) render edilir; ardından her
+    mağaza boyutu için cihaz mockup'lı pazarlama görseli üretilir.
+    """
+    themes = (DARK, LIGHT)
     for key, (headline, builder) in SCREENS.items():
-        base = builder(BASE_W, BASE_H)
-        # iOS — 3 boyut
-        for size_key, sz in IOS_SIZES.items():
-            out = compose_marketing(base, headline, sz)
-            out.save(SHOTS / "ios" / f"{key}_{size_key}.png", "PNG")
-        # Android phone
-        out = compose_marketing(base, headline, ANDROID_SIZE)
-        out.save(SHOTS / "android" / f"{key}_phone.png", "PNG")
-        print(f"  + {key} — {headline}")
+        for theme in themes:
+            theme_suffix = "" if theme.name == "dark" else "_light"
+            phone_base = builder(*PHONE_BASE, theme)
+            tablet_base = builder(*TABLET_BASE, theme)
+
+            # iOS telefon
+            for size_key, sz in IOS_PHONE_SIZES.items():
+                out = compose_marketing(phone_base, headline, sz, theme, "phone")
+                out.save(SHOTS / "ios" / f"{key}_{size_key}{theme_suffix}.png", "PNG")
+            # iOS iPad
+            for size_key, sz in IOS_TABLET_SIZES.items():
+                out = compose_marketing(tablet_base, headline, sz, theme, "tablet")
+                out.save(SHOTS / "ios" / f"{key}_{size_key}{theme_suffix}.png", "PNG")
+
+            # Android telefon
+            out = compose_marketing(phone_base, headline, ANDROID_PHONE_SIZE, theme, "phone")
+            out.save(SHOTS / "android" / f"{key}_phone{theme_suffix}.png", "PNG")
+            # Android tabletler
+            for size_key, sz in ANDROID_TABLET_SIZES.items():
+                out = compose_marketing(tablet_base, headline, sz, theme, "tablet")
+                out.save(SHOTS / "android" / f"{key}_{size_key}{theme_suffix}.png", "PNG")
+
+        print(f"  + {key} — {headline} (dark + light, telefon + tablet)")
 
 
 def main():
