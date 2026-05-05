@@ -233,16 +233,30 @@ mutlaka yeni bir EAS Build ister.
 2. `CHANGELOG` (kök) yeni sürüm bölümünü ekle (Türkçe).
 3. `eas build --profile preview` ile iç dağıtım build'ini al; iOS ve
    Android için `buildNumber` / `versionCode` otomatik artar.
-4. **Smoke test** — build'i yerel iOS Simulator veya Android Emulator'a
-   yükleyin, ardından `npm run smoke` ile Maestro akışlarını koşturun.
-   Tüm akışlar yeşil olmadan TestFlight / Play Internal yüklemesine
-   geçmeyin. Detay ve sorun giderme: [`.maestro/README.md`](.maestro/README.md).
-5. `eas submit --profile preview` ile TestFlight + Play Internal'a yükle.
+4. **Smoke test (CI üzerinden zorunlu)** — Build başarıyla bittiğinde
+   GitHub Actions'taki `Mobile Smoke (post EAS build)` iş akışı otomatik
+   ya da manuel olarak tetiklenir; build artifact'i indirilir, iOS
+   Simulator / Android Emulator'a kurulur ve `mobile/scripts/smoke.sh`
+   çalıştırılır. Bu akış olmadan **`eas submit` adımına geçmeyin** —
+   `Smoke gate` job'u kırmızıysa sürüm bloklanmıştır. Akış nasıl
+   tetiklenir, otomatik webhook bağlanır ve sonuçlar PR'a yorumlanır:
+   [Otomatik smoke CI hook'u](#otomatik-smoke-ci-hooku). Yerel akış
+   detayı: [`.maestro/README.md`](.maestro/README.md).
+5. CI smoke yeşil olduktan sonra `eas submit --profile preview` ile
+   TestFlight + Play Internal'a yükle.
 6. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
    `--profile production` ile üretim build'i ve submission. Üretim
-   build'inde de `npm run smoke` adımı tekrarlanır (gerçek QA hesapları
-   için `SMOKE_EMAIL` / `SMOKE_GUEST_EMAIL` env override).
+   build'inde de aynı CI smoke akışı tekrar çalıştırılır (`profile:
+   production` girdisi ile); gerçek QA hesapları için repo secret'ları
+   `SMOKE_EMAIL` / `SMOKE_PASSWORD` / `SMOKE_GUEST_EMAIL` /
+   `SMOKE_GUEST_PASSWORD` doldurulmuş olmalı.
 7. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
+
+> **Smoke başarısız olursa:** `eas submit` koşturulmaz. Hatanın kaynağı
+> Maestro çıktı log'undan (Actions run → `maestro-ios-debug` /
+> `maestro-android-debug` artifact'ı) tespit edilir, düzeltme kodda ya da
+> akışta yapılır, yeni bir EAS build alınır ve smoke tekrarlanır. Bu
+> kontrol "manuel onay" değil, dağıtımdan önce zorunlu otomatik kapıdır.
 
 ### Smoke test akışları
 
@@ -257,6 +271,89 @@ mutlaka yeni bir EAS Build ister.
 
 Maestro CLI yüklü değilse `npm run smoke` net bir hata mesajıyla 127 ile
 çıkar; `npm run smoke:doctor` kurulumun varlığını doğrular.
+
+---
+
+## Otomatik smoke CI hook'u
+
+`.github/workflows/mobile-smoke.yml` iş akışı, EAS build artifact'ını alıp
+GitHub Actions runner'ları üzerinde Maestro smoke akışlarını otomatik
+koşturur. Varsayılan koşum GitHub-hosted runner'lardadır (`macos-14` iOS
+için, `ubuntu-latest` Android için); self-hosted runner kullanmak
+isteyenler aynı etiketleri kendi makinelerine atayıp `runs-on` satırını
+değiştirebilir. `eas submit` adımına geçilebilmesi için bu akışın yeşil
+olması zorunludur — `Smoke gate` job'u branch protection'da "required
+check" olarak ayarlanmalıdır.
+
+### Tetikleyiciler
+
+1. **Manuel (`workflow_dispatch`)** — Actions sekmesinden:
+   - `platform`: `ios`, `android` veya `both`
+   - `build_url`: EAS build sayfasındaki artifact URL'si (iOS için
+     `*.tar.gz` simulator build, Android için APK; AAB ve App Store
+     imzalı IPA simülatöre/emülatöre doğrudan kurulamaz, ayrıntı için
+     `eas.json` profillerine bakın)
+   - `profile`: `preview` veya `production` (sadece raporlama)
+   - `issue_number`: opsiyonel — sonuçların yorumlanacağı PR / issue.
+
+2. **Otomatik (`repository_dispatch`, `eas-build-finished`)** — EAS
+   webhook'u doğrudan GitHub Actions'ı tetikleyemez; arada küçük bir
+   röle servisi konur:
+
+   ```text
+   EAS build webhook  ──HMAC-SHA1──▶  röle (Cloud Function / Lambda)
+                                         │
+                                         ▼
+                       POST /repos/<owner>/<repo>/dispatches
+                       { event_type: "eas-build-finished",
+                         client_payload: { platform, build_url,
+                                           build_id, profile,
+                                           issue_number? } }
+   ```
+
+   Röle:
+   - `expo-signature` başlığını `EAS_WEBHOOK_SECRET` ile doğrular,
+   - `status != "finished"` olan webhook'ları yutar,
+   - `client_payload`'ı yukarıdaki şemaya çevirip GitHub API'ye gönderir
+     (PAT veya GitHub App token, `repo` scope).
+
+   Webhook'u kurmak için: `eas webhook:create --event BUILD --url
+   https://<röle>/eas` (URL ile birlikte secret üretilir; aynı secret
+   röleye `EAS_WEBHOOK_SECRET` olarak verilir).
+
+### Runner gereksinimleri
+
+- **iOS** → `macos-14` runner kullanılır; GitHub-hosted macOS runner'ları
+  üzerinde Xcode + iOS Simulator hazır gelir. Self-hosted bir Mac mini
+  tercih edilirse aynı etiketle eklenip `runs-on` değiştirilebilir.
+- **Android** → `ubuntu-latest` üzerinde
+  [`reactivecircus/android-emulator-runner`](https://github.com/ReactiveCircus/android-emulator-runner)
+  ile API 34 / `pixel_6` AVD koşulur. KVM hardware accel etkinleştirilir.
+  BrowserStack / Sauce Labs entegrasyonu gerekirse aynı job içinde
+  `app_url` ile değiştirilebilir.
+
+### Repo secret'ları (zorunlu — gerçek QA hesapları)
+
+| Secret                  | Açıklama                                         |
+| ----------------------- | ------------------------------------------------ |
+| `SMOKE_EMAIL`           | Resepsiyon QA hesabı e-postası                   |
+| `SMOKE_PASSWORD`        | Resepsiyon QA hesabı şifresi                     |
+| `SMOKE_GUEST_EMAIL`     | Misafir QA hesabı e-postası                      |
+| `SMOKE_GUEST_PASSWORD`  | Misafir QA hesabı şifresi                        |
+
+Doldurulmazsa flow'lar `mobile/.maestro/flows/login.yaml` içindeki demo
+varsayılanlarına düşer; üretim build'i için bu **kabul edilemez**.
+
+### Çıktılar
+
+- `GITHUB_STEP_SUMMARY` → her platform için "Sonuc / Build URL / Cihaz"
+  özeti + Maestro çıktısının son 80 satırı.
+- Workflow artifact'ları: `maestro-ios-debug`, `maestro-android-debug`
+  (tam log + `~/.maestro/tests` içindeki ekran görüntüleri).
+- `issue_number` verildiyse PR / issue'ya tek bir özet yorum atılır.
+- `Smoke gate` job'u — istenen tüm platformlar geçmediyse `exit 1`.
+  Bu tek check'i branch protection'a "required" eklemek `eas submit`'i
+  fiilen kilitler.
 
 ---
 
