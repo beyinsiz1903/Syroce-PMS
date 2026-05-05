@@ -68,8 +68,13 @@ axios.interceptors.response.use(
         error.response.data.detail = detail
           .map((d) => (typeof d === "object" ? d.msg || JSON.stringify(d) : d))
           .join("; ");
-      } else if (typeof detail === "object") {
-        error.response.data.detail = detail.msg || JSON.stringify(detail);
+      } else if (typeof detail === "object" && detail !== null) {
+        // Pydantic tek-hata nesnesi ({msg, type, loc}) → string'e çevir.
+        // Yapılandırılmış iş hatası nesneleri (örn. {code:"BLOCKED", run:{...}})
+        // dokunulmadan bırakılır; çağıran handler kendi UI mesajını üretir.
+        if (typeof detail.msg === "string" && !detail.code) {
+          error.response.data.detail = detail.msg;
+        }
       }
     }
     return Promise.reject(error);
