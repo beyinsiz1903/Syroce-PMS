@@ -630,6 +630,8 @@ async def local_broadcast(room: str, event: str, data: dict[str, Any]) -> None:
     try:
         from domains.guest.experience_router.room_service_realtime import (
             order_stream as _rs_order_stream,
+        )
+        from domains.guest.experience_router.room_service_realtime import (
             parse_room_key as _rs_parse_room_key,
         )
     except Exception as e:

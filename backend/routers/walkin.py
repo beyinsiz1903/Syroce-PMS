@@ -2,7 +2,7 @@
 Walk-in 30-saniye akisi: tek istekte misafir + rezervasyon + check-in.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -26,7 +26,7 @@ async def available_rooms(
 ):
     """Bugunden itibaren `nights` gece icin musait odalari dondur."""
     tenant_id = current_user.tenant_id
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     end = today + timedelta(days=max(1, min(7, nights)))
     today_s = today.isoformat()
     end_s = end.isoformat()
@@ -90,7 +90,7 @@ async def walkin_checkin(
         raise HTTPException(400, "Tutar gecerli olmali")
 
     tenant_id = current_user.tenant_id
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today = now.date()
     co_date = today + timedelta(days=payload.nights)
 

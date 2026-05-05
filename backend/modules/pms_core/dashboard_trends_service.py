@@ -206,7 +206,7 @@ class DashboardTrendsService:
             ):
                 room_status_map[r["id"]] = r.get("status", "")
 
-        counts: dict[str, int] = {d: 0 for d in date_range}
+        counts: dict[str, int] = dict.fromkeys(date_range, 0)
         ready_set = {"available", "inspected"}
         for a in arrivals:
             day = (a.get("check_in") or "")[:10]

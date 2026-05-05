@@ -2,8 +2,7 @@
 Shift Handover Router — Vardiya devir notları.
 Resepsiyon vardiya değişimlerinde önemli notların taşınması için.
 """
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,13 +24,13 @@ class HandoverCreate(BaseModel):
     shift: str = Field(..., description="morning|afternoon|night")
     note: str = Field(..., min_length=1, max_length=4000)
     priority: str = "normal"
-    to_shift: Optional[str] = None
-    related_room: Optional[str] = None
-    related_booking_id: Optional[str] = None
+    to_shift: str | None = None
+    related_room: str | None = None
+    related_booking_id: str | None = None
 
 
 class HandoverAck(BaseModel):
-    note: Optional[str] = None
+    note: str | None = None
 
 
 def _serialize(d: dict) -> dict:
@@ -64,7 +63,7 @@ async def create_handover(payload: HandoverCreate, current_user: User = Depends(
         "acknowledged_by_name": None,
         "acknowledged_at": None,
         "ack_note": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db[_COL].insert_one(doc)
     return _serialize(doc)
@@ -72,9 +71,9 @@ async def create_handover(payload: HandoverCreate, current_user: User = Depends(
 
 @router.get("")
 async def list_handovers(
-    business_date: Optional[str] = Query(None),
-    status: Optional[str] = Query(None, description="open|acknowledged|all"),
-    shift: Optional[str] = Query(None),
+    business_date: str | None = Query(None),
+    status: str | None = Query(None, description="open|acknowledged|all"),
+    shift: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -109,7 +108,7 @@ async def acknowledge(handover_id: str, payload: HandoverAck, current_user: User
             "acknowledged": True,
             "acknowledged_by_id": current_user.id,
             "acknowledged_by_name": current_user.name or current_user.email,
-            "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+            "acknowledged_at": datetime.now(UTC).isoformat(),
             "ack_note": payload.note,
         }},
         return_document=True,

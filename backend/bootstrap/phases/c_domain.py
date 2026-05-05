@@ -63,6 +63,8 @@ async def phase_c_domain_indexes_and_workers(app):
 
         from workers.id_photo_view_alert import (
             DEFAULT_INTERVAL_SECONDS as _IDP_INTERVAL,
+        )
+        from workers.id_photo_view_alert import (
             run_loop as _idp_loop,
         )
         _asyncio.create_task(

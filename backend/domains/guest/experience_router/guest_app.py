@@ -19,11 +19,10 @@ from pydantic import BaseModel
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user
+from models.enums import UserRole
 from models.schemas import (
     User,
 )
-
-from models.enums import UserRole
 from modules.pms_core.role_permission_service import require_role
 
 from .room_service_realtime import emit_order_event, order_stream
@@ -908,6 +907,7 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
 
     try:
         from jose import jwt
+
         from core.security import (
             JWT_ALGORITHM,
             JWT_SECRET,

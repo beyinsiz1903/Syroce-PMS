@@ -2,8 +2,7 @@
 Erken Giris / Gec Cikis Otomatik Fiyat Kurallari.
 Saat-bazli ucret kurallari tenant_settings.early_late_pricing'de tutulur.
 """
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +18,7 @@ CHARGE_TYPES = ("flat", "percent_of_nightly", "percent_of_total", "free")
 
 
 class PricingRule(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     label: str
     from_hour: int = Field(..., ge=0, le=23)
     to_hour: int = Field(..., ge=0, le=23)
@@ -74,7 +73,7 @@ async def update_pricing(payload: PricingConfig, current_user: User = Depends(ge
                 raise HTTPException(400, f"from_hour < to_hour olmali ({r['label']})")
     await db.tenant_settings.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {"early_late_pricing": cfg, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"early_late_pricing": cfg, "updated_at": datetime.now(UTC).isoformat()}},
         upsert=True,
     )
     return cfg

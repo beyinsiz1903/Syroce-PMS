@@ -16,7 +16,6 @@ from core.database import db as _tenant_db  # noqa: F401
 from core.helpers import load_tenant_doc, resolve_tenant_features
 from core.security import (
     JWT_ALGORITHM,
-    JWT_EXPIRATION_HOURS,
     JWT_EXPIRATION_MINUTES,
     JWT_SECRET,
     REFRESH_TOKEN_EXPIRATION_DAYS,
@@ -647,7 +646,6 @@ async def login(data: UserLogin, request: Request):
         )
 
     response = _build_token_response(user, tenant)
-    token = response.access_token
 
     # Usage metering
     if user.tenant_id:

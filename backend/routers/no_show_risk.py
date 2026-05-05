@@ -2,7 +2,6 @@
 No-Show Risk Skoru — booking ozelliklerine gore 0-100 risk skoru hesaplar.
 """
 from datetime import date, datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -16,7 +15,7 @@ from modules.pms_core.role_permission_service import require_op
 router = APIRouter(prefix="/api/pms/no-show-risk", tags=["pms"])
 
 
-def _parse_date(s) -> Optional[date]:
+def _parse_date(s) -> date | None:
     if not s:
         return None
     if isinstance(s, date) and not isinstance(s, datetime):

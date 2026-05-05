@@ -2,8 +2,7 @@
 Oda Haritasi: bir tarih icin oda durumlarini ve booking eslemelerini ver,
 suruk-birak ile oda degistir.
 """
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,12 +17,12 @@ router = APIRouter(prefix="/api/pms/room-map", tags=["pms"])
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 @router.get("")
 async def get_map(
-    business_date: Optional[str] = None,
+    business_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_room_status")),
@@ -87,7 +86,7 @@ async def get_map(
 class AssignRequest(BaseModel):
     booking_id: str
     room_id: str
-    business_date: Optional[str] = None
+    business_date: str | None = None
 
 
 @router.post("/assign")
@@ -123,7 +122,7 @@ async def assign(
         raise HTTPException(409, f"Oda {new_room.get('room_number')} bu tarihlerde dolu")
 
     old_room_id = booking.get("room_id")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     # Conditional update: yalniz hala eski room_id ile durduysa degistir (yaris kosulu darbogazi)
     res = await db.bookings.update_one(
         {"id": payload.booking_id, "tenant_id": tenant_id, "room_id": old_room_id},

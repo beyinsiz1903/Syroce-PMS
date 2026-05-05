@@ -65,7 +65,7 @@ async def list_ops_events(
     # Count by severity (last 24h) — N+1 fix: tek aggregation
     from datetime import timedelta
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    severity_counts = {sev: 0 for sev in ("info", "warning", "critical", "success")}
+    severity_counts = dict.fromkeys(("info", "warning", "critical", "success"), 0)
     async for r in db.ops_events.aggregate([
         {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": since_24h},
                     "severity": {"$in": list(severity_counts.keys())}}},

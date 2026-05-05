@@ -400,7 +400,7 @@ async def get_guest_highlights(
     special_dates_today (yildonumu/dogum gunu yakin mi) / total_stays /
     last_visit_date / important_notes / has_alerts (en az bir uyari var mi).
     """
-    from datetime import UTC, date, datetime, timedelta
+    from datetime import UTC, date, datetime
     guest = await db.guests.find_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )

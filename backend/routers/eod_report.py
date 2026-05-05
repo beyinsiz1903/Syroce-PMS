@@ -1,9 +1,8 @@
 """
 Tek-tik Gun Sonu Raporu — PDF + Email gonderimi.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/api/pms/eod-report", tags=["pms"])
 
 
 def _today_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 async def _collect(tenant_id: str, business_date: str) -> dict:
@@ -135,7 +134,7 @@ th {{ background:#f3f4f6; font-weight:600; }}
 .foot {{ margin-top:24px; font-size:11px; color:#9ca3af; text-align:center; }}
 </style></head><body>
 <h1>Gun Sonu Raporu</h1>
-<div class="sub">{hotel_name} · İş Günü: <b>{data['business_date']}</b> · Üretildi: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</div>
+<div class="sub">{hotel_name} · İş Günü: <b>{data['business_date']}</b> · Üretildi: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}</div>
 
 <div class="grid">
   <div class="card"><div class="label">Doluluk</div><div class="value">{data['occupancy_rate']}%</div>
@@ -175,13 +174,13 @@ def _html_to_pdf(html: str) -> bytes:
 
 
 class SendRequest(BaseModel):
-    business_date: Optional[str] = None
+    business_date: str | None = None
     recipients: list[str] = Field(default_factory=list)
 
 
 @router.get("/preview")
 async def preview(
-    business_date: Optional[str] = None,
+    business_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_reports")),
@@ -193,7 +192,7 @@ async def preview(
 
 @router.get("/pdf")
 async def download_pdf(
-    business_date: Optional[str] = None,
+    business_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_reports")),
@@ -237,7 +236,7 @@ async def send_eod(
         "results": results,
         "sent_by_id": current_user.id,
         "sent_by_name": current_user.name or current_user.email,
-        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "sent_at": datetime.now(UTC).isoformat(),
     })
 
     # V3 — Syroce mobil: notify GMs / managers on their phones that the

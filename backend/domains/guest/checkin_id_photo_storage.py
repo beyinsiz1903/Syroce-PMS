@@ -103,6 +103,7 @@ def _encrypt_blob(
     Returns the binary blob ready to be written to disk.
     """
     import secrets
+
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     engine = _get_engine()
