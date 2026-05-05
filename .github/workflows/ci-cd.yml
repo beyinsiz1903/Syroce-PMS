@@ -154,6 +154,7 @@ jobs:
             tests/test_safety_rebinding.py \
             tests/test_egress_ci_guard.py \
             tests/test_production_blockers.py \
+            tests/test_route_shadowing.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}

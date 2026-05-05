@@ -353,17 +353,11 @@ async def list_reservation_lineages(
     return {"lineages": lineages, "count": len(lineages)}
 
 
-@router.get("/lineage/{lineage_id}")
-async def get_reservation_lineage_detail(
-    lineage_id: str,
-    current_user: User = Depends(get_current_user),
-):
-    lineage = await repo.get_reservation_lineage(current_user.tenant_id, lineage_id)
-    if not lineage:
-        raise HTTPException(status_code=404, detail="Lineage record not found")
-    return lineage
-
-
+# Route order matters: the static `/lineage/stats` GET must be declared
+# BEFORE the dynamic `/lineage/{lineage_id}` GET below. FastAPI matches
+# in declaration order, so a `{lineage_id}` placeholder declared first
+# would silently swallow `/lineage/stats` (lineage_id="stats" → 404 from
+# `get_reservation_lineage_detail`). See Task #133.
 @router.get("/lineage/stats")
 async def get_lineage_stats(
     property_id: str,
@@ -374,6 +368,17 @@ async def get_lineage_stats(
         current_user.tenant_id, property_id, provider,
     )
     return stats
+
+
+@router.get("/lineage/{lineage_id}")
+async def get_reservation_lineage_detail(
+    lineage_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    lineage = await repo.get_reservation_lineage(current_user.tenant_id, lineage_id)
+    if not lineage:
+        raise HTTPException(status_code=404, detail="Lineage record not found")
+    return lineage
 
 
 # ── Reconciliation Cases ─────────────────────────────────────────────

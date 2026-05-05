@@ -449,20 +449,20 @@ class TestRawEventsAndLineage:
         print(f"Listed {data['count']} lineage records")
     
     def test_lineage_stats_endpoint(self, auth_headers):
-        """Test lineage stats endpoint - potential routing conflict"""
-        # Note: GET /lineage/stats may conflict with /lineage/{lineage_id} if "stats" is treated as ID
+        """Test lineage stats endpoint.
+
+        Historical note: GET /lineage/stats used to be silently shadowed
+        by GET /lineage/{lineage_id} (declaration-order routing). Task
+        #133 reordered the routes so the static path wins, and added a
+        CI guard (tests/test_route_shadowing.py) to prevent regressions.
+        """
         response = requests.get(
             f"{BASE_URL}/api/channel-manager/model/lineage/stats?property_id=TEST_PROP_001",
             headers=auth_headers
         )
-        # This may return 404 if "stats" is treated as a lineage_id
-        if response.status_code == 404:
-            print("WARNING: /lineage/stats returns 404 - routing conflict with /lineage/{lineage_id}")
-            # This is a known potential issue mentioned in review_request
-        else:
-            assert response.status_code == 200, f"Lineage stats failed: {response.text}"
-            data = response.json()
-            print(f"Lineage stats: {data}")
+        assert response.status_code == 200, f"Lineage stats failed: {response.text}"
+        data = response.json()
+        print(f"Lineage stats: {data}")
 
 
 class TestReconciliationCases:

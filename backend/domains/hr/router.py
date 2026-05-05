@@ -85,11 +85,11 @@ async def create_leave_request(leave_data: dict, current_user: User = Depends(ge
     await db.leave_requests.insert_one(leave)
     return {'success': True, 'leave_id': leave['id'], 'total_days': total_days}
 
-@router.get("/hr/payroll/{month}")
-async def get_payroll(month: str, current_user: User = Depends(get_current_user)):
-    payroll = await db.payroll_records.find({'tenant_id': current_user.tenant_id, 'period_month': month}, {'_id': 0}).to_list(200)
-    total = sum([p.get('net_salary', 0) for p in payroll])
-    return {'payroll': payroll, 'total': total, 'count': len(payroll)}
+# NOTE: The dynamic `GET /hr/payroll/{month}` is intentionally declared
+# AFTER `GET /hr/payroll/export` (further below) so that FastAPI matches
+# the static "export" path first. Keeping the dynamic route here used to
+# silently swallow the export call (month="export" → empty payroll JSON);
+# see Task #133 for the route-shadowing CI guard that prevents regressions.
 
 
 def _parse_date_range(start: str | None, end: str | None, days: int = 7):
@@ -254,6 +254,20 @@ async def export_payroll(
         response['csv'] = base64.b64encode(buffer.getvalue().encode()).decode()
 
     return response
+
+
+@router.get("/hr/payroll/{month}")
+async def get_payroll(month: str, current_user: User = Depends(get_current_user)):
+    """Per-month payroll lookup.
+
+    Declared after `/hr/payroll/export` on purpose: FastAPI matches in
+    declaration order and a `{month}` placeholder declared first would
+    silently swallow the static `/hr/payroll/export` GET (Task #133).
+    """
+    payroll = await db.payroll_records.find({'tenant_id': current_user.tenant_id, 'period_month': month}, {'_id': 0}).to_list(200)
+    total = sum([p.get('net_salary', 0) for p in payroll])
+    return {'payroll': payroll, 'total': total, 'count': len(payroll)}
+
 
 @router.post("/hr/job-posting")
 async def create_job_posting(job_data: dict, current_user: User = Depends(get_current_user),
