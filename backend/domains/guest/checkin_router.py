@@ -6,6 +6,7 @@ upsell acceptance, pre-arrival communications.
 """
 import base64
 import binascii
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from core.audit import log_audit_event
 from core.database import db
 from core.security import get_current_user
 from domains.guest.checkin_id_photo_storage import load_id_photo, save_id_photo
@@ -20,6 +22,8 @@ from models.schemas import User
 from modules.pms_core.role_permission_service import MODULE_ROLES  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from security.upload_validator import MAX_IMAGE_BYTES
+
+logger = logging.getLogger("domains.guest.checkin_router")
 
 router = APIRouter(prefix="/api", tags=["checkin-domain"])
 
@@ -424,6 +428,43 @@ async def download_online_checkin_id_photo(
         booking_id=checkin["booking_id"],
         photo_id=meta["photo_id"],
     )
+
+    # Görüntüleme denetim kaydı: kim, ne zaman, hangi check-in/booking için
+    # kimlik fotoğrafını açtığını izleyebilmek için her başarılı çözümü
+    # audit timeline'a yaz. Fotoğraf baytları KVKK gereği kayıt altına
+    # alınmaz; yalnızca metadata referansı (photo_id + sha256) tutulur.
+    try:
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="view_online_checkin_id_photo",
+            entity_type="online_checkin",
+            entity_id=checkin_id,
+            details=(
+                f"Resepsiyon kimlik fotoğrafı görüntüleme: kullanıcı={current_user.id} "
+                f"booking_id={checkin['booking_id']} photo_id={meta.get('photo_id')}"
+            ),
+            after_value={
+                "booking_id": checkin["booking_id"],
+                "photo_id": meta.get("photo_id"),
+                "sha256": meta.get("sha256"),
+                "content_type": meta.get("content_type"),
+            },
+            db=db,
+        )
+    except Exception as audit_exc:  # noqa: BLE001 - audit must not break view
+        # Denetim kaydı başarısız olursa fotoğraf görüntülemeyi engelleme;
+        # ana akış (resepsiyon iş akışı) bozulmamalı. Yine de gözlemlenebilirlik
+        # için yapısal log düşelim ki audit pipeline arızası farkedilebilsin.
+        logger.warning(
+            "audit_log_failed for view_online_checkin_id_photo "
+            "tenant=%s user=%s checkin=%s error=%s",
+            current_user.tenant_id,
+            current_user.id,
+            checkin_id,
+            audit_exc,
+        )
+
     return Response(
         content=image_bytes,
         media_type=meta.get("content_type") or "application/octet-stream",

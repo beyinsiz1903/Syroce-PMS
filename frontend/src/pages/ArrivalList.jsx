@@ -5,7 +5,8 @@ import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
@@ -18,6 +19,91 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [scanBookingId, setScanBookingId] = useState(null);
+  const [idPhotoBookingId, setIdPhotoBookingId] = useState(null);
+  const [idPhotoUrl, setIdPhotoUrl] = useState(null);
+  const [idPhotoLoading, setIdPhotoLoading] = useState(false);
+  const [idPhotoMeta, setIdPhotoMeta] = useState(null);
+
+  const canViewIdPhoto = (() => {
+    const role = user?.role;
+    const roles = Array.isArray(user?.roles) ? user.roles : [];
+    const all = [role, ...roles].filter(Boolean);
+    const allowed = ['front_desk', 'frontdesk', 'supervisor', 'admin', 'super_admin'];
+    return all.some((r) => allowed.includes(String(r)));
+  })();
+
+  const closeIdPhotoModal = () => {
+    if (idPhotoUrl) {
+      try { URL.revokeObjectURL(idPhotoUrl); } catch (_) { /* noop */ }
+    }
+    setIdPhotoUrl(null);
+    setIdPhotoBookingId(null);
+    setIdPhotoMeta(null);
+    setIdPhotoLoading(false);
+  };
+
+  const openIdPhoto = async (booking) => {
+    if (!canViewIdPhoto) {
+      toast.error('Kimlik fotoğrafını görüntüleme yetkiniz yok');
+      return;
+    }
+    setIdPhotoBookingId(booking.id);
+    setIdPhotoLoading(true);
+    setIdPhotoMeta({ guestName: booking.guest_name });
+    try {
+      // 1) Online check-in kaydı + id_photo metadata'sı
+      const statusRes = await axios.get(`/checkin/online/${booking.id}`, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+      const checkin = statusRes.data?.checkin;
+      if (!checkin?.id) {
+        toast.info('Bu rezervasyon için online check-in kaydı yok');
+        closeIdPhotoModal();
+        return;
+      }
+      if (!checkin.id_photo_uploaded || !checkin.id_photo?.photo_id) {
+        toast.info('Bu misafir kimlik fotoğrafı yüklememiş');
+        closeIdPhotoModal();
+        return;
+      }
+      // 2) Şifrelenmiş fotoğrafı blob olarak çek (cache devre dışı)
+      const photoRes = await axios.get(
+        `/checkin/online/${checkin.id}/id-photo`,
+        {
+          responseType: 'blob',
+          headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+        },
+      );
+      const url = URL.createObjectURL(photoRes.data);
+      setIdPhotoUrl(url);
+      setIdPhotoMeta({
+        guestName: booking.guest_name,
+        checkinId: checkin.id,
+        contentType: checkin.id_photo?.content_type,
+        sha256: checkin.id_photo?.sha256,
+      });
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) {
+        toast.error('Kimlik fotoğrafını görüntüleme yetkiniz yok');
+      } else if (status === 404) {
+        toast.info('Kimlik fotoğrafı bulunamadı');
+      } else {
+        toast.error('Kimlik fotoğrafı yüklenemedi');
+      }
+      closeIdPhotoModal();
+    } finally {
+      setIdPhotoLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (idPhotoUrl) {
+        try { URL.revokeObjectURL(idPhotoUrl); } catch (_) { /* noop */ }
+      }
+    };
+  }, [idPhotoUrl]);
 
   const applyScanToBooking = async (bookingId, doc) => {
     try {
@@ -364,6 +450,23 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                           <ScanLine className="w-4 h-4 mr-2" />
                           Kimlik Tara
                         </Button>
+                        {booking.online_checkin_completed
+                          && booking.online_checkin_id_photo_uploaded
+                          && canViewIdPhoto && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                            onClick={() => openIdPhoto(booking)}
+                            disabled={idPhotoLoading && idPhotoBookingId === booking.id}
+                            data-testid={`btn-view-id-photo-${booking.id}`}
+                          >
+                            <IdCard className="w-4 h-4 mr-2" />
+                            {idPhotoLoading && idPhotoBookingId === booking.id
+                              ? 'Yükleniyor…'
+                              : 'Kimlik fotoğrafını görüntüle'}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           className="bg-green-600 hover:bg-green-700"
@@ -389,6 +492,47 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       onClose={() => setScanBookingId(null)}
       onExtracted={(doc) => { if (scanBookingId) applyScanToBooking(scanBookingId, doc); }}
     />
+    <Dialog
+      open={!!idPhotoBookingId}
+      onOpenChange={(open) => { if (!open) closeIdPhotoModal(); }}
+    >
+      <DialogContent className="max-w-2xl" data-testid="dialog-id-photo">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <IdCard className="w-5 h-5 text-blue-600" />
+            Misafir Kimlik Fotoğrafı
+            {idPhotoMeta?.guestName && (
+              <span className="text-sm font-normal text-gray-500">
+                — {idPhotoMeta.guestName}
+              </span>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex items-center justify-center min-h-[200px] bg-gray-50 rounded">
+          {idPhotoLoading ? (
+            <div className="flex flex-col items-center gap-2 py-8">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+              <p className="text-sm text-gray-500">Şifreli fotoğraf çözülüyor…</p>
+            </div>
+          ) : idPhotoUrl ? (
+            <img
+              src={idPhotoUrl}
+              alt="Misafir kimlik fotoğrafı"
+              className="max-h-[70vh] max-w-full object-contain"
+              data-testid="img-id-photo"
+            />
+          ) : (
+            <p className="text-sm text-gray-500 py-8">Fotoğraf yüklenemedi.</p>
+          )}
+        </div>
+        {idPhotoUrl && (
+          <p className="text-xs text-gray-500">
+            Bu görüntüleme denetim kaydına yazıldı. Fotoğraf önbelleğe alınmaz;
+            pencereyi kapattığınızda bellekten silinir.
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
     </Layout>
   );
 };

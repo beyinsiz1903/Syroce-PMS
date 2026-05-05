@@ -277,6 +277,33 @@ async def get_arrivals(
             if b.get("room_id") and not b.get("room_number"):
                 b["room_number"] = room_num_map.get(b["room_id"], "")
 
+    # Enrich each booking with `online_checkin_id_photo_uploaded`: tells the
+    # reception UI whether a guest-uploaded ID photo exists so the
+    # "Kimlik fotoğrafını görüntüle" button is only shown when there is
+    # actually a photo to view. Single batched query (no N+1).
+    booking_ids = [b["id"] for b in bookings if b.get("id")]
+    if booking_ids:
+        photo_flags: dict[str, bool] = {}
+        async for ci in db.online_checkins.find(
+            {
+                "booking_id": {"$in": booking_ids},
+                "tenant_id": current_user.tenant_id,
+            },
+            {"_id": 0, "booking_id": 1, "id_photo_uploaded": 1, "id_photo": 1},
+        ):
+            has_photo = bool(
+                ci.get("id_photo_uploaded")
+                and isinstance(ci.get("id_photo"), dict)
+                and ci["id_photo"].get("photo_id")
+            )
+            photo_flags[ci["booking_id"]] = (
+                photo_flags.get(ci["booking_id"], False) or has_photo
+            )
+        for b in bookings:
+            b["online_checkin_id_photo_uploaded"] = bool(
+                photo_flags.get(b.get("id"), False)
+            )
+
     return {"bookings": bookings, "total": len(bookings), "start_date": start, "end_date": end}
 
 
