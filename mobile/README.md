@@ -83,17 +83,27 @@ Ayrıntı: [`store/README.md`](store/README.md).
 
 ```bash
 npm install -g eas-cli
-eas login
+eas login                      # Expo hesabınıza giriş yapın (yoksa: expo.dev/signup)
 cd mobile
 eas init                       # extra.eas.projectId üretir + app.json'a yazar
 eas update:configure           # OTA için runtimeVersion + updates.url ekler
 ```
 
 `eas init` ilk çalıştığında EAS sunucusunda yeni bir proje oluşturur ve
-`app.json` → `extra.eas.projectId` alanını otomatik ekler. `eas
-update:configure` OTA güncellemeleri için gerekli `updates.url` alanını
-yazar; OTA kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
+`app.json` → `extra.eas.projectId` alanını otomatik ekler (UUID formatında,
+ör. `12345678-90ab-cdef-1234-567890abcdef`). `eas update:configure` OTA
+güncellemeleri için gerekli `updates.url` alanını yazar; OTA
+kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
 `eas build` çalıştırmayın — projeyi sunucuya bağlamak için zorunludur.
+
+> **Not:** `eas init` mutlaka **sizin yerel makinenizden** ve sizin
+> Expo hesabınızla çalıştırılmalıdır; bu Replit container'ından
+> çalıştırıldığında sizin hesabınıza bağlanamaz. Komut tamamlanınca
+> `app.json` içindeki `extra.eas.projectId` değeri commit edilir, böylece
+> tüm geliştiriciler ve CI aynı projeye build/submit eder.
+
+> Mevcut bir EAS projesinin ID'sini görmek için: <https://expo.dev>
+> → Projects → (proje) → Project settings → "ID" alanı.
 
 ### Profiller
 
@@ -124,11 +134,40 @@ imzalı build üretir.
 
 ### Ön gereksinimler
 
-- Aktif Apple Developer hesabı (Team ID, App Store Connect erişimi).
+- Aktif Apple Developer hesabı (yıllık $99). Henüz kaydolmadıysanız
+  <https://developer.apple.com/programs/enroll/> adresinden başvurun;
+  bireysel hesap onayı ~24-48 saat, kurumsal (D-U-N-S numarası gerekli)
+  daha uzun sürebilir.
 - App Store Connect'te `com.syroce.pms` bundle identifier ile uygulama
   kaydı (App ID + ASC App ID).
-- `eas.json` içindeki `submit.preview.ios` alanları doldurulmuş olmalı:
-  `appleId`, `ascAppId`, `appleTeamId`.
+- `eas.json` içindeki `submit.preview.ios` ve `submit.production.ios`
+  alanları doldurulmuş olmalı: `appleId`, `ascAppId`, `appleTeamId`.
+
+### `eas.json` için gerekli değerleri nereden bulurum?
+
+| Alan          | Nerede bulunur                                                                       | Örnek format                |
+| ------------- | ------------------------------------------------------------------------------------ | --------------------------- |
+| `appleId`     | App Store Connect'e giriş yaptığınız e-posta. <https://appstoreconnect.apple.com>     | `you@example.com`           |
+| `appleTeamId` | <https://developer.apple.com/account> → "Membership details" → "Team ID" alanı.       | 10 karakter, ör. `A1B2C3D4E5` |
+| `ascAppId`    | <https://appstoreconnect.apple.com> → My Apps → (uygulamanız) → App Information → "Apple ID" satırı (sayısal değer, "Bundle ID" değil). | Sayısal, ör. `1234567890`   |
+
+> ⚠ **Apple ID parolanızı asla `eas.json`'a yazmayın veya kimseyle
+> paylaşmayın.** `eas.json` git'e commit edilir; yalnızca e-posta + ID
+> değerleri içerir. Parola `eas submit` çalışırken interaktif olarak
+> sorulur (veya `EXPO_APPLE_PASSWORD` ortam değişkeninden okunur).
+
+### Apple kayıt akışı (ASC App ID üretmek için)
+
+1. Apple Developer Program'a kayıt olun ve onaylanmasını bekleyin.
+2. <https://developer.apple.com/account/resources/identifiers/list>
+   sayfasında "+" → App IDs → App ile yeni bir bundle ID oluşturun:
+   `com.syroce.pms`. Capabilities olarak Push Notifications'ı işaretleyin.
+3. <https://appstoreconnect.apple.com> → My Apps → "+" → New App ile
+   uygulamayı oluşturun (platform: iOS, bundle ID: `com.syroce.pms`,
+   SKU serbest seçilebilir, ör. `syroce-pms-001`).
+4. Oluşturulan uygulamanın "App Information" sayfasında **Apple ID**
+   alanı (sayısal) artık görünür — bu değer `eas.json` içindeki
+   `ascAppId` alanına yazılır.
 
 ### Build
 
@@ -163,15 +202,38 @@ incelemesinden geçer (genelde < 24 saat).
 
 ### Ön gereksinimler
 
-- Google Play Console hesabı, `com.syroce.pms` paketi ile uygulama kaydı.
+- Google Play Console hesabı (tek seferlik $25 kayıt ücreti).
+  Henüz kaydolmadıysanız <https://play.google.com/console/signup>.
+- `com.syroce.pms` paketi ile Play Console'da uygulama kaydı.
 - "Iç test" track'inin oluşturulmuş ve test kullanıcı listesinin tanımlı
   olması.
-- Service account JSON anahtarı (`play-service-account.json`) — Play
-  Console → Setup → API access üzerinden üretilir, Service Account'a
-  "Release manager" rolü verilir.
+- Service account JSON anahtarı (`play-service-account.json`).
 - Anahtar dosyası `mobile/play-service-account.json` yoluna konur veya
   `eas.json` içindeki yol değiştirilir. **Bu dosya commit edilmemelidir
   (`.gitignore`'a eklenmiştir).**
+
+### `play-service-account.json` nasıl üretilir?
+
+1. Play Console → Setup → **API access** sayfasını açın.
+2. Eğer henüz bağlı bir Google Cloud projesi yoksa "Link Google Cloud
+   project" → yeni proje oluşturun veya mevcut bir projeyi seçin.
+3. "Service accounts" bölümünde **Create new service account** →
+   açılan link sizi Google Cloud Console'a götürür.
+4. Google Cloud Console → IAM & Admin → Service Accounts → "+ CREATE
+   SERVICE ACCOUNT". İsim serbest, ör. `eas-publisher`.
+5. Oluşturulan service account satırında ⋮ menüsü → **Manage keys** →
+   **Add key** → **Create new key** → JSON formatı seçin. Dosya otomatik
+   olarak indirilir (`<proje>-<rastgele>.json`).
+6. Bu dosyayı `mobile/play-service-account.json` adıyla **mobile**
+   klasörüne kopyalayın (rename gerekirse).
+7. Play Console → API access sayfasına dönün, yeni service account
+   listede görünmeli. **Grant access** → izin olarak en az
+   "Release manager" (veya "Admin") seçin → **Invite user** → **Send
+   invitation**.
+
+> ⚠ `play-service-account.json` hassas bir kimlik bilgisidir; Google
+> Play hesabınıza yazma erişimi verir. Asla commit etmeyin, asla
+> başkasıyla paylaşmayın. `.gitignore`'a zaten eklenmiş durumda.
 
 ### Build
 
