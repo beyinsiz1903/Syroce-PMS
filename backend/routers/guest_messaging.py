@@ -138,6 +138,70 @@ async def send_guest_message(
     await _db.guest_messages.insert_one(msg_doc)
     msg_doc.pop("_id", None)
 
+    # V3 — Syroce mobil: surface the message as an OS-level push.
+    #
+    # Routing rules (task contract: "atanmiş personele"):
+    #   * Staff sender → notify the specific guest user (if they have a
+    #     phone registered).
+    #   * Guest sender → prefer the user(s) explicitly assigned to this
+    #     booking (any of `assigned_staff_id`, `assigned_user_id`,
+    #     `concierge_user_id`). Department fan-out is the fallback only
+    #     when the booking has no assignment, so a quiet phone is never
+    #     reached by broadcasting to whole departments.
+    try:
+        from services.expo_push import fire_and_forget_expo_push
+        sender_label = msg_doc.get("sender_name") or ("Misafir" if is_guest else "Otel")
+        room_label = msg_doc.get("room_number")
+        title = (
+            f"Misafir mesajı · Oda {room_label}" if is_guest and room_label
+            else f"Misafir mesajı · {sender_label}" if is_guest
+            else f"{sender_label}"
+        )
+        push_user_ids: list[str] | None = None
+        push_departments: list[str] | None = None
+        if is_guest:
+            assigned_ids: list[str] = []
+            if req.booking_id:
+                _b = booking or {}
+                for field in (
+                    'assigned_staff_id',
+                    'assigned_user_id',
+                    'concierge_user_id',
+                    'owner_id',
+                ):
+                    v = _b.get(field)
+                    if isinstance(v, str) and v:
+                        assigned_ids.append(v)
+            if assigned_ids:
+                push_user_ids = list(dict.fromkeys(assigned_ids))
+            else:
+                # No specific assignment on this booking → fall back to the
+                # front-desk / reception rota so the message still gets
+                # picked up promptly.
+                push_departments = ['front_desk', 'reception']
+        else:
+            # Staff → guest direct push.
+            if msg_doc.get('guest_user_id'):
+                push_user_ids = [msg_doc['guest_user_id']]
+        fire_and_forget_expo_push(
+            current_user.tenant_id,
+            title=title,
+            body=(req.message or '')[:140],
+            data={
+                'type': 'guest_message',
+                'thread_id': msg_doc.get('booking_id') or msg_doc.get('guest_user_id'),
+                'booking_id': msg_doc.get('booking_id'),
+                'sender': msg_doc.get('sender'),
+                'message_id': msg_doc.get('id'),
+            },
+            departments=push_departments,
+            user_ids=push_user_ids,
+            priority='high' if req.message_type == 'complaint' else 'default',
+        )
+    except Exception:
+        # Never block the message-send path on push delivery.
+        pass
+
     return msg_doc
 
 

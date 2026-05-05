@@ -84,6 +84,15 @@ export default function GuestBookingDetail() {
             fullWidth
           />
         ) : null}
+        {isCheckedIn ? (
+          <Button
+            title={tr.guest.digitalKeyOpen}
+            onPress={() =>
+              router.push({ pathname: ROUTES.guestDigitalKey, params: { id: booking.id } })
+            }
+            fullWidth
+          />
+        ) : null}
         <Button
           title={tr.guest.earlyLateTitle}
           variant="secondary"

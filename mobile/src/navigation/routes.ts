@@ -20,6 +20,7 @@ export const ROUTES = {
   guestLoyalty: '/(guest)/loyalty',
   guestBookingDetail: '/(guest)/booking',
   guestEarlyLate: '/(guest)/earlylate',
+  guestDigitalKey: '/(guest)/digitalKey',
 } as const satisfies Record<string, Href>;
 
 export function rootForRole(role: AppRole): Href {

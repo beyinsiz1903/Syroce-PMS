@@ -118,6 +118,11 @@ class WebSocketHub:
         """
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            # V3 — refresh tokens cannot authenticate WebSocket subscribers.
+            token_type = payload.get("type")
+            if token_type and token_type != "access":
+                logger.warning("WS auth: refused refresh-type token")
+                return None
             user_id = payload.get("user_id")
             jwt_tenant = payload.get("tenant_id")
             if not user_id:

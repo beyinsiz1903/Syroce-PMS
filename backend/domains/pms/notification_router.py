@@ -194,6 +194,31 @@ async def send_push_notification(notif_data: dict, current_user: User = Depends(
         )
         deliveries = await _simulate_push_delivery(devices, payload)
 
+        # V3 — Syroce mobil: in addition to the legacy simulated/in-app
+        # delivery audit, fire a real Expo Push so any registered Expo
+        # mobile clients in the audience receive an OS-level notification.
+        # Best-effort and non-blocking. The helper reads the V3 collection
+        # `db.push_device_tokens`, so legacy `db.push_devices` rows above
+        # remain untouched (web/admin simulation path).
+        try:
+            from services.expo_push import fire_and_forget_expo_push
+            fire_and_forget_expo_push(
+                current_user.tenant_id,
+                title=payload['title'],
+                body=payload['body'],
+                data={
+                    'type': payload.get('type', 'info'),
+                    'notification_id': payload['id'],
+                    'action_url': payload.get('action_url'),
+                    **(payload.get('metadata') or {}),
+                },
+                user_ids=target_user_ids,
+                departments=target_departments,
+                priority='high' if payload.get('priority') in ('high', 'urgent') else 'default',
+            )
+        except Exception:
+            logger.exception('[push] expo dispatch failed for admin broadcast')
+
     await db.push_notifications.insert_one({
         **payload,
         'target_count': len(deliveries),
@@ -255,6 +280,43 @@ async def register_push_device(device_payload: dict, current_user: User = Depend
     }
 
 
+
+
+@router.post("/notifications/push/unregister")
+async def unregister_push_device(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """V3 (round 7): explicit unregister so logout / account switch can
+    remove a device's Expo push token instead of letting it linger in
+    `push_device_tokens` until the next register call. Without this:
+      * a logged-out phone keeps receiving notifications meant for the
+        previous user (privacy + delivery duplication)
+      * a single device row can keep firing for both A and B if the
+        device_id collides
+    Identifies the row by (tenant_id, user_id, device_id) — i.e. the
+    same composite key `register_push_device` upserts on. Optional
+    `push_token` is also accepted as a fallback when the caller no
+    longer has the device_id (e.g. permission was revoked) so we can
+    still prune the stored token.
+    """
+    device_id = payload.get('device_id')
+    push_token = payload.get('push_token')
+    if not device_id and not push_token:
+        raise HTTPException(
+            status_code=400,
+            detail="device_id or push_token is required",
+        )
+    query: dict[str, Any] = {
+        'tenant_id': current_user.tenant_id,
+        'user_id': current_user.id,
+    }
+    if device_id:
+        query['device_id'] = device_id
+    elif push_token:
+        query['push_token'] = push_token
+    result = await db.push_device_tokens.delete_many(query)
+    return {'success': True, 'removed': result.deleted_count}
 
 
 @router.post("/notifications/push/subscriptions")

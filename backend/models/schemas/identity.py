@@ -108,6 +108,15 @@ class TokenResponse(BaseModel):
     # to obtain a real access_token.
     requires_2fa: bool = False
     challenge_token: str | None = None
+    # V3 (Syroce mobil): long-lived refresh token for the mobile app.
+    # Optional so legacy/web flows that don't ask for one don't break.
+    # When present the client should store it in SecureStore and POST
+    # it (in the body) to /api/auth/refresh-token to rotate the access
+    # token without a fresh password prompt.
+    refresh_token: str | None = None
+    # Access-token lifetime in seconds — lets the mobile client schedule
+    # its proactive refresh exactly instead of hard-coding 15 min.
+    expires_in: int | None = None
 
 class NotificationPreferences(BaseModel):
     model_config = ConfigDict(extra="ignore")

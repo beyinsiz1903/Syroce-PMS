@@ -203,6 +203,13 @@ async def _temp_require_super_admin(
     try:
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # V3 — refresh tokens are not valid bearer credentials.
+        token_type = payload.get("type")
+        if token_type and token_type != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Wrong token type — refresh tokens cannot access API endpoints",
+            )
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

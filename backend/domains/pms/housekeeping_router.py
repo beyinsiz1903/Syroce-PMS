@@ -420,6 +420,37 @@ async def report_housekeeping_issue(
         }
         await db.housekeeping_tasks.insert_one(maintenance_task)
 
+    # V3 — Syroce mobil: dispatch a real Expo push to the engineering /
+    # housekeeping audience so the on-call team sees the damage report
+    # immediately. Best-effort: errors are swallowed inside the helper so
+    # the HTTP response is never blocked on Expo's API.
+    try:
+        from services.expo_push import fire_and_forget_expo_push
+        # V3 task contract: damage_report → GM + housekeeping audience.
+        # We also include `maintenance` (the engineering on-call rota that
+        # actually fixes the issue) and `supervisor` for high-priority
+        # incidents — both are additive and never replace the GM/HK
+        # baseline that the task spec mandates.
+        target_departments = ['gm', 'housekeeping', 'maintenance']
+        if request.priority == 'high':
+            target_departments.append('supervisor')
+        fire_and_forget_expo_push(
+            current_user.tenant_id,
+            title=f"Hasar bildirimi · Oda {request.room_id}",
+            body=(request.description or 'Yeni hasar / bakım talebi')[:140],
+            data={
+                'type': 'damage_report',
+                'room_id': request.room_id,
+                'damage_report_id': issue['id'],
+                'priority': request.priority,
+                'issue_type': request.issue_type,
+            },
+            departments=target_departments,
+            priority='high' if request.priority == 'high' else 'default',
+        )
+    except Exception:
+        logger.exception("[damage_report] push dispatch failed")
+
     return {'message': 'Issue reported successfully', 'issue_id': issue['id']}
 
 

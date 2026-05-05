@@ -28,6 +28,7 @@ export default function GuestLayout() {
       <Tabs.Screen name="orders" options={{ href: null, title: tr.guest.orderHistory }} />
       <Tabs.Screen name="earlylate" options={{ href: null, title: tr.guest.earlyLateTitle }} />
       <Tabs.Screen name="messageThread" options={{ href: null, title: tr.guest.messagesTitle }} />
+      <Tabs.Screen name="digitalKey" options={{ href: null, title: tr.guest.digitalKeyTitle }} />
     </Tabs>
   );
 }

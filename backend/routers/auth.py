@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 
@@ -17,7 +17,10 @@ from core.helpers import load_tenant_doc, resolve_tenant_features
 from core.security import (
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
+    JWT_EXPIRATION_MINUTES,
     JWT_SECRET,
+    REFRESH_TOKEN_EXPIRATION_DAYS,
+    create_refresh_token,
     create_token,
     get_current_user,
     hash_password,
@@ -284,6 +287,32 @@ def _derive_username(email: str, name: str | None = None) -> str:
     return base
 
 
+def _build_token_response(user: User, tenant) -> TokenResponse:
+    """Single source of truth for the V3 login/refresh response shape.
+
+    Every successful authentication path (direct login, cached login,
+    2FA verify, email verification, registration) MUST go through this
+    helper so the response carries:
+      * a fresh access token (`type="access"`, lifetime
+        `JWT_EXPIRATION_MINUTES`)
+      * a freshly-minted refresh token (`type="refresh"`, lifetime
+        `REFRESH_TOKEN_EXPIRATION_DAYS`) — required for the V3 mobile
+        rotation lifecycle.
+      * `expires_in` so the client can plan its proactive refresh.
+    Centralising this prevents path drift (e.g. a 2FA-verified login
+    silently degrading to a refresh-less response).
+    """
+    access = create_token(user.id, user.tenant_id)
+    refresh, _ = create_refresh_token(user.id, user.tenant_id)
+    return TokenResponse(
+        access_token=access,
+        user=user,
+        tenant=tenant,
+        refresh_token=refresh,
+        expires_in=JWT_EXPIRATION_MINUTES * 60,
+    )
+
+
 @router.post("/auth/register", response_model=TokenResponse)
 async def register_tenant(data: TenantRegister, request: Request):
     # v54 (Bug CO): per-IP and per-email throttle. Without these the
@@ -342,8 +371,7 @@ async def register_tenant(data: TenantRegister, request: Request):
     user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
-    token = create_token(user.id, tenant.id)
-    return TokenResponse(access_token=token, user=user, tenant=tenant)
+    return _build_token_response(user, tenant)
 
 @router.post("/auth/register-guest", response_model=TokenResponse)
 async def register_guest(data: GuestRegister, request: Request):
@@ -378,8 +406,7 @@ async def register_guest(data: GuestRegister, request: Request):
     prefs = NotificationPreferences(user_id=user.id)
     await db.notification_preferences.insert_one(prefs.model_dump())
 
-    token = create_token(user.id, None)
-    return TokenResponse(access_token=token, user=user, tenant=None)
+    return _build_token_response(user, None)
 
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin, request: Request):
@@ -471,8 +498,12 @@ async def login(data: UserLogin, request: Request):
                         _login_cache.set(cache_key, None, ttl=1)
                         # fall through
                     else:
-                        fresh = create_token(cached_user.id, cached_user.tenant_id)
-                        return TokenResponse(access_token=fresh, user=cached_user, tenant=cached.get("tenant"))
+                        # V3: cached path must also issue a refresh token so
+                        # the rotation lifecycle works identically whether
+                        # the login hit the bcrypt-skipping cache or the
+                        # full path. Build via the shared helper so it
+                        # cannot drift from the canonical login response.
+                        return _build_token_response(cached_user, cached.get("tenant"))
             else:
                 # No user_id in cache → cannot verify watermark/2FA freshness.
                 # Fail-closed: evict and fall through.
@@ -615,8 +646,8 @@ async def login(data: UserLogin, request: Request):
             challenge_token=challenge,
         )
 
-    token = create_token(user.id, user.tenant_id)
-    response = TokenResponse(access_token=token, user=user, tenant=tenant)
+    response = _build_token_response(user, tenant)
+    token = response.access_token
 
     # Usage metering
     if user.tenant_id:
@@ -857,8 +888,10 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         "timestamp": datetime.now(UTC).isoformat(),
     })
 
-    token = create_token(user.id, user.tenant_id)
-    return TokenResponse(access_token=token, user=user, tenant=tenant)
+    # V3: 2FA-verified login must also issue a refresh token so the
+    # mobile rotation lifecycle works identically whether the user
+    # took the 2FA path or the direct path.
+    return _build_token_response(user, tenant)
 
 _USER_RESPONSE_SAFE = set(User.model_fields.keys())
 
@@ -1004,25 +1037,156 @@ def _decode_bearer_payload(request: Request) -> dict:
         return {}
 
 
+def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> None:
+    """Apply the same user-level invalidation guards as `get_current_user`
+    before issuing a new access (and possibly refresh) token.
+
+    Without this, a body-based refresh that intentionally sidesteps
+    `Depends(get_current_user)` (so an *expired* access token can still
+    rotate) would also sidestep:
+      * `is_active=False` lock-outs
+      * `tokens_invalid_before` mass-revocation watermark (Bug CC v46) —
+        a stolen refresh token would otherwise survive a password change.
+
+    Centralised here so Path A (refresh-token in body) and Path B
+    (legacy bearer rotation) cannot drift.
+    """
+    # `is_active=False` → fully locked out. Treat as if the user does not
+    # exist for token-issuance purposes.
+    if user_doc.get("is_active") is False:
+        raise HTTPException(status_code=401, detail="Hesap devre dışı")
+
+    # Mass-revocation watermark. Tokens minted before the watermark
+    # (including refresh tokens issued from the *previous* password) must
+    # be rejected. Tokens lacking `iat` are treated as invalid once a
+    # watermark exists (fail-closed) — matches `core.security.get_current_user`.
+    invalid_before = user_doc.get("tokens_invalid_before")
+    if invalid_before:
+        iat = payload.get("iat")
+        if not iat or int(iat) < int(invalid_before):
+            raise HTTPException(
+                status_code=401,
+                detail="Şifre değişti - lütfen yeniden giriş yapın",
+            )
+
+    # Defence-in-depth: token's tenant_id must match the user record. A
+    # forged refresh token claiming a different tenant_id is rejected.
+    jwt_tenant = payload.get("tenant_id")
+    doc_tenant = user_doc.get("tenant_id")
+    if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
+        logger.warning(
+            "[%s] tenant mismatch on refresh: user=%s jwt=%s doc=%s",
+            kind, user_doc.get("id"), jwt_tenant, doc_tenant,
+        )
+        raise HTTPException(status_code=401, detail="Token-tenant uyuşmuyor")
+
+
 @router.post("/auth/refresh-token")
-async def refresh_token(request: Request, current_user: User = Depends(get_current_user)):
-    """JWT token yenileme — eski token revoke edilir, yeni token döner (rotation)."""
-    # v44 (Bug BJ): rotation. Old jti goes to revoked_tokens BEFORE the new
-    # token is minted, so a leaked old token cannot be used in parallel.
-    payload = _decode_bearer_payload(request)
-    old_jti = payload.get("jti")
-    old_exp = payload.get("exp")
-    # v44 race-hardening (architect Round-8): only the request that wins
-    # the revocation insert is allowed to mint a fresh token. Concurrent
-    # refreshes with the same old token → only one rotates, the other(s)
-    # get 401. Any DB error propagates → 500 (no silent fail-open).
+async def refresh_token(request: Request, body: dict | None = Body(default=None)):
+    """JWT token yenileme — V3 dual-mode endpoint.
+
+    Path A (V3 / mobile, preferred):
+        POST body { "refresh_token": "<long-lived JWT, type=refresh>" }
+        Validated independently — does NOT require a still-valid access
+        token. The refresh JWT's jti is rotated (old → revoked, new minted).
+
+    Path B (legacy / web):
+        POST with `Authorization: Bearer <access_token>` and no body.
+        The access token must still be valid; its jti is rotated.
+
+    Either way the response carries `access_token`, `expires_in`, and
+    (Path A) a brand-new `refresh_token`. Old refresh tokens remain valid
+    until natural expiry only if rotation was not attempted with them —
+    once used, they're revoked and cannot be replayed.
+    """
+    import jwt as _jwt
+    body = body or {}
+
+    submitted_refresh: str | None = None
+    if isinstance(body, dict):
+        rt = body.get("refresh_token")
+        if isinstance(rt, str) and rt.strip():
+            submitted_refresh = rt.strip()
+
+    user_id: str | None = None
+    tenant_id: str | None = None
+    user_email: str = ""
+    old_jti: str | None = None
+    old_exp: int | None = None
+    rotation_kind: str = "access"
+
+    if submitted_refresh:
+        # ── Path A: V3 mobile refresh-token flow ──
+        try:
+            rt_payload = _jwt.decode(
+                submitted_refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM]
+            )
+        except _jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Refresh token expired — please login again")
+        except _jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        if rt_payload.get("type") != "refresh":
+            # An access token sent in the refresh-token slot is rejected so
+            # callers can't blur the distinction (defence in depth).
+            raise HTTPException(status_code=401, detail="Wrong token type for refresh")
+        user_id = rt_payload.get("user_id")
+        tenant_id = rt_payload.get("tenant_id")
+        old_jti = rt_payload.get("jti")
+        old_exp = rt_payload.get("exp")
+        rotation_kind = "refresh"
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Malformed refresh token")
+        # Resolve user (no Depends → tolerates missing/expired access token).
+        user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user_doc:
+            raise HTTPException(status_code=401, detail="User no longer exists")
+        # Enforce the same invariants `get_current_user` would have applied,
+        # so a refresh cannot bypass an `is_active=False` lock-out, a
+        # `tokens_invalid_before` mass-revocation, or a tenant mismatch.
+        _enforce_refresh_invariants(user_doc, rt_payload, kind="refresh")
+        user_email = user_doc.get("email", "")
+    else:
+        # ── Path B: legacy access-token rotation ──
+        # Manually decode + load user so we can produce the same audit row
+        # without forcing all callers through Depends(get_current_user).
+        auth = request.headers.get("authorization") or ""
+        if not auth.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing bearer token")
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            ax_payload = _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except _jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Access token expired — send refresh_token in body")
+        except _jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid access token")
+        # Reject refresh tokens sent in the bearer slot — same defence in depth.
+        if ax_payload.get("type") == "refresh":
+            raise HTTPException(status_code=401, detail="Refresh token cannot be used as bearer")
+        user_id = ax_payload.get("user_id")
+        tenant_id = ax_payload.get("tenant_id")
+        old_jti = ax_payload.get("jti")
+        old_exp = ax_payload.get("exp")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Malformed access token")
+        user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user_doc:
+            raise HTTPException(status_code=401, detail="User no longer exists")
+        # Same invariants as Path A: a Path-B bearer rotation also bypasses
+        # `Depends(get_current_user)` (we manually decode), so we need to
+        # re-apply the lock-out / watermark / tenant-mismatch guards here.
+        _enforce_refresh_invariants(user_doc, ax_payload, kind="access")
+        user_email = user_doc.get("email", "")
+
+    # v44 race-hardening: only the request that wins the revocation insert
+    # is allowed to mint a fresh token. Concurrent refreshes with the same
+    # old jti → only one rotates, the others get 401.
     if old_jti and old_exp:
         try:
             won = await revoke_jti(
                 old_jti, int(old_exp),
-                user_id=current_user.id,
-                tenant_id=current_user.tenant_id,
-                reason="refresh_rotation",
+                user_id=user_id,
+                tenant_id=tenant_id,
+                reason=f"{rotation_kind}_rotation",
             )
         except Exception as e:
             logger.error("refresh_token: revoke_jti raised: %s", e)
@@ -1030,32 +1194,51 @@ async def refresh_token(request: Request, current_user: User = Depends(get_curre
         if not won:
             raise HTTPException(status_code=401, detail="Refresh replay rejected — please login again")
 
-    new_token = create_token(current_user.id, current_user.tenant_id)
+    new_access = create_token(user_id, tenant_id)
+    new_refresh: str | None = None
+    if rotation_kind == "refresh":
+        new_refresh, _ = create_refresh_token(user_id, tenant_id)
 
     # Audit log
     await db.audit_logs.insert_one({
         "id": str(__import__('uuid').uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "user_email": user_email,
         "action": "token_refresh",
         "resource_type": "auth",
-        "details": f"Token refreshed (rotated jti={old_jti or 'legacy'})",
+        "details": f"Token refreshed via {rotation_kind} (rotated jti={old_jti or 'legacy'})",
         "ip_address": "",
         "timestamp": datetime.now(UTC).isoformat(),
     })
 
-    return {
-        "access_token": new_token,
+    response: dict[str, object] = {
+        "access_token": new_access,
         "token_type": "bearer",
-        "expires_in": JWT_EXPIRATION_HOURS * 3600,
+        "expires_in": JWT_EXPIRATION_MINUTES * 60,
     }
+    if new_refresh:
+        response["refresh_token"] = new_refresh
+        response["refresh_expires_in"] = REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
+    return response
 
 
 @router.post("/auth/logout")
-async def logout(request: Request, current_user: User = Depends(get_current_user)):
+async def logout(
+    request: Request,
+    body: dict | None = Body(default=None),
+    current_user: User = Depends(get_current_user),
+):
     """v44 (Bug BJ): server-side logout — current token jti revoke listesine
-    yazılır, downstream istekler 401 alır."""
+    yazılır, downstream istekler 401 alır.
+
+    V3 (Syroce mobil): if the client also submits its refresh token in
+    the body (`{"refresh_token": "<jwt>"}`), revoke that jti too so a
+    stolen refresh token cannot keep the session alive after explicit
+    logout. Best-effort: failures are logged but never block the access-
+    token revocation that this endpoint guarantees.
+    """
+    import jwt as _jwt
     payload = _decode_bearer_payload(request)
     jti = payload.get("jti")
     exp = payload.get("exp")
@@ -1075,6 +1258,34 @@ async def logout(request: Request, current_user: User = Depends(get_current_user
             logger.error("logout: revoke_jti raised: %s", e)
             raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
+    # V3: revoke the submitted refresh token if any.
+    refresh_jti: str | None = None
+    if isinstance(body, dict):
+        rt = body.get("refresh_token")
+        if isinstance(rt, str) and rt.strip():
+            try:
+                rt_payload = _jwt.decode(rt.strip(), JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                # Only honour real refresh tokens; ignore anything else
+                # silently so a malformed body doesn't crash logout.
+                if rt_payload.get("type") == "refresh":
+                    refresh_jti = rt_payload.get("jti")
+                    refresh_exp = rt_payload.get("exp")
+                    if refresh_jti and refresh_exp:
+                        try:
+                            await revoke_jti(
+                                refresh_jti, int(refresh_exp),
+                                user_id=current_user.id,
+                                tenant_id=current_user.tenant_id,
+                                reason="logout_refresh",
+                            )
+                        except Exception as e:
+                            # Best-effort: log but don't fail logout — the
+                            # access token is already revoked above.
+                            logger.warning("logout: refresh revoke failed: %s", e)
+            except _jwt.InvalidTokenError:
+                # Submitted refresh token was not parsable — skip silently.
+                pass
+
     await db.audit_logs.insert_one({
         "id": str(__import__('uuid').uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -1082,7 +1293,11 @@ async def logout(request: Request, current_user: User = Depends(get_current_user
         "user_email": current_user.email,
         "action": "logout",
         "resource_type": "auth",
-        "details": f"Logout (jti={jti or 'legacy'})",
+        "details": (
+            f"Logout (jti={jti or 'legacy'}"
+            + (f", refresh_jti={refresh_jti}" if refresh_jti else "")
+            + ")"
+        ),
         "ip_address": "",
         "timestamp": datetime.now(UTC).isoformat(),
     })
@@ -1372,8 +1587,7 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
         from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
 
-        token = create_token(user.id, tenant.id)
-        return TokenResponse(access_token=token, user=user, tenant=tenant)
+        return _build_token_response(user, tenant)
 
     else:
         # Guest kullanıcısı
@@ -1403,8 +1617,7 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
         from modules.messaging.email_service import email_service
         await email_service.send_welcome_email(data.email, verification['name'])
 
-        token = create_token(user.id, None)
-        return TokenResponse(access_token=token, user=user, tenant=None)
+        return _build_token_response(user, None)
 
 _FORGOT_GENERIC_RESPONSE = {
     'success': True,

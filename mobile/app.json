@@ -16,12 +16,19 @@
       "bundleIdentifier": "com.syroce.pms",
       "infoPlist": {
         "NSCameraUsageDescription": "Kimlik tarama ve QR okuma için kamera kullanılır.",
-        "NSPhotoLibraryUsageDescription": "Kimlik fotoğrafı seçmek için galeriye erişim gerekir."
+        "NSPhotoLibraryUsageDescription": "Kimlik fotoğrafı seçmek için galeriye erişim gerekir.",
+        "NSFaceIDUsageDescription": "Uygulama kilidini açmak için Face ID kullanılır."
       }
     },
     "android": {
       "package": "com.syroce.pms",
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -34,12 +41,29 @@
         {
           "cameraPermission": "Kimlik tarama ve QR okuma için kamera kullanılır."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#3b82f6",
+          "androidMode": "default",
+          "androidCollapsedTitle": "Syroce PMS"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Uygulama kilidini açmak için Face ID kullanılır."
+        }
       ]
     ],
     "extra": {
       "router": {
         "origin": false
-      }
+      },
+      "certPins": [],
+      "certPinningRequired": false
     }
   }
 }

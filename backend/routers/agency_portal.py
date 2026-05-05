@@ -124,6 +124,10 @@ async def _get_agency_user_from_token(token: str) -> dict:
     """Decode agency JWT and fetch user doc."""
     try:
         payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # V3 — refresh tokens are not valid bearer credentials.
+        token_type = payload.get("type")
+        if token_type and token_type != "access":
+            raise HTTPException(status_code=401, detail="Gecersiz token tipi")
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Gecersiz token")

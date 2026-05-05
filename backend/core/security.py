@@ -124,7 +124,51 @@ JWT_ALGORITHM = 'HS256'
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for
 # a stolen-token blast radius given there was previously no revocation path.
 # Override via env if a deployment really needs longer-lived tokens.
-JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', '24'))
+#
+# V3 (Syroce mobil) — the access-token lifetime DEFAULT is now 15 minutes,
+# matching the task acceptance criteria. Web sessions still rotate via
+# `/api/auth/refresh-token` (or via the mobile refresh-token flow on
+# native), so this is a safe default everywhere. Operators that need a
+# longer lifetime can still override via either env var:
+#   * `JWT_EXPIRATION_MINUTES` (preferred, integer minutes)
+#   * `JWT_EXPIRATION_HOURS` (legacy, fractional hours)
+# Setting `JWT_EXPIRATION_HOURS` explicitly continues to honour the old
+# value so existing deployments that pinned 24h aren't surprised at upgrade.
+_V3_DEFAULT_ACCESS_MINUTES = 15
+
+
+def _resolve_jwt_lifetime_minutes() -> int:
+    raw_minutes = os.environ.get('JWT_EXPIRATION_MINUTES')
+    if raw_minutes:
+        try:
+            return max(1, int(raw_minutes))
+        except (TypeError, ValueError):
+            pass
+    raw_hours = os.environ.get('JWT_EXPIRATION_HOURS')
+    if raw_hours is not None:
+        try:
+            return max(1, int(round(float(raw_hours) * 60)))
+        except (TypeError, ValueError):
+            pass
+    return _V3_DEFAULT_ACCESS_MINUTES
+
+
+JWT_EXPIRATION_MINUTES = _resolve_jwt_lifetime_minutes()
+# Kept for backwards-compat; some legacy callers still import this constant
+# (router responses, server bootstrap log line, etc.). Rounding up means a
+# 15-minute token still surfaces as "1 hour" in the legacy field rather
+# than 0 — those consumers don't gate behaviour on the value.
+JWT_EXPIRATION_HOURS = max(1, round(JWT_EXPIRATION_MINUTES / 60))
+
+# V3 (Syroce mobil): refresh tokens are long-lived (default 30 days) and
+# carry `type: "refresh"` so they cannot be used to authenticate against
+# normal API endpoints. They sit in SecureStore on the device, are sent
+# explicitly in the body of `/api/auth/refresh-token`, and are rotated
+# (old jti revoked) on every successful refresh. This decouples the
+# 15-minute access-token lifetime from the user's session lifetime.
+REFRESH_TOKEN_EXPIRATION_DAYS = max(
+    1, int(os.environ.get('REFRESH_TOKEN_EXPIRATION_DAYS', '30'))
+)
 
 security = HTTPBearer()
 
@@ -221,9 +265,37 @@ def create_token(user_id: str, tenant_id: str | None = None) -> str:
         'tenant_id': tenant_id,
         'iat': now,
         'jti': secrets.token_urlsafe(16),  # v44: revocable token id
-        'exp': now + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'exp': now + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+        # V3: explicit token type so refresh tokens (which decode under the
+        # same JWT_SECRET) can't be silently used as access tokens.
+        'type': 'access',
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[str, int]:
+    """V3 — Syroce mobil refresh-token issuance.
+
+    Mints a long-lived JWT (default 30d, `REFRESH_TOKEN_EXPIRATION_DAYS`)
+    distinguishable from the access token by `type: "refresh"`. Returns
+    `(token, exp_unix_ts)` so the auth router can immediately persist the
+    expiry alongside the rotation audit row without re-decoding.
+
+    This token is sent in the request body to `/api/auth/refresh-token`
+    (NOT the Authorization header) so an attacker who steals an Authorization
+    bearer in transit cannot use it to keep the session alive indefinitely.
+    """
+    now = datetime.now(UTC)
+    exp = now + timedelta(days=REFRESH_TOKEN_EXPIRATION_DAYS)
+    payload = {
+        'user_id': user_id,
+        'tenant_id': tenant_id,
+        'iat': now,
+        'jti': secrets.token_urlsafe(24),
+        'exp': exp,
+        'type': 'refresh',
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), int(exp.timestamp())
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -239,6 +311,20 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing user_id")
+
+        # V3 — Syroce mobil hardening: refresh tokens carry `type="refresh"`
+        # and have a 30-day lifetime. They MUST NOT authenticate normal API
+        # endpoints — only the dedicated `/api/auth/refresh-token` flow.
+        # Reject any non-access token presented as a bearer credential.
+        # Tokens minted before V3 lack the `type` claim entirely; those are
+        # accepted (backwards-compat) but every newly-minted access token
+        # carries `type="access"` explicitly via `create_token()`.
+        token_type = payload.get('type')
+        if token_type and token_type != 'access':
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Wrong token type — refresh tokens cannot access API endpoints",
+            )
 
         # v44: revoked-token check (logout/refresh-rotation enforcement).
         # Tokens issued before v44 lack `jti` → treated as non-revocable but

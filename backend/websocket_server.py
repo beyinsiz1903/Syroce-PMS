@@ -155,6 +155,12 @@ async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
         logger.debug(f"Socket auth decode failed: {e}")
         return None
 
+    # V3 — refresh tokens cannot authenticate sockets either.
+    token_type = payload.get('type')
+    if token_type and token_type != 'access':
+        logger.debug("Socket auth: refused refresh-type token")
+        return None
+
     user_id = payload.get('user_id')
     tenant_id = payload.get('tenant_id')
     if not user_id:

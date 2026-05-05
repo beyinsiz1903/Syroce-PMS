@@ -6,7 +6,7 @@ import {
   logout as apiLogout,
   me as apiMe,
 } from '../api/auth';
-import { setToken, getToken, ApiError } from '../api/client';
+import { ApiError, clearAllAuthStorage, getToken } from '../api/client';
 
 const USER_KEY = 'syroce.auth.user';
 
@@ -70,7 +70,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await persistUser(fresh);
       }
     } catch {
-      // keep cached user
+      // keep cached user — `apiMe` may have failed because we're offline
     }
     set({ user, role: normalizeRole(user?.role), loading: false });
   },
@@ -111,7 +111,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   async logout() {
     await apiLogout();
     await persistUser(null);
-    await setToken(null);
+    // V3: wipe ALL credential / device-id storage so the next user starts
+    // clean and a stolen handset cannot resume the previous session.
+    await clearAllAuthStorage();
     set({ user: null, role: 'other' });
   },
 }));

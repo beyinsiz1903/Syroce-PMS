@@ -53,6 +53,16 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Subscription expiry worker start error: {e}")
 
+    # V3 — Syroce mobil push scheduler (VIP arrivals + no-show risk).
+    # Polling endpoints already surface these but only while the app is
+    # open; this worker fans them out as real OS-level push notifications.
+    try:
+        from workers.mobile_push_scheduler import start as _start_mobile_push
+        if _start_mobile_push():
+            logger.info("Mobile push scheduler started (VIP + no-show)")
+    except Exception as e:
+        logger.warning(f"Mobile push scheduler start error: {e}")
+
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes

@@ -239,4 +239,30 @@ async def send_eod(
         "sent_by_name": current_user.name or current_user.email,
         "sent_at": datetime.now(timezone.utc).isoformat(),
     })
+
+    # V3 — Syroce mobil: notify GMs / managers on their phones that the
+    # gun sonu raporu is available. Tap routes them to the GM dashboard
+    # (handled by mobile/src/notifications/push.ts).
+    try:
+        from services.expo_push import fire_and_forget_expo_push
+        fire_and_forget_expo_push(
+            current_user.tenant_id,
+            title=f"Gun Sonu Raporu hazir — {bd}",
+            body=(
+                f"Doluluk %{data.get('occupancy_rate', 0)} · "
+                f"Gelir {data.get('revenue_total', 0):,.0f} TL"
+            ),
+            data={
+                'type': 'eod_ready',
+                'business_date': bd,
+                'occupancy_rate': data.get('occupancy_rate'),
+                'revenue_total': data.get('revenue_total'),
+            },
+            departments=['gm', 'general_manager', 'admin', 'supervisor'],
+            priority='default',
+        )
+    except Exception:
+        # Best-effort — email send already succeeded above.
+        pass
+
     return {"sent": sent, "total": len(results), "business_date": bd, "results": results, "summary": data}
