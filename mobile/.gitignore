@@ -5,3 +5,12 @@ web-build/
 *.log
 .env
 .env.local
+
+# EAS / store credentials — asla commit edilmemeli
+play-service-account.json
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+ios/Pods/
+android/app/google-services.json
