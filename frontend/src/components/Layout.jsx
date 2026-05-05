@@ -110,14 +110,16 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   // Sayfa geçişlerinde içerik alanını en üste kaydır.
   // <main> kendi `overflow-auto` scroll'una sahip olduğundan window.scrollTo
   // yetmez; doğrudan elementin scrollTop'ı sıfırlanır.
+  // `#hash` deep-link'lerde reset atlanır — anchor'a doğal scroll çalışsın.
   useEffect(() => {
+    if (location.hash) return;
     if (mainRef.current) {
       mainRef.current.scrollTop = 0;
     }
     if (typeof window !== 'undefined') {
       window.scrollTo(0, 0);
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.hash]);
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
   const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);

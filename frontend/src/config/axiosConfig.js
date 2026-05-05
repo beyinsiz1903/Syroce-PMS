@@ -64,16 +64,43 @@ axios.interceptors.response.use(
     }
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;
+      // Yapılandırılmış iş hatası nesnesinden insan-okunur metin türet.
+      // Legacy çağrılar `e.response?.data?.detail || e.message` veya
+      // `'Hata: ' + detail` paterniyle tüketiyor; toString override sayesinde
+      // hem nesne korunur hem string concat'te '[object Object]' çıkmaz.
+      const humanize = (d) =>
+        d?.error || d?.message || d?.msg || (d?.code ? `İşlem engellendi (${d.code})` : "İşlem başarısız");
+      const wrapStructured = (d) => {
+        Object.defineProperty(d, "toString", {
+          value: () => humanize(d),
+          enumerable: false,
+          configurable: true,
+        });
+        return d;
+      };
       if (Array.isArray(detail)) {
-        error.response.data.detail = detail
-          .map((d) => (typeof d === "object" ? d.msg || JSON.stringify(d) : d))
-          .join("; ");
+        const hasStructured = detail.some(
+          (d) => typeof d === "object" && d !== null && d.code,
+        );
+        if (hasStructured) {
+          // Code'lu yapılandırılmış nesneleri içeren array'i koru, çağıran
+          // handler ilk elemanı kendi mantığıyla işlesin.
+          detail.forEach((d) => {
+            if (typeof d === "object" && d !== null) wrapStructured(d);
+          });
+        } else {
+          error.response.data.detail = detail
+            .map((d) => (typeof d === "object" && d !== null ? d.msg || JSON.stringify(d) : d))
+            .join("; ");
+        }
       } else if (typeof detail === "object" && detail !== null) {
-        // Pydantic tek-hata nesnesi ({msg, type, loc}) → string'e çevir.
-        // Yapılandırılmış iş hatası nesneleri (örn. {code:"BLOCKED", run:{...}})
-        // dokunulmadan bırakılır; çağıran handler kendi UI mesajını üretir.
+        // Pydantic tek-hata nesnesi ({msg, type, loc}) ve `code` yoksa string'e çevir.
+        // Yapılandırılmış iş hatası nesneleri ({code, run, ...}) dokunulmadan
+        // bırakılır; toString override ile legacy concat çağrıları korunur.
         if (typeof detail.msg === "string" && !detail.code) {
           error.response.data.detail = detail.msg;
+        } else {
+          wrapStructured(detail);
         }
       }
     }
