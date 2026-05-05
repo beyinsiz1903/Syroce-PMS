@@ -5,11 +5,22 @@ import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+
+const ID_PHOTO_REASON_OPTIONS = [
+  { value: 'police_check', label: 'Polis denetimi' },
+  { value: 'checkin_verification', label: 'Check-in doğrulaması' },
+  { value: 'complaint_review', label: 'Şikayet incelemesi' },
+  { value: 'identity_mismatch', label: 'Kimlik bilgisi tutarsızlığı' },
+  { value: 'other', label: 'Diğer (aşağıya yazın)' },
+];
 
 const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -23,6 +34,12 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   const [idPhotoUrl, setIdPhotoUrl] = useState(null);
   const [idPhotoLoading, setIdPhotoLoading] = useState(false);
   const [idPhotoMeta, setIdPhotoMeta] = useState(null);
+  // Görüntüleme öncesi gerekçe modali için (KVKK amaç sınırlandırması).
+  // Resepsiyonist butona basınca önce burası açılır; gerekçe seçilip
+  // "Görüntüle" denmeden /id-photo isteği atılmaz.
+  const [reasonPromptBooking, setReasonPromptBooking] = useState(null);
+  const [reasonChoice, setReasonChoice] = useState(ID_PHOTO_REASON_OPTIONS[0].value);
+  const [reasonNote, setReasonNote] = useState('');
 
   const canViewIdPhoto = (() => {
     const role = user?.role;
@@ -42,11 +59,37 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
     setIdPhotoLoading(false);
   };
 
-  const openIdPhoto = async (booking) => {
+  // Kullanıcı "Kimlik fotoğrafını görüntüle" butonuna bastığında doğrudan
+  // fotoğrafı açmak yerine önce gerekçe (KVKK amaç sınırlandırması) modali
+  // açılır. Modal onaylandıktan sonra fetchIdPhoto gerekçeyi query string
+  // olarak göndererek görüntülemeyi tetikler.
+  const requestIdPhoto = (booking) => {
     if (!canViewIdPhoto) {
       toast.error('Kimlik fotoğrafını görüntüleme yetkiniz yok');
       return;
     }
+    setReasonPromptBooking(booking);
+    setReasonChoice(ID_PHOTO_REASON_OPTIONS[0].value);
+    setReasonNote('');
+  };
+
+  const closeReasonPrompt = () => {
+    setReasonPromptBooking(null);
+    setReasonChoice(ID_PHOTO_REASON_OPTIONS[0].value);
+    setReasonNote('');
+  };
+
+  const buildReasonText = () => {
+    const selected = ID_PHOTO_REASON_OPTIONS.find((o) => o.value === reasonChoice);
+    const note = (reasonNote || '').trim();
+    if (reasonChoice === 'other') {
+      return note;
+    }
+    if (!selected) return note;
+    return note ? `${selected.label} — ${note}` : selected.label;
+  };
+
+  const fetchIdPhoto = async (booking, reasonText) => {
     setIdPhotoBookingId(booking.id);
     setIdPhotoLoading(true);
     setIdPhotoMeta({ guestName: booking.guest_name });
@@ -66,11 +109,13 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         closeIdPhotoModal();
         return;
       }
-      // 2) Şifrelenmiş fotoğrafı blob olarak çek (cache devre dışı)
+      // 2) Şifrelenmiş fotoğrafı blob olarak çek (cache devre dışı).
+      // Gerekçe query string olarak gönderilir; backend boşsa 400 döner.
       const photoRes = await axios.get(
         `/checkin/online/${checkin.id}/id-photo`,
         {
           responseType: 'blob',
+          params: { reason: reasonText },
           headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
         },
       );
@@ -81,10 +126,13 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         checkinId: checkin.id,
         contentType: checkin.id_photo?.content_type,
         sha256: checkin.id_photo?.sha256,
+        reason: reasonText,
       });
     } catch (e) {
       const status = e?.response?.status;
-      if (status === 403) {
+      if (status === 400) {
+        toast.error('Görüntüleme için gerekçe zorunludur');
+      } else if (status === 403) {
         toast.error('Kimlik fotoğrafını görüntüleme yetkiniz yok');
       } else if (status === 404) {
         toast.info('Kimlik fotoğrafı bulunamadı');
@@ -94,6 +142,23 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       closeIdPhotoModal();
     } finally {
       setIdPhotoLoading(false);
+    }
+  };
+
+  const submitReasonAndOpen = () => {
+    const reasonText = buildReasonText();
+    if (!reasonText) {
+      toast.error('Lütfen bir gerekçe seçin veya yazın');
+      return;
+    }
+    if (reasonText.length > 500) {
+      toast.error('Gerekçe metni 500 karakteri geçemez');
+      return;
+    }
+    const booking = reasonPromptBooking;
+    closeReasonPrompt();
+    if (booking) {
+      fetchIdPhoto(booking, reasonText);
     }
   };
 
@@ -457,7 +522,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                             size="sm"
                             variant="outline"
                             className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                            onClick={() => openIdPhoto(booking)}
+                            onClick={() => requestIdPhoto(booking)}
                             disabled={idPhotoLoading && idPhotoBookingId === booking.id}
                             data-testid={`btn-view-id-photo-${booking.id}`}
                           >
@@ -493,6 +558,75 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       onExtracted={(doc) => { if (scanBookingId) applyScanToBooking(scanBookingId, doc); }}
     />
     <Dialog
+      open={!!reasonPromptBooking}
+      onOpenChange={(open) => { if (!open) closeReasonPrompt(); }}
+    >
+      <DialogContent className="max-w-md" data-testid="dialog-id-photo-reason">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <IdCard className="w-5 h-5 text-blue-600" />
+            Görüntüleme Gerekçesi
+          </DialogTitle>
+          <DialogDescription>
+            KVKK amaç sınırlandırması gereği kimlik fotoğrafını açma sebebinizi
+            belirtmeniz gerekir. Bu gerekçe denetim kaydına yazılır.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <RadioGroup
+            value={reasonChoice}
+            onValueChange={setReasonChoice}
+            data-testid="radio-id-photo-reason"
+          >
+            {ID_PHOTO_REASON_OPTIONS.map((opt) => (
+              <div key={opt.value} className="flex items-center gap-2">
+                <RadioGroupItem
+                  value={opt.value}
+                  id={`reason-${opt.value}`}
+                  data-testid={`radio-id-photo-reason-${opt.value}`}
+                />
+                <Label htmlFor={`reason-${opt.value}`} className="cursor-pointer">
+                  {opt.label}
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <div className="space-y-1">
+            <Label htmlFor="reason-note" className="text-xs text-gray-600">
+              {reasonChoice === 'other'
+                ? 'Gerekçe (zorunlu)'
+                : 'Ek not (opsiyonel)'}
+            </Label>
+            <Textarea
+              id="reason-note"
+              value={reasonNote}
+              onChange={(e) => setReasonNote(e.target.value)}
+              placeholder="Örn: Polis ekibi kimlik teyidi istiyor"
+              rows={2}
+              maxLength={400}
+              data-testid="input-id-photo-reason-note"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={closeReasonPrompt}
+            data-testid="btn-id-photo-reason-cancel"
+          >
+            Vazgeç
+          </Button>
+          <Button
+            onClick={submitReasonAndOpen}
+            className="bg-blue-600 hover:bg-blue-700"
+            data-testid="btn-id-photo-reason-confirm"
+          >
+            Görüntüle
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog
       open={!!idPhotoBookingId}
       onOpenChange={(open) => { if (!open) closeIdPhotoModal(); }}
     >
@@ -526,10 +660,17 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
           )}
         </div>
         {idPhotoUrl && (
-          <p className="text-xs text-gray-500">
-            Bu görüntüleme denetim kaydına yazıldı. Fotoğraf önbelleğe alınmaz;
-            pencereyi kapattığınızda bellekten silinir.
-          </p>
+          <div className="text-xs text-gray-500 space-y-1">
+            {idPhotoMeta?.reason && (
+              <p data-testid="text-id-photo-reason">
+                <strong>Gerekçe:</strong> {idPhotoMeta.reason}
+              </p>
+            )}
+            <p>
+              Bu görüntüleme denetim kaydına yazıldı. Fotoğraf önbelleğe alınmaz;
+              pencereyi kapattığınızda bellekten silinir.
+            </p>
+          </div>
         )}
       </DialogContent>
     </Dialog>

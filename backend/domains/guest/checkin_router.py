@@ -11,7 +11,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from core.audit import log_audit_event
@@ -404,6 +404,14 @@ async def get_online_checkin_status(
 )
 async def download_online_checkin_id_photo(
     checkin_id: str,
+    reason: str = Query(
+        default="",
+        description=(
+            "Görüntüleme gerekçesi (KVKK amaç sınırlandırması). "
+            "Önceden tanımlı seçenek veya serbest metin olabilir; boş gönderilemez."
+        ),
+        max_length=500,
+    ),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # staff-only access
 ):
@@ -412,7 +420,27 @@ async def download_online_checkin_id_photo(
     Decrypts the AES-GCM envelope on the fly using the AAD bound at upload
     time (tenant + booking + photo_id). Caching is disabled so the bytes never
     sit in shared/proxy caches.
+
+    KVKK / iç denetim gereği görüntüleme öncesi kısa bir gerekçe
+    (örn. "polis denetimi", "check-in doğrulaması", "şikayet incelemesi")
+    zorunludur. Gerekçe boş veya yalnızca boşluk karakterlerinden oluşuyorsa
+    istek 400 ile reddedilir; geçerli bir gerekçe gelirse audit kaydının
+    `details` ve `after_value.reason` alanlarına yazılır.
     """
+    reason_clean = (reason or "").strip()
+    if not reason_clean:
+        raise HTTPException(
+            status_code=400,
+            detail="Kimlik fotoğrafı görüntüleme için gerekçe zorunludur",
+        )
+    # Sınır kontrolü: FastAPI Query max_length=500 zaten zorlar ama strip
+    # sonrası uzunluk değişebileceği için defansif bir kontrol daha koyalım.
+    if len(reason_clean) > 500:
+        raise HTTPException(
+            status_code=400,
+            detail="Gerekçe metni çok uzun (en fazla 500 karakter)",
+        )
+
     checkin = await db.online_checkins.find_one(
         {"id": checkin_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
@@ -430,9 +458,10 @@ async def download_online_checkin_id_photo(
     )
 
     # Görüntüleme denetim kaydı: kim, ne zaman, hangi check-in/booking için
-    # kimlik fotoğrafını açtığını izleyebilmek için her başarılı çözümü
-    # audit timeline'a yaz. Fotoğraf baytları KVKK gereği kayıt altına
-    # alınmaz; yalnızca metadata referansı (photo_id + sha256) tutulur.
+    # ve hangi gerekçeyle kimlik fotoğrafını açtığını izleyebilmek için her
+    # başarılı çözümü audit timeline'a yaz. Fotoğraf baytları KVKK gereği
+    # kayıt altına alınmaz; yalnızca metadata referansı (photo_id + sha256)
+    # ve resepsiyonistin girdiği gerekçe tutulur.
     try:
         await log_audit_event(
             tenant_id=current_user.tenant_id,
@@ -442,13 +471,15 @@ async def download_online_checkin_id_photo(
             entity_id=checkin_id,
             details=(
                 f"Resepsiyon kimlik fotoğrafı görüntüleme: kullanıcı={current_user.id} "
-                f"booking_id={checkin['booking_id']} photo_id={meta.get('photo_id')}"
+                f"booking_id={checkin['booking_id']} photo_id={meta.get('photo_id')} "
+                f"gerekçe={reason_clean}"
             ),
             after_value={
                 "booking_id": checkin["booking_id"],
                 "photo_id": meta.get("photo_id"),
                 "sha256": meta.get("sha256"),
                 "content_type": meta.get("content_type"),
+                "reason": reason_clean,
             },
             db=db,
         )
