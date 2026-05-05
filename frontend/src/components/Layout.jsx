@@ -105,6 +105,19 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const navRef = useRef(null);
+  const mainRef = useRef(null);
+
+  // Sayfa geçişlerinde içerik alanını en üste kaydır.
+  // <main> kendi `overflow-auto` scroll'una sahip olduğundan window.scrollTo
+  // yetmez; doğrudan elementin scrollTop'ı sıfırlanır.
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0;
+    }
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+  }, [location.pathname]);
   const modules = useMemo(() => tenant?.modules || {}, [tenant]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
   const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);
@@ -538,7 +551,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       </header>
 
       {/* Main Content - fills remaining viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
+      <main ref={mainRef} className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
         {children}
       </main>
 
