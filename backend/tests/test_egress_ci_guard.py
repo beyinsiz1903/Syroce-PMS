@@ -30,6 +30,10 @@ ALLOWED_RAW_HTTPX = {
     "backend/domains/channel_manager/providers/hotelrunner/client.py",
     # Operator env CM_PARTNER_WEBHOOK_URL
     "backend/domains/channel_manager/router.py",
+    # Server constant — Expo Push Service public endpoint (env override allowed)
+    "backend/services/expo_push.py",
+    # Operator env CAPX_BASE_URL — partner PMS integration endpoint
+    "backend/integrations/capx/client.py",
     # Operator env CM_PARTNER_BASE_URL — outbox dispatcher
     "backend/core/outbox_dispatcher.py",
     # Operator env AFSADAKAT_PROVISIONER_URL (NOT tenant — installer)
