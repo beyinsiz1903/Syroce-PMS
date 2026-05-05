@@ -4,6 +4,11 @@
 backend/uploads/
 frontend/uploads/
 
+# Replit chat-attached assets (screenshots, pasted images, etc.) — auto-uploaded
+# by the workspace and otherwise auto-checkpointed into the repo, polluting
+# diffs and triggering hygiene warnings in code review.
+attached_assets/
+
 # Secure storage (encrypted ID photos, etc. — never commit)
 backend/secure_storage/
 
