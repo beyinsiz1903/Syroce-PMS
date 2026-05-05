@@ -41,6 +41,13 @@ export const CONVERSATION_DEPARTMENT_FILTERS = [
 // net for missed events / cross-tab sync, so we can run it much less often.
 export const POLL_INTERVAL_MS = 60000;
 
+// Task #25: presence (who is online) is process-local and changes whenever
+// a colleague opens/closes a tab — refresh it more often than the inbox
+// poll so the "Sadece çevrimiçi" filter and the green dots in the picker
+// don't drift while the compose dialog stays open. Only ticks while the
+// dialog is mounted, so this is cheap.
+export const PRESENCE_REFRESH_INTERVAL_MS = 30000;
+
 // Mirror of the backend RECALL_WINDOW_SECONDS — keeps the recall menu hidden
 // once the message is past the window so we don't pretend the action is still
 // available. The backend remains the source of truth and will reject late

@@ -22,6 +22,7 @@ import {
   STAFF_ROLES,
   CONVERSATION_DEPARTMENT_FILTERS,
   POLL_INTERVAL_MS,
+  PRESENCE_REFRESH_INTERVAL_MS,
   TYPING_EMIT_THROTTLE_MS,
 } from './internalChat/constants';
 import InboxList from './internalChat/InboxList';
@@ -445,6 +446,14 @@ const InternalChatTab = ({ currentUser }) => {
     }, [selectedConvUserId, loadThread]),
     { enabled: !!selectedConvUserId, intervalMs: POLL_INTERVAL_MS },
   );
+  // Task #25: compose dialog açıkken presence (kim çevrimiçi) bilgisi
+  // 30 sn'de bir tazelenir. Sadece dialog açıkken çalışır — kapalıyken
+  // backend'e gereksiz istek gitmez. Sekme arka plana geçince
+  // visibility-aware poller timer'ı durdurur, geri gelince hemen tetikler.
+  useVisibilityAwarePoller(loadOnlinePresence, {
+    enabled: composeOpen,
+    intervalMs: PRESENCE_REFRESH_INTERVAL_MS,
+  });
 
   // Auto-scroll the thread to the bottom whenever new messages arrive.
   useEffect(() => {
