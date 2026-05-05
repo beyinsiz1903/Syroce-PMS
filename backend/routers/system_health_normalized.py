@@ -14,6 +14,14 @@ from models.schemas import User
 
 router = APIRouter(prefix="/api/system-health", tags=["System Health Normalized"])
 
+# Task #92: rolling window for the room-service "events delivered in
+# the last hour" gauge surfaced on the System Health dashboard. Mirrors
+# the in-memory deque retention in
+# ``room_service_realtime._EVENT_WINDOW_SECONDS`` — kept as a separate
+# constant here so the endpoint can pass an explicit second count
+# without coupling this router import-time to the realtime module.
+_EVENT_WINDOW_SECONDS_RS = 3600
+
 
 def _health_response(
     status: str, severity: str, scope_type: str, scope_id: str,
@@ -458,6 +466,96 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
         )
 
 
+@router.get("/normalized/room-service")
+async def normalized_room_service(current_user: User = Depends(get_current_user)):
+    """Live room-service realtime channel health (Task #92).
+
+    Surfaces two operational gauges to System Health:
+
+    * how many (tenant, booking) sockets are currently subscribed to
+      live order updates on this pod, plus the staff-dashboard fan-out;
+    * how many order events were delivered to local subscribers in the
+      last hour (rolling, in-memory).
+
+    Cross-pod visibility is added via ``ws_redis_adapter`` —
+    ``room_service:`` channels in the bridge's ``subscribed_channels``
+    list indicate other pods that have at least one guest socket on the
+    matching booking, which gives operators a fleet-wide view without
+    standing up an additional storage layer.
+    """
+    try:
+        from domains.guest.experience_router.room_service_realtime import (
+            ROOM_KEY_PREFIX,
+            order_stream,
+        )
+    except Exception as e:
+        return _health_response(
+            status="degraded", severity="warning",
+            scope_type="global", scope_id="room-service",
+            detail={"error": str(e)[:200]},
+            degraded_reason="room_service module not importable",
+            evidence_summary="module unavailable",
+        )
+
+    try:
+        local_rooms = order_stream.total_room_count()
+        local_sockets = order_stream.total_connection_count()
+        staff_tenants = order_stream.total_staff_room_count()
+        staff_sockets = order_stream.total_staff_connection_count()
+        recent_events = order_stream.recent_event_count(_EVENT_WINDOW_SECONDS_RS)
+    except Exception as e:
+        return _health_response(
+            status="degraded", severity="warning",
+            scope_type="global", scope_id="room-service",
+            detail={"error": str(e)[:200]},
+            degraded_reason="failed to read order_stream gauges",
+            evidence_summary="gauge read failed",
+        )
+
+    # Bridge view: count cross-pod subscribers via the channel list the
+    # adapter exposes. Best-effort — when the adapter isn't wired (tests,
+    # very early startup) the bridge view simply collapses to local-only.
+    bridge_channels = 0
+    bridge_active = False
+    try:
+        from infra.ws_redis_adapter import ws_redis_adapter
+        m = ws_redis_adapter.get_metrics()
+        bridge_active = bool(m.get("active"))
+        channels = list(m.get("subscribed_channels") or [])
+        prefix = f"{ROOM_KEY_PREFIX}:"
+        bridge_channels = sum(1 for c in channels if c.startswith(prefix))
+    except Exception:
+        # Stay healthy on bridge read failures — local gauges are still
+        # valid; the bridge already has its own subsystem entry.
+        pass
+
+    status = "healthy"
+    severity = "info"
+    evidence = (
+        f"{local_rooms} bookings / {local_sockets} guest sockets, "
+        f"{staff_tenants} staff tenants / {staff_sockets} staff sockets, "
+        f"{recent_events} events delivered in last 60m"
+    )
+
+    return _health_response(
+        status=status,
+        severity=severity,
+        scope_type="global",
+        scope_id="room-service",
+        detail={
+            "active_bookings_local": local_rooms,
+            "guest_sockets_local": local_sockets,
+            "staff_tenants_local": staff_tenants,
+            "staff_sockets_local": staff_sockets,
+            "events_last_hour": recent_events,
+            "event_window_seconds": _EVENT_WINDOW_SECONDS_RS,
+            "bridge_active": bridge_active,
+            "bridge_room_service_channels": bridge_channels,
+        },
+        evidence_summary=evidence,
+    )
+
+
 @router.get("/normalized/overview")
 async def normalized_overview(current_user: User = Depends(get_current_user)):
     """Aggregated normalized health overview across all subsystems.
@@ -476,10 +574,14 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
         normalized_observability(current_user),
         normalized_alerts(current_user),
         normalized_ws_bridge(current_user),
+        normalized_room_service(current_user),
         return_exceptions=True,
     )
 
-    scope_ids = ("channel-manager", "workers", "security", "observability", "alerts", "ws-bridge")
+    scope_ids = (
+        "channel-manager", "workers", "security",
+        "observability", "alerts", "ws-bridge", "room-service",
+    )
     fallback_scope_id = getattr(current_user, "tenant_id", None) or "global"
 
     def _coerce(scope_id: str, value):
@@ -499,9 +601,9 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
             )
         return value
 
-    cm, wk, sec, obs, al, wsb = (_coerce(sid, v) for sid, v in zip(scope_ids, results))
+    cm, wk, sec, obs, al, wsb, rs = (_coerce(sid, v) for sid, v in zip(scope_ids, results))
 
-    subsystems = [cm, wk, sec, obs, al, wsb]
+    subsystems = [cm, wk, sec, obs, al, wsb, rs]
     overall_severity = "critical" if any(s["severity"] == "critical" for s in subsystems) else (
         "warning" if any(s["severity"] == "warning" for s in subsystems) else "info"
     )
@@ -522,5 +624,6 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
             "observability": obs,
             "alerts": al,
             "ws_bridge": wsb,
+            "room_service": rs,
         },
     }

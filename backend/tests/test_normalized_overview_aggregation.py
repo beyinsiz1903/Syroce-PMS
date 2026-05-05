@@ -43,6 +43,7 @@ async def test_subsystem_exception_becomes_degraded_entry(monkeypatch):
     monkeypatch.setattr(mod, "normalized_observability", healthy)
     monkeypatch.setattr(mod, "normalized_alerts", healthy)
     monkeypatch.setattr(mod, "normalized_ws_bridge", healthy)
+    monkeypatch.setattr(mod, "normalized_room_service", healthy)
 
     out = await mod.normalized_overview(user)
 
@@ -51,10 +52,10 @@ async def test_subsystem_exception_becomes_degraded_entry(monkeypatch):
         "overall_status", "overall_severity", "last_updated_at",
         "live_capable", "data_freshness", "subsystems",
     }
-    # All six subsystems present
+    # All seven subsystems present (room_service added in Task #92).
     assert set(out["subsystems"].keys()) == {
         "channel_manager", "workers", "security",
-        "observability", "alerts", "ws_bridge",
+        "observability", "alerts", "ws_bridge", "room_service",
     }
     # The failing subsystem is now degraded with tenant scope and error detail
     cm = out["subsystems"]["channel_manager"]
@@ -89,6 +90,7 @@ async def test_cancelled_error_is_not_swallowed(monkeypatch):
     monkeypatch.setattr(mod, "normalized_observability", healthy)
     monkeypatch.setattr(mod, "normalized_alerts", healthy)
     monkeypatch.setattr(mod, "normalized_ws_bridge", healthy)
+    monkeypatch.setattr(mod, "normalized_room_service", healthy)
 
     with pytest.raises((asyncio.CancelledError, BaseException)) as excinfo:
         await mod.normalized_overview(user)
@@ -115,12 +117,13 @@ async def test_overview_runs_concurrently(monkeypatch):
     monkeypatch.setattr(mod, "normalized_observability", slow)
     monkeypatch.setattr(mod, "normalized_alerts", slow)
     monkeypatch.setattr(mod, "normalized_ws_bridge", slow)
+    monkeypatch.setattr(mod, "normalized_room_service", slow)
 
     loop = asyncio.get_event_loop()
     t0 = loop.time()
     out = await mod.normalized_overview(user)
     elapsed = loop.time() - t0
 
-    # Sequential would be ~1.2s (6 * 0.2). Parallel should be well under 0.5s.
+    # Sequential would be ~1.4s (7 * 0.2). Parallel should be well under 0.5s.
     assert elapsed < 0.5, f"overview not concurrent: took {elapsed:.3f}s"
     assert out["overall_status"] == "healthy"

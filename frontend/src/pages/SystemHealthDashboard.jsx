@@ -283,6 +283,65 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
   );
 }
 
+/* ── Room Service Live Connections Panel (Task #92) ─────── */
+function RoomServiceLivePanel({ roomService, testIdPrefix = "room-service" }) {
+  if (!roomService) return null;
+  const detail = roomService.detail || {};
+  const status = roomService.status || "healthy";
+  const bookings = detail.active_bookings_local ?? 0;
+  const guestSockets = detail.guest_sockets_local ?? 0;
+  const staffTenants = detail.staff_tenants_local ?? 0;
+  const staffSockets = detail.staff_sockets_local ?? 0;
+  const eventsLastHour = detail.events_last_hour ?? 0;
+  const windowSec = detail.event_window_seconds ?? 3600;
+  const windowMin = Math.max(1, Math.round(windowSec / 60));
+  const bridgeActive = !!detail.bridge_active;
+  const bridgeChannels = detail.bridge_room_service_channels ?? 0;
+
+  return (
+    <PanelCard
+      testId={`${testIdPrefix}-panel`}
+      title="Oda servisi canlı bağlantıları"
+      icon={Radio}
+      status={status}
+    >
+      <div className="space-y-2 text-xs">
+        <DataRow
+          label="Aktif rezervasyonlar (bu pod)"
+          value={bookings}
+        />
+        <DataRow
+          label="Misafir soketleri"
+          value={guestSockets}
+        />
+        <DataRow
+          label="Personel panelleri (kiracı)"
+          value={`${staffTenants} kiracı / ${staffSockets} soket`}
+        />
+        <DataRow
+          label={`Son ${windowMin} dk teslim edilen güncelleme`}
+          value={eventsLastHour}
+          valueClass={eventsLastHour > 0 ? "text-emerald-600" : "text-gray-900"}
+        />
+        <p className="text-[10px] text-gray-500 -mt-1">
+          (her misafir/personel ekranına teslim her güncelleme bir kez sayılır)
+        </p>
+        <div className="flex justify-between text-gray-600">
+          <span>Çoklu sunucu köprüsü</span>
+          <StatusBadge status={bridgeActive ? "active" : "unknown"} />
+        </div>
+        <DataRow
+          label="Köprüde room_service kanalı"
+          value={bridgeChannels}
+        />
+        {roomService.evidence_summary && (
+          <p className="text-[11px] text-gray-500 mt-1">{roomService.evidence_summary}</p>
+        )}
+      </div>
+    </PanelCard>
+  );
+}
+
 /* ── GM Property Panel ──────────────────────────────────── */
 function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
   const alertCount = alerts?.count || 0;
@@ -333,7 +392,7 @@ function GMPropertyView({ cmStatus, alerts, normalizedOverview }) {
 }
 
 /* ── Admin Tenant Panel ─────────────────────────────────── */
-function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, wsBridge, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, wsBridge, roomService, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
 
@@ -423,6 +482,9 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
 
         {/* Multi-instance live chat bridge */}
         <WSBridgePanel wsBridge={wsBridge} testIdPrefix="admin-ws-bridge" />
+
+        {/* Room-service realtime gauge (Task #92) */}
+        <RoomServiceLivePanel roomService={roomService} testIdPrefix="admin-room-service" />
       </div>
 
       {/* Audit & Observability */}
@@ -446,7 +508,7 @@ function AdminTenantView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGua
 }
 
 /* ── Superadmin Global Panel ────────────────────────────── */
-function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, wsBridge, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
+function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, wsBridge, roomService, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading }) {
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
 
@@ -543,6 +605,9 @@ function SuperadminGlobalView({ cmStatus, queueHealth, secAudit, rateLimit, tena
 
         {/* Multi-instance live chat bridge */}
         <WSBridgePanel wsBridge={wsBridge} testIdPrefix="sa-ws-bridge" />
+
+        {/* Room-service realtime gauge (Task #92) */}
+        <RoomServiceLivePanel roomService={roomService} testIdPrefix="sa-room-service" />
       </div>
 
       {/* Audit & Observability */}
@@ -751,6 +816,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
   const userRole = roleDashboard?.role || user?.role || "admin";
   const userScope = roleDashboard?.scope || "";
   const wsBridge = normalizedOverview?.subsystems?.ws_bridge || null;
+  const roomService = normalizedOverview?.subsystems?.room_service || null;
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="system-health">
@@ -825,7 +891,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
             cmStatus={cmStatus} queueHealth={queueHealth} secAudit={secAudit}
             rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
             alerts={alerts} stuckTasks={stuckTasks} auditMetrics={auditMetrics}
-            wsBridge={wsBridge}
+            wsBridge={wsBridge} roomService={roomService}
             triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
             triggerRecon={triggerRecon} reconLoading={reconLoading}
           />
@@ -837,7 +903,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
             rateLimit={rateLimit} tenantGuard={tenantGuard} logSanit={logSanit}
             alerts={alerts} stuckTasks={stuckTasks} metrics={metrics}
             auditMetrics={auditMetrics} normalizedOverview={normalizedOverview}
-            wsBridge={wsBridge}
+            wsBridge={wsBridge} roomService={roomService}
             triggerDriftScan={triggerDriftScan} driftScanLoading={driftScanLoading}
             triggerRecon={triggerRecon} reconLoading={reconLoading}
           />

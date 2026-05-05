@@ -32,13 +32,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import defaultdict
+import time
+from collections import defaultdict, deque
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
+
+# Sliding-window cap for the in-memory "events delivered in the last
+# hour" counter exposed on the System Health dashboard. Bound the deque
+# defensively so a runaway producer cannot grow it without limit; in
+# practice room-service is not a high-volume channel and this ceiling is
+# orders of magnitude above realistic 1-hour traffic.
+_EVENT_WINDOW_SECONDS = 3600
+_EVENT_WINDOW_MAX = 10_000
 
 
 # Room-name format used both as the in-process bucket key suffix and
@@ -83,6 +92,12 @@ class RoomServiceOrderStream:
         self._connections: dict[tuple[str, str], set[WebSocket]] = defaultdict(set)
         self._staff_connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._lock = asyncio.Lock()
+        # Monotonic timestamps (seconds) of order events delivered to
+        # *any* subscriber — used by the System Health dashboard to show
+        # "events delivered in the last hour". Kept in-memory only; on
+        # pod restart the window resets, which is acceptable for a live
+        # operations gauge (Task #92).
+        self._event_timestamps: deque[float] = deque(maxlen=_EVENT_WINDOW_MAX)
 
     async def connect(self, ws: WebSocket, tenant_id: str, booking_id: str) -> None:
         await ws.accept()
@@ -173,6 +188,52 @@ class RoomServiceOrderStream:
 
     def connection_count(self, tenant_id: str, booking_id: str) -> int:
         return len(self._connections.get((tenant_id, booking_id), set()))
+
+    # ── Aggregate gauges (Task #92) ─────────────────────────────────
+    def total_room_count(self) -> int:
+        """Number of distinct (tenant, booking) rooms with ≥1 socket.
+
+        Used by the System Health "Room service live connections" card
+        to answer "how many bookings are currently watching live order
+        updates on this pod?".
+        """
+        return sum(1 for bucket in self._connections.values() if bucket)
+
+    def total_connection_count(self) -> int:
+        """Total guest WebSocket connections across all bookings."""
+        return sum(len(bucket) for bucket in self._connections.values())
+
+    def total_staff_room_count(self) -> int:
+        """Number of distinct tenants with ≥1 staff dashboard socket."""
+        return sum(1 for bucket in self._staff_connections.values() if bucket)
+
+    def total_staff_connection_count(self) -> int:
+        """Total staff dashboard WebSocket connections across tenants."""
+        return sum(len(bucket) for bucket in self._staff_connections.values())
+
+    def record_event_delivery(self, count: int = 1) -> None:
+        """Append ``count`` event-delivery timestamps to the rolling
+        window. ``count`` is typically the number of recipients on the
+        publishing pod, so a fan-out to 3 sockets registers as 3
+        delivered events — matching how operators read the gauge ("how
+        many guest screens were updated in the last hour")."""
+        if count <= 0:
+            return
+        now = time.monotonic()
+        for _ in range(count):
+            self._event_timestamps.append(now)
+
+    def recent_event_count(self, seconds: int = _EVENT_WINDOW_SECONDS) -> int:
+        """Number of events delivered in the last ``seconds`` window.
+
+        Prunes expired entries from the left of the deque on each call
+        — cheap because the deque is bounded and ordered by insertion
+        time (which is monotonic)."""
+        cutoff = time.monotonic() - max(0, seconds)
+        ts = self._event_timestamps
+        while ts and ts[0] < cutoff:
+            ts.popleft()
+        return len(ts)
 
     # ── Staff (tenant-wide) fan-out ─────────────────────────────────
     async def connect_staff(self, ws: WebSocket, tenant_id: str) -> None:
@@ -341,5 +402,15 @@ async def emit_order_event(
         delivered += await order_stream.broadcast_staff(tenant_id, envelope)
     except Exception as e:
         logger.error("Failed to staff-emit room-service order event: %s", e)
+
+    # Task #92: feed the rolling 1-hour gauge on the System Health
+    # dashboard. We record the number of locally delivered recipients
+    # rather than a single "event" so the gauge reflects how many guest/
+    # staff screens were actually updated. Best-effort — never let an
+    # in-memory accounting bug fail the originating HTTP request.
+    try:
+        order_stream.record_event_delivery(delivered)
+    except Exception as e:
+        logger.warning("Failed to record room-service event delivery: %s", e)
 
     return delivered
