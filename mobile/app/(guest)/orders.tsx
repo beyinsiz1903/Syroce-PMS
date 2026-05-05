@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
@@ -28,6 +28,9 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'İptal',
 };
 
+// Sessiz, üstel artan yeniden bağlanma gecikmeleri (ms). Tavan 60s.
+const RECONNECT_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
+
 export default function GuestOrdersScreen() {
   const c = useTheme();
   const queryClient = useQueryClient();
@@ -39,6 +42,8 @@ export default function GuestOrdersScreen() {
 
   const [streamConnected, setStreamConnected] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ordersQueryKey = ['room-service-orders', activeBooking?.id] as const;
 
   const ordersQ = useQuery({
@@ -47,6 +52,33 @@ export default function GuestOrdersScreen() {
     enabled: !!activeBooking,
     refetchInterval: streamConnected ? false : 15_000,
   });
+
+  const clearPendingReconnect = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if (reconnectTimerRef.current) return;
+    const idx = Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS_MS.length - 1);
+    const delay = RECONNECT_DELAYS_MS[idx];
+    reconnectAttemptRef.current += 1;
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      setRetryNonce((n) => n + 1);
+    }, delay);
+  };
+
+  // Aktif rezervasyon değişince/sökülünce bekleyen denemeleri ve sayacı sıfırla.
+  useEffect(() => {
+    reconnectAttemptRef.current = 0;
+    clearPendingReconnect();
+    return () => {
+      clearPendingReconnect();
+    };
+  }, [activeBooking?.id]);
 
   useEffect(() => {
     if (!activeBooking) return;
@@ -57,6 +89,8 @@ export default function GuestOrdersScreen() {
       const t = await subscribeRoomServiceOrders(activeBooking.id, {
         onOpen: () => {
           if (cancelled) return;
+          reconnectAttemptRef.current = 0;
+          clearPendingReconnect();
           setStreamConnected(true);
           queryClient.invalidateQueries({ queryKey: ordersQueryKey });
         },
@@ -70,10 +104,12 @@ export default function GuestOrdersScreen() {
         onClose: () => {
           if (cancelled) return;
           setStreamConnected(false);
+          scheduleReconnect();
         },
         onError: () => {
           if (cancelled) return;
           setStreamConnected(false);
+          scheduleReconnect();
         },
       });
       // If cleanup ran while we were awaiting subscribe, the cleanup
@@ -96,6 +132,8 @@ export default function GuestOrdersScreen() {
 
   const handleRetryStream = () => {
     if (streamConnected) return;
+    reconnectAttemptRef.current = 0;
+    clearPendingReconnect();
     setRetryNonce((n) => n + 1);
     if (activeBooking) {
       ordersQ.refetch();
