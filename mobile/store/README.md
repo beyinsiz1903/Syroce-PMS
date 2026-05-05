@@ -105,6 +105,32 @@ Komut hem `mobile/assets/` (icon, adaptive-icon, splash, notification-icon,
 favicon) hem de `mobile/store/screenshots/` altındaki tüm boyut × tema
 kombinasyonlarını yeniden oluşturur.
 
+> Komutun yalnızca standart kütüphane + **Pillow 12.1.1** ve sistem
+> üzerinde **DejaVu Sans / DejaVu Sans Bold** yazı tiplerinin kurulu
+> olmasına ihtiyacı vardır. Ubuntu üzerinde:
+> `sudo apt-get install fonts-dejavu-core && pip install Pillow==12.1.1`.
+
+## CI sürüklenme guard'ı
+
+`.github/workflows/mobile-store-assets.yml` her PR'da (yalnızca
+`mobile/store/generate_assets.py`, `mobile/store/screenshots/**` veya
+`mobile/assets/**` değiştiğinde) jeneratörü yeniden çalıştırır ve
+çıktıyı commit'li PNG'lerle karşılaştırır. Çıktı deterministik
+olduğundan herhangi bir fark olması demek, geliştiricinin bir
+pazarlama görselini etkileyen kod değişikliği yapıp scripti
+çalıştırmayı unuttuğu anlamına gelir; bu durumda iş başarısız olur ve
+"Summary" sekmesinde değişen dosyalar listelenir. Düzeltmek için:
+
+```bash
+cd mobile
+python3 store/generate_assets.py
+git add mobile/store/screenshots mobile/assets
+```
+
+İşlem başarısız olursa CI ayrıca **`regenerated-store-assets`** adında
+bir artifact yükler — bunu indirip içeriğini repo üzerine kopyalayıp
+commit ederek de düzeltebilirsiniz.
+
 ## App Store Connect / Play Console'a yükleme
 
 - **iOS**: App Store Connect → Uygulamanız → "App Store" sekmesi.

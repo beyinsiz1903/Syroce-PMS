@@ -1,0 +1,142 @@
+name: Mobile store assets drift guard
+
+# Mağaza görselleri ve uygulama ikon/splash varlıkları
+# `mobile/store/generate_assets.py` tarafından deterministik olarak üretilir
+# ve repoya commit'lenir. Bu iş, jeneratör scriptini her PR'da yeniden
+# çalıştırıp commit'li PNG'lerle birebir karşılaştırır. Pazarlama
+# görsellerini etkileyen bir değişiklik yapıp scripti çalıştırmayı unutan
+# bir geliştirici, mağazaya yüklenen PNG'lerin koddan sürüklenmesine yol
+# açar — bu adım o sürüklenmeyi engeller.
+
+on:
+  push:
+    branches: [main, develop, staging]
+    paths:
+      - "mobile/store/generate_assets.py"
+      - "mobile/store/screenshots/**"
+      - "mobile/assets/**"
+      - ".github/workflows/mobile-store-assets.yml"
+  pull_request:
+    branches: [main, develop, staging]
+    paths:
+      - "mobile/store/generate_assets.py"
+      - "mobile/store/screenshots/**"
+      - "mobile/assets/**"
+      - ".github/workflows/mobile-store-assets.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-store-assets:
+    name: Mağaza görsellerini yeniden üret ve karşılaştır
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pillow
+        run: |
+          set -euo pipefail
+          # Jeneratör sadece PIL'e bağlıdır. Wheel'i pinleyerek farklı
+          # PIL sürümlerinden kaynaklı font kerning / encoder farklarını
+          # önlüyoruz; bu sürüm yerel üretim sırasında kullanılan sürümle
+          # aynı olmalıdır.
+          pip install --upgrade pip
+          pip install "Pillow==12.1.1"
+
+      - name: Install DejaVu fonts
+        # generate_assets.py /usr/share/fonts/truetype/dejavu/ altındaki
+        # DejaVuSans (+Bold) yazı tiplerini kullanır. ubuntu-latest
+        # üzerinde varsayılan olarak yüklü değildir.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+
+      - name: Regenerate store assets
+        run: |
+          set -euo pipefail
+          cd mobile
+          python3 store/generate_assets.py
+
+      - name: Verify no drift vs. committed PNGs
+        # Jeneratör deterministiktir (rastgele tohumlar sabit, tüm
+        # boyutlar/temalar tek koşuda üretilir). Bu yüzden çıktı
+        # commit'li PNG'lerle birebir aynı olmalıdır. Üç sürüklenme
+        # tipini de yakalamamız gerekir:
+        #   1. Değişen dosyalar    -> `git diff` ile
+        #   2. Yeni (untracked)    -> `git ls-files --others ...` ile
+        #   3. Silinen dosyalar    -> aynı `git diff`, çünkü silinen
+        #      bir dosyayı jeneratör tekrar üretirse working tree'de
+        #      "yeni" olarak görünür ve untracked listesine düşer.
+        # `git add -N` ile yeni dosyaları index'e "intent-to-add"
+        # olarak ekleyip `git diff --exit-code`'un onları da görmesini
+        # sağlıyoruz; böylece tek bir komut hem modifikasyonu hem
+        # eklemeyi tespit ediyor.
+        run: |
+          set -euo pipefail
+          # Untracked dosyalar (yeni üretilen ya da repodan silinmiş
+          # ama jeneratörün tekrar oluşturduğu PNG'ler) — raporlamak
+          # için ayrıca yakalıyoruz.
+          UNTRACKED=$(git ls-files --others --exclude-standard -- \
+            mobile/store/screenshots mobile/assets || true)
+
+          # Untracked olanları da diff'e dahil et.
+          if [ -n "$UNTRACKED" ]; then
+            git add -N -- mobile/store/screenshots mobile/assets
+          fi
+
+          if git diff --exit-code --quiet -- mobile/store/screenshots mobile/assets; then
+            echo "Mağaza görselleri ve uygulama varlıkları güncel."
+            exit 0
+          fi
+
+          echo "::error::Mağaza görselleri kodla uyumlu değil. 'cd mobile && python3 store/generate_assets.py' çalıştırıp çıktıları commit'leyin."
+          {
+            echo "## Mağaza görselleri sürüklenmiş"
+            echo ""
+            echo "Aşağıdaki dosyalar \`mobile/store/generate_assets.py\` çıktısıyla uyuşmuyor."
+            echo "Lokal olarak şu komutu çalıştırıp commit edin:"
+            echo ""
+            echo '```bash'
+            echo "cd mobile"
+            echo "python3 store/generate_assets.py"
+            echo "git add mobile/store/screenshots mobile/assets"
+            echo '```'
+            echo ""
+            echo "### Değişen / silinen dosyalar"
+            echo ""
+            echo '```'
+            git diff --name-status -- mobile/store/screenshots mobile/assets
+            echo '```'
+            if [ -n "$UNTRACKED" ]; then
+              echo ""
+              echo "### Yeni (commit'lenmemiş) dosyalar"
+              echo ""
+              echo '```'
+              echo "$UNTRACKED"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Upload regenerated assets on drift
+        # Drift olduğunda, üretilmiş (yani "doğru") PNG'leri artifact
+        # olarak yükle ki geliştirici lokal olarak çalıştırmadan da
+        # indirip commit'leyebilsin.
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: regenerated-store-assets
+          path: |
+            mobile/store/screenshots
+            mobile/assets
+          if-no-files-found: warn
