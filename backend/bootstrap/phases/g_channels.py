@@ -112,6 +112,16 @@ async def phase_g_channels_and_audit(app):
     except Exception as e:
         logger.warning(f"Web Push cleanup worker init warning: {e}")
 
+    # Task #72 — Online check-in kimlik fotoğrafları temizlik worker'ı
+    try:
+        from domains.guest.checkin_id_photo_cleanup import (
+            start_checkin_id_photo_cleanup_worker,
+        )
+        start_checkin_id_photo_cleanup_worker()
+        logger.info("✅ Check-in ID photo cleanup worker started")
+    except Exception as e:
+        logger.warning(f"Check-in ID photo cleanup worker init warning: {e}")
+
     # CapX Availability Scheduler (Faz 2: periodic snapshot push)
     try:
         from integrations.capx import availability_scheduler as capx_avail_sched
