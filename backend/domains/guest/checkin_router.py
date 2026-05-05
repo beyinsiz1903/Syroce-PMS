@@ -4,16 +4,21 @@ Domain Router: Online Check-in & Pre-Arrival
 Extracted from legacy_routes.py — online check-in submission,
 upsell acceptance, pre-arrival communications.
 """
+import base64
+import binascii
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from core.database import db
 from core.security import get_current_user
+from domains.guest.checkin_id_photo_storage import load_id_photo, save_id_photo
 from models.schemas import User
 from modules.pms_core.role_permission_service import MODULE_ROLES  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from security.upload_validator import MAX_IMAGE_BYTES
 
 router = APIRouter(prefix="/api", tags=["checkin-domain"])
 
@@ -30,6 +35,75 @@ def _allow_frontdesk_or_guest(current_user: User = Depends(get_current_user)) ->
     return current_user
 
 
+async def _assert_booking_accessible(
+    booking_id: str, current_user: User
+) -> dict:
+    """Resolve a booking and enforce ownership (guest_app sees only own booking)."""
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    role = getattr(current_user.role, "value", str(current_user.role))
+    if role == "guest_app":
+        guest_doc = await db.guests.find_one(
+            {"email": current_user.email, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1},
+        )
+        if not guest_doc or booking.get("guest_id") != guest_doc.get("id"):
+            raise HTTPException(status_code=403, detail="Bu rezervasyon size ait değil")
+    return booking
+
+
+@router.post("/checkin/online/{booking_id}/id-photo")
+async def upload_online_checkin_id_photo(
+    booking_id: str,
+    photo: UploadFile = File(...),
+    current_user: User = Depends(_allow_frontdesk_or_guest),
+):
+    """Stage a guest ID photo before submitting the online check-in form.
+
+    Multipart upload path:
+      - Validated with magic-bytes (rejects SVG/PDF/polyglots) and size-capped.
+      - Encrypted with the platform crypto service (AES-256-GCM + HKDF key,
+        AAD-bound to tenant + booking + photo_id) before being written to a
+        private filesystem location outside the public ``/api/uploads`` mount.
+      - Plaintext bytes never touch the database; only sha-256 hash and
+        sanitized metadata are recorded.
+
+    Returns ``{photo_id, sha256, content_type, size_bytes}``; supply
+    ``photo_id`` as ``id_photo_id`` in the subsequent JSON check-in submission.
+    """
+    booking = await _assert_booking_accessible(booking_id, current_user)
+    file_bytes = await photo.read(MAX_IMAGE_BYTES + 1)
+    stored = save_id_photo(
+        tenant_id=current_user.tenant_id,
+        booking_id=booking_id,
+        image_bytes=file_bytes,
+        field_label="Kimlik fotografi",
+    )
+
+    # Stage metadata so a later checkin submission can claim this photo and
+    # so orphan-cleanup jobs can age out abandoned uploads.
+    stage_doc = {
+        **stored.to_dict(),
+        "guest_id": booking.get("guest_id"),
+        "uploaded_by": current_user.id,
+        "uploaded_by_role": getattr(current_user.role, "value", str(current_user.role)),
+        "uploaded_at": datetime.now(UTC).isoformat(),
+        "claimed": False,
+    }
+    await db.online_checkin_id_photos.insert_one(stage_doc)
+
+    return {
+        "photo_id": stored.photo_id,
+        "sha256": stored.sha256,
+        "content_type": stored.content_type,
+        "size_bytes": stored.size_bytes,
+    }
+
+
 @router.post("/checkin/online")
 async def submit_online_checkin(
     checkin_data: dict,
@@ -40,21 +114,12 @@ async def submit_online_checkin(
 
     request = OnlineCheckinRequest(**checkin_data)
 
-    booking = await db.bookings.find_one(
-        {"id": request.booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
-    if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    booking = await _assert_booking_accessible(request.booking_id, current_user)
 
-    # Guest-app callers may only submit for their own booking, with the canonical
+    # Guest-app callers must satisfy the digital-signature contract and the
     # 06:00-on-check-in-day eligibility gate (mirror of the mobile UI rule).
     role = getattr(current_user.role, "value", str(current_user.role))
     if role == "guest_app":
-        guest_doc = await db.guests.find_one(
-            {"email": current_user.email, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
-        )
-        if not guest_doc or booking.get("guest_id") != guest_doc.get("id"):
-            raise HTTPException(status_code=403, detail="Bu rezervasyon size ait değil")
         # Digital-signature contract: typed name + explicit consent both required.
         if not (request.signature_consent and (request.signature_text or "").strip()):
             raise HTTPException(status_code=400, detail="Dijital imza onayı gerekli")
@@ -83,6 +148,61 @@ async def submit_online_checkin(
                         detail="Online check-in giriş günü saat 06:00'dan itibaren açılır",
                     )
 
+    # ── Resolve the ID photo: prefer a previously-staged multipart upload
+    #    (id_photo_id), fall back to legacy inline base64. In both cases the
+    #    bytes are encrypted at rest via core.crypto and only metadata lands
+    #    in MongoDB — never the raw image.
+    id_photo_meta: dict | None = None
+    if request.id_photo_id:
+        stage_doc = await db.online_checkin_id_photos.find_one(
+            {
+                "photo_id": request.id_photo_id,
+                "tenant_id": current_user.tenant_id,
+                "booking_id": request.booking_id,
+            },
+            {"_id": 0},
+        )
+        if not stage_doc:
+            raise HTTPException(
+                status_code=400,
+                detail="Kimlik fotografi bulunamadi veya bu rezervasyona ait degil.",
+            )
+        id_photo_meta = {
+            "photo_id": stage_doc["photo_id"],
+            "sha256": stage_doc.get("sha256"),
+            "content_type": stage_doc.get("content_type"),
+            "size_bytes": stage_doc.get("size_bytes"),
+            "extension": stage_doc.get("extension"),
+            "source": "multipart_upload",
+        }
+    elif request.id_photo_base64:
+        try:
+            raw = base64.b64decode(request.id_photo_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail="Kimlik fotografi gecersiz base64 verisi iceriyor.",
+            )
+        stored = save_id_photo(
+            tenant_id=current_user.tenant_id,
+            booking_id=request.booking_id,
+            image_bytes=raw,
+            field_label="Kimlik fotografi",
+        )
+        await db.online_checkin_id_photos.insert_one({
+            **stored.to_dict(),
+            "guest_id": booking.get("guest_id"),
+            "uploaded_by": current_user.id,
+            "uploaded_by_role": role,
+            "uploaded_at": datetime.now(UTC).isoformat(),
+            "claimed": True,
+            "source": "legacy_inline_base64",
+        })
+        id_photo_meta = {
+            **stored.to_dict(),
+            "source": "legacy_inline_base64",
+        }
+
     checkin_record = {
         "id": str(uuid.uuid4()),
         "booking_id": request.booking_id,
@@ -108,9 +228,12 @@ async def submit_online_checkin(
         "quiet_room": request.quiet_room,
         "mobile_number": request.mobile_number,
         "whatsapp_number": request.whatsapp_number,
-        # Identity & digital signature
-        "id_photo_base64": request.id_photo_base64,
-        "id_photo_uploaded": bool(request.id_photo_base64),
+        # Identity & digital signature.
+        # ID-photo bytes live encrypted on disk via core.crypto; the DB only
+        # records the opaque reference + sanitized metadata so a DB dump never
+        # leaks the photo.
+        "id_photo": id_photo_meta,
+        "id_photo_uploaded": id_photo_meta is not None,
         "signature_text": (request.signature_text or "").strip() or None,
         "signature_consent": bool(request.signature_consent),
         "signed_at": datetime.now(UTC).isoformat() if request.signature_consent else None,
@@ -119,6 +242,14 @@ async def submit_online_checkin(
         "processed": False,
     }
     await db.online_checkins.insert_one(checkin_record)
+
+    if id_photo_meta:
+        # Tie the staged photo to the freshly-created checkin record so staff
+        # can locate it via either the photo_id or the checkin_id.
+        await db.online_checkin_id_photos.update_one(
+            {"photo_id": id_photo_meta["photo_id"], "tenant_id": current_user.tenant_id},
+            {"$set": {"claimed": True, "checkin_id": checkin_record["id"]}},
+        )
 
     await db.bookings.update_one(
         {"id": request.booking_id, "tenant_id": current_user.tenant_id},
@@ -196,7 +327,55 @@ async def get_online_checkin_status(
     )
     if not checkin:
         return {"completed": False, "checkin": None}
+    # Defensive: even though new records do not persist inline photo bytes any
+    # more, an upgraded tenant may still have legacy `id_photo_base64` rows.
+    # Strip the raw payload from every status response so the bytes never
+    # round-trip through the JSON layer again.
+    if isinstance(checkin, dict):
+        checkin.pop("id_photo_base64", None)
     return {"completed": True, "checkin": checkin}
+
+
+@router.get(
+    "/checkin/online/{checkin_id}/id-photo",
+    responses={200: {"content": {"image/*": {}}}},
+)
+async def download_online_checkin_id_photo(
+    checkin_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # staff-only access
+):
+    """Download a guest's encrypted ID photo as image bytes (staff only).
+
+    Decrypts the AES-GCM envelope on the fly using the AAD bound at upload
+    time (tenant + booking + photo_id). Caching is disabled so the bytes never
+    sit in shared/proxy caches.
+    """
+    checkin = await db.online_checkins.find_one(
+        {"id": checkin_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not checkin:
+        raise HTTPException(status_code=404, detail="Online check-in bulunamadi")
+
+    meta = checkin.get("id_photo")
+    if not isinstance(meta, dict) or not meta.get("photo_id"):
+        raise HTTPException(status_code=404, detail="Bu check-in icin kimlik fotografi yok")
+
+    image_bytes = load_id_photo(
+        tenant_id=current_user.tenant_id,
+        booking_id=checkin["booking_id"],
+        photo_id=meta["photo_id"],
+    )
+    return Response(
+        content=image_bytes,
+        media_type=meta.get("content_type") or "application/octet-stream",
+        headers={
+            "Cache-Control": "private, no-store, max-age=0",
+            "Content-Disposition": (
+                f'inline; filename="id_photo_{checkin_id}{meta.get("extension") or ""}"'
+            ),
+        },
+    )
 
 
 @router.post("/upsell/accept")

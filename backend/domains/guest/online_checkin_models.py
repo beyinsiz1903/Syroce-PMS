@@ -85,9 +85,14 @@ class OnlineCheckinRequest(BaseModel):
     whatsapp_number: str | None = None
 
     # Identity & Digital Signature (mobile guest app)
-    # id_photo_base64: base64-encoded JPEG/PNG of the ID document (no data URL prefix expected).
+    # id_photo_id: opaque reference returned by POST /checkin/online/{booking_id}/id-photo
+    #              after a successful multipart upload (preferred path).
+    # id_photo_base64: legacy inline base64-encoded JPEG/PNG of the ID document
+    #              (no data URL prefix expected). Will be re-encrypted server-side
+    #              and persisted to secure storage; never stored inline anymore.
     # signature_text: typed full-name digital signature consent.
     # signature_consent: explicit boolean acknowledgement.
+    id_photo_id: str | None = None
     id_photo_base64: str | None = None
     signature_text: str | None = None
     signature_consent: bool = False

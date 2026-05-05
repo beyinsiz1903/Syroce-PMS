@@ -4,15 +4,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-// Reading EncodingType safely across SDK shapes
-const FS_BASE64 = (FileSystem as { EncodingType?: { Base64?: string } }).EncodingType?.Base64 ?? 'base64';
 import { Badge, Body, Button, Card, Field, H1, H2, Muted } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
 import { errorMessage } from '../../src/utils/errors';
 import { GuestBooking, getGuestBookings } from '../../src/api/guestBookings';
-import { submitOnlineCheckin } from '../../src/api/guestCheckin';
+import { submitOnlineCheckin, uploadOnlineCheckinIdPhoto } from '../../src/api/guestCheckin';
 import { formatDate } from '../../src/utils/format';
 
 function isCheckinOpen(booking: GuestBooking | null | undefined): boolean {
@@ -112,17 +110,23 @@ export default function OnlineCheckinScreen() {
     setBusy(true);
     setError(null);
     try {
-      // Encode the local ID photo as base64 so it actually reaches the server.
-      let idPhotoBase64: string | undefined;
+      // Step 1: stream the photo to the secure storage endpoint via multipart
+      // upload. The server validates magic-bytes, encrypts the bytes at rest
+      // and returns an opaque photo_id. The encrypted blob never lives in the
+      // JSON request body, which keeps the on-the-wire payload tiny and stays
+      // safely under the platform's 4MB JSON cap.
+      let idPhotoId: string;
       try {
-        idPhotoBase64 = await FileSystem.readAsStringAsync(photoUri, {
-          encoding: FS_BASE64 as FileSystem.EncodingType,
-        });
-      } catch {
-        // If the encoding helper fails, fail fast — the photo MUST land on the server.
-        throw new Error('Kimlik fotoğrafı okunamadı, lütfen yeniden çekin');
+        const uploaded = await uploadOnlineCheckinIdPhoto(booking.id, photoUri);
+        idPhotoId = uploaded.photo_id;
+      } catch (uploadErr) {
+        throw new Error(
+          errorMessage(uploadErr, 'Kimlik fotoğrafı yüklenemedi, lütfen yeniden deneyin'),
+        );
       }
 
+      // Step 2: submit the structured check-in form referencing the staged
+      // photo by id (NOT inline). The signature consent travels in JSON.
       await submitOnlineCheckin({
         booking_id: booking.id,
         passport_number: passport || undefined,
@@ -130,11 +134,11 @@ export default function OnlineCheckinScreen() {
         estimated_arrival_time: arrivalTime || undefined,
         flight_number: flightNumber || undefined,
         special_requests: specialRequests || undefined,
-        id_photo_base64: idPhotoBase64,
+        id_photo_id: idPhotoId,
         signature_text: signatureName.trim(),
         signature_consent: true,
       });
-      // Success: wipe the local raw photo per privacy requirement
+      // Success: wipe the local raw photo per privacy requirement.
       await safeDeleteFile(photoUri);
       setPhotoUri(null);
       setDone(true);
