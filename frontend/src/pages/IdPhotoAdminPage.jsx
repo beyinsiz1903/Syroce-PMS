@@ -23,7 +23,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, ShieldAlert, RefreshCw, Loader2, Trash2, Eye,
-  CalendarClock, FileLock2, AlertTriangle, X,
+  CalendarClock, FileLock2, AlertTriangle, X, Pencil, Save, RotateCcw,
 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -106,6 +106,19 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
   const [previewing, setPreviewing] = useState(null); // photo_id while loading
   const [previewError, setPreviewError] = useState(null);
 
+  // Task #124 — Per-tenant saklama süresi düzenleyicisi
+  const [retentionMeta, setRetentionMeta] = useState({
+    source: "env_default",   // "tenant" | "env_default"
+    env_default: 90,
+    tenant_override: null,
+    min_days: 1,
+    max_days: 365,
+  });
+  const [retentionEditing, setRetentionEditing] = useState(false);
+  const [retentionDraft, setRetentionDraft] = useState("");
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [retentionError, setRetentionError] = useState(null);
+
   const buildParams = useCallback(() => {
     const p = {};
     if (appliedFilters.booking_id.trim()) p.booking_id = appliedFilters.booking_id.trim();
@@ -140,6 +153,106 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
   }, [buildParams, offset]);
 
   useEffect(() => { loadList(); }, [loadList]);
+
+  // Task #124 — Saklama süresi meta'sını ayrıca yükle. Liste cevabı zaten
+  // efektif gün sayısını döner (banner için), ancak "tenant özelleşmiş mi?"
+  // bilgisi sadece settings GET'inde var; rozet/edit formu bunu ister.
+  const loadRetentionMeta = useCallback(async () => {
+    try {
+      const res = await axios.get(
+        "/checkin/online/settings/id-photo-retention",
+      );
+      const data = res.data || {};
+      if (typeof data.retention_days === "number") {
+        setRetentionDays(data.retention_days);
+      }
+      setRetentionMeta({
+        source: data.source === "tenant" ? "tenant" : "env_default",
+        env_default: typeof data.env_default === "number" ? data.env_default : 90,
+        tenant_override:
+          typeof data.tenant_override === "number" ? data.tenant_override : null,
+        min_days: typeof data.min_days === "number" ? data.min_days : 1,
+        max_days: typeof data.max_days === "number" ? data.max_days : 365,
+      });
+    } catch {
+      // Settings endpoint sessizce başarısız olursa kart yine de görünsün —
+      // liste cevabındaki retention_days banner için yeterli.
+    }
+  }, []);
+
+  useEffect(() => { loadRetentionMeta(); }, [loadRetentionMeta]);
+
+  const beginEditRetention = useCallback(() => {
+    setRetentionDraft(String(retentionDays));
+    setRetentionError(null);
+    setRetentionEditing(true);
+  }, [retentionDays]);
+
+  const cancelEditRetention = useCallback(() => {
+    setRetentionEditing(false);
+    setRetentionError(null);
+    setRetentionDraft("");
+  }, []);
+
+  const saveRetention = useCallback(async (payload) => {
+    setRetentionSaving(true);
+    setRetentionError(null);
+    try {
+      const res = await axios.put(
+        "/checkin/online/settings/id-photo-retention",
+        payload,
+      );
+      const data = res.data || {};
+      if (typeof data.retention_days === "number") {
+        setRetentionDays(data.retention_days);
+      }
+      setRetentionMeta((prev) => ({
+        ...prev,
+        source: data.source === "tenant" ? "tenant" : "env_default",
+        env_default:
+          typeof data.env_default === "number" ? data.env_default : prev.env_default,
+        tenant_override:
+          typeof data.tenant_override === "number"
+            ? data.tenant_override
+            : null,
+      }));
+      setRetentionEditing(false);
+      setRetentionDraft("");
+      // Liste içindeki "kalan gün" rozetlerinin yeni saklama süresine göre
+      // yeniden hesaplanması için listeyi tazele.
+      await loadList();
+    } catch (err) {
+      setRetentionError(
+        err?.response?.data?.detail || "Saklama süresi güncellenemedi.",
+      );
+    } finally {
+      setRetentionSaving(false);
+    }
+  }, [loadList]);
+
+  const submitRetention = useCallback(() => {
+    const trimmed = retentionDraft.trim();
+    if (!trimmed) {
+      setRetentionError("Bir gün değeri girin (boş bırakmak için 'Varsayılana dön').");
+      return;
+    }
+    const n = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(n) || String(n) !== trimmed) {
+      setRetentionError("Sadece pozitif tam sayı (gün) girilebilir.");
+      return;
+    }
+    if (n < retentionMeta.min_days || n > retentionMeta.max_days) {
+      setRetentionError(
+        `Değer ${retentionMeta.min_days} – ${retentionMeta.max_days} gün aralığında olmalı.`,
+      );
+      return;
+    }
+    saveRetention({ retention_days: n });
+  }, [retentionDraft, retentionMeta.min_days, retentionMeta.max_days, saveRetention]);
+
+  const resetRetention = useCallback(() => {
+    saveRetention({ retention_days: null });
+  }, [saveRetention]);
 
   const handleApply = useCallback(() => {
     setAppliedFilters(filters);
@@ -333,17 +446,107 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 </p>
               </CardContent>
             </Card>
-            <Card>
+            <Card data-testid="card-retention-wrapper">
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500 flex items-center gap-1">
-                  <CalendarClock className="w-3 h-3" /> Saklama süresi
-                </p>
-                <p
-                  data-testid="card-retention"
-                  className="text-2xl font-bold text-indigo-700"
-                >
-                  {retentionDays} gün
-                </p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <CalendarClock className="w-3 h-3" /> Saklama süresi
+                  </p>
+                  {!retentionEditing && (
+                    <button
+                      type="button"
+                      data-testid="retention-edit-btn"
+                      onClick={beginEditRetention}
+                      className="text-gray-400 hover:text-indigo-600 transition"
+                      title="Saklama süresini düzenle"
+                      aria-label="Saklama süresini düzenle"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {!retentionEditing ? (
+                  <>
+                    <p
+                      data-testid="card-retention"
+                      className="text-2xl font-bold text-indigo-700"
+                    >
+                      {retentionDays} gün
+                    </p>
+                    <p
+                      data-testid="retention-source"
+                      className="text-[10px] text-gray-500 mt-0.5"
+                    >
+                      {retentionMeta.source === "tenant"
+                        ? "Otele özel ayar"
+                        : `Sistem varsayılanı (${retentionMeta.env_default} gün)`}
+                    </p>
+                  </>
+                ) : (
+                  <div className="mt-1 space-y-1.5" data-testid="retention-editor">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        data-testid="retention-input"
+                        type="number"
+                        min={retentionMeta.min_days}
+                        max={retentionMeta.max_days}
+                        value={retentionDraft}
+                        onChange={(e) => setRetentionDraft(e.target.value)}
+                        disabled={retentionSaving}
+                        className="h-7 text-sm w-20 px-1.5"
+                      />
+                      <span className="text-xs text-gray-500">gün</span>
+                      <Button
+                        data-testid="retention-save-btn"
+                        size="sm"
+                        variant="default"
+                        onClick={submitRetention}
+                        disabled={retentionSaving}
+                        className="h-7 px-2 ml-auto"
+                      >
+                        {retentionSaving ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Save className="w-3 h-3" />
+                        )}
+                      </Button>
+                      <Button
+                        data-testid="retention-cancel-btn"
+                        size="sm"
+                        variant="ghost"
+                        onClick={cancelEditRetention}
+                        disabled={retentionSaving}
+                        className="h-7 px-1.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    {retentionMeta.source === "tenant" && (
+                      <button
+                        type="button"
+                        data-testid="retention-reset-btn"
+                        onClick={resetRetention}
+                        disabled={retentionSaving}
+                        className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Sistem varsayılanına dön ({retentionMeta.env_default} gün)
+                      </button>
+                    )}
+                    <p className="text-[10px] text-gray-500">
+                      İzin verilen: {retentionMeta.min_days}–{retentionMeta.max_days} gün
+                    </p>
+                    {retentionError && (
+                      <p
+                        data-testid="retention-error"
+                        className="text-[11px] text-rose-600"
+                      >
+                        {retentionError}
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

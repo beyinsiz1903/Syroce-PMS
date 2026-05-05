@@ -44,6 +44,14 @@ DEFAULT_RETENTION_DAYS = 90
 DEFAULT_ORPHAN_TTL_HOURS = 24
 DEFAULT_INTERVAL_SECONDS = 3600  # hourly tick — orphan TTL granularity
 
+# Task #124 — KVKK saklama süresi için makul üst/alt sınırlar.
+# 1 günden kısa: pratik olarak fotoğrafı yüklenir yüklenmez silmek demek;
+# bu da resepsiyonun çekilen fotoğrafı görme şansını ortadan kaldırır.
+# 365 günden uzun: KVKK amaç-sınırlandırma ilkesine aykırı düşer ve
+# diskte gereksiz risk birikimine yol açar.
+MIN_RETENTION_DAYS = 1
+MAX_RETENTION_DAYS = 365
+
 _worker_task: asyncio.Task | None = None
 
 
@@ -59,6 +67,73 @@ def _env_int(name: str, default: int) -> int:
             name, raw, default,
         )
         return default
+
+
+def clamp_retention_days(value: int) -> int:
+    """Saklama süresini [MIN_RETENTION_DAYS, MAX_RETENTION_DAYS] aralığına sıkıştırır.
+
+    Hem env değerini hem tenant ayarını okurken hem de ayar PUT eden API
+    katmanında çağrılır; tek noktadan sınırlandırma yaparak DB'ye veya
+    sorgu cutoff'una geçersiz değerin sızmasını engeller.
+    """
+    if value < MIN_RETENTION_DAYS:
+        return MIN_RETENTION_DAYS
+    if value > MAX_RETENTION_DAYS:
+        return MAX_RETENTION_DAYS
+    return value
+
+
+def env_default_retention_days() -> int:
+    """`ID_PHOTO_RETENTION_DAYS` env değerini okur ve sınırlara sıkıştırır.
+
+    Tenant ayarı yoksa **global default** olarak bu değer kullanılır;
+    Task #124 öncesindeki davranış (tüm kiracılar için tek değer) bu
+    fonksiyon üzerinden korunur.
+    """
+    return clamp_retention_days(
+        _env_int("ID_PHOTO_RETENTION_DAYS", DEFAULT_RETENTION_DAYS)
+    )
+
+
+async def resolve_tenant_retention_days(db: Any, tenant_id: str) -> int:
+    """Tenant'ın efektif saklama süresini gün cinsinden döner.
+
+    Çözümleme sırası (Task #124):
+
+    1. ``tenant_settings.id_photo_retention_days`` — tenant özel değeri.
+    2. ``ID_PHOTO_RETENTION_DAYS`` env — tüm kiracılar için global
+       varsayılan (mevcut davranış).
+    3. ``DEFAULT_RETENTION_DAYS`` (90) — env de yoksa son çare.
+
+    Her durumda dönen değer ``clamp_retention_days`` ile [1, 365]
+    aralığına sıkıştırılır; bu sayede kötü-niyetli ya da bozuk bir DB
+    kaydı silme cutoff'unu absurd bir noktaya kaydıramaz.
+    """
+    if not tenant_id:
+        return env_default_retention_days()
+    try:
+        settings = await db.tenant_settings.find_one(
+            {"tenant_id": tenant_id},
+            {"_id": 0, "id_photo_retention_days": 1},
+        )
+    except Exception:
+        logger.exception(
+            "checkin_id_photo_cleanup: tenant_settings read failed for tenant=%s",
+            tenant_id,
+        )
+        return env_default_retention_days()
+    raw = (settings or {}).get("id_photo_retention_days")
+    if raw is None:
+        return env_default_retention_days()
+    try:
+        return clamp_retention_days(int(raw))
+    except (TypeError, ValueError):
+        logger.warning(
+            "checkin_id_photo_cleanup: invalid tenant retention %r for tenant=%s, "
+            "falling back to env default",
+            raw, tenant_id,
+        )
+        return env_default_retention_days()
 
 
 def _is_enabled() -> bool:
@@ -200,6 +275,7 @@ async def prune_expired_id_photos(
     db: Any,
     retention_days: int | None = None,
     orphan_ttl_hours: int | None = None,
+    tenant_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, int]:
     """Süresi dolan ve yetim kalan kimlik fotoğraflarını temizler.
@@ -212,6 +288,14 @@ async def prune_expired_id_photos(
     kayıtları tekrar ziyaret etmez. Retention taraması da yetimleri
     yakalayabilir (90 günden eski yetim varsa) — bu durumda ikinci tarama
     o kayıtları görmez (zaten silindi), sayaçlar tutarlı kalır.
+
+    Task #124: ``tenant_id`` verilirse sorgular o kiracıya skoplanır
+    (``{"tenant_id": tid, ...}``); böylece per-tenant retention günü
+    gerçek anlamda izole hesaplanır. ``tenant_id=None`` ise (varsayılan,
+    geriye dönük uyum) sorgular eski davranıştaki gibi tüm koleksiyon
+    üzerinde tek cutoff ile çalışır — bu mod manuel testler ve tek-shot
+    çağrılar için tutuldu; üretim worker'ı ``prune_expired_id_photos_per_tenant``
+    üzerinden tenant başına bu fonksiyonu çağırır.
     """
     if retention_days is None:
         retention_days = _env_int("ID_PHOTO_RETENTION_DAYS", DEFAULT_RETENTION_DAYS)
@@ -220,6 +304,7 @@ async def prune_expired_id_photos(
 
     now = now or datetime.now(UTC)
     counts = {"expired": 0, "orphans": 0}
+    tenant_filter: dict[str, Any] = {"tenant_id": tenant_id} if tenant_id else {}
 
     # 1) Saklama süresi dolan TÜM kayıtlar (claimed/unclaimed fark etmez).
     if retention_days > 0:
@@ -228,6 +313,7 @@ async def prune_expired_id_photos(
         # ``uploaded_at`` ISO string olarak yazılıyor; eski kayıtlarda
         # native datetime ihtimali için iki tipi de yakalıyoruz.
         retention_query: dict[str, Any] = {
+            **tenant_filter,
             "$or": [
                 {"uploaded_at": {"$lt": cutoff_iso}},
                 {"uploaded_at": {"$lt": cutoff}},
@@ -247,6 +333,7 @@ async def prune_expired_id_photos(
         orphan_cutoff = now - timedelta(hours=orphan_ttl_hours)
         orphan_cutoff_iso = orphan_cutoff.isoformat()
         orphan_query: dict[str, Any] = {
+            **tenant_filter,
             "claimed": False,
             "$or": [
                 {"uploaded_at": {"$lt": orphan_cutoff_iso}},
@@ -265,9 +352,68 @@ async def prune_expired_id_photos(
     if counts["expired"] or counts["orphans"]:
         logger.info(
             "checkin_id_photo_cleanup: deleted %d expired + %d orphan ID photos "
-            "(retention=%dd, orphan_ttl=%dh)",
+            "(retention=%dd, orphan_ttl=%dh, tenant=%s)",
             counts["expired"], counts["orphans"], retention_days, orphan_ttl_hours,
+            tenant_id or "*",
         )
+    return counts
+
+
+async def prune_expired_id_photos_per_tenant(
+    *,
+    db: Any,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Worker giriş noktası — tenant başına saklama süresini çözer ve temizler.
+
+    Task #124'te eklendi: önceden tek bir global cutoff ile çalışan worker,
+    artık koleksiyondaki ``distinct("tenant_id")`` kümesini iterate ederek
+    her kiracıya kendi ayarını (``tenant_settings.id_photo_retention_days``,
+    yoksa env defaults) uygular. Hiç fotoğrafı olmayan tenant'lar burada
+    görünmez — silinecek bir şey de olmadığı için bu beklenen davranış.
+
+    Yetim TTL (``ID_PHOTO_ORPHAN_TTL_HOURS``) per-tenant değil; KVKK
+    saklama yükümlülüğüyle ilgisi yok, yalnızca yarım kalan yüklemeyi
+    aklamak için bir housekeeping ayarı olduğundan global tutuldu.
+    Geriye dönük uyum: değer eski env değişkeni üzerinden okunur.
+    """
+    counts = {"expired": 0, "orphans": 0}
+    orphan_ttl_hours = _env_int(
+        "ID_PHOTO_ORPHAN_TTL_HOURS", DEFAULT_ORPHAN_TTL_HOURS,
+    )
+
+    try:
+        tenant_ids = await db.online_checkin_id_photos.distinct("tenant_id")
+    except Exception:
+        logger.exception(
+            "checkin_id_photo_cleanup: distinct(tenant_id) failed; skipping cycle",
+        )
+        return counts
+
+    # ``distinct`` None/garip değerler dönerse (eski/bozuk kayıtlar)
+    # sessizce atla; tenant_id'siz bir kayıt zaten _delete_one
+    # tarafından da iskartaya çıkarılır.
+    seen: set[str] = set()
+    for tid in tenant_ids or []:
+        if not tid or not isinstance(tid, str) or tid in seen:
+            continue
+        seen.add(tid)
+        try:
+            retention = await resolve_tenant_retention_days(db, tid)
+            sub = await prune_expired_id_photos(
+                db=db,
+                retention_days=retention,
+                orphan_ttl_hours=orphan_ttl_hours,
+                tenant_id=tid,
+                now=now,
+            )
+            counts["expired"] += sub["expired"]
+            counts["orphans"] += sub["orphans"]
+        except Exception:
+            logger.exception(
+                "checkin_id_photo_cleanup: per-tenant prune failed for tenant=%s",
+                tid,
+            )
     return counts
 
 
@@ -286,7 +432,9 @@ async def _worker_loop(interval_seconds: int) -> None:
     while True:
         try:
             from core.database import db  # late import: storage ile aynı kaynak
-            await prune_expired_id_photos(db=db)
+            # Task #124: per-tenant retention. Eski global cutoff yerine
+            # her kiracının kendi ayarını uygulayan orchestrator kullanılır.
+            await prune_expired_id_photos_per_tenant(db=db)
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover — worker hiç durmamalı

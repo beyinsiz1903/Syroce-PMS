@@ -7,7 +7,6 @@ upsell acceptance, pre-arrival communications.
 import base64
 import binascii
 import logging
-import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -436,7 +435,7 @@ async def list_online_checkin_id_photos(
             ts["$lte"] = uploaded_before
         query["uploaded_at"] = ts
 
-    retention_days = _id_photo_retention_days()
+    retention_days = await _id_photo_retention_days(current_user.tenant_id)
     cursor = (
         db.online_checkin_id_photos
         .find(query, {"_id": 0})
@@ -591,21 +590,18 @@ async def download_online_checkin_id_photo(
     )
 
 
-def _id_photo_retention_days() -> int:
+async def _id_photo_retention_days(tenant_id: str) -> int:
     """Saklama süresini tek noktadan oku (cleanup worker ile aynı kaynak).
 
-    Worker `ID_PHOTO_RETENTION_DAYS` env değişkenini kullanıyor; UI'da
-    "sona erme tarihi" kolonu burada hesaplanıyor — değer eşitsizliği
-    olmasın diye aynı env adına bağlandık.
+    Task #124'te per-tenant'a çevrildi: önce ``tenant_settings.id_photo_retention_days``,
+    sonra ``ID_PHOTO_RETENTION_DAYS`` env, son olarak 90. Cleanup
+    worker'ı ile birebir aynı çözümleyiciyi çağırır ki worker'ın
+    silme cutoff'u ile UI'daki "sona erme" tarihi tutarsız olmasın.
     """
-    raw = os.getenv("ID_PHOTO_RETENTION_DAYS")
-    if not raw:
-        return 90
-    try:
-        v = int(raw)
-        return v if v > 0 else 90
-    except ValueError:
-        return 90
+    from domains.guest.checkin_id_photo_cleanup import (
+        resolve_tenant_retention_days,
+    )
+    return await resolve_tenant_retention_days(db, tenant_id)
 
 
 def _expires_at_iso(uploaded_at: str | None, retention_days: int) -> str | None:
@@ -788,6 +784,158 @@ async def bulk_delete_online_checkin_id_photos(
         "guest_id": guest_id,
         "reason": reason_clean,
     }
+
+
+async def _build_retention_setting_response(tenant_id: str) -> dict:
+    """GET ve PUT için ortak yanıt şekli; per-tenant ayar + meta verisi.
+
+    `tenant_override` alanı, DB'deki ham değer int parse edilemiyorsa
+    (geçmiş migration kalıntısı, tipik olarak string) None olarak
+    döner — `resolve_tenant_retention_days` zaten env varsayılanına
+    düştüğü için efektif değer doğru olur, ama UI'da "rozet" ve form
+    için sayısal bir override görmek anlamlı; parse edilemiyorsa
+    'tenant override yok gibi davran' diyoruz ki 500 yerine UI temiz
+    bir env_default deneyimi gösterebilsin.
+    """
+    from domains.guest.checkin_id_photo_cleanup import (
+        MAX_RETENTION_DAYS,
+        MIN_RETENTION_DAYS,
+        env_default_retention_days,
+        resolve_tenant_retention_days,
+    )
+
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id_photo_retention_days": 1},
+    )
+    raw_tenant_value = (settings or {}).get("id_photo_retention_days")
+    effective = await resolve_tenant_retention_days(db, tenant_id)
+
+    tenant_override: int | None = None
+    if raw_tenant_value is not None and not isinstance(raw_tenant_value, bool):
+        try:
+            tenant_override = int(raw_tenant_value)
+        except (TypeError, ValueError):
+            tenant_override = None
+
+    return {
+        "retention_days": effective,
+        "source": "tenant" if tenant_override is not None else "env_default",
+        "env_default": env_default_retention_days(),
+        "tenant_override": tenant_override,
+        "min_days": MIN_RETENTION_DAYS,
+        "max_days": MAX_RETENTION_DAYS,
+    }
+
+
+@router.get("/checkin/online/settings/id-photo-retention")
+async def get_id_photo_retention_setting(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #124 — Tenant'ın efektif kimlik fotoğrafı saklama süresi.
+
+    Yanıt UI'a hem efektif değeri hem de "değer nereden geliyor" bilgisini
+    verir; admin formu "global default kullanılıyor" / "tenant özelleşti"
+    rozetini doğru çizebilsin diye gerekli.
+    """
+    return await _build_retention_setting_response(current_user.tenant_id)
+
+
+@router.put("/checkin/online/settings/id-photo-retention")
+async def update_id_photo_retention_setting(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Task #124 — Tenant'a özel saklama süresini set et / sıfırla.
+
+    Body:
+      ``{"retention_days": <int>}`` — değeri MIN_RETENTION_DAYS..MAX_RETENTION_DAYS
+        aralığına düşürür ve ``tenant_settings.id_photo_retention_days`` olarak yazar.
+      ``{"retention_days": null}`` — alanı kaldırır; bir sonraki okumada env
+        varsayılanı geri döner.
+
+    Sınır dışı sayı ya da int olmayan değer 400 döner; bu sayede UI'daki
+    spinner/clamp davranışı backend tarafından da garanti edilir.
+    """
+    from domains.guest.checkin_id_photo_cleanup import (
+        MAX_RETENTION_DAYS,
+        MIN_RETENTION_DAYS,
+        clamp_retention_days,
+    )
+
+    if "retention_days" not in payload:
+        raise HTTPException(
+            status_code=400,
+            detail="`retention_days` alanı zorunlu (sıfırlamak için null gönder).",
+        )
+    raw = payload.get("retention_days")
+
+    if raw is None:
+        # Sıfırla: alanı sil, env default'a dön.
+        await db.tenant_settings.update_one(
+            {"tenant_id": current_user.tenant_id},
+            {
+                "$setOnInsert": {"tenant_id": current_user.tenant_id},
+                "$unset": {"id_photo_retention_days": ""},
+            },
+            upsert=True,
+        )
+    else:
+        # Strict int parse: bool Python'da int alt-türüdür, kullanıcı
+        # `true` gönderirse 1 gün ayarı yazılırdı — bunu kazara değiştirme
+        # riski olarak görüp 400 dönüyoruz.
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise HTTPException(
+                status_code=400,
+                detail="`retention_days` tam sayı (gün) olmalı.",
+            )
+        value = raw
+        if value < MIN_RETENTION_DAYS or value > MAX_RETENTION_DAYS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"`retention_days` {MIN_RETENTION_DAYS}–{MAX_RETENTION_DAYS} "
+                    "gün aralığında olmalı."
+                ),
+            )
+        clamped = clamp_retention_days(value)
+        await db.tenant_settings.update_one(
+            {"tenant_id": current_user.tenant_id},
+            {
+                "$setOnInsert": {"tenant_id": current_user.tenant_id},
+                "$set": {
+                    "id_photo_retention_days": clamped,
+                    "id_photo_retention_updated_at": datetime.now(UTC).isoformat(),
+                    "id_photo_retention_updated_by": current_user.id,
+                },
+            },
+            upsert=True,
+        )
+        # Audit izi: kim, ne zaman, neye çekti? KVKK kapsamında saklama
+        # süresi değişikliği iz bırakmalı — denetimde "Mart'ta 90 gündü
+        # ama Mayıs'ta 30 yapıldı" sorgusu yanıtlanabilsin.
+        try:
+            await log_audit_event(
+                tenant_id=current_user.tenant_id,
+                user_id=current_user.id,
+                action="update_id_photo_retention",
+                entity_type="tenant_settings",
+                entity_id=current_user.tenant_id,
+                details=(
+                    f"id_photo_retention_days set to {clamped} (input={value})"
+                ),
+                after_value={"id_photo_retention_days": clamped},
+                db=db,
+            )
+        except Exception:  # pragma: no cover - audit must not break write
+            logger.warning(
+                "audit_log_failed for update_id_photo_retention tenant=%s",
+                current_user.tenant_id,
+            )
+
+    return await _build_retention_setting_response(current_user.tenant_id)
 
 
 @router.post("/upsell/accept")

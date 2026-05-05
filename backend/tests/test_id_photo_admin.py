@@ -80,6 +80,15 @@ def _make_mock_db_find(rows: list[dict], total: int | None = None):
     coll.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
 
     db_mock.online_checkin_id_photos = coll
+
+    # Task #124 — list endpoint artık per-tenant retention çözüyor;
+    # tenant_settings.find_one async olarak çağrılıyor. Default: None →
+    # env varsayılanına düş.
+    tenant_settings = MagicMock()
+    tenant_settings.find_one = AsyncMock(return_value=None)
+    tenant_settings.update_one = AsyncMock()
+    db_mock.tenant_settings = tenant_settings
+
     db_mock.audit_logs = MagicMock()
     db_mock.audit_logs.insert_one = AsyncMock()
     return db_mock, find
@@ -542,3 +551,251 @@ async def test_audit_action_stays_auto_delete_for_worker_calls():
     entry = db_mock.audit_logs.insert_one.call_args[0][0]
     assert entry["action"] == "auto_delete"
     assert entry["actor_id"] is None
+
+
+# ──────────────────────────────────────────────────────────────────
+# Task #124 — GET/PUT /api/checkin/online/settings/id-photo-retention
+# ──────────────────────────────────────────────────────────────────
+
+
+def _settings_db_mock(stored_value=None):
+    """Tenant settings için izole bir db mock. ``stored_value`` None ise
+    tenant ayarı yok (env default geçerli); int verilirse o değer dönülür."""
+    db_mock = MagicMock()
+    settings_doc = (
+        {"id_photo_retention_days": stored_value} if stored_value is not None else None
+    )
+    ts = MagicMock()
+    ts.find_one = AsyncMock(return_value=settings_doc)
+    ts.update_one = AsyncMock()
+    db_mock.tenant_settings = ts
+    db_mock.audit_logs = MagicMock()
+    db_mock.audit_logs.insert_one = AsyncMock()
+    return db_mock
+
+
+@pytest.mark.asyncio
+async def test_get_retention_setting_returns_env_default_when_unset(monkeypatch):
+    """Tenant ayarı yokken efektif değer env varsayılanı + source=env_default."""
+    from domains.guest import checkin_router as r
+
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "60")
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user(tenant="tenant-x")
+
+    with patch.object(r, "db", db_mock):
+        out = await r.get_id_photo_retention_setting(current_user=user, _perm=None)
+
+    assert out["retention_days"] == 60
+    assert out["source"] == "env_default"
+    assert out["env_default"] == 60
+    assert out["tenant_override"] is None
+    assert out["min_days"] == 1
+    assert out["max_days"] == 365
+
+
+@pytest.mark.asyncio
+async def test_get_retention_setting_returns_tenant_value(monkeypatch):
+    """Tenant özel değeri varsa source=tenant ve tenant_override döner."""
+    from domains.guest import checkin_router as r
+
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "60")
+    db_mock = _settings_db_mock(stored_value=14)
+    user = _make_user(tenant="tenant-x")
+
+    with patch.object(r, "db", db_mock):
+        out = await r.get_id_photo_retention_setting(current_user=user, _perm=None)
+
+    assert out["retention_days"] == 14
+    assert out["source"] == "tenant"
+    assert out["env_default"] == 60
+    assert out["tenant_override"] == 14
+
+
+@pytest.mark.asyncio
+async def test_get_retention_setting_handles_malformed_legacy_value(monkeypatch):
+    """DB'de bozuk değer (string/None tip) → 500 yerine env default'a güvenli düş.
+
+    Code review kontrolü: ham değer int parse edilemiyorsa tenant_override
+    None döner ve source=env_default olur. resolve_tenant_retention_days
+    zaten env'e düştüğü için efektif değer doğru — UI yine sayısal bir
+    rozet gösterir, 500 yemez.
+    """
+    from domains.guest import checkin_router as r
+
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "60")
+    db_mock = MagicMock()
+    db_mock.tenant_settings = MagicMock()
+    db_mock.tenant_settings.find_one = AsyncMock(
+        return_value={"id_photo_retention_days": "yedi-gun"},
+    )
+    db_mock.tenant_settings.update_one = AsyncMock()
+    db_mock.audit_logs = MagicMock()
+    db_mock.audit_logs.insert_one = AsyncMock()
+    user = _make_user(tenant="tenant-x")
+
+    with patch.object(r, "db", db_mock):
+        out = await r.get_id_photo_retention_setting(current_user=user, _perm=None)
+
+    assert out["retention_days"] == 60  # env fallback
+    assert out["source"] == "env_default"
+    assert out["tenant_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_put_retention_setting_writes_clamped_value():
+    """Geçerli int → tenant_settings'e yazılır, audit kaydı oluşur."""
+    from domains.guest import checkin_router as r
+
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user(tenant="tenant-x", uid="user-7")
+
+    # update_one sonrasında okuma için find_one'ı yeni değere döndür.
+    db_mock.tenant_settings.find_one = AsyncMock(
+        return_value={"id_photo_retention_days": 45},
+    )
+
+    with patch.object(r, "db", db_mock):
+        out = await r.update_id_photo_retention_setting(
+            payload={"retention_days": 45}, current_user=user, _perm=None,
+        )
+
+    assert out["retention_days"] == 45
+    assert out["source"] == "tenant"
+    assert out["tenant_override"] == 45
+
+    # update_one çağrısı: tenant_id filtresi + $set.id_photo_retention_days=45
+    update_call = db_mock.tenant_settings.update_one.call_args
+    assert update_call.args[0] == {"tenant_id": "tenant-x"}
+    set_payload = update_call.args[1]["$set"]
+    assert set_payload["id_photo_retention_days"] == 45
+    assert "id_photo_retention_updated_at" in set_payload
+    assert set_payload["id_photo_retention_updated_by"] == "user-7"
+    assert update_call.kwargs.get("upsert") is True
+
+    # KVKK audit izi yazılmalı.
+    db_mock.audit_logs.insert_one.assert_awaited()
+    audit_entry = db_mock.audit_logs.insert_one.call_args[0][0]
+    assert audit_entry["action"] == "update_id_photo_retention"
+    assert audit_entry["entity_type"] == "tenant_settings"
+
+
+@pytest.mark.asyncio
+async def test_put_retention_setting_rejects_out_of_range():
+    from domains.guest import checkin_router as r
+
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user()
+
+    for bad_value in (0, -5, 366, 9999):
+        with patch.object(r, "db", db_mock):
+            with pytest.raises(HTTPException) as exc:
+                await r.update_id_photo_retention_setting(
+                    payload={"retention_days": bad_value},
+                    current_user=user, _perm=None,
+                )
+        assert exc.value.status_code == 400
+    db_mock.tenant_settings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_put_retention_setting_rejects_non_int_types():
+    """bool ve string gibi int olmayan değerler 400 dönmeli."""
+    from domains.guest import checkin_router as r
+
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user()
+
+    for bad in (True, False, "abc", [30], {"x": 1}):
+        with patch.object(r, "db", db_mock):
+            with pytest.raises(HTTPException) as exc:
+                await r.update_id_photo_retention_setting(
+                    payload={"retention_days": bad},
+                    current_user=user, _perm=None,
+                )
+        assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_put_retention_setting_null_unsets_tenant_value(monkeypatch):
+    """null payload → $unset; bir sonraki okumada env default'a döner."""
+    from domains.guest import checkin_router as r
+
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "75")
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user(tenant="tenant-x")
+
+    # PUT sonrası okuma tenant ayarı yok döner (silindi)
+    db_mock.tenant_settings.find_one = AsyncMock(return_value=None)
+
+    with patch.object(r, "db", db_mock):
+        out = await r.update_id_photo_retention_setting(
+            payload={"retention_days": None}, current_user=user, _perm=None,
+        )
+
+    update_call = db_mock.tenant_settings.update_one.call_args
+    assert "$unset" in update_call.args[1]
+    assert "id_photo_retention_days" in update_call.args[1]["$unset"]
+    assert update_call.kwargs.get("upsert") is True
+
+    assert out["retention_days"] == 75
+    assert out["source"] == "env_default"
+    assert out["tenant_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_put_retention_setting_missing_field_400():
+    """Body'de retention_days alanı hiç yoksa 400; sıfırlamak için açıkça null gerekli."""
+    from domains.guest import checkin_router as r
+
+    db_mock = _settings_db_mock(stored_value=None)
+    user = _make_user()
+
+    with patch.object(r, "db", db_mock):
+        with pytest.raises(HTTPException) as exc:
+            await r.update_id_photo_retention_setting(
+                payload={}, current_user=user, _perm=None,
+            )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_endpoint_uses_tenant_specific_retention():
+    """List yanıtı per-tenant retention günü ile expires_at hesaplar."""
+    from domains.guest import checkin_router as r
+
+    rows = [
+        {
+            "photo_id": "p1",
+            "tenant_id": "tenant-abc",
+            "booking_id": "bk1",
+            "guest_id": "g1",
+            "checkin_id": "c1",
+            "claimed": True,
+            "uploaded_at": "2026-04-01T10:00:00+00:00",
+            "size_bytes": 100,
+            "sha256": "x",
+            "content_type": "image/jpeg",
+            "extension": "jpg",
+            "uploaded_by": "guest:bk1",
+            "uploaded_by_role": "guest",
+            "source": "online_checkin",
+        },
+    ]
+    db_mock, _ = _make_mock_db_find(rows, total=1)
+    # Bu kiracıya 14 gün set edilmiş — list endpoint env'i değil bunu kullanmalı.
+    db_mock.tenant_settings.find_one = AsyncMock(
+        return_value={"id_photo_retention_days": 14},
+    )
+    user = _make_user(tenant="tenant-abc")
+
+    with patch.object(r, "db", db_mock):
+        result = await r.list_online_checkin_id_photos(
+            booking_id=None, guest_id=None, claimed=None,
+            uploaded_after=None, uploaded_before=None,
+            limit=100, offset=0, current_user=user, _perm=None,
+        )
+
+    assert result["retention_days"] == 14
+    # 2026-04-01 + 14 gün = 2026-04-15
+    assert result["items"][0]["expires_at"].startswith("2026-04-15")

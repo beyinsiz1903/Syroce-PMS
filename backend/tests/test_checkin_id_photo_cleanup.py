@@ -17,9 +17,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from domains.guest import checkin_id_photo_cleanup as cic
 from domains.guest.checkin_id_photo_cleanup import (
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
     _is_enabled,
     _worker_loop,
+    clamp_retention_days,
+    env_default_retention_days,
     prune_expired_id_photos,
+    prune_expired_id_photos_per_tenant,
+    resolve_tenant_retention_days,
     start_checkin_id_photo_cleanup_worker,
     stop_checkin_id_photo_cleanup_worker,
 )
@@ -398,3 +404,300 @@ async def test_worker_loop_cancels_during_initial_sleep():
     task.cancel()
     await task
     assert task.done()
+
+
+# ────────────────────────────────────────────────────────────────────
+# Task #124 — Per-tenant saklama süresi: clamp + resolver + orchestrator
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_clamp_retention_days_within_bounds_returns_input():
+    assert clamp_retention_days(MIN_RETENTION_DAYS) == MIN_RETENTION_DAYS
+    assert clamp_retention_days(90) == 90
+    assert clamp_retention_days(MAX_RETENTION_DAYS) == MAX_RETENTION_DAYS
+
+
+def test_clamp_retention_days_floors_below_min():
+    """0 ya da negatif değer MIN_RETENTION_DAYS'e çekilir; 'silmeyi tamamen
+    kapat' yan etkisini önlemek için."""
+    assert clamp_retention_days(0) == MIN_RETENTION_DAYS
+    assert clamp_retention_days(-7) == MIN_RETENTION_DAYS
+
+
+def test_clamp_retention_days_caps_above_max():
+    """Çok büyük değer MAX_RETENTION_DAYS'e çekilir; KVKK amaç-
+    sınırlandırma ihlalini engellemek için."""
+    assert clamp_retention_days(366) == MAX_RETENTION_DAYS
+    assert clamp_retention_days(99999) == MAX_RETENTION_DAYS
+
+
+def test_env_default_retention_days_uses_env(monkeypatch):
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "45")
+    assert env_default_retention_days() == 45
+
+
+def test_env_default_retention_days_clamps_env(monkeypatch):
+    """Env'de 9999 yazsa bile kullanıcı bunu cleanup cutoff'una geçiremez."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "9999")
+    assert env_default_retention_days() == MAX_RETENTION_DAYS
+
+
+def test_env_default_retention_days_falls_back_when_unset(monkeypatch):
+    monkeypatch.delenv("ID_PHOTO_RETENTION_DAYS", raising=False)
+    assert env_default_retention_days() == 90
+
+
+def _mock_db_with_settings(settings_doc):
+    db = MagicMock()
+    db.tenant_settings = MagicMock()
+    db.tenant_settings.find_one = AsyncMock(return_value=settings_doc)
+    return db
+
+
+@pytest.mark.asyncio
+async def test_resolve_tenant_retention_uses_tenant_value(monkeypatch):
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "90")
+    db = _mock_db_with_settings({"id_photo_retention_days": 30})
+    assert await resolve_tenant_retention_days(db, "t1") == 30
+    db.tenant_settings.find_one.assert_awaited_once_with(
+        {"tenant_id": "t1"}, {"_id": 0, "id_photo_retention_days": 1},
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_tenant_retention_falls_back_to_env(monkeypatch):
+    """Tenant kaydı/alanı yoksa env değerine düşer."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "60")
+    db = _mock_db_with_settings(None)
+    assert await resolve_tenant_retention_days(db, "t1") == 60
+
+    db2 = _mock_db_with_settings({"some_other_field": True})
+    assert await resolve_tenant_retention_days(db2, "t1") == 60
+
+
+@pytest.mark.asyncio
+async def test_resolve_tenant_retention_clamps_bad_db_value(monkeypatch):
+    """DB'de bozuk/aşırı değer varsa sınıra sıkıştırılır — DOS koruması."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "90")
+    db = _mock_db_with_settings({"id_photo_retention_days": 9999})
+    assert await resolve_tenant_retention_days(db, "t1") == MAX_RETENTION_DAYS
+
+    db2 = _mock_db_with_settings({"id_photo_retention_days": 0})
+    assert await resolve_tenant_retention_days(db2, "t1") == MIN_RETENTION_DAYS
+
+
+@pytest.mark.asyncio
+async def test_resolve_tenant_retention_handles_invalid_type(monkeypatch, caplog):
+    """String/None gibi int olmayan değer env fallback'ine düşmeli."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "30")
+    db = _mock_db_with_settings({"id_photo_retention_days": "yedi-gun"})
+    with caplog.at_level("WARNING", logger="domains.guest.checkin_id_photo_cleanup"):
+        assert await resolve_tenant_retention_days(db, "t1") == 30
+    assert any("invalid tenant retention" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_resolve_tenant_retention_empty_tenant_id(monkeypatch):
+    """tenant_id boşsa DB'ye sorulmadan env'e düşülür."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "45")
+    db = _mock_db_with_settings({"id_photo_retention_days": 10})
+    assert await resolve_tenant_retention_days(db, "") == 45
+    db.tenant_settings.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prune_expired_id_photos_scopes_query_to_tenant():
+    """tenant_id verildiğinde sorgular o kiracıya skoplanır."""
+    now = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+    db = _mock_db(find_results=[[], []])
+
+    await prune_expired_id_photos(
+        db=db,
+        retention_days=30,
+        orphan_ttl_hours=12,
+        tenant_id="tenant-7",
+        now=now,
+    )
+
+    retention_query = db.online_checkin_id_photos.find.call_args_list[0][0][0]
+    orphan_query = db.online_checkin_id_photos.find.call_args_list[1][0][0]
+    assert retention_query["tenant_id"] == "tenant-7"
+    assert orphan_query["tenant_id"] == "tenant-7"
+    # Skopu doğrula: $or hâlâ uploaded_at cutoff'unu içermeli
+    expected_iso = (now - timedelta(days=30)).isoformat()
+    assert any(
+        c.get("uploaded_at") == {"$lt": expected_iso}
+        for c in retention_query["$or"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_prune_expired_id_photos_omits_tenant_filter_legacy():
+    """tenant_id verilmezse sorgu kiracıya skoplanmaz (geriye dönük uyum)."""
+    now = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+    db = _mock_db(find_results=[[], []])
+
+    await prune_expired_id_photos(
+        db=db, retention_days=30, orphan_ttl_hours=12, now=now,
+    )
+
+    retention_query = db.online_checkin_id_photos.find.call_args_list[0][0][0]
+    assert "tenant_id" not in retention_query
+
+
+@pytest.mark.asyncio
+async def test_per_tenant_orchestrator_resolves_and_dispatches(monkeypatch):
+    """distinct(tenant_id) → her kiracı için kendi retention'ı uygulanır."""
+    monkeypatch.setenv("ID_PHOTO_RETENTION_DAYS", "60")
+    monkeypatch.delenv("ID_PHOTO_ORPHAN_TTL_HOURS", raising=False)
+    now = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+
+    # Tenant A — özel ayar 30 gün; Tenant B — ayar yok, env (60) kullanır.
+    settings_by_tenant = {
+        "t-a": {"id_photo_retention_days": 30},
+        "t-b": None,
+    }
+
+    expired_a = {
+        "photo_id": "pa", "tenant_id": "t-a", "booking_id": "ba",
+        "uploaded_at": (now - timedelta(days=45)).isoformat(),
+        "claimed": True,
+    }
+    # 45 gün eski kayıt: tenant A için (30 gün) süresi dolmuş, ama
+    # eğer global 60 gün uygulansaydı dolmamış olurdu — orchestrator
+    # tenant'ın kendi ayarını kullandığını burada ispat eder.
+
+    db = MagicMock()
+    db.tenant_settings = MagicMock()
+    db.tenant_settings.find_one = AsyncMock(
+        side_effect=lambda q, _p=None: settings_by_tenant.get(q["tenant_id"]),
+    )
+    db.online_checkin_id_photos = MagicMock()
+    db.online_checkin_id_photos.distinct = AsyncMock(return_value=["t-a", "t-b"])
+
+    # find: 4 çağrı (her tenant için retention + orphan).
+    # Sıralama: t-a retention, t-a orphan, t-b retention, t-b orphan.
+    find_calls = [[expired_a], [], [], []]
+    find_call_log = []
+
+    def _find(query, projection=None):
+        find_call_log.append(query)
+        docs = find_calls.pop(0) if find_calls else []
+        return _AsyncCursor(docs)
+
+    db.online_checkin_id_photos.find = MagicMock(side_effect=_find)
+    db.online_checkin_id_photos.delete_one = AsyncMock(
+        return_value=MagicMock(deleted_count=1),
+    )
+    db.audit_logs = MagicMock()
+    db.audit_logs.insert_one = AsyncMock()
+
+    counts = await prune_expired_id_photos_per_tenant(db=db, now=now)
+
+    assert counts == {"expired": 1, "orphans": 0}
+    # Tenant A'nın retention sorgusu 30 gün cutoff'una bağlı olmalı
+    a_retention_query = find_call_log[0]
+    assert a_retention_query["tenant_id"] == "t-a"
+    expected_a_iso = (now - timedelta(days=30)).isoformat()
+    assert any(
+        c.get("uploaded_at") == {"$lt": expected_a_iso}
+        for c in a_retention_query["$or"]
+    )
+    # Tenant B'nin retention sorgusu env defaults'a (60 gün) bağlı olmalı
+    b_retention_query = find_call_log[2]
+    assert b_retention_query["tenant_id"] == "t-b"
+    expected_b_iso = (now - timedelta(days=60)).isoformat()
+    assert any(
+        c.get("uploaded_at") == {"$lt": expected_b_iso}
+        for c in b_retention_query["$or"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_per_tenant_orchestrator_skips_blank_or_duplicate_tenants():
+    """Bozuk distinct() çıktısı (None, '', tekrar) güvenle filtrelenir."""
+    db = MagicMock()
+    db.tenant_settings = MagicMock()
+    db.tenant_settings.find_one = AsyncMock(return_value=None)
+    db.online_checkin_id_photos = MagicMock()
+    db.online_checkin_id_photos.distinct = AsyncMock(
+        return_value=[None, "", "t-1", "t-1", 42],
+    )
+
+    find_call_log = []
+
+    def _find(query, projection=None):
+        find_call_log.append(query)
+        return _AsyncCursor([])
+
+    db.online_checkin_id_photos.find = MagicMock(side_effect=_find)
+    db.online_checkin_id_photos.delete_one = AsyncMock()
+    db.audit_logs = MagicMock()
+    db.audit_logs.insert_one = AsyncMock()
+
+    counts = await prune_expired_id_photos_per_tenant(
+        db=db, now=datetime(2026, 5, 1, tzinfo=UTC),
+    )
+
+    # Sadece "t-1" işlenmiş olmalı: 2 find çağrısı (retention + orphan).
+    assert counts == {"expired": 0, "orphans": 0}
+    assert len(find_call_log) == 2
+    assert all(q["tenant_id"] == "t-1" for q in find_call_log)
+
+
+@pytest.mark.asyncio
+async def test_per_tenant_orchestrator_isolates_failures(caplog):
+    """Bir kiracıda istisna olsa diğer kiracı işlenmeye devam etmeli."""
+    db = MagicMock()
+    db.tenant_settings = MagicMock()
+
+    async def _bad_find_one(q, _p=None):
+        if q["tenant_id"] == "t-bad":
+            raise RuntimeError("db down")
+        return None
+
+    db.tenant_settings.find_one = AsyncMock(side_effect=_bad_find_one)
+    db.online_checkin_id_photos = MagicMock()
+    db.online_checkin_id_photos.distinct = AsyncMock(
+        return_value=["t-bad", "t-ok"],
+    )
+
+    find_call_log = []
+
+    def _find(query, projection=None):
+        find_call_log.append(query)
+        return _AsyncCursor([])
+
+    db.online_checkin_id_photos.find = MagicMock(side_effect=_find)
+    db.online_checkin_id_photos.delete_one = AsyncMock()
+    db.audit_logs = MagicMock()
+    db.audit_logs.insert_one = AsyncMock()
+
+    with caplog.at_level("ERROR", logger="domains.guest.checkin_id_photo_cleanup"):
+        # resolve_tenant_retention_days kendi try/except'iyle hatayı yutar
+        # ve env default'a düşer — bu yüzden iki kiracı da find çağrılır.
+        # Ama tam izolasyonu da test edelim: distinct'in döndüğü her
+        # tenant için en az bir find çağrısı bekliyoruz.
+        counts = await prune_expired_id_photos_per_tenant(
+            db=db, now=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+
+    # 4 find çağrısı (her kiracı için 2): bad de retention'ı resolve
+    # try/except sonrası env'e düştüğü için akış kırılmaz.
+    assert counts == {"expired": 0, "orphans": 0}
+    tenant_ids_seen = {q["tenant_id"] for q in find_call_log}
+    assert tenant_ids_seen == {"t-bad", "t-ok"}
+
+
+@pytest.mark.asyncio
+async def test_per_tenant_orchestrator_distinct_failure_returns_zero(caplog):
+    db = MagicMock()
+    db.online_checkin_id_photos = MagicMock()
+    db.online_checkin_id_photos.distinct = AsyncMock(
+        side_effect=RuntimeError("mongo unreachable"),
+    )
+
+    with caplog.at_level("ERROR", logger="domains.guest.checkin_id_photo_cleanup"):
+        counts = await prune_expired_id_photos_per_tenant(db=db)
+    assert counts == {"expired": 0, "orphans": 0}
+    assert any("distinct" in r.getMessage() for r in caplog.records)
