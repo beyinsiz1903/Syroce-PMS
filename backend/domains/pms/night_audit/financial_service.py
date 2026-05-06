@@ -425,92 +425,216 @@ class FinancialService:
             "audit_runs": audit_runs,
         })
 
+    async def _enrich_with_guest_room(
+        self, tenant_id: str, items: list[dict],
+    ) -> list[dict]:
+        """items[]'taki guest_id/room_id/booking_id'leri kullanarak
+        guest_name + room_no doldur. Hepsi tenant-scoped."""
+        if not items:
+            return items
+        booking_ids = {it.get("booking_id") for it in items if it.get("booking_id")}
+        booking_map: dict = {}
+        if booking_ids:
+            async for b in self._db.bookings.find(
+                {"tenant_id": tenant_id, "id": {"$in": list(booking_ids)}},
+                {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
+                 "room_id": 1, "room_no": 1, "confirmation_code": 1},
+            ):
+                booking_map[b["id"]] = b
+
+        guest_ids = set()
+        room_ids = set()
+        for it in items:
+            b = booking_map.get(it.get("booking_id")) or {}
+            gid = it.get("guest_id") or b.get("guest_id")
+            rid = it.get("room_id") or b.get("room_id")
+            if gid and not it.get("guest_name") and not b.get("guest_name"):
+                guest_ids.add(gid)
+            if rid and not it.get("room_no") and not b.get("room_no"):
+                room_ids.add(rid)
+
+        guest_map: dict = {}
+        if guest_ids:
+            async for g in self._db.guests.find(
+                {"tenant_id": tenant_id, "id": {"$in": list(guest_ids)}},
+                {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
+            ):
+                full = (g.get("name") or
+                        " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip())
+                if full:
+                    guest_map[g["id"]] = full
+
+        room_map: dict = {}
+        if room_ids:
+            async for r in self._db.rooms.find(
+                {"tenant_id": tenant_id, "id": {"$in": list(room_ids)}},
+                {"_id": 0, "id": 1, "room_number": 1, "room_no": 1},
+            ):
+                room_map[r["id"]] = r.get("room_number") or r.get("room_no")
+
+        for it in items:
+            b = booking_map.get(it.get("booking_id")) or {}
+            if not it.get("guest_name"):
+                it["guest_name"] = b.get("guest_name") or guest_map.get(
+                    it.get("guest_id") or b.get("guest_id")) or None
+            if not it.get("room_no"):
+                rid = it.get("room_id") or b.get("room_id")
+                it["room_no"] = b.get("room_no") or (room_map.get(rid) if rid else None)
+            if not it.get("booking_id") and b.get("id"):
+                it["booking_id"] = b["id"]
+            if not it.get("confirmation_code") and b.get("confirmation_code"):
+                it["confirmation_code"] = b["confirmation_code"]
+        return items
+
     async def get_integrity_check(
         self, ctx: OperationContext, business_date: str,
     ) -> ServiceResult:
         """Run financial integrity checks for a given business date."""
         checks = []
+        ITEM_LIMIT = 50
 
         # 1. Verify all checked-in bookings have folios
         checked_in = await self._db.bookings.find(
             {"tenant_id": ctx.tenant_id, "status": "checked_in"},
-            {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1},
+            {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1, "room_no": 1, "guest_id": 1, "room_id": 1},
         ).to_list(500)
         missing_folios = [b for b in checked_in if not b.get("folio_id")]
+        mf_items = [{"booking_id": b["id"], "guest_name": b.get("guest_name"),
+                     "room_no": b.get("room_no"), "guest_id": b.get("guest_id"),
+                     "room_id": b.get("room_id"),
+                     "action": "open_booking"}
+                    for b in missing_folios[:ITEM_LIMIT]]
+        await self._enrich_with_guest_room(ctx.tenant_id, mf_items)
         checks.append({
             "check": "bookings_with_folios",
             "label": "Rezervasyon-Folio Eslesmesi",
             "status": "pass" if not missing_folios else "fail",
             "detail": f"{len(checked_in)} aktif rezervasyondan {len(missing_folios)} tanesinin folyosu yok",
             "count": len(missing_folios),
-            "items": [{"booking_id": b["id"], "guest": b.get("guest_name", "?")} for b in missing_folios[:10]],
+            "items": mf_items,
         })
 
         # 2. Check for voided charges today
+        voided_items: list[dict] = []
+        async for ch in self._db.folio_charges.find(
+            {"tenant_id": ctx.tenant_id, "date": business_date, "voided": True},
+            {"_id": 0, "id": 1, "folio_id": 1, "booking_id": 1, "amount": 1,
+             "description": 1, "voided_reason": 1},
+        ).limit(ITEM_LIMIT):
+            voided_items.append({
+                "folio_id": ch.get("folio_id"),
+                "booking_id": ch.get("booking_id"),
+                "amount": ch.get("amount"),
+                "description": ch.get("description"),
+                "reason": ch.get("voided_reason"),
+                "action": "open_folio",
+            })
         voided_count = await self._db.folio_charges.count_documents({
-            "tenant_id": ctx.tenant_id,
-            "date": business_date,
-            "voided": True,
+            "tenant_id": ctx.tenant_id, "date": business_date, "voided": True,
         })
+        await self._enrich_with_guest_room(ctx.tenant_id, voided_items)
         checks.append({
             "check": "voided_charges",
             "label": "Iptal Edilen Masraflar",
             "status": "pass" if voided_count == 0 else "warning",
             "detail": f"Bugun {voided_count} masraf iptal edildi",
             "count": voided_count,
+            "items": voided_items,
         })
 
         # 3. Negative balance folios
+        neg_items: list[dict] = []
+        async for f in self._db.folios.find(
+            {"tenant_id": ctx.tenant_id, "status": "open", "balance": {"$lt": -0.01}},
+            {"_id": 0, "id": 1, "booking_id": 1, "balance": 1, "guest_name": 1,
+             "room_no": 1, "guest_id": 1, "room_id": 1},
+        ).limit(ITEM_LIMIT):
+            neg_items.append({
+                "folio_id": f.get("id"),
+                "booking_id": f.get("booking_id"),
+                "balance": round(f.get("balance", 0), 2),
+                "overpayment": round(abs(f.get("balance", 0)), 2),
+                "guest_name": f.get("guest_name"),
+                "room_no": f.get("room_no"),
+                "guest_id": f.get("guest_id"),
+                "room_id": f.get("room_id"),
+                "action": "open_folio",
+            })
         neg_balance = await self._db.folios.count_documents({
-            "tenant_id": ctx.tenant_id,
-            "status": "open",
-            "balance": {"$lt": -0.01},
+            "tenant_id": ctx.tenant_id, "status": "open", "balance": {"$lt": -0.01},
         })
+        await self._enrich_with_guest_room(ctx.tenant_id, neg_items)
         checks.append({
             "check": "negative_balance_folios",
             "label": "Negatif Bakiyeli Folyolar",
             "status": "pass" if neg_balance == 0 else "warning",
             "detail": f"{neg_balance} folyoda negatif bakiye (fazla odeme)",
             "count": neg_balance,
+            "items": neg_items,
         })
 
         # 4. Room rate consistency
-        rate_issues = 0
+        rate_items: list[dict] = []
         async for booking in self._db.bookings.find(
             {"tenant_id": ctx.tenant_id, "status": "checked_in"},
-            {"_id": 0, "id": 1, "room_rate": 1, "rate": 1},
+            {"_id": 0, "id": 1, "room_rate": 1, "rate": 1, "guest_name": 1,
+             "room_no": 1, "guest_id": 1, "room_id": 1},
         ):
             rate = booking.get("room_rate") or booking.get("rate") or 0
             if rate <= 0:
-                rate_issues += 1
+                rate_items.append({
+                    "booking_id": booking["id"],
+                    "rate": rate,
+                    "guest_name": booking.get("guest_name"),
+                    "room_no": booking.get("room_no"),
+                    "guest_id": booking.get("guest_id"),
+                    "room_id": booking.get("room_id"),
+                    "action": "open_booking",
+                })
+        rate_issues = len(rate_items)
+        await self._enrich_with_guest_room(ctx.tenant_id, rate_items[:ITEM_LIMIT])
         checks.append({
             "check": "room_rate_consistency",
             "label": "Oda Fiyat Tutarliligi",
             "status": "pass" if rate_issues == 0 else "warning",
             "detail": f"{rate_issues} aktif rezervasyonda sifir/eksik oda fiyati",
             "count": rate_issues,
+            "items": rate_items[:ITEM_LIMIT],
         })
 
         # 5. Check for charges posted after close
-        closed_folio_charges = 0
         closed_folios = await self._db.folios.find(
             {"tenant_id": ctx.tenant_id, "status": "closed"},
             {"_id": 0, "id": 1},
         ).to_list(500)
         closed_ids = [f["id"] for f in closed_folios]
+        closed_charge_items: list[dict] = []
+        closed_folio_charges = 0
         if closed_ids:
             closed_folio_charges = await self._db.folio_charges.count_documents({
-                "tenant_id": ctx.tenant_id,
-                "folio_id": {"$in": closed_ids},
-                "date": business_date,
-                "voided": {"$ne": True},
+                "tenant_id": ctx.tenant_id, "folio_id": {"$in": closed_ids},
+                "date": business_date, "voided": {"$ne": True},
             })
+            async for ch in self._db.folio_charges.find(
+                {"tenant_id": ctx.tenant_id, "folio_id": {"$in": closed_ids},
+                 "date": business_date, "voided": {"$ne": True}},
+                {"_id": 0, "folio_id": 1, "booking_id": 1, "amount": 1, "description": 1},
+            ).limit(ITEM_LIMIT):
+                closed_charge_items.append({
+                    "folio_id": ch.get("folio_id"),
+                    "booking_id": ch.get("booking_id"),
+                    "amount": ch.get("amount"),
+                    "description": ch.get("description"),
+                    "action": "open_folio",
+                })
+            await self._enrich_with_guest_room(ctx.tenant_id, closed_charge_items)
         checks.append({
             "check": "closed_folio_charges",
             "label": "Kapali Folyoya Masraf",
             "status": "pass" if closed_folio_charges == 0 else "error",
             "detail": f"{closed_folio_charges} masraf kapali folyolara kaydedilmis",
             "count": closed_folio_charges,
+            "items": closed_charge_items,
         })
 
         # 6. Unposted night audit charges
