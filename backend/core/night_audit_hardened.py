@@ -1077,6 +1077,10 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     return items
 
 
+from cache_manager import cached as _na_cached  # local import to avoid cycles at module top
+
+
+@_na_cached(ttl=30, key_prefix="na_preview")
 async def build_audit_preview(tenant_id: str, property_id: str | None = None) -> dict:
     """Gece denetimi 'Hazirlik' ekrani icin yapisal ozet.
 

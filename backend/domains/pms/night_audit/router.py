@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from cache_manager import cache as _cache
 from common.context import OperationContext
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
@@ -17,6 +18,27 @@ from modules.pms_core.role_permission_service import require_op  # v101 DW
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/night-audit", tags=["Night Audit Core"])
+
+# Short-TTL cache for read-only finance dashboards. Mutations
+# (run/checkin/checkout/folio post) call _invalidate_finance_cache.
+_FIN_CACHE_TTL = 30
+
+
+def _fin_cache_key(name: str, tenant_id: str, business_date: str) -> str:
+    return f"cache:{tenant_id}:na_{name}:{business_date}"
+
+
+def _invalidate_finance_cache(tenant_id: str) -> None:
+    """Drop all cached financial dashboards for a tenant.
+
+    Called on any mutation that can change the day's revenue, payments,
+    folio balances, or integrity-check inputs. Pattern delete is safe
+    because the prefix `cache:{tenant_id}:na_*` is namespaced per tenant.
+    """
+    try:
+        _cache.delete_pattern(f"cache:{tenant_id}:na_*")
+    except Exception as e:  # pragma: no cover — cache layer best-effort
+        logger.debug("na finance cache invalidation skipped: %s", e)
 
 
 def _admin_guard(user: User):
@@ -58,6 +80,8 @@ async def run_night_audit(request: RunNightAuditRequest, current_user: User = De
             "STALE_RECOVERED": 409, "VALIDATION_BLOCKED": 422,
         }.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
+    # Successful run mutates folio charges, payments, balances → drop dashboards.
+    _invalidate_finance_cache(current_user.tenant_id)
     return result
 
 
@@ -134,6 +158,8 @@ async def resume_run(run_id: str, current_user: User = Depends(get_current_user)
         code = result.get("code", "UNKNOWN")
         status_code = {"NOT_FOUND": 404, "INVALID_STATE": 409, "STILL_BLOCKED": 422}.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
+    # Resume can finalize remaining steps → mutates folio/payment state.
+    _invalidate_finance_cache(current_user.tenant_id)
     return result
 
 
@@ -231,8 +257,14 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
         date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
+    cache_key = _fin_cache_key("financial_summary", ctx.tenant_id, date)
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
     result = await financial_service.get_daily_financial_summary(ctx, date)
-    return result.data
+    payload = result.data
+    _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
+    return payload
 
 
 @router.get("/payment-reconciliation")
@@ -281,5 +313,11 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
         date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
+    cache_key = _fin_cache_key("integrity_check", ctx.tenant_id, date)
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
     result = await financial_service.get_integrity_check(ctx, date)
-    return result.data
+    payload = result.data
+    _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
+    return payload
