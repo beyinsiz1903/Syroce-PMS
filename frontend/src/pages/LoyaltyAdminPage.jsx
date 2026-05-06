@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "@/api/axios";
+import { alertDialog, promptDialog } from "@/lib/dialogs";
 
 export default function LoyaltyAdminPage() {
   const [tab, setTab] = useState("tiers");
@@ -55,7 +56,7 @@ export default function LoyaltyAdminPage() {
       points: Number(earnForm.points),
       source: earnForm.source,
     });
-    alert(`+${data.awarded} puan, yeni bakiye: ${data.balance}, tier: ${data.tier || "-"}`);
+    await alertDialog({ message: `+${data.awarded} puan, yeni bakiye: ${data.balance}, tier: ${data.tier || "-"}` });
     reload();
   };
 
@@ -73,14 +74,14 @@ export default function LoyaltyAdminPage() {
     reload();
   };
   const redeem = async (reward_id) => {
-    const guest_id = prompt("Misafir ID?");
+    const guest_id = await promptDialog({ message: "Misafir ID?" });
     if (!guest_id) return;
     try {
       const { data } = await api.post("/api/loyalty/redeem", { guest_id, reward_id });
-      alert(`Ödül kullanıldı. Kalan bakiye: ${data.balance_after}`);
+      await alertDialog({ message: `Ödül kullanıldı. Kalan bakiye: ${data.balance_after}` });
       reload();
     } catch (e) {
-      alert(e?.response?.data?.detail || "Ödül kullanılamadı");
+      await alertDialog({ message: e?.response?.data?.detail || "Ödül kullanılamadı" });
     }
   };
 

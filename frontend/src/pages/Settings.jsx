@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import { useCurrency } from '@/context/CurrencyContext';
 
+import { confirmDialog } from '@/lib/dialogs';
 // ─── Plan Config ──────────────────────────────────
 const PLAN_CONFIG = {
   basic: {
@@ -241,7 +242,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   };
 
   const handleRemoveMember = async (userId, name) => {
-    if (!window.confirm(`${name} adlı kullanıcıyı silmek istediğinize emin misiniz?`)) return;
+    if (!await confirmDialog({ message: `${name} adlı kullanıcıyı silmek istediğinize emin misiniz?`, variant: 'danger' })) return;
     try {
       await axios.delete(`/hotel/team/${userId}`);
       toast.success('Ekip üyesi silindi');
@@ -331,7 +332,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteRoom = async (roomId, roomNumber) => {
-    if (!window.confirm(`${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`)) return;
+    if (!await confirmDialog({ message: `${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`, variant: 'danger' })) return;
     try {
       const API = "";
       await axios.post(`/pms/rooms/bulk/delete`, {

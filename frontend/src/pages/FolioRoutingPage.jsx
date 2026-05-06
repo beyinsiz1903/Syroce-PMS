@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/api/axios";
 
+import { confirmDialog, alertDialog } from '@/lib/dialogs';
 export default function FolioRoutingPage() {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +45,7 @@ export default function FolioRoutingPage() {
   };
 
   const remove = async (id) => {
-    if (!confirm("Bu yönlendirme kuralı silinsin mi?")) return;
+    if (!await confirmDialog({ message: "Bu yönlendirme kuralı silinsin mi?", variant: 'danger' })) return;
     await api.delete(`/api/folio-routing/${id}`);
     load();
   };
@@ -52,9 +53,9 @@ export default function FolioRoutingPage() {
   const apply = async (folio_id) => {
     try {
       const { data } = await api.post(`/api/folio-routing/apply/${folio_id}`);
-      alert(`Uygulandı: ${data.moved} ücret taşındı (${data.rules} kural)`);
+      await alertDialog({ message: `Uygulandı: ${data.moved} ücret taşındı (${data.rules} kural)` });
     } catch (e) {
-      alert(e?.response?.data?.detail || "Uygulanamadı");
+      await alertDialog({ message: e?.response?.data?.detail || "Uygulanamadı" });
     }
   };
 

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { promptDialog } from '@/lib/dialogs';
 
 const ApprovalWidget = ({ userRole }) => {
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -51,7 +52,7 @@ const ApprovalWidget = ({ userRole }) => {
   };
 
   const handleReject = async (approvalId) => {
-    const reason = prompt('Ret nedeni:');
+    const reason = await promptDialog({ message: 'Ret nedeni:' });
     if (!reason) return;
 
     try {

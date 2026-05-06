@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
 
 const PKG_TYPES = [
   { key: 'wedding',    label: 'Düğün' },
@@ -62,13 +63,13 @@ export default function PackagesTab() {
       else await axios.post('/mice/sales/packages', payload);
       setShowForm(false); setForm(blank); setEditId(null);
       await load();
-    } catch (e) { alert('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const remove = async (id) => {
-    if (!confirm('Paketi silmek istiyor musunuz?')) return;
+    if (!await confirmDialog({ message: 'Paketi silmek istiyor musunuz?', variant: 'danger' })) return;
     try { await axios.delete(`/mice/sales/packages/${id}`); await load(); }
-    catch (e) { alert(e.response?.data?.detail || e.message); }
+    catch (e) { await alertDialog({ message: e.response?.data?.detail || e.message }); }
   };
 
   const edit = (p) => {
@@ -81,7 +82,7 @@ export default function PackagesTab() {
       const r = await axios.post(`/mice/sales/packages/${quotePkg.id}/quote`, null,
         { params: { pax: Number(quotePax) || 1 } });
       setQuote(r.data);
-    } catch (e) { alert(e.response?.data?.detail || e.message); }
+    } catch (e) { await alertDialog({ message: e.response?.data?.detail || e.message }); }
   };
 
   const addItem = () => setForm({

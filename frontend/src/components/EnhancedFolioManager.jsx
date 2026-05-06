@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import SplitFolioDialog from './SplitFolioDialog';
 
+import { confirmDialog } from '@/lib/dialogs';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 const EnhancedFolioManager = ({ bookingId }) => {
@@ -69,7 +70,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
   };
 
   const handleCheckout = async () => {
-    if (!window.confirm('Bu misafirin çıkışını yapmak istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu misafirin çıkışını yapmak istediğinize emin misiniz?', variant: 'danger' })) return;
     
     try {
       const token = localStorage.getItem('token');

@@ -13,6 +13,7 @@ import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap }
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 
+import { confirmDialog } from '@/lib/dialogs';
 const API = '/mailing';
 
 export default function MailingPage({ user, tenant, onLogout }) {
@@ -159,7 +160,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
       toast.error(`Yetersiz kredi: ${selected.size} gerekli, ${credits.balance} mevcut`);
       return;
     }
-    if (!confirm(`${selected.size} misafire e-posta gönderilecek. Onaylıyor musunuz?`)) return;
+    if (!await confirmDialog({ message: `${selected.size} misafire e-posta gönderilecek. Onaylıyor musunuz?` })) return;
     setSending(true);
     try {
       const res = await axios.post(`${API}/campaigns`, {
@@ -394,7 +395,7 @@ function TemplatesTab({ templates, onChanged }) {
   };
 
   const remove = async (id) => {
-    if (!confirm('Şablon silinecek, emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Şablon silinecek, emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`${API}/templates/${id}`);
       toast.success('Şablon silindi');

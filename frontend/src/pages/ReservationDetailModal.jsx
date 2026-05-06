@@ -22,6 +22,7 @@ import { VCCTab } from './reservation-detail/VCCTab';
 import GuestAlertModal from '@/components/GuestAlertModal';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
+import { confirmDialog } from '@/lib/dialogs';
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -185,7 +186,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 )}
                 {booking?.status === 'checked_in' && (
                   <Button size="sm" variant="outline" onClick={async () => {
-                    if (!window.confirm('Çıkış yapılsın mı?')) return;
+                    if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
                     try {
                       const res = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
                       if (res.data.total_balance > 0.01) {
@@ -211,7 +212,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   try { await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı'); loadData(); }
                   catch (e) { toast.error('Hata'); }
                 }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}</Button>
-                <Button size="sm" variant="outline" onClick={() => { if (window.confirm('No-show olarak işaretlensin mi?')) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
+                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-cancel-reservation"><X className="w-3 h-3 mr-2" /> İptal Et</Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start text-teal-600 border-teal-200 hover:bg-teal-50" data-testid="btn-voucher"><FileText className="w-3 h-3 mr-2" /> Voucher</Button>
               </div>

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+import { confirmDialog } from '@/lib/dialogs';
   Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2,
   CheckCircle2, XCircle, PlayCircle, Receipt, History,
 } from 'lucide-react';
@@ -108,7 +109,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   };
 
   const remove = async (id) => {
-    if (!confirm('Randevu silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Randevu silinsin mi?', variant: 'danger' })) return;
     try { await axios.delete(`/spa/appointments/${id}`); await load(); }
     catch (e) { toast.error('Silinemedi'); }
   };

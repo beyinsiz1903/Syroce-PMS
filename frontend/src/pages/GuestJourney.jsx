@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
+import { confirmDialog } from '@/lib/dialogs';
 
 const CATEGORY_BADGE = {
   promoter:  { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Destekçi (9-10)', Icon: Smile },
@@ -98,7 +99,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Bu yorum silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Bu yorum silinsin mi?' })) return;
     try {
       await axios.delete(`/nps/survey/${id}`);
       // Optimistik UI: listeden hemen kaldır, sonra reload (out-of-order

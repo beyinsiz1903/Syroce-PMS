@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+import { alertDialog } from '@/lib/dialogs';
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -257,7 +258,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
       if (correlationId) fetchTimeline(correlationId);
       if (onRetryDlq) onRetryDlq();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Retry başarısız');
+      alertDialog({ message: err.response?.data?.detail || 'Retry başarısız' });
     } finally {
       setRetrying(false);
     }

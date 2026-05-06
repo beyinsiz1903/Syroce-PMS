@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DollarSign, FileText, Loader2, Save, X, XCircle } from 'lucide-react';
+import { confirmDialog } from '@/lib/dialogs';
 
 const toDateInput = (val) => {
   if (!val) return '';
@@ -257,7 +258,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                 disabled={cancelling || booking.status === 'cancelled' || booking.status === 'checked_in' || booking.status === 'checked_out'}
                 data-testid="cancel-booking-btn"
                 onClick={async () => {
-                  if (!confirm(t('booking.cancelBooking') + '?')) return;
+                  if (!await confirmDialog({ message: t('booking.cancelBooking') + '?', variant: 'danger' })) return;
                   setCancelling(true);
                   try {
                     await axios.post('/pms-core/cancel', {

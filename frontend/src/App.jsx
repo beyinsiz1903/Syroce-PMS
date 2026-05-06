@@ -11,6 +11,7 @@ import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationC
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
+import DialogHost from "@/components/DialogHost";
 
 import {
   AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal, getRouteConfigs,
@@ -241,6 +242,7 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <div className="App">
             <Toaster position="top-right" />
+            <DialogHost />
             <BrowserRouter>
               <Suspense fallback={<LoadingFallback />}>
                 <Routes>
@@ -275,6 +277,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <div className="App">
           <Toaster position="top-right" />
+          <DialogHost />
           <BrowserRouter>
             <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>

@@ -21,6 +21,7 @@ import Layout from "../components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { promptDialog } from '@/lib/dialogs';
 import {
   ArrowLeft, ShieldAlert, RefreshCw, Loader2, Trash2, Eye,
   CalendarClock, FileLock2, AlertTriangle, X, Pencil, Save, RotateCcw,
@@ -338,10 +339,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
       setPreviewError("Bu kayıt henüz bir check-in formuna bağlanmamış (yetim).");
       return;
     }
-    const reason = window.prompt(
-      "Önizleme için KVKK gerekçesi girin (örn. polis denetimi, check-in doğrulaması):",
-      "",
-    );
+    const reason = await promptDialog({ message: "Önizleme için KVKK gerekçesi girin (örn. polis denetimi, check-in doğrulaması):", defaultValue: "" });
     const reasonClean = (reason || "").trim();
     if (!reasonClean) return;
     setPreviewing(row.photo_id);

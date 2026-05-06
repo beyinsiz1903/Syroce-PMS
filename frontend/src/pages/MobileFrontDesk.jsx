@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import useMediaCapture from '@/hooks/useMediaCapture';
 import { useTranslation } from 'react-i18next';
 
+import { confirmDialog } from '@/lib/dialogs';
 const MobileFrontDesk = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -437,7 +438,7 @@ const MobileFrontDesk = ({ user }) => {
               }
               const target = candidates[0];
               const guestLabel = target.guest_name || `Rezervasyon ${target.id.slice(0, 8)}`;
-              if (!window.confirm(`"${guestLabel}" no-show olarak işaretlensin mi?`)) return;
+              if (!await confirmDialog({ message: `"${guestLabel}" no-show olarak işaretlensin mi?`, variant: 'danger' })) return;
               try {
                 const res = await axios.post('/frontdesk/mobile/process-no-show', {
                   booking_id: target.id

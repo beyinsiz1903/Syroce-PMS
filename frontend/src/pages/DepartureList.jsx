@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Home, LogOut, AlertCircle, Wallet, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { confirmDialog } from '@/lib/dialogs';
 const localISODate = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -48,15 +49,11 @@ const DepartureList = ({ user, tenant, onLogout }) => {
   const checkout = async (booking, force = false) => {
     if (busyId) return;
     if (!force && (booking.balance || 0) > 0) {
-      const ok = window.confirm(
-        `Folio bakiyesi ${fmtTRY(booking.balance)} pozitif. Yine de zorla çıkış yapılsın mı?`
-      );
+      const ok = await confirmDialog({ message: `Folio bakiyesi ${fmtTRY(booking.balance)} pozitif. Yine de zorla çıkış yapılsın mı?`, variant: 'danger' });
       if (!ok) return;
       force = true;
     } else if (!force) {
-      const ok = window.confirm(
-        `${booking.guest_name || booking.id.slice(0, 8)} için çıkış yapılsın mı?`
-      );
+      const ok = await confirmDialog({ message: `${booking.guest_name || booking.id.slice(0, 8)} için çıkış yapılsın mı?`, variant: 'danger' });
       if (!ok) return;
     }
     setBusyId(booking.id);

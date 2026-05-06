@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
 import { API, fmtTL, fmtTs } from './helpers';
 
+import { confirmDialog } from '@/lib/dialogs';
 export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
   const [roomTypes, setRoomTypes] = useState([]);
   const [selectedType, setSelectedType] = useState('');
@@ -179,7 +180,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
   const handleCancel = async () => {
     if (!reason) { toast.error('İptal nedeni giriniz'); return; }
-    if (!window.confirm(applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?')) return;
+    if (!await confirmDialog({ message: applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?', variant: 'danger' })) return;
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${bookingId}/cancel`, {

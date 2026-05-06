@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Users, Trash2, UserPlus, ShieldCheck } from 'lucide-react';
 import { ROLE_LABELS } from './tenantConstants';
 
+import { confirmDialog } from '@/lib/dialogs';
 const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,7 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
   };
 
   const handleRemove = async (userId, userName) => {
-    if (!window.confirm(`${userName} silinecek. Emin misiniz?`)) return;
+    if (!await confirmDialog({ message: `${userName} silinecek. Emin misiniz?`, variant: 'danger' })) return;
     try {
       await axios.delete(`/admin/tenants/${tenantId}/team/${userId}`);
       await loadTeam();

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
+import { alertDialog } from '@/lib/dialogs';
   Sparkles, Wrench, Wifi, Tv, Thermometer, Utensils, Wine, Beer, Shirt,
   Car, Bell, Heart, Package, MessageSquare, CheckCircle2, Loader2, Hotel,
   AlertTriangle,
@@ -109,7 +110,7 @@ export default function RoomRequestPage() {
       }, { params: { t: token } });
       setDone(true);
     } catch (e) {
-      alert(e.response?.data?.detail || "Gönderim hatası");
+      alertDialog({ message: e.response?.data?.detail || "Gönderim hatası" });
     } finally {
       setSubmitting(false);
     }

@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, ClipboardCheck, AlertTriangle, Check, Trash2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { confirmDialog } from '@/lib/dialogs';
 const SHIFTS = [
   { v: 'morning', l: 'Sabah (07:00–15:00)' },
   { v: 'afternoon', l: 'Öğleden Sonra (15:00–23:00)' },
@@ -77,7 +78,7 @@ export default function ShiftHandoverPage() {
   };
 
   const remove = async (id) => {
-    if (!confirm('Bu devir notunu silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu devir notunu silmek istediğinize emin misiniz?', variant: 'danger' })) return;
     try {
       await api.delete(`/pms/shift-handover/${id}`);
       toast.success('Silindi');

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { API } from './helpers';
 
+import { confirmDialog } from '@/lib/dialogs';
 export function OnlinePaymentTab({ booking, onRefresh }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,9 +44,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
     const remaining = vcc.max_views - vcc.view_count;
     if (remaining <= 0) return;
 
-    if (!window.confirm(
-      `Kart bilgilerini görüntülemek istediğinize emin misiniz?\n\nKalan hak: ${remaining}/${vcc.max_views}\nBu işlem geri alınamaz.`
-    )) return;
+    if (!await confirmDialog({ message: `Kart bilgilerini görüntülemek istediğinize emin misiniz?\n\nKalan hak: ${remaining}/${vcc.max_views}\nBu işlem geri alınamaz.` })) return;
 
     setRevealing(true);
     try {
@@ -87,7 +86,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Kart bilgileri kalıcı olarak silinecek. Emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Kart bilgileri kalıcı olarak silinecek. Emin misiniz?', variant: 'danger' })) return;
     setDeleting(true);
     try {
       await axios.delete(`/pms/reservations/${booking.id}/vcc`);

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Pencil, CalendarRange, X, Loader2 } from 'lucide-react';
 
+import { confirmDialog } from '@/lib/dialogs';
 const SEASON_TYPES = [
   { value: 'peak', label: 'Pik Sezon', color: '#f59e0b' },
   { value: 'high', label: 'Yüksek Sezon', color: '#ef4444' },
@@ -74,7 +75,7 @@ export default function SeasonCalendarPanel() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bu sezonu silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu sezonu silmek istediğinize emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`/rms/seasonal-calendar/${id}`);
       toast.success('Sezon silindi');

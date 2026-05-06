@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { alertDialog } from '@/lib/dialogs';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -20,7 +21,7 @@ const LoyaltyAutoTierManager = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setUpgrades(response.data.upgrades || []);
-      alert(`${response.data.upgrades_applied} loyalty upgrades applied!`);
+      alertDialog({ message: `${response.data.upgrades_applied} loyalty upgrades applied!` });
     } catch (error) {
       console.error('Error running auto-tier upgrade:', error);
     } finally {

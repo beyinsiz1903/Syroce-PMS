@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast, Toaster } from "react-hot-toast";
 import {
+import { confirmDialog } from '@/lib/dialogs';
   Store,
   Package,
   ClipboardList,
@@ -309,7 +310,7 @@ function VendorDashboard({ vendor, onLogout }) {
   };
 
   const deleteProduct = async (id) => {
-    if (!confirm("Ürünü silmek istediğinize emin misiniz?")) return;
+    if (!await confirmDialog({ message: "Ürünü silmek istediğinize emin misiniz?" })) return;
     try {
       await vendorApi.delete(`/supplies-market/vendor/products/${id}`);
       toast.success("Silindi");
@@ -330,7 +331,7 @@ function VendorDashboard({ vendor, onLogout }) {
   };
 
   const cancelOrder = async (id) => {
-    if (!confirm("Sipariş iptal edilsin mi? Stok iade edilecek.")) return;
+    if (!await confirmDialog({ message: "Sipariş iptal edilsin mi? Stok iade edilecek.", variant: 'danger' })) return;
     try {
       await vendorApi.post(`/supplies-market/vendor/orders/${id}/cancel`);
       toast.success("Sipariş iptal edildi");

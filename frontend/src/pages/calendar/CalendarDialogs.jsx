@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lucide-react";
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
+import { alertDialog } from '@/lib/dialogs';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
@@ -369,7 +370,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
 
   const handleConfirm = async () => {
     if (!selectedRoom) return;
-    if (!reason.trim()) { alert('Lütfen oda değişim nedenini seçin'); return; }
+    if (!reason.trim()) { alertDialog({ message: 'Lütfen oda değişim nedenini seçin' }); return; }
     const sameType = selectedRoom.is_same_type;
     const useNewPrice = !sameType && !keepPrice;
     const payload = {
@@ -379,7 +380,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
     };
     if (useNewPrice) {
       const amount = parseFloat(newPrice);
-      if (Number.isNaN(amount) || amount < 0) { alert('Geçerli bir fiyat girin'); return; }
+      if (Number.isNaN(amount) || amount < 0) { alertDialog({ message: 'Geçerli bir fiyat girin' }); return; }
       payload.total_amount = amount;
     }
     setSubmitting(true);
@@ -400,7 +401,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
       if (onClose) onClose();
     } catch (err) {
       console.error('room change error', err);
-      alert(err.response?.data?.detail || 'Oda değiştirilemedi');
+      alertDialog({ message: err.response?.data?.detail || 'Oda değiştirilemedi' });
     } finally {
       setSubmitting(false);
     }

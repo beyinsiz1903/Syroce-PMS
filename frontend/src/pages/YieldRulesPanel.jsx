@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Pencil, Shield, X, Loader2 } from 'lucide-react';
 
+import { confirmDialog } from '@/lib/dialogs';
 const CONDITION_TYPES = [
   { value: 'occupancy_above', label: 'Doluluk ustu (%)' },
   { value: 'occupancy_below', label: 'Doluluk alti (%)' },
@@ -83,7 +84,7 @@ export default function YieldRulesPanel() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bu kuralı silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu kuralı silmek istediğinize emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`/rms/yield-rules/${id}`);
       toast.success('Kural silindi');

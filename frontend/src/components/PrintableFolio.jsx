@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Printer, Download, X } from 'lucide-react';
+import { alertDialog } from '@/lib/dialogs';
 
 const PrintableFolio = ({ folioData, onClose }) => {
   const [guestData, setGuestData] = useState(null);
@@ -52,7 +53,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
 
   const handleDownloadPDF = () => {
     // For actual PDF generation, you would use a library like jsPDF or html2pdf
-    alert('PDF download functionality - integrate with PDF library like html2pdf.js');
+    alertDialog({ message: 'PDF download functionality - integrate with PDF library like html2pdf.js' });
   };
 
   const formatDate = (date) => {

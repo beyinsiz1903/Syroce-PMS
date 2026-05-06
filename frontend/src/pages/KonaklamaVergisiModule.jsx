@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import Layout from "@/components/Layout";
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import {
   Building2,
   Calculator,
@@ -86,10 +87,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
 
   const finalizeDeclaration = async () => {
     if (!declaration) return;
-    if (!window.confirm(
-      `${declaration.period} dönemini onaylayıp kilitlemek üzeresiniz. ` +
+    if (!await confirmDialog({ message: `${declaration.period} dönemini onaylayıp kilitlemek üzeresiniz. ` +
       `Kilitledikten sonra dönem kapanır, yalnızca gönderim ve ödeme ` +
-      `kayıtları eklenebilir. Devam edilsin mi?`)) return;
+      `kayıtları eklenebilir. Devam edilsin mi?` })) return;
     setWorking(true);
     try {
       const { data } = await axios.post(
@@ -104,8 +104,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   };
 
   const submitDeclaration = async (decl) => {
-    const ref = window.prompt(
-      "GİB / e-Beyanname tahakkuk fiş numarasını girin:");
+    const ref = await promptDialog({ message: "GİB / e-Beyanname tahakkuk fiş numarasını girin:" });
     if (!ref || ref.trim().length < 3) return;
     setWorking(true);
     try {
@@ -121,8 +120,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   };
 
   const payDeclaration = async (decl) => {
-    const ref = window.prompt(
-      "Banka transfer / dekont referans numarası:");
+    const ref = await promptDialog({ message: "Banka transfer / dekont referans numarası:" });
     if (!ref || ref.trim().length < 3) return;
     setWorking(true);
     try {

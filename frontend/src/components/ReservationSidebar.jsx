@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 
 const ReservationSidebar = ({ 
   booking, 
@@ -468,7 +469,7 @@ const ReservationSidebar = ({
               data-testid="sidebar-cancel-booking-btn"
               disabled={cancelling}
               onClick={async () => {
-                if (!confirm('Bu rezervasyonu iptal etmek istediğinize emin misiniz?')) return;
+                if (!await confirmDialog({ message: 'Bu rezervasyonu iptal etmek istediğinize emin misiniz?', variant: 'danger' })) return;
                 setCancelling(true);
                 try {
                   await axios.post('/pms-core/cancel', {

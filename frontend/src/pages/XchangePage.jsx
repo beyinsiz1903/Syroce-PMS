@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { confirmDialog } from '@/lib/dialogs';
 import {
   Network, CheckCircle2, XCircle, AlertTriangle, Settings2, RefreshCw,
   Server, Globe, Building2, Send, Inbox, Power, Eye,
@@ -99,7 +100,7 @@ const XchangePage = ({ user, tenant, onLogout }) => {
   };
 
   const removeConfig = async (code) => {
-    if (!window.confirm(`${code} bağlantısı silinsin mi?`)) return;
+    if (!await confirmDialog({ message: `${code} bağlantısı silinsin mi?`, variant: 'danger' })) return;
     try {
       await axios.delete(`/xchange/configs/${code}`);
       toast.success('Bağlantı kaldırıldı');

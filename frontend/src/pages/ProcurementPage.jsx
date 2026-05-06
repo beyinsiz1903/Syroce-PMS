@@ -18,6 +18,7 @@ import {
 import Layout from '@/components/Layout';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 // Status → CSS class only. Display label comes from i18n via prStatuses/poStatuses.
 const PR_STATUS_CLS = {
   draft: 'bg-slate-100 text-slate-700',
@@ -245,7 +246,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     }
   };
   const deleteSupplier = async (id) => {
-    if (!window.confirm(t('procurement.prompts.confirmDeleteSupplier'))) return;
+    if (!await confirmDialog({ message: t('procurement.prompts.confirmDeleteSupplier'), variant: 'danger' })) return;
     try {
       await axios.delete(`/procurement/suppliers/${id}`);
       toast.success(t('procurement.toasts.supplierDeleted'));
@@ -295,7 +296,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
         const promptKey = status === 'rejected'
           ? 'procurement.prompts.rejectReason'
           : 'procurement.prompts.cancelReason';
-        reason = window.prompt(t(promptKey));
+        reason = await promptDialog({ message: t(promptKey) });
         if (!reason || reason.trim().length < 5) {
           toast.error(t('procurement.errors.reasonMinLen')); return;
         }
@@ -342,7 +343,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     try {
       let reason = null;
       if (status === 'cancelled') {
-        reason = window.prompt(t('procurement.prompts.cancelReason'));
+        reason = await promptDialog({ message: t('procurement.prompts.cancelReason') });
         if (!reason || reason.trim().length < 5) {
           toast.error(t('procurement.errors.reasonMinLen')); return;
         }

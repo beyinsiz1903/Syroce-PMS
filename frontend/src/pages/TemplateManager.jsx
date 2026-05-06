@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Mail, MessageSquare, FileText, Edit, Trash2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { confirmDialog } from '@/lib/dialogs';
 const TemplateManager = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [templates, setTemplates] = useState([]);
@@ -58,7 +59,7 @@ const TemplateManager = ({ user, tenant, onLogout }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bu şablonu silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu şablonu silmek istediğinize emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`/messages/templates/${id}`);
       toast.success('Şablon silindi');

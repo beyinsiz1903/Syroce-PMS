@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import Layout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { promptDialog } from '@/lib/dialogs';
 
 const BACKEND = "";
 
@@ -67,9 +68,9 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
   };
 
   const disable2FA = async () => {
-    const code = prompt('2FA kodunuzu girin:');
+    const code = await promptDialog({ message: '2FA kodunuzu girin:' });
     if (!code) return;
-    const password = prompt('Sifrenizi girin:');
+    const password = await promptDialog({ message: 'Sifrenizi girin:' });
     if (!password) return;
     try {
       await axios.post(`/2fa/disable`, { code, password }, { headers });

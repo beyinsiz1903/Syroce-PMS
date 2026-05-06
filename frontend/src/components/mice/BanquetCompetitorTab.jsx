@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
+import { confirmDialog } from '@/lib/dialogs';
 
 const COMP_EVENT_TYPES = [
   ['meeting', 'Toplantı'], ['conference', 'Konferans'],
@@ -82,7 +83,7 @@ const BanquetCompetitorTab = () => {
     } catch (e) { toast.error('Kaydedilemedi'); }
   };
   const remove = async (c) => {
-    if (!confirm(`"${c.name}" silinsin mi?`)) return;
+    if (!await confirmDialog({ message: `"${c.name}" silinsin mi?`, variant: 'danger' })) return;
     try { await axios.delete(`/banquet/competitors/${c.id}`); await load(); }
     catch { toast.error('Silinemedi'); }
   };

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 
 const DEFAULT_ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
@@ -46,7 +47,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
   }, []);
 
   const handleUpdateRole = async (userId, newRole) => {
-    if (!confirm(`Bu kullanıcının role'ünü ${newRole} yapmak istediğinizden emin misiniz?`)) {
+    if (!await confirmDialog({ message: `Bu kullanıcının role'ünü ${newRole} yapmak istediğinizden emin misiniz?` })) {
       return;
     }
 

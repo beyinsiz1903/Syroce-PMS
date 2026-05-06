@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { confirmDialog } from '@/lib/dialogs';
 import {
   Shield, Activity, Flag, BarChart3, RefreshCw,
   Plus, Trash2, Settings2, ChevronRight, AlertTriangle,
@@ -360,7 +361,7 @@ const FeatureFlagsTab = () => {
   };
 
   const handleDelete = async (flagKey) => {
-    if (!window.confirm(`"${flagKey}" flagını silmek istediğinize emin misiniz?`)) return;
+    if (!await confirmDialog({ message: `"${flagKey}" flagını silmek istediğinize emin misiniz?`, variant: 'danger' })) return;
     try {
       await axios.delete(`/admin/feature-flags/${flagKey}`);
       await loadFlags();

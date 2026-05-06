@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { confirmDialog } from '@/lib/dialogs';
 import {
   KeyRound, Shield, Eye, EyeOff, RefreshCw, Trash2, ExternalLink,
   CheckCircle2, XCircle, Save, Lock, Cloud, Bot, Mail, Activity, Database, Plug,
@@ -63,7 +64,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
   };
 
   const remove = async (key) => {
-    if (!window.confirm(`${key} değerini silmek istediğine emin misin? Servis ilgili özelliği kullanamayacak.`)) return;
+    if (!await confirmDialog({ message: `${key} değerini silmek istediğine emin misin? Servis ilgili özelliği kullanamayacak.`, variant: 'danger' })) return;
     try {
       await axios.delete(`/admin/integration-credentials/${encodeURIComponent(key)}`);
       toast.success(`${key} silindi`);

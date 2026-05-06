@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
+import { confirmDialog } from '@/lib/dialogs';
 const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -156,7 +157,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       toast.info('Zaten check-in yapılmış');
       return;
     }
-    if (!window.confirm(`${booking.guest_name || booking.id.slice(0, 8)} için check-in yapılsın mı?`)) return;
+    if (!await confirmDialog({ message: `${booking.guest_name || booking.id.slice(0, 8)} için check-in yapılsın mı?` })) return;
     setBusyId(booking.id);
     try {
       await axios.post('/api/pms-core/check-in', { booking_id: booking.id });

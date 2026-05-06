@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
+import { confirmDialog } from '@/lib/dialogs';
 const AgencyRequests = () => {
   const { t } = useTranslation();
   const [requests, setRequests] = useState([]);
@@ -57,7 +58,7 @@ const AgencyRequests = () => {
   };
 
   const handleApprove = async (requestId) => {
-    if (!confirm('Bu talebi onaylamak istediğinize emin misiniz?\n\nOnaylandığında otomatik olarak rezervasyon oluşturulacaktır.')) {
+    if (!await confirmDialog({ message: 'Bu talebi onaylamak istediğinize emin misiniz?\n\nOnaylandığında otomatik olarak rezervasyon oluşturulacaktır.' })) {
       return;
     }
 

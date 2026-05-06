@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Search, FileText, CreditCard, Plus, DollarSign, Receipt, Eye, Printer } from 'lucide-react';
 import RegistrationCard from './RegistrationCard';
 import PrintableFolio from './PrintableFolio';
+import { alertDialog } from '@/lib/dialogs';
 
 const FolioManagementPage = () => {
   const [folios, setFolios] = useState([]);
@@ -189,12 +190,12 @@ const FolioManagementPage = () => {
         throw new Error(err.detail || 'Charge failed');
       }
 
-      alert('Charge posted successfully');
+      alertDialog({ message: 'Charge posted successfully' });
       setShowChargeModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting charge:', error);
-      alert('Masraf kaydedilemedi: ' + error.message);
+      alertDialog({ message: 'Masraf kaydedilemedi: ' + error.message });
     }
   };
 
@@ -219,12 +220,12 @@ const FolioManagementPage = () => {
         throw new Error(err.detail || 'Payment failed');
       }
 
-      alert('Payment posted successfully');
+      alertDialog({ message: 'Payment posted successfully' });
       setShowPaymentModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting payment:', error);
-      alert('Ödeme kaydedilemedi: ' + error.message);
+      alertDialog({ message: 'Ödeme kaydedilemedi: ' + error.message });
     }
   };
 

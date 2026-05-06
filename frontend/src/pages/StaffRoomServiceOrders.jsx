@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 import {
   ArrowLeft, RefreshCw, Clock, BedDouble, Coffee, CheckCircle2,
   ChefHat, Truck, XCircle, PlugZap, ListChecks,
@@ -252,8 +253,8 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
     }
   }, [t]);
 
-  const cancelOrder = useCallback((orderId) => {
-    if (!window.confirm(t('staffRoomService.confirmCancel'))) return;
+  const cancelOrder = useCallback(async (orderId) => {
+    if (!await confirmDialog({ message: t('staffRoomService.confirmCancel'), variant: 'danger' })) return;
     advanceStatus(orderId, 'cancelled');
   }, [advanceStatus, t]);
 

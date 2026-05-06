@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { FileText, Printer, Download, User, Calendar, CreditCard, MapPin, Phone, Mail } from 'lucide-react';
+import { alertDialog } from '@/lib/dialogs';
 
 const RegistrationCard = ({ bookingId, onClose }) => {
   const [cardData, setCardData] = useState(null);
@@ -63,7 +64,7 @@ const RegistrationCard = ({ bookingId, onClose }) => {
   };
 
   const handleDownloadPDF = async () => {
-    alert('PDF download functionality - integrate with PDF library');
+    alertDialog({ message: 'PDF download functionality - integrate with PDF library' });
   };
 
   const formatDate = (date) => {

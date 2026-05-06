@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { promptDialog } from '@/lib/dialogs';
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -836,18 +837,15 @@ const MobileFnB = ({ user }) => {
             <Button 
               className="w-full bg-purple-600 hover:bg-purple-700"
               onClick={async () => {
-                const name = window.prompt('Ürün adı:')?.trim();
+                const name = await promptDialog({ message: 'Ürün adı:' })?.trim();
                 if (!name) return;
-                const priceStr = window.prompt('Fiyat (TL):')?.trim();
+                const priceStr = await promptDialog({ message: 'Fiyat (TL):' })?.trim();
                 const price = parseFloat((priceStr || '').replace(',', '.'));
                 if (!price || price <= 0) {
                   toast.error('Geçerli bir fiyat girin');
                   return;
                 }
-                const category = (window.prompt(
-                  'Kategori (food/drink/dessert/appetizer/alcohol):',
-                  'food'
-                ) || 'food').trim().toLowerCase();
+                const category = (await promptDialog({ message: 'Kategori (food/drink/dessert/appetizer/alcohol):', defaultValue: 'food' }) || 'food').trim().toLowerCase();
                 try {
                   const res = await axios.post('/pos/menu-item', {
                     name, price, category, available: true

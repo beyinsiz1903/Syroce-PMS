@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
 
+import { confirmDialog } from '@/lib/dialogs';
 const EMPTY_ITEM = {
   name: '', sku: '', category: 'Oda Ürünleri', unit: 'adet',
   quantity: 0, unit_cost: 0, reorder_level: 0, location: '', notes: '',
@@ -78,7 +79,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
   };
 
   const deleteKit = async (id) => {
-    if (!window.confirm('Bu kit silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Bu kit silinsin mi?', variant: 'danger' })) return;
     try {
       await axios.delete(`/accounting/setup-kits/${id}`);
       toast.success('Silindi');

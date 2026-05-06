@@ -17,6 +17,7 @@ import {
   Menu
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { alertDialog } from '@/lib/dialogs';
 
 const FeaturesShowcase = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -179,7 +180,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 variant="outline"
                 className="h-24 flex flex-col items-center justify-center"
                 onClick={() => {
-                  alert('Navigate to any booking and open Upsell Store to see AI products');
+                  alertDialog({ message: 'Navigate to any booking and open Upsell Store to see AI products' });
                 }}
               >
                 <span className="text-2xl mb-2">🛍️</span>
@@ -189,7 +190,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 variant="outline"
                 className="h-24 flex flex-col items-center justify-center"
                 onClick={() => {
-                  alert('Split Folio: Open any folio and use Split button (to be added to Folio Manager)');
+                  alertDialog({ message: 'Split Folio: Open any folio and use Split button (to be added to Folio Manager)' });
                 }}
               >
                 <span className="text-2xl mb-2">📑</span>

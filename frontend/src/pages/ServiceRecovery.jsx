@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Layout from '@/components/Layout';
 
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const CATEGORIES = [
   { value: 'room', label: 'Oda', color: 'bg-blue-100 text-blue-800' },
   { value: 'service', label: 'Hizmet', color: 'bg-purple-100 text-purple-800' },
@@ -305,7 +306,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeEscalate = async () => {
-    const notes = window.prompt('Geri alma notu (zorunlu):', '');
+    const notes = await promptDialog({ message: 'Geri alma notu (zorunlu):', defaultValue: '' });
     if (notes === null) return;
     if (!notes.trim()) { toast.error('Not zorunludur'); return; }
     try {
@@ -330,7 +331,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   };
 
   const handleDelete = async (complaint) => {
-    if (!window.confirm('Bu şikayeti silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu şikayeti silmek istediğinize emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`/service/complaints/${complaint.id}`);
       toast.success('Şikayet silindi');
@@ -373,7 +374,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   };
 
   const handleAutoEscalate = async () => {
-    if (!window.confirm('SLA süresini aşmış tüm açık şikayetler yönetime havale edilecek. Devam edilsin mi?')) return;
+    if (!await confirmDialog({ message: 'SLA süresini aşmış tüm açık şikayetler yönetime havale edilecek. Devam edilsin mi?', variant: 'danger' })) return;
     try {
       const res = await axios.post('/service/complaints/auto-escalate');
       toast.success(`${res.data.escalated_count || 0} şikayet otomatik eskalasyon edildi`);

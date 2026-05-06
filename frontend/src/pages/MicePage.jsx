@@ -32,6 +32,7 @@ import {
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import Layout from '@/components/Layout';
 
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const MicePage = ({ user, tenant, onLogout }) => {
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
@@ -253,7 +254,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
   const changeStatus = async (id, status) => {
     let body = { status };
     if (status === 'cancelled') {
-      const reason = prompt('İptal/lost-business sebebi (en az 10 karakter):', '');
+      const reason = await promptDialog({ message: 'İptal/lost-business sebebi (en az 10 karakter):', defaultValue: '' });
       if (reason === null) return;
       if (reason.trim().length < 10) {
         toast.error('En az 10 karakter sebep gereklidir');
@@ -269,7 +270,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
   };
 
   const remove = async (id) => {
-    if (!confirm('Etkinlik silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Etkinlik silinsin mi?', variant: 'danger' })) return;
     try { await axios.delete(`/mice/events/${id}`); await loadEvents(); }
     catch { toast.error('Silinemedi'); }
   };
@@ -330,7 +331,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
     }
   };
   const removeMenu = async (id, name) => {
-    if (!confirm(`"${name}" silinsin mi?`)) return;
+    if (!await confirmDialog({ message: `"${name}" silinsin mi?`, variant: 'danger' })) return;
     try {
       await axios.delete(`/mice/menus/${id}`);
       toast.success('Silindi');
@@ -361,7 +362,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
   };
 
   const markPaid = async (eventId, idx) => {
-    const ref = prompt('Ödeme referansı (banka/işlem no):', '') || '';
+    const ref = await promptDialog({ message: 'Ödeme referansı (banka/işlem no):', defaultValue: '' }) || '';
     try {
       await axios.post(`/mice/events/${eventId}/payment-schedule/${idx}/mark-paid`,
         null, { params: ref ? { reference: ref } : {} });

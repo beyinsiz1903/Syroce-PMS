@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shirt, Plus, RefreshCw, Search, Settings, Trash2, Pencil, Check, X } from 'lucide-react';
 
+import { confirmDialog } from '@/lib/dialogs';
 const SERVICE_TYPES = [
   { code: 'wash_iron', name: 'Yikama + Utuleme', multiplier: 1 },
   { code: 'dry_clean', name: 'Kuru Temizleme', multiplier: 1.5 },
@@ -217,7 +218,7 @@ const LaundryTab = () => {
   };
 
   const deleteItem = async (id) => {
-    if (!window.confirm('Bu urunu silmek istediginize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu urunu silmek istediginize emin misiniz?', variant: 'danger' })) return;
     try {
       await axios.delete(`/laundry/items/${id}`);
       toast.success('Silindi');

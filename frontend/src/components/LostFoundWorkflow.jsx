@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Package, ArrowRight, CheckCircle, XCircle, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import { promptDialog } from '@/lib/dialogs';
 
 const LostFoundWorkflow = () => {
   const [items, setItems] = useState([]);
@@ -42,7 +43,7 @@ const LostFoundWorkflow = () => {
     const statusData = { status: newStatus };
     
     if (newStatus === 'claimed') {
-      const claimedBy = prompt('Teslim alan kişi adı:');
+      const claimedBy = await promptDialog({ message: 'Teslim alan kişi adı:' });
       if (!claimedBy) return;
       statusData.claimed_by_name = claimedBy;
     }
@@ -61,7 +62,7 @@ const LostFoundWorkflow = () => {
   };
 
   const handleTransfer = async (itemId) => {
-    const toLocation = prompt('Transfer edilecek lokasyon:');
+    const toLocation = await promptDialog({ message: 'Transfer edilecek lokasyon:' });
     if (!toLocation) return;
 
     try {

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout';
+import { promptDialog } from '@/lib/dialogs';
 import {
   User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
   Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil,
@@ -246,7 +247,7 @@ function TwoFactorSection() {
   };
 
   const regen = async () => {
-    const c = window.prompt('Yedek kodları yenilemek için 6 haneli mevcut TOTP kodunu girin:');
+    const c = await promptDialog({ message: 'Yedek kodları yenilemek için 6 haneli mevcut TOTP kodunu girin:' });
     if (!c) return;
     setBusy(true);
     try {

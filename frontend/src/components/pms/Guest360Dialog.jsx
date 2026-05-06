@@ -15,6 +15,7 @@ import {
   Heart, Globe, Tag, Clock, User, DollarSign, TrendingUp, Loader2, Crown
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { promptDialog } from '@/lib/dialogs';
 
 const Guest360Dialog = ({
   open,
@@ -119,7 +120,7 @@ const Guest360Dialog = ({
           <Button 
             onClick={async () => {
               try {
-                const preference = prompt('Enter room preference (e.g., High Floor, Sea View, Quiet Room):');
+                const preference = await promptDialog({ message: 'Enter room preference (e.g., High Floor, Sea View, Quiet Room):' });
                 if (preference) {
                   await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=PREF: ${preference}`);
                   toast.success('Room preference saved!');

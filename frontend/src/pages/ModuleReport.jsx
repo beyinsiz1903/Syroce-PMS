@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
+import { alertDialog } from '@/lib/dialogs';
 
 const BOOL_ICON = (val) => (val ? '✅' : '❌');
 
@@ -85,7 +86,7 @@ const ModuleReport = ({ user, tenant, onLogout }) => {
         subscription_days: 30
       });
       await loadReport(); // Reload list
-      alert('Otel başarıyla oluşturuldu!');
+      alertDialog({ message: 'Otel başarıyla oluşturuldu!' });
     } catch (err) {
       console.error('Failed to create tenant', err);
       setError(err.response?.data?.detail || 'Otel oluşturulurken bir hata oluştu');

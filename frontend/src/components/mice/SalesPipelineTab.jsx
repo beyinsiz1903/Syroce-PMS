@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
 
 const STAGES = [
   { key: 'lead',       label: 'Lead',      cls: 'bg-slate-100 text-slate-700' },
@@ -66,7 +67,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
       });
       setShowForm(false); setForm(blank);
       await load();
-    } catch (e) { alert('Kayıt başarısız: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { await alertDialog({ message: 'Kayıt başarısız: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const doTransition = async () => {
@@ -76,20 +77,20 @@ export default function SalesPipelineTab({ accounts = [] }) {
       });
       setTransitionFor(null); setReason('');
       await load();
-    } catch (e) { alert('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const submitActivity = async () => {
     try {
       await axios.post(`/mice/sales/opportunities/${activityFor.id}/activities`, activity);
       setActivityFor(null); setActivity({ type: 'call', subject: '', body: '', outcome: 'positive' });
-    } catch (e) { alert('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const remove = async (id) => {
-    if (!confirm('Fırsatı silmek istiyor musunuz?')) return;
+    if (!await confirmDialog({ message: 'Fırsatı silmek istiyor musunuz?', variant: 'danger' })) return;
     try { await axios.delete(`/mice/sales/opportunities/${id}`); await load(); }
-    catch (e) { alert(e.response?.data?.detail || e.message); }
+    catch (e) { await alertDialog({ message: e.response?.data?.detail || e.message }); }
   };
 
   const fmtCurrency = (v) => `₺${Number(v || 0).toLocaleString('tr-TR')}`;

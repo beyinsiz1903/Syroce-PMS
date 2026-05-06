@@ -6,6 +6,7 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Moon, PlayCircle, CheckCircle, AlertTriangle, Clock, TrendingUp, Calendar } from 'lucide-react';
 
+import { alertDialog } from '@/lib/dialogs';
 // Helper to get yesterday in YYYY-MM-DD format
 const getDefaultAuditDate = () => {
   const d = new Date();
@@ -75,7 +76,7 @@ const NightAuditModule = () => {
       await fetchStatusAndReport();
     } catch (err) {
       console.error('Error starting night audit', err);
-      window.alert('Night audit başlatılamadı. Detay için konsolu kontrol edin.');
+      await alertDialog({ message: 'Night audit başlatılamadı. Detay için konsolu kontrol edin.' });
     } finally {
       setRunningStep(null);
     }
@@ -91,7 +92,7 @@ const NightAuditModule = () => {
       await fetchStatusAndReport();
     } catch (err) {
       console.error('Error in automatic posting', err);
-      window.alert('Oda gelirleri post edilirken hata oluştu.');
+      await alertDialog({ message: 'Oda gelirleri post edilirken hata oluştu.' });
     } finally {
       setRunningStep(null);
     }
@@ -110,7 +111,7 @@ const NightAuditModule = () => {
       await fetchStatusAndReport();
     } catch (err) {
       console.error('Error processing no-shows', err);
-      window.alert('No-show işlemleri sırasında hata oluştu.');
+      await alertDialog({ message: 'No-show işlemleri sırasında hata oluştu.' });
     } finally {
       setRunningStep(null);
     }
@@ -118,7 +119,7 @@ const NightAuditModule = () => {
 
   const handleEndOfDay = async () => {
     if (!auditId) {
-      window.alert('Önce audit başlatılmalı (Audit ID bulunamadı).');
+      await alertDialog({ message: 'Önce audit başlatılmalı (Audit ID bulunamadı).' });
       return;
     }
     setRunningStep('end');
@@ -130,7 +131,7 @@ const NightAuditModule = () => {
       await fetchStatusAndReport();
     } catch (err) {
       console.error('Error completing end-of-day', err);
-      window.alert('Gün sonu kapanışında hata oluştu.');
+      await alertDialog({ message: 'Gün sonu kapanışında hata oluştu.' });
     } finally {
       setRunningStep(null);
     }

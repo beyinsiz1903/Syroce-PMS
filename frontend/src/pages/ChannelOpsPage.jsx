@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import IncidentDrilldownDrawer from '@/components/ops/IncidentDrilldownDrawer';
 import EarlyWarningPanel from '@/components/ops/EarlyWarningPanel';
 import {
+import { alertDialog } from '@/lib/dialogs';
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -487,7 +488,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
       fetchDashboard();
       fetchPrioritizedIncidents();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Retry başarısız');
+      alertDialog({ message: err.response?.data?.detail || 'Retry başarısız' });
     } finally {
       setRetryingDlq(null);
     }

@@ -4,6 +4,7 @@ import { toast } from "react-hot-toast";
 import { Store, CheckCircle2, Ban, Loader2, RefreshCw, ShoppingBag } from "lucide-react";
 import Layout from "@/components/Layout";
 
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const STATUS_BADGE = {
   pending: { label: "Onay Bekliyor", cls: "bg-yellow-100 text-yellow-800" },
   approved: { label: "Onaylı", cls: "bg-green-100 text-green-800" },
@@ -69,7 +70,7 @@ export default function AdminVendors({ user, tenant, onLogout }) {
   };
 
   const suspend = async (id) => {
-    if (!window.confirm("Bu tedarikçinin hesabı askıya alınsın mı? Sipariş alamaz.")) return;
+    if (!await confirmDialog({ message: "Bu tedarikçinin hesabı askıya alınsın mı? Sipariş alamaz." })) return;
     setBusyId(id);
     try {
       await axios.post(`/supplies-market/admin/vendors/${id}/suspend`);
@@ -203,8 +204,8 @@ export default function AdminVendors({ user, tenant, onLogout }) {
                           <td className="px-4 py-3 text-right space-x-1">
                             {v.status !== "approved" && (
                               <button
-                                onClick={() => {
-                                  const c = window.prompt("Komisyon oranı (% — varsayılan 8):", v.commission_pct || 8);
+                                onClick={async () => {
+                                  const c = await promptDialog({ message: "Komisyon oranı (% — varsayılan 8):", defaultValue: v.commission_pct || 8 });
                                   if (c === null) return;
                                   const num = parseFloat(c);
                                   approve(v.id, isNaN(num) ? null : num);

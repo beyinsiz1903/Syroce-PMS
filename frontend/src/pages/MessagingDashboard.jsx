@@ -30,6 +30,7 @@ import {
   Pencil, TestTube, ArrowRight, Zap, Play, Power, Timer, Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 
 const API = "";
 const headers = () => ({
@@ -338,7 +339,7 @@ function TemplatesTab() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Bu sablonu silmek istediginizden emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu sablonu silmek istediginizden emin misiniz?' })) return;
     await del(`/api/messaging-center/templates/${id}`);
     toast.success('Şablon silindi');
     load();
@@ -842,7 +843,7 @@ function AutomationTab() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Bu kuralı silmek istediginizden emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu kuralı silmek istediginizden emin misiniz?' })) return;
     await del(`/api/messaging-center/automation/rules/${id}`);
     toast.success('Kural silindi');
     load();

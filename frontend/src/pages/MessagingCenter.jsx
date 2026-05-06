@@ -23,6 +23,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { alertDialog } from '@/lib/dialogs';
 
 const MessagingCenter = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -96,7 +97,7 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
   ];
 
   const handleSendMessage = () => {
-    alert(`Sending ${selectedChannel} message to: ${recipients}\n\nMessage: ${message}`);
+    alertDialog({ message: `Sending ${selectedChannel} message to: ${recipients}\n\nMessage: ${message}` });
   };
 
   return (

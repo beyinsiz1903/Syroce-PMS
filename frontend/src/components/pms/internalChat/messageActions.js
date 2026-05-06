@@ -1,5 +1,6 @@
 import axios from 'axios';
 
+import { confirmDialog } from '@/lib/dialogs';
 /**
  * Inline mesaj düzenleme submit'i. Optimistic update + sunucu round-trip.
  * Aynı metinse no-op short-circuit yapar (geçmişe kirli giriş engellenir).
@@ -70,9 +71,7 @@ export async function recallMessage({
   toast,
 }) {
   if (!messageId) return;
-  const ok = window.confirm(
-    'Bu mesajı geri almak istediğinize emin misiniz? Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.',
-  );
+  const ok = await confirmDialog({ message: 'Bu mesajı geri almak istediğinize emin misiniz? Karşı tarafta "Bu mesaj kaldırıldı" olarak görünecek.', });
   if (!ok) return;
   try {
     const res = await axios.delete(`/messaging/internal/${encodeURIComponent(messageId)}`);

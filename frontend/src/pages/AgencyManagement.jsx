@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import Layout from '@/components/Layout';
+import { confirmDialog } from '@/lib/dialogs';
 
 const AgencyManagement = ({ user, tenant, onLogout }) => {
   const [agencies, setAgencies] = useState([]);
@@ -97,7 +98,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleRegenerateApiKey = async (agencyId) => {
-    if (!confirm('Mevcut API key iptal edilecek ve yeni key olusturulacak. Devam etmek istiyor musunuz?')) return;
+    if (!await confirmDialog({ message: 'Mevcut API key iptal edilecek ve yeni key olusturulacak. Devam etmek istiyor musunuz?', variant: 'danger' })) return;
     setApiKeyLoading(prev => ({ ...prev, [agencyId]: true }));
     try {
       const { data } = await axios.post(`/b2b/api-keys/${agencyId}/regenerate`);
@@ -112,7 +113,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleRevokeApiKey = async (agencyId) => {
-    if (!confirm('API key iptal edilecek. Acente artik B2B API erisimi yapamayacak. Devam?')) return;
+    if (!await confirmDialog({ message: 'API key iptal edilecek. Acente artik B2B API erisimi yapamayacak. Devam?', variant: 'danger' })) return;
     setApiKeyLoading(prev => ({ ...prev, [agencyId]: true }));
     try {
       await axios.delete(`/b2b/api-keys/${agencyId}`);
@@ -178,7 +179,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteAgency = async (agency) => {
-    if (!confirm(`"${agency.name}" acentesini silmek istediğinize emin misiniz?`)) return;
+    if (!await confirmDialog({ message: `"${agency.name}" acentesini silmek istediğinize emin misiniz?` })) return;
     try {
       await axios.delete(`/agencies/${agency.id}`);
       toast.success('Acente silindi');
@@ -212,7 +213,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteUser = async (userId, agencyId) => {
-    if (!confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')) return;
+    if (!await confirmDialog({ message: 'Bu kullanıcıyı silmek istediğinize emin misiniz?' })) return;
     try {
       await axios.delete(`/agencies/users/${userId}`);
       toast.success('Kullanici silindi');

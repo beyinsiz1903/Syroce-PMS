@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { MessageCircle, Mail, Phone, Send, FileText, Zap } from 'lucide-react';
+import { alertDialog } from '@/lib/dialogs';
 
 const MessagingModuleAdvanced = () => {
   const [activeTab, setActiveTab] = useState('send'); // send, templates, auto
@@ -60,7 +61,7 @@ const MessagingModuleAdvanced = () => {
       );
 
       if (response.ok) {
-        alert('Message sent successfully!');
+        alertDialog({ message: 'Message sent successfully!' });
         setMessageData({
           guest_id: '',
           message_type: 'whatsapp',
@@ -71,7 +72,7 @@ const MessagingModuleAdvanced = () => {
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      alert('Mesaj gönderilemedi');
+      alertDialog({ message: 'Mesaj gönderilemedi' });
     } finally {
       setLoading(false);
     }
@@ -90,7 +91,7 @@ const MessagingModuleAdvanced = () => {
 
       if (response.ok) {
         const data = await response.json();
-        alert(`Auto-messages triggered: ${data.messages_sent} messages sent`);
+        alertDialog({ message: `Auto-messages triggered: ${data.messages_sent} messages sent` });
       }
     } catch (error) {
       console.error('Error triggering auto-messages:', error);

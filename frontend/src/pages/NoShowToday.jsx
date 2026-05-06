@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { confirmDialog } from '@/lib/dialogs';
 const localISODate = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -63,9 +64,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
   const markNoShow = async (booking) => {
     if (busyId) return;
     if (
-      !window.confirm(
-        `${booking.guest_name || booking.id.slice(0, 8)} no-show olarak işaretlensin mi?\n(Oda boşaltılacak, audit'e düşecek.)`
-      )
+      !await confirmDialog({ message: `${booking.guest_name || booking.id.slice(0, 8)} no-show olarak işaretlensin mi?\n(Oda boşaltılacak, audit'e düşecek.)`, variant: 'danger' })
     )
       return;
     setBusyId(booking.id);

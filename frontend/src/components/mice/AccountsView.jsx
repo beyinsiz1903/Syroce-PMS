@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Briefcase } from 'lucide-react';
 import { Field, Modal } from './_shared';
+import { confirmDialog } from '@/lib/dialogs';
 
 const AccountsView = ({ accounts, reload }) => {
   const [showForm, setShowForm] = useState(false);
@@ -28,7 +29,7 @@ const AccountsView = ({ accounts, reload }) => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
   };
   const remove = async (id) => {
-    if (!confirm('Hesap silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Hesap silinsin mi?', variant: 'danger' })) return;
     try { await axios.delete(`/mice/accounts/${id}`); await reload(); }
     catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };

@@ -18,6 +18,7 @@ import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+import { confirmDialog } from '@/lib/dialogs';
   Calendar, Clock, Mail, Plus, Play, Pause, Trash2, Edit,
   Send, RefreshCw, AlertTriangle, CheckCircle, XCircle,
   FileText, BarChart3, Loader2, RotateCcw, Eye,
@@ -160,7 +161,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Bu zamanlamayı silmek istediğinize emin misiniz?")) return;
+    if (!await confirmDialog({ message: "Bu zamanlamayı silmek istediğinize emin misiniz?" })) return;
     setActionLoading((p) => ({ ...p, [id]: "delete" }));
     try {
       await api(`/api/report-scheduler/schedules/${id}`, { method: "DELETE" });

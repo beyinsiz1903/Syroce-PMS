@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
+import { confirmDialog } from '@/lib/dialogs';
 const FrontdeskTab = ({
   arrivals,
   departures,
@@ -686,9 +687,9 @@ const FrontdeskTab = ({
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       {booking.status === 'confirmed' && (
                         <Button size="sm" className={`h-9 ${isDirty ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#C09D63] hover:bg-[#B08D55]'} text-white`}
-                          onClick={() => {
+                          onClick={async () => {
                             if (isDirty) {
-                              if (!window.confirm(tf('dirtyWarning'))) return;
+                              if (!await confirmDialog({ message: tf('dirtyWarning'), variant: 'danger' })) return;
                             }
                             handleCheckIn(booking.id);
                           }} data-testid={`checkin-${booking.id}`}>

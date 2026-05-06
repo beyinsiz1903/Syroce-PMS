@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { confirmDialog } from '@/lib/dialogs';
 import {
   Activity, RefreshCw, Send, AlertTriangle, CheckCircle2,
   XCircle, Clock, Inbox, RotateCcw, Trash2,
@@ -109,7 +110,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   };
 
   const handleReplayAll = async () => {
-    if (!window.confirm("Tüm başarısız olayları tekrar kuyruğa almak istiyor musunuz?")) return;
+    if (!await confirmDialog({ message: "Tüm başarısız olayları tekrar kuyruğa almak istiyor musunuz?" })) return;
     try {
       const r = await axios.post("/outbox/replay");
       toast.success(`${r.data.requeued_count} olay tekrar kuyruğa alındı`);
@@ -130,7 +131,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   };
 
   const handleDismissDlq = async (dlqId) => {
-    if (!window.confirm("Bu DLQ kaydını dismiss etmek istiyor musunuz? (Bir daha denenmez)")) return;
+    if (!await confirmDialog({ message: "Bu DLQ kaydını dismiss etmek istiyor musunuz? (Bir daha denenmez)", variant: 'danger' })) return;
     try {
       await axios.post(`/webhooks/dlq/${dlqId}/dismiss`);
       toast.success("DLQ kaydı dismiss edildi");

@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { ShoppingCart, UtensilsCrossed, Plus, Minus, History, Check } from 'lucide-react';
+import { alertDialog } from '@/lib/dialogs';
 
 const POSEnhancements = () => {
   const [activeTab, setActiveTab] = useState('order'); // order, history
@@ -101,7 +102,7 @@ const POSEnhancements = () => {
 
   const handleCreateOrder = async () => {
     if (cart.length === 0) {
-      alert('Cart is empty');
+      alertDialog({ message: 'Cart is empty' });
       return;
     }
 
@@ -130,16 +131,16 @@ const POSEnhancements = () => {
       );
 
       if (response.ok) {
-        alert('Order created successfully!');
+        alertDialog({ message: 'Order created successfully!' });
         setCart([]);
         setBookingId('');
         setFolioId('');
       } else {
-        alert('Sipariş oluşturulamadı');
+        alertDialog({ message: 'Sipariş oluşturulamadı' });
       }
     } catch (error) {
       console.error('Error creating order:', error);
-      alert('Error creating order');
+      alertDialog({ message: 'Error creating order' });
     } finally {
       setLoading(false);
     }

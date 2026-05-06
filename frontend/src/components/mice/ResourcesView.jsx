@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
+import { confirmDialog } from '@/lib/dialogs';
 
 const ResourcesView = ({ resources, reload }) => {
   const [showForm, setShowForm] = useState(false);
@@ -22,7 +23,7 @@ const ResourcesView = ({ resources, reload }) => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
   };
   const remove = async (id) => {
-    if (!confirm('Silinsin mi?')) return;
+    if (!await confirmDialog({ message: 'Silinsin mi?', variant: 'danger' })) return;
     try { await axios.delete(`/mice/resources/${id}`); await reload(); }
     catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
