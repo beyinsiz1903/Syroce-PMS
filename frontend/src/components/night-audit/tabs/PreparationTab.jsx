@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -69,20 +69,25 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
+  // Stable ref so callback identity changes do not retrigger the effect.
+  const onPreviewLoadedRef = useRef(onPreviewLoaded);
+  useEffect(() => { onPreviewLoadedRef.current = onPreviewLoaded; }, [onPreviewLoaded]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await axios.get('/night-audit/preview');
       setData(res.data);
-      if (typeof onPreviewLoaded === 'function') {
-        onPreviewLoaded(res.data);
+      const cb = onPreviewLoadedRef.current;
+      if (typeof cb === 'function') {
+        cb(res.data);
       }
     } catch (e) {
       console.error('preview failed', e);
     } finally {
       setLoading(false);
     }
-  }, [onPreviewLoaded]);
+  }, []);
 
   useEffect(() => { load(); }, [load, refreshKey]);
 

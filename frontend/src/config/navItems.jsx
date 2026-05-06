@@ -310,7 +310,7 @@ export const NAV_ITEMS = [
   // ──── RESERVATIONS GROUP ───────────────────────────
   {
     key: "group_bookings",
-    label: "Grup Rezervasyonlari",
+    label: "Grup Rezervasyonları",
     path: "/group-bookings-manage",
     moduleKey: "pms",
     tier: "basic",
@@ -319,7 +319,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "block_management",
-    label: "Blok Yönetimi",
+    label: "Grup Blok Kontenjanı",
     path: "/block-management",
     moduleKey: "pms",
     tier: "basic",

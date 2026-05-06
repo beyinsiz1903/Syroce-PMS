@@ -180,7 +180,10 @@ export default function GroupBookings({ user, tenant, onLogout }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Grup Rezervasyonları</h1>
-            <p className="text-sm text-gray-500 mt-1">Grup giriş/çıkış ve toplu yönetim</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Grup adı altında bireysel rezervasyonların toplu yönetimi (giriş/çıkış, oluşturma).
+              Oda kontenjanı/wash/pickup için “Grup Blok Kontenjanı” sayfasına bakın.
+            </p>
           </div>
           <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white" data-testid="create-group-btn">
             <Plus className="w-4 h-4 mr-2" /> Yeni Grup

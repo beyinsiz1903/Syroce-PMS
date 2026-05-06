@@ -143,10 +143,11 @@ export default function BlockManagementPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <BarChart3 className="h-6 w-6" /> Grup Blok Yönetimi
+            <BarChart3 className="h-6 w-6" /> Grup Blok Kontenjanı
           </h2>
           <p className="text-sm text-muted-foreground">
-            Cutoff uyarıları, oda bırakma (wash) ve pickup eğrisi.
+            Grup için ayrılan oda kontenjanları — cutoff uyarıları, oda bırakma (wash) ve pickup eğrisi.
+            Bireysel rezervasyonlar için “Grup Rezervasyonları” sayfasını kullanın.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-blocks">

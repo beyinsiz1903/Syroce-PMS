@@ -261,12 +261,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     }
   };
 
+  // Use functional updater + ref-free comparison so the callback identity is
+  // stable across renders and does not retrigger child effects (preview loop fix).
   const handlePreviewLoaded = useCallback((data) => {
     setPreviewData(data);
-    if (data?.business_date && data.business_date !== businessDate) {
-      setBusinessDate(data.business_date);
+    const next = data?.business_date;
+    if (next) {
+      setBusinessDate((prev) => (prev === next ? prev : next));
     }
-  }, [businessDate]);
+  }, []);
 
   const toggleExpand = async (auditId) => {
     if (expandedRun === auditId) {
