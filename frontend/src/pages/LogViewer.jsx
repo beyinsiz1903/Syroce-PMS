@@ -55,7 +55,7 @@ const LogViewer = ({ user }) => {
   const getLogIcon = (level) => {
     switch(level) {
       case 'ERROR': return <AlertCircle className="w-4 h-4 text-red-600" />;
-      case 'WARN': return <AlertTriangle className="w-4 h-4 text-orange-600" />;
+      case 'WARN': return <AlertTriangle className="w-4 h-4 text-amber-600" />;
       case 'INFO': return <Info className="w-4 h-4 text-blue-600" />;
       case 'DEBUG': return <Bug className="w-4 h-4 text-gray-600" />;
       default: return <FileText className="w-4 h-4" />;
@@ -65,7 +65,7 @@ const LogViewer = ({ user }) => {
   const getLogColor = (level) => {
     switch(level) {
       case 'ERROR': return 'bg-red-50 border-red-200';
-      case 'WARN': return 'bg-orange-50 border-orange-200';
+      case 'WARN': return 'bg-amber-50 border-amber-200';
       case 'INFO': return 'bg-blue-50 border-blue-200';
       case 'DEBUG': return 'bg-gray-50 border-gray-200';
       default: return 'bg-white border-gray-200';
@@ -171,7 +171,7 @@ const LogViewer = ({ user }) => {
                   size="sm"
                   variant={selectedLevel === 'WARN' ? 'default' : 'outline'}
                   onClick={() => setSelectedLevel('WARN')}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                  className="bg-amber-500 hover:bg-amber-600 text-white"
                 >
                   WARN ({logLevels.WARN || 0})
                 </Button>

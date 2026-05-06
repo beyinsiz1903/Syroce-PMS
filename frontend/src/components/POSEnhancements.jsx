@@ -148,9 +148,9 @@ const POSEnhancements = () => {
 
   const getCategoryColor = (category) => {
     const colors = {
-      food: 'bg-orange-100 text-orange-800',
+      food: 'bg-amber-100 text-amber-800',
       beverage: 'bg-blue-100 text-blue-800',
-      alcohol: 'bg-purple-100 text-purple-800',
+      alcohol: 'bg-indigo-100 text-indigo-800',
       dessert: 'bg-pink-100 text-pink-800',
       appetizer: 'bg-green-100 text-green-800'
     };

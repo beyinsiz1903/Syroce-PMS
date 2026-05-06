@@ -373,7 +373,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                                             <div className="flex items-center gap-1.5">
                                               <span className={`text-xs ${on ? 'text-gray-700' : 'text-gray-400'}`}>{label}</span>
                                               {!included && (
-                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 border border-orange-200 font-medium">
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 border border-amber-200 font-medium">
                                                   {modTier === 'mini' ? 'MINI' : modTier === 'basic' ? 'BASIC' : modTier === 'professional' ? 'PRO' : 'ENT'}
                                                 </span>
                                               )}

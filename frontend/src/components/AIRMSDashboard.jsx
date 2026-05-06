@@ -100,7 +100,7 @@ const AIRMSDashboard = () => {
         <button
           onClick={autoPublishRates}
           disabled={loading}
-          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 font-semibold text-lg"
+          className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 font-semibold text-lg"
         >
           {loading ? '⏳ Publishing...' : '🚀 Auto-Publish AI Rates'}
         </button>
@@ -128,9 +128,9 @@ const AIRMSDashboard = () => {
               <div className="text-sm text-gray-600">City Occupancy</div>
               <div className="text-3xl font-bold text-blue-600">{marketCompression.city_occupancy_estimate}</div>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
+            <div className="bg-indigo-50 p-4 rounded-lg border-2 border-indigo-200">
               <div className="text-sm text-gray-600">Pricing Opportunity</div>
-              <div className="text-3xl font-bold text-purple-600">{marketCompression.pricing_opportunity_pct}%</div>
+              <div className="text-3xl font-bold text-indigo-600">{marketCompression.pricing_opportunity_pct}%</div>
             </div>
           </div>
           <div className="bg-blue-100 border-l-4 border-blue-500 p-4 rounded">
@@ -158,7 +158,7 @@ const AIRMSDashboard = () => {
         <button
           onClick={fetchMarketCompression}
           disabled={loading}
-          className="p-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+          className="p-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
         >
           🎯 Refresh Compression
         </button>

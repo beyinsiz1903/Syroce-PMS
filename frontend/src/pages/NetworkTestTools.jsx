@@ -52,7 +52,7 @@ const NetworkTestTools = ({ user }) => {
     switch(quality) {
       case 'excellent': return 'bg-green-500';
       case 'good': return 'bg-blue-500';
-      case 'fair': return 'bg-orange-500';
+      case 'fair': return 'bg-amber-500';
       case 'poor': return 'bg-red-500';
       default: return 'bg-gray-500';
     }
@@ -61,7 +61,7 @@ const NetworkTestTools = ({ user }) => {
   const getStatusColor = (status) => {
     switch(status) {
       case 'healthy': return 'text-green-600 bg-green-50 border-green-200';
-      case 'degraded': return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'degraded': return 'text-amber-600 bg-amber-50 border-amber-200';
       case 'critical': return 'text-red-600 bg-red-50 border-red-200';
       default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
@@ -132,13 +132,13 @@ const NetworkTestTools = ({ user }) => {
                     <div className="text-xs text-gray-600">Paket Kaybı</div>
                     <div className="text-2xl font-bold text-green-600">{pingResult.packet_loss_percent}%</div>
                   </div>
-                  <div className="p-3 bg-purple-50 rounded">
+                  <div className="p-3 bg-indigo-50 rounded">
                     <div className="text-xs text-gray-600">En Düşük</div>
-                    <div className="text-lg font-bold text-purple-600">{pingResult.latency?.min_ms}ms</div>
+                    <div className="text-lg font-bold text-indigo-600">{pingResult.latency?.min_ms}ms</div>
                   </div>
-                  <div className="p-3 bg-orange-50 rounded">
+                  <div className="p-3 bg-amber-50 rounded">
                     <div className="text-xs text-gray-600">En Yüksek</div>
-                    <div className="text-lg font-bold text-orange-600">{pingResult.latency?.max_ms}ms</div>
+                    <div className="text-lg font-bold text-amber-600">{pingResult.latency?.max_ms}ms</div>
                   </div>
                 </div>
 

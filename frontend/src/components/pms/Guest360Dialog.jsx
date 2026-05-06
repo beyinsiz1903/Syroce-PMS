@@ -86,7 +86,7 @@ const Guest360Dialog = ({
     ) : guest360Data ? (
       <div className="space-y-4">
         {/* Quick Action Buttons - NEW */}
-        <div className="flex gap-2 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+        <div className="flex gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
           <Button 
             onClick={() => {
               const g = guest360Data.guest || {};
@@ -131,7 +131,7 @@ const Guest360Dialog = ({
               }
             }}
             variant="outline"
-            className="flex-1 border-purple-400 hover:bg-purple-50"
+            className="flex-1 border-indigo-400 hover:bg-indigo-50"
           >
             <Star className="w-4 h-4 mr-2" />
             Block Room Preference
@@ -142,7 +142,7 @@ const Guest360Dialog = ({
               window.location.href = `/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`;
             }}
             variant="outline"
-            className="flex-1 border-orange-400 hover:bg-orange-50"
+            className="flex-1 border-amber-400 hover:bg-amber-50"
           >
             <MessageSquare className="w-4 h-4 mr-2" />
             Message Guest
@@ -174,7 +174,7 @@ const Guest360Dialog = ({
             <div>
               <div className="text-sm text-gray-600">Loyalty Status</div>
               <div className={`inline-block px-2 py-1 rounded text-sm font-bold ${
-                guest360Data.profile?.loyalty_status === 'vip' ? 'bg-purple-600 text-white' :
+                guest360Data.profile?.loyalty_status === 'vip' ? 'bg-indigo-600 text-white' :
                 guest360Data.profile?.loyalty_status === 'gold' ? 'bg-yellow-500 text-white' :
                 guest360Data.profile?.loyalty_status === 'silver' ? 'bg-gray-400 text-white' :
                 'bg-blue-500 text-white'
@@ -193,10 +193,10 @@ const Guest360Dialog = ({
 
 
         {/* Loyalty Progress Card */}
-        <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+        <Card className="bg-gradient-to-r from-indigo-50 to-pink-50 border-indigo-200">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Crown className="w-5 h-5 text-purple-600" />
+              <Crown className="w-5 h-5 text-indigo-600" />
               Loyalty Program Status
             </CardTitle>
           </CardHeader>
@@ -209,7 +209,7 @@ const Guest360Dialog = ({
                 <div className="text-sm text-gray-600">Current Balance</div>
               </div>
               <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
-                guest360Data.profile?.loyalty_status === 'vip' ? 'bg-purple-600 text-white' :
+                guest360Data.profile?.loyalty_status === 'vip' ? 'bg-indigo-600 text-white' :
                 guest360Data.profile?.loyalty_status === 'gold' ? 'bg-yellow-500 text-white' :
                 guest360Data.profile?.loyalty_status === 'silver' ? 'bg-gray-400 text-white' :
                 'bg-blue-500 text-white'
@@ -241,7 +241,7 @@ const Guest360Dialog = ({
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div 
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 h-3 rounded-full transition-all"
+                  className="bg-gradient-to-r from-indigo-600 to-pink-600 h-3 rounded-full transition-all"
                   style={{ 
                     width: `${(() => {
                       const currentPoints = guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0;
@@ -312,13 +312,13 @@ const Guest360Dialog = ({
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-3xl font-bold text-purple-600">${guest360Data.stats?.lifetime_value || 0}</div>
+              <div className="text-3xl font-bold text-indigo-600">${guest360Data.stats?.lifetime_value || 0}</div>
               <div className="text-sm text-gray-600">Lifetime Value</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-3xl font-bold text-orange-600">${guest360Data.stats?.average_adr || 0}</div>
+              <div className="text-3xl font-bold text-amber-600">${guest360Data.stats?.average_adr || 0}</div>
               <div className="text-sm text-gray-600">Avg ADR</div>
             </CardContent>
           </Card>
@@ -494,7 +494,7 @@ const Guest360Dialog = ({
                 {/* Stats */}
                 <div className="flex flex-col justify-center gap-3">
                   {Object.entries(guest360Data.stats.channel_distribution).map(([channel, count], index) => {
-                    const colors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500'];
+                    const colors = ['bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-indigo-500', 'bg-pink-500'];
                     return (
                       <div key={channel} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">

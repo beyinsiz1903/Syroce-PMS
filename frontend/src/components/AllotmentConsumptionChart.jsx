@@ -67,10 +67,10 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
   }
 
   return (
-    <Card className="border-2 border-purple-300">
+    <Card className="border-2 border-indigo-300">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Package className="w-5 h-5 text-purple-600" />
+          <Package className="w-5 h-5 text-indigo-600" />
           Allotment Consumption - Operatör Bazlı
         </CardTitle>
         <CardDescription>
@@ -93,8 +93,8 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
               </div>
               <div className="text-xs text-gray-600">Toplam Satılan</div>
             </div>
-            <div className="p-3 bg-orange-50 rounded-lg text-center">
-              <div className="text-2xl font-bold text-orange-700">
+            <div className="p-3 bg-amber-50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-amber-700">
                 {allotments.reduce((sum, a) => sum + a.remaining, 0)}
               </div>
               <div className="text-xs text-gray-600">Toplam Kalan</div>
@@ -144,7 +144,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                     </div>
                     {/* Remaining (Orange) */}
                     <div
-                      className="absolute h-full bg-orange-300 flex items-center justify-center text-gray-700 text-xs font-semibold transition-all"
+                      className="absolute h-full bg-amber-300 flex items-center justify-center text-gray-700 text-xs font-semibold transition-all"
                       style={{
                         left: `${(allotment.sold / allotment.allocated) * 100}%`,
                         width: `${(allotment.remaining / allotment.allocated) * 100}%`
@@ -166,7 +166,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                     <div className="text-xs text-gray-600">Sold</div>
                   </div>
                   <div>
-                    <div className="font-bold text-orange-700">{allotment.remaining}</div>
+                    <div className="font-bold text-amber-700">{allotment.remaining}</div>
                     <div className="text-xs text-gray-600">Remaining</div>
                   </div>
                 </div>
@@ -194,14 +194,14 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
           </div>
 
           {/* Demo Pitch Banner */}
-          <div className="mt-4 p-4 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg border-2 border-purple-300">
+          <div className="mt-4 p-4 bg-gradient-to-r from-indigo-100 to-pink-100 rounded-lg border-2 border-indigo-300">
             <div className="flex items-start gap-3">
-              <TrendingUp className="w-6 h-6 text-purple-600 mt-1" />
+              <TrendingUp className="w-6 h-6 text-indigo-600 mt-1" />
               <div>
-                <div className="font-bold text-purple-900 mb-1">
+                <div className="font-bold text-indigo-900 mb-1">
                   🎯 Demo Pitch: "Allotment Kaosunu Tek Tuşla Yönetin"
                 </div>
-                <p className="text-sm text-purple-800">
+                <p className="text-sm text-indigo-800">
                   Tüm operatörlerin allotment durumunu tek ekranda görün. Kalan oda sayısını 
                   an instant takip edin. Kritik durumlar otomatik highlight edilir. 
                   Revenue Management toplantılarında çok etkili!

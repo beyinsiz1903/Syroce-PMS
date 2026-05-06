@@ -173,7 +173,7 @@ const ConciergeDesk = () => {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{req.guest_name}</span>
                         <Badge variant="outline">{tc('room')} {req.room_number}</Badge>
-                        {req.priority === 'vip' && <Badge className="bg-purple-100 text-purple-800">{tc('vip')}</Badge>}
+                        {req.priority === 'vip' && <Badge className="bg-indigo-100 text-indigo-800">{tc('vip')}</Badge>}
                         {req.priority === 'high' && <Badge className="bg-red-100 text-red-800">{tc('highPriority')}</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">{getTypeLabel(req.type)}: {req.details}</p>

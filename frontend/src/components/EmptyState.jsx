@@ -17,12 +17,12 @@ const EmptyState = ({
     <Card className="border-2 border-dashed">
       <CardContent className="p-8 text-center">
         <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
-          comingSoon ? 'bg-purple-100' : 
+          comingSoon ? 'bg-indigo-100' : 
           setupRequired ? 'bg-blue-100' : 
           'bg-gray-100'
         }`}>
           <Icon className={`w-8 h-8 ${
-            comingSoon ? 'text-purple-600' : 
+            comingSoon ? 'text-indigo-600' : 
             setupRequired ? 'text-blue-600' : 
             'text-gray-400'
           }`} />
@@ -37,7 +37,7 @@ const EmptyState = ({
         </p>
 
         {comingSoon && (
-          <Badge className="bg-purple-500 text-white mb-4">
+          <Badge className="bg-indigo-500 text-white mb-4">
             <Rocket className="w-3 h-3 mr-1" />
             Yakında Gelecek
           </Badge>

@@ -353,8 +353,8 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           <Card className="bg-gray-50 border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-500/20">
-                  <AlertTriangle className="h-5 w-5 text-orange-400" />
+                <div className="p-2 rounded-lg bg-amber-500/20">
+                  <AlertTriangle className="h-5 w-5 text-amber-400" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Geciken</p>
@@ -669,7 +669,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
                       <div key={idx} className="flex items-start gap-3 p-2 rounded bg-white text-sm">
                         <div className={`w-2 h-2 rounded-full mt-1.5 ${
                           entry.severity === 'critical' ? 'bg-red-500' :
-                          entry.severity === 'error' ? 'bg-orange-500' :
+                          entry.severity === 'error' ? 'bg-amber-500' :
                           entry.severity === 'warning' ? 'bg-amber-500' : 'bg-emerald-500'
                         }`} />
                         <div className="flex-1">

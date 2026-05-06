@@ -84,7 +84,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
       case 'resort':
         return <Home className="h-5 w-5 text-blue-500" />;
       case 'boutique':
-        return <Building2 className="h-5 w-5 text-purple-500" />;
+        return <Building2 className="h-5 w-5 text-indigo-500" />;
       default:
         return <Hotel className="h-5 w-5 text-green-500" />;
     }
@@ -104,7 +104,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
       {/* Floating Button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-20 left-4 z-50 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
+        className="fixed bottom-20 left-4 z-50 bg-gradient-to-r from-indigo-600 to-indigo-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
         title="Tesis Değiştir"
       >
         <Building2 className="h-6 w-6" />

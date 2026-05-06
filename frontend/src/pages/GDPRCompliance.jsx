@@ -89,7 +89,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
                   </Card>
                   <Card>
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-orange-600">{cs.anonymized_guests}</div>
+                      <div className="text-3xl font-bold text-amber-600">{cs.anonymized_guests}</div>
                       <p className="text-sm text-gray-500">Anonimlestirilmis</p>
                     </CardContent>
                   </Card>

@@ -39,7 +39,7 @@ const GuestAlerts = ({ guest, booking }) => {
       type: 'special_request',
       icon: AlertCircle,
       label: `${booking.special_requests.length} Special Request${booking.special_requests.length > 1 ? 's' : ''}`,
-      color: 'bg-orange-500'
+      color: 'bg-amber-500'
     });
   }
   

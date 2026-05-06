@@ -175,14 +175,14 @@ const SalesModule = ({ user, tenant, onLogout }) => {
       'tentative': { color: 'bg-yellow-500', text: 'Tentative' },
       'cancelled': { color: 'bg-red-500', text: 'Cancelled' },
       'active': { color: 'bg-green-500', text: 'Active' },
-      'renewal-due': { color: 'bg-orange-500', text: 'Renewal Due' }
+      'renewal-due': { color: 'bg-amber-500', text: 'Renewal Due' }
     };
     return badges[status] || badges['confirmed'];
   };
 
   const getTierBadge = (tier) => {
     const tiers = {
-      'platinum': 'bg-purple-600',
+      'platinum': 'bg-indigo-600',
       'gold': 'bg-yellow-600',
       'silver': 'bg-gray-400'
     };
@@ -256,7 +256,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">18</div>
-              <div className="flex items-center text-sm text-orange-600 mt-1">
+              <div className="flex items-center text-sm text-amber-600 mt-1">
                 <AlertCircle className="w-4 h-4 mr-1" />
                 3 renewals due
               </div>
@@ -483,7 +483,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                         Report
                       </Button>
                       {contract.status === 'renewal-due' && (
-                        <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+                        <Button size="sm" className="bg-amber-600 hover:bg-amber-700">
                           <Clock className="w-4 h-4 mr-1" />
                           Renew
                         </Button>

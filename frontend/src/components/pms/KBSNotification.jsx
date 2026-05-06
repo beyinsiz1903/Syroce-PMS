@@ -312,10 +312,10 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
             <p className="text-lg font-bold text-green-700">{queueStats.done || 0}</p>
             <p className="text-[10px] text-green-700">{tk('qDone')}</p>
           </div>
-          <div className="text-center bg-white rounded border-orange-200 border p-2">
-            <AlertTriangle className="w-4 h-4 mx-auto text-orange-600" />
-            <p className="text-lg font-bold text-orange-700">{queueStats.failed || 0}</p>
-            <p className="text-[10px] text-orange-700">{tk('qFailed')}</p>
+          <div className="text-center bg-white rounded border-amber-200 border p-2">
+            <AlertTriangle className="w-4 h-4 mx-auto text-amber-600" />
+            <p className="text-lg font-bold text-amber-700">{queueStats.failed || 0}</p>
+            <p className="text-[10px] text-amber-700">{tk('qFailed')}</p>
           </div>
           <div className="text-center bg-white rounded border-red-200 border p-2">
             <Skull className="w-4 h-4 mx-auto text-red-600" />
@@ -439,7 +439,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
               pending: 'bg-yellow-100 text-yellow-800',
               in_progress: 'bg-blue-100 text-blue-800',
               done: 'bg-green-100 text-green-800',
-              failed: 'bg-orange-100 text-orange-800',
+              failed: 'bg-amber-100 text-amber-800',
               dead: 'bg-red-100 text-red-800',
             };
             const statusLabel = {

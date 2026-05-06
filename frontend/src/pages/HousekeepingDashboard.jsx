@@ -133,7 +133,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/maintenance/work-orders')}
                 data-testid="hk-quick-maintenance"
               >
-                <Wrench className="w-5 h-5 text-orange-600" />
+                <Wrench className="w-5 h-5 text-amber-600" />
                 <span className="text-sm">{t('hkDashboard.taskList')}</span>
               </Button>
               <Button
@@ -142,7 +142,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 onClick={() => navigate('/mobile/housekeeping')}
                 data-testid="hk-quick-mobile"
               >
-                <Smartphone className="w-5 h-5 text-purple-600" />
+                <Smartphone className="w-5 h-5 text-indigo-600" />
                 <span className="text-sm">{t('hkDashboard.mobileApp')}</span>
               </Button>
             </div>

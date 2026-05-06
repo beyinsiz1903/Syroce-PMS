@@ -30,7 +30,7 @@ function ActionBadge({ action }) {
     slight_increase: { label: 'Hafif Artir', icon: ArrowUp, cls: 'text-teal-600' },
     maintain: { label: 'Koru', icon: Minus, cls: 'text-blue-600' },
     decrease: { label: 'Dusur', icon: ArrowDown, cls: 'text-red-600' },
-    slight_decrease: { label: 'Hafif Dusur', icon: ArrowDown, cls: 'text-orange-600' },
+    slight_decrease: { label: 'Hafif Dusur', icon: ArrowDown, cls: 'text-amber-600' },
     no_data: { label: 'Veri Yok', icon: Minus, cls: 'text-slate-400' },
   };
   const item = map[action] || map.no_data;
@@ -70,7 +70,7 @@ export default function RevenueMLPanel() {
     <div className="space-y-6" data-testid="revenue-ml-panel">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Brain className="w-5 h-5 text-purple-600" /> Revenue ML Sonuclari
+          <Brain className="w-5 h-5 text-indigo-600" /> Revenue ML Sonuclari
         </h3>
         <Button variant="outline" size="sm" onClick={load} data-testid="refresh-ml-btn">
           <RefreshCw className="h-4 w-4 mr-1" /> Yenile
@@ -86,10 +86,10 @@ export default function RevenueMLPanel() {
           <StatBox label="Fiyat Opt. Firsati" value={priceOpt.length} color="text-teal-600" />
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <StatBox label="Yüksek Talep Gunu" value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} color="text-purple-600" />
+          <StatBox label="Yüksek Talep Gunu" value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} color="text-indigo-600" />
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <StatBox label="Riskli Rez. Sayısı" value={data?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
+          <StatBox label="Riskli Rez. Sayısı" value={data?.cancellation_risk?.at_risk_count || 0} color="text-amber-600" />
         </CardContent></Card>
       </div>
 

@@ -98,7 +98,7 @@ const CategoryRevenueCard = () => {
                   <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
                   <td className="p-2 text-right">{r.count}</td>
                   <td className="p-2 text-right">{fmt(r.subtotal)}</td>
-                  <td className="p-2 text-right text-orange-700">{r.discount > 0 ? `−${fmt(r.discount)}` : '0,00'}</td>
+                  <td className="p-2 text-right text-amber-700">{r.discount > 0 ? `−${fmt(r.discount)}` : '0,00'}</td>
                   <td className="p-2 text-right">{fmt(r.net)}</td>
                   <td className="p-2 text-right">{fmt(r.vat)}</td>
                   <td className="p-2 text-right">{fmt(r.city_tax)}</td>
@@ -112,7 +112,7 @@ const CategoryRevenueCard = () => {
                   <td className="p-2">TOPLAM</td>
                   <td className="p-2 text-right">{totals.count}</td>
                   <td className="p-2 text-right">{fmt(totals.subtotal)}</td>
-                  <td className="p-2 text-right text-orange-700">{totals.discount > 0 ? `−${fmt(totals.discount)}` : '0,00'}</td>
+                  <td className="p-2 text-right text-amber-700">{totals.discount > 0 ? `−${fmt(totals.discount)}` : '0,00'}</td>
                   <td className="p-2 text-right">{fmt(totals.net)}</td>
                   <td className="p-2 text-right">{fmt(totals.vat)}</td>
                   <td className="p-2 text-right">{fmt(totals.city_tax)}</td>

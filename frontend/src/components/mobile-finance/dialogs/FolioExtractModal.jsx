@@ -26,7 +26,7 @@ export default function FolioExtractModal(props) {
         {selectedFolioExtract ? (
           <div className="space-y-4">
             {/* Folio Info */}
-            <Card className="bg-gradient-to-r from-indigo-50 to-purple-50">
+            <Card className="bg-gradient-to-r from-indigo-50 to-indigo-50">
               <CardContent className="p-4">
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>

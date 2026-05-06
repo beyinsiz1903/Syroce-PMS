@@ -46,7 +46,7 @@ const MobileDashboard = ({ user, onLogout }) => {
       name: t('mobileDashboard.fnb'),
       nameEn: 'F&B',
       icon: UtensilsCrossed,
-      color: 'bg-orange-500',
+      color: 'bg-amber-500',
       roles: ['ADMIN', 'SUPERVISOR', 'FNB'],
       path: '/mobile/fnb'
     },
@@ -55,7 +55,7 @@ const MobileDashboard = ({ user, onLogout }) => {
       name: t('mobileDashboard.maintenance'),
       nameEn: 'Maintenance',
       icon: Wrench,
-      color: 'bg-purple-500',
+      color: 'bg-indigo-500',
       roles: ['ADMIN', 'SUPERVISOR', 'MAINTENANCE'],
       path: '/mobile/maintenance'
     },
@@ -196,7 +196,7 @@ const MobileDashboard = ({ user, onLogout }) => {
         </div>
 
         {/* Today's Notifications */}
-        <Card className="mb-4 border-orange-200 bg-orange-50">
+        <Card className="mb-4 border-amber-200 bg-amber-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               🔔 {t('mobileDashboard.todaysAlerts')}

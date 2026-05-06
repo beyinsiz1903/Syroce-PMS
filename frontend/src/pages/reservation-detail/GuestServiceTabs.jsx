@@ -153,8 +153,8 @@ export function HistoryTab({ history, roomMoves }) {
     communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
   };
   const colors = {
-    payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-orange-100 text-orange-700',
-    agency_payment_recorded: 'bg-purple-100 text-purple-700', charge_split: 'bg-blue-100 text-blue-700',
+    payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-amber-100 text-amber-700',
+    agency_payment_recorded: 'bg-indigo-100 text-indigo-700', charge_split: 'bg-blue-100 text-blue-700',
     room_changed: 'bg-indigo-100 text-indigo-700', early_checkin: 'bg-teal-100 text-teal-700',
     late_checkout: 'bg-teal-100 text-teal-700', marked_noshow: 'bg-red-100 text-red-700',
     deposit_recorded: 'bg-blue-100 text-blue-700', deposit_refunded: 'bg-red-100 text-red-700',

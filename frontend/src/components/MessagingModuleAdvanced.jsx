@@ -113,7 +113,7 @@ const MessagingModuleAdvanced = () => {
     const colors = {
       whatsapp: 'bg-green-500',
       sms: 'bg-blue-500',
-      email: 'bg-purple-500'
+      email: 'bg-indigo-500'
     };
     return colors[type] || 'bg-gray-500';
   };
@@ -333,7 +333,7 @@ const MessagingModuleAdvanced = () => {
                 </CardContent>
               </Card>
 
-              <Card className="border-l-4 border-l-purple-500">
+              <Card className="border-l-4 border-l-indigo-500">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>

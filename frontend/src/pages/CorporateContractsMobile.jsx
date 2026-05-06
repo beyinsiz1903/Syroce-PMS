@@ -40,11 +40,11 @@ const CorporateContractsMobile = ({ user }) => {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-50 flex items-center justify-center"><RefreshCw className="h-12 w-12 animate-spin text-violet-600" /></div>;
+  if (loading) return <div className="min-h-screen bg-gradient-to-br from-violet-50 to-indigo-50 flex items-center justify-center"><RefreshCw className="h-12 w-12 animate-spin text-violet-600" /></div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-50 pb-20">
-      <div className="bg-gradient-to-r from-violet-600 to-purple-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 to-indigo-50 pb-20">
+      <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
@@ -63,7 +63,7 @@ const CorporateContractsMobile = ({ user }) => {
 
       <div className="p-4 space-y-3">
         {activeView === 'contracts' && contracts.map(contract => (
-          <Card key={contract.id} className={`border-l-4 ${contract.status === 'active' ? 'border-green-500' : 'border-orange-500'}`}>
+          <Card key={contract.id} className={`border-l-4 ${contract.status === 'active' ? 'border-green-500' : 'border-amber-500'}`}>
             <CardContent className="p-4">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -73,7 +73,7 @@ const CorporateContractsMobile = ({ user }) => {
                   </div>
                   <div className="text-sm text-gray-600">{contract.contact_person}</div>
                 </div>
-                <Badge className={contract.days_until_expiry < 60 ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}>
+                <Badge className={contract.days_until_expiry < 60 ? 'bg-amber-500 text-white' : 'bg-green-500 text-white'}>
                   {contract.days_until_expiry < 60 ? 'YAKLAŞIYOR' : 'AKTİF'}
                 </Badge>
               </div>
@@ -90,7 +90,7 @@ const CorporateContractsMobile = ({ user }) => {
               <div className="text-xs space-y-1">
                 <div className="flex justify-between"><span className="text-gray-600">Taahhüt:</span><span className="font-semibold">{contract.room_nights_committed} gece</span></div>
                 <div className="flex justify-between"><span className="text-gray-600">Kullanılan:</span><span className="font-semibold">{contract.room_nights_used} gece</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Bitiş:</span><span className={contract.days_until_expiry < 60 ? 'font-bold text-orange-600' : ''}>{contract.days_until_expiry} gün</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Bitiş:</span><span className={contract.days_until_expiry < 60 ? 'font-bold text-amber-600' : ''}>{contract.days_until_expiry} gün</span></div>
               </div>
               <div className="flex flex-wrap gap-1 mt-2">
                 {contract.special_amenities.map((amenity, idx) => <Badge key={idx} variant="outline" className="text-xs">{amenity}</Badge>)}
@@ -110,7 +110,7 @@ const CorporateContractsMobile = ({ user }) => {
                   </div>
                   <div className="text-sm text-gray-600">{customer.contact_person}</div>
                 </div>
-                <Badge className={customer.contract_status === 'active' ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'}>
+                <Badge className={customer.contract_status === 'active' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}>
                   {customer.contract_status === 'active' ? 'AKTİF' : 'BİTİYOR'}
                 </Badge>
               </div>
@@ -130,7 +130,7 @@ const CorporateContractsMobile = ({ user }) => {
         ))}
 
         {activeView === 'alerts' && alerts.map(alert => (
-          <Card key={alert.id} className={`border-l-4 ${alert.severity === 'high' ? 'border-red-500 bg-red-50' : 'border-orange-500 bg-orange-50'}`}>
+          <Card key={alert.id} className={`border-l-4 ${alert.severity === 'high' ? 'border-red-500 bg-red-50' : 'border-amber-500 bg-amber-50'}`}>
             <CardContent className="p-4">
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -140,7 +140,7 @@ const CorporateContractsMobile = ({ user }) => {
                   </div>
                   <div className="text-sm text-gray-700 mt-1">{alert.message}</div>
                 </div>
-                <Badge className={alert.severity === 'high' ? 'bg-red-500 text-white' : 'bg-orange-500 text-white'}>
+                <Badge className={alert.severity === 'high' ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'}>
                   {alert.severity === 'high' ? 'ACİL' : 'ORTA'}
                 </Badge>
               </div>

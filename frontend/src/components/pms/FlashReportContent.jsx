@@ -237,15 +237,15 @@ const FlashReportContent = ({
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-purple-50 border-purple-200" data-testid="flash-kpi-revpar">
+        <Card className="bg-indigo-50 border-indigo-200" data-testid="flash-kpi-revpar">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-purple-700 font-medium">RevPAR</p>
-                <p className="text-2xl font-bold text-purple-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
-                <p className="text-xs text-purple-600 mt-0.5">/ Mevcut Oda</p>
+                <p className="text-xs text-indigo-700 font-medium">RevPAR</p>
+                <p className="text-2xl font-bold text-indigo-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
+                <p className="text-xs text-indigo-600 mt-0.5">/ Mevcut Oda</p>
               </div>
-              <TrendingUp className="w-7 h-7 text-purple-500" />
+              <TrendingUp className="w-7 h-7 text-indigo-500" />
             </div>
           </CardContent>
         </Card>
@@ -281,9 +281,9 @@ const FlashReportContent = ({
         </Card>
         <Card data-testid="flash-ops-inhouse">
           <CardContent className="p-3 text-center">
-            <Users className="w-5 h-5 mx-auto text-purple-500" />
+            <Users className="w-5 h-5 mx-auto text-indigo-500" />
             <p className="text-[11px] text-gray-500 mt-1">In-House</p>
-            <p className="text-xl font-bold text-purple-700">{d.operations?.inhouse || 0}</p>
+            <p className="text-xl font-bold text-indigo-700">{d.operations?.inhouse || 0}</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-noshow">
@@ -302,9 +302,9 @@ const FlashReportContent = ({
         </Card>
         <Card data-testid="flash-ops-cancel">
           <CardContent className="p-3 text-center">
-            <XCircle className="w-5 h-5 mx-auto text-orange-500" />
+            <XCircle className="w-5 h-5 mx-auto text-amber-500" />
             <p className="text-[11px] text-gray-500 mt-1">İptal</p>
-            <p className="text-xl font-bold text-orange-700">{d.operations?.cancellations || 0}</p>
+            <p className="text-xl font-bold text-amber-700">{d.operations?.cancellations || 0}</p>
           </CardContent>
         </Card>
       </div>
@@ -384,22 +384,22 @@ const FlashReportContent = ({
 
       {/* Dikkat gerektiren durumlar */}
       {((d.operations?.no_shows || 0) > 0 || (d.operations?.cancellations || 0) > 0) && (
-        <Card className="border-orange-200 bg-orange-50" data-testid="flash-alerts">
+        <Card className="border-amber-200 bg-amber-50" data-testid="flash-alerts">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-orange-800 flex items-center gap-2">
+            <CardTitle className="text-sm text-amber-800 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> Dikkat Gerektiren Durumlar
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4 text-sm">
               {(d.operations?.no_shows || 0) > 0 && (
-                <div className="flex items-center gap-2 text-orange-700">
+                <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
                   <span className="font-semibold">{d.operations.no_shows} No-show</span>
                 </div>
               )}
               {(d.operations?.cancellations || 0) > 0 && (
-                <div className="flex items-center gap-2 text-orange-700">
+                <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
                   <span className="font-semibold">{d.operations.cancellations} İptal</span>
                 </div>

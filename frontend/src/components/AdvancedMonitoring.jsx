@@ -41,7 +41,7 @@ const AdvancedMonitoring = () => {
       case 'operational':
         return 'bg-green-500';
       case 'warning':
-        return 'bg-orange-500';
+        return 'bg-amber-500';
       case 'error':
       case 'critical':
         return 'bg-red-500';
@@ -101,7 +101,7 @@ const AdvancedMonitoring = () => {
                 <div
                   className={`h-2 rounded-full transition-all ${
                     health.system.cpu?.usage_percent > 80 ? 'bg-red-500' :
-                    health.system.cpu?.usage_percent > 60 ? 'bg-orange-500' : 'bg-green-500'
+                    health.system.cpu?.usage_percent > 60 ? 'bg-amber-500' : 'bg-green-500'
                   }`}
                   style={{ width: `${health.system.cpu?.usage_percent || 0}%` }}
                 />
@@ -120,7 +120,7 @@ const AdvancedMonitoring = () => {
                 <div
                   className={`h-2 rounded-full transition-all ${
                     health.system.memory?.percent > 80 ? 'bg-red-500' :
-                    health.system.memory?.percent > 60 ? 'bg-orange-500' : 'bg-green-500'
+                    health.system.memory?.percent > 60 ? 'bg-amber-500' : 'bg-green-500'
                   }`}
                   style={{ width: `${health.system.memory?.percent || 0}%` }}
                 />
@@ -139,7 +139,7 @@ const AdvancedMonitoring = () => {
                 <div
                   className={`h-2 rounded-full transition-all ${
                     health.system.disk?.percent > 85 ? 'bg-red-500' :
-                    health.system.disk?.percent > 70 ? 'bg-orange-500' : 'bg-green-500'
+                    health.system.disk?.percent > 70 ? 'bg-amber-500' : 'bg-green-500'
                   }`}
                   style={{ width: `${health.system.disk?.percent || 0}%` }}
                 />
@@ -204,14 +204,14 @@ const AdvancedMonitoring = () => {
                 </div>
                 <div className="text-xs text-gray-600">Uptime</div>
               </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <div className="text-xl font-bold text-purple-600">
+              <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                <div className="text-xl font-bold text-indigo-600">
                   {(metrics.summary.total_requests / 1000).toFixed(1)}K
                 </div>
                 <div className="text-xs text-gray-600">Toplam İstek</div>
               </div>
-              <div className="text-center p-3 bg-orange-50 rounded-lg">
-                <div className="text-xl font-bold text-orange-600">
+              <div className="text-center p-3 bg-amber-50 rounded-lg">
+                <div className="text-xl font-bold text-amber-600">
                   {metrics.summary.avg_error_rate}%
                 </div>
                 <div className="text-xs text-gray-600">Hata Oranı</div>

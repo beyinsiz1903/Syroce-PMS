@@ -48,7 +48,7 @@ const MobileLogViewer = ({ user }) => {
   const getLogIcon = (level) => {
     switch(level) {
       case 'ERROR': return <AlertCircle className="w-4 h-4 text-red-600" />;
-      case 'WARN': return <AlertTriangle className="w-4 h-4 text-orange-600" />;
+      case 'WARN': return <AlertTriangle className="w-4 h-4 text-amber-600" />;
       case 'INFO': return <Info className="w-4 h-4 text-blue-600" />;
       default: return <FileText className="w-4 h-4" />;
     }
@@ -57,7 +57,7 @@ const MobileLogViewer = ({ user }) => {
   const getLogColor = (level) => {
     switch(level) {
       case 'ERROR': return 'border-l-4 border-red-500 bg-red-50';
-      case 'WARN': return 'border-l-4 border-orange-500 bg-orange-50';
+      case 'WARN': return 'border-l-4 border-amber-500 bg-amber-50';
       case 'INFO': return 'border-l-4 border-blue-500 bg-blue-50';
       default: return 'border-l-4 border-gray-300 bg-white';
     }
@@ -123,7 +123,7 @@ const MobileLogViewer = ({ user }) => {
           <Button
             size="sm"
             onClick={() => setSelectedLevel('WARN')}
-            className={`whitespace-nowrap ${selectedLevel === 'WARN' ? 'bg-orange-600' : 'bg-orange-500'} text-white`}
+            className={`whitespace-nowrap ${selectedLevel === 'WARN' ? 'bg-amber-600' : 'bg-amber-500'} text-white`}
           >
             WARN ({logLevels.WARN || 0})
           </Button>

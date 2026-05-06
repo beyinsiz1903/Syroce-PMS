@@ -46,7 +46,7 @@ const ErrorQueueTab = () => {
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <MetricCard title="Toplam Hata" value={summary.total || 0} icon={AlertOctagon} color="text-red-400" />
-        <MetricCard title="Sync Hatası" value={summary.sync_failed || 0} icon={RefreshCw} color="text-orange-400" />
+        <MetricCard title="Sync Hatası" value={summary.sync_failed || 0} icon={RefreshCw} color="text-amber-400" />
         <MetricCard title="Import Hatası" value={summary.import_failed || 0} icon={Database} color="text-amber-400" />
         <MetricCard title="ACK Hatası" value={summary.ack_failed || 0} icon={AlertTriangle} color="text-red-400" />
       </div>
@@ -86,7 +86,7 @@ const ErrorQueueTab = () => {
                       <span className="text-[10px] text-slate-600">{new Date(item.created_at).toLocaleString('tr-TR')}</span>
                     </div>
                     <p className="text-xs text-slate-300 truncate">{item.last_error || item.import_error || item.status || '-'}</p>
-                    {item.retry_count > 0 && <span className="text-[10px] text-orange-400">Retry: {item.retry_count}</span>}
+                    {item.retry_count > 0 && <span className="text-[10px] text-amber-400">Retry: {item.retry_count}</span>}
                   </div>
                   <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                     <Button size="sm" variant="ghost" className="text-emerald-400 h-6 px-1.5" onClick={() => handleAction(item.id, item.error_type, 'retry')}><RotateCcw className="w-3 h-3" /></Button>

@@ -76,13 +76,13 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
             </Card>
             <Card>
               <CardContent className="pt-6 text-center">
-                <div className="text-3xl font-bold text-orange-600">{kpi.today_checkins}</div>
+                <div className="text-3xl font-bold text-amber-600">{kpi.today_checkins}</div>
                 <p className="text-sm text-gray-500">Bugunki Check-in</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6 text-center">
-                <div className="text-3xl font-bold text-purple-600">{kpi.total_guests}</div>
+                <div className="text-3xl font-bold text-indigo-600">{kpi.total_guests}</div>
                 <p className="text-sm text-gray-500">Toplam Misafir</p>
               </CardContent>
             </Card>

@@ -129,33 +129,34 @@ const RoomsTab = ({
   const allViews = [...new Set(rooms.map(r => r.view).filter(Boolean))];
   const allAmenities = [...new Set(rooms.flatMap(r => r.amenities || []))];
 
-  // Card border/bg colors based on guest category
+  // Kart kategori stilleri — palet: emerald (içeride) / rose (bugün çıkış) /
+  // amber (yarın çıkış) / sky (giriş bekleniyor). Mor ve turuncu kaldırıldı.
   const categoryStyles = {
-    in_house: 'border-l-4 border-l-green-500 bg-green-50/40',
-    departing_today: 'border-l-4 border-l-red-500 bg-red-50/40',
-    departing_tomorrow: 'border-l-4 border-l-orange-500 bg-orange-50/40',
-    pending_checkin: 'border-l-4 border-l-purple-500 bg-purple-50/40',
+    in_house: 'border-l-4 border-l-emerald-500 bg-emerald-50/40',
+    departing_today: 'border-l-4 border-l-rose-500 bg-rose-50/40',
+    departing_tomorrow: 'border-l-4 border-l-amber-500 bg-amber-50/40',
+    pending_checkin: 'border-l-4 border-l-sky-500 bg-sky-50/40',
   };
 
   const categoryLabels = {
-    in_house: { text: 'Iceride', cls: 'bg-green-100 text-green-700' },
-    departing_today: { text: 'Bugün Çıkış', cls: 'bg-red-100 text-red-700' },
-    departing_tomorrow: { text: 'Yarin Çıkış', cls: 'bg-orange-100 text-orange-700' },
-    pending_checkin: { text: 'Giriş Bekleniyor', cls: 'bg-purple-100 text-purple-700' },
+    in_house: { text: 'İçeride', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    departing_today: { text: 'Bugün Çıkış', cls: 'bg-rose-100 text-rose-700 border-rose-200' },
+    departing_tomorrow: { text: 'Yarın Çıkış', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+    pending_checkin: { text: 'Giriş Bekleniyor', cls: 'bg-sky-100 text-sky-700 border-sky-200' },
   };
 
   const guestSectionStyles = {
-    in_house: 'bg-green-50 border-green-200',
-    departing_today: 'bg-red-50 border-red-200',
-    departing_tomorrow: 'bg-orange-50 border-orange-200',
-    pending_checkin: 'bg-purple-50 border-purple-200',
+    in_house: 'bg-emerald-50 border-emerald-200',
+    departing_today: 'bg-rose-50 border-rose-200',
+    departing_tomorrow: 'bg-amber-50 border-amber-200',
+    pending_checkin: 'bg-sky-50 border-sky-200',
   };
 
   const guestTextStyles = {
-    in_house: { icon: 'text-green-600', name: 'text-green-800', date: 'text-green-500', link: 'text-green-400', hoverBg: 'hover:bg-green-100' },
-    departing_today: { icon: 'text-red-600', name: 'text-red-800', date: 'text-red-500', link: 'text-red-400', hoverBg: 'hover:bg-red-100' },
-    departing_tomorrow: { icon: 'text-orange-600', name: 'text-orange-800', date: 'text-orange-500', link: 'text-orange-400', hoverBg: 'hover:bg-orange-100' },
-    pending_checkin: { icon: 'text-purple-600', name: 'text-purple-800', date: 'text-purple-500', link: 'text-purple-400', hoverBg: 'hover:bg-purple-100' },
+    in_house: { icon: 'text-emerald-600', name: 'text-emerald-800', date: 'text-emerald-600/70', link: 'text-emerald-400', hoverBg: 'hover:bg-emerald-100' },
+    departing_today: { icon: 'text-rose-600', name: 'text-rose-800', date: 'text-rose-600/70', link: 'text-rose-400', hoverBg: 'hover:bg-rose-100' },
+    departing_tomorrow: { icon: 'text-amber-600', name: 'text-amber-800', date: 'text-amber-600/70', link: 'text-amber-400', hoverBg: 'hover:bg-amber-100' },
+    pending_checkin: { icon: 'text-sky-600', name: 'text-sky-800', date: 'text-sky-600/70', link: 'text-sky-400', hoverBg: 'hover:bg-sky-100' },
   };
 
   // Handle guest name click -> open reservation detail modal (same as calendar double-click)
@@ -320,52 +321,67 @@ const RoomsTab = ({
 
 
 
+  const hasActiveFilter = typeFilter !== 'all' || viewFilter !== 'all' || amenityFilter !== 'all';
+  const clearFilters = () => { setTypeFilter('all'); setViewFilter('all'); setAmenityFilter('all'); };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">{t('pms.rooms')} ({rooms.length})</h2>
+      {/* Header — başlık + filtreli/toplam sayım rozetleri */}
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-semibold text-slate-900">{t('pms.rooms')}</h2>
+          <Badge className="bg-slate-100 text-slate-700 border-slate-200">{filteredRooms.length} / {rooms.length}</Badge>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Filtreler — kompakt, sticky değil ama hizalı */}
+      <div className="flex gap-2 flex-wrap items-center bg-white border border-slate-200 rounded-lg p-2.5">
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
+          <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tüm Tipler'}</SelectItem>
+            <SelectItem value="all">Tüm Tipler</SelectItem>
             {allTypes.map(t2 => <SelectItem key={t2} value={t2}>{t2}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={viewFilter} onValueChange={setViewFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder={t('common.view')} /></SelectTrigger>
+          <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('common.view')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tüm Manzaralar'}</SelectItem>
+            <SelectItem value="all">Tüm Manzaralar</SelectItem>
             {allViews.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={amenityFilter} onValueChange={setAmenityFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Ozellik" /></SelectTrigger>
+          <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Özellik" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('common.filter') || 'Tüm Ozellikler'}</SelectItem>
+            <SelectItem value="all">Tüm Özellikler</SelectItem>
             {allAmenities.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
           </SelectContent>
         </Select>
+        {hasActiveFilter && (
+          <Button variant="ghost" size="sm" className="h-9 text-xs text-slate-600 hover:text-slate-900" onClick={clearFilters}>
+            Filtreleri Temizle
+          </Button>
+        )}
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-4 flex-wrap text-xs">
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-500" /> Iceride</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> Yarin Çıkış</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-500" /> Bugün Çıkış</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-500" /> Giriş Bekleniyor</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-400" /> Kirli</div>
-        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-300" /> Bos</div>
+      {/* Lejant — palet uyumlu, kompakt tek satır */}
+      <div className="flex gap-3 flex-wrap text-xs text-slate-600 px-1">
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> İçeride</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Yarın Çıkış</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> Bugün Çıkış</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-sky-500" /> Giriş Bekleniyor</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-300" /> Kirli/Temizleniyor</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-slate-300" /> Boş</div>
       </div>
 
-      {/* Room Grid */}
+      {/* Boş durum */}
       {filteredRooms.length === 0 && (
-        <div className="text-center py-12 text-gray-400">
-          <span className="text-4xl block mb-2">🏨</span>
-          <p className="text-sm">Secili filtreye uygun oda bulunamadı</p>
+        <div className="text-center py-16 border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+          <BedDouble className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+          <p className="text-sm text-slate-500 mb-3">Seçili filtreye uygun oda bulunamadı</p>
+          {hasActiveFilter && (
+            <Button variant="outline" size="sm" onClick={clearFilters}>Filtreleri Temizle</Button>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -376,19 +392,23 @@ const RoomsTab = ({
           const hasBalance = guestInfo && guestInfo.balance > 0.01;
           const isOccupied = guestInfo && guestInfo.status === 'checked_in';
           const cat = guestInfo?.category;
-          const cardExtra = cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-yellow-400' : '';
+          const cardExtra = cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
           const catLabel = cat ? categoryLabels[cat] : null;
-          const guestBg = cat ? guestSectionStyles[cat] : 'bg-blue-50 border-blue-100';
-          const gText = cat ? guestTextStyles[cat] : { icon: 'text-blue-600', name: 'text-blue-800', date: 'text-blue-500', link: 'text-blue-400', hoverBg: 'hover:bg-blue-100' };
+          const guestBg = cat ? guestSectionStyles[cat] : 'bg-slate-50 border-slate-200';
+          const gText = cat ? guestTextStyles[cat] : { icon: 'text-slate-600', name: 'text-slate-800', date: 'text-slate-500', link: 'text-slate-400', hoverBg: 'hover:bg-slate-100' };
 
           const statusColors = {
-            available: 'bg-green-100 text-green-800',
-            occupied: 'bg-blue-100 text-blue-800',
-            dirty: 'bg-yellow-100 text-yellow-800',
-            cleaning: 'bg-orange-100 text-orange-800',
-            maintenance: 'bg-red-100 text-red-800',
-            out_of_order: 'bg-gray-100 text-gray-800',
-            inspected: 'bg-purple-100 text-purple-800',
+            available: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+            occupied: 'bg-sky-100 text-sky-800 border-sky-200',
+            dirty: 'bg-amber-100 text-amber-800 border-amber-200',
+            cleaning: 'bg-amber-200 text-amber-900 border-amber-300',
+            maintenance: 'bg-rose-100 text-rose-800 border-rose-200',
+            out_of_order: 'bg-slate-200 text-slate-700 border-slate-300',
+            inspected: 'bg-sky-100 text-sky-800 border-sky-200',
+          };
+          const statusLabelsTr = {
+            available: 'Boş', occupied: 'Dolu', dirty: 'Kirli', cleaning: 'Temizleniyor',
+            maintenance: 'Bakım', out_of_order: 'Hizmet Dışı', inspected: 'Kontrol Edildi',
           };
 
           return (
@@ -401,12 +421,12 @@ const RoomsTab = ({
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-lg font-bold" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex gap-1 items-center">
-                    {catLabel && <Badge className={`text-[10px] ${catLabel.cls}`}>{catLabel.text}</Badge>}
-                    <Badge className={statusColors[room.status] || 'bg-gray-100'}>{room.status}</Badge>
+                    {catLabel && <Badge className={`text-[10px] border ${catLabel.cls}`}>{catLabel.text}</Badge>}
+                    <Badge className={`border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600">{room.room_type}</p>
-                <p className="text-xs text-gray-400">Kat {room.floor} &bull; {room.capacity} kisi</p>
+                <p className="text-sm text-slate-600">{room.room_type}</p>
+                <p className="text-xs text-slate-400">Kat {room.floor} &bull; {room.capacity} kişi</p>
 
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
                 {(room.status === 'dirty' || room.status === 'cleaning') && (
@@ -435,7 +455,7 @@ const RoomsTab = ({
                   </div>
                 )}
 
-                {/* Guest info section */}
+                {/* Misafir bilgi alanı */}
                 {guestInfo && (
                   <div
                     className={`mt-2 p-2 rounded-md border ${guestBg}`}
@@ -474,23 +494,23 @@ const RoomsTab = ({
                       {showCheckIn && (
                         <Button
                           size="sm"
-                          className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white px-2"
+                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2"
                           onClick={(e) => handleCheckInClick(e, room, guestInfo)}
                           data-testid={`room-checkin-btn-${room.room_number}`}
                         >
                           <LogIn className="w-3 h-3 mr-1" />
-                          C/In
+                          Giriş
                         </Button>
                       )}
                       {showCheckOut && (
                         <Button
                           size="sm"
-                          className={`h-7 text-xs px-2 ${hasBalance ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'} text-white`}
+                          className={`h-7 text-xs px-2 ${hasBalance ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700'} text-white`}
                           onClick={(e) => handleCheckOutClick(e, guestInfo)}
                           data-testid={`room-checkout-btn-${room.room_number}`}
                         >
                           <LogOut className="w-3 h-3 mr-1" />
-                          C/Out
+                          Çıkış
                         </Button>
                       )}
                       {isOccupied && (
@@ -515,11 +535,11 @@ const RoomsTab = ({
                   {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
                 </div>
 
-                {/* Quick reservation button for empty rooms */}
+                {/* Boş oda için hızlı rezervasyon */}
                 {!guestInfo && room.status === 'available' && (
                   <Button
                     size="sm"
-                    className="w-full mt-2 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                    className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
                     onClick={(e) => handleQuickResOpen(e, room)}
                     data-testid={`quick-res-btn-${room.room_number}`}
                   >
@@ -630,7 +650,7 @@ const RoomsTab = ({
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-blue-600" />
+              <Wallet className="w-5 h-5 text-amber-600" />
               Hızlı Ödeme
             </DialogTitle>
             <DialogDescription>
@@ -640,8 +660,8 @@ const RoomsTab = ({
           {paymentTarget && (
             <div className="space-y-4">
               {/* Guest & balance info */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm font-medium text-blue-900">{paymentTarget.guest_name}</p>
+              <div className="bg-sky-50 border border-sky-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-sky-900">{paymentTarget.guest_name}</p>
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
@@ -652,8 +672,8 @@ const RoomsTab = ({
                     <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
-                    <span className="text-blue-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-blue-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-sky-800 font-semibold">Kalan Bakiye:</span>
+                    <span className="font-bold text-sky-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </div>
@@ -692,7 +712,7 @@ const RoomsTab = ({
                 <div className="grid grid-cols-3 gap-2 mt-1">
                   <Button
                     variant={paymentMethod === 'cash' ? 'default' : 'outline'}
-                    className={`h-14 flex-col gap-1 ${paymentMethod === 'cash' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'cash' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}`}
                     onClick={() => setPaymentMethod('cash')}
                     data-testid="quick-payment-method-cash"
                   >
@@ -701,7 +721,7 @@ const RoomsTab = ({
                   </Button>
                   <Button
                     variant={paymentMethod === 'card' ? 'default' : 'outline'}
-                    className={`h-14 flex-col gap-1 ${paymentMethod === 'card' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'card' ? 'bg-sky-600 hover:bg-sky-700 text-white' : ''}`}
                     onClick={() => setPaymentMethod('card')}
                     data-testid="quick-payment-method-card"
                   >
@@ -710,7 +730,7 @@ const RoomsTab = ({
                   </Button>
                   <Button
                     variant={paymentMethod === 'bank_transfer' ? 'default' : 'outline'}
-                    className={`h-14 flex-col gap-1 ${paymentMethod === 'bank_transfer' ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+                    className={`h-14 flex-col gap-1 ${paymentMethod === 'bank_transfer' ? 'bg-slate-700 hover:bg-slate-800 text-white' : ''}`}
                     onClick={() => setPaymentMethod('bank_transfer')}
                     data-testid="quick-payment-method-transfer"
                   >
@@ -720,9 +740,9 @@ const RoomsTab = ({
                 </div>
               </div>
 
-              {/* Submit */}
+              {/* Onay */}
               <Button
-                className="w-full bg-green-600 hover:bg-green-700"
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handleQuickPayment}
                 disabled={paymentLoading || !paymentAmount || parseFloat(paymentAmount) <= 0}
                 data-testid="quick-payment-submit"
@@ -749,7 +769,7 @@ const RoomsTab = ({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CalendarPlus className="w-5 h-5 text-blue-600" />
+              <CalendarPlus className="w-5 h-5 text-amber-600" />
               Hızlı Rezervasyon
             </DialogTitle>
             <DialogDescription>
@@ -762,11 +782,11 @@ const RoomsTab = ({
               <div>
                 <Label className="text-sm font-medium">Misafir *</Label>
                 {selectedGuest ? (
-                  <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="quick-res-selected-guest">
-                    <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <div className="mt-1 flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-md p-2.5" data-testid="quick-res-selected-guest">
+                    <UserCheck className="w-4 h-4 text-sky-600 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-blue-900 truncate">{selectedGuest.name}</p>
-                      <p className="text-xs text-blue-600 truncate">
+                      <p className="text-sm font-medium text-sky-900 truncate">{selectedGuest.name}</p>
+                      <p className="text-xs text-sky-600 truncate">
                         {selectedGuest.email && !selectedGuest.email.includes('placeholder') ? selectedGuest.email : ''}
                         {selectedGuest.phone ? (selectedGuest.email && !selectedGuest.email.includes('placeholder') ? ' | ' : '') + selectedGuest.phone : ''}
                         {selectedGuest.total_stays > 0 && ` | ${selectedGuest.total_stays} konaklama`}
@@ -775,7 +795,7 @@ const RoomsTab = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100"
+                      className="h-6 w-6 p-0 text-sky-400 hover:text-sky-600 hover:bg-sky-100"
                       onClick={handleClearGuest}
                       data-testid="quick-res-clear-guest"
                     >
@@ -785,7 +805,7 @@ const RoomsTab = ({
                 ) : (
                   <div className="relative mt-1">
                     <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <Input
                         value={guestSearchQuery}
                         onChange={(e) => handleGuestSearch(e.target.value)}
@@ -796,7 +816,7 @@ const RoomsTab = ({
                         data-testid="quick-res-guest-search"
                       />
                       {guestSearchLoading && (
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
                       )}
                     </div>
 
@@ -810,18 +830,18 @@ const RoomsTab = ({
                           <button
                             key={g.id}
                             type="button"
-                            className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                            className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b border-slate-50 last:border-b-0 transition-colors"
                             onClick={() => handleSelectGuest(g)}
                             data-testid={`quick-res-guest-option-${g.id}`}
                           >
                             <div className="flex items-center gap-2">
-                              <UserCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                              <UserCheck className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
+                                <p className="text-sm font-medium text-slate-900 truncate">
                                   {g.name}
                                   {g.vip_status && <span className="ml-1 text-amber-500 text-xs">VIP</span>}
                                 </p>
-                                <p className="text-xs text-gray-500 truncate">
+                                <p className="text-xs text-slate-500 truncate">
                                   {g.email && !g.email.includes('placeholder') ? g.email : ''}
                                   {g.phone ? (g.email && !g.email.includes('placeholder') ? ' | ' : '') + g.phone : ''}
                                 </p>
@@ -835,7 +855,7 @@ const RoomsTab = ({
                     {/* "New guest" hint when typing but no match selected */}
                     {guestSearchQuery.trim().length >= 2 && !guestSearchLoading && showGuestDropdown && guestSearchResults.length === 0 && (
                       <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
-                        <div className="flex items-center gap-2 text-gray-500">
+                        <div className="flex items-center gap-2 text-slate-500">
                           <UserPlus className="w-3.5 h-3.5" />
                           <span className="text-sm">"{guestSearchQuery.trim()}" yeni misafir olarak eklenecek</span>
                         </div>
@@ -881,7 +901,7 @@ const RoomsTab = ({
                 />
               </div>
               <Button
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handleQuickResSubmit}
                 disabled={quickResLoading}
                 data-testid="quick-res-submit"
@@ -921,7 +941,7 @@ function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssign
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
         <div className="flex justify-between items-center mb-1.5">
           <span className="text-sm font-bold text-amber-900">Oda {room.room_number}</span>
-          <Badge className="bg-yellow-100 text-yellow-800 text-[10px]">{room.status === 'cleaning' ? 'Temizleniyor' : 'Kirli'}</Badge>
+          <Badge className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px]">{room.status === 'cleaning' ? 'Temizleniyor' : 'Kirli'}</Badge>
         </div>
         <p className="text-sm text-amber-700">{guestInfo.guest_name}</p>
         <div className="mt-2 flex items-center gap-2 text-xs text-amber-600">
@@ -975,7 +995,7 @@ function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssign
       {/* Actions */}
       <div className="flex gap-2 pt-1">
         <Button
-          className="flex-1 bg-[#C09D63] hover:bg-[#B08D55] text-white"
+          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
           onClick={onForceCheckIn}
           data-testid="dirty-room-checkin-btn"
         >

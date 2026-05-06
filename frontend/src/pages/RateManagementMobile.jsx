@@ -43,11 +43,11 @@ const RateManagementMobile = ({ user }) => {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center"><RefreshCw className="h-12 w-12 animate-spin text-amber-600" /></div>;
+  if (loading) return <div className="min-h-screen bg-gradient-to-br from-amber-50 to-amber-50 flex items-center justify-center"><RefreshCw className="h-12 w-12 animate-spin text-amber-600" /></div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 pb-20">
-      <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-amber-50 pb-20">
+      <div className="bg-gradient-to-r from-amber-600 to-amber-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>

@@ -50,7 +50,7 @@ const FloatingActionButton = ({ actions = [] }) => {
         className={`w-16 h-16 rounded-full shadow-2xl transition-all duration-300 ${
           isOpen 
             ? 'bg-red-600 hover:bg-red-700 rotate-45' 
-            : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 scale-100 hover:scale-110'
+            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 scale-100 hover:scale-110'
         }`}
         title="Quick Actions"
       >

@@ -149,7 +149,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="flex items-center">
-            <UtensilsCrossed className="w-5 h-5 mr-2 text-orange-600" />
+            <UtensilsCrossed className="w-5 h-5 mr-2 text-amber-600" />
             Menu ({filteredItems.length})
           </CardTitle>
           <div className="flex gap-2">
@@ -296,7 +296,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
 
         {loading ? (
           <div className="text-center py-8">
-            <RefreshCw className="w-8 h-8 animate-spin text-orange-600 mx-auto" />
+            <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto" />
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="text-center py-12 text-gray-500">

@@ -238,7 +238,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
               <Button variant="outline" size="sm" onClick={() => printFolio(data, tenant)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
                 <Printer className="w-4 h-4 mr-2" /> Yazdir
               </Button>
-              <Button variant="outline" size="sm" onClick={() => printProformaInvoice({ ...folio, total_amount: summary?.total_charges }, null, [], tenant)} className="border-purple-200 text-purple-700 hover:bg-purple-50">
+              <Button variant="outline" size="sm" onClick={() => printProformaInvoice({ ...folio, total_amount: summary?.total_charges }, null, [], tenant)} className="border-indigo-200 text-indigo-700 hover:bg-indigo-50">
                 <FileText className="w-4 h-4 mr-2" /> Proforma
               </Button>
               <Button variant="outline" size="sm" onClick={() => fetchDetail(propFolioId || folioId)} className="border-gray-200">

@@ -541,10 +541,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         </Card>
 
         {/* Right: Operator-Level Stop Sales */}
-        <Card className="border-orange-200">
+        <Card className="border-amber-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Globe className="w-4 h-4 text-orange-600" />
+              <Globe className="w-4 h-4 text-amber-600" />
               Kanal Bazli Stop Sale
             </CardTitle>
             <CardDescription className="text-xs">

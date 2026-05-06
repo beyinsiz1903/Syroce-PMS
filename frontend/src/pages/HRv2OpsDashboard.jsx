@@ -123,7 +123,7 @@ function ReadinessGauge({ score, verdict, verdictLabel, components }) {
   const getScoreColor = (s) => {
     if (s >= 90) return { ring: "text-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" };
     if (s >= 70) return { ring: "text-amber-500", bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" };
-    if (s >= 50) return { ring: "text-orange-500", bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" };
+    if (s >= 50) return { ring: "text-amber-500", bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" };
     return { ring: "text-red-500", bg: "bg-red-50", text: "text-red-700", border: "border-red-200" };
   };
 

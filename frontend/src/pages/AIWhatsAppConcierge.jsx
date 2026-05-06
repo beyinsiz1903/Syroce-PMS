@@ -92,16 +92,16 @@ const AIWhatsAppConcierge = () => {
             <p className="text-sm text-gray-600">GPT-4 Powered</p>
           </CardContent>
         </Card>
-        <Card className="bg-purple-50 border-purple-200">
+        <Card className="bg-indigo-50 border-indigo-200">
           <CardContent className="pt-6 text-center">
-            <MessageCircle className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+            <MessageCircle className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">{conversations.length}</p>
             <p className="text-sm text-gray-600">Conversation</p>
           </CardContent>
         </Card>
-        <Card className="bg-orange-50 border-orange-200">
+        <Card className="bg-amber-50 border-amber-200">
           <CardContent className="pt-6 text-center">
-            <CheckCircle className="w-10 h-10 text-orange-600 mx-auto mb-2" />
+            <CheckCircle className="w-10 h-10 text-amber-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">
               {conversations.filter(c => c.action_taken).length}
             </p>

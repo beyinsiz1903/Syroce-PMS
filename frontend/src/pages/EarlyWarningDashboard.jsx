@@ -22,14 +22,14 @@ const BASE = "/ops-events/early-warnings";
 const healthStyles = {
   healthy: { color: "text-green-600", bg: "bg-green-50", label: "Sağlıklı", icon: CheckCircle2 },
   attention: { color: "text-yellow-600", bg: "bg-yellow-50", label: "Dikkat", icon: AlertTriangle },
-  degraded: { color: "text-orange-600", bg: "bg-orange-50", label: "Bozulma", icon: AlertTriangle },
+  degraded: { color: "text-amber-600", bg: "bg-amber-50", label: "Bozulma", icon: AlertTriangle },
   critical: { color: "text-red-600", bg: "bg-red-50", label: "Kritik", icon: AlertTriangle },
 };
 
 const severityBadge = (s) => {
   const map = {
     critical: "bg-red-100 text-red-700 border-red-300",
-    warning: "bg-orange-100 text-orange-700 border-orange-300",
+    warning: "bg-amber-100 text-amber-700 border-amber-300",
     info: "bg-blue-100 text-blue-700 border-blue-300",
   };
   return map[s] || "bg-gray-100 text-gray-700 border-gray-300";
@@ -37,7 +37,7 @@ const severityBadge = (s) => {
 
 const confidenceColor = (c) => {
   if (c >= 80) return "bg-red-500 text-white";
-  if (c >= 60) return "bg-orange-500 text-white";
+  if (c >= 60) return "bg-amber-500 text-white";
   if (c >= 40) return "bg-yellow-500 text-white";
   return "bg-gray-400 text-white";
 };
@@ -68,7 +68,7 @@ function KPICard({ icon: Icon, label, value, sub, tone = "blue" }) {
   const toneMap = {
     blue: "text-blue-600 bg-blue-50",
     red: "text-red-600 bg-red-50",
-    orange: "text-orange-600 bg-orange-50",
+    orange: "text-amber-600 bg-amber-50",
     green: "text-green-600 bg-green-50",
     gray: "text-gray-600 bg-gray-50",
   };

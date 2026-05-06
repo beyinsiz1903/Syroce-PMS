@@ -63,7 +63,7 @@ const ChannelManagerMobile = ({ user }) => {
 
       <div className="p-4 space-y-3">
         {activeView === 'status' && channels.map(channel => (
-          <Card key={channel.channel} className={`border-l-4 ${channel.connection_health === 'good' ? 'border-green-500' : 'border-orange-500'}`}>
+          <Card key={channel.channel} className={`border-l-4 ${channel.connection_health === 'good' ? 'border-green-500' : 'border-amber-500'}`}>
             <CardContent className="p-4">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -73,7 +73,7 @@ const ChannelManagerMobile = ({ user }) => {
                   </div>
                   <div className="text-xs text-gray-500 mt-1">Son senkron: {new Date(channel.last_sync).toLocaleTimeString('tr-TR')}</div>
                 </div>
-                {channel.connection_health === 'good' ? <CheckCircle className="h-6 w-6 text-green-500" /> : <AlertTriangle className="h-6 w-6 text-orange-500" />}
+                {channel.connection_health === 'good' ? <CheckCircle className="h-6 w-6 text-green-500" /> : <AlertTriangle className="h-6 w-6 text-amber-500" />}
               </div>
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div className="text-center bg-green-50 p-2 rounded">
@@ -84,8 +84,8 @@ const ChannelManagerMobile = ({ user }) => {
                   <div className="font-bold text-blue-600">{channel.inventory_synced ? '✓' : '✗'}</div>
                   <div className="text-xs text-gray-600">Envanter</div>
                 </div>
-                <div className="text-center bg-purple-50 p-2 rounded">
-                  <div className="font-bold text-purple-600">{channel.rates_synced ? '✓' : '✗'}</div>
+                <div className="text-center bg-indigo-50 p-2 rounded">
+                  <div className="font-bold text-indigo-600">{channel.rates_synced ? '✓' : '✗'}</div>
                   <div className="text-xs text-gray-600">Fiyat</div>
                 </div>
               </div>
@@ -134,13 +134,13 @@ const ChannelManagerMobile = ({ user }) => {
                   <div className="text-gray-500 text-xs">{t("finance.revenue")}</div>
                   <div className="font-bold text-green-600">₺{(perf.revenue / 1000).toFixed(0)}K</div>
                 </div>
-                <div className="bg-purple-50 p-2 rounded">
+                <div className="bg-indigo-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">Ort. Fiyat</div>
-                  <div className="font-bold text-purple-600">₺{perf.avg_rate}</div>
+                  <div className="font-bold text-indigo-600">₺{perf.avg_rate}</div>
                 </div>
-                <div className="bg-orange-50 p-2 rounded">
+                <div className="bg-amber-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">İptal Oranı</div>
-                  <div className="font-bold text-orange-600">%{perf.cancellation_rate}</div>
+                  <div className="font-bold text-amber-600">%{perf.cancellation_rate}</div>
                 </div>
               </div>
             </CardContent>

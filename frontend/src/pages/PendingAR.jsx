@@ -123,14 +123,14 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     if (days <= 7) return { label: '0-7 days', color: 'bg-green-500' };
     if (days <= 14) return { label: '8-14 days', color: 'bg-blue-500' };
     if (days <= 30) return { label: '15-30 days', color: 'bg-yellow-500' };
-    if (days <= 60) return { label: '31-60 days', color: 'bg-orange-500' };
+    if (days <= 60) return { label: '31-60 days', color: 'bg-amber-500' };
     return { label: '60+ days', color: 'bg-red-500' };
   };
 
   const getUrgencyLevel = (days) => {
     if (days <= 7) return { level: 'Low', color: 'text-green-600' };
     if (days <= 30) return { level: 'Medium', color: 'text-yellow-600' };
-    if (days <= 60) return { level: 'High', color: 'text-orange-600' };
+    if (days <= 60) return { level: 'High', color: 'text-amber-600' };
     return { level: 'Critical', color: 'text-red-600' };
   };
 
@@ -289,7 +289,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm text-gray-600">Avg Days Outstanding</div>
-                      <div className="text-3xl font-bold text-orange-600 mt-1">
+                      <div className="text-3xl font-bold text-amber-600 mt-1">
                         {arData.length > 0
                           ? Math.round(
                               arData.reduce((sum, item) => sum + item.days_outstanding, 0) / arData.length
@@ -297,7 +297,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                           : 0}
                       </div>
                     </div>
-                    <Clock className="w-12 h-12 text-orange-600 opacity-50" />
+                    <Clock className="w-12 h-12 text-amber-600 opacity-50" />
                   </div>
                 </CardContent>
               </Card>
@@ -400,7 +400,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                                 </div>
                                 <div>
                                   <div className="text-gray-600">Days Outstanding</div>
-                                  <div className="text-xl font-bold text-orange-600">
+                                  <div className="text-xl font-bold text-amber-600">
                                     {item.days_outstanding} days
                                   </div>
                                 </div>
@@ -498,7 +498,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <Card>
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">61-90 days</div>
-                    <div className="text-2xl font-bold text-orange-600 mt-1">
+                    <div className="text-2xl font-bold text-amber-600 mt-1">
                       ${agingData.totals['60_days'].toFixed(2)}
                     </div>
                   </CardContent>

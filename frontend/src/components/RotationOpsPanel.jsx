@@ -82,8 +82,8 @@ function RiskSummaryCards({ dashboard, audit }) {
       title: "Son 7 Gün Rollback",
       value: rollbackCount,
       icon: Undo2,
-      color: rollbackCount > 0 ? "text-orange-400" : "text-zinc-500",
-      bg: rollbackCount > 0 ? "bg-orange-500/10 border-orange-500/20" : "bg-zinc-800/50 border-zinc-700/50",
+      color: rollbackCount > 0 ? "text-amber-400" : "text-zinc-500",
+      bg: rollbackCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-zinc-800/50 border-zinc-700/50",
     },
     {
       title: "Test Başarısız",

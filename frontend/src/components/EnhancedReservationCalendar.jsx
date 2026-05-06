@@ -100,7 +100,7 @@ const EnhancedReservationCalendar = () => {
         <div className="flex gap-4">
           <button
             onClick={fetchAIPricing}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
           >
             🤖 AI Price Suggestions
           </button>
@@ -124,13 +124,13 @@ const EnhancedReservationCalendar = () => {
             <div className="text-sm text-gray-600">Total Revenue</div>
             <div className="text-2xl font-bold text-green-600">${adrData.total_room_revenue}</div>
           </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
+          <div className="bg-indigo-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Room Nights</div>
-            <div className="text-2xl font-bold text-purple-600">{adrData.total_room_nights}</div>
+            <div className="text-2xl font-bold text-indigo-600">{adrData.total_room_nights}</div>
           </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
+          <div className="bg-amber-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Bookings</div>
-            <div className="text-2xl font-bold text-orange-600">{adrData.total_bookings}</div>
+            <div className="text-2xl font-bold text-amber-600">{adrData.total_bookings}</div>
           </div>
         </div>
       )}

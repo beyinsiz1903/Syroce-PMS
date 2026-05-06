@@ -87,7 +87,7 @@ const KitchenDisplay = () => {
 
   const getPriorityColor = (priority) => {
     return priority === 'urgent' ? 'from-red-500 to-red-600' :
-           priority === 'high' ? 'from-orange-500 to-orange-600' :
+           priority === 'high' ? 'from-amber-500 to-amber-600' :
            'from-blue-500 to-blue-600';
   };
 
@@ -163,7 +163,7 @@ const KitchenDisplay = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-red-600 p-6 sticky top-0 z-50 shadow-2xl">
+      <div className="bg-gradient-to-r from-amber-600 to-red-600 p-6 sticky top-0 z-50 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="text-white hover:bg-white/20">
@@ -171,14 +171,14 @@ const KitchenDisplay = () => {
             </Button>
             <div>
               <h1 className="text-3xl font-bold">🍳 {t('dashboard.kitchenDisplay')}</h1>
-              <p className="text-sm text-orange-100">Real-time Order Management</p>
+              <p className="text-sm text-amber-100">Real-time Order Management</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm text-orange-100">Aktif Sipariş</p>
+              <p className="text-sm text-amber-100">Aktif Sipariş</p>
               <p className="text-3xl font-bold">{filteredOrders.length}</p>
-              <p className="text-xs text-orange-100">
+              <p className="text-xs text-amber-100">
                 Güncelleme: {lastUpdate ? new Date(lastUpdate).toLocaleTimeString('tr-TR') : '--'}
               </p>
             </div>
@@ -328,7 +328,7 @@ const KitchenDisplay = () => {
                             {item.modifications && item.modifications.length > 0 && (
                               <div className="mt-1 space-y-1">
                                 {item.modifications.map((mod, i) => (
-                                  <p key={i} className="text-xs text-orange-200">+ {mod}</p>
+                                  <p key={i} className="text-xs text-amber-200">+ {mod}</p>
                                 ))}
                               </div>
                             )}

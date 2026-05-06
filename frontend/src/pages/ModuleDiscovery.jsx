@@ -147,7 +147,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-orange-50 text-orange-600">
+              <div className="p-3 rounded-lg bg-amber-50 text-amber-600">
                 <EyeOff className="w-5 h-5" />
               </div>
               <div>
@@ -220,7 +220,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
                       {r.type === "public" ? (
                         <Globe className="w-4 h-4 text-blue-500 flex-shrink-0" title="Public" />
                       ) : r.type === "module" ? (
-                        <Lock className="w-4 h-4 text-purple-500 flex-shrink-0" title="Modül korumalı" />
+                        <Lock className="w-4 h-4 text-indigo-500 flex-shrink-0" title="Modül korumalı" />
                       ) : (
                         <Lock className="w-4 h-4 text-gray-400 flex-shrink-0" title="Korumalı" />
                       )}
@@ -244,7 +244,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
                           menüde
                         </Badge>
                       ) : (
-                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 text-[10px]">
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-300 text-[10px]">
                           gizli
                         </Badge>
                       )}

@@ -30,7 +30,7 @@ const STATUS_LABEL = {
 const STATUS_TONE = {
   pending: 'bg-amber-100 text-amber-800 border-amber-300',
   confirmed: 'bg-blue-100 text-blue-800 border-blue-300',
-  preparing: 'bg-purple-100 text-purple-800 border-purple-300',
+  preparing: 'bg-indigo-100 text-indigo-800 border-indigo-300',
   delivered: 'bg-green-100 text-green-800 border-green-300',
   cancelled: 'bg-gray-100 text-gray-700 border-gray-300',
 };
@@ -273,7 +273,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Coffee className="w-8 h-8 text-orange-600" />
+              <Coffee className="w-8 h-8 text-amber-600" />
               {t('staffRoomService.title')}
             </h1>
             <p className="text-gray-600 mt-1">{t('staffRoomService.subtitle')}</p>
@@ -309,7 +309,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-gray-600">{t('staffRoomService.openOrders')}</p>
-              <p className="text-3xl font-bold text-orange-600" data-testid="count-total">
+              <p className="text-3xl font-bold text-amber-600" data-testid="count-total">
                 {counts.total}
               </p>
             </CardContent>
@@ -333,7 +333,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-gray-600">{t('staffRoomService.statusPreparing')}</p>
-              <p className="text-3xl font-bold text-purple-600" data-testid="count-preparing">
+              <p className="text-3xl font-bold text-indigo-600" data-testid="count-preparing">
                 {counts.preparing}
               </p>
             </CardContent>

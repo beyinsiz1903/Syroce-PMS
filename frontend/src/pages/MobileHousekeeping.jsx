@@ -365,8 +365,8 @@ const MobileHousekeeping = ({ user }) => {
       cleaning: 'bg-yellow-100 text-yellow-700 border-yellow-300',
       inspected: 'bg-blue-100 text-blue-700 border-blue-300',
       available: 'bg-green-100 text-green-700 border-green-300',
-      occupied: 'bg-purple-100 text-purple-700 border-purple-300',
-      maintenance: 'bg-orange-100 text-orange-700 border-orange-300'
+      occupied: 'bg-indigo-100 text-indigo-700 border-indigo-300',
+      maintenance: 'bg-amber-100 text-amber-700 border-amber-300'
     };
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-300';
   };
@@ -449,10 +449,10 @@ const MobileHousekeeping = ({ user }) => {
       <div className="p-4 space-y-4">
         {/* Bulk Action Controls */}
         {bulkUpdateMode ? (
-          <Card className="bg-purple-50 border-purple-200">
+          <Card className="bg-indigo-50 border-indigo-200">
             <CardContent className="p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-purple-700">
+                <span className="text-sm font-bold text-indigo-700">
                   {selectedRooms.length} oda seçildi
                 </span>
                 <Button
@@ -502,7 +502,7 @@ const MobileHousekeeping = ({ user }) => {
         ) : (
           <Button
             size="sm"
-            className="w-full h-10 bg-purple-600 hover:bg-purple-700"
+            className="w-full h-10 bg-indigo-600 hover:bg-indigo-700"
             onClick={() => setBulkUpdateMode(true)}
           >
             📋 Toplu İşlem Modu
@@ -568,7 +568,7 @@ const MobileHousekeeping = ({ user }) => {
                 <CardHeader className="pb-3 cursor-pointer hover:bg-gray-50 transition-colors">
                   <CardTitle className="text-lg flex items-center justify-between">
                     <div className="flex items-center">
-                      <AlertCircle className="w-5 h-5 mr-2 text-orange-600" />
+                      <AlertCircle className="w-5 h-5 mr-2 text-amber-600" />
                       Bugün Çıkış Yapacaklar ({dueOut.filter(r => r.is_today).length})
                     </div>
                     {openCategories.dueOut ? (
@@ -582,7 +582,7 @@ const MobileHousekeeping = ({ user }) => {
               <CollapsibleContent>
                 <CardContent className="space-y-2">
                   {dueOut.filter(r => r.is_today).map((room) => (
-                    <div key={room.booking_id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <div key={room.booking_id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <div>
                         <p className="font-bold text-gray-900">Oda {room.room_number}</p>
                         <p className="text-sm text-gray-600">{room.guest_name}</p>
@@ -926,7 +926,7 @@ const MobileHousekeeping = ({ user }) => {
           </Button>
           <Button
             size="sm"
-            className="h-16 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700 p-1"
+            className="h-16 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700 p-1"
             onClick={loadLostFound}
           >
             <Search className="w-4 h-4 mb-1" />
@@ -942,7 +942,7 @@ const MobileHousekeeping = ({ user }) => {
           </Button>
           <Button
             size="sm"
-            className="h-16 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700 p-1"
+            className="h-16 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700 p-1"
             onClick={loadTaskAssignments}
           >
             <MapPin className="w-4 h-4 mb-1" />
@@ -1045,7 +1045,7 @@ const MobileHousekeeping = ({ user }) => {
               <span>🔍 Kayıp Eşya ({lostFoundItems.length})</span>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="bg-orange-600">
+                  <Button size="sm" className="bg-amber-600">
                     <Plus className="w-4 h-4 mr-1" />
                     Yeni Kayıt
                   </Button>
@@ -1111,7 +1111,7 @@ const MobileHousekeeping = ({ user }) => {
                       </p>
                     </div>
                     <Badge className={
-                      item.status === 'unclaimed' ? 'bg-orange-500' :
+                      item.status === 'unclaimed' ? 'bg-amber-500' :
                       item.status === 'claimed' ? 'bg-green-500' :
                       item.status === 'disposed' ? 'bg-gray-500' : 'bg-gray-500'
                     }>

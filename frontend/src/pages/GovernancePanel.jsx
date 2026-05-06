@@ -514,7 +514,7 @@ const OnboardingTab = () => {
   if (loading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-slate-400" /></div>;
 
   const CATEGORY_LABELS = { setup: 'Kurulum', operations: 'Operasyon', team: 'Ekip', channels: 'Kanallar', finance: 'Finans', reports: 'Raporlar' };
-  const CATEGORY_COLORS = { setup: 'bg-blue-50 text-blue-700', operations: 'bg-green-50 text-green-700', team: 'bg-purple-50 text-purple-700', channels: 'bg-amber-50 text-amber-700', finance: 'bg-red-50 text-red-700', reports: 'bg-slate-50 text-slate-700' };
+  const CATEGORY_COLORS = { setup: 'bg-blue-50 text-blue-700', operations: 'bg-green-50 text-green-700', team: 'bg-indigo-50 text-indigo-700', channels: 'bg-amber-50 text-amber-700', finance: 'bg-red-50 text-red-700', reports: 'bg-slate-50 text-slate-700' };
 
   return (
     <div className="space-y-6" data-testid="onboarding-tab">

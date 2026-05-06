@@ -116,9 +116,9 @@ export const getStatusColor = (status) => {
 export const getSegmentColor = (segment) => {
   const colors = {
     corporate: 'bg-blue-600',
-    'ota': 'bg-purple-600',
-    'walk_in': 'bg-orange-500',
-    'walk-in': 'bg-orange-500',
+    'ota': 'bg-indigo-600',
+    'walk_in': 'bg-amber-500',
+    'walk-in': 'bg-amber-500',
     group: 'bg-green-600',
     leisure: 'bg-pink-500',
     government: 'bg-indigo-600',
@@ -134,7 +134,7 @@ export const getRateTypeInfo = (booking) => {
     'corp_pref': { label: 'CORP-PREF', color: 'text-blue-200' },
     'gov': { label: 'GOV', color: 'text-indigo-300' },
     'leisure': { label: 'RACK', color: 'text-pink-300' },
-    'ota': { label: 'OTA', color: 'text-purple-300' },
+    'ota': { label: 'OTA', color: 'text-indigo-300' },
     'group': { label: 'GROUP', color: 'text-green-300' }
   };
   return rateTypes[booking.rate_type] || { label: booking.rate_type?.toUpperCase() || 'STD', color: 'text-gray-300' };
@@ -169,11 +169,11 @@ export const getOTAInfo = (channel) => {
     'booking_com': { label: 'BKG', name: 'Booking.com', color: 'bg-indigo-600' },
     'expedia': { label: 'EXP', name: 'Expedia', color: 'bg-blue-600' },
     'airbnb': { label: 'ABNB', name: 'Airbnb', color: 'bg-red-600' },
-    'agoda': { label: 'AGD', name: 'Agoda', color: 'bg-purple-600' },
+    'agoda': { label: 'AGD', name: 'Agoda', color: 'bg-indigo-600' },
     'hotels_com': { label: 'HTL', name: 'Hotels.com', color: 'bg-rose-600' },
     'direct': { label: 'DIR', name: 'Direct', color: 'bg-green-600' },
     'phone': { label: 'TEL', name: 'Phone', color: 'bg-gray-600' },
-    'walk_in': { label: 'WLK', name: 'Walk-in', color: 'bg-orange-600' }
+    'walk_in': { label: 'WLK', name: 'Walk-in', color: 'bg-amber-600' }
   };
   return otaData[channel] || { label: 'OTA', name: 'OTA', color: 'bg-gray-600' };
 };
@@ -246,7 +246,7 @@ export const isPastDate = (date) => {
 export const getHeatmapColor = (intensity) => {
   const colors = {
     'critical': 'bg-red-100 border-red-300',
-    'high': 'bg-orange-100 border-orange-300',
+    'high': 'bg-amber-100 border-amber-300',
     'moderate': 'bg-yellow-100 border-yellow-300',
     'medium': 'bg-green-100 border-green-300',
     'low': 'bg-white'
@@ -331,7 +331,7 @@ export const getUnassignedUrgency = (booking) => {
 export const getUrgencyBarColors = (urgency) => {
   const map = {
     overdue:  { bg: '#fecaca', border: '#ef4444', stripe: '#dc2626', text: '#991b1b', badge: 'bg-red-600' },
-    today:    { bg: '#fed7aa', border: '#f97316', stripe: '#ea580c', text: '#9a3412', badge: 'bg-orange-500' },
+    today:    { bg: '#fed7aa', border: '#f97316', stripe: '#ea580c', text: '#9a3412', badge: 'bg-amber-500' },
     tomorrow: { bg: '#fde68a', border: '#f59e0b', stripe: '#d97706', text: '#92400e', badge: 'bg-amber-500' },
     future:   { bg: '#bfdbfe', border: '#3b82f6', stripe: '#2563eb', text: '#1e40af', badge: 'bg-blue-500' },
   };

@@ -30,8 +30,8 @@ const MarketSegmentChart = () => {
   const colors = {
     OTA: 'bg-blue-500',
     Direct: 'bg-green-500',
-    Corporate: 'bg-purple-500',
-    Group: 'bg-orange-500'
+    Corporate: 'bg-indigo-500',
+    Group: 'bg-amber-500'
   };
 
   return (

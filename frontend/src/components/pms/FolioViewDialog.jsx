@@ -244,7 +244,7 @@ th{background:#f5f5f5}
 
           {selectedFolio && (
             <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <div className="text-sm text-gray-600">{t('pms.guest', 'Misafir')}</div>
@@ -332,7 +332,7 @@ th{background:#f5f5f5}
                                     {new Date(charge.created_at || charge.date).toLocaleString()}
                                   </div>
                                   {hasDiscount && (
-                                    <div className="text-xs text-orange-700 mt-1">
+                                    <div className="text-xs text-amber-700 mt-1">
                                       İndirim: −{fmt(charge.discount_amount)} ₺
                                       {charge.discount_reason ? ` (${charge.discount_reason})` : ''}
                                     </div>
@@ -493,7 +493,7 @@ th{background:#f5f5f5}
             <div className="bg-gray-50 rounded p-3 text-sm space-y-1">
               <div className="flex justify-between"><span>Ara Toplam</span><span>{fmt(chargePreview.sub)} ₺</span></div>
               {chargePreview.disc > 0 && (
-                <div className="flex justify-between text-orange-700"><span>İndirim</span><span>−{fmt(chargePreview.disc)} ₺</span></div>
+                <div className="flex justify-between text-amber-700"><span>İndirim</span><span>−{fmt(chargePreview.disc)} ₺</span></div>
               )}
               <div className="flex justify-between"><span>Net</span><span>{fmt(chargePreview.net)} ₺</span></div>
               {chargePreview.rate > 0 && (
@@ -803,7 +803,7 @@ th{background:#f5f5f5}
                         <div className="flex-1">
                           <div className="font-semibold capitalize">
                             {op.operation_type === 'transfer' ? 'Transfer' : op.operation_type}
-                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${op.direction === 'in' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${op.direction === 'in' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                               {op.direction === 'in' ? 'Gelen' : 'Giden'}
                             </span>
                           </div>

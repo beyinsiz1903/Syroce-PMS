@@ -23,7 +23,7 @@ const TYPE_LABELS = {
   general: { tr: 'Genel', en: 'General', color: 'bg-blue-100 text-blue-700' },
   request: { tr: 'Talep', en: 'Request', color: 'bg-green-100 text-green-700' },
   complaint: { tr: 'Şikayet', en: 'Complaint', color: 'bg-red-100 text-red-700' },
-  feedback: { tr: 'Geri Bildirim', en: 'Feedback', color: 'bg-purple-100 text-purple-700' },
+  feedback: { tr: 'Geri Bildirim', en: 'Feedback', color: 'bg-indigo-100 text-indigo-700' },
 };
 
 const GuestMessaging = ({ user, bookingId, isStaff = false }) => {

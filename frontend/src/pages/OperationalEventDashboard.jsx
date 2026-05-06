@@ -14,7 +14,7 @@ const API = "";
 
 const PRIORITY_STYLES = {
   critical: 'bg-red-100 text-red-800 border-red-300',
-  high: 'bg-orange-100 text-orange-800 border-orange-300',
+  high: 'bg-amber-100 text-amber-800 border-amber-300',
   medium: 'bg-sky-100 text-sky-800 border-sky-300',
   low: 'bg-slate-100 text-slate-600 border-slate-300',
 };
@@ -139,7 +139,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
               <p className="text-2xl font-bold" data-testid="stat-critical">{stats?.by_priority?.critical || 0}</p>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-orange-500">
+          <Card className="border-l-4 border-l-amber-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase">Yüksek</p>
               <p className="text-2xl font-bold" data-testid="stat-high">{stats?.by_priority?.high || 0}</p>

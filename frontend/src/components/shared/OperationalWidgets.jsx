@@ -5,7 +5,7 @@ import React from "react";
 
 const SEVERITY_CONFIG = {
   critical: { bg: "bg-red-500/15", border: "border-red-500/30", text: "text-red-300", dot: "bg-red-400" },
-  error: { bg: "bg-orange-500/15", border: "border-orange-500/30", text: "text-orange-300", dot: "bg-orange-400" },
+  error: { bg: "bg-amber-500/15", border: "border-amber-500/30", text: "text-amber-300", dot: "bg-amber-400" },
   warning: { bg: "bg-amber-500/15", border: "border-amber-500/30", text: "text-amber-300", dot: "bg-amber-400" },
   info: { bg: "bg-blue-500/15", border: "border-blue-500/30", text: "text-blue-300", dot: "bg-blue-400" },
   success: { bg: "bg-emerald-500/15", border: "border-emerald-500/30", text: "text-emerald-300", dot: "bg-emerald-400" },

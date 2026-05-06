@@ -38,8 +38,8 @@ const PLAN_CONFIG = {
   enterprise: {
     key: 'enterprise', price: 799, priceYearly: 7990,
     maxRooms: null, maxUsers: null,
-    icon: Crown, gradient: 'from-purple-500 to-pink-600',
-    lightBg: 'bg-purple-50', borderColor: 'border-purple-200',
+    icon: Crown, gradient: 'from-indigo-500 to-pink-600',
+    lightBg: 'bg-indigo-50', borderColor: 'border-indigo-200',
   },
 };
 
@@ -47,7 +47,7 @@ const ROLE_COLORS = {
   admin: 'bg-blue-100 text-blue-800',
   supervisor: 'bg-green-100 text-green-800',
   front_desk: 'bg-yellow-100 text-yellow-800',
-  housekeeping: 'bg-orange-100 text-orange-800',
+  housekeeping: 'bg-amber-100 text-amber-800',
   finance: 'bg-pink-100 text-pink-800',
   procurement: 'bg-amber-100 text-amber-800',
   sales: 'bg-indigo-100 text-indigo-800',
@@ -58,7 +58,7 @@ const ROLE_COLORS = {
   concierge: 'bg-cyan-100 text-cyan-800',
   night_auditor: 'bg-slate-100 text-slate-800',
   staff: 'bg-neutral-100 text-neutral-800',
-  super_admin: 'bg-purple-100 text-purple-800',
+  super_admin: 'bg-indigo-100 text-indigo-800',
 };
 
 const Settings = ({ user, tenant, onLogout }) => {
@@ -596,10 +596,10 @@ const Settings = ({ user, tenant, onLogout }) => {
             </Card>
 
             {currentTier === 'enterprise' && (
-              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-center">
-                <Crown className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                <p className="text-sm font-bold text-purple-800">En üst plandasınız!</p>
-                <p className="text-xs text-purple-600">Tüm modüller ve özellikler aktif.</p>
+              <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-center">
+                <Crown className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
+                <p className="text-sm font-bold text-indigo-800">En üst plandasınız!</p>
+                <p className="text-xs text-indigo-600">Tüm modüller ve özellikler aktif.</p>
               </div>
             )}
           </TabsContent>
@@ -635,12 +635,12 @@ const Settings = ({ user, tenant, onLogout }) => {
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${isUpgrade ? 'bg-green-100' : 'bg-orange-100'}`}>
-                              {isUpgrade ? <ArrowRight className="w-5 h-5 text-green-600" /> : <ArrowDown className="w-5 h-5 text-orange-600" />}
+                            <div className={`p-2 rounded-lg ${isUpgrade ? 'bg-green-100' : 'bg-amber-100'}`}>
+                              {isUpgrade ? <ArrowRight className="w-5 h-5 text-green-600" /> : <ArrowDown className="w-5 h-5 text-amber-600" />}
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isUpgrade ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isUpgrade ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                                   {isUpgrade ? 'Yükseltme' : 'Düşürme'}
                                 </span>
                                 <span className="text-sm font-semibold text-gray-900">
@@ -972,7 +972,7 @@ const Settings = ({ user, tenant, onLogout }) => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {planAction === 'upgrade' ? <Sparkles className="w-5 h-5 text-amber-500" /> : <ArrowDown className="w-5 h-5 text-orange-500" />}
+              {planAction === 'upgrade' ? <Sparkles className="w-5 h-5 text-amber-500" /> : <ArrowDown className="w-5 h-5 text-amber-500" />}
               {planAction === 'upgrade' ? 'Plan Yükselt' : 'Plan Düşür'}
             </DialogTitle>
           </DialogHeader>
@@ -991,11 +991,11 @@ const Settings = ({ user, tenant, onLogout }) => {
                 </div>
 
                 {isDowngrade && (
-                  <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-medium text-orange-800">Plan düşürme uyarısı</p>
-                      <p className="text-xs text-orange-600 mt-0.5">
+                      <p className="text-sm font-medium text-amber-800">Plan düşürme uyarısı</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
                         Mevcut planınıza ait modüller devre dışı kalacaktır. Oda ve kullanıcı sayınız yeni plan limitlerini aşıyorsa düşürme yapılamaz.
                       </p>
                     </div>
@@ -1018,7 +1018,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="outline" onClick={() => setShowPlanModal(false)}>{t("common.cancel")}</Button>
                   <Button
-                    className={isDowngrade ? 'bg-orange-500 hover:bg-orange-600 text-white' : `bg-gradient-to-r ${plan.gradient} text-white hover:opacity-90`}
+                    className={isDowngrade ? 'bg-amber-500 hover:bg-amber-600 text-white' : `bg-gradient-to-r ${plan.gradient} text-white hover:opacity-90`}
                     onClick={handleChangePlan} disabled={saving}>
                     {saving ? 'İşleniyor...' : isDowngrade ? `${plan.label} Plana Düşür` : `${plan.label} Plana Yükselt`}
                   </Button>

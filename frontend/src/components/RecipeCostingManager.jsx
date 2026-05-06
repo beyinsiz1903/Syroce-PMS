@@ -183,9 +183,9 @@ const RecipeCostingManager = () => {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-gradient-to-r from-orange-50 to-orange-100 border-orange-200">
+        <Card className="bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200">
           <CardContent className="p-4">
-            <p className="text-xs text-orange-600 font-semibold">Toplam Recipe</p>
+            <p className="text-xs text-amber-600 font-semibold">Toplam Recipe</p>
             <p className="text-3xl font-bold">{stats.total}</p>
           </CardContent>
         </Card>
@@ -201,9 +201,9 @@ const RecipeCostingManager = () => {
             <p className="text-3xl font-bold">€{stats.avg_cost.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">
+        <Card className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-indigo-200">
           <CardContent className="p-4">
-            <p className="text-xs text-purple-600 font-semibold">En Yüksek GP</p>
+            <p className="text-xs text-indigo-600 font-semibold">En Yüksek GP</p>
             <p className="text-sm font-bold">
               {stats.best_gp ? `${stats.best_gp.dish_name} (${stats.best_gp.gp_percentage}%)` : '—'}
             </p>
@@ -215,7 +215,7 @@ const RecipeCostingManager = () => {
         <Card className="lg:w-1/3">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <CookingPot className="w-4 h-4 text-orange-600" />
+              <CookingPot className="w-4 h-4 text-amber-600" />
               Recipes
             </CardTitle>
             <Dialog open={dialogOpen} onOpenChange={(open) => {
@@ -398,8 +398,8 @@ const RecipeCostingManager = () => {
                 key={recipe.id}
                 className={`p-3 rounded-md border cursor-pointer transition ${
                   selectedRecipe?.id === recipe.id
-                    ? 'border-orange-500 bg-orange-50'
-                    : 'border-gray-200 hover:border-orange-200'
+                    ? 'border-amber-500 bg-amber-50'
+                    : 'border-gray-200 hover:border-amber-200'
                 }`}
                 onClick={() => setSelectedRecipe(recipe)}
               >
@@ -421,7 +421,7 @@ const RecipeCostingManager = () => {
         <Card className="flex-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <UtensilsCrossed className="w-4 h-4 text-orange-600" />
+              <UtensilsCrossed className="w-4 h-4 text-amber-600" />
               {selectedRecipe ? selectedRecipe.dish_name : 'Recipe Detay'}
             </CardTitle>
           </CardHeader>
@@ -448,10 +448,10 @@ const RecipeCostingManager = () => {
                       </p>
                     </CardContent>
                   </Card>
-                  <Card className="bg-orange-50 border-orange-200">
+                  <Card className="bg-amber-50 border-amber-200">
                     <CardContent className="p-3">
-                      <p className="text-xs text-orange-600">Satış Fiyatı</p>
-                      <p className="text-2xl font-bold text-orange-700">
+                      <p className="text-xs text-amber-600">Satış Fiyatı</p>
+                      <p className="text-2xl font-bold text-amber-700">
                         €{selectedRecipe.selling_price?.toFixed(2)}
                       </p>
                     </CardContent>
@@ -459,7 +459,7 @@ const RecipeCostingManager = () => {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Flame className="w-4 h-4 text-orange-500" />
+                    <Flame className="w-4 h-4 text-amber-500" />
                     {selectedRecipe.portion_size || '1 portion'}
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">

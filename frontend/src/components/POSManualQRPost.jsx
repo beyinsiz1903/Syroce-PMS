@@ -127,10 +127,10 @@ const POSManualQRPost = () => {
   };
 
   return (
-    <Card className="border-2 border-orange-300">
+    <Card className="border-2 border-amber-300">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <QrCode className="w-5 h-5 text-orange-600" />
+          <QrCode className="w-5 h-5 text-amber-600" />
           Manuel QR/Barkod Post
         </CardTitle>
         <CardDescription>
@@ -139,10 +139,10 @@ const POSManualQRPost = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Warning Banner */}
-        <div className="p-3 bg-orange-50 border-l-4 border-orange-500 rounded">
+        <div className="p-3 bg-amber-50 border-l-4 border-amber-500 rounded">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-orange-600 mt-0.5" />
-            <div className="text-xs text-orange-800">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
+            <div className="text-xs text-amber-800">
               <strong>Fallback Modu:</strong> Bu yöntemi sadece POS entegrasyonu çalışmadığında kullanın.
               Normal durumda otomatik aktarım kullanılmalıdır.
             </div>
@@ -231,7 +231,7 @@ const POSManualQRPost = () => {
             </div>
             <Button
               onClick={handleManualEntry}
-              className="w-full bg-orange-600 hover:bg-orange-700"
+              className="w-full bg-amber-600 hover:bg-amber-700"
               disabled={loading || !qrCode.trim()}
             >
               {loading ? 'Aktarılıyor...' : 'Manuel Aktar'}

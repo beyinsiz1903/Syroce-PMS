@@ -57,7 +57,7 @@ const TestBookingVerification = () => {
     <Card data-testid="test-booking-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <FlaskConical className="w-5 h-5 text-purple-600" />
+          <FlaskConical className="w-5 h-5 text-indigo-600" />
           Test Booking Doğrulama
         </CardTitle>
         <CardDescription>
@@ -71,7 +71,7 @@ const TestBookingVerification = () => {
             <div key={s.id} className="flex items-center gap-2">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step >= s.id ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'
+                  step >= s.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'
                 }`}
                 data-testid={`step-indicator-${s.id}`}
               >
@@ -114,7 +114,7 @@ const TestBookingVerification = () => {
               <Button
                 onClick={() => { setStep(2); handleVerify(); }}
                 disabled={loading}
-                className="bg-purple-600 hover:bg-purple-700"
+                className="bg-indigo-600 hover:bg-indigo-700"
                 data-testid="test-booking-verify-btn"
               >
                 {loading ? (

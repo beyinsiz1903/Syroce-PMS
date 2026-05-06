@@ -44,7 +44,7 @@ const AnomalyAlerts = () => {
       case 'high':
         return 'bg-red-500';
       case 'medium':
-        return 'bg-orange-500';
+        return 'bg-amber-500';
       default:
         return 'bg-yellow-500';
     }
@@ -68,7 +68,7 @@ const AnomalyAlerts = () => {
       {/* Floating Bell Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed top-4 right-4 z-50 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
+        className="fixed top-4 right-4 z-50 bg-gradient-to-r from-red-600 to-amber-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
       >
         <Bell className="h-6 w-6" />
         {unreadCount > 0 && (
@@ -109,7 +109,7 @@ const AnomalyAlerts = () => {
                       anomaly.severity === 'high'
                         ? 'border-red-500 bg-red-50'
                         : anomaly.severity === 'medium'
-                        ? 'border-orange-500 bg-orange-50'
+                        ? 'border-amber-500 bg-amber-50'
                         : 'border-yellow-500 bg-yellow-50'
                     }`}
                   >

@@ -13,12 +13,12 @@ import {
 } from "lucide-react";
 
 const CATEGORY_META = {
-  ai:             { label: "AI & LLM",            icon: Bot,      color: "from-purple-500/10 to-indigo-500/10", border: "border-purple-500/30" },
+  ai:             { label: "AI & LLM",            icon: Bot,      color: "from-indigo-500/10 to-indigo-500/10", border: "border-indigo-500/30" },
   email:          { label: "E-posta",             icon: Mail,     color: "from-blue-500/10 to-cyan-500/10",     border: "border-blue-500/30" },
-  monitoring:    { label: "İzleme & Uyarı",      icon: Activity, color: "from-amber-500/10 to-orange-500/10",  border: "border-amber-500/30" },
+  monitoring:    { label: "İzleme & Uyarı",      icon: Activity, color: "from-amber-500/10 to-amber-500/10",  border: "border-amber-500/30" },
   infrastructure:{ label: "Altyapı",              icon: Database, color: "from-slate-500/10 to-slate-700/10",   border: "border-slate-500/30" },
   integrations:  { label: "3. Parti Servisler",   icon: Plug,     color: "from-emerald-500/10 to-teal-500/10",  border: "border-emerald-500/30" },
-  aws:           { label: "AWS & KMS",            icon: Cloud,    color: "from-orange-500/10 to-red-500/10",    border: "border-orange-500/30" },
+  aws:           { label: "AWS & KMS",            icon: Cloud,    color: "from-amber-500/10 to-red-500/10",    border: "border-amber-500/30" },
   capx:          { label: "CapX B2B Network",     icon: Plug,     color: "from-emerald-500/10 to-green-500/10", border: "border-emerald-500/30" },
 };
 
@@ -94,7 +94,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-indigo-500/20 to-indigo-500/20 border border-indigo-500/30">
               <KeyRound className="w-6 h-6 text-indigo-400" />
             </div>
             <div>

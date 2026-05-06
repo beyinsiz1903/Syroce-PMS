@@ -40,7 +40,7 @@ const DynamicPricing = () => {
             variant="outline" 
             size="icon"
             onClick={() => navigate('/')}
-            className="hover:bg-purple-50"
+            className="hover:bg-indigo-50"
           >
             <Home className="w-5 h-5" />
           </Button>
@@ -78,17 +78,17 @@ const DynamicPricing = () => {
 
       {recommendation && (
         <div className="space-y-4">
-          <Card className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200">
+          <Card className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Target className="w-6 h-6 text-purple-600" />
+                <Target className="w-6 h-6 text-indigo-600" />
                 {t('rms.priceRecommendation')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-600 mb-2">{t('rms.recommendedPrice')}</p>
-                <p className="text-5xl font-bold text-purple-600">
+                <p className="text-5xl font-bold text-indigo-600">
                   €{recommendation.recommended_price}
                 </p>
                 <div className="flex items-center justify-center gap-4 mt-4">
@@ -119,7 +119,7 @@ const DynamicPricing = () => {
                 </div>
               </div>
 
-              <Button className="w-full mt-6 bg-purple-600 hover:bg-purple-700" onClick={async () => {
+              <Button className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700" onClick={async () => {
                 try {
                   // Push rate to all channels
                   await axios.post('/rms/update-rate', {

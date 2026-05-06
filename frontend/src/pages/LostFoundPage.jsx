@@ -17,7 +17,7 @@ import {
 const STATUS_CONFIG = {
   found: { label: 'Bulundu', color: 'bg-blue-100 text-blue-700 border-blue-200' },
   stored: { label: 'Depolandı', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  claimed: { label: 'Sahiplenildi', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  claimed: { label: 'Sahiplenildi', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
   returned: { label: 'Teslim Edildi', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   disposed: { label: 'İmha Edildi', color: 'bg-gray-100 text-gray-600 border-gray-200' },
 };
@@ -135,7 +135,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Package className="w-6 h-6 text-orange-600" />
+              <Package className="w-6 h-6 text-amber-600" />
               Kayıp & Bulunan Eşyalar
             </h1>
             <p className="text-sm text-gray-500 mt-1">Bulunan eşyaları kaydedin ve misafirlerle eşleştirin</p>
@@ -361,7 +361,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                           </Button>
                         )}
                         {(showDetail.status === 'found' || showDetail.status === 'stored') && (
-                          <Button size="sm" variant="outline" className="text-orange-600 border-orange-200"
+                          <Button size="sm" variant="outline" className="text-amber-600 border-amber-200"
                             onClick={() => { setShowMatch(showDetail); setMatchForm({ guest_name: showDetail.guest_name || '', guest_contact: showDetail.guest_contact || '', booking_id: '' }); setShowDetail(null); }}
                           >
                             <UserCheck className="w-3 h-3 mr-1" /> Misafir Eşleştir

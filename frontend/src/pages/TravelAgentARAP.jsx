@@ -201,7 +201,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   const agingBuckets = aging ? [
     { key: 'current', label: t('agentArap.current'), color: 'bg-green-100 text-green-800', data: aging.current },
     { key: '30_days', label: t('agentArap.days30'), color: 'bg-yellow-100 text-yellow-800', data: aging['30_days'] },
-    { key: '60_days', label: t('agentArap.days60'), color: 'bg-orange-100 text-orange-800', data: aging['60_days'] },
+    { key: '60_days', label: t('agentArap.days60'), color: 'bg-amber-100 text-amber-800', data: aging['60_days'] },
     { key: '90_days', label: t('agentArap.days90'), color: 'bg-red-100 text-red-800', data: aging['90_days'] },
     { key: 'over_90', label: t('agentArap.over90'), color: 'bg-red-200 text-red-900', data: aging.over_90 },
   ] : [];
@@ -292,7 +292,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                       <div className="text-sm text-muted-foreground">{t('agentArap.overdueAccounts')}</div>
                       <div className="flex gap-4 mt-1">
                         <span className="text-sm">30d: <strong className="text-yellow-600">{summary.overdue_30_count}</strong></span>
-                        <span className="text-sm">60d: <strong className="text-orange-600">{summary.overdue_60_count}</strong></span>
+                        <span className="text-sm">60d: <strong className="text-amber-600">{summary.overdue_60_count}</strong></span>
                         <span className="text-sm">90d: <strong className="text-red-600">{summary.overdue_90_count}</strong></span>
                       </div>
                     </CardContent>

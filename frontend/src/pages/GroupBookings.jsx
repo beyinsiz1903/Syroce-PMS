@@ -182,7 +182,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
             <h1 className="text-2xl font-bold text-gray-800">Grup Rezervasyonları</h1>
             <p className="text-sm text-gray-500 mt-1">Grup giriş/çıkış ve toplu yönetim</p>
           </div>
-          <Button onClick={openCreateDialog} className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="create-group-btn">
+          <Button onClick={openCreateDialog} className="bg-amber-500 hover:bg-amber-600 text-white" data-testid="create-group-btn">
             <Plus className="w-4 h-4 mr-2" /> Yeni Grup
           </Button>
         </div>
@@ -387,7 +387,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => setShowCreate(false)}>İptal</Button>
-                <Button onClick={handleCreate} disabled={creating} className="bg-orange-500 hover:bg-orange-600 text-white">
+                <Button onClick={handleCreate} disabled={creating} className="bg-amber-500 hover:bg-amber-600 text-white">
                   {creating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null} Grup Oluştur
                 </Button>
               </div>

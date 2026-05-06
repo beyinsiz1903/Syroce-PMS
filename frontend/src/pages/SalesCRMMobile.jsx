@@ -45,7 +45,7 @@ const SalesCRMMobile = ({ user }) => {
   };
 
   const getStageColor = (stage) => {
-    const colors = { cold: 'bg-blue-500', warm: 'bg-orange-500', hot: 'bg-red-500', converted: 'bg-green-500' };
+    const colors = { cold: 'bg-blue-500', warm: 'bg-amber-500', hot: 'bg-red-500', converted: 'bg-green-500' };
     return colors[stage] || 'bg-gray-500';
   };
 
@@ -126,7 +126,7 @@ const SalesCRMMobile = ({ user }) => {
                 <div><span className="text-gray-500">Expedia:</span> ₺{ota.expedia}</div>
                 <div><span className="text-gray-500">Agoda:</span> ₺{ota.agoda}</div>
               </div>
-              <Badge className={`mt-2 ${ota.price_position === 'lowest' ? 'bg-green-500' : 'bg-orange-500'} text-white`}>{ota.price_position}</Badge>
+              <Badge className={`mt-2 ${ota.price_position === 'lowest' ? 'bg-green-500' : 'bg-amber-500'} text-white`}>{ota.price_position}</Badge>
             </CardContent>
           </Card>
         ))}
@@ -134,7 +134,7 @@ const SalesCRMMobile = ({ user }) => {
         {activeView === 'followups' && (followUps.length === 0 ? (
           <Card><CardContent className="p-6 text-center"><AlertCircle className="h-12 w-12 text-gray-300 mx-auto mb-2" /><p className="text-gray-500">Takip gerekmeyen</p></CardContent></Card>
         ) : followUps.map(followUp => (
-          <Card key={followUp.id} className="border-l-4 border-orange-500">
+          <Card key={followUp.id} className="border-l-4 border-amber-500">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
                 <div>

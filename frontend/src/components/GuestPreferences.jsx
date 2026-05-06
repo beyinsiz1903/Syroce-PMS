@@ -101,8 +101,8 @@ const GuestPreferences = ({ guest }) => {
         </div>
 
         {/* Stay History Summary */}
-        <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded">
-          <div className="flex items-center gap-2 text-sm font-semibold text-purple-900">
+        <div className="mt-4 p-3 bg-indigo-50 border border-indigo-200 rounded">
+          <div className="flex items-center gap-2 text-sm font-semibold text-indigo-900">
             <Users className="w-4 h-4" />
             Stay History
           </div>

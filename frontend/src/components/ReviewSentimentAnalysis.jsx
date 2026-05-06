@@ -106,7 +106,7 @@ const ReviewSentimentAnalysis = ({ reviewText = '', onAnalysisComplete }) => {
 
         {/* Analysis Results */}
         {analysis && (
-          <div className="space-y-4 mt-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border-2 border-blue-200">
+          <div className="space-y-4 mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200">
             {/* Overall Sentiment */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ const ReviewSentimentAnalysis = ({ reviewText = '', onAnalysisComplete }) => {
             {analysis.issues && analysis.issues.length > 0 && (
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-orange-600" />
+                  <AlertCircle className="w-4 h-4 text-amber-600" />
                   Issues Detected:
                 </h4>
                 <div className="space-y-2">
@@ -191,9 +191,9 @@ const ReviewSentimentAnalysis = ({ reviewText = '', onAnalysisComplete }) => {
             )}
 
             {/* Demo Examples */}
-            <div className="mt-4 p-3 bg-purple-100 border-l-4 border-purple-500 rounded text-xs">
+            <div className="mt-4 p-3 bg-indigo-100 border-l-4 border-indigo-500 rounded text-xs">
               <strong>Example AI Insights:</strong>
-              <ul className="list-disc list-inside mt-1 space-y-0.5 text-purple-900">
+              <ul className="list-disc list-inside mt-1 space-y-0.5 text-indigo-900">
                 <li>"Negative sentiment detected: cleanliness issue"</li>
                 <li>"Positive sentiment: staff friendliness"</li>
                 <li>"High priority: Room maintenance required"</li>

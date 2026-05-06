@@ -255,7 +255,7 @@ const ComprehensiveReportsModule = () => {
                         <div className="text-xl font-bold text-green-600 capitalize">{compsetPrices.market_position}</div>
                       </CardContent>
                     </Card>
-                    <Card className="bg-purple-50">
+                    <Card className="bg-indigo-50">
                       <CardContent className="p-4">
                         <div className="text-sm text-gray-600">Check-in Date</div>
                         <div className="text-lg font-semibold">{compsetPrices.check_in_date}</div>

@@ -41,7 +41,7 @@ const LandingPage = () => {
       icon: ShieldCheck,
       title: 'Gönül rahatlığı',
       desc: 'Verileriniz güvende, kanallar her zaman senkron. Geceleri rahat uyuyun.',
-      color: 'from-amber-400 to-orange-500',
+      color: 'from-amber-400 to-amber-500',
     },
   ];
 
@@ -144,7 +144,7 @@ const LandingPage = () => {
       <section className="relative pt-32 pb-24 overflow-hidden bg-gradient-to-br from-indigo-900 via-blue-900 to-slate-900">
         <div className="absolute inset-0 opacity-30 pointer-events-none">
           <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400 rounded-full mix-blend-screen filter blur-3xl animate-pulse" />
-          <div className="absolute top-40 right-10 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute top-40 right-10 w-96 h-96 bg-indigo-500 rounded-full mix-blend-screen filter blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
           <div className="absolute bottom-10 left-1/3 w-80 h-80 bg-pink-500 rounded-full mix-blend-screen filter blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
         </div>
 
@@ -156,7 +156,7 @@ const LandingPage = () => {
 
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-[1.05] mb-6">
             Otelinizi yönetmenin
-            <span className="block bg-gradient-to-r from-amber-300 via-pink-300 to-purple-300 bg-clip-text text-transparent">
+            <span className="block bg-gradient-to-r from-amber-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
               en kolay yolu.
             </span>
           </h1>
@@ -356,7 +356,7 @@ const LandingPage = () => {
       {/* Final CTA */}
       <section className="py-24 bg-white">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <div className="bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 rounded-3xl p-12 md:p-16 shadow-2xl relative overflow-hidden">
+          <div className="bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-700 rounded-3xl p-12 md:p-16 shadow-2xl relative overflow-hidden">
             <div className="absolute -top-20 -right-20 w-60 h-60 bg-white/10 rounded-full blur-3xl" />
             <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-white/10 rounded-full blur-3xl" />
             <div className="relative">

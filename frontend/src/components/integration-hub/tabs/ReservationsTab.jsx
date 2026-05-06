@@ -238,7 +238,7 @@ export default function ReservationsTab(props) {
                               {b.review_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{b.review_count} review</span>}
                               {b.duplicate_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/20">{b.duplicate_count} dup</span>}
                               {b.conflict_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">{b.conflict_count} conflict</span>}
-                              {b.out_of_order_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">{b.out_of_order_count} ooo</span>}
+                              {b.out_of_order_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{b.out_of_order_count} ooo</span>}
                             </div>
                             <div className="text-right">
                               <span className="text-[10px] text-slate-500 block">toplam</span>

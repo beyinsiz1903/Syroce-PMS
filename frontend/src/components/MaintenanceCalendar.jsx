@@ -89,7 +89,7 @@ const MaintenanceCalendar = () => {
             calendarItems.map((item) => (
               <div
                 key={item.id}
-                className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg"
+                className="p-3 bg-gradient-to-r from-indigo-50 to-pink-50 border border-indigo-200 rounded-lg"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -109,7 +109,7 @@ const MaintenanceCalendar = () => {
                     </div>
                   </div>
                   <div>
-                    <Badge className="bg-purple-500">
+                    <Badge className="bg-indigo-500">
                       {item.frequency === 'monthly' ? 'Aylık' : item.frequency}
                     </Badge>
                   </div>

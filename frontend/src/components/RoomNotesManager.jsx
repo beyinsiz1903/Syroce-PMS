@@ -41,7 +41,7 @@ const RoomNotesManager = ({ roomId, roomNumber }) => {
     switch(type) {
       case 'issue': return <Wrench className="w-4 h-4 text-red-600" />;
       case 'minibar': return <Package className="w-4 h-4 text-blue-600" />;
-      case 'maintenance': return <FileText className="w-4 h-4 text-orange-600" />;
+      case 'maintenance': return <FileText className="w-4 h-4 text-amber-600" />;
       default: return <FileText className="w-4 h-4" />;
     }
   };
@@ -92,7 +92,7 @@ const RoomNotesManager = ({ roomId, roomNumber }) => {
                     <p className="text-xs text-gray-500">{note.created}</p>
                   </div>
                 </div>
-                <Badge className={note.status === 'open' ? 'bg-orange-500' : 'bg-green-500'}>
+                <Badge className={note.status === 'open' ? 'bg-amber-500' : 'bg-green-500'}>
                   {note.status}
                 </Badge>
               </div>

@@ -39,7 +39,7 @@ const ALIGNMENT_STYLES = {
 
 const DRIFT_SEVERITY_STYLES = {
   severe: { label: "SEVERE", icon: AlertOctagon, cls: "bg-red-600/20 text-red-300 border-red-500/50", pulse: true },
-  critical: { label: "CRITICAL", icon: ShieldAlert, cls: "bg-orange-500/20 text-orange-300 border-orange-500/50", pulse: true },
+  critical: { label: "CRITICAL", icon: ShieldAlert, cls: "bg-amber-500/20 text-amber-300 border-amber-500/50", pulse: true },
   warning: { label: "WARNING", icon: AlertTriangle, cls: "bg-yellow-500/15 text-yellow-300 border-yellow-500/40", pulse: false },
   none: { label: "TEMIZ", icon: CheckCircle, cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", pulse: false },
 };
@@ -217,12 +217,12 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
   const bySeverity = summary?.by_severity || {};
 
   return (
-    <Card className={`border ${highest === "severe" ? "border-red-500/50 bg-red-950/30" : highest === "critical" ? "border-orange-500/40 bg-orange-950/20" : "bg-zinc-900 border-zinc-800"}`} data-testid="drift-alert-panel">
+    <Card className={`border ${highest === "severe" ? "border-red-500/50 bg-red-950/30" : highest === "critical" ? "border-amber-500/40 bg-amber-950/20" : "bg-zinc-900 border-zinc-800"}`} data-testid="drift-alert-panel">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
             {activeCount > 0 ? (
-              <BellRing className={`h-3.5 w-3.5 ${style.pulse ? "animate-pulse" : ""} ${highest === "severe" ? "text-red-400" : highest === "critical" ? "text-orange-400" : "text-yellow-400"}`} />
+              <BellRing className={`h-3.5 w-3.5 ${style.pulse ? "animate-pulse" : ""} ${highest === "severe" ? "text-red-400" : highest === "critical" ? "text-amber-400" : "text-yellow-400"}`} />
             ) : (
               <Bell className="h-3.5 w-3.5" />
             )}
@@ -252,7 +252,7 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
           {activeCount > 0 ? (
             <div className="flex items-center gap-3 text-xs">
               {bySeverity.severe > 0 && <span className="text-red-400 font-mono font-bold">{bySeverity.severe} severe</span>}
-              {bySeverity.critical > 0 && <span className="text-orange-400 font-mono font-bold">{bySeverity.critical} critical</span>}
+              {bySeverity.critical > 0 && <span className="text-amber-400 font-mono font-bold">{bySeverity.critical} critical</span>}
               {bySeverity.warning > 0 && <span className="text-yellow-400 font-mono font-bold">{bySeverity.warning} warning</span>}
             </div>
           ) : (
@@ -267,10 +267,10 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
               const AlertIcon = alertStyle.icon;
               const payload = alert.payload || {};
               return (
-                <div key={alert.alert_id || i} className={`border rounded-lg p-3 space-y-2 ${alert.severity === "severe" ? "border-red-500/30 bg-red-950/20" : alert.severity === "critical" ? "border-orange-500/25 bg-orange-950/10" : "border-yellow-500/20 bg-yellow-950/10"}`} data-testid={`drift-alert-${alert.alert_id}`}>
+                <div key={alert.alert_id || i} className={`border rounded-lg p-3 space-y-2 ${alert.severity === "severe" ? "border-red-500/30 bg-red-950/20" : alert.severity === "critical" ? "border-amber-500/25 bg-amber-950/10" : "border-yellow-500/20 bg-yellow-950/10"}`} data-testid={`drift-alert-${alert.alert_id}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <AlertIcon className={`h-3.5 w-3.5 ${alert.severity === "severe" ? "text-red-400" : alert.severity === "critical" ? "text-orange-400" : "text-yellow-400"}`} />
+                      <AlertIcon className={`h-3.5 w-3.5 ${alert.severity === "severe" ? "text-red-400" : alert.severity === "critical" ? "text-amber-400" : "text-yellow-400"}`} />
                       <Badge variant="outline" className={`${alertStyle.cls} text-[9px] px-1.5 py-0 border`}>{alertStyle.label}</Badge>
                       <span className="text-[10px] text-zinc-500 font-mono">{alert.fired_at ? new Date(alert.fired_at).toLocaleTimeString("tr-TR") : ""}</span>
                       {alert.auto_action_triggered && (
@@ -462,7 +462,7 @@ function KpiDashboard({ kpiData, dora, correlation, onDrillDown }) {
         {/* Active alerts summary */}
         <div className="flex items-center justify-between text-[10px] text-zinc-600">
           <span>Aktif alarm: <span className="text-zinc-400 font-mono">{driftAlerts.active_count || 0}</span></span>
-          <span>En yüksek: <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-orange-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
+          <span>En yüksek: <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-amber-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
           <span>Auto-heal basari: <span className="text-zinc-400 font-mono">{autoActions.success_rate ?? 100}%</span></span>
         </div>
       </CardContent>

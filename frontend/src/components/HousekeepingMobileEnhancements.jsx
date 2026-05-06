@@ -70,7 +70,7 @@ const HousekeepingMobileEnhancements = () => {
   const getPriorityColor = (priority) => {
     const colors = {
       urgent: 'bg-red-100 text-red-800',
-      high: 'bg-orange-100 text-orange-800',
+      high: 'bg-amber-100 text-amber-800',
       normal: 'bg-blue-100 text-blue-800',
       low: 'bg-gray-100 text-gray-800'
     };

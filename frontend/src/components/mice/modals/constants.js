@@ -3,7 +3,7 @@ export const STATUS = {
   tentative: { label: 'Tentative', cls: 'bg-amber-100 text-amber-800' },
   definite: { label: 'Definite', cls: 'bg-sky-100 text-sky-800' },
   confirmed: { label: 'Confirmed', cls: 'bg-emerald-100 text-emerald-800' },
-  completed: { label: 'Tamamlandı', cls: 'bg-purple-100 text-purple-800' },
+  completed: { label: 'Tamamlandı', cls: 'bg-indigo-100 text-indigo-800' },
   cancelled: { label: 'İptal', cls: 'bg-red-100 text-red-800' },
 };
 

@@ -73,7 +73,7 @@ const LoyaltyAutoTierManager = () => {
           <button
             onClick={runAutoTierUpgrade}
             disabled={loading}
-            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-pink-600 text-white rounded-lg hover:from-indigo-700 hover:to-pink-700 disabled:opacity-50"
           >
             {loading ? '⏳ Processing...' : '🤖 Run Auto-Tier Upgrade'}
           </button>
@@ -87,7 +87,7 @@ const LoyaltyAutoTierManager = () => {
           <div className="space-y-3">
             {upgrades.map((upgrade, idx) => (
               <div key={idx} className={`border-l-4 rounded-lg p-4 ${
-                upgrade.action === 'tier_upgrade' ? 'border-purple-500 bg-purple-50' :
+                upgrade.action === 'tier_upgrade' ? 'border-indigo-500 bg-indigo-50' :
                 upgrade.action === 'ota_to_direct_bonus' ? 'border-green-500 bg-green-50' :
                 'border-blue-500 bg-blue-50'
               }`}>
@@ -99,7 +99,7 @@ const LoyaltyAutoTierManager = () => {
                       <div className="flex items-center gap-3">
                         <span className="px-3 py-1 bg-gray-200 rounded">{upgrade.old_tier}</span>
                         <span>→</span>
-                        <span className="px-3 py-1 bg-purple-600 text-white rounded font-semibold">{upgrade.new_tier}</span>
+                        <span className="px-3 py-1 bg-indigo-600 text-white rounded font-semibold">{upgrade.new_tier}</span>
                       </div>
                     )}
                     {upgrade.bonus_points && (
@@ -165,7 +165,7 @@ const LoyaltyAutoTierManager = () => {
                 <div className="text-sm text-gray-600">Lifetime Value</div>
                 <div className="text-2xl font-bold">${personaAnalysis.analysis_summary.lifetime_value}</div>
               </div>
-              <div className="bg-purple-50 p-3 rounded">
+              <div className="bg-indigo-50 p-3 rounded">
                 <div className="text-sm text-gray-600">Personas Detected</div>
                 <div className="text-2xl font-bold">{personaAnalysis.personas_detected}</div>
               </div>

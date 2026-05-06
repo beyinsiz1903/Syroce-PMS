@@ -103,7 +103,7 @@ const ObservabilityTab = () => {
                   </div>
                   <div className="bg-slate-900/50 rounded p-2 text-center">
                     <p className="text-[10px] text-slate-500">Retry Orani</p>
-                    <p className="text-xl font-semibold text-orange-400">{m.retry_rate}%</p>
+                    <p className="text-xl font-semibold text-amber-400">{m.retry_rate}%</p>
                     <p className="text-[9px] text-slate-600">{m.retry_jobs} retry</p>
                   </div>
                   <div className="bg-slate-900/50 rounded p-2 text-center">

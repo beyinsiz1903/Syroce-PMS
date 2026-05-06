@@ -238,7 +238,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
 
   const getStockStatus = (quantity, reorderLevel) => {
     if (quantity === 0) return { label: 'Tükendi', color: 'bg-red-500', textColor: 'text-red-700' };
-    if (quantity <= reorderLevel / 2) return { label: 'Kritik', color: 'bg-orange-500', textColor: 'text-orange-700' };
+    if (quantity <= reorderLevel / 2) return { label: 'Kritik', color: 'bg-amber-500', textColor: 'text-amber-700' };
     if (quantity <= reorderLevel) return { label: 'Düşük', color: 'bg-yellow-500', textColor: 'text-yellow-700' };
     return { label: 'Normal', color: 'bg-green-500', textColor: 'text-green-700' };
   };
@@ -311,9 +311,9 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Düşük Stok</p>
-                  <p className="text-2xl font-bold text-orange-500">{stats.lowStockCount}</p>
+                  <p className="text-2xl font-bold text-amber-500">{stats.lowStockCount}</p>
                 </div>
-                <AlertTriangle className="w-10 h-10 text-orange-500" />
+                <AlertTriangle className="w-10 h-10 text-amber-500" />
               </div>
             </CardContent>
           </Card>
@@ -394,7 +394,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <p className="font-semibold">{item.name}</p>
                                       {item.is_consumable === false && (
-                                        <Badge className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0">
+                                        <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
                                           🛏️ Çok Kullanımlık
                                         </Badge>
                                       )}
@@ -426,7 +426,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                 <div className="flex gap-1 mt-3">
                                   <Button
                                     size="sm" variant="outline"
-                                    className="flex-1 text-xs px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                    className="flex-1 text-xs px-2 border-amber-300 text-amber-700 hover:bg-amber-50"
                                     onClick={() => openMovement(item, 'out')}
                                     title="Stoktan düş (kullanım/tüketim)"
                                   >
@@ -450,7 +450,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                   </Button>
                                   <Button
                                     size="sm" variant="outline"
-                                    className={`text-xs px-2 ${item.is_consumable === false ? 'border-purple-300 text-purple-700' : 'border-gray-300'}`}
+                                    className={`text-xs px-2 ${item.is_consumable === false ? 'border-indigo-300 text-indigo-700' : 'border-gray-300'}`}
                                     onClick={() => toggleConsumable(item)}
                                     title={item.is_consumable === false ? 'Çok kullanımlık (stoktan düşmez) — değiştir' : 'Tek kullanımlık — değiştir'}
                                   >
@@ -499,7 +499,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                         key={idx} 
                         className={`border-l-4 ${
                           alert.priority === 'URGENT' ? 'border-red-500' : 
-                          alert.priority === 'HIGH' ? 'border-orange-500' : 'border-yellow-500'
+                          alert.priority === 'HIGH' ? 'border-amber-500' : 'border-yellow-500'
                         }`}
                       >
                         <CardContent className="p-4">
@@ -508,7 +508,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                               <div className="flex items-center gap-2 mb-2">
                                 <AlertTriangle className={`w-5 h-5 ${
                                   alert.priority === 'URGENT' ? 'text-red-500' : 
-                                  alert.priority === 'HIGH' ? 'text-orange-500' : 'text-yellow-500'
+                                  alert.priority === 'HIGH' ? 'text-amber-500' : 'text-yellow-500'
                                 }`} />
                                 <p className="font-semibold">{alert.item_name}</p>
                                 <Badge variant={
@@ -578,7 +578,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                     </p>
                   </div>
                   <Button
-                    className="bg-purple-600 hover:bg-purple-700"
+                    className="bg-indigo-600 hover:bg-indigo-700"
                     onClick={() => setKitForm({ name: '', description: '', lines: [{ item_id: '', item_name: '', unit: 'adet', quantity: 1 }] })}
                   >
                     <Plus className="w-4 h-4 mr-1" /> Yeni Kit
@@ -602,7 +602,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <h3 className="font-semibold flex items-center gap-2">
-                                <BedDouble className="w-4 h-4 text-purple-600" />
+                                <BedDouble className="w-4 h-4 text-indigo-600" />
                                 {kit.name}
                               </h3>
                               {kit.description && (
@@ -625,7 +625,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                           </div>
                           <Button
                             size="sm"
-                            className="w-full bg-purple-600 hover:bg-purple-700"
+                            className="w-full bg-indigo-600 hover:bg-indigo-700"
                             onClick={() => setApplyKit({ kit, multiplier: 1, notes: '' })}
                           >
                             <Play className="w-3.5 h-3.5 mr-1" /> Stoktan Düş (Uygula)
@@ -672,7 +672,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                         </div>
                         <div>
                           <p className="text-gray-600">Yüksek Öncelik:</p>
-                          <p className="font-bold text-lg text-orange-600">
+                          <p className="font-bold text-lg text-amber-600">
                             {alerts.filter(a => a.priority === 'HIGH').length}
                           </p>
                         </div>
@@ -706,9 +706,9 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
              onClick={() => !saving && setKitForm(null)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
                onClick={(e) => e.stopPropagation()}>
-            <div className="border-b p-4 bg-purple-50 flex items-center justify-between">
+            <div className="border-b p-4 bg-indigo-50 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <BedDouble className="w-6 h-6 text-purple-600" />
+                <BedDouble className="w-6 h-6 text-indigo-600" />
                 <div>
                   <h2 className="font-bold">Yeni Hazırlık Kiti</h2>
                   <p className="text-xs text-gray-600">Standart ürün setini bir kez tanımlayın, sonra tek tıkla uygulayın.</p>
@@ -784,13 +784,13 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                   ))}
                 </div>
                 {inventory.length === 0 && (
-                  <p className="text-xs text-orange-600 mt-2">Önce stok ekranında ürün tanımlamanız gerekir.</p>
+                  <p className="text-xs text-amber-600 mt-2">Önce stok ekranında ürün tanımlamanız gerekir.</p>
                 )}
               </div>
             </div>
             <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
               <Button variant="outline" onClick={() => setKitForm(null)} disabled={saving}>Vazgeç</Button>
-              <Button className="bg-purple-600 hover:bg-purple-700" onClick={saveKit} disabled={saving}>
+              <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={saveKit} disabled={saving}>
                 {saving ? 'Kaydediliyor…' : 'Kiti Kaydet'}
               </Button>
             </div>
@@ -804,9 +804,9 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
              onClick={() => !saving && setApplyKit(null)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full"
                onClick={(e) => e.stopPropagation()}>
-            <div className="border-b p-4 bg-purple-50 flex items-center justify-between">
+            <div className="border-b p-4 bg-indigo-50 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Play className="w-6 h-6 text-purple-600" />
+                <Play className="w-6 h-6 text-indigo-600" />
                 <div>
                   <h2 className="font-bold">Kit Uygula</h2>
                   <p className="text-xs text-gray-600">{applyKit.kit.name}</p>
@@ -836,8 +836,8 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                 return (
                   <>
                     {consumables.length > 0 && (
-                      <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 text-sm">
-                        <p className="font-medium text-orange-900 mb-2">🧴 Stoktan düşecek (tek kullanımlık):</p>
+                      <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm">
+                        <p className="font-medium text-amber-900 mb-2">🧴 Stoktan düşecek (tek kullanımlık):</p>
                         <ul className="space-y-1">
                           {consumables.map((ln, i) => (
                             <li key={i} className="flex justify-between">
@@ -849,8 +849,8 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                       </div>
                     )}
                     {reusables.length > 0 && (
-                      <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm">
-                        <p className="font-medium text-purple-900 mb-2">🛏️ Sadece odaya konacak (çok kullanımlık — stoktan düşmez):</p>
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 text-sm">
+                        <p className="font-medium text-indigo-900 mb-2">🛏️ Sadece odaya konacak (çok kullanımlık — stoktan düşmez):</p>
                         <ul className="space-y-1">
                           {reusables.map((ln, i) => (
                             <li key={i} className="flex justify-between">
@@ -872,7 +872,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
             </div>
             <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
               <Button variant="outline" onClick={() => setApplyKit(null)} disabled={saving}>Vazgeç</Button>
-              <Button className="bg-purple-600 hover:bg-purple-700" onClick={runApplyKit} disabled={saving}>
+              <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={runApplyKit} disabled={saving}>
                 {saving ? 'Uygulanıyor…' : 'Onayla & Stoktan Düş'}
               </Button>
             </div>
@@ -883,7 +883,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
       {/* ── Stok Hareketi Modal ────────────────────────── */}
       {movement && (() => {
         const cfg = {
-          out:        { title: 'Stoktan Düş',     desc: 'Tüketim, kullanım veya kayıp girişi.', headerCls: 'bg-orange-50',  iconCls: 'text-orange-600',  icon: ArrowDownCircle },
+          out:        { title: 'Stoktan Düş',     desc: 'Tüketim, kullanım veya kayıp girişi.', headerCls: 'bg-amber-50',  iconCls: 'text-amber-600',  icon: ArrowDownCircle },
           in:         { title: 'Stoğa Ekle',      desc: 'Manuel giriş (mal kabul dışında).',    headerCls: 'bg-emerald-50', iconCls: 'text-emerald-600', icon: ArrowUpCircle },
           adjustment: { title: 'Sayım Düzeltmesi', desc: 'Fiziksel sayım sonucu yeni miktarı girin.', headerCls: 'bg-slate-50',  iconCls: 'text-slate-600',   icon: Edit3 },
         }[movement.type];
@@ -956,7 +956,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                 <Button variant="outline" onClick={() => setMovement(null)} disabled={saving}>Vazgeç</Button>
                 <Button
                   className={
-                    movement.type === 'out' ? 'bg-orange-600 hover:bg-orange-700' :
+                    movement.type === 'out' ? 'bg-amber-600 hover:bg-amber-700' :
                     movement.type === 'in'  ? 'bg-emerald-600 hover:bg-emerald-700' :
                                               'bg-blue-600 hover:bg-blue-700'
                   }
@@ -1048,7 +1048,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                       <div className="text-xs text-gray-600 mt-0.5">Kullanınca tükenir, stoktan düşer (şampuan, sabun, kahve)</div>
                     </button>
                     <button type="button"
-                      className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable === false ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
+                      className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable === false ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
                       onClick={() => setNewItem({ ...newItem, is_consumable: false })}>
                       <div className="font-semibold text-sm">🛏️ Çok Kullanımlık</div>
                       <div className="text-xs text-gray-600 mt-0.5">Tekrar tekrar kullanılır, stoktan düşmez (havlu, nevresim, bornoz)</div>

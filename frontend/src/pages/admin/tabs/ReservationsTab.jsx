@@ -38,9 +38,9 @@ const STATUS_COLORS = {
   duplicate: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
   duplicate_cancel: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
   conflict: 'bg-red-500/15 text-red-400 border-red-500/30',
-  review: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  review: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
   failed: 'bg-red-500/15 text-red-400 border-red-500/30',
-  out_of_order: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  out_of_order: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
   dismissed: 'bg-slate-600/15 text-slate-500 border-slate-600/30',
   pending: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
   acknowledged: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
@@ -92,9 +92,9 @@ const BatchCard = ({ batch, onExpand }) => {
         </div>
         {(batch.review_count > 0 || batch.conflict_count > 0 || batch.out_of_order_count > 0) && (
           <div className="flex gap-2 mt-1.5">
-            {batch.review_count > 0 && <span className="text-[10px] text-orange-400">Review: {batch.review_count}</span>}
+            {batch.review_count > 0 && <span className="text-[10px] text-amber-400">Review: {batch.review_count}</span>}
             {batch.conflict_count > 0 && <span className="text-[10px] text-red-400">Conflict: {batch.conflict_count}</span>}
-            {batch.out_of_order_count > 0 && <span className="text-[10px] text-purple-400">OOO: {batch.out_of_order_count}</span>}
+            {batch.out_of_order_count > 0 && <span className="text-[10px] text-indigo-400">OOO: {batch.out_of_order_count}</span>}
           </div>
         )}
         <div className="flex items-center justify-between mt-1.5">
@@ -173,9 +173,9 @@ const ReservationDetailDialog = ({ reservation, onClose, onReprocess, onDismiss 
 
           {/* Review Info */}
           {(r.review_reason || r.conflict_reason) && (
-            <div className="bg-orange-500/10 border border-orange-500/20 rounded p-2.5">
-              <p className="text-[10px] text-orange-400 font-medium mb-1">Review Info</p>
-              {r.review_reason_code && <p className="text-[10px] text-slate-300">Code: <span className="text-orange-300">{r.review_reason_code}</span></p>}
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded p-2.5">
+              <p className="text-[10px] text-amber-400 font-medium mb-1">Review Info</p>
+              {r.review_reason_code && <p className="text-[10px] text-slate-300">Code: <span className="text-amber-300">{r.review_reason_code}</span></p>}
               {r.review_reason && <p className="text-[10px] text-slate-300">{r.review_reason}</p>}
               {r.conflict_reason && <p className="text-[10px] text-red-300">{r.conflict_reason}</p>}
               {r.suggested_action && <p className="text-[10px] text-amber-300 mt-1">Suggested: {r.suggested_action}</p>}
@@ -369,7 +369,7 @@ const ReservationsTab = () => {
             <MetricCard title="Success Rate" value={`${stats?.success_rate || 0}%`} icon={CheckCircle2}
               color={stats?.success_rate >= 80 ? 'text-emerald-400' : 'text-amber-400'} />
             <MetricCard title="Review Queue" value={stats?.review_queue_count || 0} icon={AlertTriangle}
-              color={stats?.review_queue_count > 0 ? 'text-orange-400' : 'text-slate-400'} />
+              color={stats?.review_queue_count > 0 ? 'text-amber-400' : 'text-slate-400'} />
             <MetricCard title="ACK Failed" value={stats?.ack_failed_count || 0} icon={XCircle}
               color={stats?.ack_failed_count > 0 ? 'text-red-400' : 'text-slate-400'} />
           </div>
@@ -510,7 +510,7 @@ const ReservationsTab = () => {
                         <div className="flex items-center gap-2 mb-1.5">
                           <StatusBadge status={r.import_status} />
                           {r.review_reason_code && (
-                            <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/30 border text-[10px]">
+                            <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 border text-[10px]">
                               {r.review_reason_code.replace(/_/g, ' ')}
                             </Badge>
                           )}
@@ -520,7 +520,7 @@ const ReservationsTab = () => {
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {r.arrival_date} → {r.departure_date} | {r.channel_name} | {r.total_amount} {r.currency}
                         </p>
-                        {r.review_reason && <p className="text-[10px] text-orange-300 mt-1">{r.review_reason}</p>}
+                        {r.review_reason && <p className="text-[10px] text-amber-300 mt-1">{r.review_reason}</p>}
                         {r.conflict_reason && <p className="text-[10px] text-red-300 mt-1">{r.conflict_reason}</p>}
                         {r.suggested_action && <p className="text-[10px] text-amber-300 mt-0.5">Suggested: {r.suggested_action}</p>}
                       </div>

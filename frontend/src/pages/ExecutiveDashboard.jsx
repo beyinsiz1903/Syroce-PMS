@@ -95,7 +95,7 @@ const ExecutiveDashboard = ({ user }) => {
       case 'urgent':
         return 'bg-red-500';
       case 'high':
-        return 'bg-orange-500';
+        return 'bg-amber-500';
       case 'medium':
         return 'bg-yellow-500';
       default:
@@ -112,7 +112,7 @@ const ExecutiveDashboard = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center">
         <div className="text-center text-white">
           <RefreshCw className="h-12 w-12 animate-spin mx-auto mb-4" />
           <p>Dashboard yükleniyor...</p>
@@ -122,7 +122,7 @@ const ExecutiveDashboard = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 pb-20">
       {/* Header */}
       <div className="bg-black/30 backdrop-blur-sm text-white p-4 sticky top-0 z-10 shadow-lg border-b border-white/10">
         <div className="flex items-center justify-between">
@@ -253,7 +253,7 @@ const ExecutiveDashboard = ({ user }) => {
                         </CardContent>
                       </Card>
 
-                      <Card className="bg-gradient-to-br from-purple-500 to-pink-600 text-white border-0 shadow-xl">
+                      <Card className="bg-gradient-to-br from-indigo-500 to-pink-600 text-white border-0 shadow-xl">
                         <CardContent className="p-4">
                           <div className="flex items-center gap-2 mb-2">
                             <Users className="h-5 w-5" />
@@ -277,7 +277,7 @@ const ExecutiveDashboard = ({ user }) => {
                     </div>
 
                     {/* Revenue */}
-                    <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white border-0 shadow-xl">
+                    <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 shadow-xl">
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
@@ -385,7 +385,7 @@ const ExecutiveDashboard = ({ user }) => {
                         </div>
                         <div>
                           <div className="text-gray-300 mb-1">Şikayet</div>
-                          <div className="text-2xl font-bold text-orange-400">
+                          <div className="text-2xl font-bold text-amber-400">
                             {dailySummary.summary.complaints}
                           </div>
                         </div>
@@ -557,7 +557,7 @@ const ExecutiveDashboard = ({ user }) => {
                           <div className="text-xs text-gray-300 mt-1">{t("housekeeping.occupied")}</div>
                         </div>
                         <div>
-                          <div className="text-3xl font-bold text-orange-400">
+                          <div className="text-3xl font-bold text-amber-400">
                             {kpiSnapshot.summary.available_rooms}
                           </div>
                           <div className="text-xs text-gray-300 mt-1">Boş</div>

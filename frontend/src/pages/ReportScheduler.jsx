@@ -17,8 +17,8 @@ import {
 import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
 import { confirmDialog } from '@/lib/dialogs';
+import {
   Calendar, Clock, Mail, Plus, Play, Pause, Trash2, Edit,
   Send, RefreshCw, AlertTriangle, CheckCircle, XCircle,
   FileText, BarChart3, Loader2, RotateCcw, Eye,
@@ -41,7 +41,7 @@ const STATUS_MAP = {
   failed: { label: "Basarisiz", variant: "destructive", icon: XCircle, color: "text-red-600" },
   partial: { label: "Kismi", variant: "secondary", icon: AlertTriangle, color: "text-yellow-600" },
   processing: { label: "Isleniyor", variant: "outline", icon: Loader2, color: "text-blue-600" },
-  retrying: { label: "Tekrar Deneniyor", variant: "outline", icon: RotateCcw, color: "text-orange-600" },
+  retrying: { label: "Tekrar Deneniyor", variant: "outline", icon: RotateCcw, color: "text-amber-600" },
 };
 
 const EMPTY_FORM = {
@@ -213,7 +213,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
         <span className="ml-3 text-gray-500">Yükleniyor...</span>
       </div>
     );
@@ -248,7 +248,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-purple-600">{stats.total}</div>
+            <div className="text-2xl font-bold text-indigo-600">{stats.total}</div>
             <div className="text-xs text-gray-500 mt-1">Toplam Zamanlama</div>
           </CardContent>
         </Card>
@@ -338,7 +338,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                           )}
                         </div>
                         {s.next_run && (
-                          <div className="text-xs text-purple-600 mt-1">
+                          <div className="text-xs text-indigo-600 mt-1">
                             Sonraki gonderim: {new Date(s.next_run).toLocaleString("tr-TR")}
                           </div>
                         )}
@@ -461,7 +461,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                               {h.status === "failed" && (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-orange-600"
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600"
                                       onClick={() => handleRetry(h._id)}
                                       disabled={!!actionLoading[h._id]}>
                                       {actionLoading[h._id] === "retry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}

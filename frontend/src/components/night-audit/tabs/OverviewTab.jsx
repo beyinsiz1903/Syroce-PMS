@@ -138,7 +138,7 @@ export default function OverviewTab(props) {
               Son Denetim Özeti
               <StatusBadge status={lastRun.status} />
               {lastRun.is_dry_run && (
-                <Badge className="bg-purple-100 text-purple-700 border-purple-200 border text-[11px]">
+                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-[11px]">
                   Simülasyon
                 </Badge>
               )}
@@ -179,7 +179,7 @@ export default function OverviewTab(props) {
                   </Badge>
                 )}
                 {lastRun.departures_pending > 0 && (
-                  <Badge className="bg-orange-50 text-orange-700 border border-orange-200 text-xs">
+                  <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">
                     {lastRun.departures_pending} bekleyen çıkış
                   </Badge>
                 )}
@@ -234,8 +234,8 @@ export default function OverviewTab(props) {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-gray-900">
                             {run.business_date}
-                            {run.is_dry_run && <span className="ml-1.5 text-purple-600 text-xs font-normal">(Simülasyon)</span>}
-                            {run.is_rerun && <span className="ml-1.5 text-orange-600 text-xs font-normal">(Tekrar)</span>}
+                            {run.is_dry_run && <span className="ml-1.5 text-indigo-600 text-xs font-normal">(Simülasyon)</span>}
+                            {run.is_rerun && <span className="ml-1.5 text-amber-600 text-xs font-normal">(Tekrar)</span>}
                           </p>
                           <p className="text-xs text-gray-500">
                             {startedAt ? startedAt.toLocaleString("tr-TR") : "-"}

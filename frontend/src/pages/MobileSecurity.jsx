@@ -199,7 +199,7 @@ const MobileSecurity = ({ user }) => {
           </Button>
           
           <Button 
-            className="h-20 flex flex-col items-center justify-center bg-gradient-to-br from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
+            className="h-20 flex flex-col items-center justify-center bg-gradient-to-br from-yellow-600 to-amber-600 hover:from-yellow-700 hover:to-amber-700 text-white"
             onClick={() => window.location.reload()}
           >
             <RefreshCw className="w-6 h-6 mb-1" />
@@ -238,7 +238,7 @@ const MobileSecurity = ({ user }) => {
 
         {/* Notifications */}
         {notifications.length > 0 && (
-          <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-200">
+          <Card className="bg-gradient-to-r from-red-50 to-amber-50 border-red-200">
             <CardContent className="p-3">
               <div className="flex items-start space-x-2">
                 <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -289,7 +289,7 @@ const MobileSecurity = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <Activity className="w-5 h-5 mr-2 text-purple-600" />
+                <Activity className="w-5 h-5 mr-2 text-indigo-600" />
                 Bağlantı Durumu
               </CardTitle>
             </CardHeader>
@@ -365,13 +365,13 @@ const MobileSecurity = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-orange-600" />
+                <AlertTriangle className="w-5 h-5 mr-2 text-amber-600" />
                 Son Sistem Hataları
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {systemStatus.recent_errors.slice(0, 5).map((error, idx) => (
-                <div key={idx} className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <div key={idx} className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <p className="font-medium text-gray-900">{error.component}</p>
                   <p className="text-sm text-gray-700 mt-1">{error.message}</p>
                   <p className="text-xs text-gray-500 mt-1">

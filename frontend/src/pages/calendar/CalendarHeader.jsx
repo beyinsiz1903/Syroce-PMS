@@ -51,7 +51,7 @@ const CalendarHeader = ({
       <div className="flex items-center justify-between" data-testid="calendar-header">
         <div className="flex items-center gap-2">
           <Button
-            className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-md text-sm"
+            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-md text-sm"
             data-testid="reservations-tab-btn"
             onClick={() => navigate('/pms?tab=bookings')}
           >
@@ -65,8 +65,8 @@ const CalendarHeader = ({
                 overdueCount > 0
                   ? 'border-red-400 text-red-700 bg-red-50 hover:bg-red-100 animate-pulse'
                   : todayCount > 0
-                    ? 'border-orange-400 text-orange-700 bg-orange-50 hover:bg-orange-100'
-                    : 'border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100'
+                    ? 'border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100'
+                    : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100'
               }`}
               data-testid="unassigned-count-btn"
               onClick={() => onShowUnassigned?.()}
@@ -74,7 +74,7 @@ const CalendarHeader = ({
               {hasUrgent && <AlertTriangle className="w-3.5 h-3.5 mr-1" />}
               {unassignedCount} atanmamış
               {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} gecikmiş!)</span>}
-              {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-orange-600 font-bold">({todayCount} bugün)</span>}
+              {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-amber-600 font-bold">({todayCount} bugün)</span>}
             </Button>
           )}
           {conflicts.length > 0 && (
@@ -155,7 +155,7 @@ const CalendarHeader = ({
           </Button>
           <Button
             onClick={onShowNewBookingDialog}
-            className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-3 font-semibold"
+            className="bg-amber-500 hover:bg-amber-600 text-white text-xs h-8 px-3 font-semibold"
             data-testid="add-reservation-btn"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />

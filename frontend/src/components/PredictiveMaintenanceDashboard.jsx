@@ -87,7 +87,7 @@ const PredictiveMaintenanceDashboard = () => {
         <button
           onClick={runAnalysis}
           disabled={loading}
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
         >
           {loading ? '⏳ Analyzing...' : '🤖 Run AI Analysis'}
         </button>
@@ -128,7 +128,7 @@ const PredictiveMaintenanceDashboard = () => {
             key={idx}
             className={`border-l-4 rounded-lg p-4 ${
               alert.severity === 'critical' ? 'border-red-500 bg-red-50' :
-              alert.severity === 'high' ? 'border-orange-500 bg-orange-50' :
+              alert.severity === 'high' ? 'border-amber-500 bg-amber-50' :
               'border-yellow-500 bg-yellow-50'
             }`}
           >
@@ -137,7 +137,7 @@ const PredictiveMaintenanceDashboard = () => {
                 <div className="flex items-center gap-3 mb-2">
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
                     alert.severity === 'critical' ? 'bg-red-200 text-red-800' :
-                    alert.severity === 'high' ? 'bg-orange-200 text-orange-800' :
+                    alert.severity === 'high' ? 'bg-amber-200 text-amber-800' :
                     'bg-yellow-200 text-yellow-800'
                   }`}>
                     {alert.severity.toUpperCase()}

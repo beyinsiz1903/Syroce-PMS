@@ -66,11 +66,11 @@ export default function PlDetailModal(props) {
 
             {/* Cost of Sales Section */}
             <Card>
-              <CardHeader className="pb-3 bg-orange-50">
-                <CardTitle className="text-base text-orange-800">📦 Satış Maliyeti</CardTitle>
+              <CardHeader className="pb-3 bg-amber-50">
+                <CardTitle className="text-base text-amber-800">📦 Satış Maliyeti</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
-                <div className="flex justify-between p-2 bg-orange-50 rounded">
+                <div className="flex justify-between p-2 bg-amber-50 rounded">
                   <span className="text-gray-700">F&B Maliyeti:</span>
                   <span className="font-bold">{formatCurrency(plData.fnb_cost || 0)}</span>
                 </div>
@@ -78,9 +78,9 @@ export default function PlDetailModal(props) {
                   <span className="text-gray-700">Housekeeping Maliyeti:</span>
                   <span className="font-bold">{formatCurrency(plData.housekeeping_cost || 0)}</span>
                 </div>
-                <div className="flex justify-between p-3 bg-orange-200 rounded-lg border-2 border-orange-400 mt-2">
-                  <span className="font-bold text-orange-900">TOPLAM SATIŞ MALİYETİ:</span>
-                  <span className="font-bold text-xl text-orange-700">
+                <div className="flex justify-between p-3 bg-amber-200 rounded-lg border-2 border-amber-400 mt-2">
+                  <span className="font-bold text-amber-900">TOPLAM SATIŞ MALİYETİ:</span>
+                  <span className="font-bold text-xl text-amber-700">
                     {formatCurrency(plData.total_cost_of_sales || 0)}
                   </span>
                 </div>
@@ -106,11 +106,11 @@ export default function PlDetailModal(props) {
 
             {/* Operating Expenses */}
             <Card>
-              <CardHeader className="pb-3 bg-purple-50">
-                <CardTitle className="text-base text-purple-800">🏢 Faaliyet Giderleri</CardTitle>
+              <CardHeader className="pb-3 bg-indigo-50">
+                <CardTitle className="text-base text-indigo-800">🏢 Faaliyet Giderleri</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
-                <div className="flex justify-between p-2 bg-purple-50 rounded">
+                <div className="flex justify-between p-2 bg-indigo-50 rounded">
                   <span className="text-gray-700">Personel Giderleri:</span>
                   <span className="font-bold">{formatCurrency(plData.personnel_cost || 0)}</span>
                 </div>
@@ -118,7 +118,7 @@ export default function PlDetailModal(props) {
                   <span className="text-gray-700">Enerji Giderleri:</span>
                   <span className="font-bold">{formatCurrency(plData.utility_cost || 0)}</span>
                 </div>
-                <div className="flex justify-between p-2 bg-purple-50 rounded">
+                <div className="flex justify-between p-2 bg-indigo-50 rounded">
                   <span className="text-gray-700">Bakım Onarım:</span>
                   <span className="font-bold">{formatCurrency(plData.maintenance_cost || 0)}</span>
                 </div>
@@ -126,13 +126,13 @@ export default function PlDetailModal(props) {
                   <span className="text-gray-700">Pazarlama Giderleri:</span>
                   <span className="font-bold">{formatCurrency(plData.marketing_cost || 0)}</span>
                 </div>
-                <div className="flex justify-between p-2 bg-purple-50 rounded">
+                <div className="flex justify-between p-2 bg-indigo-50 rounded">
                   <span className="text-gray-700">Yönetim Giderleri:</span>
                   <span className="font-bold">{formatCurrency(plData.admin_cost || 0)}</span>
                 </div>
-                <div className="flex justify-between p-3 bg-purple-200 rounded-lg border-2 border-purple-400 mt-2">
-                  <span className="font-bold text-purple-900">TOPLAM FAALİYET GİDERİ:</span>
-                  <span className="font-bold text-xl text-purple-700">
+                <div className="flex justify-between p-3 bg-indigo-200 rounded-lg border-2 border-indigo-400 mt-2">
+                  <span className="font-bold text-indigo-900">TOPLAM FAALİYET GİDERİ:</span>
+                  <span className="font-bold text-xl text-indigo-700">
                     {formatCurrency(plData.total_operating_expenses || 0)}
                   </span>
                 </div>
@@ -177,15 +177,15 @@ export default function PlDetailModal(props) {
                       {formatCurrency(plData.key_metrics.adr || 0)}
                     </p>
                   </div>
-                  <div className="text-center p-3 bg-purple-50 rounded">
-                    <p className="text-xs text-purple-600">Occ %</p>
-                    <p className="text-lg font-bold text-purple-900">
+                  <div className="text-center p-3 bg-indigo-50 rounded">
+                    <p className="text-xs text-indigo-600">Occ %</p>
+                    <p className="text-lg font-bold text-indigo-900">
                       {formatPercent(plData.key_metrics.occupancy || 0)}
                     </p>
                   </div>
-                  <div className="text-center p-3 bg-orange-50 rounded">
-                    <p className="text-xs text-orange-600">GOP %</p>
-                    <p className="text-lg font-bold text-orange-900">
+                  <div className="text-center p-3 bg-amber-50 rounded">
+                    <p className="text-xs text-amber-600">GOP %</p>
+                    <p className="text-lg font-bold text-amber-900">
                       {formatPercent(plData.key_metrics.gop_percentage || 0)}
                     </p>
                   </div>

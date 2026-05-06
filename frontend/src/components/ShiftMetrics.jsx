@@ -29,8 +29,8 @@ const ShiftMetrics = () => {
   const shifts = shiftData.shifts;
   const shiftColors = {
     morning: 'bg-yellow-500',
-    afternoon: 'bg-orange-500',
-    evening: 'bg-purple-500'
+    afternoon: 'bg-amber-500',
+    evening: 'bg-indigo-500'
   };
 
   const shiftNames = {

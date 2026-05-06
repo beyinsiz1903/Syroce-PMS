@@ -10,8 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
 import { alertDialog } from '@/lib/dialogs';
+import {
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -44,7 +44,7 @@ const getAuthHeaders = () => {
 const SeverityIcon = ({ severity, className = "w-4 h-4" }) => {
   const map = {
     critical: <XCircle className={`${className} text-red-600`} />,
-    warning: <AlertTriangle className={`${className} text-orange-600`} />,
+    warning: <AlertTriangle className={`${className} text-amber-600`} />,
     info: <Activity className={`${className} text-blue-600`} />,
     success: <CheckCircle2 className={`${className} text-green-600`} />,
   };
@@ -54,7 +54,7 @@ const SeverityIcon = ({ severity, className = "w-4 h-4" }) => {
 const SeverityBadge = ({ severity }) => {
   const map = {
     critical: 'bg-red-100 text-red-800',
-    warning: 'bg-orange-100 text-orange-800',
+    warning: 'bg-amber-100 text-amber-800',
     info: 'bg-blue-100 text-blue-800',
     success: 'bg-green-100 text-green-800',
   };
@@ -70,7 +70,7 @@ const StatusBadge = ({ status }) => {
     succeeded: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     failed: { color: 'bg-red-100 text-red-800', icon: XCircle },
     dlq: { color: 'bg-red-100 text-red-800', icon: Inbox },
-    retrying: { color: 'bg-orange-100 text-orange-800', icon: RotateCcw },
+    retrying: { color: 'bg-amber-100 text-amber-800', icon: RotateCcw },
     pending: { color: 'bg-gray-100 text-gray-800', icon: Clock },
     delivering: { color: 'bg-blue-100 text-blue-800', icon: Send },
     resolved: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
@@ -128,7 +128,7 @@ const TimelineNode = ({ event, isFirst, isLast }) => {
   const getNodeColor = (severity) => {
     const map = {
       critical: 'bg-red-500',
-      warning: 'bg-orange-500',
+      warning: 'bg-amber-500',
       success: 'bg-green-500',
       info: 'bg-blue-500',
     };
@@ -313,7 +313,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                           </Badge>
                         )}
                         {!summary.is_recovered && !summary.is_terminal_failure && (
-                          <Badge className="bg-orange-100 text-orange-800">
+                          <Badge className="bg-amber-100 text-amber-800">
                             <Clock className="w-3 h-3 mr-1" /> Devam Ediyor
                           </Badge>
                         )}

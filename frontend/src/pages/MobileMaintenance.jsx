@@ -308,7 +308,7 @@ const MobileMaintenance = ({ user }) => {
   const getPriorityColor = (priority) => {
     const colors = {
       emergency: 'bg-red-100 text-red-800 border-red-300',
-      urgent: 'bg-orange-100 text-orange-800 border-orange-300',
+      urgent: 'bg-amber-100 text-amber-800 border-amber-300',
       high: 'bg-yellow-100 text-yellow-800 border-yellow-300',
       normal: 'bg-blue-100 text-blue-800 border-blue-300',
       low: 'bg-gray-100 text-gray-800 border-gray-300'
@@ -320,8 +320,8 @@ const MobileMaintenance = ({ user }) => {
     const colors = {
       open: 'bg-blue-100 text-blue-800',
       in_progress: 'bg-yellow-100 text-yellow-800',
-      on_hold: 'bg-orange-100 text-orange-800',
-      waiting_parts: 'bg-purple-100 text-purple-800',
+      on_hold: 'bg-amber-100 text-amber-800',
+      waiting_parts: 'bg-indigo-100 text-indigo-800',
       completed: 'bg-green-100 text-green-800',
       cancelled: 'bg-gray-100 text-gray-800'
     };
@@ -357,7 +357,7 @@ const MobileMaintenance = ({ user }) => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-2" />
+          <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
           <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
@@ -367,7 +367,7 @@ const MobileMaintenance = ({ user }) => {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-500 text-white p-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 text-white p-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
@@ -380,7 +380,7 @@ const MobileMaintenance = ({ user }) => {
             </Button>
             <div>
               <h1 className="text-xl font-bold">Teknik Servis</h1>
-              <p className="text-xs text-purple-100">Maintenance Dashboard</p>
+              <p className="text-xs text-indigo-100">Maintenance Dashboard</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -463,15 +463,15 @@ const MobileMaintenance = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <TrendingUp className="w-5 h-5 mr-2 text-purple-600" />
+                <TrendingUp className="w-5 h-5 mr-2 text-indigo-600" />
                 SLA Performansı
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-purple-50 rounded-lg">
-                  <p className="text-xs text-purple-600 mb-1">Ortalama Yanıt Süresi</p>
-                  <p className="text-2xl font-bold text-purple-700">
+                <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                  <p className="text-xs text-indigo-600 mb-1">Ortalama Yanıt Süresi</p>
+                  <p className="text-2xl font-bold text-indigo-700">
                     {slaMetrics.avg_response_time_minutes?.toFixed(0) || 0} dk
                   </p>
                 </div>
@@ -546,7 +546,7 @@ const MobileMaintenance = ({ user }) => {
                         <Button
                           size="sm"
                           onClick={() => handleTaskUpdate(task.id, task.status === 'new' ? 'in_progress' : 'completed')}
-                          className="bg-purple-600 hover:bg-purple-700"
+                          className="bg-indigo-600 hover:bg-indigo-700"
                         >
                           {task.status === 'new' ? 'Başla' : 'Tamamla'}
                         </Button>
@@ -627,13 +627,13 @@ const MobileMaintenance = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-orange-600" />
+                <AlertTriangle className="w-5 h-5 mr-2 text-amber-600" />
                 Tekrarlayan Sorunlar
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {repeatIssues.slice(0, 5).map((issue, idx) => (
-                <div key={idx} className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <div key={idx} className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <p className="font-bold text-gray-900">Oda {issue.room_number}</p>
@@ -642,7 +642,7 @@ const MobileMaintenance = ({ user }) => {
                         {issue.occurrences} kez tekrarlandı
                       </p>
                     </div>
-                    <Badge variant="outline" className="bg-orange-100">
+                    <Badge variant="outline" className="bg-amber-100">
                       {issue.occurrences}x
                     </Badge>
                   </div>
@@ -655,7 +655,7 @@ const MobileMaintenance = ({ user }) => {
         {/* Quick Actions - Enhanced */}
         <div className="grid grid-cols-2 gap-3">
           <Button
-            className="h-20 flex flex-col items-center justify-center space-y-1 bg-purple-600 hover:bg-purple-700"
+            className="h-20 flex flex-col items-center justify-center space-y-1 bg-indigo-600 hover:bg-indigo-700"
             onClick={() => setNewTaskModalOpen(true)}
           >
             <Wrench className="w-6 h-6" />
@@ -695,7 +695,7 @@ const MobileMaintenance = ({ user }) => {
           </Button>
           
           <Button
-            className="h-20 flex flex-col items-center justify-center space-y-1 bg-orange-600 hover:bg-orange-700"
+            className="h-20 flex flex-col items-center justify-center space-y-1 bg-amber-600 hover:bg-amber-700"
             onClick={() => setFilterModalOpen(true)}
           >
             <Filter className="w-6 h-6" />
@@ -760,7 +760,7 @@ const MobileMaintenance = ({ user }) => {
                 </select>
               </div>
 
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700">
+              <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700">
                 Görev Oluştur
               </Button>
             </div>
@@ -825,11 +825,11 @@ const MobileMaintenance = ({ user }) => {
                         </p>
                         <p className="text-green-600">Gün Önce</p>
                       </div>
-                      <div className="text-center p-2 bg-purple-50 rounded">
-                        <p className="text-purple-900 font-bold text-lg">
+                      <div className="text-center p-2 bg-indigo-50 rounded">
+                        <p className="text-indigo-900 font-bold text-lg">
                           {assetHistory.avg_cost?.toFixed(0) || 0} ₺
                         </p>
-                        <p className="text-purple-600">Ort. Maliyet</p>
+                        <p className="text-indigo-600">Ort. Maliyet</p>
                       </div>
                     </div>
 
@@ -853,7 +853,7 @@ const MobileMaintenance = ({ user }) => {
                               </Badge>
                             </div>
                             {item.cost && (
-                              <p className="text-purple-700 font-bold mt-2">{item.cost} ₺</p>
+                              <p className="text-indigo-700 font-bold mt-2">{item.cost} ₺</p>
                             )}
                           </div>
                         ))}
@@ -871,9 +871,9 @@ const MobileMaintenance = ({ user }) => {
                         <p className="font-bold text-sm text-gray-700 mb-2">En Yaygın Sorunlar:</p>
                         <div className="space-y-1">
                           {assetHistory.most_common_issues.map((issue, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-2 bg-orange-50 rounded text-xs">
+                            <div key={idx} className="flex items-center justify-between p-2 bg-amber-50 rounded text-xs">
                               <span className="text-gray-900">{issue.type}</span>
-                              <Badge variant="outline" className="bg-orange-100">
+                              <Badge variant="outline" className="bg-amber-100">
                                 {issue.count}x
                               </Badge>
                             </div>
@@ -983,7 +983,7 @@ const MobileMaintenance = ({ user }) => {
                               <p className="text-xs text-gray-500 mt-1">📍 {part.location}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-lg text-purple-700">{part.unit_price} ₺</p>
+                              <p className="font-bold text-lg text-indigo-700">{part.unit_price} ₺</p>
                               <p className="text-xs text-gray-500">/{part.unit}</p>
                             </div>
                           </div>
@@ -1034,14 +1034,14 @@ const MobileMaintenance = ({ user }) => {
             })}
 
             {/* Total Value */}
-            <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+            <Card className="bg-gradient-to-r from-indigo-50 to-indigo-50 border-indigo-200">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-purple-700 font-medium">Toplam Stok Değeri</p>
-                    <p className="text-xs text-purple-600 mt-1">Tüm malzemeler</p>
+                    <p className="text-sm text-indigo-700 font-medium">Toplam Stok Değeri</p>
+                    <p className="text-xs text-indigo-600 mt-1">Tüm malzemeler</p>
                   </div>
-                  <p className="text-3xl font-bold text-purple-700">
+                  <p className="text-3xl font-bold text-indigo-700">
                     {partsInventory.reduce((sum, p) => sum + (p.stock * p.unit_price), 0).toLocaleString('tr-TR')} ₺
                   </p>
                 </div>
@@ -1127,7 +1127,7 @@ const MobileMaintenance = ({ user }) => {
           {selectedTask && (
             <div className="space-y-4">
               {/* Task Info */}
-              <Card className="bg-gradient-to-r from-indigo-50 to-purple-50">
+              <Card className="bg-gradient-to-r from-indigo-50 to-indigo-50">
                 <CardContent className="p-4">
                   <h3 className="font-bold text-lg mb-2">{selectedTask.title}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -1172,14 +1172,14 @@ const MobileMaintenance = ({ user }) => {
                     </Button>
                     <Button
                       size="sm"
-                      className="bg-orange-600"
+                      className="bg-amber-600"
                       onClick={() => handleTaskStatusUpdate(selectedTask.id, 'on_hold', 'Beklemede')}
                     >
                       Beklet
                     </Button>
                     <Button
                       size="sm"
-                      className="bg-purple-600"
+                      className="bg-indigo-600"
                       onClick={() => handleTaskStatusUpdate(selectedTask.id, 'waiting_parts', 'Parça bekleniyor')}
                     >
                       Parça Bekliyor

@@ -373,7 +373,7 @@ export default function B2BApiDocs() {
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.action}</td>
                           <td className="px-4 py-2.5 text-slate-500">{r.who}</td>
                           <td className="px-4 py-2.5 font-mono text-[12px] text-emerald-700">{r.ep}</td>
-                          <td className="px-4 py-2.5"><span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">{r.auth}</span></td>
+                          <td className="px-4 py-2.5"><span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{r.auth}</span></td>
                         </tr>
                       ))}
                     </tbody>

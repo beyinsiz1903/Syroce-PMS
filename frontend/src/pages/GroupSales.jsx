@@ -259,7 +259,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
             variant="outline" 
             size="icon"
             onClick={() => navigate('/')}
-            className="hover:bg-purple-50"
+            className="hover:bg-indigo-50"
           >
             <Home className="w-5 h-5" />
           </Button>
@@ -275,7 +275,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
         
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogTrigger asChild>
-            <Button size="lg" className="bg-purple-600 hover:bg-purple-700">
+            <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700">
               <Plus className="w-5 h-5 mr-2" />
               Yeni Grup Bloğu
             </Button>
@@ -428,7 +428,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                 <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)} className="flex-1">
                   İptal
                 </Button>
-                <Button type="submit" disabled={loading} className="flex-1 bg-purple-600 hover:bg-purple-700">
+                <Button type="submit" disabled={loading} className="flex-1 bg-indigo-600 hover:bg-indigo-700">
                   {loading ? 'Oluşturuluyor...' : 'Grup Bloğu Oluştur'}
                 </Button>
               </div>
@@ -531,7 +531,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                   </div>
                   
                   <div className="text-right">
-                    <div className="text-3xl font-bold text-purple-600">
+                    <div className="text-3xl font-bold text-indigo-600">
                       {Math.round((group.rooms_picked_up / group.total_rooms) * 100)}%
                     </div>
                     <div className="text-xs text-gray-500">Pickup Oranı</div>
@@ -559,7 +559,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                     variant="outline"
                     size="sm"
                     onClick={openReleaseDialog}
-                    className="mr-8 text-orange-700 border-orange-300 hover:bg-orange-50"
+                    className="mr-8 text-amber-700 border-amber-300 hover:bg-amber-50"
                   >
                     <UnlockKeyhole className="w-4 h-4 mr-1" />
                     Bloğu Serbest Bırak
@@ -593,19 +593,19 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Kalan Oda:</span>
-                        <span className="font-bold text-orange-600">{groupDetails.pickup.rooms_remaining}</span>
+                        <span className="font-bold text-amber-600">{groupDetails.pickup.rooms_remaining}</span>
                       </div>
                       
                       <div className="pt-4 border-t">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-medium">Pickup Oranı</span>
-                          <span className="text-lg font-bold text-purple-600">
+                          <span className="text-lg font-bold text-indigo-600">
                             {groupDetails.pickup.pickup_percentage}%
                           </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-3">
                           <div 
-                            className="bg-purple-600 h-3 rounded-full transition-all duration-500"
+                            className="bg-indigo-600 h-3 rounded-full transition-all duration-500"
                             style={{ width: `${groupDetails.pickup.pickup_percentage}%` }}
                           />
                         </div>
@@ -755,7 +755,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                         type="button"
                         onClick={handleUploadRoomingList}
                         disabled={roomingLoading}
-                        className="bg-purple-600 hover:bg-purple-700"
+                        className="bg-indigo-600 hover:bg-indigo-700"
                       >
                         <UploadCloud className="w-4 h-4 mr-1" />
                         {roomingLoading ? 'Yükleniyor...' : 'Rooming List Yükle'}
@@ -792,9 +792,9 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                       return (
                         <div className="space-y-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div className="bg-purple-50 border border-purple-100 rounded p-3">
-                              <div className="text-xs text-purple-700">Toplam Folio Tutarı</div>
-                              <div className="text-2xl font-bold text-purple-900">₺{total.toFixed(2)}</div>
+                            <div className="bg-indigo-50 border border-indigo-100 rounded p-3">
+                              <div className="text-xs text-indigo-700">Toplam Folio Tutarı</div>
+                              <div className="text-2xl font-bold text-indigo-900">₺{total.toFixed(2)}</div>
                             </div>
                             <div className="bg-blue-50 border border-blue-100 rounded p-3">
                               <div className="text-xs text-blue-700">Toplam Geceleme</div>
@@ -804,9 +804,9 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                               <div className="text-xs text-green-700">Ortalama Gecelik (ADR)</div>
                               <div className="text-2xl font-bold text-green-900">₺{adr.toFixed(2)}</div>
                             </div>
-                            <div className="bg-orange-50 border border-orange-100 rounded p-3">
-                              <div className="text-xs text-orange-700">Pickup / Toplam Oda</div>
-                              <div className="text-2xl font-bold text-orange-900">{pickedUp} / {totalRooms}</div>
+                            <div className="bg-amber-50 border border-amber-100 rounded p-3">
+                              <div className="text-xs text-amber-700">Pickup / Toplam Oda</div>
+                              <div className="text-2xl font-bold text-amber-900">{pickedUp} / {totalRooms}</div>
                             </div>
                           </div>
 
@@ -841,10 +841,10 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                               })
                             )}
                             {bookings.length > 0 && (
-                              <div className="px-3 py-2 text-sm border-t bg-purple-50 grid grid-cols-12 gap-2 font-bold">
+                              <div className="px-3 py-2 text-sm border-t bg-indigo-50 grid grid-cols-12 gap-2 font-bold">
                                 <div className="col-span-8 text-right">TOPLAM</div>
                                 <div className="col-span-2 text-right">{nightsTotal}</div>
-                                <div className="col-span-2 text-right text-purple-700">₺{total.toFixed(2)}</div>
+                                <div className="col-span-2 text-right text-indigo-700">₺{total.toFixed(2)}</div>
                               </div>
                             )}
                           </div>
@@ -871,7 +871,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-500">Toplam Grup</p>
-                <p className="text-3xl font-bold text-purple-600">{groups.length}</p>
+                <p className="text-3xl font-bold text-indigo-600">{groups.length}</p>
               </div>
             </CardContent>
           </Card>
@@ -909,7 +909,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-500">Ort. Pickup</p>
-                <p className="text-3xl font-bold text-orange-600">
+                <p className="text-3xl font-bold text-amber-600">
                   {groups.length > 0 
                     ? Math.round(groups.reduce((sum, g) => sum + ((g.rooms_picked_up || 0) / g.total_rooms * 100), 0) / groups.length)
                     : 0}%
@@ -941,9 +941,9 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                 <div className="text-xs text-green-700">Alındı</div>
                 <div className="font-bold text-green-700">{groupDetails?.pickup?.rooms_picked_up ?? 0}</div>
               </div>
-              <div className="bg-orange-50 rounded p-2">
-                <div className="text-xs text-orange-700">Kalan</div>
-                <div className="font-bold text-orange-700">{groupDetails?.pickup?.rooms_remaining ?? 0}</div>
+              <div className="bg-amber-50 rounded p-2">
+                <div className="text-xs text-amber-700">Kalan</div>
+                <div className="font-bold text-amber-700">{groupDetails?.pickup?.rooms_remaining ?? 0}</div>
               </div>
             </div>
             <div>
@@ -966,7 +966,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
               <Button
                 onClick={handleReleaseBlock}
                 disabled={releaseLoading || releaseCount <= 0 || releaseCount > (groupDetails?.pickup?.rooms_remaining ?? 0)}
-                className="flex-1 bg-orange-600 hover:bg-orange-700"
+                className="flex-1 bg-amber-600 hover:bg-amber-700"
               >
                 {releaseLoading ? 'İşleniyor...' : 'Serbest Bırak'}
               </Button>

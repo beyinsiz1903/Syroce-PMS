@@ -466,7 +466,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
                     <span className="font-semibold">Oda {r.room_number}</span>
                     <span className="text-gray-500 ml-2">{r.room_type} · Kat {r.floor}</span>
                     <span className="text-gray-500 ml-2">${r.price_per_night}/gece</span>
-                    {r.is_upgrade && <Badge className="ml-2 bg-purple-100 text-purple-800">Upgrade</Badge>}
+                    {r.is_upgrade && <Badge className="ml-2 bg-indigo-100 text-indigo-800">Upgrade</Badge>}
                   </button>
                 ))}
               </div>

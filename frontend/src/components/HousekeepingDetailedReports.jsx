@@ -87,9 +87,9 @@ const HousekeepingDetailedReports = () => {
                       <div className="text-sm text-gray-600">{t('hkReports.occupied')}</div>
                       <div className="text-2xl font-bold text-green-600">{roomStatus?.summary?.occupied}</div>
                     </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
+                    <div className="bg-indigo-50 p-4 rounded-lg">
                       <div className="text-sm text-gray-600">{t('hkReports.vacantClean')}</div>
-                      <div className="text-2xl font-bold text-purple-600">{roomStatus?.summary?.vacant_clean}</div>
+                      <div className="text-2xl font-bold text-indigo-600">{roomStatus?.summary?.vacant_clean}</div>
                     </div>
                     <div className="bg-yellow-50 p-4 rounded-lg">
                       <div className="text-sm text-gray-600">{t('hkReports.vacantDirty')}</div>
@@ -245,9 +245,9 @@ const HousekeepingDetailedReports = () => {
                           <div className="text-xs text-gray-600">{t('hkReports.roomsCleaned')}</div>
                           <div className="text-2xl font-bold text-blue-600">{staff.daily_stats?.rooms_cleaned || 0}</div>
                         </div>
-                        <div className="bg-purple-50 p-3 rounded">
+                        <div className="bg-indigo-50 p-3 rounded">
                           <div className="text-xs text-gray-600">{t('hkReports.avgTime')}</div>
-                          <div className="text-2xl font-bold text-purple-600">{staff.daily_stats?.avg_time_per_room || 0}m</div>
+                          <div className="text-2xl font-bold text-indigo-600">{staff.daily_stats?.avg_time_per_room || 0}m</div>
                         </div>
                         <div className="bg-green-50 p-3 rounded">
                           <div className="text-xs text-gray-600">{t('hkReports.passed')}</div>

@@ -75,9 +75,9 @@ export default function ReportTab(props) {
                   <p className="text-lg font-bold text-amber-700">{financialReport.summary?.net_position?.toFixed(2)} TL</p>
                   <p className="text-[11px] text-amber-600">Net Pozisyon</p>
                 </div>
-                <div className="p-3 bg-purple-50 rounded-lg">
-                  <p className="text-lg font-bold text-purple-700">{financialReport.summary?.total_bookings || 0}</p>
-                  <p className="text-[11px] text-purple-600">Toplam Rezervasyon</p>
+                <div className="p-3 bg-indigo-50 rounded-lg">
+                  <p className="text-lg font-bold text-indigo-700">{financialReport.summary?.total_bookings || 0}</p>
+                  <p className="text-[11px] text-indigo-600">Toplam Rezervasyon</p>
                 </div>
               </div>
 

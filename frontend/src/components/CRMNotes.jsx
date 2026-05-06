@@ -68,7 +68,7 @@ const CRMNotes = ({ guestId }) => {
     preference: 'bg-blue-500',
     health: 'bg-red-500',
     general: 'bg-gray-500',
-    vip: 'bg-purple-500'
+    vip: 'bg-indigo-500'
   };
 
   if (loading) {

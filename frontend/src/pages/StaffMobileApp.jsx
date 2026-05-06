@@ -75,7 +75,7 @@ const StaffMobileApp = ({ user }) => {
   const getPriorityColor = (priority) => {
     const colors = {
       urgent: 'bg-red-100 text-red-700',
-      high: 'bg-orange-100 text-orange-700',
+      high: 'bg-amber-100 text-amber-700',
       normal: 'bg-blue-100 text-blue-700',
       low: 'bg-gray-100 text-gray-700'
     };
@@ -89,7 +89,7 @@ const StaffMobileApp = ({ user }) => {
       case 'in_progress':
         return <Clock className="w-5 h-5 text-blue-500" />;
       case 'pending':
-        return <AlertCircle className="w-5 h-5 text-orange-500" />;
+        return <AlertCircle className="w-5 h-5 text-amber-500" />;
       default:
         return <Clock className="w-5 h-5 text-gray-500" />;
     }

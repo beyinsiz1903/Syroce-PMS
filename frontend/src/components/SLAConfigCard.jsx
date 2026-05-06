@@ -17,7 +17,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
   const getPriorityColor = (priority) => {
     const colors = {
       'urgent': 'bg-red-500',
-      'high': 'bg-orange-500',
+      'high': 'bg-amber-500',
       'normal': 'bg-blue-500',
       'low': 'bg-gray-500'
     };
@@ -90,7 +90,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                   key={task.id} 
                   className={`p-3 bg-white rounded border ${
                     task.delay_minutes > 60 ? 'border-red-500' : 
-                    task.delay_minutes > 30 ? 'border-orange-400' : 
+                    task.delay_minutes > 30 ? 'border-amber-400' : 
                     'border-red-200'
                   }`}
                 >
@@ -99,7 +99,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                       <span className={`
                         w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
                         ${task.delay_minutes > 60 ? 'bg-red-600 text-white' : 
-                          task.delay_minutes > 30 ? 'bg-orange-500 text-white' : 
+                          task.delay_minutes > 30 ? 'bg-amber-500 text-white' : 
                           'bg-yellow-500 text-white'}
                       `}>
                         {index + 1}
@@ -108,7 +108,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                     </div>
                     <Badge className={`text-xs ${
                       task.delay_minutes > 60 ? 'bg-red-600' : 
-                      task.delay_minutes > 30 ? 'bg-orange-500' : 
+                      task.delay_minutes > 30 ? 'bg-amber-500' : 
                       'bg-yellow-500'
                     }`}>
                       {task.delay_minutes} dk gecikme

@@ -317,7 +317,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                     disabled={dryRunning || !hasActiveConnectors}
                     data-testid="btn-dry-run"
                   >
-                    {dryRunning ? <Loader2 className="w-5 h-5 animate-spin text-purple-500" /> : <TestTube className="w-5 h-5 text-purple-500" />}
+                    {dryRunning ? <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> : <TestTube className="w-5 h-5 text-indigo-500" />}
                     <span className="text-xs font-medium">Dry Run</span>
                     <span className="text-[10px] text-slate-400">ARI push simulasyonu</span>
                   </Button>

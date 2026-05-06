@@ -54,7 +54,7 @@ const ComplaintManager = () => {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'resolved': return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'in_progress': return <Clock className="w-5 h-5 text-orange-500" />;
+      case 'in_progress': return <Clock className="w-5 h-5 text-amber-500" />;
       default: return <AlertCircle className="w-5 h-5 text-red-500" />;
     }
   };
@@ -62,7 +62,7 @@ const ComplaintManager = () => {
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'high': return 'bg-red-500';
-      case 'normal': return 'bg-orange-500';
+      case 'normal': return 'bg-amber-500';
       case 'low': return 'bg-gray-500';
       default: return 'bg-gray-400';
     }

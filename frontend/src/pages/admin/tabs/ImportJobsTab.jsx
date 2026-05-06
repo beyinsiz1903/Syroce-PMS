@@ -7,7 +7,7 @@ const STATUS_STYLES = {
   completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', icon: CheckCircle },
   running: { bg: 'bg-blue-500/10', text: 'text-blue-400', icon: RefreshCw },
   pending: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', icon: Clock },
-  retrying: { bg: 'bg-orange-500/10', text: 'text-orange-400', icon: RotateCcw },
+  retrying: { bg: 'bg-amber-500/10', text: 'text-amber-400', icon: RotateCcw },
   failed: { bg: 'bg-red-500/10', text: 'text-red-400', icon: XCircle },
   skipped: { bg: 'bg-slate-500/10', text: 'text-slate-400', icon: AlertTriangle },
 };
@@ -107,7 +107,7 @@ export default function ImportJobsTab() {
           { label: 'Total Jobs', value: jobs.length, color: 'text-white' },
           { label: 'Completed', value: completed, color: 'text-emerald-400' },
           { label: 'Failed', value: failed, color: 'text-red-400' },
-          { label: 'Retrying', value: retrying, color: 'text-orange-400' },
+          { label: 'Retrying', value: retrying, color: 'text-amber-400' },
         ].map(s => (
           <div key={s.label} className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
             <p className="text-xs text-slate-400">{s.label}</p>

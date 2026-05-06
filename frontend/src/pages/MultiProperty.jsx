@@ -45,7 +45,7 @@ const MultiProperty = () => {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <Hotel className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+              <Hotel className="w-10 h-10 text-indigo-600 mx-auto mb-2" />
               <p className="text-3xl font-bold">{data.summary.total_rooms}</p>
               <p className="text-sm text-gray-500">Toplam Oda</p>
             </CardContent>
@@ -59,7 +59,7 @@ const MultiProperty = () => {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <DollarSign className="w-10 h-10 text-orange-600 mx-auto mb-2" />
+              <DollarSign className="w-10 h-10 text-amber-600 mx-auto mb-2" />
               <p className="text-3xl font-bold">€{data.summary.total_revenue}</p>
               <p className="text-sm text-gray-500">Bugün Gelir</p>
             </CardContent>
@@ -81,7 +81,7 @@ const MultiProperty = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-3xl font-bold text-purple-600">{property.occupancy_pct}%</p>
+                    <p className="text-3xl font-bold text-indigo-600">{property.occupancy_pct}%</p>
                     <p className="text-xs text-gray-500">Doluluk</p>
                   </div>
                 </div>

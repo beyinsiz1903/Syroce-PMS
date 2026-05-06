@@ -114,7 +114,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
           </button>
           <button
             onClick={() => setShowSplitModal(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
             disabled={folio.status !== 'open'}
           >
             ✂️ Split Folio

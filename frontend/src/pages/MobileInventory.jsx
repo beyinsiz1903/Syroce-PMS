@@ -151,7 +151,7 @@ const MobileInventory = ({ user }) => {
       case 'medium':
         return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
       case 'low':
-        return <TrendingDown className="h-5 w-5 text-orange-500" />;
+        return <TrendingDown className="h-5 w-5 text-amber-500" />;
       case 'out_of_stock':
         return <XCircle className="h-5 w-5 text-red-500" />;
       default:
@@ -166,7 +166,7 @@ const MobileInventory = ({ user }) => {
       case 'medium':
         return 'border-yellow-200 bg-yellow-50';
       case 'low':
-        return 'border-orange-200 bg-orange-50';
+        return 'border-amber-200 bg-amber-50';
       case 'out_of_stock':
         return 'border-red-200 bg-red-50';
       default:
@@ -204,7 +204,7 @@ const MobileInventory = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">{t('mobileInventory.loading')}</p>
@@ -214,9 +214,9 @@ const MobileInventory = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
@@ -255,7 +255,7 @@ const MobileInventory = ({ user }) => {
             <div className="text-2xl font-bold">{stats.good}</div>
             <div className="text-xs">{t('mobileInventory.stats.good')}</div>
           </div>
-          <div className="bg-orange-500/80 rounded-lg p-2 text-center">
+          <div className="bg-amber-500/80 rounded-lg p-2 text-center">
             <div className="text-2xl font-bold">{stats.low}</div>
             <div className="text-xs">{t('mobileInventory.stats.low')}</div>
           </div>
@@ -271,7 +271,7 @@ const MobileInventory = ({ user }) => {
         <div className="mx-4 mt-4">
           <button
             onClick={() => setAlertsModalOpen(true)}
-            className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white p-3 rounded-lg flex items-center justify-between shadow-lg hover:shadow-xl transition"
+            className="w-full bg-gradient-to-r from-amber-500 to-red-500 text-white p-3 rounded-lg flex items-center justify-between shadow-lg hover:shadow-xl transition"
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 animate-pulse" />
@@ -342,8 +342,8 @@ const MobileInventory = ({ user }) => {
 
                 {/* Low Stock Warning */}
                 {item.is_low_stock && (
-                  <div className="bg-orange-100 border border-orange-200 rounded p-2 mb-3">
-                    <div className="flex items-center gap-2 text-orange-700 text-sm">
+                  <div className="bg-amber-100 border border-amber-200 rounded p-2 mb-3">
+                    <div className="flex items-center gap-2 text-amber-700 text-sm">
                       <AlertTriangle className="h-4 w-4" />
                       <span className="font-semibold">{t('mobileInventory.lowStockWarning')}</span>
                     </div>
@@ -372,7 +372,7 @@ const MobileInventory = ({ user }) => {
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
               {t('mobileInventory.alertsModal.title')}
             </DialogTitle>
           </DialogHeader>
@@ -385,7 +385,7 @@ const MobileInventory = ({ user }) => {
                   alert.urgency === 'critical' 
                     ? 'bg-red-50 border-red-500' 
                     : alert.urgency === 'high'
-                    ? 'bg-orange-50 border-orange-500'
+                    ? 'bg-amber-50 border-amber-500'
                     : 'bg-yellow-50 border-yellow-500'
                 }`}
               >
@@ -548,7 +548,7 @@ const MobileInventory = ({ user }) => {
       <div className="fixed bottom-4 right-4 flex flex-col gap-2">
         <Button
           onClick={() => setAlertsModalOpen(true)}
-          className="rounded-full w-14 h-14 shadow-lg bg-orange-600 hover:bg-orange-700 relative"
+          className="rounded-full w-14 h-14 shadow-lg bg-amber-600 hover:bg-amber-700 relative"
         >
           <AlertTriangle className="h-6 w-6" />
           {lowStockAlerts.length > 0 && (

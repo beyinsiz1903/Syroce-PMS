@@ -16,7 +16,7 @@ const API = "";
 function SeverityBadge({ severity }) {
   const map = {
     critical: "bg-red-100 text-red-700 border-red-300",
-    high: "bg-orange-100 text-orange-700 border-orange-300",
+    high: "bg-amber-100 text-amber-700 border-amber-300",
     warning: "bg-amber-100 text-amber-800 border-amber-300",
     info: "bg-sky-100 text-sky-700 border-sky-300",
   };

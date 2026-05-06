@@ -190,9 +190,9 @@ const MobileOrderTracking = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 to-red-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="h-12 w-12 animate-spin text-orange-600 mx-auto mb-4" />
+          <RefreshCw className="h-12 w-12 animate-spin text-amber-600 mx-auto mb-4" />
           <p className="text-gray-600">Siparişler yükleniyor...</p>
         </div>
       </div>
@@ -200,9 +200,9 @@ const MobileOrderTracking = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-red-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-red-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+      <div className="bg-gradient-to-r from-amber-600 to-red-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
@@ -210,7 +210,7 @@ const MobileOrderTracking = ({ user }) => {
             </button>
             <div>
               <h1 className="text-xl font-bold">Sipariş Takibi</h1>
-              <p className="text-orange-100 text-sm">F&B Mobil</p>
+              <p className="text-amber-100 text-sm">F&B Mobil</p>
             </div>
           </div>
           
@@ -325,7 +325,7 @@ const MobileOrderTracking = ({ user }) => {
                 </div>
 
                 <div className="flex justify-between items-center mt-3 pt-3 border-t">
-                  <div className="text-lg font-bold text-orange-600">
+                  <div className="text-lg font-bold text-amber-600">
                     ₺{order.total_amount.toFixed(2)}
                   </div>
                   
@@ -336,7 +336,7 @@ const MobileOrderTracking = ({ user }) => {
                         e.stopPropagation();
                         updateOrderStatus(order.id, getNextStatus(order.status));
                       }}
-                      className="bg-orange-600 hover:bg-orange-700"
+                      className="bg-amber-600 hover:bg-amber-700"
                     >
                       {getNextStatusLabel(order.status)}
                     </Button>
@@ -396,7 +396,7 @@ const MobileOrderTracking = ({ user }) => {
                           {item.quantity} x ₺{item.unit_price.toFixed(2)}
                         </div>
                         {item.special_instructions && (
-                          <div className="text-xs text-orange-600 mt-1">
+                          <div className="text-xs text-amber-600 mt-1">
                             Not: {item.special_instructions}
                           </div>
                         )}
@@ -427,14 +427,14 @@ const MobileOrderTracking = ({ user }) => {
                 </div>
                 <div className="flex justify-between font-bold text-lg">
                   <span>Toplam</span>
-                  <span className="text-orange-600">₺{selectedOrder.total_amount.toFixed(2)}</span>
+                  <span className="text-amber-600">₺{selectedOrder.total_amount.toFixed(2)}</span>
                 </div>
               </div>
 
               {/* Status Update Buttons */}
               {canUpdateStatus(selectedOrder) && getNextStatus(selectedOrder.status) && (
                 <Button
-                  className="w-full bg-orange-600 hover:bg-orange-700"
+                  className="w-full bg-amber-600 hover:bg-amber-700"
                   onClick={() => {
                     updateOrderStatus(selectedOrder.id, getNextStatus(selectedOrder.status));
                   }}
@@ -485,7 +485,7 @@ const MobileOrderTracking = ({ user }) => {
                   setFilterModalOpen(false);
                   loadActiveOrders();
                 }}
-                className="flex-1 bg-orange-600 hover:bg-orange-700"
+                className="flex-1 bg-amber-600 hover:bg-amber-700"
               >
                 Uygula
               </Button>
@@ -525,7 +525,7 @@ const MobileOrderTracking = ({ user }) => {
       <div className="fixed bottom-4 right-4">
         <Button
           onClick={loadOrderHistory}
-          className="rounded-full w-14 h-14 shadow-lg bg-orange-600 hover:bg-orange-700"
+          className="rounded-full w-14 h-14 shadow-lg bg-amber-600 hover:bg-amber-700"
         >
           <TrendingUp className="h-6 w-6" />
         </Button>

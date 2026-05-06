@@ -222,7 +222,7 @@ const NightAuditModule = () => {
                   : '-'}
               </div>
             </div>
-            <Clock className="w-7 h-7 text-purple-600" />
+            <Clock className="w-7 h-7 text-indigo-600" />
           </CardContent>
         </Card>
 

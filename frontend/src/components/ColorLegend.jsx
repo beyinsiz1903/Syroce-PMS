@@ -9,10 +9,10 @@ const ColorLegend = ({ inline = false, compact = false }) => {
   const colors = [
     { color: 'bg-green-500', name: 'Green', meaning: 'Available / Positive / Ready' },
     { color: 'bg-red-500', name: 'Red', meaning: 'Risk / Overdue / Critical / Dirty' },
-    { color: 'bg-orange-500', name: 'Orange', meaning: 'Attention / Warning / Priority' },
+    { color: 'bg-amber-500', name: 'Orange', meaning: 'Attention / Warning / Priority' },
     { color: 'bg-yellow-500', name: 'Yellow', meaning: 'Pending / In-Progress / Cleaning' },
     { color: 'bg-blue-500', name: 'Blue', meaning: 'Informational / Normal' },
-    { color: 'bg-purple-500', name: 'Purple', meaning: 'Occupied / In-Use / VIP' }
+    { color: 'bg-indigo-500', name: 'Purple', meaning: 'Occupied / In-Use / VIP' }
   ];
 
   if (compact) {

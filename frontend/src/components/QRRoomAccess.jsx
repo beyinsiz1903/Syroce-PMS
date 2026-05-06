@@ -135,13 +135,13 @@ const QRRoomAccess = () => {
                 <Clock className="w-5 h-5 mr-2" />
                 Aktif Temizlikler
               </span>
-              <Badge className="bg-orange-500">{activeSessions.length}</Badge>
+              <Badge className="bg-amber-500">{activeSessions.length}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {activeSessions.map((session) => (
-                <div key={session.id} className="p-4 bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-lg">
+                <div key={session.id} className="p-4 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="font-bold text-lg">Oda {session.room_number}</div>
@@ -152,7 +152,7 @@ const QRRoomAccess = () => {
                         })}
                       </div>
                     </div>
-                    <Badge className="bg-orange-500">
+                    <Badge className="bg-amber-500">
                       <Clock className="w-3 h-3 mr-1" />
                       {formatElapsedTime(session.elapsed_minutes)}
                     </Badge>
@@ -162,7 +162,7 @@ const QRRoomAccess = () => {
                   <div className="mb-3">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="bg-orange-500 h-2 rounded-full transition-all animate-pulse"
+                        className="bg-amber-500 h-2 rounded-full transition-all animate-pulse"
                         style={{ width: `${Math.min((session.elapsed_minutes / 30) * 100, 100)}%` }}
                       />
                     </div>

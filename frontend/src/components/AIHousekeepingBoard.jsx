@@ -62,7 +62,7 @@ const AIHousekeepingBoard = () => {
         <div className="flex gap-4">
           <button
             onClick={generateAISchedule}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
           >
             🤖 Regenerate Schedule
           </button>
@@ -87,9 +87,9 @@ const AIHousekeepingBoard = () => {
               <div className="text-sm text-gray-600">Checkout Rooms</div>
               <div className="text-2xl font-bold text-green-600">{schedule.forecast.checkout_rooms}</div>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
+            <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="text-sm text-gray-600">Staff Available</div>
-              <div className="text-2xl font-bold text-purple-600">{schedule.staffing.available_staff}</div>
+              <div className="text-2xl font-bold text-indigo-600">{schedule.staffing.available_staff}</div>
             </div>
             <div className={`p-4 rounded-lg ${
               schedule.staffing.capacity_utilization < 90 ? 'bg-green-50' :

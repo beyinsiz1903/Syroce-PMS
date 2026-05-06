@@ -171,7 +171,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
             {CHECKOUT_RULES.map((rule) => (
               <div key={rule.key} className="border rounded-lg p-3 text-center">
                 <p className="text-xs font-medium">{rule.label}</p>
-                <p className={`text-lg font-bold ${rule.charge > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                <p className={`text-lg font-bold ${rule.charge > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                   {rule.charge > 0 ? `%${rule.charge}` : 'Ucretsiz'}
                 </p>
                 <p className="text-xs text-muted-foreground">{rule.description}</p>

@@ -123,7 +123,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-purple-50">
+            <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-indigo-50">
               <Home className="w-5 h-5" />
             </Button>
             <div>
@@ -150,7 +150,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
         </div>
 
         {/* NPS Skor kartı */}
-        <Card className="bg-gradient-to-r from-emerald-50 via-blue-50 to-purple-50">
+        <Card className="bg-gradient-to-r from-emerald-50 via-blue-50 to-indigo-50">
           <CardContent className="pt-6 pb-5 text-center">
             <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Net Tavsiye Skoru</p>
             <p className={`text-6xl font-bold ${npsData ? npsColor(npsData.nps_score) : 'text-gray-300'}`}>

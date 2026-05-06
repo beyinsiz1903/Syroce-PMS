@@ -94,10 +94,10 @@ export default function EarlyLatePricingSettings() {
     <div className="p-6 max-w-6xl mx-auto space-y-4" data-testid="early-late-pricing-settings">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Clock className="w-6 h-6 text-orange-600" /> Erken Giriş / Geç Çıkış Ücretleri</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Clock className="w-6 h-6 text-amber-600" /> Erken Giriş / Geç Çıkış Ücretleri</h1>
           <p className="text-sm text-gray-500 mt-1">Saat-bazlı otomatik ek ücret kuralları. Standart saatler dışında uygulanır.</p>
         </div>
-        <Button onClick={save} disabled={saving} className="bg-orange-600 hover:bg-orange-700">
+        <Button onClick={save} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
           {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Kaydet
         </Button>
       </div>

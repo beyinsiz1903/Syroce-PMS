@@ -147,7 +147,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
     { label: 'Toplam Oda', value: portfolio.total_rooms || 0, icon: Building2, color: 'text-teal-600' },
     { label: 'Portfolio Doluluk', value: `${portfolio.portfolio_occupancy_pct || 0}%`, icon: TrendingUp, color: 'text-blue-600' },
     { label: 'Riskli Rezervasyon', value: mlSummary.at_risk_bookings || 0, icon: AlertTriangle, color: 'text-amber-600' },
-    { label: 'Yüksek Talep Gunu', value: `${mlSummary.high_demand_days_next_14 || 0}/14`, icon: Zap, color: 'text-purple-600' },
+    { label: 'Yüksek Talep Gunu', value: `${mlSummary.high_demand_days_next_14 || 0}/14`, icon: Zap, color: 'text-indigo-600' },
     { label: 'Global Uyarı', value: alerts.count || 0, icon: Bell, color: 'text-red-600' },
     { label: 'Olay Sayısı (24s)', value: eventData?.total_events || 0, icon: Activity, color: 'text-indigo-600' },
   ];
@@ -189,7 +189,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
                     <OccupancyBadge pct={p.occupancy_pct} />
                     <div className="text-right text-xs">
                       <div className="text-green-600">{p.arrivals_today} giriş</div>
-                      <div className="text-orange-600">{p.departures_today} çıkış</div>
+                      <div className="text-amber-600">{p.departures_today} çıkış</div>
                     </div>
                   </div>
                 </div>
@@ -234,7 +234,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
         <Card data-testid="ml-summary-overview">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Brain className="w-4 h-4 text-purple-600" /> ML Özet
+              <Brain className="w-4 h-4 text-indigo-600" /> ML Özet
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -242,7 +242,7 @@ function OverviewPanel({ eventData, multiPropData, mlData, compData }) {
               <StatBox label="Riskli Rez. Geliri" value={`${(mlData?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString()} TL`} color="text-red-600" />
               <StatBox label="Fiyat Opt. Firsati" value={mlData?.price_optimization?.price_points?.length || 0} color="text-teal-600" />
               <StatBox label="Düşük Talep Gunu" value={`${mlData?.summary?.low_demand_days_next_14 || 0}/14`} color="text-amber-600" />
-              <StatBox label="Riskli Rez. Sayısı" value={mlData?.cancellation_risk?.at_risk_count || 0} color="text-orange-600" />
+              <StatBox label="Riskli Rez. Sayısı" value={mlData?.cancellation_risk?.at_risk_count || 0} color="text-amber-600" />
             </div>
           </CardContent>
         </Card>
@@ -363,7 +363,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
             <div className="grid grid-cols-4 gap-4 mb-4">
               <StatBox label="Toplam" value={data?.total_events || 0} color="text-slate-800" />
               <StatBox label="Kritik" value={data?.by_priority?.critical || 0} color="text-red-600" />
-              <StatBox label="Yüksek" value={data?.by_priority?.high || 0} color="text-orange-600" />
+              <StatBox label="Yüksek" value={data?.by_priority?.high || 0} color="text-amber-600" />
               <StatBox label="Onaysiz Kritik" value={data?.unacknowledged_critical || 0} color="text-red-500" />
             </div>
             {data?.by_type && Object.keys(data.by_type).length > 0 ? (
@@ -470,7 +470,7 @@ function MultiPropertyPanel({ data }) {
         <KPICard label="Portfolio Doluluk" value={`${portfolio.portfolio_occupancy_pct || 0}%`} icon={Building2} color="bg-teal-50 text-teal-700" />
         <KPICard label="Toplam Oda" value={portfolio.total_rooms || 0} icon={Layers} color="bg-blue-50 text-blue-700" />
         <KPICard label="Müsait Oda" value={portfolio.total_available || 0} icon={Eye} color="bg-green-50 text-green-700" />
-        <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={DollarSign} color="bg-purple-50 text-purple-700" />
+        <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={DollarSign} color="bg-indigo-50 text-indigo-700" />
       </div>
 
       {/* Property Comparison */}
@@ -502,7 +502,7 @@ function MultiPropertyPanel({ data }) {
                       <td className="py-3 text-right">{p.total_rooms}</td>
                       <td className="py-3 text-right"><OccupancyBadge pct={p.occupancy_pct} /></td>
                       <td className="py-3 text-right text-green-600">{p.arrivals_today}</td>
-                      <td className="py-3 text-right text-orange-600">{p.departures_today}</td>
+                      <td className="py-3 text-right text-amber-600">{p.departures_today}</td>
                       <td className="py-3 text-right">{(rev.total_revenue || 0).toLocaleString()} TL</td>
                       <td className="py-3 text-right">{rev.adr || 0} TL</td>
                       <td className="py-3 text-right">{rev.revpar || 0} TL</td>
@@ -756,7 +756,7 @@ function OccupancyBadge({ pct }) {
 }
 
 function PriorityDot({ priority }) {
-  const colors = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-slate-400' };
+  const colors = { critical: 'bg-red-500', high: 'bg-amber-500', medium: 'bg-yellow-500', low: 'bg-slate-400' };
   return <span className={`w-2 h-2 rounded-full ${colors[priority] || colors.low} shrink-0 mt-1.5`} />;
 }
 
@@ -766,7 +766,7 @@ function ActionBadge({ action }) {
     slight_increase: { label: 'Hafif Artir', icon: ArrowUp, cls: 'text-teal-600' },
     maintain: { label: 'Koru', icon: Minus, cls: 'text-blue-600' },
     decrease: { label: 'Dusur', icon: ArrowDown, cls: 'text-red-600' },
-    slight_decrease: { label: 'Hafif Dusur', icon: ArrowDown, cls: 'text-orange-600' },
+    slight_decrease: { label: 'Hafif Dusur', icon: ArrowDown, cls: 'text-amber-600' },
     no_data: { label: 'Veri Yok', icon: Minus, cls: 'text-slate-400' },
   };
   const item = map[action] || map.no_data;
@@ -779,7 +779,7 @@ function ActionBadge({ action }) {
 
 function PositionBadge({ position }) {
   const map = {
-    premium: { label: 'Premium', cls: 'bg-purple-100 text-purple-700' },
+    premium: { label: 'Premium', cls: 'bg-indigo-100 text-indigo-700' },
     above_market: { label: 'Pazar Ustu', cls: 'bg-blue-100 text-blue-700' },
     at_market: { label: 'Pazar Seviye', cls: 'bg-green-100 text-green-700' },
     below_market: { label: 'Pazar Alti', cls: 'bg-yellow-100 text-yellow-700' },

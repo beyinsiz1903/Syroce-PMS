@@ -799,7 +799,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="pt-6">
               <div className="text-sm text-gray-600">Occupancy Today</div>
-              <div className="text-3xl font-bold text-purple-600">
+              <div className="text-3xl font-bold text-indigo-600">
                 {rooms.length > 0
                   ? Math.round((bookings.filter(b => isBookingOnDate(b, new Date()) && b.status === 'checked_in').length / rooms.length) * 100)
                   : 0}%
@@ -863,25 +863,25 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         type="button"
                         onClick={() => openBooking(b1)}
                         disabled={!b1}
-                        className="text-left p-2 bg-white border rounded hover:bg-orange-50 hover:border-orange-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-left p-2 bg-white border rounded hover:bg-amber-50 hover:border-amber-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         data-testid={`conflict-open-b1-${idx}`}
                       >
                         <div className="text-xs text-gray-500">Rezervasyon 1</div>
                         <div className="text-sm font-medium truncate">{c.guest1 || '(misafir bilinmiyor)'}</div>
                         {b1 && <div className="text-xs text-gray-600">{fmt(b1.check_in)} → {fmt(b1.check_out)}</div>}
-                        <div className="text-xs text-orange-600 mt-1">Aç ve düzenle →</div>
+                        <div className="text-xs text-amber-600 mt-1">Aç ve düzenle →</div>
                       </button>
                       <button
                         type="button"
                         onClick={() => openBooking(b2)}
                         disabled={!b2}
-                        className="text-left p-2 bg-white border rounded hover:bg-orange-50 hover:border-orange-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-left p-2 bg-white border rounded hover:bg-amber-50 hover:border-amber-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         data-testid={`conflict-open-b2-${idx}`}
                       >
                         <div className="text-xs text-gray-500">Rezervasyon 2</div>
                         <div className="text-sm font-medium truncate">{c.guest2 || '(misafir bilinmiyor)'}</div>
                         {b2 && <div className="text-xs text-gray-600">{fmt(b2.check_in)} → {fmt(b2.check_out)}</div>}
-                        <div className="text-xs text-orange-600 mt-1">Aç ve düzenle →</div>
+                        <div className="text-xs text-amber-600 mt-1">Aç ve düzenle →</div>
                       </button>
                     </div>
                   </div>
@@ -1001,13 +1001,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
         const urgencyBorderColors = {
           overdue: 'border-l-red-500',
-          today: 'border-l-orange-500',
+          today: 'border-l-amber-500',
           tomorrow: 'border-l-amber-400',
           future: 'border-l-blue-400',
         };
         const urgencyBadgeColors = {
           overdue: 'bg-red-100 text-red-700',
-          today: 'bg-orange-100 text-orange-700',
+          today: 'bg-amber-100 text-amber-700',
           tomorrow: 'bg-amber-100 text-amber-700',
           future: 'bg-blue-100 text-blue-700',
         };
@@ -1019,8 +1019,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               <div className="sticky top-0 z-10 bg-white border-b">
                 <div className="px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${overdueList.length > 0 ? 'bg-red-100' : todayList.length > 0 ? 'bg-orange-100' : 'bg-blue-100'}`}>
-                      <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-orange-600' : 'text-blue-600'}`} />
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${overdueList.length > 0 ? 'bg-red-100' : todayList.length > 0 ? 'bg-amber-100' : 'bg-blue-100'}`}>
+                      <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamış Rezervasyonlar</h3>
@@ -1039,8 +1039,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         <div className={`text-lg font-bold ${overdueList.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdueList.length}</div>
                         <div className="text-[10px] text-gray-500">Gecikmiş</div>
                       </div>
-                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${todayList.length > 0 ? 'bg-orange-50 hover:bg-orange-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('today')}>
-                        <div className={`text-lg font-bold ${todayList.length > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{todayList.length}</div>
+                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${todayList.length > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('today')}>
+                        <div className={`text-lg font-bold ${todayList.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{todayList.length}</div>
                         <div className="text-[10px] text-gray-500">Bugün</div>
                       </div>
                       <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${tomorrowList.length > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('tomorrow')}>

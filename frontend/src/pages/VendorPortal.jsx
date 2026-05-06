@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast, Toaster } from "react-hot-toast";
-import {
 import { confirmDialog } from '@/lib/dialogs';
+import {
   Store,
   Package,
   ClipboardList,
@@ -31,7 +31,7 @@ const CATEGORIES = [
 const STATUS_LABELS = {
   pending: { label: "Onay Bekliyor", color: "bg-yellow-100 text-yellow-800" },
   confirmed: { label: "Onaylandı", color: "bg-blue-100 text-blue-800" },
-  shipped: { label: "Kargoda", color: "bg-purple-100 text-purple-800" },
+  shipped: { label: "Kargoda", color: "bg-indigo-100 text-indigo-800" },
   delivered: { label: "Teslim Edildi", color: "bg-green-100 text-green-800" },
   cancelled: { label: "İptal", color: "bg-red-100 text-red-800" },
 };
@@ -102,7 +102,7 @@ function VendorAuth({ onAuthed }) {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #1e3a8a 50%, #0f172a 100%)' }}>
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[10%] left-[8%] w-[380px] h-[380px] bg-blue-500 rounded-full mix-blend-screen filter blur-[80px] opacity-35" />
-        <div className="absolute bottom-[5%] right-[10%] w-[460px] h-[460px] bg-purple-500 rounded-full mix-blend-screen filter blur-[90px] opacity-30" />
+        <div className="absolute bottom-[5%] right-[10%] w-[460px] h-[460px] bg-indigo-500 rounded-full mix-blend-screen filter blur-[90px] opacity-30" />
       </div>
       <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative z-10">
         <div className="text-center mb-6">
@@ -586,7 +586,7 @@ function VendorDashboard({ vendor, onLogout }) {
                     </div>
 
                     {o.shipment && (
-                      <div className="text-xs bg-purple-50 p-2 rounded mb-2">
+                      <div className="text-xs bg-indigo-50 p-2 rounded mb-2">
                         <Truck className="w-3 h-3 inline mr-1" />
                         {o.shipment.carrier} · Takip: <b>{o.shipment.tracking_no}</b>
                       </div>
@@ -613,7 +613,7 @@ function VendorDashboard({ vendor, onLogout }) {
                         <>
                           <button
                             onClick={() => setShipModal(o)}
-                            className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded"
+                            className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded"
                           >
                             <Truck className="w-3 h-3 inline mr-1" /> Kargoya Ver
                           </button>
@@ -680,7 +680,7 @@ function VendorDashboard({ vendor, onLogout }) {
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded"
+                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded"
               >
                 Kaydet
               </button>
@@ -741,7 +741,7 @@ function EarningsPanel({ data, loading, commissionPct }) {
           title="Toplam Komisyon Gideri"
           value={fmt(all_time.commission)}
           sub={commissionPct ? `Komisyon oranı: %${commissionPct}` : null}
-          color="text-orange-600"
+          color="text-amber-600"
         />
         <Card
           icon={ClipboardList}
@@ -762,7 +762,7 @@ function EarningsPanel({ data, loading, commissionPct }) {
           </div>
           <div>
             <div className="text-xs text-gray-500">Komisyon Gideri (-)</div>
-            <div className="font-semibold text-orange-600">- {fmt(all_time.commission)}</div>
+            <div className="font-semibold text-amber-600">- {fmt(all_time.commission)}</div>
           </div>
           <div>
             <div className="text-xs text-gray-500">Net Kazanç</div>

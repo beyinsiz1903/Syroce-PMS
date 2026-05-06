@@ -206,7 +206,7 @@ const RevenueMobile = ({ user }) => {
               </Card>
 
               {/* Occupancy Card */}
-              <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+              <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="h-5 w-5" />
@@ -413,7 +413,7 @@ const RevenueMobile = ({ user }) => {
         {/* Forecast View */}
         {activeView === 'forecast' && (
           <>
-            <Card className="bg-gradient-to-br from-purple-50 to-indigo-50">
+            <Card className="bg-gradient-to-br from-indigo-50 to-indigo-50">
               <CardContent className="p-4">
                 <h3 className="font-bold text-lg mb-2">Tahmin Özeti (30 Gün)</h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -475,7 +475,7 @@ const RevenueMobile = ({ user }) => {
         {/* Cancellation Report View */}
         {activeView === 'cancellation' && (
           <>
-            <Card className="bg-gradient-to-br from-red-50 to-orange-50">
+            <Card className="bg-gradient-to-br from-red-50 to-amber-50">
               <CardContent className="p-4">
                 <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
                   <XCircle className="h-5 w-5 text-red-600" />
@@ -490,7 +490,7 @@ const RevenueMobile = ({ user }) => {
                   </div>
                   <div className="bg-white p-3 rounded">
                     <div className="text-gray-600 text-xs">No-Show Oranı</div>
-                    <div className="font-bold text-xl text-orange-600">{cancellationData?.summary?.no_show_rate}%</div>
+                    <div className="font-bold text-xl text-amber-600">{cancellationData?.summary?.no_show_rate}%</div>
                     <div className="text-sm text-gray-600">{cancellationData?.summary?.no_shows} no-show</div>
                   </div>
                 </div>

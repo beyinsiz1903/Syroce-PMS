@@ -59,7 +59,7 @@ export default function ReportsModal(props) {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Kalan Alacak:</span>
-                <span className="font-bold text-orange-700">{formatCurrency(monthlyCollections?.outstanding || 0)}</span>
+                <span className="font-bold text-amber-700">{formatCurrency(monthlyCollections?.outstanding || 0)}</span>
               </div>
             </CardContent>
           </Card>

@@ -168,7 +168,7 @@ function TraceHeader({ trace, onCopy }) {
     statusColor = "bg-red-500/20 text-red-400 border-red-500/30";
   } else if (isDuplicate) {
     statusLabel = "DUPLICATE";
-    statusColor = "bg-orange-500/20 text-orange-400 border-orange-500/30";
+    statusColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
   } else if (lastEvent?.stage === "confirmed") {
     statusLabel = "CONFIRMED";
     statusColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
@@ -257,7 +257,7 @@ function TraceTimeline({ events, onLoadRaw }) {
                 {/* Key metadata inline */}
                 <div className="flex-1 flex items-center gap-2 overflow-hidden">
                   {evt.metadata?.is_duplicate === true && (
-                    <Badge variant="outline" className="text-orange-400 border-orange-500/30 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">
                       DUPLICATE
                     </Badge>
                   )}
@@ -411,7 +411,7 @@ function SystemHealth() {
     A: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
     B: "text-blue-400 border-blue-500/40 bg-blue-500/10",
     C: "text-yellow-400 border-yellow-500/40 bg-yellow-500/10",
-    D: "text-orange-400 border-orange-500/40 bg-orange-500/10",
+    D: "text-amber-400 border-amber-500/40 bg-amber-500/10",
     F: "text-red-400 border-red-500/40 bg-red-500/10",
   }[grade] || "text-gray-600";
 

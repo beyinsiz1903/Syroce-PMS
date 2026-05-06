@@ -18,11 +18,11 @@ const API = "";
 // ─── Severity Config ─────────────────────────────────────────
 const SEVERITY_CONFIG = {
   critical: { color: 'bg-red-500/15 text-red-400 border-red-500/30', dot: 'bg-red-500 animate-pulse' },
-  high: { color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', dot: 'bg-orange-500' },
+  high: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' },
   medium: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' },
   low: { color: 'bg-slate-100 text-slate-600 border-slate-300', dot: 'bg-slate-300' },
   P1: { color: 'bg-red-500/15 text-red-400 border-red-500/30', dot: 'bg-red-500 animate-pulse' },
-  P2: { color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', dot: 'bg-orange-500' },
+  P2: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' },
   P3: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', dot: 'bg-amber-500' },
   P4: { color: 'bg-slate-100 text-slate-600 border-slate-300', dot: 'bg-slate-300' },
 };

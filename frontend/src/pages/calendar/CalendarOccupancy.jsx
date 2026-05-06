@@ -25,7 +25,7 @@ const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, on
             const occ = getOccupancyForDate(date);
             return (
               <div key={idx} className="flex-1 text-center">
-                <span className={`text-[10px] font-bold ${occ >= 80 ? 'text-red-600' : occ >= 50 ? 'text-orange-600' : occ > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                <span className={`text-[10px] font-bold ${occ >= 80 ? 'text-red-600' : occ >= 50 ? 'text-amber-600' : occ > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                   {occ > 0 ? occ : '0'}
                 </span>
               </div>

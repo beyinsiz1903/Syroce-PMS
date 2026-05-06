@@ -191,7 +191,7 @@ const MobileFnB = ({ user }) => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-2" />
+          <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto mb-2" />
           <p className="text-gray-600">{t("common.loading")}</p>
         </div>
       </div>
@@ -201,7 +201,7 @@ const MobileFnB = ({ user }) => {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-orange-500 text-white sticky top-0 z-50 shadow-lg">
+      <div className="bg-gradient-to-r from-amber-600 to-amber-500 text-white sticky top-0 z-50 shadow-lg">
         <div className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -215,7 +215,7 @@ const MobileFnB = ({ user }) => {
               </Button>
               <div>
                 <h1 className="text-xl font-bold">F&B Yönetimi</h1>
-                <p className="text-xs text-orange-100">Food & Beverage Dashboard</p>
+                <p className="text-xs text-amber-100">Food & Beverage Dashboard</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
@@ -293,30 +293,30 @@ const MobileFnB = ({ user }) => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-purple-600 font-medium">ORT. SEPET</p>
-                  <p className="text-2xl font-bold text-purple-700">
+                  <p className="text-xs text-indigo-600 font-medium">ORT. SEPET</p>
+                  <p className="text-2xl font-bold text-indigo-700">
                     {formatCurrency(dailySummary?.average_transaction || 0)}
                   </p>
                 </div>
-                <BarChart3 className="w-10 h-10 text-purple-300" />
+                <BarChart3 className="w-10 h-10 text-indigo-300" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-orange-600 font-medium">OUTLET SAYISI</p>
-                  <p className="text-3xl font-bold text-orange-700">
+                  <p className="text-xs text-amber-600 font-medium">OUTLET SAYISI</p>
+                  <p className="text-3xl font-bold text-amber-700">
                     {outlets.length}
                   </p>
                 </div>
-                <UtensilsCrossed className="w-10 h-10 text-orange-300" />
+                <UtensilsCrossed className="w-10 h-10 text-amber-300" />
               </div>
             </CardContent>
           </Card>
@@ -326,7 +326,7 @@ const MobileFnB = ({ user }) => {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center">
-              <UtensilsCrossed className="w-5 h-5 mr-2 text-orange-600" />
+              <UtensilsCrossed className="w-5 h-5 mr-2 text-amber-600" />
               Outlet'ler ({outlets.length})
             </CardTitle>
           </CardHeader>
@@ -335,7 +335,7 @@ const MobileFnB = ({ user }) => {
               <p className="text-gray-500 text-center py-4">Outlet bulunamadı</p>
             ) : (
               outlets.map((outlet) => (
-                <div key={outlet.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <div key={outlet.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <div className="flex-1">
                     <p className="font-bold text-gray-900">{outlet.name}</p>
                     <p className="text-sm text-gray-600">{outlet.location}</p>
@@ -395,7 +395,7 @@ const MobileFnB = ({ user }) => {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-3">
           <Button
-            className="h-20 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700"
+            className="h-20 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700"
             onClick={() => setOrderModalOpen(true)}
           >
             <ShoppingBag className="w-6 h-6 mb-1" />
@@ -419,7 +419,7 @@ const MobileFnB = ({ user }) => {
           </Button>
           
           <Button
-            className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+            className="h-20 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700"
             onClick={() => setMenuManagementModalOpen(true)}
           >
             <MenuIcon className="w-6 h-6 mb-1" />
@@ -505,7 +505,7 @@ const MobileFnB = ({ user }) => {
             )}
 
             <Button 
-              className="w-full bg-orange-600 hover:bg-orange-700"
+              className="w-full bg-amber-600 hover:bg-amber-700"
               onClick={handleSubmitOrder}
               disabled={!selectedOutlet || orderItems.length === 0}
             >
@@ -550,7 +550,7 @@ const MobileFnB = ({ user }) => {
                 {topItems.map((item, idx) => (
                   <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center space-x-2">
-                      <span className="font-bold text-orange-600">{idx + 1}.</span>
+                      <span className="font-bold text-amber-600">{idx + 1}.</span>
                       <span className="text-sm">{item.name}</span>
                     </div>
                     <span className="text-sm font-bold">{formatCurrency(item.price)}</span>
@@ -613,7 +613,7 @@ const MobileFnB = ({ user }) => {
                   </div>
                   <div className="flex justify-between p-2">
                     <span className="text-gray-700">İndirimler:</span>
-                    <span className="font-bold text-orange-700">
+                    <span className="font-bold text-amber-700">
                       -{formatCurrency(zReportData.discounts || 0)}
                     </span>
                   </div>
@@ -651,7 +651,7 @@ const MobileFnB = ({ user }) => {
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {Object.entries(zReportData.category_sales).map(([category, amount]) => (
-                      <div key={category} className="flex justify-between p-2 bg-purple-50 rounded">
+                      <div key={category} className="flex justify-between p-2 bg-indigo-50 rounded">
                         <span className="capitalize">{category}</span>
                         <span className="font-bold">{formatCurrency(amount)}</span>
                       </div>
@@ -761,7 +761,7 @@ const MobileFnB = ({ user }) => {
         <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
-              <MenuIcon className="w-5 h-5 text-purple-600" />
+              <MenuIcon className="w-5 h-5 text-indigo-600" />
               <span>Menü Yönetimi</span>
             </DialogTitle>
           </DialogHeader>
@@ -769,10 +769,10 @@ const MobileFnB = ({ user }) => {
           <div className="space-y-3">
             {/* Menu Stats */}
             <div className="grid grid-cols-3 gap-2">
-              <Card className="bg-purple-50">
+              <Card className="bg-indigo-50">
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-purple-700">{menuItems.length}</p>
-                  <p className="text-xs text-purple-600">Toplam Ürün</p>
+                  <p className="text-2xl font-bold text-indigo-700">{menuItems.length}</p>
+                  <p className="text-xs text-indigo-600">Toplam Ürün</p>
                 </CardContent>
               </Card>
               <Card className="bg-green-50">
@@ -783,12 +783,12 @@ const MobileFnB = ({ user }) => {
                   <p className="text-xs text-green-600">Aktif</p>
                 </CardContent>
               </Card>
-              <Card className="bg-orange-50">
+              <Card className="bg-amber-50">
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-orange-700">
+                  <p className="text-2xl font-bold text-amber-700">
                     {new Set(menuItems.map(i => i.category)).size}
                   </p>
-                  <p className="text-xs text-orange-600">Kategori</p>
+                  <p className="text-xs text-amber-600">Kategori</p>
                 </CardContent>
               </Card>
             </div>
@@ -822,7 +822,7 @@ const MobileFnB = ({ user }) => {
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-purple-700">{formatCurrency(item.price)}</p>
+                          <p className="font-bold text-indigo-700">{formatCurrency(item.price)}</p>
                           <Badge className={item.available !== false ? 'bg-green-500' : 'bg-gray-400'}>
                             {item.available !== false ? 'Mevcut' : 'Yok'}
                           </Badge>
@@ -835,7 +835,7 @@ const MobileFnB = ({ user }) => {
             })}
 
             <Button 
-              className="w-full bg-purple-600 hover:bg-purple-700"
+              className="w-full bg-indigo-600 hover:bg-indigo-700"
               onClick={async () => {
                 const name = await promptDialog({ message: 'Ürün adı:' })?.trim();
                 if (!name) return;
@@ -869,7 +869,7 @@ const MobileFnB = ({ user }) => {
         <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
-              <Store className="w-5 h-5 text-orange-600" />
+              <Store className="w-5 h-5 text-amber-600" />
               <span>Outlet Seçimi</span>
             </DialogTitle>
           </DialogHeader>
@@ -877,10 +877,10 @@ const MobileFnB = ({ user }) => {
           <div className="space-y-3">
             {/* Active Outlet Info */}
             {activeOutlet && (
-              <Card className="bg-gradient-to-r from-orange-50 to-red-50 border-orange-200">
+              <Card className="bg-gradient-to-r from-amber-50 to-red-50 border-amber-200">
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-3">
-                    <CheckCircle className="w-8 h-8 text-orange-600" />
+                    <CheckCircle className="w-8 h-8 text-amber-600" />
                     <div className="flex-1">
                       <p className="text-sm text-gray-600">Şu anda görüntülenen:</p>
                       <p className="font-bold text-gray-900">{activeOutlet.name}</p>
@@ -902,7 +902,7 @@ const MobileFnB = ({ user }) => {
                   variant={activeOutlet?.id === outlet.id ? "default" : "outline"}
                   className={`w-full justify-start h-auto p-4 ${
                     activeOutlet?.id === outlet.id 
-                      ? 'bg-orange-600 hover:bg-orange-700 text-white border-orange-600' 
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600' 
                       : 'bg-white hover:bg-gray-50'
                   }`}
                   onClick={() => {
@@ -914,7 +914,7 @@ const MobileFnB = ({ user }) => {
                 >
                   <div className="flex items-center space-x-3 w-full">
                     <Store className={`w-8 h-8 ${
-                      activeOutlet?.id === outlet.id ? 'text-white' : 'text-orange-600'
+                      activeOutlet?.id === outlet.id ? 'text-white' : 'text-amber-600'
                     }`} />
                     <div className="flex-1 text-left">
                       <p className={`font-bold ${
@@ -923,18 +923,18 @@ const MobileFnB = ({ user }) => {
                         {outlet.name}
                       </p>
                       <p className={`text-sm ${
-                        activeOutlet?.id === outlet.id ? 'text-orange-100' : 'text-gray-600'
+                        activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-600'
                       }`}>
                         📍 {outlet.location}
                       </p>
                       <div className="flex items-center space-x-3 mt-1">
                         <span className={`text-xs ${
-                          activeOutlet?.id === outlet.id ? 'text-orange-100' : 'text-gray-500'
+                          activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
                         }`}>
                           🪑 {outlet.capacity} kişi
                         </span>
                         <span className={`text-xs ${
-                          activeOutlet?.id === outlet.id ? 'text-orange-100' : 'text-gray-500'
+                          activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
                         }`}>
                           {outlet.type}
                         </span>
@@ -948,7 +948,7 @@ const MobileFnB = ({ user }) => {
                       </div>
                       {outlet.operating_hours && (
                         <p className={`text-xs mt-1 ${
-                          activeOutlet?.id === outlet.id ? 'text-orange-100' : 'text-gray-500'
+                          activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
                         }`}>
                           🕐 {outlet.operating_hours}
                         </p>
@@ -979,7 +979,7 @@ const MobileFnB = ({ user }) => {
                   </div>
                   <div className="text-center p-2 bg-white rounded col-span-2">
                     <p className="text-xs text-gray-600">Toplam Kapasite</p>
-                    <p className="text-2xl font-bold text-orange-700">
+                    <p className="text-2xl font-bold text-amber-700">
                       {outlets.reduce((sum, o) => sum + (o.capacity || 0), 0)} kişi
                     </p>
                   </div>

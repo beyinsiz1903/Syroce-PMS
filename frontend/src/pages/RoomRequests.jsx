@@ -39,7 +39,7 @@ const DEPT_LABEL = Object.fromEntries(DEPARTMENTS.map((d) => [d.id, d.label]));
 
 const PRIORITY_STYLE = {
   urgent: "bg-red-100 text-red-700 border-red-300",
-  high: "bg-orange-100 text-orange-700 border-orange-300",
+  high: "bg-amber-100 text-amber-700 border-amber-300",
   normal: "bg-slate-100 text-slate-700 border-slate-300",
   low: "bg-gray-100 text-gray-600 border-gray-300",
 };

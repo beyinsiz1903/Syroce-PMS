@@ -157,7 +157,7 @@ const RevenueDashboard = () => {
                 <p className="text-sm text-gray-600">RevPAR</p>
                 <p className="text-2xl font-bold">${revPar.toFixed(2)}</p>
               </div>
-              <Calendar className="w-8 h-8 text-purple-500" />
+              <Calendar className="w-8 h-8 text-indigo-500" />
             </div>
           </CardContent>
         </Card>
@@ -169,7 +169,7 @@ const RevenueDashboard = () => {
                 <p className="text-sm text-gray-600">Occupancy</p>
                 <p className="text-2xl font-bold">{(revenueData.occupancy_rate || 0).toFixed(1)}%</p>
               </div>
-              <TrendingUp className="w-8 h-8 text-orange-500" />
+              <TrendingUp className="w-8 h-8 text-amber-500" />
             </div>
           </CardContent>
         </Card>
@@ -263,10 +263,10 @@ const RevenueDashboard = () => {
                 {((revenueData.fnb_revenue / totalRevenue) * 100).toFixed(1)}% of total
               </div>
             </div>
-            <div className="p-4 bg-orange-50 rounded-lg">
-              <div className="text-sm text-orange-600 font-semibold">Other Revenue</div>
-              <div className="text-2xl font-bold text-orange-700">${(revenueData.other_revenue || 0).toLocaleString()}</div>
-              <div className="text-xs text-orange-600 mt-1">
+            <div className="p-4 bg-amber-50 rounded-lg">
+              <div className="text-sm text-amber-600 font-semibold">Other Revenue</div>
+              <div className="text-2xl font-bold text-amber-700">${(revenueData.other_revenue || 0).toLocaleString()}</div>
+              <div className="text-xs text-amber-600 mt-1">
                 {((revenueData.other_revenue / totalRevenue) * 100).toFixed(1)}% of total
               </div>
             </div>

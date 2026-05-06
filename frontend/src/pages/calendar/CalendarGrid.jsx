@@ -163,7 +163,7 @@ const CalendarGrid = ({
                 <div
                   key={idx}
                   className={`${CELL_CLS} flex-shrink-0 py-1 border-r text-center ${
-                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-100/60 border-gray-200' : weekend ? 'bg-orange-50 border-gray-200' : 'bg-white border-gray-200'
+                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-100/60 border-gray-200' : weekend ? 'bg-amber-50 border-gray-200' : 'bg-white border-gray-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
@@ -256,8 +256,8 @@ const CalendarGrid = ({
                               {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} TL` : '-'}
                             </div>
                             <div className="flex items-center justify-center gap-0.5 mt-0.5">
-                              <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : occupiedCount > 0 ? 'bg-orange-500' : 'bg-green-500'}`}></div>
-                              <span className={`text-[8px] font-bold ${isFull ? 'text-red-600' : occupiedCount > 0 ? 'text-orange-600' : 'text-green-700'}`}>
+                              <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : occupiedCount > 0 ? 'bg-amber-500' : 'bg-green-500'}`}></div>
+                              <span className={`text-[8px] font-bold ${isFull ? 'text-red-600' : occupiedCount > 0 ? 'text-amber-600' : 'text-green-700'}`}>
                                 {occupiedCount}/{totalTypeRooms}
                               </span>
                             </div>
@@ -273,10 +273,10 @@ const CalendarGrid = ({
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
                     const hasOverdue = unassignedForType.some(b => getUnassignedUrgency(b).level === 'overdue');
                     const hasToday = unassignedForType.some(b => getUnassignedUrgency(b).level === 'today');
-                    const labelColor = hasOverdue ? 'text-red-700' : hasToday ? 'text-orange-700' : 'text-blue-700';
-                    const dotColor = hasOverdue ? 'bg-red-500' : hasToday ? 'bg-orange-500' : 'bg-blue-500';
-                    const rowBg = hasOverdue ? 'bg-red-50/30' : hasToday ? 'bg-orange-50/30' : 'bg-blue-50/20';
-                    const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-orange-50/60' : 'bg-blue-50/40';
+                    const labelColor = hasOverdue ? 'text-red-700' : hasToday ? 'text-amber-700' : 'text-blue-700';
+                    const dotColor = hasOverdue ? 'bg-red-500' : hasToday ? 'bg-amber-500' : 'bg-blue-500';
+                    const rowBg = hasOverdue ? 'bg-red-50/30' : hasToday ? 'bg-amber-50/30' : 'bg-blue-50/20';
+                    const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-amber-50/60' : 'bg-blue-50/40';
                     return (
                       <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`}>
                         <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
@@ -284,7 +284,7 @@ const CalendarGrid = ({
                             <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
                             <div className={`font-bold text-[9px] ${labelColor}`}>Atanmamış</div>
                           </div>
-                          <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-orange-500 font-semibold' : 'text-blue-500'}`}>
+                          <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-amber-500 font-semibold' : 'text-blue-500'}`}>
                             {unassignedForType.length} rez.
                           </div>
                         </div>
@@ -321,7 +321,7 @@ const CalendarGrid = ({
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg transition-all cursor-move z-20 border-2 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-orange-300' : ''}`}
+                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg transition-all cursor-move z-20 border-2 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-amber-300' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
@@ -379,7 +379,7 @@ const CalendarGrid = ({
                               <div
                                 key={idx}
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
-                                  past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-orange-50/30' : 'bg-white hover:bg-gray-50'
+                                  past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-amber-50/30' : 'bg-white hover:bg-gray-50'
                                 } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
                                 ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
                                 style={{
@@ -397,7 +397,7 @@ const CalendarGrid = ({
                                   <div
                                     className={`absolute top-0 left-0 h-full opacity-60 border-2 ${
                                       roomBlock.type === 'out_of_order' ? 'bg-red-600 border-red-700' :
-                                      roomBlock.type === 'out_of_service' ? 'bg-orange-500 border-orange-600' :
+                                      roomBlock.type === 'out_of_service' ? 'bg-amber-500 border-amber-600' :
                                       'bg-yellow-600 border-yellow-700'
                                     }`}
                                     style={{
@@ -452,7 +452,7 @@ const CalendarGrid = ({
                                       </div>
                                       <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
                                         {showAIPanel && getAIRecommendation(booking.id) && (
-                                          <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white text-[7px] font-bold px-0.5 py-0 rounded animate-pulse" title="AI Recommendation">
+                                          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-[7px] font-bold px-0.5 py-0 rounded animate-pulse" title="AI Recommendation">
                                             AI
                                           </div>
                                         )}
@@ -462,7 +462,7 @@ const CalendarGrid = ({
                                           </div>
                                         )}
                                         {showDeluxePanel && isGroupBooking(booking.id) && (
-                                          <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
+                                          <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
                                             G
                                           </div>
                                         )}

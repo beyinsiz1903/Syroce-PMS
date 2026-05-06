@@ -7,10 +7,40 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Layout from '@/components/Layout';
-import { Hotel, FileText, TrendingUp, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
+import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
 import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+// Hafif inline SVG sparkline — recharts overhead yok, 4 KPI kartına uygun.
+const Sparkline = ({ values, stroke = '#0ea5e9', fill = 'rgba(14,165,233,0.12)', height = 32 }) => {
+  if (!values || values.length < 2) {
+    return <div className="h-8 w-full flex items-center justify-center text-[10px] text-slate-300">veri yok</div>;
+  }
+  const w = 100; const h = height;
+  const min = Math.min(...values); const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = w / (values.length - 1);
+  const points = values.map((v, i) => `${(i * step).toFixed(2)},${(h - ((v - min) / range) * (h - 4) - 2).toFixed(2)}`);
+  const path = `M ${points.join(' L ')}`;
+  const area = `${path} L ${w},${h} L 0,${h} Z`;
+  const first = values[0]; const last = values[values.length - 1];
+  const delta = first === 0 ? 0 : ((last - first) / Math.abs(first)) * 100;
+  const TrendIcon = Math.abs(delta) < 1 ? Minus : delta > 0 ? TrendingUp : TrendingDown;
+  const trendCls = Math.abs(delta) < 1 ? 'text-slate-400' : delta > 0 ? 'text-emerald-600' : 'text-rose-600';
+  return (
+    <div className="w-full">
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+        <path d={area} fill={fill} />
+        <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className={`flex items-center justify-center gap-1 mt-0.5 text-[10px] font-medium ${trendCls}`}>
+        <TrendIcon className="w-3 h-3" />
+        <span>{delta > 0 ? '+' : ''}{delta.toFixed(1)}% / 7g</span>
+      </div>
+    </div>
+  );
+};
 
 // Memory cache for dashboard data (faster than IndexedDB)
 const dashboardCache = {
@@ -609,8 +639,16 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
             {/* Command Center: Decision-Driven Alerts */}
             <CommandCenter />
 
-            {/* Quick Stats */}
-            {stats?.pms && (
+            {/* Quick Stats — KPI kartları + son 7 gün sparkline */}
+            {stats?.pms && (() => {
+              const occ7 = (occupancyData || []).slice(-7).map(d => Number(d?.occupancy_rate) || 0);
+              const book7 = (trendData || []).slice(-7).map(d => Number(d?.bookings) || 0);
+              // Toplam misafir = günlük doluluk × oda sayısı (yaklaşık dolu yatak); semantik olarak misafir trendine yakın.
+              const totalRooms = Number(stats?.pms?.total_rooms) || 0;
+              const guests7 = occ7.map(o => Math.round((o / 100) * totalRooms));
+              // Sabit envanter için düz çizgi (görsel tutarlılık).
+              const rooms7 = totalRooms > 0 ? Array(7).fill(totalRooms) : [];
+              return (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
                 <Card className="hover:shadow-md transition-shadow border-slate-200">
                   <CardContent className="p-4 text-center">
@@ -620,6 +658,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       </div>
                       <div className="text-2xl font-bold text-slate-900">{stats.pms.total_rooms}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.totalRooms')}</div>
+                      <Sparkline values={rooms7} stroke="#64748b" fill="rgba(100,116,139,0.10)" />
                     </div>
                   </CardContent>
                 </Card>
@@ -632,6 +671,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       </div>
                       <div className="text-2xl font-bold text-amber-800">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.occupancyRate')}</div>
+                      <Sparkline values={occ7} stroke="#d97706" fill="rgba(217,119,6,0.12)" />
                     </div>
                   </CardContent>
                 </Card>
@@ -644,6 +684,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       </div>
                       <div className="text-2xl font-bold text-slate-900">{stats.pms.today_checkins}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.todayCheckins')}</div>
+                      <Sparkline values={book7} stroke="#059669" fill="rgba(5,150,105,0.12)" />
                     </div>
                   </CardContent>
                 </Card>
@@ -656,11 +697,13 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       </div>
                       <div className="text-2xl font-bold text-slate-900">{stats.pms.total_guests}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.totalGuests')}</div>
+                      <Sparkline values={guests7} stroke="#0284c7" fill="rgba(2,132,199,0.12)" />
                     </div>
                   </CardContent>
                 </Card>
               </div>
-            )}
+              );
+            })()}
 
             <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
               <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
@@ -859,7 +902,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       const rate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
                       const color = 
                         rate >= 90 ? 'bg-red-600' :
-                        rate >= 80 ? 'bg-orange-500' :
+                        rate >= 80 ? 'bg-amber-500' :
                         rate >= 70 ? 'bg-yellow-500' :
                         rate >= 60 ? 'bg-green-500' :
                         rate >= 50 ? 'bg-blue-500' :
@@ -895,7 +938,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       <span>70-80%</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-orange-500 rounded"></div>
+                      <div className="w-3 h-3 bg-amber-500 rounded"></div>
                       <span>80-90%</span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -929,7 +972,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                         return (
                           <Card 
                             key={module.path} 
-                            className={`card-hover cursor-pointer ${module.badge === 'GAME-CHANGER' ? 'border-2 border-pink-500 shadow-lg' : module.badge === 'AI' ? 'border-2 border-purple-400 shadow-lg' : module.badge === 'NEW' ? 'border-2 border-blue-300 shadow-md' : ''}`}
+                            className={`card-hover cursor-pointer ${module.badge === 'GAME-CHANGER' ? 'border-2 border-pink-500 shadow-lg' : module.badge === 'AI' ? 'border-2 border-indigo-400 shadow-lg' : module.badge === 'NEW' ? 'border-2 border-blue-300 shadow-md' : ''}`}
                             onClick={() => navigate(module.path)}
                             data-testid={`module-${module.title.toLowerCase()}`}
                           >
@@ -950,7 +993,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                                     {module.badge && (
                                       <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${
                                         module.badge === 'GAME-CHANGER' ? 'bg-pink-100 text-pink-700' :
-                                        module.badge === 'AI' ? 'bg-purple-100 text-purple-700' :
+                                        module.badge === 'AI' ? 'bg-indigo-100 text-indigo-700' :
                                         'bg-blue-100 text-blue-700'
                                       }`}>
                                         {module.badge}
@@ -1037,8 +1080,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
             <Card className="hover:shadow-md transition-shadow">
               <CardContent className="p-4 text-center">
                 <div className="flex flex-col items-center space-y-2">
-                  <div className="p-2 bg-purple-100 rounded-lg">
-                    <Calendar className="w-6 h-6 text-purple-500" />
+                  <div className="p-2 bg-indigo-100 rounded-lg">
+                    <Calendar className="w-6 h-6 text-indigo-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stats.pms.today_checkins}</div>
                   <div className="text-xs font-medium text-gray-600">{t('dashboard.todayCheckins')}</div>
@@ -1049,8 +1092,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
             <Card className="hover:shadow-md transition-shadow">
               <CardContent className="p-4 text-center">
                 <div className="flex flex-col items-center space-y-2">
-                  <div className="p-2 bg-orange-100 rounded-lg">
-                    <Users className="w-6 h-6 text-orange-500" />
+                  <div className="p-2 bg-amber-100 rounded-lg">
+                    <Users className="w-6 h-6 text-amber-500" />
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stats.pms.total_guests}</div>
                   <div className="text-xs font-medium text-gray-600">{t('dashboard.totalGuests')}</div>

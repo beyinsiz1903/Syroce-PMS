@@ -165,7 +165,7 @@ const HousekeepingTab = ({
             <span className="text-sm">{tc('outOfOrder')}: {roomBlocks.filter(b => b.type === 'out_of_order' && b.status === 'active').length}</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-orange-500 rounded"></div>
+            <div className="w-3 h-3 bg-amber-500 rounded"></div>
             <span className="text-sm">{tc('outOfService')}: {roomBlocks.filter(b => b.type === 'out_of_service' && b.status === 'active').length}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ const HousekeepingTab = ({
                   tabIndex={0}
                   onClick={() => onBookingCardClick && room.booking_id && onBookingCardClick(room.booking_id)}
                   onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onBookingCardClick && room.booking_id) onBookingCardClick(room.booking_id); }}
-                  className={`p-3 rounded border cursor-pointer transition hover:shadow-md hover:scale-[1.01] ${room.is_today ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-orange-50 border-orange-200 hover:bg-orange-100'}`}
+                  className={`p-3 rounded border cursor-pointer transition hover:shadow-md hover:scale-[1.01] ${room.is_today ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
                 >
                   <div className="font-bold">{tc('roomPrefix')} {room.room_number}</div>
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
@@ -314,7 +314,7 @@ const HousekeepingTab = ({
                   cleaning: 'bg-yellow-100 border-yellow-300',
                   inspected: 'bg-green-100 border-green-300',
                   available: 'bg-green-100 border-green-300',
-                  occupied: 'bg-purple-100 border-purple-300',
+                  occupied: 'bg-indigo-100 border-indigo-300',
                 };
 
                 return (

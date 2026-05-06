@@ -10,8 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
 import { confirmDialog } from '@/lib/dialogs';
+import {
   Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2,
   CheckCircle2, XCircle, PlayCircle, Receipt, History,
 } from 'lucide-react';
@@ -146,7 +146,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-purple-600" /> Spa & Wellness
+            <Sparkles className="w-6 h-6 text-indigo-600" /> Spa & Wellness
           </h1>
           <p className="text-sm text-gray-500">
             Hizmet kataloğu, terapist & oda yönetimi, çakışma kontrollü randevu planlama.
@@ -167,7 +167,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <Stat label="Bugün Toplam" value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
-          <Stat label="Bugünkü Ciro" value={`₺${(summary.revenue || 0).toLocaleString('tr-TR')}`} cls="text-purple-600" />
+          <Stat label="Bugünkü Ciro" value={`₺${(summary.revenue || 0).toLocaleString('tr-TR')}`} cls="text-indigo-600" />
         </div>
       )}
 
@@ -271,7 +271,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-purple-600">
+                  <div className="text-2xl font-bold text-indigo-600">
                     ₺{(s.price || 0).toLocaleString('tr-TR')}
                   </div>
                   {s.commission_rate > 0 && (
@@ -323,7 +323,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <Card key={r.id}>
                 <CardContent className="p-4">
                   <div className="font-semibold flex items-center gap-2">
-                    <DoorOpen className="w-4 h-4 text-purple-600" /> {r.name}
+                    <DoorOpen className="w-4 h-4 text-indigo-600" /> {r.name}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
                     Tip: {r.room_type} • Kapasite: {r.capacity}

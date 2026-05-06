@@ -64,10 +64,10 @@ const StopSaleManager = ({ operators = [] }) => {
   ];
 
   return (
-    <Card className="border-2 border-orange-300">
+    <Card className="border-2 border-amber-300">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Ban className="w-5 h-5 text-orange-600" />
+          <Ban className="w-5 h-5 text-amber-600" />
           Stop-Sale Yönetimi
         </CardTitle>
         <CardDescription>
@@ -77,10 +77,10 @@ const StopSaleManager = ({ operators = [] }) => {
       <CardContent>
         <div className="space-y-3">
           {/* Warning Info */}
-          <div className="p-3 bg-orange-50 border-l-4 border-orange-500 rounded mb-4">
+          <div className="p-3 bg-amber-50 border-l-4 border-amber-500 rounded mb-4">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-600 mt-0.5" />
-              <div className="text-xs text-orange-800">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
+              <div className="text-xs text-amber-800">
                 <strong>Dikkat:</strong> Stop-sale aktif olduğunda, seçili operatörden yeni rezervasyon alınamaz.
                 Mevcut rezervasyonlar etkilenmez.
               </div>

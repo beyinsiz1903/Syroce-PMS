@@ -654,11 +654,11 @@ const AuthPage = ({ onLogin }) => {
                   <TabsContent value="login">
                     <form onSubmit={handleGuestLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
                       {isMobile && (
-                        <div className="bg-purple-50 p-3 rounded-lg mb-4">
-                          <p className="text-sm text-purple-800 font-medium">
+                        <div className="bg-indigo-50 p-3 rounded-lg mb-4">
+                          <p className="text-sm text-indigo-800 font-medium">
                             👤 {t('auth.guestMobileAccess')}
                           </p>
-                          <p className="text-xs text-purple-600 mt-1">
+                          <p className="text-xs text-indigo-600 mt-1">
                             {t('auth.viewBookingsManageStay')}
                           </p>
                         </div>

@@ -14,7 +14,7 @@ const API = "";
 function AlertCard({ alert, onAck, onResolve }) {
   const sevMap = {
     critical: { bg: "bg-red-950/40 border-red-900/50", text: "text-red-400", icon: XCircle },
-    high: { bg: "bg-orange-950/40 border-orange-900/50", text: "text-orange-400", icon: AlertTriangle },
+    high: { bg: "bg-amber-950/40 border-amber-900/50", text: "text-amber-400", icon: AlertTriangle },
     warning: { bg: "bg-amber-950/40 border-amber-900/50", text: "text-amber-400", icon: AlertTriangle },
     info: { bg: "bg-sky-950/40 border-sky-900/50", text: "text-sky-400", icon: Bell },
   };
@@ -225,7 +225,7 @@ export default function IncidentDashboardPage() {
                       <p className="text-sm text-zinc-200">{inc.title}</p>
                       <Badge variant="outline" className={`text-[10px] ${
                         inc.severity === "P1" ? "text-red-400 border-red-500/40"
-                        : inc.severity === "P2" ? "text-orange-400 border-orange-500/40"
+                        : inc.severity === "P2" ? "text-amber-400 border-amber-500/40"
                         : "text-amber-400 border-amber-500/40"
                       }`}>{inc.severity}</Badge>
                     </div>

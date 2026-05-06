@@ -49,7 +49,7 @@ const MaintenancePriorityVisual = () => {
   const getPriorityColor = (priority) => {
     const colors = {
       urgent: 'bg-red-600',
-      high: 'bg-orange-500',
+      high: 'bg-amber-500',
       normal: 'bg-blue-500',
       low: 'bg-gray-500'
     };
@@ -74,7 +74,7 @@ const MaintenancePriorityVisual = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-500 text-white p-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 text-white p-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
@@ -87,7 +87,7 @@ const MaintenancePriorityVisual = () => {
             </Button>
             <div>
               <h1 className="text-xl font-bold">Öncelik Görseli</h1>
-              <p className="text-xs text-purple-100">Priority Visual Dashboard</p>
+              <p className="text-xs text-indigo-100">Priority Visual Dashboard</p>
             </div>
           </div>
         </div>
@@ -104,11 +104,11 @@ const MaintenancePriorityVisual = () => {
             </CardContent>
           </Card>
           
-          <Card className="bg-orange-50 border-orange-200">
+          <Card className="bg-amber-50 border-amber-200">
             <CardContent className="p-3 text-center">
-              <AlertCircle className="w-6 h-6 mx-auto text-orange-600 mb-1" />
-              <p className="text-2xl font-bold text-orange-700">{stats.high}</p>
-              <p className="text-xs text-orange-600">Yüksek</p>
+              <AlertCircle className="w-6 h-6 mx-auto text-amber-600 mb-1" />
+              <p className="text-2xl font-bold text-amber-700">{stats.high}</p>
+              <p className="text-xs text-amber-600">Yüksek</p>
             </CardContent>
           </Card>
           

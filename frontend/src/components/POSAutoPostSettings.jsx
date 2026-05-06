@@ -143,17 +143,17 @@ const POSAutoPostSettings = () => {
             onClick={() => setAutoPostMode('checkout')}
             className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
               autoPostMode === 'checkout' 
-                ? 'border-purple-500 bg-purple-50' 
-                : 'border-gray-200 hover:border-purple-300'
+                ? 'border-indigo-500 bg-indigo-50' 
+                : 'border-gray-200 hover:border-indigo-300'
             }`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <LogOut className={`w-5 h-5 ${autoPostMode === 'checkout' ? 'text-purple-600' : 'text-gray-400'}`} />
+                <LogOut className={`w-5 h-5 ${autoPostMode === 'checkout' ? 'text-indigo-600' : 'text-gray-400'}`} />
                 <span className="font-semibold">Check-out'ta Toplu</span>
               </div>
               {autoPostMode === 'checkout' && (
-                <Badge className="bg-purple-500">Aktif</Badge>
+                <Badge className="bg-indigo-500">Aktif</Badge>
               )}
             </div>
             <p className="text-xs text-gray-600">

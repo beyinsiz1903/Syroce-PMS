@@ -15,9 +15,9 @@ import {
 // scanning the source file.
 const COLORS = {
   orange: {
-    iconBg: 'bg-orange-100', iconFg: 'text-orange-600',
-    badgeBg: 'bg-orange-50', badgeFg: 'text-orange-700',
-    border: 'hover:border-orange-200',
+    iconBg: 'bg-amber-100', iconFg: 'text-amber-600',
+    badgeBg: 'bg-amber-50', badgeFg: 'text-amber-700',
+    border: 'hover:border-amber-200',
   },
   blue: {
     iconBg: 'bg-blue-100', iconFg: 'text-blue-600',
@@ -30,9 +30,9 @@ const COLORS = {
     border: 'hover:border-indigo-200',
   },
   purple: {
-    iconBg: 'bg-purple-100', iconFg: 'text-purple-600',
-    badgeBg: 'bg-purple-50', badgeFg: 'text-purple-700',
-    border: 'hover:border-purple-200',
+    iconBg: 'bg-indigo-100', iconFg: 'text-indigo-600',
+    badgeBg: 'bg-indigo-50', badgeFg: 'text-indigo-700',
+    border: 'hover:border-indigo-200',
   },
   emerald: {
     iconBg: 'bg-emerald-100', iconFg: 'text-emerald-600',
@@ -204,11 +204,11 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
   };
 
   const steps = [
-    { num: 1, icon: AlertTriangle, color: 'bg-orange-500' },
+    { num: 1, icon: AlertTriangle, color: 'bg-amber-500' },
     { num: 2, icon: ClipboardList, color: 'bg-blue-500' },
     { num: 3, icon: CheckCircle2, color: 'bg-emerald-500' },
     { num: 4, icon: Truck, color: 'bg-indigo-500' },
-    { num: 5, icon: PackageCheck, color: 'bg-purple-500' },
+    { num: 5, icon: PackageCheck, color: 'bg-indigo-500' },
     { num: 6, icon: Package, color: 'bg-pink-500' },
   ];
 

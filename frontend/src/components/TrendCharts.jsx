@@ -200,7 +200,7 @@ export const TrendCharts = ({ headers }) => {
           {/* Queue Health */}
           <div data-testid="trend-queue" className="p-4 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
             <div className="flex items-center gap-2 mb-3">
-              <Layers className="w-3.5 h-3.5 text-orange-400" />
+              <Layers className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs font-medium text-zinc-400">Queue & Workers</span>
             </div>
             <div className="space-y-3">

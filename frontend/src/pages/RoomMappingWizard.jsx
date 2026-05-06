@@ -37,7 +37,7 @@ const ConfidenceBadge = ({ confidence, status, breakdown, warnings }) => {
     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
     : confidence >= 60
       ? 'bg-amber-100 text-amber-800 border-amber-300'
-      : 'bg-orange-100 text-orange-800 border-orange-300';
+      : 'bg-amber-100 text-amber-800 border-amber-300';
 
   const hasBreakdown = breakdown && (breakdown.name_similarity > 0 || breakdown.capacity_match !== null || breakdown.price_proximity !== null);
 
@@ -67,7 +67,7 @@ const ConfidenceBadge = ({ confidence, status, breakdown, warnings }) => {
           {warnings && warnings.length > 0 && (
             <div className="pt-1 space-y-1">
               {warnings.map((w, i) => (
-                <div key={i} className="flex items-start gap-1 text-[10px] text-orange-600">
+                <div key={i} className="flex items-start gap-1 text-[10px] text-amber-600">
                   <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                   <span>{w}</span>
                 </div>
@@ -492,7 +492,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                           key={idx}
                           className={`p-3 rounded-lg border transition-all ${
                             hasWarnings
-                              ? 'bg-orange-50/50 border-orange-200'
+                              ? 'bg-amber-50/50 border-amber-200'
                               : sel.enabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'
                           }`}
                           data-testid={`room-suggestion-${idx}`}
@@ -549,7 +549,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                           {hasWarnings && (
                             <div className="mt-2 ml-7 space-y-0.5">
                               {sel.warnings.map((w, wi) => (
-                                <div key={wi} className="flex items-center gap-1.5 text-[11px] text-orange-600">
+                                <div key={wi} className="flex items-center gap-1.5 text-[11px] text-amber-600">
                                   <AlertTriangle className="w-3 h-3 shrink-0" />
                                   <span>{w}</span>
                                 </div>

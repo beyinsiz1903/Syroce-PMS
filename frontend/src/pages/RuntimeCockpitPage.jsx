@@ -505,7 +505,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Age Distribution</p>
                         <AgeBucket label="< 5 min" count={ageBuckets.lt_5min || 0} color="bg-emerald-500/15 text-emerald-400 border-emerald-500/30" />
                         <AgeBucket label="5-30 min" count={ageBuckets['5_30min'] || 0} color="bg-amber-500/15 text-amber-400 border-amber-500/30" />
-                        <AgeBucket label="30-120 min" count={ageBuckets['30_120min'] || 0} color="bg-orange-500/15 text-orange-400 border-orange-500/30" />
+                        <AgeBucket label="30-120 min" count={ageBuckets['30_120min'] || 0} color="bg-amber-500/15 text-amber-400 border-amber-500/30" />
                         <AgeBucket label="> 2 hours" count={ageBuckets.gt_2h || 0} color="bg-red-500/15 text-red-400 border-red-500/30" />
                       </div>
                       {Object.keys(q.by_provider || {}).length > 0 && (
@@ -552,7 +552,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                 </Section>
 
                 {/* Hard Fail */}
-                <Section title="Hard Fail Gate" icon={Shield} iconColor="text-orange-400" testId="cockpit-hardfail-section">
+                <Section title="Hard Fail Gate" icon={Shield} iconColor="text-amber-400" testId="cockpit-hardfail-section">
                   <MetricPill label="Active Blocks" value={hf.hard_fail_change_sets || 0} alert={hf.hard_fail_change_sets > 0} testId="hf-active" />
                   <MetricPill label="Open Incidents" value={hf.open_hard_fail_incidents || 0} alert={hf.open_hard_fail_incidents > 0} testId="hf-incidents" />
                   <MetricPill label="Blocks (24h)" value={hf.hard_fails_last_24h || 0} testId="hf-24h" />
@@ -765,7 +765,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2 space-y-4">
                 {/* Gate Checks */}
-                <Section title="Gate Kontrolleri" icon={Shield} iconColor="text-orange-400" testId="rollout-gate-section">
+                <Section title="Gate Kontrolleri" icon={Shield} iconColor="text-amber-400" testId="rollout-gate-section">
                   {ro.gate_evaluation?.next_phase ? (
                     <>
                       <div className="flex items-center gap-2 mb-3">

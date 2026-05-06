@@ -496,7 +496,7 @@ function HistoryTab({ campaigns, loading }) {
               <StatBox label="Gönderildi"  value={stats.sent}      sub="" />
               <StatBox label="Ulaştı"      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-blue-600" />
               <StatBox label="Açıldı"      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-green-600" />
-              <StatBox label="Tıklandı"    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-purple-600" />
+              <StatBox label="Tıklandı"    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-indigo-600" />
               <StatBox label="Geri döndü"  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-red-600" />
             </div>
             {stats.sent === 0 && (

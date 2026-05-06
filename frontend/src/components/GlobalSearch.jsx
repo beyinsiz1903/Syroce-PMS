@@ -217,7 +217,7 @@ const GlobalSearch = ({ onSelectResult }) => {
                           setQuery('');
                         }}
                       >
-                        <Home className="w-4 h-4 text-purple-500" />
+                        <Home className="w-4 h-4 text-indigo-500" />
                         <div>
                           <div className="font-medium">Room {room.room_number}</div>
                           <div className="text-xs text-gray-500 capitalize">{room.room_type} - {room.status}</div>

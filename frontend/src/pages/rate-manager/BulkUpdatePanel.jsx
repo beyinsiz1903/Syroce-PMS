@@ -84,7 +84,7 @@ export const BulkUpdatePanel = ({
 
         {/* Action Buttons */}
         <div className="flex gap-2">
-          <Button className="flex-1 bg-orange-600 hover:bg-orange-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
+          <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Save className="w-4 h-4 mr-1.5" />}
             Guncelle
           </Button>
@@ -143,7 +143,7 @@ export const BulkUpdatePanel = ({
 
     {/* Summary Bar */}
     {(totalSelectedRoomTypes > 0 || enabledFields.size > 0) && (
-      <Card className="border-orange-200 bg-orange-50/50 mt-4" data-testid="bulk-summary">
+      <Card className="border-amber-200 bg-amber-50/50 mt-4" data-testid="bulk-summary">
         <CardContent className="py-3 px-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-medium text-gray-700">Özet:</span>
@@ -168,7 +168,7 @@ const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTyp
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); applyToAllSelected(field, value); }}
-      className="text-orange-500 hover:text-orange-700 p-0.5 transition-colors flex-shrink-0"
+      className="text-amber-500 hover:text-amber-700 p-0.5 transition-colors flex-shrink-0"
       title="Tumune uygula"
       data-testid={`apply-all-${field}`}
     >
@@ -209,7 +209,7 @@ const RoomTypeList = ({
 
         return (
           <div key={rt.code} data-testid={`room-type-row-${rt.code}`}>
-            <div className={`grid items-center px-4 py-3 gap-3 transition-colors ${isSelected ? 'bg-orange-50/60' : 'hover:bg-gray-50'}`}
+            <div className={`grid items-center px-4 py-3 gap-3 transition-colors ${isSelected ? 'bg-amber-50/60' : 'hover:bg-gray-50'}`}
               style={{ gridTemplateColumns: colTemplate }}>
               <div className="flex items-center gap-2">
                 <Checkbox checked={isRoomTypeFullySelected(rt.code)} onCheckedChange={() => toggleRoomType(rt.code)} data-testid={`room-type-check-${rt.code}`} />
@@ -228,7 +228,7 @@ const RoomTypeList = ({
                     )}
                   </div>
                   <button onClick={(e) => togglePricingType(rt.code, e)}
-                    className={`text-xs italic cursor-pointer hover:underline transition-colors ${(pricingSettings[rt.code] || 'per_person') === 'per_room' ? 'text-blue-600' : 'text-orange-600'}`}
+                    className={`text-xs italic cursor-pointer hover:underline transition-colors ${(pricingSettings[rt.code] || 'per_person') === 'per_room' ? 'text-blue-600' : 'text-amber-600'}`}
                     data-testid={`pricing-type-toggle-${rt.code}`}>
                     {getPricingLabel(rt.code)}
                   </button>

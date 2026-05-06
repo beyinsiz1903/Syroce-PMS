@@ -316,13 +316,13 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       {/* Data quality banner */}
       {showQualityBanner && (
         <div
-          className="flex items-start gap-3 bg-orange-50 border border-orange-200 text-orange-900 rounded-md px-4 py-3"
+          className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-3"
           data-testid="data-quality-banner"
         >
-          <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0 text-orange-500" />
+          <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0 text-amber-500" />
           <div className="flex-1 text-sm">
             <p className="font-semibold mb-1">{t('rmsModule.data_quality_banner_title')}</p>
-            <p className="text-orange-800/80 mb-2">{t('rmsModule.data_quality_banner_desc')}</p>
+            <p className="text-amber-800/80 mb-2">{t('rmsModule.data_quality_banner_desc')}</p>
             <ul className="list-disc pl-5 space-y-0.5">
               {dqLines.map(line => (
                 <li key={line.key}>{line.text}</li>

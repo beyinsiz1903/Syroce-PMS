@@ -187,7 +187,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                     <div className="text-xs text-gray-600">{t('booking.adults')}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-purple-700">{booking.status?.toUpperCase() || 'N/A'}</div>
+                    <div className="text-2xl font-bold text-indigo-700">{booking.status?.toUpperCase() || 'N/A'}</div>
                     <div className="text-xs text-gray-600">{t('common.status')}</div>
                   </div>
                 </div>

@@ -93,7 +93,7 @@ const GROUP_ICONS = {
 const TIER_CONFIG = {
   basic: { label: 'Basic', icon: Building2, cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   professional: { label: 'Pro', icon: Zap, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-  enterprise: { label: 'Enterprise', icon: Crown, cls: 'bg-purple-100 text-purple-700 border-purple-200' },
+  enterprise: { label: 'Enterprise', icon: Crown, cls: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
 };
 
 const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
@@ -451,7 +451,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   <DropdownMenuItem className="text-sm text-gray-600">
                     <span className="text-gray-500 mr-1">Rol:</span>
                     <span className="font-semibold">{user?.role || '—'}</span>
-                    {isSuperAdmin && <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Super Admin</span>}
+                    {isSuperAdmin && <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Super Admin</span>}
                   </DropdownMenuItem>
                   {!isSuperAdmin && (
                     <DropdownMenuItem className="text-sm text-gray-600">

@@ -28,8 +28,8 @@ const OUTLET_TYPES = [
 ];
 
 const TYPE_COLOR = {
-  restaurant: 'bg-orange-100 text-orange-700',
-  bar: 'bg-purple-100 text-purple-700',
+  restaurant: 'bg-amber-100 text-amber-700',
+  bar: 'bg-indigo-100 text-indigo-700',
   cafe: 'bg-amber-100 text-amber-700',
   spa: 'bg-emerald-100 text-emerald-700',
   room_service: 'bg-blue-100 text-blue-700',
@@ -136,7 +136,7 @@ const POSOutletManagement = ({ onChange }) => {
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="flex items-center gap-2">
-            <Store className="w-5 h-5 text-orange-600" />
+            <Store className="w-5 h-5 text-amber-600" />
             Satış Noktalari ({outlets.length})
           </CardTitle>
           <div className="flex gap-2">
@@ -231,7 +231,7 @@ const POSOutletManagement = ({ onChange }) => {
       <CardContent>
         {loading ? (
           <div className="text-center py-8">
-            <RefreshCw className="w-8 h-8 animate-spin text-orange-600 mx-auto" />
+            <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto" />
           </div>
         ) : outlets.length === 0 ? (
           <div className="text-center py-12 text-gray-500">

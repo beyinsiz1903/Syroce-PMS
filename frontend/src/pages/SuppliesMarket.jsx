@@ -31,7 +31,7 @@ const PAYMENT_LABELS = {
 const STATUS_LABELS = {
   pending: { label: "Onay Bekliyor", color: "bg-yellow-100 text-yellow-800" },
   confirmed: { label: "Onaylandı", color: "bg-blue-100 text-blue-800" },
-  shipped: { label: "Kargoda", color: "bg-purple-100 text-purple-800" },
+  shipped: { label: "Kargoda", color: "bg-indigo-100 text-indigo-800" },
   delivered: { label: "Teslim Edildi", color: "bg-green-100 text-green-800" },
   cancelled: { label: "İptal", color: "bg-red-100 text-red-800" },
 };
@@ -635,7 +635,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       ))}
                     </div>
                     {o.shipment && (
-                      <div className="mt-2 text-xs bg-purple-50 p-2 rounded">
+                      <div className="mt-2 text-xs bg-indigo-50 p-2 rounded">
                         <Truck className="w-3 h-3 inline mr-1" />
                         {o.shipment.carrier} — Takip: <b>{o.shipment.tracking_no}</b>
                         {o.shipment.note && <div className="text-gray-600 mt-1">{o.shipment.note}</div>}
@@ -743,7 +743,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                         setCheckout({ ...checkout, payment_method: "credit_card" })
                       }
                     />
-                    <CreditCard className="w-4 h-4 text-purple-600" />
+                    <CreditCard className="w-4 h-4 text-indigo-600" />
                     <span className="text-sm">Kredi Kartı</span>
                     <span className="text-xs text-gray-400 ml-auto">3D Secure</span>
                   </label>

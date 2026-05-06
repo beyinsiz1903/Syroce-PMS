@@ -86,13 +86,13 @@ const NotificationBell = () => {
       case 'reservation_cancelled':
         return <AlertCircle className="w-5 h-5 text-red-500" />;
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-orange-500" />;
+        return <AlertTriangle className="w-5 h-5 text-amber-500" />;
       case 'success':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'reservation_modified':
         return <Info className="w-5 h-5 text-blue-500" />;
       case 'ops_event':
-        return <AlertTriangle className="w-5 h-5 text-orange-500" />;
+        return <AlertTriangle className="w-5 h-5 text-amber-500" />;
       default:
         return <Info className="w-5 h-5 text-blue-500" />;
     }
@@ -103,7 +103,7 @@ const NotificationBell = () => {
       case 'critical':
         return 'border-l-4 border-red-500 bg-red-50';
       case 'high':
-        return 'border-l-4 border-orange-500 bg-orange-50';
+        return 'border-l-4 border-amber-500 bg-amber-50';
       case 'normal':
         return 'border-l-4 border-blue-500 bg-blue-50';
       case 'low':

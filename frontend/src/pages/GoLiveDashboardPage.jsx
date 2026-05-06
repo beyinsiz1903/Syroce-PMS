@@ -140,7 +140,7 @@ export default function GoLiveDashboardPage() {
 
   const maturityColor = {
     "Foundation": "text-red-400",
-    "Developing": "text-orange-400",
+    "Developing": "text-amber-400",
     "Capable": "text-amber-400",
     "Production Ready": "text-lime-400",
     "Elite": "text-emerald-400",

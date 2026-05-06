@@ -131,7 +131,7 @@ const MobileApprovals = ({ user }) => {
       case 'price_override':
         return <DollarSign className="h-5 w-5 text-green-500" />;
       case 'budget_expense':
-        return <TrendingUp className="h-5 w-5 text-orange-500" />;
+        return <TrendingUp className="h-5 w-5 text-amber-500" />;
       case 'refund':
         return <XCircle className="h-5 w-5 text-red-500" />;
       default:
@@ -162,7 +162,7 @@ const MobileApprovals = ({ user }) => {
       return <Badge variant="destructive" className="animate-pulse">{t('mobileApprovals.priority.urgent')}</Badge>;
     }
     if (priority === 'high') {
-      return <Badge variant="default" className="bg-orange-500">{t('mobileApprovals.priority.high')}</Badge>;
+      return <Badge variant="default" className="bg-amber-500">{t('mobileApprovals.priority.high')}</Badge>;
     }
     return null;
   };
@@ -184,9 +184,9 @@ const MobileApprovals = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-pink-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="h-12 w-12 animate-spin text-purple-600 mx-auto mb-4" />
+          <RefreshCw className="h-12 w-12 animate-spin text-indigo-600 mx-auto mb-4" />
           <p className="text-gray-600">{t('mobileApprovals.loading')}</p>
         </div>
       </div>
@@ -194,9 +194,9 @@ const MobileApprovals = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-pink-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+      <div className="bg-gradient-to-r from-indigo-600 to-pink-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
@@ -204,7 +204,7 @@ const MobileApprovals = ({ user }) => {
             </button>
             <div>
               <h1 className="text-xl font-bold">{t('mobileApprovals.title')}</h1>
-              <p className="text-purple-100 text-sm">{t('mobileApprovals.subtitle')}</p>
+              <p className="text-indigo-100 text-sm">{t('mobileApprovals.subtitle')}</p>
             </div>
           </div>
           
@@ -223,7 +223,7 @@ const MobileApprovals = ({ user }) => {
             onClick={() => setActiveTab('pending')}
             className={`flex-1 py-2 rounded-lg font-semibold transition ${
               activeTab === 'pending' 
-                ? 'bg-white text-purple-600' 
+                ? 'bg-white text-indigo-600' 
                 : 'bg-white/20 text-white'
             }`}
           >
@@ -233,7 +233,7 @@ const MobileApprovals = ({ user }) => {
             onClick={() => setActiveTab('my-requests')}
             className={`flex-1 py-2 rounded-lg font-semibold transition ${
               activeTab === 'my-requests' 
-                ? 'bg-white text-purple-600' 
+                ? 'bg-white text-indigo-600' 
                 : 'bg-white/20 text-white'
             }`}
           >

@@ -48,7 +48,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-orange-600" />
+            <Clock className="w-5 h-5 text-amber-600" />
             {direction === 'early_checkin' ? 'Erken Giriş Ek Ücreti' : 'Geç Çıkış Ek Ücreti'}
           </DialogTitle>
         </DialogHeader>
@@ -64,7 +64,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
           </div>
 
           {calc && (
-            <div className={`border rounded p-3 text-sm ${calc.applicable ? 'bg-orange-50 border-orange-200' : 'bg-emerald-50 border-emerald-200'}`}>
+            <div className={`border rounded p-3 text-sm ${calc.applicable ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
               {calc.applicable ? (
                 <>
                   <div className="font-semibold">{calc.label}</div>
@@ -87,7 +87,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>İptal</Button>
-          <Button onClick={apply} disabled={busy || (!calc?.applicable && !overrideAmount)} className="bg-orange-600 hover:bg-orange-700">
+          <Button onClick={apply} disabled={busy || (!calc?.applicable && !overrideAmount)} className="bg-amber-600 hover:bg-amber-700">
             Folyoya Ekle
           </Button>
         </DialogFooter>

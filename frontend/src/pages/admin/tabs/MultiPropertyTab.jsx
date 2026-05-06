@@ -105,7 +105,7 @@ const MultiPropertyTab = () => {
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">Sync</p><p className="text-sm font-semibold text-white">{p.sync_success_rate}%</p></div>
                   <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">ACK</p><p className="text-sm font-semibold text-white">{p.ack_success_rate}%</p></div>
-                  <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">Retry</p><p className="text-sm font-semibold text-orange-400">{p.retry_rate}%</p></div>
+                  <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">Retry</p><p className="text-sm font-semibold text-amber-400">{p.retry_rate}%</p></div>
                   <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">Issues</p><p className="text-sm font-semibold text-red-400">{p.open_issues}</p></div>
                   <div className="bg-slate-900/50 rounded p-1.5 text-center"><p className="text-[9px] text-slate-500">Failed</p><p className="text-sm font-semibold text-red-400">{p.failed_syncs}</p></div>
                 </div>
@@ -139,7 +139,7 @@ const MultiPropertyTab = () => {
                         <td className="p-2 text-center text-slate-300">{p.connector_count}</td>
                         <td className={`p-2 text-center ${p.sync_success_rate >= 90 ? 'text-emerald-400' : 'text-amber-400'}`}>{p.sync_success_rate}%</td>
                         <td className={`p-2 text-center ${p.ack_success_rate >= 90 ? 'text-emerald-400' : 'text-amber-400'}`}>{p.ack_success_rate}%</td>
-                        <td className={`p-2 text-center ${p.retry_rate <= 10 ? 'text-emerald-400' : 'text-orange-400'}`}>{p.retry_rate}%</td>
+                        <td className={`p-2 text-center ${p.retry_rate <= 10 ? 'text-emerald-400' : 'text-amber-400'}`}>{p.retry_rate}%</td>
                         <td className={`p-2 text-center ${p.open_issues > 0 ? 'text-red-400' : 'text-slate-400'}`}>{p.open_issues}</td>
                       </tr>
                     ))}

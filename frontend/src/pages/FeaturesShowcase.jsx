@@ -30,7 +30,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Sparkles className="w-8 h-8 text-purple-600" />
+              <Sparkles className="w-8 h-8 text-indigo-600" />
               {t('featuresShowcase.title')}
             </h1>
             <p className="text-gray-600 mt-1">
@@ -89,11 +89,11 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
           {/* Menu Items Tab */}
           <TabsContent value="menu" className="mt-6">
             <div className="space-y-4">
-              <Card className="bg-orange-50 border-orange-200">
+              <Card className="bg-amber-50 border-amber-200">
                 <CardContent className="p-4">
                   <div className="flex items-start space-x-3">
-                    <div className="bg-orange-100 p-2 rounded-full">
-                      <Menu className="w-5 h-5 text-orange-600" />
+                    <div className="bg-amber-100 p-2 rounded-full">
+                      <Menu className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-1">📋 {t('featuresShowcase.menuMgmt')}</h4>
@@ -133,11 +133,11 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
           {/* Messaging Tab */}
           <TabsContent value="messaging" className="mt-6">
             <div className="space-y-4">
-              <Card className="bg-purple-50 border-purple-200">
+              <Card className="bg-indigo-50 border-indigo-200">
                 <CardContent className="p-4">
                   <div className="flex items-start space-x-3">
-                    <div className="bg-purple-100 p-2 rounded-full">
-                      <MessageSquare className="w-5 h-5 text-purple-600" />
+                    <div className="bg-indigo-100 p-2 rounded-full">
+                      <MessageSquare className="w-5 h-5 text-indigo-600" />
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-1">💬 {t('featuresShowcase.messagingTitle')}</h4>
@@ -154,7 +154,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
         </Tabs>
 
         {/* Quick Links */}
-        <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+        <Card className="bg-gradient-to-r from-indigo-50 to-pink-50 border-indigo-200">
           <CardHeader>
             <CardTitle>{t('featuresShowcase.otherFeatures')}</CardTitle>
           </CardHeader>

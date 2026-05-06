@@ -27,7 +27,7 @@ const AIEnhancedPMS = () => {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 shadow-lg">
+      <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-6 shadow-lg">
         <h1 className="text-4xl font-bold mb-2">{t('aiEnhancedPms.title')}</h1>
         <p className="text-lg opacity-90">{t('aiEnhancedPms.subtitle')}</p>
       </div>
@@ -41,7 +41,7 @@ const AIEnhancedPMS = () => {
               onClick={() => setActiveModule(module.id)}
               className={`px-6 py-3 rounded-lg font-medium transition-all whitespace-nowrap ${
                 activeModule === module.id
-                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg scale-105'
+                  ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg scale-105'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >

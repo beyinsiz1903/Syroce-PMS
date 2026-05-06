@@ -70,7 +70,7 @@ const POSReports = ({ outletId }) => {
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-orange-600" />
+              <BarChart3 className="w-5 h-5 text-amber-600" />
               Z Raporu / Gun Sonu
             </CardTitle>
             <div className="flex items-end gap-2">
@@ -97,7 +97,7 @@ const POSReports = ({ outletId }) => {
         <CardContent>
           {!report ? (
             <div className="text-center py-12 text-gray-500">
-              <RefreshCw className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-2" />
+              <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto mb-2" />
               <p>Yukleniyor...</p>
             </div>
           ) : (
@@ -112,9 +112,9 @@ const POSReports = ({ outletId }) => {
               </TabsList>
 
               <TabsContent value="summary" className="mt-4 space-y-4">
-                <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-4 rounded-lg border border-orange-200">
+                <div className="bg-gradient-to-r from-amber-50 to-amber-50 p-4 rounded-lg border border-amber-200">
                   <div className="flex items-center gap-2 mb-2">
-                    <Receipt className="w-5 h-5 text-orange-600" />
+                    <Receipt className="w-5 h-5 text-amber-600" />
                     <span className="font-semibold">{report.report_number || 'Z-?'}</span>
                     <Badge variant="outline" className="ml-auto">
                       <Calendar className="w-3 h-3 mr-1" />
@@ -145,9 +145,9 @@ const POSReports = ({ outletId }) => {
                   </Card>
                   <Card>
                     <CardContent className="p-4 text-center">
-                      <Receipt className="w-6 h-6 mx-auto text-purple-600 mb-1" />
+                      <Receipt className="w-6 h-6 mx-auto text-indigo-600 mb-1" />
                       <p className="text-xs text-gray-600">İşlem Sayısı</p>
-                      <p className="text-2xl font-bold text-purple-600">
+                      <p className="text-2xl font-bold text-indigo-600">
                         {report.transaction_count || 0}
                       </p>
                     </CardContent>
@@ -175,7 +175,7 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">İndirim</span>
-                      <span className="font-semibold text-orange-600">{fmt(report.discounts)} TL</span>
+                      <span className="font-semibold text-amber-600">{fmt(report.discounts)} TL</span>
                     </CardContent>
                   </Card>
                 </div>
@@ -222,7 +222,7 @@ const POSReports = ({ outletId }) => {
                           <span className="font-bold">{fmt(amount)} TL</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
+                          <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
                         </div>
                         <p className="text-xs text-gray-500 mt-1">%{pct.toFixed(1)}</p>
                       </div>

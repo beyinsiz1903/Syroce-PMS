@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 const SOURCE_META = {
-  internal: { label: 'Otel İçi', color: 'bg-purple-100 text-purple-700 border-purple-200', icon: Inbox },
+  internal: { label: 'Otel İçi', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', icon: Inbox },
   external: { label: 'Dış Platform', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Globe },
   survey: { label: 'Anket', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: ClipboardList },
   department: { label: 'Departman', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: Building2 },

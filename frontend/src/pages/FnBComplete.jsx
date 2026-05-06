@@ -23,7 +23,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
-              <ChefHat className="w-8 h-8 text-orange-600" />
+              <ChefHat className="w-8 h-8 text-amber-600" />
               {t('fnb.suiteTitle')}
             </h1>
             <p className="text-gray-600 mt-1">{t('fnb.suiteSubtitle')}</p>
@@ -75,10 +75,10 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 <div className="text-center py-8">
-                  <FileText className="w-16 h-16 text-orange-600 mx-auto mb-4" />
+                  <FileText className="w-16 h-16 text-amber-600 mx-auto mb-4" />
                   <p className="text-gray-700 mb-4">{t('fnb.beoAutoCreate')}</p>
                   <Button
-                    className="bg-orange-600"
+                    className="bg-amber-600"
                     onClick={() => navigate('/fnb/beo-generator')}
                   >
                     {t('fnb.createBeo')}
@@ -99,7 +99,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
                     {t('fnb.kitchenDisplayDesc')}
                   </p>
                   <Button
-                    className="bg-orange-600 hover:bg-orange-700"
+                    className="bg-amber-600 hover:bg-amber-700"
                     onClick={() => navigate('/kitchen-display')}
                   >
                     {t('fnb.openFullScreen')}

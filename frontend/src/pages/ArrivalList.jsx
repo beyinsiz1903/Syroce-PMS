@@ -116,7 +116,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   const getVIPBadge = (booking) => {
     // Check if guest is VIP (from tags or vip_status)
     if (booking.vip_status || booking.tags?.includes('vip')) {
-      return <Badge className="bg-purple-600">VIP</Badge>;
+      return <Badge className="bg-indigo-600">VIP</Badge>;
     }
     return null;
   };
@@ -213,7 +213,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
-            <Crown className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+            <Crown className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">
               {arrivals.filter(a => a.vip_status || a.tags?.includes('vip')).length}
             </p>
@@ -231,7 +231,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
-            <Clock className="w-8 h-8 text-orange-600 mx-auto mb-2" />
+            <Clock className="w-8 h-8 text-amber-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">
               {arrivals.filter(a => a.online_checkin_completed).length}
             </p>
@@ -269,7 +269,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                         {(d.vip_count > 0 || d.group_count > 0) && (
                           <div className="flex gap-1 mt-2 flex-wrap">
                             {d.vip_count > 0 && (
-                              <Badge className="bg-purple-600 text-xs px-1.5 py-0">VIP {d.vip_count}</Badge>
+                              <Badge className="bg-indigo-600 text-xs px-1.5 py-0">VIP {d.vip_count}</Badge>
                             )}
                             {d.group_count > 0 && (
                               <Badge className="bg-green-600 text-xs px-1.5 py-0">Grup {d.group_count}</Badge>
@@ -288,7 +288,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
         ) : (
           arrivals.map((booking) => (
             <Card key={booking.id} className={`border-l-4 ${
-              booking.vip_status ? 'border-purple-500 bg-purple-50' :
+              booking.vip_status ? 'border-indigo-500 bg-indigo-50' :
               booking.group_block_id ? 'border-green-500 bg-green-50' :
               'border-blue-500'
             }`}>

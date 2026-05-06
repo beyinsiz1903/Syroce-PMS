@@ -418,7 +418,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
           <DialogContent className="max-w-md" data-testid="hr-connect-dialog">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Network className="w-5 h-5 text-orange-600" />
+                <Network className="w-5 h-5 text-amber-600" />
                 HotelRunner Baglantisi Kur
               </DialogTitle>
               <DialogDescription>
@@ -596,7 +596,7 @@ function ProviderCard({
   const mappings = data?.room_mappings_count || 0;
 
   const colorMap = {
-    hotelrunner: { border: 'border-orange-200', bg: 'bg-orange-50', accent: 'text-orange-600', badge: 'bg-orange-100 text-orange-700' },
+    hotelrunner: { border: 'border-amber-200', bg: 'bg-amber-50', accent: 'text-amber-600', badge: 'bg-amber-100 text-amber-700' },
     exely: { border: 'border-emerald-200', bg: 'bg-emerald-50', accent: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700' },
   };
   const colors = colorMap[provider] || colorMap.hotelrunner;

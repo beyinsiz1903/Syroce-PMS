@@ -134,11 +134,11 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
                           <p className="text-sm text-gray-500">Toplam Gece</p>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">{selectedGuest.lifetime_stats?.total_spent?.toLocaleString('tr-TR')}</div>
+                          <div className="text-2xl font-bold text-indigo-600">{selectedGuest.lifetime_stats?.total_spent?.toLocaleString('tr-TR')}</div>
                           <p className="text-sm text-gray-500">Toplam Harcama</p>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">{selectedGuest.lifetime_stats?.properties_count}</div>
+                          <div className="text-2xl font-bold text-amber-600">{selectedGuest.lifetime_stats?.properties_count}</div>
                           <p className="text-sm text-gray-500">Otel Sayısı</p>
                         </div>
                       </div>

@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import IncidentDrilldownDrawer from '@/components/ops/IncidentDrilldownDrawer';
 import EarlyWarningPanel from '@/components/ops/EarlyWarningPanel';
-import {
 import { alertDialog } from '@/lib/dialogs';
+import {
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -51,8 +51,8 @@ const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', badge, o
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
     red: 'bg-red-50 text-red-700 border-red-200',
-    orange: 'bg-orange-50 text-orange-700 border-orange-200',
-    purple: 'bg-purple-50 text-purple-700 border-purple-200',
+    orange: 'bg-amber-50 text-amber-700 border-amber-200',
+    purple: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     gray: 'bg-gray-50 text-gray-700 border-gray-200',
   };
   return (
@@ -83,7 +83,7 @@ const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', badge, o
 const SeverityBadge = ({ severity }) => {
   const map = {
     critical: 'bg-red-100 text-red-800',
-    warning: 'bg-orange-100 text-orange-800',
+    warning: 'bg-amber-100 text-amber-800',
     info: 'bg-blue-100 text-blue-800',
     success: 'bg-green-100 text-green-800',
   };
@@ -99,11 +99,11 @@ const StatusBadge = ({ status }) => {
     succeeded: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     failed: { color: 'bg-red-100 text-red-800', icon: XCircle },
     dlq: { color: 'bg-red-100 text-red-800', icon: Inbox },
-    retrying: { color: 'bg-orange-100 text-orange-800', icon: RotateCcw },
+    retrying: { color: 'bg-amber-100 text-amber-800', icon: RotateCcw },
     pending: { color: 'bg-gray-100 text-gray-800', icon: Clock },
     delivering: { color: 'bg-blue-100 text-blue-800', icon: Send },
     healthy: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
-    degraded: { color: 'bg-orange-100 text-orange-800', icon: AlertTriangle },
+    degraded: { color: 'bg-amber-100 text-amber-800', icon: AlertTriangle },
     critical: { color: 'bg-red-100 text-red-800', icon: XCircle },
   };
   const s = map[status] || map.pending;
@@ -119,7 +119,7 @@ const StatusBadge = ({ status }) => {
 const HealthScoreBadge = ({ score, size = 'md' }) => {
   const getColor = (s) => {
     if (s >= 80) return 'bg-green-500';
-    if (s >= 50) return 'bg-orange-500';
+    if (s >= 50) return 'bg-amber-500';
     return 'bg-red-500';
   };
   const getLabel = (s) => {
@@ -142,7 +142,7 @@ const HealthScoreBadge = ({ score, size = 'md' }) => {
 const HealthIndicator = ({ health }) => {
   const map = {
     healthy: { color: 'bg-green-500', label: 'Sağlıklı' },
-    degraded: { color: 'bg-orange-500', label: 'Düşük' },
+    degraded: { color: 'bg-amber-500', label: 'Düşük' },
     critical: { color: 'bg-red-500', label: 'Kritik' },
   };
   const h = map[health] || map.healthy;
@@ -158,7 +158,7 @@ const PriorityBadge = ({ priority, label }) => {
   const map = {
     1: 'bg-red-600 text-white',
     2: 'bg-red-500 text-white',
-    3: 'bg-orange-500 text-white',
+    3: 'bg-amber-500 text-white',
     4: 'bg-yellow-500 text-gray-900',
     5: 'bg-green-500 text-white',
   };
@@ -200,7 +200,7 @@ const IncidentCard = ({ incident, onOpenTimeline, onRetry }) => {
   const getBorderColor = () => {
     if (incident.priority === 1) return 'border-red-400 bg-red-50/70';
     if (incident.priority === 2) return 'border-red-300 bg-red-50/50';
-    if (incident.priority === 3) return 'border-orange-300 bg-orange-50/50';
+    if (incident.priority === 3) return 'border-amber-300 bg-amber-50/50';
     if (incident.priority === 4) return 'border-yellow-300 bg-yellow-50/50';
     return 'border-green-300 bg-green-50/50';
   };
@@ -275,7 +275,7 @@ const IncidentCard = ({ incident, onOpenTimeline, onRetry }) => {
 const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
   const getStatusBg = () => {
     if (connector.status === 'critical') return 'border-red-300 bg-red-50';
-    if (connector.status === 'degraded') return 'border-orange-300 bg-orange-50';
+    if (connector.status === 'degraded') return 'border-amber-300 bg-amber-50';
     return 'border-green-300 bg-green-50';
   };
 
@@ -287,7 +287,7 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
             {connector.status === 'healthy' ? (
               <Wifi className="w-5 h-5 text-green-600" />
             ) : connector.status === 'degraded' ? (
-              <Wifi className="w-5 h-5 text-orange-600" />
+              <Wifi className="w-5 h-5 text-amber-600" />
             ) : (
               <WifiOff className="w-5 h-5 text-red-600" />
             )}
@@ -316,13 +316,13 @@ const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
           </div>
           <div className="flex justify-between">
             <span className="text-gray-500">Retry Backlog:</span>
-            <span className={`font-medium ${connector.retry_backlog > 5 ? 'text-orange-600' : 'text-gray-700'}`}>
+            <span className={`font-medium ${connector.retry_backlog > 5 ? 'text-amber-600' : 'text-gray-700'}`}>
               {connector.retry_backlog}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-500">Throttle:</span>
-            <span className={`font-medium ${connector.throttle_active ? 'text-orange-600' : 'text-gray-700'}`}>
+            <span className={`font-medium ${connector.throttle_active ? 'text-amber-600' : 'text-gray-700'}`}>
               {connector.throttle_active ? 'Aktif' : 'Normal'}
             </span>
           </div>
@@ -663,11 +663,11 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
 
             {/* Rate Limit Banner */}
             {rl.is_throttled && (
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 flex items-center gap-3" data-testid="rate-limit-banner">
-                <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0" />
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3" data-testid="rate-limit-banner">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-orange-800">HotelRunner Rate Limit Aktif</p>
-                  <p className="text-xs text-orange-600">
+                  <p className="text-sm font-medium text-amber-800">HotelRunner Rate Limit Aktif</p>
+                  <p className="text-xs text-amber-600">
                     Son 24 saatte {rl.throttle_events_24h} throttle olayı, {rl.rate_limited_pushes_24h} push rate limit'e takıldı.
                     {rl.last_429_at && <> Son 429: <TimeAgo timestamp={rl.last_429_at} /></>}
                   </p>
@@ -679,19 +679,19 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
             {earlyWarningSummary && (earlyWarningSummary.warning_count > 0 || earlyWarningSummary.system_health_indicator === 'critical') && (
               <Card className={`border-l-4 ${
                 earlyWarningSummary.system_health_indicator === 'critical' ? 'border-l-red-500 bg-red-50/50' :
-                earlyWarningSummary.system_health_indicator === 'degraded' ? 'border-l-orange-500 bg-orange-50/50' :
+                earlyWarningSummary.system_health_indicator === 'degraded' ? 'border-l-amber-500 bg-amber-50/50' :
                 'border-l-yellow-500 bg-yellow-50/50'
               }`} data-testid="early-warning-overview-card">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center justify-between">
                     <span className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
                       Erken Uyarı Durumu
                       {earlyWarningSummary.system_health_indicator === 'critical' && (
                         <Badge className="bg-red-500 text-white text-[10px]">Kritik</Badge>
                       )}
                       {earlyWarningSummary.system_health_indicator === 'degraded' && (
-                        <Badge className="bg-orange-500 text-white text-[10px]">Bozulma Riski</Badge>
+                        <Badge className="bg-amber-500 text-white text-[10px]">Bozulma Riski</Badge>
                       )}
                     </span>
                     <Button variant="ghost" size="sm" onClick={() => setActiveTab('early-warning')}>
@@ -706,7 +706,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       <span className="text-sm"><strong>{earlyWarningSummary.critical_count}</strong> kritik</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-orange-500" />
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
                       <span className="text-sm"><strong>{earlyWarningSummary.warning_count_warning}</strong> uyarı</span>
                     </div>
                     {earlyWarningSummary.connectors_at_risk_count > 0 && (
@@ -721,11 +721,11 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       {earlyWarningSummary.top_warnings.slice(0, 2).map((w, i) => (
                         <div key={i} className="flex items-center justify-between bg-white rounded-md p-2 border text-sm">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${w.severity === 'critical' ? 'bg-red-500' : 'bg-orange-500'}`} />
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${w.severity === 'critical' ? 'bg-red-500' : 'bg-amber-500'}`} />
                             <span className="truncate text-gray-700">{w.reason}</span>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${w.confidence >= 80 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${w.confidence >= 80 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                               {w.confidence}%
                             </span>
                             <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveTab('early-warning')}>
@@ -740,7 +740,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                     <div className="flex items-center gap-2 mt-3">
                       <span className="text-xs text-gray-500">Risk altında:</span>
                       {earlyWarningSummary.connectors_at_risk.map((prov) => (
-                        <Badge key={prov} variant="outline" className="bg-orange-50 border-orange-300 text-orange-800 capitalize text-[10px]">
+                        <Badge key={prov} variant="outline" className="bg-amber-50 border-amber-300 text-amber-800 capitalize text-[10px]">
                           {prov}
                         </Badge>
                       ))}
@@ -764,7 +764,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       {healthSummary.healthy || 0}
                     </span>
                     <span className="flex items-center gap-1">
-                      <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                       {healthSummary.degraded || 0}
                     </span>
                     <span className="flex items-center gap-1">
@@ -1077,7 +1077,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-orange-500" />
+                  <Shield className="w-4 h-4 text-amber-500" />
                   HotelRunner Rate Limit Durumu
                 </CardTitle>
               </CardHeader>
@@ -1085,7 +1085,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center p-3 rounded-lg bg-gray-50">
                     <p className="text-xs text-gray-500">Durum</p>
-                    <p className={`text-sm font-bold mt-1 ${rl.is_throttled ? 'text-orange-600' : 'text-green-600'}`}>
+                    <p className={`text-sm font-bold mt-1 ${rl.is_throttled ? 'text-amber-600' : 'text-green-600'}`}>
                       {rl.is_throttled ? 'THROTTLED' : 'NORMAL'}
                     </p>
                   </div>
@@ -1132,7 +1132,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       {healthSummary.healthy || 0} Sağlıklı
                     </span>
                     <span className="flex items-center gap-1">
-                      <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                       {healthSummary.degraded || 0} Düşük
                     </span>
                     <span className="flex items-center gap-1">
@@ -1189,7 +1189,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                         key={ev.id}
                         className={`border rounded-lg p-3 text-xs space-y-1 cursor-pointer hover:shadow-md transition-shadow ${
                           ev.severity === 'critical' ? 'border-red-200 bg-red-50/50' :
-                          ev.severity === 'warning' ? 'border-orange-200 bg-orange-50/50' :
+                          ev.severity === 'warning' ? 'border-amber-200 bg-amber-50/50' :
                           ev.severity === 'success' ? 'border-green-200 bg-green-50/50' :
                           'border-gray-200 bg-gray-50/50'
                         }`}

@@ -146,7 +146,7 @@ const EnhancedFrontDesk = () => {
                       setSelectedGuest(booking);
                       fetchGuestAlerts(booking.guest_id);
                     }}
-                    className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
                   >
                     🔔 {t('frontDeskEnhanced.alerts')}
                   </button>
@@ -180,7 +180,7 @@ const EnhancedFrontDesk = () => {
               {guestAlerts.map((alert, idx) => (
                 <div key={idx} className={`p-4 rounded-lg border-l-4 ${
                   alert.priority === 'urgent' ? 'border-red-500 bg-red-50' :
-                  alert.priority === 'high' ? 'border-orange-500 bg-orange-50' :
+                  alert.priority === 'high' ? 'border-amber-500 bg-amber-50' :
                   'border-blue-500 bg-blue-50'
                 }`}>
                   <div className="flex items-start gap-3">

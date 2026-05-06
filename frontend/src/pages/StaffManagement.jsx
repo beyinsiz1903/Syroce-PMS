@@ -61,7 +61,7 @@ const StaffManagement = () => {
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
-            <TrendingUp className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+            <TrendingUp className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
             <p className="text-2xl font-bold">8.5</p>
             <p className="text-sm text-gray-500">{t('staffMgmt.avgPerformance')}</p>
           </CardContent>

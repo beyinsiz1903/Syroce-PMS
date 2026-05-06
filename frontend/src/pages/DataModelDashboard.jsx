@@ -144,7 +144,7 @@ const SlackConfigPanel = ({ headers }) => {
                 className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
                   slackSeverities.includes(sev)
                     ? sev === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500/40'
-                    : sev === 'high' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40'
+                    : sev === 'high' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                     : sev === 'medium' ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
                     : 'bg-zinc-500/20 text-zinc-400 border-zinc-500/40'
                     : 'bg-zinc-900 text-zinc-600 border-zinc-700'
@@ -789,7 +789,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                         </div>
                         {Object.entries(reconDashboard.severity_counts || {}).map(([sev, count]) => (
                           <div key={sev} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
-                            <p className={`text-2xl font-bold ${sev === 'critical' ? 'text-red-400' : sev === 'high' ? 'text-orange-400' : sev === 'medium' ? 'text-amber-400' : 'text-zinc-400'}`}>{count}</p>
+                            <p className={`text-2xl font-bold ${sev === 'critical' ? 'text-red-400' : sev === 'high' ? 'text-amber-400' : sev === 'medium' ? 'text-amber-400' : 'text-zinc-400'}`}>{count}</p>
                             <p className="text-xs text-zinc-500 capitalize">{sev}</p>
                           </div>
                         ))}
@@ -816,11 +816,11 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                   <CardContent>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                       {[
-                        { label: 'Missing Res.', value: reconMetrics.missing_reservations, color: 'text-orange-400' },
+                        { label: 'Missing Res.', value: reconMetrics.missing_reservations, color: 'text-amber-400' },
                         { label: 'Ghost Res.', value: reconMetrics.ghost_reservations, color: 'text-amber-400' },
                         { label: 'Status Conflict', value: reconMetrics.status_conflicts, color: 'text-red-400' },
                         { label: 'Amount Mismatch', value: reconMetrics.amount_mismatches, color: 'text-yellow-400' },
-                        { label: 'Date Conflict', value: reconMetrics.date_conflicts, color: 'text-orange-400' },
+                        { label: 'Date Conflict', value: reconMetrics.date_conflicts, color: 'text-amber-400' },
                         { label: 'Duplicates', value: reconMetrics.duplicate_reservations, color: 'text-zinc-400' },
                       ].map(m => (
                         <div key={m.label} className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-center">
@@ -922,7 +922,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
                                 <Badge className="bg-zinc-700/50 text-zinc-300 text-xs">{c.case_type?.replace(/_/g, ' ')}</Badge>
                                 <Badge className={`text-xs border ${
                                   c.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
-                                  c.severity === 'high' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                                  c.severity === 'high' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
                                   c.severity === 'medium' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
                                   'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
                                 }`}>{c.severity}</Badge>

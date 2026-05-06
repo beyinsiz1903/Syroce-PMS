@@ -173,7 +173,7 @@ export const DepartmentsSection = ({ s, hk, maint, finance }) => {
           <StatBox label="Devam" value={hk.in_progress || 0} color="blue" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Wrench className="w-4 h-4 text-orange-500" />Teknik Servis</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Wrench className="w-4 h-4 text-amber-500" />Teknik Servis</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Açık" value={maint.open || 0} color="amber" />
           <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />

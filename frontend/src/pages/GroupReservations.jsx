@@ -176,7 +176,7 @@ const GroupReservations = () => {
             <Card key={block.id} className="hover:shadow-lg transition">
               <CardHeader>
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-purple-500" />
+                  <Building2 className="w-5 h-5 text-indigo-500" />
                   <CardTitle className="text-lg">{block.block_name}</CardTitle>
                 </div>
               </CardHeader>

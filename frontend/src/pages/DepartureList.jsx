@@ -109,7 +109,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <AlertCircle className="w-8 h-8 text-orange-600 mx-auto mb-2" />
+              <AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
               <p className="text-2xl font-bold">{withDebt}</p>
               <p className="text-sm text-gray-500">Bakiyeli Çıkış</p>
             </CardContent>
@@ -141,7 +141,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
               return (
                 <Card
                   key={b.id}
-                  className={`border-l-4 ${debt ? 'border-orange-500 bg-orange-50' : 'border-blue-500'}`}
+                  className={`border-l-4 ${debt ? 'border-amber-500 bg-amber-50' : 'border-blue-500'}`}
                 >
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between">
@@ -153,7 +153,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
                           {b.guest_name && (
                             <span className="text-gray-700">{b.guest_name}</span>
                           )}
-                          {debt && <Badge className="bg-orange-600">Bakiyeli</Badge>}
+                          {debt && <Badge className="bg-amber-600">Bakiyeli</Badge>}
                           {b.late_checkout && (
                             <Badge className="bg-amber-600">
                               <Clock className="w-3 h-3 mr-1" /> Geç Çıkış
@@ -175,7 +175,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
                             <p className="text-gray-500">Folio Bakiyesi</p>
                             <p
                               className={`font-semibold ${
-                                debt ? 'text-orange-700' : 'text-emerald-700'
+                                debt ? 'text-amber-700' : 'text-emerald-700'
                               }`}
                             >
                               {fmtTRY(b.balance || 0)}

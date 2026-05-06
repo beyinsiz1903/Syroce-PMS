@@ -111,7 +111,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
             <div className="flex justify-between text-sm"><span>{tm('arrivals')}</span><Badge variant="outline">{todayArrivals}</Badge></div>
             <div className="flex justify-between text-sm"><span>{tm('departures')}</span><Badge variant="outline">{todayDepartures}</Badge></div>
             <div className="flex justify-between text-sm"><span>{tm('inHouse')}</span><Badge>{inhouseGuests}</Badge></div>
-            <div className="flex justify-between text-sm"><span>{tm('vip')}</span><Badge className="bg-purple-100 text-purple-800">{vipGuests}</Badge></div>
+            <div className="flex justify-between text-sm"><span>{tm('vip')}</span><Badge className="bg-indigo-100 text-indigo-800">{vipGuests}</Badge></div>
             <div className="flex justify-between text-sm"><span>{tm('group')}</span><Badge variant="outline">{groupBookings}</Badge></div>
             <div className="flex justify-between text-sm"><span>{tm('walkIn')}</span><Badge variant="outline">{walkIns}</Badge></div>
             <div className="flex justify-between text-sm"><span>{tm('noShow')}</span><Badge variant="destructive">{noShows}</Badge></div>

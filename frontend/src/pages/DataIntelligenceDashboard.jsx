@@ -528,7 +528,7 @@ function GuestTab() {
               { tier: 'platinum', label: 'Platinum', color: 'bg-violet-500', count: valDist.platinum || 0 },
               { tier: 'gold', label: 'Gold', color: 'bg-amber-400', count: valDist.gold || 0 },
               { tier: 'silver', label: 'Silver', color: 'bg-gray-400', count: valDist.silver || 0 },
-              { tier: 'bronze', label: 'Bronze', color: 'bg-orange-300', count: valDist.bronze || 0 },
+              { tier: 'bronze', label: 'Bronze', color: 'bg-amber-300', count: valDist.bronze || 0 },
             ].map(t => (
               <div key={t.tier} className="text-center p-3 rounded-lg bg-muted/50 border">
                 <div className={`w-3 h-3 rounded-full ${t.color} mx-auto mb-2`} />

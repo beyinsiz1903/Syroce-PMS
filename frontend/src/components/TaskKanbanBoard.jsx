@@ -82,7 +82,7 @@ const TaskKanbanBoard = () => {
   const getColumnIcon = (column) => {
     switch (column) {
       case 'new': return <Clock className="w-5 h-5 text-blue-600" />;
-      case 'in_progress': return <PlayCircle className="w-5 h-5 text-orange-600" />;
+      case 'in_progress': return <PlayCircle className="w-5 h-5 text-amber-600" />;
       case 'waiting_parts': return <AlertTriangle className="w-5 h-5 text-yellow-600" />;
       case 'completed': return <CheckCircle className="w-5 h-5 text-green-600" />;
       default: return null;
@@ -239,7 +239,7 @@ const TaskKanbanBoard = () => {
             <span className="font-semibold">Total Tasks: {Object.values(tasks).flat().length}</span>
             <div className="flex gap-4">
               <span className="text-blue-700">New: {tasks.new.length}</span>
-              <span className="text-orange-700">In Progress: {tasks.in_progress.length}</span>
+              <span className="text-amber-700">In Progress: {tasks.in_progress.length}</span>
               <span className="text-yellow-700">Waiting: {tasks.waiting_parts.length}</span>
               <span className="text-green-700">Completed: {tasks.completed.length}</span>
             </div>

@@ -463,11 +463,11 @@ const CashierTab = () => {
                 <p className="text-lg font-bold text-amber-700">{cashOutTotal.toFixed(2)} TL</p>
               </CardContent>
             </Card>
-            <Card className="bg-purple-50 border-purple-200">
+            <Card className="bg-indigo-50 border-indigo-200">
               <CardContent className="p-3">
-                <p className="text-xs text-purple-600">Kredi Kartı</p>
-                <p className="text-lg font-bold text-purple-700">{cardTotal.toFixed(2)} TL</p>
-                <p className="text-[10px] text-purple-500">{cardCount} işlem</p>
+                <p className="text-xs text-indigo-600">Kredi Kartı</p>
+                <p className="text-lg font-bold text-indigo-700">{cardTotal.toFixed(2)} TL</p>
+                <p className="text-[10px] text-indigo-500">{cardCount} işlem</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
@@ -870,9 +870,9 @@ const CashierTab = () => {
 
               {reportData.report_type === 'Z' && reportData.closing_amount != null && (
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 rounded bg-purple-50 border border-purple-200">
-                    <p className="text-[10px] text-purple-600 uppercase">Sayılan Kapanış</p>
-                    <p className="text-base font-bold text-purple-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
+                  <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
+                    <p className="text-[10px] text-indigo-600 uppercase">Sayılan Kapanış</p>
+                    <p className="text-base font-bold text-indigo-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(reportData.difference || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark</p>
@@ -1052,9 +1052,9 @@ const CashierTab = () => {
                     <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
                     <p className="text-base font-bold text-gray-800">{(periodData.totals?.expected_total || 0).toFixed(2)} TL</p>
                   </div>
-                  <div className="p-3 rounded bg-purple-50 border border-purple-200">
-                    <p className="text-[10px] text-purple-600 uppercase">Sayılan</p>
-                    <p className="text-base font-bold text-purple-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
+                  <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
+                    <p className="text-[10px] text-indigo-600 uppercase">Sayılan</p>
+                    <p className="text-base font-bold text-indigo-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark Toplam</p>

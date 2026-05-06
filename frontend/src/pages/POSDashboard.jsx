@@ -84,7 +84,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
-              <UtensilsCrossed className="w-8 h-8 text-orange-600" />
+              <UtensilsCrossed className="w-8 h-8 text-amber-600" />
               {t('posDashboard.title')}
             </h1>
             <p className="text-gray-600 mt-1">{t('posDashboard.subtitle')}</p>
@@ -113,10 +113,10 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
 
         {/* Outlet Selector + Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card className="md:col-span-2 bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
+          <Card className="md:col-span-2 bg-gradient-to-br from-amber-50 to-amber-50 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-2">
-                <Store className="w-4 h-4 text-orange-600" />
+                <Store className="w-4 h-4 text-amber-600" />
                 <span className="text-sm font-semibold">{t('posDashboard.activeOutlet')}</span>
               </div>
               <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
@@ -149,7 +149,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           <Card>
             <CardContent className="p-4 text-center">
               <p className="text-sm text-gray-600 mb-1">{t('posDashboard.outletCount')}</p>
-              <p className="text-3xl font-bold text-orange-600" data-testid="stat-outlets">
+              <p className="text-3xl font-bold text-amber-600" data-testid="stat-outlets">
                 {stats.outlet_count}
               </p>
             </CardContent>

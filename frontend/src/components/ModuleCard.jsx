@@ -23,7 +23,7 @@ const ModuleCard = memo(({ module }) => {
             <Icon style={{ color: module.color }} className="w-6 h-6 md:w-8 md:h-8" />
           </div>
           {module.badge && (
-            <span className="px-2 py-1 text-xs font-semibold text-white bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
+            <span className="px-2 py-1 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full">
               {module.badge}
             </span>
           )}

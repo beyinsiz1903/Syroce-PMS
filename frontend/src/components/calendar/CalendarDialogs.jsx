@@ -78,7 +78,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>İptal</Button>
-            <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white">Rezervasyon Olustur</Button>
+            <Button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white">Rezervasyon Olustur</Button>
           </div>
         </form>
       </DialogContent>

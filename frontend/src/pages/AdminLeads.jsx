@@ -29,7 +29,7 @@ const statusLabel = {
 const STATUS_COLOR = {
   new: "bg-blue-500/10 text-blue-400 border-blue-500/30",
   contacted: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
-  qualified: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+  qualified: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
   won: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   lost: "bg-slate-500/10 text-slate-400 border-slate-500/30",
 };

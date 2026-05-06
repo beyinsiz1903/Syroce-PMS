@@ -269,19 +269,19 @@ export default function CostAnalyticsView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+        <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-purple-600 font-medium">
+                <p className="text-sm text-indigo-600 font-medium">
                   {t('costAnalytics.kpi.dailyAvg')}
                 </p>
-                <p className="text-2xl font-bold text-purple-700 mt-1">{fmtMoney(dailyAvg)}</p>
-                <p className="text-xs text-purple-600 mt-1">
+                <p className="text-2xl font-bold text-indigo-700 mt-1">{fmtMoney(dailyAvg)}</p>
+                <p className="text-xs text-indigo-600 mt-1">
                   {t('costAnalytics.kpi.dailyAvgHint', { days: periodDays })}
                 </p>
               </div>
-              <Calendar className="w-10 h-10 text-purple-300" />
+              <Calendar className="w-10 h-10 text-indigo-300" />
             </div>
           </CardContent>
         </Card>
@@ -322,7 +322,7 @@ export default function CostAnalyticsView() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center text-base">
-              <PieChart className="w-4 h-4 mr-2 text-purple-600" />
+              <PieChart className="w-4 h-4 mr-2 text-indigo-600" />
               {t('costAnalytics.distribution')}
             </CardTitle>
           </CardHeader>

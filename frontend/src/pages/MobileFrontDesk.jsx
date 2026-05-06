@@ -404,7 +404,7 @@ const MobileFrontDesk = ({ user }) => {
           
           <Button
             size="sm"
-            className="h-16 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700 text-white p-1"
+            className="h-16 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700 text-white p-1"
             onClick={() => {
               const departures = todayDepartures.filter(b => b.status === 'checked_in');
               if (departures.length > 0) {
@@ -464,7 +464,7 @@ const MobileFrontDesk = ({ user }) => {
         <div className="grid grid-cols-4 gap-2">
           <Button
             size="sm"
-            className="h-16 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700 text-white p-1"
+            className="h-16 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white p-1"
             onClick={() => setSearchModalOpen(true)}
           >
             <Search className="w-5 h-5 mb-1" />
@@ -525,14 +525,14 @@ const MobileFrontDesk = ({ user }) => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-orange-600 font-medium">BUGÜN ÇIKIŞ</p>
-                  <p className="text-3xl font-bold text-orange-700">{todayDepartures.length}</p>
+                  <p className="text-xs text-amber-600 font-medium">BUGÜN ÇIKIŞ</p>
+                  <p className="text-3xl font-bold text-amber-700">{todayDepartures.length}</p>
                 </div>
-                <XCircle className="w-10 h-10 text-orange-300" />
+                <XCircle className="w-10 h-10 text-amber-300" />
               </div>
             </CardContent>
           </Card>
@@ -549,14 +549,14 @@ const MobileFrontDesk = ({ user }) => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-purple-600 font-medium">BOŞ ODALAR</p>
-                  <p className="text-3xl font-bold text-purple-700">{roomAvailability?.status_counts?.available || 0}</p>
+                  <p className="text-xs text-indigo-600 font-medium">BOŞ ODALAR</p>
+                  <p className="text-3xl font-bold text-indigo-700">{roomAvailability?.status_counts?.available || 0}</p>
                 </div>
-                <Bed className="w-10 h-10 text-purple-300" />
+                <Bed className="w-10 h-10 text-indigo-300" />
               </div>
             </CardContent>
           </Card>
@@ -620,7 +620,7 @@ const MobileFrontDesk = ({ user }) => {
           >
             <CardTitle className="text-lg flex items-center justify-between">
               <div className="flex items-center">
-                <XCircle className="w-5 h-5 mr-2 text-orange-600" />
+                <XCircle className="w-5 h-5 mr-2 text-amber-600" />
                 Bugün Çıkış Yapacaklar ({todayDepartures.length})
               </div>
               {departuresExpanded ? (
@@ -636,7 +636,7 @@ const MobileFrontDesk = ({ user }) => {
                 <p className="text-gray-500 text-center py-4">Bugün çıkış yok</p>
               ) : (
                 todayDepartures.map((booking) => (
-                  <div key={booking.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <div key={booking.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <div className="flex-1">
                       <p className="font-bold text-gray-900">{booking.guest_name || 'Misafir'}</p>
                       <p className="text-sm text-gray-600">Oda {booking.room_number || 'N/A'}</p>
@@ -645,7 +645,7 @@ const MobileFrontDesk = ({ user }) => {
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-2">
-                      <Badge className="bg-orange-500 text-xs">Konaklıyor</Badge>
+                      <Badge className="bg-amber-500 text-xs">Konaklıyor</Badge>
                       <Button
                         size="sm"
                         onClick={() => handleCheckOut(booking.id)}
@@ -682,7 +682,7 @@ const MobileFrontDesk = ({ user }) => {
                 <span className="text-xs">Oda Durumu</span>
               </Button>
               <Button
-                className="h-20 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700"
+                className="h-20 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700"
                 onClick={loadGuestAlerts}
               >
                 <Star className="w-6 h-6 mb-1" />
@@ -696,7 +696,7 @@ const MobileFrontDesk = ({ user }) => {
                 <span className="text-xs">Ücret Hesapla</span>
               </Button>
               <Button
-                className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+                className="h-20 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700"
                 onClick={() => {
                   setRoomFilterModalOpen(true);
                   loadFilteredRooms(roomFilters);
@@ -767,8 +767,8 @@ const MobileFrontDesk = ({ user }) => {
                     'occupied': 'bg-blue-500',
                     'dirty': 'bg-red-500',
                     'cleaning': 'bg-yellow-500',
-                    'inspected': 'bg-purple-500',
-                    'maintenance': 'bg-orange-500'
+                    'inspected': 'bg-indigo-500',
+                    'maintenance': 'bg-amber-500'
                   }[room.status] || 'bg-gray-500'}>
                     {room.status}
                   </Badge>
@@ -989,7 +989,7 @@ const MobileFrontDesk = ({ user }) => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               />
-              <Button onClick={handleSearch} className="bg-purple-600">
+              <Button onClick={handleSearch} className="bg-indigo-600">
                 <Search className="w-4 h-4" />
               </Button>
             </div>
@@ -999,7 +999,7 @@ const MobileFrontDesk = ({ user }) => {
                 <p className="text-center text-gray-500 py-4">Arama yapın veya sonuç bulunamadı</p>
               ) : (
                 searchResults.map(booking => (
-                  <Card key={booking.id} className="border-l-4 border-purple-500">
+                  <Card key={booking.id} className="border-l-4 border-indigo-500">
                     <CardContent className="p-3">
                       <div className="flex justify-between items-start">
                         <div>

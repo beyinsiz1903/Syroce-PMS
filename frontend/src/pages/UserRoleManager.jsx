@@ -72,7 +72,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
 
   const getRoleBadgeColor = (role) => {
     switch(role) {
-      case 'super_admin': return 'bg-purple-600 text-white';
+      case 'super_admin': return 'bg-indigo-600 text-white';
       case 'admin': return 'bg-blue-600 text-white';
       case 'supervisor': return 'bg-green-600 text-white';
       case 'front_desk': return 'bg-yellow-600 text-white';

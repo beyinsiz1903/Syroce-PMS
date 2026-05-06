@@ -56,7 +56,7 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <FileText className="w-6 h-6 text-orange-600" />
+              <FileText className="w-6 h-6 text-amber-600" />
               BEO Generator
             </h1>
             <p className="text-gray-600 mt-1 text-sm">
@@ -148,7 +148,7 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
                   rows={3}
                 />
 
-                <Button type="submit" className="w-full bg-orange-600" disabled={saving}>
+                <Button type="submit" className="w-full bg-amber-600" disabled={saving}>
                   {saving ? 'Kaydediliyor...' : 'BEO Oluştur'}
                 </Button>
               </form>
@@ -168,7 +168,7 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
                     <span>{createdBeo.id}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-orange-600" />
+                    <FileText className="w-4 h-4 text-amber-600" />
                     <span className="font-semibold">{createdBeo.event_name}</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-700">

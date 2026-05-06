@@ -105,7 +105,7 @@ const SimpleAdminPanel = () => {
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-600">{t('adminPanel.memoryUsage')}</span>
-                <Activity className="w-4 h-4 text-purple-600" />
+                <Activity className="w-4 h-4 text-indigo-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
                 {systemStatus?.components?.system?.memory_usage?.toFixed(1) || '0'}%

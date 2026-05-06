@@ -71,12 +71,12 @@ export const RoomBlockViewDialog = ({ open, onClose, selectedRoom, roomBlocks, o
             <div className="text-center text-gray-400 py-8">No blocks for this room</div>
           )}
           {selectedRoom && (roomBlocks || []).filter(b => b.room_id === selectedRoom.id).map((block) => (
-            <Card key={block.id} className={block.status === 'cancelled' ? 'bg-gray-50' : block.type === 'out_of_order' ? 'border-red-400' : block.type === 'out_of_service' ? 'border-orange-400' : 'border-yellow-400'}>
+            <Card key={block.id} className={block.status === 'cancelled' ? 'bg-gray-50' : block.type === 'out_of_order' ? 'border-red-400' : block.type === 'out_of_service' ? 'border-amber-400' : 'border-yellow-400'}>
               <CardContent className="pt-4">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-1 text-xs font-bold rounded ${block.type === 'out_of_order' ? 'bg-red-600 text-white' : block.type === 'out_of_service' ? 'bg-orange-500 text-white' : 'bg-yellow-600 text-white'}`}>
+                      <span className={`px-2 py-1 text-xs font-bold rounded ${block.type === 'out_of_order' ? 'bg-red-600 text-white' : block.type === 'out_of_service' ? 'bg-amber-500 text-white' : 'bg-yellow-600 text-white'}`}>
                         {block.type === 'out_of_order' ? 'OUT OF ORDER' : block.type === 'out_of_service' ? 'OUT OF SERVICE' : 'MAINTENANCE'}
                       </span>
                       <span className={`px-2 py-1 text-xs font-semibold rounded ${block.status === 'active' ? 'bg-green-100 text-green-700' : block.status === 'cancelled' ? 'bg-gray-200 text-gray-600' : 'bg-yellow-100 text-yellow-700'}`}>

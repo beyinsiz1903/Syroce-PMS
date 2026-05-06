@@ -652,7 +652,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Table2 className="w-4 h-4 text-purple-600" />
+                  <Table2 className="w-4 h-4 text-indigo-600" />
                   Sonuçlar
                   <Badge variant="secondary" className="text-xs">{reportData.length} kayıt</Badge>
                 </CardTitle>

@@ -296,8 +296,8 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
                         <div className="flex items-center space-x-2">
                           {msg.channel === 'whatsapp' && <MessageSquare className="w-3 h-3 text-green-600" />}
                           {msg.channel === 'email' && <Mail className="w-3 h-3 text-blue-600" />}
-                          {msg.channel === 'sms' && <Phone className="w-3 h-3 text-purple-600" />}
-                          {msg.channel === 'push' && <Bell className="w-3 h-3 text-orange-600" />}
+                          {msg.channel === 'sms' && <Phone className="w-3 h-3 text-indigo-600" />}
+                          {msg.channel === 'push' && <Bell className="w-3 h-3 text-amber-600" />}
                           <span className="text-xs text-gray-500">{msg.channel}</span>
                         </div>
                         <div className="flex items-center space-x-2">

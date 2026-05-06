@@ -89,7 +89,7 @@ const UpsellStore = ({ bookingId }) => {
         return <Utensils className="w-5 h-5 text-green-500" />;
       case 'spa':
       case 'gym':
-        return <Dumbbell className="w-5 h-5 text-purple-500" />;
+        return <Dumbbell className="w-5 h-5 text-indigo-500" />;
       case 'wifi_upgrade':
         return <Wifi className="w-5 h-5 text-cyan-500" />;
       default:
@@ -158,12 +158,12 @@ const UpsellStore = ({ bookingId }) => {
                     <div>
                       <h3 className="font-bold text-lg">{offer.title}</h3>
                       {(offer.ai_recommended || offer.ai_score) && (
-                        <Badge className="mt-1 bg-purple-100 text-purple-700 hover:bg-purple-100">
+                        <Badge className="mt-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
                           🤖 AI Score: {offer.ai_score ? `${(offer.ai_score * 100).toFixed(0)}%` : 'Recommended'}
                         </Badge>
                       )}
                       {offer.popular && (
-                        <Badge className="mt-1 ml-1 bg-orange-100 text-orange-700 hover:bg-orange-100">
+                        <Badge className="mt-1 ml-1 bg-amber-100 text-amber-700 hover:bg-amber-100">
                           🔥 Popular
                         </Badge>
                       )}
@@ -191,7 +191,7 @@ const UpsellStore = ({ bookingId }) => {
                 )}
 
                 {offer.limited_availability && (
-                  <div className="bg-orange-50 text-orange-700 text-xs p-2 rounded mb-4">
+                  <div className="bg-amber-50 text-amber-700 text-xs p-2 rounded mb-4">
                     ⚡ Limited availability - Only {offer.available_count} left!
                   </div>
                 )}

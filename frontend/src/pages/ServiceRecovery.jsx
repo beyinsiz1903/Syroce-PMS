@@ -19,9 +19,9 @@ import Layout from '@/components/Layout';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const CATEGORIES = [
   { value: 'room', label: 'Oda', color: 'bg-blue-100 text-blue-800' },
-  { value: 'service', label: 'Hizmet', color: 'bg-purple-100 text-purple-800' },
+  { value: 'service', label: 'Hizmet', color: 'bg-indigo-100 text-indigo-800' },
   { value: 'cleanliness', label: 'Temizlik', color: 'bg-green-100 text-green-800' },
-  { value: 'fnb', label: 'F&B', color: 'bg-orange-100 text-orange-800' },
+  { value: 'fnb', label: 'F&B', color: 'bg-amber-100 text-amber-800' },
   { value: 'noise', label: 'Gürültü', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'maintenance', label: 'Bakım', color: 'bg-gray-100 text-gray-800' },
   { value: 'service_recovery', label: 'Geri Bildirim', color: 'bg-pink-100 text-pink-800' },
@@ -30,14 +30,14 @@ const CATEGORIES = [
 const SEVERITIES = [
   { value: 'low', label: 'Düşük', color: 'bg-blue-100 text-blue-800', dot: 'bg-blue-500' },
   { value: 'medium', label: 'Orta', color: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' },
-  { value: 'high', label: 'Yüksek', color: 'bg-orange-100 text-orange-800', dot: 'bg-orange-500' },
+  { value: 'high', label: 'Yüksek', color: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500' },
   { value: 'critical', label: 'Kritik', color: 'bg-red-100 text-red-800', dot: 'bg-red-500' },
 ];
 
 const STATUSES = [
   { value: 'open', label: 'Açık', color: 'bg-red-100 text-red-700', icon: Clock },
   { value: 'in_progress', label: 'İşlemde', color: 'bg-yellow-100 text-yellow-700', icon: ArrowUpCircle },
-  { value: 'escalated', label: 'Eskalasyon', color: 'bg-purple-100 text-purple-700', icon: AlertTriangle },
+  { value: 'escalated', label: 'Eskalasyon', color: 'bg-indigo-100 text-indigo-700', icon: AlertTriangle },
   { value: 'resolved', label: 'Çözüldü', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
 ];
 
@@ -462,7 +462,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             </Button>
             <Button
               variant="outline"
-              className="text-purple-700 border-purple-300 hover:bg-purple-50"
+              className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
               onClick={handleAutoEscalate}
               disabled={!stats.overdue}
               title={stats.overdue ? `${stats.overdue} şikayet SLA süresini aştı` : 'SLA aşan şikayet yok'}
@@ -482,7 +482,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             { label: 'Toplam', value: stats.total || 0, icon: MessageSquare, color: 'text-gray-600', bg: 'bg-gray-50' },
             { label: 'Açık', value: stats.open || 0, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'İşlemde', value: stats.in_progress || 0, icon: ArrowUpCircle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-            { label: 'Eskalasyon', value: stats.escalated || 0, icon: AlertTriangle, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { label: 'Eskalasyon', value: stats.escalated || 0, icon: AlertTriangle, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Çözüldü', value: stats.resolved || 0, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50' },
             { label: 'SLA Aşan', value: stats.overdue || 0, icon: BellRing, color: 'text-red-700', bg: 'bg-red-50' },
           ].map((s, i) => (
@@ -567,7 +567,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   className={`cursor-pointer hover:shadow-md transition-shadow border-l-4 ${
                     complaint.is_overdue ? 'border-l-red-600 bg-red-50/30' :
                     complaint.severity === 'critical' ? 'border-l-red-500' :
-                    complaint.severity === 'high' ? 'border-l-orange-500' :
+                    complaint.severity === 'high' ? 'border-l-amber-500' :
                     complaint.severity === 'medium' ? 'border-l-yellow-500' :
                     'border-l-blue-400'
                   }`}
@@ -582,7 +582,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                             {statusBadge.label}
                           </span>
                           {complaint.source === 'guest_qr' && (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-100 text-purple-700">
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-100 text-indigo-700">
                               Misafir QR
                             </span>
                           )}
@@ -750,7 +750,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                     {getBadge(CATEGORIES, selectedComplaint.category).label}
                   </span>
                   {selectedComplaint.source === 'guest_qr' && (
-                    <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
                       Misafir QR ile geldi
                     </span>
                   )}
@@ -772,8 +772,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                     <Label className="text-xs text-blue-600 flex items-center gap-1"><User className="w-3 h-3" /> Misafir</Label>
                     <p className="font-medium text-sm mt-1">{selectedComplaint.guest_name || '-'}</p>
                   </div>
-                  <div className="bg-purple-50 p-3 rounded">
-                    <Label className="text-xs text-purple-600 flex items-center gap-1"><DoorOpen className="w-3 h-3" /> Oda</Label>
+                  <div className="bg-indigo-50 p-3 rounded">
+                    <Label className="text-xs text-indigo-600 flex items-center gap-1"><DoorOpen className="w-3 h-3" /> Oda</Label>
                     <p className="font-medium text-sm mt-1">
                       {selectedComplaint.room_number ? `${selectedComplaint.room_number} (${selectedComplaint.room_type || ''})` : '-'}
                     </p>
@@ -792,19 +792,19 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </div>
 
                 {selectedComplaint.status === 'escalated' && (
-                  <div className="bg-purple-50 border border-purple-200 p-3 rounded space-y-1">
-                    <Label className="text-xs text-purple-700 font-semibold flex items-center gap-1">
+                  <div className="bg-indigo-50 border border-indigo-200 p-3 rounded space-y-1">
+                    <Label className="text-xs text-indigo-700 font-semibold flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" /> Eskalasyon Bilgileri
                     </Label>
-                    <p className="text-sm text-purple-800">
+                    <p className="text-sm text-indigo-800">
                       <strong>Havale edilen:</strong>{' '}
                       {(ESCALATION_TARGETS.find(t => t.value === selectedComplaint.escalated_to) || {}).label || selectedComplaint.escalated_to}
                     </p>
                     {selectedComplaint.escalation_notes && (
-                      <p className="text-sm text-purple-800"><strong>Not:</strong> {selectedComplaint.escalation_notes}</p>
+                      <p className="text-sm text-indigo-800"><strong>Not:</strong> {selectedComplaint.escalation_notes}</p>
                     )}
                     {selectedComplaint.escalated_at && (
-                      <p className="text-xs text-purple-600">{formatDate(selectedComplaint.escalated_at)}</p>
+                      <p className="text-xs text-indigo-600">{formatDate(selectedComplaint.escalated_at)}</p>
                     )}
                   </div>
                 )}
@@ -837,7 +837,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                             <span className="font-medium text-gray-800">{HISTORY_ACTION_LABEL[h.action] || h.action}</span>
                             {h.actor_name && <span className="text-gray-500"> — {h.actor_name}</span>}
                             {h.escalated_to && (
-                              <span className="text-purple-600">
+                              <span className="text-indigo-600">
                                 {' '}→ {(ESCALATION_TARGETS.find(t => t.value === h.escalated_to) || {}).label || h.escalated_to}
                               </span>
                             )}
@@ -870,7 +870,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="text-purple-700 border-purple-300 hover:bg-purple-50"
+                          className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
                           onClick={openEscalateDialog}
                         >
                           <AlertTriangle className="w-3 h-3 mr-1" /> Eskalasyon
@@ -880,7 +880,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                          className="text-amber-700 border-amber-300 hover:bg-amber-50"
                           onClick={handleDeEscalate}
                         >
                           <ArrowDownCircle className="w-3 h-3 mr-1" /> Geri Al
@@ -937,7 +937,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 />
               </div>
               <Button
-                className="w-full bg-purple-600 hover:bg-purple-700"
+                className="w-full bg-indigo-600 hover:bg-indigo-700"
                 onClick={handleEscalateSubmit}
                 disabled={submitting}
               >

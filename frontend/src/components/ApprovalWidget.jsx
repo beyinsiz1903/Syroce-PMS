@@ -92,7 +92,7 @@ const ApprovalWidget = ({ userRole }) => {
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'critical': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
+      case 'high': return 'bg-amber-500';
       case 'normal': return 'bg-blue-500';
       case 'low': return 'bg-gray-500';
       default: return 'bg-gray-500';
@@ -113,7 +113,7 @@ const ApprovalWidget = ({ userRole }) => {
               Onay Bekleyenler
             </span>
             {pendingApprovals.length > 0 && (
-              <Badge className="bg-orange-500">{pendingApprovals.length}</Badge>
+              <Badge className="bg-amber-500">{pendingApprovals.length}</Badge>
             )}
           </CardTitle>
         </CardHeader>
@@ -126,7 +126,7 @@ const ApprovalWidget = ({ userRole }) => {
                 pendingApprovals.slice(0, 5).map((approval) => (
                   <div
                     key={approval.id}
-                    className="p-3 bg-orange-50 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-100"
+                    className="p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100"
                     onClick={() => {
                       setSelectedApproval(approval);
                       setDetailsOpen(true);
@@ -168,7 +168,7 @@ const ApprovalWidget = ({ userRole }) => {
                       </div>
                       <Badge className={
                         request.status === 'approved' ? 'bg-green-500' :
-                        request.status === 'rejected' ? 'bg-red-500' : 'bg-orange-500'
+                        request.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'
                       }>
                         {request.status === 'approved' ? 'Onaylandı' :
                          request.status === 'rejected' ? 'Reddedildi' : 'Bekliyor'}

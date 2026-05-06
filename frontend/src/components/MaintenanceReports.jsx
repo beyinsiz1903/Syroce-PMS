@@ -150,13 +150,13 @@ const MaintenanceReports = () => {
               <div className="text-xs text-gray-600">Tamamlanan</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-orange-600">
+              <div className="text-3xl font-bold text-amber-600">
                 {report.summary.completion_rate}%
               </div>
               <div className="text-xs text-gray-600">Tamamlanma</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-purple-600">
+              <div className="text-3xl font-bold text-indigo-600">
                 {report.summary.sla_compliance}%
               </div>
               <div className="text-xs text-gray-600">SLA Uyum</div>
@@ -294,7 +294,7 @@ const MaintenanceReports = () => {
               {monthlyReport.most_active_rooms.slice(0, 5).map((room, index) => (
                 <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm font-medium">{room.room}</span>
-                  <Badge className="bg-orange-500">{room.tasks} görev</Badge>
+                  <Badge className="bg-amber-500">{room.tasks} görev</Badge>
                 </div>
               ))}
             </div>

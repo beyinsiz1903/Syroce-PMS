@@ -253,7 +253,7 @@ const MobileFinance = ({ user }) => {
 
   const getRiskIcon = (severity) => {
     if (severity === 'critical') return <XCircle className="w-5 h-5 text-red-600" />;
-    if (severity === 'high') return <AlertTriangle className="w-5 h-5 text-orange-600" />;
+    if (severity === 'high') return <AlertTriangle className="w-5 h-5 text-amber-600" />;
     if (severity === 'medium') return <AlertCircle className="w-5 h-5 text-yellow-600" />;
     return <AlertCircle className="w-5 h-5 text-blue-600" />;
   };
@@ -378,7 +378,7 @@ const MobileFinance = ({ user }) => {
       <div className="p-4 space-y-4">
         {/* Notifications */}
         {notifications.length > 0 && (
-          <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-200">
+          <Card className="bg-gradient-to-r from-red-50 to-amber-50 border-red-200">
             <CardContent className="p-3">
               <div className="flex items-start space-x-2">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -431,33 +431,33 @@ const MobileFinance = ({ user }) => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-orange-600 font-medium">BEKLEYEN ALACAK</p>
-                  <p className="text-2xl font-bold text-orange-700">
+                  <p className="text-xs text-amber-600 font-medium">BEKLEYEN ALACAK</p>
+                  <p className="text-2xl font-bold text-amber-700">
                     {formatCurrency(pendingReceivables?.total_pending || 0)}
                   </p>
-                  <p className="text-xs text-orange-600 mt-1">
+                  <p className="text-xs text-amber-600 mt-1">
                     {pendingReceivables?.receivables_count || 0} fatura
                   </p>
                 </div>
-                <Receipt className="w-10 h-10 text-orange-300" />
+                <Receipt className="w-10 h-10 text-amber-300" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-purple-600 font-medium">AYIN MALİYETİ</p>
-                  <p className="text-2xl font-bold text-purple-700">
+                  <p className="text-xs text-indigo-600 font-medium">AYIN MALİYETİ</p>
+                  <p className="text-2xl font-bold text-indigo-700">
                     {formatCurrency(monthlyCosts?.total_costs || 0)}
                   </p>
                 </div>
-                <Calendar className="w-10 h-10 text-purple-300" />
+                <Calendar className="w-10 h-10 text-indigo-300" />
               </div>
             </CardContent>
           </Card>
@@ -468,7 +468,7 @@ const MobileFinance = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <Receipt className="w-5 h-5 mr-2 text-orange-600" />
+                <Receipt className="w-5 h-5 mr-2 text-amber-600" />
                 Bekleyen Alacaklar ({pendingReceivables.receivables_count})
               </CardTitle>
             </CardHeader>
@@ -488,7 +488,7 @@ const MobileFinance = ({ user }) => {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-orange-700">{formatCurrency(receivable.balance)}</p>
+                    <p className="font-bold text-amber-700">{formatCurrency(receivable.balance)}</p>
                     <Button
                       size="sm"
                       onClick={() => {
@@ -533,7 +533,7 @@ const MobileFinance = ({ user }) => {
 
         {/* Risk Alerts - NEW */}
         {riskAlerts && riskAlerts.alerts && riskAlerts.alerts.length > 0 && (
-          <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-300">
+          <Card className="bg-gradient-to-r from-red-50 to-amber-50 border-red-300">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center justify-between">
                 <div className="flex items-center">
@@ -629,7 +629,7 @@ const MobileFinance = ({ user }) => {
 
         {/* Bank Balances - NEW */}
         {bankBalances && bankBalances.bank_accounts && bankBalances.bank_accounts.length > 0 && (
-          <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-50 border-indigo-200">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
                 <Building2 className="w-5 h-5 mr-2 text-indigo-600" />
@@ -716,7 +716,7 @@ const MobileFinance = ({ user }) => {
           </Button>
           
           <Button
-            className="h-20 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700"
+            className="h-20 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700"
             onClick={loadEnhancedInvoices}
           >
             <Receipt className="w-6 h-6 mb-1" />
@@ -740,7 +740,7 @@ const MobileFinance = ({ user }) => {
           </Button>
           
           <Button
-            className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+            className="h-20 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700"
             onClick={loadCashierShiftReport}
           >
             <User className="w-6 h-6 mb-1" />

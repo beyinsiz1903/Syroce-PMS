@@ -83,7 +83,7 @@ const LostFoundWorkflow = () => {
     switch (status) {
       case 'found': return 'bg-blue-500';
       case 'claimed': return 'bg-green-500';
-      case 'expired': return 'bg-orange-500';
+      case 'expired': return 'bg-amber-500';
       case 'disposed': return 'bg-gray-500';
       default: return 'bg-gray-400';
     }

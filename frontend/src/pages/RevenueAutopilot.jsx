@@ -55,7 +55,7 @@ const RevenueAutopilot = () => {
     <div className="p-6">
       <div className="mb-8">
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-purple-50">
+          <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-indigo-50">
             <Home className="w-5 h-5" />
           </Button>
           <div>
@@ -67,10 +67,10 @@ const RevenueAutopilot = () => {
 
       {/* Status Card */}
       {status && (
-        <Card className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200">
+        <Card className="mb-6 bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Zap className="w-6 h-6 text-purple-600" />
+              <Zap className="w-6 h-6 text-indigo-600" />
               Autopilot Status
             </CardTitle>
           </CardHeader>
@@ -97,10 +97,10 @@ const RevenueAutopilot = () => {
       <div className="grid grid-cols-3 gap-4 mb-6">
         <Card className="cursor-pointer hover:shadow-lg" onClick={() => setMode('full_auto')}>
           <CardContent className="pt-6 text-center">
-            <Zap className="w-12 h-12 text-purple-600 mx-auto mb-2" />
+            <Zap className="w-12 h-12 text-indigo-600 mx-auto mb-2" />
             <p className="font-bold">Full Auto</p>
             <p className="text-xs text-gray-600 mt-2">AI her şeyi yapar</p>
-            {status?.mode === 'full_auto' && <Badge className="mt-2 bg-purple-600">Active</Badge>}
+            {status?.mode === 'full_auto' && <Badge className="mt-2 bg-indigo-600">Active</Badge>}
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-lg" onClick={() => setMode('supervised')}>
@@ -127,7 +127,7 @@ const RevenueAutopilot = () => {
           <CardTitle>Manuel Optimization Cycle</CardTitle>
         </CardHeader>
         <CardContent>
-          <Button className="w-full bg-purple-600 hover:bg-purple-700" onClick={runCycle} disabled={loading}>
+          <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={runCycle} disabled={loading}>
             <PlayCircle className="w-5 h-5 mr-2" />
             {loading ? 'Çalıştırılıyor...' : 'Optimization Cycle Başlat'}
           </Button>

@@ -59,7 +59,7 @@ const PredictiveAnalytics = () => {
             variant="outline" 
             size="icon"
             onClick={() => navigate('/')}
-            className="hover:bg-purple-50"
+            className="hover:bg-indigo-50"
           >
             <Home className="w-5 h-5" />
           </Button>
@@ -126,7 +126,7 @@ const PredictiveAnalytics = () => {
           ) : (
             <div className="space-y-3">
               {noShowPredictions.map((pred, idx) => (
-                <div key={idx} className="p-4 bg-gray-50 rounded-lg border-l-4 border-orange-500">
+                <div key={idx} className="p-4 bg-gray-50 rounded-lg border-l-4 border-amber-500">
                   <div className="flex items-center justify-between mb-2">
                     <div>
                       <p className="font-bold">Booking #{pred.booking_id.substring(0, 8).toUpperCase()}</p>
@@ -135,7 +135,7 @@ const PredictiveAnalytics = () => {
                     <RiskBadge level={pred.risk_level} />
                   </div>
                   <div className="mt-3">
-                    <p className="text-sm font-semibold text-orange-600">
+                    <p className="text-sm font-semibold text-amber-600">
                       🎯 {pred.recommended_action}
                     </p>
                     <div className="flex flex-wrap gap-1 mt-2">
@@ -165,7 +165,7 @@ const PredictiveAnalytics = () => {
                 key={idx} 
                 className={`p-3 rounded-lg text-center ${
                   forecast.demand_level === 'very_high' ? 'bg-red-100' :
-                  forecast.demand_level === 'high' ? 'bg-orange-100' :
+                  forecast.demand_level === 'high' ? 'bg-amber-100' :
                   forecast.demand_level === 'medium' ? 'bg-yellow-100' :
                   'bg-green-100'
                 }`}

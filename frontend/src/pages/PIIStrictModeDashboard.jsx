@@ -148,7 +148,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
             color="blue"
           />
           <StatCard
-            icon={<Users className="w-5 h-5 text-purple-400" />}
+            icon={<Users className="w-5 h-5 text-indigo-400" />}
             label="Etkilenen Kullanici"
             value={summary?.unique_users ?? 0}
             color="purple"
@@ -362,7 +362,7 @@ function StatCard({ icon, label, value, color }) {
     red: "text-red-400",
     emerald: "text-emerald-400",
     blue: "text-blue-400",
-    purple: "text-purple-400",
+    purple: "text-indigo-400",
     amber: "text-amber-400",
   };
   return (

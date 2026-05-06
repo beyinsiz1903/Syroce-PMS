@@ -122,7 +122,7 @@ const OnlineCheckin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
@@ -483,10 +483,10 @@ const OnlineCheckin = () => {
         {/* Step 3: Upsell Offers */}
         {step === 3 && upsellOffers.length > 0 && (
           <div className="space-y-4">
-            <Card className="bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+            <Card className="bg-gradient-to-r from-indigo-50 to-blue-50 border-indigo-200">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-6 h-6 text-purple-600" />
+                  <Sparkles className="w-6 h-6 text-indigo-600" />
                   Özel Teklifler - Sadece Sizin İçin!
                 </CardTitle>
                 <CardDescription>
@@ -496,7 +496,7 @@ const OnlineCheckin = () => {
             </Card>
 
             {upsellOffers.map((offer) => (
-              <Card key={offer.id} className="border-2 hover:border-purple-300 transition-colors">
+              <Card key={offer.id} className="border-2 hover:border-indigo-300 transition-colors">
                 <CardContent className="pt-6">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
@@ -511,7 +511,7 @@ const OnlineCheckin = () => {
                           <div className="text-sm text-gray-400 line-through">
                             €{offer.original_price}
                           </div>
-                          <div className="text-2xl font-bold text-purple-600">
+                          <div className="text-2xl font-bold text-indigo-600">
                             €{offer.discounted_price}
                           </div>
                           <div className="text-xs text-green-600 font-semibold">
@@ -525,7 +525,7 @@ const OnlineCheckin = () => {
                   <div className="flex gap-3">
                     <Button
                       onClick={() => handleUpsellAction(offer.id, 'accept')}
-                      className="flex-1 bg-purple-600 hover:bg-purple-700"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                     >
                       ✨ Kabul Et
                     </Button>
@@ -565,7 +565,7 @@ const OnlineCheckin = () => {
               
               <div className="bg-white rounded-lg p-6 max-w-md mx-auto mb-6">
                 <p className="text-sm text-gray-600 mb-2">Express Check-in Kodunuz:</p>
-                <div className="text-4xl font-bold text-purple-600 tracking-wider">
+                <div className="text-4xl font-bold text-indigo-600 tracking-wider">
                   ••••••
                 </div>
                 <p className="text-xs text-gray-500 mt-2">

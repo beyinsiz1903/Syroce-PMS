@@ -41,7 +41,7 @@ const StaffAssignment = () => {
   };
 
   const getShiftColor = (shift) => {
-    return shift === 'morning' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
+    return shift === 'morning' ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700';
   };
 
   const getEfficiencyColor = (efficiency) => {
@@ -89,14 +89,14 @@ const StaffAssignment = () => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-purple-600 font-medium">Avg Efficiency</p>
-                  <p className="text-3xl font-bold text-purple-700">{stats.avgEfficiency}%</p>
+                  <p className="text-sm text-indigo-600 font-medium">Avg Efficiency</p>
+                  <p className="text-3xl font-bold text-indigo-700">{stats.avgEfficiency}%</p>
                 </div>
-                <TrendingUp className="w-10 h-10 text-purple-300" />
+                <TrendingUp className="w-10 h-10 text-indigo-300" />
               </div>
             </CardContent>
           </Card>

@@ -80,11 +80,11 @@ const POSTab = () => {
             <p className="text-2xl font-bold text-blue-700">{summary.transaction_count || 0}</p>
           </CardContent>
         </Card>
-        <Card className="bg-purple-50 border-purple-200">
+        <Card className="bg-indigo-50 border-indigo-200">
           <CardContent className="p-5 text-center">
-            <TrendingUp className="w-6 h-6 mx-auto mb-1 text-purple-600" />
-            <p className="text-xs text-purple-600">{tc('avgTransaction')}</p>
-            <p className="text-2xl font-bold text-purple-700">{fmt(summary.average_transaction, i18n.language)} {cur}</p>
+            <TrendingUp className="w-6 h-6 mx-auto mb-1 text-indigo-600" />
+            <p className="text-xs text-indigo-600">{tc('avgTransaction')}</p>
+            <p className="text-2xl font-bold text-indigo-700">{fmt(summary.average_transaction, i18n.language)} {cur}</p>
           </CardContent>
         </Card>
       </div>

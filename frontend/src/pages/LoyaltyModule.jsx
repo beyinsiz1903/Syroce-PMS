@@ -86,19 +86,19 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
 
   const getTierColor = (tier) => {
     switch(tier) {
-      case 'platinum': return 'from-purple-500 to-purple-700';
+      case 'platinum': return 'from-indigo-500 to-indigo-700';
       case 'gold': return 'from-yellow-400 to-yellow-600';
       case 'silver': return 'from-gray-300 to-gray-500';
-      default: return 'from-orange-400 to-orange-600';
+      default: return 'from-amber-400 to-amber-600';
     }
   };
 
   const getTierBadgeColor = (tier) => {
     switch(tier) {
-      case 'platinum': return 'bg-purple-100 text-purple-700 border-purple-300';
+      case 'platinum': return 'bg-indigo-100 text-indigo-700 border-indigo-300';
       case 'gold': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
       case 'silver': return 'bg-gray-100 text-gray-700 border-gray-300';
-      default: return 'bg-orange-100 text-orange-700 border-orange-300';
+      default: return 'bg-amber-100 text-amber-700 border-amber-300';
     }
   };
 
@@ -256,7 +256,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
                   <CardTitle className="text-sm text-gray-600">Lifetime Points</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-purple-600">{getTotalLifetimePoints().toLocaleString()}</div>
+                  <div className="text-3xl font-bold text-indigo-600">{getTotalLifetimePoints().toLocaleString()}</div>
                   <p className="text-xs text-gray-500">All-time earned</p>
                 </CardContent>
               </Card>
@@ -456,7 +456,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
                   </Card>
                   <Card>
                     <CardContent className="pt-6">
-                      <div className="text-3xl font-bold text-purple-600">{(selectedProgram?.lifetime_points || 0).toLocaleString()}</div>
+                      <div className="text-3xl font-bold text-indigo-600">{(selectedProgram?.lifetime_points || 0).toLocaleString()}</div>
                       <div className="text-sm text-gray-600">Lifetime Points</div>
                     </CardContent>
                   </Card>

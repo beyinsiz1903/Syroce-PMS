@@ -412,7 +412,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <CardTitle className="text-lg">{item.name}</CardTitle>
                         <div className="text-sm text-gray-600 capitalize">{item.category}</div>
                       </div>
-                      {item.quantity <= item.reorder_level && <AlertCircle className="w-5 h-5 text-orange-500" />}
+                      {item.quantity <= item.reorder_level && <AlertCircle className="w-5 h-5 text-amber-500" />}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
@@ -420,7 +420,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
                     <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost)}</span></div>
                     <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0))}</span></div>
-                    {item.quantity <= item.reorder_level && <div className="text-xs text-orange-600 font-medium">{t('invoice.labels.lowStock')}</div>}
+                    {item.quantity <= item.reorder_level && <div className="text-xs text-amber-600 font-medium">{t('invoice.labels.lowStock')}</div>}
                   </CardContent>
                 </Card>
               ))}

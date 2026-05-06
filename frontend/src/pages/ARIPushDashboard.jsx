@@ -22,7 +22,7 @@ const StatusBadge = ({ status }) => {
     queued: { color: 'bg-blue-500/15 text-blue-400 border-blue-500/30', label: 'Queued' },
     pushed: { color: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30', label: 'Pushed' },
     acked: { color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: 'Acked' },
-    failed_retryable: { color: 'bg-orange-500/15 text-orange-400 border-orange-500/30', label: 'Retry' },
+    failed_retryable: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', label: 'Retry' },
     manual_review: { color: 'bg-red-500/15 text-red-400 border-red-500/30', label: 'Failed' },
     skipped: { color: 'bg-gray-100 text-gray-600 border-gray-300', label: 'Skipped' },
   };
@@ -166,7 +166,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
           <MetricCard testId="metric-pending" title="Pending" value={stats?.pending_changes ?? 0} icon={Clock} color="bg-amber-500/15 text-amber-400" />
           <MetricCard testId="metric-acked" title="Acked" value={stats?.acked_changes ?? 0} icon={CheckCircle} color="bg-emerald-500/15 text-emerald-400" />
           <MetricCard testId="metric-failed" title="Failed" value={stats?.failed_changes ?? 0} icon={XCircle} color="bg-red-500/15 text-red-400" />
-          <MetricCard testId="metric-drift" title="Drift" value={stats?.drift_count ?? 0} icon={AlertTriangle} color="bg-orange-500/15 text-orange-400" />
+          <MetricCard testId="metric-drift" title="Drift" value={stats?.drift_count ?? 0} icon={AlertTriangle} color="bg-amber-500/15 text-amber-400" />
           <MetricCard testId="metric-outbound" title="Outbound" value={stats?.total_outbound_pushes ?? 0} icon={ArrowUpDown} color="bg-violet-500/15 text-violet-400" />
         </div>
 
@@ -195,7 +195,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                       data-testid="drift-mode-badge"
                       className={`text-xs cursor-pointer transition-colors ${
                         driftMode.mode === 'recovery'
-                          ? 'bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25'
+                          ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
                           : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
                       }`}
                       onClick={toggleDriftMode}
@@ -231,7 +231,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                       <p className="text-[10px] text-gray-600">Error Rate</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-orange-400">{h.retry_rate}%</p>
+                      <p className="text-lg font-bold text-amber-400">{h.retry_rate}%</p>
                       <p className="text-[10px] text-gray-600">Retry Rate</p>
                     </div>
                   </div>
@@ -281,7 +281,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
                       <p className="text-[10px] text-gray-600">Queue Depth</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-orange-400">{opMetrics.queue.retry_backlog}</p>
+                      <p className="text-lg font-bold text-amber-400">{opMetrics.queue.retry_backlog}</p>
                       <p className="text-[10px] text-gray-600">Retry Backlog</p>
                     </div>
                     <div>

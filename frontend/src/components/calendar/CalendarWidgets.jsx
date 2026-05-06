@@ -70,7 +70,7 @@ export function OccupancyChart({ dateRange, bookings, rooms, isBookingOnDate, is
 export function CalendarLegend() {
   return (
     <div className="flex items-center gap-4 text-xs text-gray-500" data-testid="calendar-legend">
-      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-orange-400" /> Expedia</div>
+      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-amber-400" /> Expedia</div>
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-500" /> Tatilbudur/Online</div>
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-600" /> Booking.com</div>
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-gray-600" /> Kesin</div>
@@ -100,7 +100,7 @@ export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
           <div className="text-xs text-gray-500 font-medium">Doluluk</div>
-          <div className="text-lg font-bold text-orange-600">{occupancyPct}%</div>
+          <div className="text-lg font-bold text-amber-600">{occupancyPct}%</div>
         </CardContent>
       </Card>
       <Card className="bg-white border shadow-sm">

@@ -21,13 +21,13 @@ const DEPT_KEYS = ['engineering', 'housekeeping', 'maintenance', 'frontdesk', 'f
 const PRIORITY_KEYS = ['urgent', 'high', 'normal', 'low'];
 const PRIORITY_COLORS = {
   urgent: 'bg-red-100 text-red-700 border-red-200',
-  high: 'bg-orange-100 text-orange-700 border-orange-200',
+  high: 'bg-amber-100 text-amber-700 border-amber-200',
   normal: 'bg-blue-100 text-blue-700 border-blue-200',
   low: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
 const STATUS_ICONS = { pending: AlertCircle, in_progress: Clock, completed: CheckCircle };
-const STATUS_COLORS = { pending: 'text-orange-500', in_progress: 'text-blue-500', completed: 'text-green-500' };
+const STATUS_COLORS = { pending: 'text-amber-500', in_progress: 'text-blue-500', completed: 'text-green-500' };
 
 const StaffTaskManager = () => {
   const { t } = useTranslation();
@@ -152,11 +152,11 @@ const StaffTaskManager = () => {
             <p className="text-2xl font-bold text-gray-700">{counts.total}</p>
           </CardContent>
         </Card>
-        <Card className="bg-orange-50 border-orange-200 cursor-pointer" onClick={() => setFilterStatus('pending')}>
+        <Card className="bg-amber-50 border-amber-200 cursor-pointer" onClick={() => setFilterStatus('pending')}>
           <CardContent className="p-4 text-center">
-            <AlertCircle className="w-5 h-5 mx-auto mb-1 text-orange-500" />
-            <p className="text-xs text-orange-600">{ts('pending')}</p>
-            <p className="text-2xl font-bold text-orange-700">{counts.pending}</p>
+            <AlertCircle className="w-5 h-5 mx-auto mb-1 text-amber-500" />
+            <p className="text-xs text-amber-600">{ts('pending')}</p>
+            <p className="text-2xl font-bold text-amber-700">{counts.pending}</p>
           </CardContent>
         </Card>
         <Card className="bg-blue-50 border-blue-200 cursor-pointer" onClick={() => setFilterStatus('in_progress')}>

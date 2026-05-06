@@ -229,15 +229,15 @@ const ReportsTab = () => {
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-3 text-center">
-                  <Home className="w-6 h-6 mx-auto mb-1 text-purple-500" />
-                  <p className="text-2xl font-bold text-purple-600">{movements.stayovers ?? 0}</p>
+                  <Home className="w-6 h-6 mx-auto mb-1 text-indigo-500" />
+                  <p className="text-2xl font-bold text-indigo-600">{movements.stayovers ?? 0}</p>
                   <p className="text-xs text-gray-500">Konaklayan</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-3 text-center">
-                  <Hotel className="w-6 h-6 mx-auto mb-1 text-orange-500" />
-                  <p className="text-2xl font-bold text-orange-600">%{flashOcc.occupancy_rate?.toFixed(1) ?? '0'}</p>
+                  <Hotel className="w-6 h-6 mx-auto mb-1 text-amber-500" />
+                  <p className="text-2xl font-bold text-amber-600">%{flashOcc.occupancy_rate?.toFixed(1) ?? '0'}</p>
                   <p className="text-xs text-gray-500">{flashOcc.occupied_rooms ?? 0}/{flashOcc.total_rooms ?? totalRooms} Oda</p>
                 </CardContent>
               </Card>

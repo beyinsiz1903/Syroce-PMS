@@ -50,7 +50,7 @@ const OutletSalesChart = () => {
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
-                  className="bg-gradient-to-r from-orange-400 to-orange-600 h-3 rounded-full transition-all duration-500"
+                  className="bg-gradient-to-r from-amber-400 to-amber-600 h-3 rounded-full transition-all duration-500"
                   style={{ width: `${(data.sales / maxSales) * 100}%` }}
                 />
               </div>
@@ -63,7 +63,7 @@ const OutletSalesChart = () => {
         <div className="mt-4 pt-4 border-t">
           <div className="flex items-center justify-between">
             <span className="font-bold">Toplam Satış:</span>
-            <span className="text-lg font-bold text-orange-600">
+            <span className="text-lg font-bold text-amber-600">
               ₺{salesData.total_sales.toLocaleString()}
             </span>
           </div>

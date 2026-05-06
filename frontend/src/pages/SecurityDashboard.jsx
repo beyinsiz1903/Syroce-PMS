@@ -132,8 +132,8 @@ const SecurityDashboard = ({ user, tenant, onLogout, embedded = false }) => {
           </Card>
           <Card data-testid="kpi-total-users">
             <CardContent className="p-4 text-center">
-              <Lock className="w-5 h-5 text-purple-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-purple-600">{o.total_users || 0}</p>
+              <Lock className="w-5 h-5 text-indigo-500 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-indigo-600">{o.total_users || 0}</p>
               <p className="text-[10px] text-gray-500">{t('securityDashboard.totalUsers')}</p>
             </CardContent>
           </Card>
@@ -146,8 +146,8 @@ const SecurityDashboard = ({ user, tenant, onLogout, embedded = false }) => {
           </Card>
           <Card data-testid="kpi-error-rate">
             <CardContent className="p-4 text-center">
-              <AlertTriangle className="w-5 h-5 text-orange-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-orange-600">{apm.error_rate?.toFixed(1) || 0}%</p>
+              <AlertTriangle className="w-5 h-5 text-amber-500 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-amber-600">{apm.error_rate?.toFixed(1) || 0}%</p>
               <p className="text-[10px] text-gray-500">{t('securityDashboard.errorRate')}</p>
             </CardContent>
           </Card>

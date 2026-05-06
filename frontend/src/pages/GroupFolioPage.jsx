@@ -516,7 +516,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                 </div>
                                 <div className="shrink-0">
                                   {isMerged ? (
-                                    <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[10px]">
+                                    <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px]">
                                       <Lock className="w-3 h-3 mr-1" /> Birlestirildi
                                     </Badge>
                                   ) : (

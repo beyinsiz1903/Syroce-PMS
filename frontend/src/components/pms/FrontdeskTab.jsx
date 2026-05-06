@@ -377,7 +377,7 @@ const FrontdeskTab = ({
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <div className="flex items-center gap-1 min-w-0">
                             {isVip && (
-                              <Badge className="text-[9px] bg-purple-500 hover:bg-purple-500 text-white">VIP</Badge>
+                              <Badge className="text-[9px] bg-indigo-500 hover:bg-indigo-500 text-white">VIP</Badge>
                             )}
                             <span className="font-semibold text-xs text-gray-800 truncate">{guestName}</span>
                           </div>
@@ -488,7 +488,7 @@ const FrontdeskTab = ({
                       {item.source === 'arrival' ? tf('arrivalToday') : tf('inhouseNow')}
                     </Badge>
                     {item.loyaltyPoints > 0 && (
-                      <Badge variant="outline" className="text-[9px] border-purple-300 text-purple-700">
+                      <Badge variant="outline" className="text-[9px] border-indigo-300 text-indigo-700">
                         {tf('loyaltyPoints', { points: item.loyaltyPoints })}
                       </Badge>
                     )}
@@ -621,9 +621,9 @@ const FrontdeskTab = ({
           )}
 
           {aiPatterns && (
-            <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
+            <Card className="bg-gradient-to-br from-indigo-50 to-pink-50 border-indigo-200">
               <CardHeader>
-                <CardTitle className="flex items-center text-purple-700">
+                <CardTitle className="flex items-center text-indigo-700">
                   <Users className="w-5 h-5 mr-2" />
                   {t('ai.guestPatterns')}
                 </CardTitle>
@@ -660,14 +660,14 @@ const FrontdeskTab = ({
             const isDirty = booking.room?.status === 'dirty' || booking.room?.status === 'cleaning';
             const isVip = booking.guest?.vip_status;
             return (
-              <Card key={booking.id} className={`transition-all hover:shadow-md ${isDirty ? 'border-l-4 border-l-amber-400' : ''} ${isVip ? 'ring-1 ring-purple-200' : ''}`}
+              <Card key={booking.id} className={`transition-all hover:shadow-md ${isDirty ? 'border-l-4 border-l-amber-400' : ''} ${isVip ? 'ring-1 ring-indigo-200' : ''}`}
                 data-testid={`arrival-card-${booking.id}`}>
                 <CardContent className="pt-5 pb-4">
                   <div className="flex justify-between items-start gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-bold text-base text-slate-800">{booking.guest?.name}</span>
-                        {isVip && <Badge className="bg-purple-100 text-purple-700 text-[10px]"><Star className="w-3 h-3 mr-0.5" />VIP</Badge>}
+                        {isVip && <Badge className="bg-indigo-100 text-indigo-700 text-[10px]"><Star className="w-3 h-3 mr-0.5" />VIP</Badge>}
                       </div>
                       <div className="text-sm text-slate-500">{tf('room')} {booking.room?.room_number} — {booking.room?.room_type}</div>
                       <div className="text-xs text-slate-400 mt-0.5">{new Date(booking.check_in).toLocaleDateString()} - {new Date(booking.check_out).toLocaleDateString()}</div>

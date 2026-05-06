@@ -15,9 +15,9 @@ const TIER_INFO = {
     label: 'Enterprise',
     color: 'purple',
     icon: Crown,
-    gradient: 'from-purple-500 to-pink-600',
-    lightBg: 'bg-purple-50 border-purple-200',
-    textColor: 'text-purple-700',
+    gradient: 'from-indigo-500 to-pink-600',
+    lightBg: 'bg-indigo-50 border-indigo-200',
+    textColor: 'text-indigo-700',
     price: '799€/ay',
   },
 };

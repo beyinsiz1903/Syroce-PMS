@@ -46,8 +46,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       </div>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={() => setShowPayment(!showPayment)} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
-        <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
+        <Button size="sm" variant="outline" onClick={() => { setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
+        <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
@@ -194,7 +194,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800">{item.description || item.charge_name || item.method || item.payment_type || '-'}</div>
-                <div className="text-xs text-gray-400">{fmtTs(item.created_at || item.processed_at)}{item.agency_name && <span className="ml-2 text-purple-600">({item.agency_name})</span>}</div>
+                <div className="text-xs text-gray-400">{fmtTs(item.created_at || item.processed_at)}{item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}</div>
               </div>
               <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {item._type === 'payment' ? '-' : '+'}{fmtTL(item.amount || item.total || item.charge_amount)} TL

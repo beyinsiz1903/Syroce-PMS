@@ -218,13 +218,13 @@ const ReservationSidebar = ({
         <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
           <CardContent className="pt-6">
             <div className="flex items-center mb-4">
-              <DollarSign className="w-5 h-5 text-purple-600 mr-2" />
+              <DollarSign className="w-5 h-5 text-indigo-600 mr-2" />
               <h3 className="font-bold text-lg">Rate Information</h3>
             </div>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">ADR:</span>
-                <span className="text-2xl font-bold text-purple-600">${adr.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-indigo-600">${adr.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Amount:</span>
@@ -260,7 +260,7 @@ const ReservationSidebar = ({
           <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
             <CardContent className="pt-6">
               <div className="flex items-center mb-4">
-                <FileText className="w-5 h-5 text-orange-600 mr-2" />
+                <FileText className="w-5 h-5 text-amber-600 mr-2" />
                 <h3 className="font-bold text-lg">Folio Balance</h3>
               </div>
               <div className="space-y-3">

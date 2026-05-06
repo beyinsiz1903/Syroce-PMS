@@ -109,7 +109,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
             <Card data-testid="wire-ari-card">
               <CardContent className="py-4">
                 <div className="flex items-center gap-3">
-                  <Activity className="w-5 h-5 text-orange-500" />
+                  <Activity className="w-5 h-5 text-amber-500" />
                   <div>
                     <p className="text-xs text-slate-500 uppercase">ARI Hard Fail</p>
                     <p className="text-lg font-bold">{summary.breakdown.ari_hard_fails}</p>
@@ -122,7 +122,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
             <Card data-testid="wire-recon-card">
               <CardContent className="py-4">
                 <div className="flex items-center gap-3">
-                  <Shield className="w-5 h-5 text-purple-500" />
+                  <Shield className="w-5 h-5 text-indigo-500" />
                   <div>
                     <p className="text-xs text-slate-500 uppercase">Açık Recon Sorunu</p>
                     <p className="text-lg font-bold">{summary.breakdown.reconciliation_issues}</p>

@@ -19,10 +19,10 @@ const GuestProfileComplete = ({ guestId }) => {
     { value: 'vip', label: 'VIP', color: 'bg-yellow-500', icon: Star },
     { value: 'blacklist', label: 'Blacklist', color: 'bg-red-500', icon: AlertTriangle },
     { value: 'honeymoon', label: 'Honeymoon', color: 'bg-pink-500', icon: Calendar },
-    { value: 'anniversary', label: 'Anniversary', color: 'bg-purple-500', icon: Calendar },
+    { value: 'anniversary', label: 'Anniversary', color: 'bg-indigo-500', icon: Calendar },
     { value: 'business_traveler', label: 'Business', color: 'bg-blue-500', icon: User },
     { value: 'frequent_guest', label: 'Frequent', color: 'bg-green-500', icon: History },
-    { value: 'complainer', label: 'Complainer', color: 'bg-orange-500', icon: AlertTriangle },
+    { value: 'complainer', label: 'Complainer', color: 'bg-amber-500', icon: AlertTriangle },
     { value: 'high_spender', label: 'High Spender', color: 'bg-indigo-500', icon: Star }
   ];
 

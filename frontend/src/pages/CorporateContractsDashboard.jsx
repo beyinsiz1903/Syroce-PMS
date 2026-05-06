@@ -81,11 +81,11 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <div className="text-xs text-gray-500 mb-1">Ortalama Kullanım (%)</div>
-                <div className="text-2xl font-bold text-purple-700">
+                <div className="text-2xl font-bold text-indigo-700">
                   {summary.avg_utilization_pct != null ? `${summary.avg_utilization_pct}%` : "-"}
                 </div>
               </div>
-              <Percent className="w-7 h-7 text-purple-500" />
+              <Percent className="w-7 h-7 text-indigo-500" />
             </CardContent>
           </Card>
         </div>

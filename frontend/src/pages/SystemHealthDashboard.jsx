@@ -33,7 +33,7 @@ function StatusBadge({ status }) {
 function SeverityChip({ severity }) {
   const map = {
     critical: "bg-red-500/20 text-red-300 border-red-500/40",
-    high: "bg-orange-500/20 text-orange-300 border-orange-500/40",
+    high: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     warning: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     info: "bg-sky-500/20 text-sky-300 border-sky-500/40",
   };

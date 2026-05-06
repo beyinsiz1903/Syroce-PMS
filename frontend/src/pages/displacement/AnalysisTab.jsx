@@ -144,7 +144,7 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             <SummaryCard label={t('displacement.displacedRevenue', 'Displaced Revenue')} value={`₺${fmt(result.summary.total_displaced_revenue)}`} icon={TrendingDown} color="text-red-600" />
             <SummaryCard label={t('displacement.proposedRevenue', 'Proposed Revenue')} value={`₺${fmt(result.summary.total_proposed_revenue)}`} icon={TrendingUp} color="text-blue-600" />
-            <SummaryCard label={t('displacement.ancillaryRevenue', 'Ancillary Revenue')} value={`₺${fmt(result.summary.total_ancillary_revenue)}`} icon={Plus} color="text-purple-600" />
+            <SummaryCard label={t('displacement.ancillaryRevenue', 'Ancillary Revenue')} value={`₺${fmt(result.summary.total_ancillary_revenue)}`} icon={Plus} color="text-indigo-600" />
             <SummaryCard
               label={t('displacement.netDisplacement', 'Net Displacement')}
               value={`₺${fmt(result.summary.net_displacement)}`}

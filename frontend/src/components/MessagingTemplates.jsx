@@ -91,7 +91,7 @@ const MessagingTemplates = () => {
       case 'whatsapp':
         return <MessageSquare className="w-5 h-5 text-green-600" />;
       case 'sms':
-        return <Phone className="w-5 h-5 text-purple-600" />;
+        return <Phone className="w-5 h-5 text-indigo-600" />;
       case 'email':
         return <Mail className="w-5 h-5 text-blue-600" />;
       default:
@@ -102,7 +102,7 @@ const MessagingTemplates = () => {
   const getChannelBadge = (type) => {
     const colors = {
       whatsapp: 'bg-green-100 text-green-700',
-      sms: 'bg-purple-100 text-purple-700',
+      sms: 'bg-indigo-100 text-indigo-700',
       email: 'bg-blue-100 text-blue-700'
     };
     return colors[type] || 'bg-gray-100 text-gray-700';
@@ -142,7 +142,7 @@ const MessagingTemplates = () => {
               <MessageSquare className="w-3 h-3 mr-1" />
               WhatsApp
             </Badge>
-            <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">
+            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
               <Phone className="w-3 h-3 mr-1" />
               SMS
             </Badge>

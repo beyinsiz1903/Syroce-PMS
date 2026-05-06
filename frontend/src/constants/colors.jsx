@@ -21,10 +21,10 @@ export const COLORS = {
       meaning: 'Risk, Overdue, Critical, Dirty, Urgent'
     },
     ATTENTION: {
-      bg: 'bg-orange-100',
-      border: 'border-orange-300',
-      text: 'text-orange-700',
-      badge: 'bg-orange-500',
+      bg: 'bg-amber-100',
+      border: 'border-amber-300',
+      text: 'text-amber-700',
+      badge: 'bg-amber-500',
       meaning: 'Attention, Warning, Priority, High Priority'
     },
     INFO: {
@@ -35,10 +35,10 @@ export const COLORS = {
       meaning: 'Informational, Normal, Neutral'
     },
     OCCUPIED: {
-      bg: 'bg-purple-100',
-      border: 'border-purple-300',
-      text: 'text-purple-700',
-      badge: 'bg-purple-500',
+      bg: 'bg-indigo-100',
+      border: 'border-indigo-300',
+      text: 'text-indigo-700',
+      badge: 'bg-indigo-500',
       meaning: 'Occupied, In-Use, VIP'
     },
     PENDING: {

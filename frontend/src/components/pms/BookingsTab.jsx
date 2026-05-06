@@ -81,7 +81,7 @@ const BookingsTab = ({
         <Card>
           <CardContent className="p-4">
             <div className="text-xs text-gray-600">{tc('avgAdr')}</div>
-            <div className="text-2xl font-bold text-purple-600">
+            <div className="text-2xl font-bold text-indigo-600">
               {cur}{(bookingStats?.avgAdr ?? 0).toFixed(0)}
             </div>
           </CardContent>

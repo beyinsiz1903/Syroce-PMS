@@ -12,7 +12,7 @@ import { toast } from "sonner";
 
 const PRIORITY_COLORS = {
   1: "border-red-500/30 bg-red-500/5",
-  2: "border-orange-500/30 bg-orange-500/5",
+  2: "border-amber-500/30 bg-amber-500/5",
   3: "border-yellow-500/30 bg-yellow-500/5",
   4: "border-blue-500/30 bg-blue-500/5",
   5: "border-zinc-700 bg-zinc-900",
@@ -137,7 +137,7 @@ export function TechDebtDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Flame className="h-4 w-4 text-orange-400" />
+          <Flame className="h-4 w-4 text-amber-400" />
           <span className="text-xs text-zinc-400 font-mono">
             Karantina Burn-Down Panosu
           </span>
@@ -156,7 +156,7 @@ export function TechDebtDashboard() {
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="h-4 w-4 text-orange-400" />
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
               <span className="text-xs text-zinc-500">Toplam Karantina</span>
             </div>
             <div className="text-2xl font-bold font-mono text-zinc-100" data-testid="debt-total-count">
@@ -222,7 +222,7 @@ export function TechDebtDashboard() {
           </div>
           <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 rounded-full transition-all duration-1000"
+              className="h-full bg-gradient-to-r from-red-500 via-amber-500 to-yellow-500 rounded-full transition-all duration-1000"
               style={{ width: `${Math.min((data.total_quarantined / 50) * 100, 100)}%` }}
               data-testid="debt-progress-bar"
             />

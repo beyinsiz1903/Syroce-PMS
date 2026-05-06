@@ -121,8 +121,8 @@ export const CommandCenter = ({ className = '' }) => {
         <Card className="bg-white border border-slate-100 shadow-sm hover:shadow-md transition-all" data-testid="cc-inhouse">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                <Users className="w-5 h-5 text-purple-600" />
+              <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                <Users className="w-5 h-5 text-indigo-600" />
               </div>
               <div>
                 <div className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope' }}>{summary?.inhouse || 0}</div>

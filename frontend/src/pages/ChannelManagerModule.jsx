@@ -695,13 +695,13 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="text-center py-8">
                 <div className="flex flex-col items-center gap-4">
-                  <Settings className="w-12 h-12 text-orange-500" />
+                  <Settings className="w-12 h-12 text-amber-500" />
                   <p className="text-gray-600 text-sm max-w-md">
                     Fiyat ve müsaitlik yönetimi artık "Toplu Güncellemeler" sayfasına taşındı.
                     Tüm oda tiplerini aynı anda görebilir ve tek seferde güncelleyebilirsiniz.
                   </p>
                   <Button
-                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
                     onClick={() => window.location.href = '/rate-manager'}
                     data-testid="go-to-rate-manager"
                   >

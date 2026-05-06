@@ -22,7 +22,7 @@ const TenantStatsPanel = ({ tenantId }) => {
     { label: 'Oda', value: stats.rooms, icon: BedDouble, color: 'text-blue-600 bg-blue-50' },
     { label: 'Kullanıcı', value: stats.users, icon: Users, color: 'text-indigo-600 bg-indigo-50' },
     { label: 'Misafir', value: stats.guests, icon: UserCheck, color: 'text-green-600 bg-green-50' },
-    { label: 'Toplam Rez.', value: stats.total_bookings, icon: CalendarCheck, color: 'text-purple-600 bg-purple-50' },
+    { label: 'Toplam Rez.', value: stats.total_bookings, icon: CalendarCheck, color: 'text-indigo-600 bg-indigo-50' },
     { label: 'Bu Ay Rez.', value: stats.bookings_this_month, icon: BarChart3, color: 'text-amber-600 bg-amber-50' },
     { label: 'Check-in', value: stats.checked_in, icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
   ];

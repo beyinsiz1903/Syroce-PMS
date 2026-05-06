@@ -70,7 +70,7 @@ const MiniSparkline = ({ data, color = 'blue', height = 30 }) => {
 const ConfidenceBadge = ({ confidence }) => {
   const getColor = (c) => {
     if (c >= 80) return 'bg-red-100 text-red-800 border-red-200';
-    if (c >= 60) return 'bg-orange-100 text-orange-800 border-orange-200';
+    if (c >= 60) return 'bg-amber-100 text-amber-800 border-amber-200';
     return 'bg-yellow-100 text-yellow-800 border-yellow-200';
   };
 
@@ -85,10 +85,10 @@ const ConfidenceBadge = ({ confidence }) => {
 const WarningTypeBadge = ({ type }) => {
   const typeMap = {
     'predictive.warning.degradation_likely': { label: 'Bozulma Riski', color: 'bg-red-100 text-red-800', icon: TrendingDown },
-    'predictive.warning.failure_rate_rising': { label: 'Hata Artışı', color: 'bg-orange-100 text-orange-800', icon: TrendingUp },
+    'predictive.warning.failure_rate_rising': { label: 'Hata Artışı', color: 'bg-amber-100 text-amber-800', icon: TrendingUp },
     'predictive.warning.backlog_growth': { label: 'Backlog Artışı', color: 'bg-yellow-100 text-yellow-800', icon: Activity },
     'predictive.warning.dlq_spike': { label: 'DLQ Spike', color: 'bg-red-100 text-red-800', icon: AlertCircle },
-    'predictive.warning.throttle_risk': { label: 'Throttle Riski', color: 'bg-orange-100 text-orange-800', icon: Clock },
+    'predictive.warning.throttle_risk': { label: 'Throttle Riski', color: 'bg-amber-100 text-amber-800', icon: Clock },
     'predictive.warning.staleness_risk': { label: 'Sessizlik', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
     'predictive.warning.recovery_expected': { label: 'İyileşme', color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
   };
@@ -109,7 +109,7 @@ const SystemHealthIndicator = ({ health }) => {
   const healthMap = {
     healthy: { color: 'bg-green-500', label: 'Sağlıklı', textColor: 'text-green-700' },
     attention: { color: 'bg-yellow-500', label: 'Dikkat', textColor: 'text-yellow-700' },
-    degraded: { color: 'bg-orange-500', label: 'Düşük', textColor: 'text-orange-700' },
+    degraded: { color: 'bg-amber-500', label: 'Düşük', textColor: 'text-amber-700' },
     critical: { color: 'bg-red-500', label: 'Kritik', textColor: 'text-red-700' },
     unknown: { color: 'bg-gray-400', label: 'Bilinmiyor', textColor: 'text-gray-600' },
   };
@@ -128,7 +128,7 @@ const SystemHealthIndicator = ({ health }) => {
 const WarningCard = ({ warning, onViewDetails, onAction }) => {
   const severityBg = {
     critical: 'border-red-300 bg-red-50/80',
-    warning: 'border-orange-300 bg-orange-50/80',
+    warning: 'border-amber-300 bg-amber-50/80',
     info: 'border-blue-300 bg-blue-50/80',
   };
 
@@ -352,11 +352,11 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
   return (
     <div className="space-y-4" data-testid="early-warning-panel">
       {/* Header Card */}
-      <Card className="bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+      <Card className="bg-gradient-to-r from-indigo-50 to-blue-50 border-indigo-200">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-600" />
+              <Sparkles className="w-5 h-5 text-indigo-600" />
               Erken Uyarı Sistemi (v1)
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -380,7 +380,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
             <div className="bg-white rounded-lg p-3 border shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 uppercase">Toplam Uyarı</span>
-                <Target className="w-4 h-4 text-purple-500" />
+                <Target className="w-4 h-4 text-indigo-500" />
               </div>
               <p className="text-2xl font-bold text-gray-900">{summary?.warning_count || 0}</p>
             </div>
@@ -396,9 +396,9 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
             <div className="bg-white rounded-lg p-3 border shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 uppercase">Uyarı</span>
-                <AlertTriangle className="w-4 h-4 text-orange-500" />
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
               </div>
-              <p className="text-2xl font-bold text-orange-600">{summary?.warning_count_warning || 0}</p>
+              <p className="text-2xl font-bold text-amber-600">{summary?.warning_count_warning || 0}</p>
             </div>
             
             <div className="bg-white rounded-lg p-3 border shadow-sm">
@@ -439,7 +439,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
                 <Badge 
                   key={prov} 
                   variant="outline" 
-                  className="bg-orange-50 border-orange-300 text-orange-800 capitalize cursor-pointer hover:bg-orange-100"
+                  className="bg-amber-50 border-amber-300 text-amber-800 capitalize cursor-pointer hover:bg-amber-100"
                   onClick={() => onViewConnector && onViewConnector(prov)}
                 >
                   {prov}
@@ -481,7 +481,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
               Aktif Erken Uyarılar
             </span>
             <Badge variant="outline">{topWarnings.length} uyarı</Badge>
@@ -539,7 +539,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
               </div>
               <div>
                 <span className="text-gray-500">Seviye:</span>
-                <span className={`font-medium ${selectedWarning.severity === 'critical' ? 'text-red-600' : 'text-orange-600'}`}>
+                <span className={`font-medium ${selectedWarning.severity === 'critical' ? 'text-red-600' : 'text-amber-600'}`}>
                   {selectedWarning.severity}
                 </span>
               </div>

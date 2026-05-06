@@ -72,8 +72,8 @@ const OTAReservationDetails = ({ bookingId }) => {
     const colors = {
       ota: 'bg-blue-500',
       website: 'bg-green-500',
-      corporate: 'bg-purple-500',
-      walk_in: 'bg-orange-500',
+      corporate: 'bg-indigo-500',
+      walk_in: 'bg-amber-500',
       phone: 'bg-yellow-500'
     };
     return colors[source] || 'bg-gray-500';

@@ -285,30 +285,30 @@ const MobileGM = ({ user }) => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-purple-600 font-medium">RevPAR</p>
-                  <p className="text-2xl font-bold text-purple-700">
+                  <p className="text-xs text-indigo-600 font-medium">RevPAR</p>
+                  <p className="text-2xl font-bold text-indigo-700">
                     {formatCurrency(dailyFlash?.revenue?.revpar || 0)}
                   </p>
                 </div>
-                <Target className="w-10 h-10 text-purple-300" />
+                <Target className="w-10 h-10 text-indigo-300" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-orange-600 font-medium">BEKLEYEN AR</p>
-                  <p className="text-2xl font-bold text-orange-700">
+                  <p className="text-xs text-amber-600 font-medium">BEKLEYEN AR</p>
+                  <p className="text-2xl font-bold text-amber-700">
                     {formatCurrency(financeSnapshot?.pending_ar?.total_pending || 0)}
                   </p>
                 </div>
-                <AlertCircle className="w-10 h-10 text-orange-300" />
+                <AlertCircle className="w-10 h-10 text-amber-300" />
               </div>
             </CardContent>
           </Card>
@@ -353,7 +353,7 @@ const MobileGM = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <Bed className="w-5 h-5 mr-2 text-purple-600" />
+                <Bed className="w-5 h-5 mr-2 text-indigo-600" />
                 Oda Durumu Özeti
               </CardTitle>
             </CardHeader>
@@ -367,9 +367,9 @@ const MobileGM = ({ user }) => {
                   <p className="text-2xl font-bold text-red-700">{roomStatus.status_counts.dirty || 0}</p>
                   <p className="text-xs text-red-600">{t("housekeeping.dirty")}</p>
                 </div>
-                <div className="text-center p-2 bg-purple-50 rounded border border-purple-200">
-                  <p className="text-2xl font-bold text-purple-700">{roomStatus.status_counts.occupied || 0}</p>
-                  <p className="text-xs text-purple-600">{t("housekeeping.occupied")}</p>
+                <div className="text-center p-2 bg-indigo-50 rounded border border-indigo-200">
+                  <p className="text-2xl font-bold text-indigo-700">{roomStatus.status_counts.occupied || 0}</p>
+                  <p className="text-xs text-indigo-600">{t("housekeeping.occupied")}</p>
                 </div>
                 <div className="text-center p-2 bg-blue-50 rounded border border-blue-200">
                   <p className="text-2xl font-bold text-blue-700">{roomStatus.status_counts.inspected || 0}</p>
@@ -379,9 +379,9 @@ const MobileGM = ({ user }) => {
                   <p className="text-2xl font-bold text-yellow-700">{roomStatus.status_counts.cleaning || 0}</p>
                   <p className="text-xs text-yellow-600">Temizlik</p>
                 </div>
-                <div className="text-center p-2 bg-orange-50 rounded border border-orange-200">
-                  <p className="text-2xl font-bold text-orange-700">{roomStatus.status_counts.maintenance || 0}</p>
-                  <p className="text-xs text-orange-600">Bakım</p>
+                <div className="text-center p-2 bg-amber-50 rounded border border-amber-200">
+                  <p className="text-2xl font-bold text-amber-700">{roomStatus.status_counts.maintenance || 0}</p>
+                  <p className="text-xs text-amber-600">Bakım</p>
                 </div>
               </div>
             </CardContent>
@@ -450,7 +450,7 @@ const MobileGM = ({ user }) => {
         )}
 
         {/* Quick Actions */}
-        <Card className="bg-gradient-to-r from-red-50 to-orange-50">
+        <Card className="bg-gradient-to-r from-red-50 to-amber-50">
           <CardContent className="p-4">
             <div className="grid grid-cols-2 gap-3">
               <Button
@@ -476,14 +476,14 @@ const MobileGM = ({ user }) => {
                 <span className="text-xs">Pickup Analizi</span>
               </Button>
               <Button
-                className="h-20 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700"
+                className="h-20 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700"
                 onClick={loadAnomalyDetection}
               >
                 <AlertCircle className="w-6 h-6 mb-1" />
                 <span className="text-xs">Anomali Tespiti</span>
               </Button>
               <Button
-                className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+                className="h-20 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700"
                 onClick={loadForecast}
               >
                 <Calendar className="w-6 h-6 mb-1" />
@@ -494,7 +494,7 @@ const MobileGM = ({ user }) => {
         </Card>
 
         {/* Info Banner */}
-        <Card className="bg-gradient-to-r from-indigo-50 to-purple-50">
+        <Card className="bg-gradient-to-r from-indigo-50 to-indigo-50">
           <CardContent className="p-4">
             <div className="flex items-start space-x-3">
               <div className="bg-indigo-100 p-2 rounded-full">
@@ -537,15 +537,15 @@ const MobileGM = ({ user }) => {
                       ₺{dailyFlash?.revpar?.toFixed(0) || 0}
                     </p>
                   </div>
-                  <div className="p-3 bg-purple-50 rounded-lg">
-                    <p className="text-xs text-purple-600 mb-1">ADR</p>
-                    <p className="text-2xl font-bold text-purple-700">
+                  <div className="p-3 bg-indigo-50 rounded-lg">
+                    <p className="text-xs text-indigo-600 mb-1">ADR</p>
+                    <p className="text-2xl font-bold text-indigo-700">
                       ₺{dailyFlash?.adr?.toFixed(0) || 0}
                     </p>
                   </div>
-                  <div className="p-3 bg-orange-50 rounded-lg">
-                    <p className="text-xs text-orange-600 mb-1">Günlük Gelir</p>
-                    <p className="text-2xl font-bold text-orange-700">
+                  <div className="p-3 bg-amber-50 rounded-lg">
+                    <p className="text-xs text-amber-600 mb-1">Günlük Gelir</p>
+                    <p className="text-2xl font-bold text-amber-700">
                       ₺{dailyFlash?.total_revenue?.toFixed(0) || 0}
                     </p>
                   </div>
@@ -576,7 +576,7 @@ const MobileGM = ({ user }) => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bakımda:</span>
-                  <span className="font-bold text-orange-700">{roomStatus?.status_counts?.maintenance || 0}</span>
+                  <span className="font-bold text-amber-700">{roomStatus?.status_counts?.maintenance || 0}</span>
                 </div>
               </CardContent>
             </Card>
@@ -592,7 +592,7 @@ const MobileGM = ({ user }) => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bekleyen Alacaklar:</span>
-                  <span className="font-bold text-orange-700">₺{financeSnapshot?.pending_receivables?.toFixed(0) || 0}</span>
+                  <span className="font-bold text-amber-700">₺{financeSnapshot?.pending_receivables?.toFixed(0) || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Aylık Toplam Gelir:</span>

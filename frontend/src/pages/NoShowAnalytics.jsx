@@ -18,7 +18,7 @@ const CHANNEL_COLORS = {
   booking: { bar: 'bg-blue-600', text: 'text-blue-700', light: 'bg-blue-50' },
   expedia: { bar: 'bg-yellow-500', text: 'text-yellow-700', light: 'bg-yellow-50' },
   airbnb: { bar: 'bg-rose-500', text: 'text-rose-700', light: 'bg-rose-50' },
-  agency: { bar: 'bg-purple-500', text: 'text-purple-700', light: 'bg-purple-50' },
+  agency: { bar: 'bg-indigo-500', text: 'text-indigo-700', light: 'bg-indigo-50' },
 };
 const getChColor = (ch) => CHANNEL_COLORS[ch] || { bar: 'bg-gray-500', text: 'text-gray-700', light: 'bg-gray-50' };
 
@@ -246,7 +246,7 @@ const OverbookingHeatmapTab = ({ period }) => {
     const intensity = Math.min(count / maxOB, 1);
     if (intensity > 0.75) return 'bg-red-500';
     if (intensity > 0.5) return 'bg-red-400';
-    if (intensity > 0.25) return 'bg-orange-400';
+    if (intensity > 0.25) return 'bg-amber-400';
     return 'bg-yellow-400';
   };
 
@@ -309,7 +309,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                 <span>Az</span>
                 <div className="w-4 h-4 rounded-sm bg-gray-100" />
                 <div className="w-4 h-4 rounded-sm bg-yellow-400" />
-                <div className="w-4 h-4 rounded-sm bg-orange-400" />
+                <div className="w-4 h-4 rounded-sm bg-amber-400" />
                 <div className="w-4 h-4 rounded-sm bg-red-400" />
                 <div className="w-4 h-4 rounded-sm bg-red-500" />
                 <span>Çok</span>
@@ -334,7 +334,7 @@ const OverbookingHeatmapTab = ({ period }) => {
             <div className="space-y-2">
               {(data.peak_days || []).map((d, i) => (
                 <div key={d.date} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 border" data-testid={`peak-day-${i}`}>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold ${i === 0 ? 'bg-red-500' : i === 1 ? 'bg-orange-500' : 'bg-amber-500'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold ${i === 0 ? 'bg-red-500' : i === 1 ? 'bg-amber-500' : 'bg-amber-500'}`}>
                     #{i + 1}
                   </div>
                   <div className="flex-1">
@@ -706,10 +706,10 @@ const PredictionTab = () => {
             <p className="text-2xl font-bold text-green-600 mt-1">{data.summary?.low_risk || 0}</p>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-purple-500" data-testid="pred-potential-loss">
+        <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">Potansiyel Kayıp</p>
-            <p className="text-2xl font-bold text-purple-600 mt-1">{data.summary?.potential_loss?.toLocaleString('tr-TR') || 0} TL</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-1">{data.summary?.potential_loss?.toLocaleString('tr-TR') || 0} TL</p>
           </CardContent>
         </Card>
       </div>
@@ -718,7 +718,7 @@ const PredictionTab = () => {
       <Card data-testid="prediction-table-card">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4 text-purple-500" />
+            <Brain className="w-4 h-4 text-indigo-500" />
             <CardTitle className="text-sm font-semibold text-gray-700">Rezervasyon Risk Tahminleri</CardTitle>
           </div>
         </CardHeader>
@@ -835,7 +835,7 @@ const TABS = [
   { id: 'channel', label: 'Kanal Kaybı', icon: BarChart3, color: 'text-blue-600' },
   { id: 'heatmap', label: 'Overbooking Haritası', icon: Flame, color: 'text-red-600' },
   { id: 'rules', label: 'Kural Motoru', icon: Shield, color: 'text-amber-600' },
-  { id: 'prediction', label: 'Tahmin', icon: Brain, color: 'text-purple-600' },
+  { id: 'prediction', label: 'Tahmin', icon: Brain, color: 'text-indigo-600' },
 ];
 
 const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {

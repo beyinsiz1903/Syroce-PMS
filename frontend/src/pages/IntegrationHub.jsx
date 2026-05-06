@@ -1118,9 +1118,9 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     </div>
                   )}
                   {selectedBatch.out_of_order_count > 0 && (
-                    <div className="p-2 rounded bg-orange-500/10 border border-orange-500/20 text-center">
-                      <p className="text-[10px] text-orange-400">OOO</p>
-                      <p className="text-sm font-bold text-orange-300">{selectedBatch.out_of_order_count}</p>
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-center">
+                      <p className="text-[10px] text-amber-400">OOO</p>
+                      <p className="text-sm font-bold text-amber-300">{selectedBatch.out_of_order_count}</p>
                     </div>
                   )}
                   {selectedBatch.failed_count > 0 && (

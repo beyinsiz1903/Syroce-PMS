@@ -117,7 +117,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <AlertTriangle className="w-8 h-8 text-orange-600 mx-auto mb-2" />
+              <AlertTriangle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
               <p className="text-2xl font-bold">
                 {items.filter((b) => (b.status || '').toLowerCase() === 'guaranteed').length}
               </p>
@@ -152,7 +152,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
               return (
                 <Card
                   key={b.id}
-                  className={`border-l-4 ${guaranteed ? 'border-orange-500 bg-orange-50' : 'border-gray-300'}`}
+                  className={`border-l-4 ${guaranteed ? 'border-amber-500 bg-amber-50' : 'border-gray-300'}`}
                 >
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between">
@@ -167,7 +167,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
                           <Badge
                             className={
                               guaranteed
-                                ? 'bg-orange-600'
+                                ? 'bg-amber-600'
                                 : status === 'confirmed'
                                   ? 'bg-blue-600'
                                   : 'bg-gray-500'

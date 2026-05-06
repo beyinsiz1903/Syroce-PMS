@@ -18,9 +18,9 @@ import { Mail, Phone, Trash2, Activity, RefreshCw } from 'lucide-react';
 const STAGES = [
   { key: 'new',           label: 'Yeni',       color: 'bg-gray-500' },
   { key: 'contacted',     label: 'İletişim',   color: 'bg-blue-500' },
-  { key: 'qualified',     label: 'Nitelikli',  color: 'bg-purple-500' },
+  { key: 'qualified',     label: 'Nitelikli',  color: 'bg-indigo-500' },
   { key: 'proposal_sent', label: 'Teklif',     color: 'bg-indigo-500' },
-  { key: 'negotiating',   label: 'Müzakere',   color: 'bg-orange-500' },
+  { key: 'negotiating',   label: 'Müzakere',   color: 'bg-amber-500' },
   { key: 'won',           label: 'Kazanıldı',  color: 'bg-green-500' },
   { key: 'lost',          label: 'Kaybedildi', color: 'bg-red-500' },
 ];
@@ -209,9 +209,9 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
   const stageBadgeClass = useMemo(() => ({
     new:           'bg-gray-100 text-gray-700',
     contacted:     'bg-blue-100 text-blue-800',
-    qualified:     'bg-purple-100 text-purple-800',
+    qualified:     'bg-indigo-100 text-indigo-800',
     proposal_sent: 'bg-indigo-100 text-indigo-800',
-    negotiating:   'bg-orange-100 text-orange-800',
+    negotiating:   'bg-amber-100 text-amber-800',
     won:           'bg-green-100 text-green-800',
     lost:          'bg-red-100 text-red-800',
   }), []);

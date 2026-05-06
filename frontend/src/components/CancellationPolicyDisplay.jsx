@@ -50,7 +50,7 @@ const CancellationPolicyDisplay = ({ booking }) => {
           </div>
 
           <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-orange-600 mt-0.5" />
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm font-semibold">Late Cancellation</p>
               <p className="text-xs text-gray-600">
@@ -74,7 +74,7 @@ const CancellationPolicyDisplay = ({ booking }) => {
           <div className="mt-4 pt-3 border-t">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600">OTA Commission:</span>
-              <span className="font-bold text-orange-600">
+              <span className="font-bold text-amber-600">
                 {booking.ota_commission}%
               </span>
             </div>

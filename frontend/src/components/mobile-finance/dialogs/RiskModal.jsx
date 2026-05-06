@@ -106,7 +106,7 @@ export default function RiskModal(props) {
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-gray-900">Kredi Limiti Aşımları</h3>
               {creditViolations && (
-                <Badge className="bg-orange-500">
+                <Badge className="bg-amber-500">
                   {creditViolations.summary?.total_count || 0}
                 </Badge>
               )}
@@ -231,7 +231,7 @@ export default function RiskModal(props) {
                 {riskAlerts.alerts.map((alert) => (
                   <div key={alert.id} className={`p-3 rounded-lg border-2 ${
                     alert.severity === 'critical' ? 'bg-red-50 border-red-300' :
-                    alert.severity === 'high' ? 'bg-orange-50 border-orange-300' :
+                    alert.severity === 'high' ? 'bg-amber-50 border-amber-300' :
                     alert.severity === 'medium' ? 'bg-yellow-50 border-yellow-300' :
                     'bg-blue-50 border-blue-300'
                   }`}>

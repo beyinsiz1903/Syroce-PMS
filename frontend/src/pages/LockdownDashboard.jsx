@@ -259,7 +259,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
             title="Stale Red Orani"
             value={`${rates.stale_rate_pct ?? 0}%`}
             icon={Clock}
-            color="bg-orange-500/15 text-orange-400"
+            color="bg-amber-500/15 text-amber-400"
             alert={(rates.stale_rate_pct ?? 0) > 5}
           />
           <MetricCard

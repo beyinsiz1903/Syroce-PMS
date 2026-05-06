@@ -19,7 +19,7 @@ export default function CashierShiftModal(props) {
       <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            <User className="w-5 h-5 text-purple-600" />
+            <User className="w-5 h-5 text-indigo-600" />
             <span>Kasiyer Vardiya Raporu</span>
           </DialogTitle>
         </DialogHeader>
@@ -27,7 +27,7 @@ export default function CashierShiftModal(props) {
         {shiftReportData ? (
           <div className="space-y-4">
             {/* Shift Info */}
-            <Card className="bg-gradient-to-r from-purple-50 to-indigo-50">
+            <Card className="bg-gradient-to-r from-indigo-50 to-indigo-50">
               <CardContent className="p-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -80,9 +80,9 @@ export default function CashierShiftModal(props) {
                     -{formatCurrency(shiftReportData.total_paid_out || 0)}
                   </span>
                 </div>
-                <div className="flex justify-between p-4 bg-purple-100 rounded-lg border-2 border-purple-300">
-                  <span className="font-bold text-purple-900">Beklenen Bakiye:</span>
-                  <span className="font-bold text-2xl text-purple-700">
+                <div className="flex justify-between p-4 bg-indigo-100 rounded-lg border-2 border-indigo-300">
+                  <span className="font-bold text-indigo-900">Beklenen Bakiye:</span>
+                  <span className="font-bold text-2xl text-indigo-700">
                     {formatCurrency(shiftReportData.expected_balance || 0)}
                   </span>
                 </div>
@@ -129,15 +129,15 @@ export default function CashierShiftModal(props) {
                       {shiftReportData.checkin_count || 0}
                     </p>
                   </div>
-                  <div className="text-center p-3 bg-purple-50 rounded">
-                    <p className="text-xs text-purple-600">Check-out</p>
-                    <p className="text-2xl font-bold text-purple-900">
+                  <div className="text-center p-3 bg-indigo-50 rounded">
+                    <p className="text-xs text-indigo-600">Check-out</p>
+                    <p className="text-2xl font-bold text-indigo-900">
                       {shiftReportData.checkout_count || 0}
                     </p>
                   </div>
-                  <div className="text-center p-3 bg-orange-50 rounded">
-                    <p className="text-xs text-orange-600">Ort. İşlem</p>
-                    <p className="text-2xl font-bold text-orange-900">
+                  <div className="text-center p-3 bg-amber-50 rounded">
+                    <p className="text-xs text-amber-600">Ort. İşlem</p>
+                    <p className="text-2xl font-bold text-amber-900">
                       {formatCurrency(shiftReportData.average_transaction || 0)}
                     </p>
                   </div>
@@ -189,7 +189,7 @@ export default function CashierShiftModal(props) {
             )}
 
             <Button 
-              className="w-full bg-purple-600 hover:bg-purple-700"
+              className="w-full bg-indigo-600 hover:bg-indigo-700"
               onClick={() => toast.success('Vardiya raporu kapatıldı!')}
             >
               <CheckCircle className="w-4 h-4 mr-2" />

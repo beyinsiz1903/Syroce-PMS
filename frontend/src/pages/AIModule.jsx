@@ -114,7 +114,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       title: 'AI-Powered PMS', 
       description: t('aiModule.enhancedPMSDesc'),
       icon: Hotel, 
-      color: 'from-purple-500 to-blue-500',
+      color: 'from-indigo-500 to-blue-500',
     },
     { 
       id: 'ai-chatbot',
@@ -135,7 +135,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       title: 'Dynamic Pricing', 
       description: t('aiModule.dynamicPricingDesc'),
       icon: DollarSign, 
-      color: 'from-amber-500 to-orange-500',
+      color: 'from-amber-500 to-amber-500',
     },
     { 
       id: 'predictive-analytics',
@@ -211,7 +211,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
   const renderOverview = () => (
     <div className="space-y-6">
       {/* AI Daily Briefing */}
-      <Card className="border-0 shadow-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+      <Card className="border-0 shadow-lg bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-white">
             <Brain className="w-6 h-6" />
@@ -256,8 +256,8 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-3 bg-purple-100 rounded-xl">
-              <Hotel className="w-6 h-6 text-purple-600" />
+            <div className="p-3 bg-indigo-100 rounded-xl">
+              <Hotel className="w-6 h-6 text-indigo-600" />
             </div>
             <div>
               <div className="text-2xl font-bold">{briefing?.metrics?.total_rooms || '-'}</div>
@@ -323,9 +323,9 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
                   ${pricingRec.current_rate || pricingRec.current_price || 'N/A'}
                 </div>
               </div>
-              <div className="p-3 bg-purple-50 rounded-lg">
+              <div className="p-3 bg-indigo-50 rounded-lg">
                 <div className="text-sm text-gray-500">Güven Skoru</div>
-                <div className="text-xl font-bold text-purple-600">
+                <div className="text-xl font-bold text-indigo-600">
                   {pricingRec.confidence ? `${Math.round(pricingRec.confidence * 100)}%` : 'N/A'}
                 </div>
               </div>
@@ -462,7 +462,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl text-white">
+            <div className="p-2 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-xl text-white">
               <Brain className="w-7 h-7" />
             </div>
             AI Hub

@@ -98,7 +98,7 @@ const RevenueManagementAdvanced = () => {
     const colors = {
       low: 'bg-green-200',
       medium: 'bg-yellow-200',
-      high: 'bg-orange-200',
+      high: 'bg-amber-200',
       very_high: 'bg-red-200'
     };
     return colors[level] || 'bg-gray-200';
@@ -108,7 +108,7 @@ const RevenueManagementAdvanced = () => {
     const colors = {
       low: 'text-green-800',
       medium: 'text-yellow-800',
-      high: 'text-orange-800',
+      high: 'text-amber-800',
       very_high: 'text-red-800'
     };
     return colors[level] || 'text-gray-800';
@@ -220,9 +220,9 @@ const RevenueManagementAdvanced = () => {
                         </div>
                         <div className="text-xs text-gray-500 mt-1">Last year same date</div>
                       </div>
-                      <div className="bg-purple-50 p-4 rounded-lg">
+                      <div className="bg-indigo-50 p-4 rounded-lg">
                         <div className="text-sm text-gray-600 mb-1">Base Price</div>
-                        <div className="text-2xl font-bold text-purple-600">
+                        <div className="text-2xl font-bold text-indigo-600">
                           ${pricingData.base_price}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">Standard rate</div>
@@ -293,7 +293,7 @@ const RevenueManagementAdvanced = () => {
                     <span className="text-sm">Medium (30-60%)</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-orange-200"></div>
+                    <div className="w-4 h-4 rounded bg-amber-200"></div>
                     <span className="text-sm">High (60-80%)</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -334,9 +334,9 @@ const RevenueManagementAdvanced = () => {
                         ${compsetData.compset_summary?.avg_rate}
                       </div>
                     </div>
-                    <div className="bg-purple-50 p-4 rounded-lg">
+                    <div className="bg-indigo-50 p-4 rounded-lg">
                       <div className="text-sm text-gray-600 mb-1">Avg Occupancy</div>
-                      <div className="text-2xl font-bold text-purple-600">
+                      <div className="text-2xl font-bold text-indigo-600">
                         {compsetData.compset_summary?.avg_occupancy_pct}%
                       </div>
                     </div>

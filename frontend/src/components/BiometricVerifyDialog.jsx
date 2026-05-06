@@ -265,7 +265,7 @@ export default function BiometricVerifyDialog({
                 </div>
               )}
               {livenessRes?.spoof_indicators?.length > 0 && (
-                <div className="p-3 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
                   <b>Sahtekarlık göstergeleri:</b>
                   {livenessRes.spoof_indicators.slice(0, 3).map((s, i) => <div key={i}>• {s}</div>)}
                 </div>

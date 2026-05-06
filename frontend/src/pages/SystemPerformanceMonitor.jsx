@@ -203,7 +203,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                 color="blue"
               />
               <ResourceCard
-                icon={<Activity className="w-5 h-5 text-purple-600" />}
+                icon={<Activity className="w-5 h-5 text-indigo-600" />}
                 label="RAM"
                 value={`${system?.memory_percent || 0}%`}
                 sub={`${system?.memory_used_gb || 0}GB / ${system?.memory_total_gb || 0}GB`}
@@ -240,7 +240,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                 icon={<Timer className="w-4 h-4" />}
                 label="P95"
                 value={`${api_metrics?.p95_ms || 0}ms`}
-                color="text-orange-600"
+                color="text-amber-600"
               />
               <MetricCard
                 icon={<TrendingUp className="w-4 h-4" />}
@@ -418,7 +418,7 @@ const SystemPerformanceMonitor = ({ user }) => {
             {/* Percentile Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <MetricCard icon={<Timer className="w-4 h-4" />} label="P50 (Median)" value={`${api_metrics?.p50_ms || 0}ms`} color="text-blue-600" />
-              <MetricCard icon={<Timer className="w-4 h-4" />} label="P95" value={`${api_metrics?.p95_ms || 0}ms`} color="text-orange-600" />
+              <MetricCard icon={<Timer className="w-4 h-4" />} label="P95" value={`${api_metrics?.p95_ms || 0}ms`} color="text-amber-600" />
               <MetricCard icon={<Timer className="w-4 h-4" />} label="P99" value={`${api_metrics?.p99_ms || 0}ms`} color="text-red-600" />
               <MetricCard icon={<AlertTriangle className="w-4 h-4" />} label="Yavaş İstek" value={api_metrics?.slow_requests || 0} sub=">500ms" color="text-amber-600" />
             </div>
@@ -445,7 +445,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                         <div className="text-xs text-gray-400">{ep.count} istek</div>
                       </div>
                       <div className="text-right">
-                        <div className={`font-bold text-sm ${ep.avg_ms > 500 ? 'text-red-600' : ep.avg_ms > 200 ? 'text-orange-600' : 'text-green-600'}`}>
+                        <div className={`font-bold text-sm ${ep.avg_ms > 500 ? 'text-red-600' : ep.avg_ms > 200 ? 'text-amber-600' : 'text-green-600'}`}>
                           {ep.avg_ms}ms
                         </div>
                       </div>
@@ -565,7 +565,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                         <Badge className={`text-[10px] ${
                           key === 'auth' ? 'bg-red-100 text-red-700' :
                           key === 'anonymous' ? 'bg-yellow-100 text-yellow-700' :
-                          key === 'admin' ? 'bg-purple-100 text-purple-700' :
+                          key === 'admin' ? 'bg-indigo-100 text-indigo-700' :
                           'bg-blue-100 text-blue-700'
                         }`}>
                           {getCategoryLabel(key)}
@@ -653,7 +653,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                 icon={<Clock className="w-4 h-4" />}
                 label="DB Uptime"
                 value={formatUptime(dbStats?.uptime_seconds || 0)}
-                color="text-purple-600"
+                color="text-indigo-600"
               />
             </div>
 
@@ -675,8 +675,8 @@ const SystemPerformanceMonitor = ({ user }) => {
                     <div className="text-2xl font-bold text-green-600">{dbStats?.pool_config?.min_pool_size || 50}</div>
                     <div className="text-xs text-gray-500">Min Pool Size</div>
                   </div>
-                  <div className="text-center p-3 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">{((dbStats?.pool_config?.max_idle_time_ms || 45000) / 1000).toFixed(0)}s</div>
+                  <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                    <div className="text-2xl font-bold text-indigo-600">{((dbStats?.pool_config?.max_idle_time_ms || 45000) / 1000).toFixed(0)}s</div>
                     <div className="text-xs text-gray-500">Max Idle Time</div>
                   </div>
                 </div>
@@ -800,7 +800,7 @@ const ResourceCard = ({ icon, label, value, sub, percent, color }) => (
         <div
           className={`h-1.5 rounded-full transition-all duration-500 ${
             percent > 80 ? 'bg-red-500' :
-            percent > 60 ? 'bg-orange-400' : `bg-${color}-500`
+            percent > 60 ? 'bg-amber-400' : `bg-${color}-500`
           }`}
           style={{ width: `${Math.min(100, percent || 0)}%` }}
         />

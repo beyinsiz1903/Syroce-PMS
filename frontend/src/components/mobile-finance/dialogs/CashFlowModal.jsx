@@ -81,7 +81,7 @@ export default function CashFlowModal(props) {
                           <span className="font-medium">Tahsilat: </span>
                           {formatCurrency(day.expected_collections)}
                         </div>
-                        <div className="text-orange-700">
+                        <div className="text-amber-700">
                           <span className="font-medium">Ödeme: </span>
                           {formatCurrency(day.expected_payments)}
                         </div>

@@ -796,7 +796,7 @@ const TRIGGER_COLORS = {
   booking_confirmed: 'bg-blue-50 text-blue-700',
   pre_arrival: 'bg-amber-50 text-amber-700',
   checked_in: 'bg-green-50 text-green-700',
-  checked_out: 'bg-purple-50 text-purple-700',
+  checked_out: 'bg-indigo-50 text-indigo-700',
 };
 
 function AutomationTab() {
@@ -974,7 +974,7 @@ function AutomationTab() {
               <div><strong>Check-in</strong><br/>Hos geldiniz mesaji, WiFi sifresi, restoran bilgileri</div>
             </div>
             <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 text-purple-700 font-bold">4</div>
+              <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 text-indigo-700 font-bold">4</div>
               <div><strong>Check-out</strong><br/>Tesekkur emaili ve degerlendirme linki</div>
             </div>
           </div>

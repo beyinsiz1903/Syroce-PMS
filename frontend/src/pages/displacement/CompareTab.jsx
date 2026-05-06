@@ -164,7 +164,7 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">{t('displacement.ancillaryRevenue', 'Ancillary')}</span>
-                        <span className="font-medium text-purple-600">₺{fmt(sc.total_ancillary)}</span>
+                        <span className="font-medium text-indigo-600">₺{fmt(sc.total_ancillary)}</span>
                       </div>
                       <div className="border-t pt-2 flex justify-between">
                         <span className="font-semibold">{t('displacement.net', 'Net')}</span>

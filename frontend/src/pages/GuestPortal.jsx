@@ -153,10 +153,10 @@ const GuestPortal = ({ user, onLogout }) => {
 
   const getTierColor = (tier) => {
     switch(tier) {
-      case 'platinum': return 'bg-purple-100 text-purple-700 border-purple-300';
+      case 'platinum': return 'bg-indigo-100 text-indigo-700 border-indigo-300';
       case 'gold': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
       case 'silver': return 'bg-gray-100 text-gray-700 border-gray-300';
-      default: return 'bg-orange-100 text-orange-700 border-orange-300';
+      default: return 'bg-amber-100 text-amber-700 border-amber-300';
     }
   };
 
@@ -287,7 +287,7 @@ const GuestPortal = ({ user, onLogout }) => {
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center">
-                        <Hotel className="w-8 h-8 mr-3 text-purple-500" />
+                        <Hotel className="w-8 h-8 mr-3 text-indigo-500" />
                         <div className="text-3xl font-bold">{loyaltyPrograms.length}</div>
                       </div>
                     </CardContent>
@@ -513,7 +513,7 @@ const GuestPortal = ({ user, onLogout }) => {
                   <p className="text-gray-600">Your points across all hotels</p>
                 </div>
 
-                <Card className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+                <Card className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
                   <CardContent className="pt-6 pb-6">
                     <div className="text-center">
                       <div className="text-6xl font-bold mb-2">{totalPoints}</div>
@@ -556,7 +556,7 @@ const GuestPortal = ({ user, onLogout }) => {
                           {cleaningRequests.slice(0, 3).map((req) => (
                             <div key={req.id} className="flex items-center justify-between p-2 bg-white rounded border">
                               <div className="flex items-center gap-2">
-                                {req.status === 'pending' && <Clock className="w-4 h-4 text-orange-500" />}
+                                {req.status === 'pending' && <Clock className="w-4 h-4 text-amber-500" />}
                                 {req.status === 'in_progress' && <AlertCircle className="w-4 h-4 text-blue-500" />}
                                 {req.status === 'completed' && <CheckCircle className="w-4 h-4 text-green-500" />}
                                 <span className="text-sm">
@@ -564,7 +564,7 @@ const GuestPortal = ({ user, onLogout }) => {
                                 </span>
                               </div>
                               <span className={`text-xs px-2 py-1 rounded ${
-                                req.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                                req.status === 'pending' ? 'bg-amber-100 text-amber-700' :
                                 req.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
                                 'bg-green-100 text-green-700'
                               }`}>
@@ -801,7 +801,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       
                       return (
                         <div className="space-y-6">
-                          <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl p-8 text-white text-center">
+                          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-8 text-white text-center">
                             <div className="mb-4">
                               <h3 className="text-2xl font-bold">{booking.hotel?.property_name}</h3>
                               <p className="text-blue-100">Room {booking.room?.room_number}</p>

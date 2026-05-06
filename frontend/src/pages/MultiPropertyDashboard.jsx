@@ -113,7 +113,7 @@ const MultiPropertyDashboard = () => {
                 <p className="text-sm text-gray-600">{t('common.property')}</p>
                 <p className="text-3xl font-bold">{properties.length}</p>
               </div>
-              <Building2 className="w-8 h-8 text-purple-500" />
+              <Building2 className="w-8 h-8 text-indigo-500" />
             </div>
           </CardContent>
         </Card>
@@ -149,7 +149,7 @@ const MultiPropertyDashboard = () => {
                 <p className="text-sm text-gray-600">{t('dashboard.totalGuests')}</p>
                 <p className="text-3xl font-bold">{dashboardData?.total_guests || 0}</p>
               </div>
-              <Users className="w-8 h-8 text-orange-500" />
+              <Users className="w-8 h-8 text-amber-500" />
             </div>
           </CardContent>
         </Card>
@@ -191,7 +191,7 @@ const MultiPropertyDashboard = () => {
           <Card key={property.id} className="hover:shadow-lg transition">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-purple-500" />
+                <Building2 className="w-5 h-5 text-indigo-500" />
                 <CardTitle className="text-lg">{property.name}</CardTitle>
               </div>
             </CardHeader>

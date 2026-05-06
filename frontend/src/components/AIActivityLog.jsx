@@ -32,7 +32,7 @@ const AIActivityLog = () => {
       case 'message_generation':
         return <MessageSquare className="w-5 h-5 text-blue-500" />;
       case 'demand_forecast':
-        return <Brain className="w-5 h-5 text-purple-500" />;
+        return <Brain className="w-5 h-5 text-indigo-500" />;
       default:
         return <Sparkles className="w-5 h-5 text-yellow-500" />;
     }
@@ -70,7 +70,7 @@ const AIActivityLog = () => {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
         <p className="mt-4 text-gray-600">Loading AI activity...</p>
       </div>
     );
@@ -87,7 +87,7 @@ const AIActivityLog = () => {
                 <p className="text-sm text-gray-600">Total AI Operations</p>
                 <p className="text-3xl font-bold">{stats.total}</p>
               </div>
-              <Brain className="w-10 h-10 text-purple-500" />
+              <Brain className="w-10 h-10 text-indigo-500" />
             </div>
           </CardContent>
         </Card>

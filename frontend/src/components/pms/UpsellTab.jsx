@@ -23,8 +23,8 @@ const PRICE_FIELDS = [
 const TYPE_LABELS = {
   room_upgrade: { label: 'Oda Yukseltme', icon: ArrowUpRight, color: 'bg-blue-100 text-blue-800' },
   early_checkin: { label: 'Erken Check-in', icon: LogIn, color: 'bg-green-100 text-green-800' },
-  late_checkout: { label: 'Gec Check-out', icon: LogOut, color: 'bg-purple-100 text-purple-800' },
-  airport_transfer: { label: 'Transfer', icon: Car, color: 'bg-orange-100 text-orange-800' },
+  late_checkout: { label: 'Gec Check-out', icon: LogOut, color: 'bg-indigo-100 text-indigo-800' },
+  airport_transfer: { label: 'Transfer', icon: Car, color: 'bg-amber-100 text-amber-800' },
 };
 
 const INSIGHT_STYLES = {
@@ -297,7 +297,7 @@ const UpsellTab = ({ bookings = [] }) => {
               <p className="text-xs text-gray-400">Ortalama Günlük Fiyat</p>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-purple-500">
+          <Card className="border-l-4 border-l-indigo-500">
             <CardContent className="pt-4 pb-3">
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <BarChart3 className="w-4 h-4" /> RevPAR

@@ -106,11 +106,11 @@ const AllotmentGrid = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <Card className="bg-purple-50 border-purple-200">
+        <Card className="bg-indigo-50 border-indigo-200">
           <CardContent className="p-4 text-center">
-            <Building2 className="w-5 h-5 mx-auto mb-1 text-purple-600" />
-            <p className="text-xs text-purple-600">{ta('contractCount')}</p>
-            <p className="text-2xl font-bold text-purple-700">{contracts.length}</p>
+            <Building2 className="w-5 h-5 mx-auto mb-1 text-indigo-600" />
+            <p className="text-xs text-indigo-600">{ta('contractCount')}</p>
+            <p className="text-2xl font-bold text-indigo-700">{contracts.length}</p>
           </CardContent>
         </Card>
         <Card className="bg-blue-50 border-blue-200">
@@ -155,7 +155,7 @@ const AllotmentGrid = () => {
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2">
-                      <Building2 className="w-5 h-5 text-purple-500" />
+                      <Building2 className="w-5 h-5 text-indigo-500" />
                       <CardTitle className="text-lg">{contract.tour_operator}</CardTitle>
                     </div>
                     {isExpiring && (
@@ -184,7 +184,7 @@ const AllotmentGrid = () => {
                       <span className={`font-semibold ${available > 0 ? 'text-green-600' : 'text-red-600'}`}>{available} {ta('rooms')}</span>
                     </div>
                     <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
-                      <div className="bg-purple-500 h-full rounded-full" style={{ width: `${Math.min(usagePct, 100)}%` }} />
+                      <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${Math.min(usagePct, 100)}%` }} />
                     </div>
                     <p className="text-xs text-gray-400 text-center">{ta('usage')} %{usagePct}</p>
                     {(contract.bookings_count > 0 || contract.total_revenue > 0) && (
