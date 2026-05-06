@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -366,14 +366,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
   }, []);
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="id-photo-admin"
-      title="Bekleyen Kimlik Fotoğrafları"
-      subtitle="Ön görüntüleme & manuel/KVKK silme — saklama süresi içindeki tüm kayıtlar"
-    >
+    <>
       <div data-testid="id-photo-admin-page" className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between mb-6">
@@ -1004,6 +997,6 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
           </div>
         </div>
       )}
-    </Layout>
+    </>
   );
 }

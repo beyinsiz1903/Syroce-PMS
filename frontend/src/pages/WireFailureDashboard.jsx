@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -63,7 +63,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
   const severityColor = (s) => s === 'high' ? 'text-red-700 bg-red-50' : s === 'medium' ? 'text-amber-700 bg-amber-50' : 'text-slate-700 bg-slate-50';
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
+    <>
       <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="wire-failure-dashboard">
         <div className="flex items-center justify-between">
           <div>
@@ -236,7 +236,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

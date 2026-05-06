@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -90,14 +90,7 @@ const PCIComplianceDashboard = ({ user, tenant, onLogout }) => {
   const { summary, controls } = data;
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="pci-compliance"
-      title="PCI-DSS Uyum Paneli"
-      subtitle={`${summary.version} • Değerlendirme: ${summary.evaluated_at?.slice(0, 19).replace('T', ' ')}`}
-    >
+    <>
     <div className="max-w-6xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-end flex-wrap gap-3">
         <div className="hidden"></div>
@@ -192,7 +185,7 @@ const PCIComplianceDashboard = ({ user, tenant, onLogout }) => {
         ))}
       </div>
     </div>
-    </Layout>
+    </>
   );
 };
 

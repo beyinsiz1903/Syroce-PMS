@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -354,7 +354,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   const ctx = { t, activeTab, setActiveTab, dashboard, setDashboard, connectors, setConnectors, mappings, setMappings, syncJobs, setSyncJobs, importedReservations, setImportedReservations, issues, setIssues, auditLogs, setAuditLogs, loading, setLoading, showNewConnector, setShowNewConnector, showNewMapping, setShowNewMapping, selectedConnector, setSelectedConnector, newConnector, setNewConnector, newMapping, setNewMapping, testResult, setTestResult, showTestResult, setShowTestResult, testLoading, setTestLoading, selectedJob, setSelectedJob, jobEvents, setJobEvents, showJobDetail, setShowJobDetail, jobDetailLoading, setJobDetailLoading, manualReviewQueue, setManualReviewQueue, importBatches, setImportBatches, reservationReviewQueue, setReservationReviewQueue, selectedReservation, setSelectedReservation, showReservationDetail, setShowReservationDetail, selectedBatch, setSelectedBatch, showBatchDetail, setShowBatchDetail, batchReservations, setBatchReservations, batchDetailLoading, setBatchDetailLoading, mappingReadiness, setMappingReadiness, mappingFilter, setMappingFilter, pullLoading, setPullLoading, fetchDashboard, fetchConnectors, fetchData, handleCreateConnector, handleActivate, handlePause, handleTestConnection, handleCreateMapping, fetchMappings, fetchMappingReadiness, handleValidateAllMappings, handleValidateMapping, handleDeactivateMapping, handleSyncInventory, handleSyncRates, handlePullReservations, handleViewBatchDetail, handleViewReservationDetail, handleReprocessReview, handleDismissReview, handleRunReconciliation, handleResolveIssue, handleViewJobDetail, handleRetryJob, handleDismissJob, hs };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="integration-hub">
+    <>
       <div data-testid="integration-hub" className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -1176,7 +1176,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

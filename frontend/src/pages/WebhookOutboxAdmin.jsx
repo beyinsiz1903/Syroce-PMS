@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -142,7 +142,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="webhook-outbox-admin">
+    <>
       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
         <div className="flex items-center justify-between">
           <div>
@@ -381,6 +381,6 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

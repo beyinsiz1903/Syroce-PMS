@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -197,16 +197,16 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-store">
+      <>
         <div className="min-h-[60vh] flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-store">
+    <>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -311,6 +311,6 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

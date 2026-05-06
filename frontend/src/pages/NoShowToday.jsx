@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -87,7 +87,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
   const totalLoss = items.reduce((s, b) => s + (b.total_amount || 0), 0);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+    <>
       <div className="p-6">
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -218,7 +218,7 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

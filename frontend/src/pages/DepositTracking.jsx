@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -188,7 +188,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
   const totalAll = totalActive + totalPartial;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="deposits">
+    <>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -575,6 +575,6 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 }

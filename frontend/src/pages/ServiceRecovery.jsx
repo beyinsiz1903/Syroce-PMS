@@ -14,7 +14,6 @@ import {
   ArrowUpCircle, ArrowDownCircle, User, DoorOpen, Calendar,
   MessageSquare, Trash2, Edit, Zap, History, Wallet, BellRing, FileText
 } from 'lucide-react';
-import Layout from '@/components/Layout';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const CATEGORIES = [
@@ -431,19 +430,19 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <>
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
             <p className="text-gray-500">Yükleniyor...</p>
           </div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1095,7 +1094,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

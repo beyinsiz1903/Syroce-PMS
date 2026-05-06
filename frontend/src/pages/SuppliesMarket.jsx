@@ -20,7 +20,6 @@ import {
   Clock,
   Wallet,
 } from "lucide-react";
-import Layout from "@/components/Layout";
 
 const PAYMENT_LABELS = {
   cash_on_delivery: "Kapıda Ödeme",
@@ -241,7 +240,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="supplies_market">
+    <>
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -775,6 +774,6 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
         </div>
       )}
     </div>
-    </Layout>
+    </>
   );
 }

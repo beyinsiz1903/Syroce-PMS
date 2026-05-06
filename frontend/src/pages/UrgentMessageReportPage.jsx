@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -134,14 +134,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="urgent-message-report"
-      title="Acil Mesaj Raporu"
-      subtitle="Acil mesaj denetim kayıtları — kim, kime, ne zaman"
-    >
+    <>
       <div
         data-testid="urgent-message-report-page"
         className="min-h-screen bg-gray-50"
@@ -511,6 +504,6 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

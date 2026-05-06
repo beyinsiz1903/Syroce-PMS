@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import Layout from "@/components/Layout";
+
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import {
   Building2,
@@ -245,14 +245,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   const yearOptions = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="konaklama-vergisi"
-      title="Konaklama Vergisi Otomasyonu"
-      subtitle="7194 sayılı Kanun — Türkiye Konaklama Vergisi (varsayılan %2). Aylık beyanname takip eden ayın 26'sına kadar verilir."
-    >
+    <>
       <div className="p-4 lg:p-6 space-y-4">
 
       <div className="border-b">
@@ -611,7 +604,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         </div>
       )}
       </div>
-    </Layout>
+    </>
   );
 }
 

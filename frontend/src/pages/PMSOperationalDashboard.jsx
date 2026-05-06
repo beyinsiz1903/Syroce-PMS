@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -527,18 +527,18 @@ export default function PMSOperationalDashboard({ user, tenant, onLogout }) {
 
   if (loading && !data) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
+      <>
         <div className="flex items-center justify-center py-32">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   const tr = trends?.trends;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
+    <>
       <div data-testid="pms-operational-dashboard" className="max-w-[1600px] mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -663,6 +663,6 @@ export default function PMSOperationalDashboard({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

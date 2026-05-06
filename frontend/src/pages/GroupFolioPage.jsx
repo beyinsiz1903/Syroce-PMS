@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -305,7 +305,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group_folio">
+    <>
       <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto" data-testid="group-folio-page">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -852,7 +852,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

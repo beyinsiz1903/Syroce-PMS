@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -178,16 +178,16 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
 
   if (loading && !dashboard) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <>
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="max-w-6xl mx-auto space-y-6" data-testid="golive-cockpit">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -460,7 +460,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

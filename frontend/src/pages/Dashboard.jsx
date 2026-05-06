@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import Layout from '@/components/Layout';
+
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
 import { useCurrency } from '@/context/CurrencyContext';
@@ -554,7 +554,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
   }, [filteredModules]);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="dashboard">
+    <>
       <div className="p-4 md:p-6 space-y-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
@@ -1029,7 +1029,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
           </>
         )}
       </div>
-    </Layout>
+    </>
   );
 };
 
@@ -1040,7 +1040,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
   const { t } = useTranslation();
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={() => {}} currentModule="dashboard">
+    <>
       <div className="p-4 md:p-6 space-y-4">
         <PmsLiteOnboarding tenant={tenant} />
         <div>
@@ -1129,7 +1129,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

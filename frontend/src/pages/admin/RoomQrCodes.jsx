@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,7 +68,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
   );
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_codes">
+    <>
       <div className="p-6 space-y-6 print:hidden">
         <div className="flex justify-between items-center">
           <div>
@@ -149,7 +149,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
       <div className="hidden print:block">
         <PrintAllQrCodes rooms={filtered} />
       </div>
-    </Layout>
+    </>
   );
 }
 

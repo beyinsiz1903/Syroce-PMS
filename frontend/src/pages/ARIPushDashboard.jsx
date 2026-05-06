@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -142,7 +142,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
   });
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} title="ARI Push Engine">
+    <>
       <div data-testid="ari-push-dashboard" className="space-y-6 p-4 sm:p-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -563,7 +563,7 @@ const ARIPushDashboard = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

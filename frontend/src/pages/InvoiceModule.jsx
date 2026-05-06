@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatAmount } from '@/lib/currency';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
@@ -172,9 +172,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
   if (!user || !tenant) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
+      <>
         <div className="p-6 text-sm text-slate-600">{t('common.loading')}</div>
-      </Layout>
+      </>
     );
   }
 
@@ -182,35 +182,35 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const _isAllowed = ['super_admin', 'admin'].includes(user?.role) || _userRoles.includes('super_admin') || _userRoles.includes('admin');
   if (!_isAllowed) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
+      <>
         <div className="p-6 text-sm text-slate-600">{t('common.noAccess') || 'Bu modüle erişim izniniz yok.'}</div>
-      </Layout>
+      </>
     );
   }
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
+      <>
         <div className="p-6 text-center">{t('common.loading')}</div>
-      </Layout>
+      </>
     );
   }
 
   if (fatal) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
+      <>
         <div className="p-6 space-y-2">
           <div className="text-sm font-medium text-red-600">{t('common.error') || 'Hata'}</div>
           <pre className="text-xs bg-slate-950/80 text-slate-200 p-3 rounded-md overflow-auto">{String(fatal)}</pre>
         </div>
-      </Layout>
+      </>
     );
   }
 
   const money = (v) => fmtMoney(v || 0, { decimals: 2 });
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
+    <>
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('invoice.title')}</h1>
@@ -520,7 +520,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
         <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
       </div>
-    </Layout>
+    </>
   );
 };
 

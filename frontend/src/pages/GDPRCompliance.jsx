@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
-import Layout from '@/components/Layout';
+
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
@@ -41,7 +41,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
   const cs = complianceStatus;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -211,6 +211,6 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

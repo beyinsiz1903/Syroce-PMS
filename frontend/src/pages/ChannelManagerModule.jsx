@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -353,7 +353,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -1017,7 +1017,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

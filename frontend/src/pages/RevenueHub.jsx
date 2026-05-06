@@ -14,7 +14,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
 
 const GelirYonetimiPage = lazy(() => import('@/pages/GelirYonetimiPage'));
 const RevenueAutopilotDashboard = lazy(() => import('@/pages/RevenueAutopilotDashboard'));
@@ -64,7 +63,7 @@ export default function RevenueHub({ user, tenant, onLogout }) {
   ];
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="revenue">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="revenue-hub">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
@@ -130,6 +129,6 @@ export default function RevenueHub({ user, tenant, onLogout }) {
           </Suspense>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

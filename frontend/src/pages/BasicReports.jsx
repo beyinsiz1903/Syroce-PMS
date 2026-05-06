@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -190,18 +190,18 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const isInitialDashboardLoad = needsDashboard && data === null && !error;
 
   if ((loading || isInitialDashboardLoad) && needsDashboard) return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
+    <>
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
           <p className="text-sm text-gray-500">Raporlar yükleniyor...</p>
         </div>
       </div>
-    </Layout>
+    </>
   );
 
   if (error && needsDashboard) return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
+    <>
       <div className="p-6">
         <Card className="border-red-200 bg-red-50">
           <CardContent className="p-6 text-center">
@@ -213,7 +213,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 
   const s = data?.summary || {};
@@ -296,7 +296,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
+    <>
       <div className="flex min-h-[calc(100vh-64px)]">
         <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
           <div className="p-4 border-b border-gray-100">
@@ -378,7 +378,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           </div>
         </main>
       </div>
-    </Layout>
+    </>
   );
 };
 

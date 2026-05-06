@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import Layout from "@/components/Layout";
+
 import axios from "axios";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
   const summary = data?.summary || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -319,7 +319,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
           </Card>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

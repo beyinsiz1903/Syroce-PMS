@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -157,7 +157,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
   const running = !!engineStatus?.running;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="early-warning" title="Erken Uyarı Motoru" subtitle="Tahminsel operasyonel sinyaller ve trend analizi">
+    <>
       <div className="space-y-6 p-4">
         {error && (
           <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200 text-sm">{error}</div>
@@ -371,6 +371,6 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 }

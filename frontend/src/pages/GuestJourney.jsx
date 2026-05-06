@@ -15,7 +15,7 @@ import {
   MessageSquare, DoorClosed,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { confirmDialog } from '@/lib/dialogs';
 
 const CATEGORY_BADGE = {
@@ -118,7 +118,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
                   'text-red-600';
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -390,7 +390,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

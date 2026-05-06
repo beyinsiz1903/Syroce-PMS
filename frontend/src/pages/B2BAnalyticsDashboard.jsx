@@ -13,7 +13,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
 } from 'recharts';
 import { KPICard, CustomTooltip, COLORS, formatCurrency, formatNumber } from './reports/ReportHelpers';
-import Layout from '@/components/Layout';
 
 const BACKEND_URL = "";
 
@@ -128,7 +127,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
   const kpis = summary?.kpis || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="b2b-analytics">
+    <>
     <div className="min-h-screen bg-gray-50/50 p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -492,6 +491,6 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
         </Button>
       </div>
     </div>
-    </Layout>
+    </>
   );
 }

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
+
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
@@ -48,7 +48,7 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
   useEffect(() => { fetchLoyalty(); }, []);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Cross-Property Misafir Profilleri</h1>
@@ -207,6 +207,6 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

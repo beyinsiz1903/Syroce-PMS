@@ -1,6 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '@/components/Layout';
+
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -454,7 +454,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
   };
 
   const wrap = (content) => embedded ? content : (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">{content}</Layout>
+    <>{content}</>
   );
 
   return wrap(

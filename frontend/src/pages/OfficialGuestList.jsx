@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -107,7 +107,7 @@ const OfficialGuestList = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+    <>
       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -225,7 +225,7 @@ const OfficialGuestList = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

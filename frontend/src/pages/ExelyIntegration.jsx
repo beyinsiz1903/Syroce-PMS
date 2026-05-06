@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -192,7 +192,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
   const isConnected = connection?.connected;
 
   return (
-    <Layout user={user} onLogout={onLogout} tenant={tenant}>
+    <>
       <div className="p-4 md:p-6 space-y-6" data-testid="exely-integration">
         <div className="flex items-center justify-between">
           <div>
@@ -743,7 +743,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

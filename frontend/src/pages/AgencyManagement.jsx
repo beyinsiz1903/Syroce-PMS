@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import Layout from '@/components/Layout';
+
 import { confirmDialog } from '@/lib/dialogs';
 
 const AgencyManagement = ({ user, tenant, onLogout }) => {
@@ -510,7 +510,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     </div>
   );
 
-  return <Layout user={user} tenant={tenant} onLogout={onLogout}>{content}</Layout>;
+  return <>{content}</>;
 };
 
 export default AgencyManagement;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,7 +80,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
   const withDebt = departures.filter((b) => (b.balance || 0) > 0).length;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+    <>
       <div className="p-6">
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -211,7 +211,7 @@ const DepartureList = ({ user, tenant, onLogout }) => {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

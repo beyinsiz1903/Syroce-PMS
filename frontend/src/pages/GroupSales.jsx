@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -250,7 +250,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group-sales">
+    <>
     <div className="p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -975,7 +975,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
         </DialogContent>
       </Dialog>
     </div>
-    </Layout>
+    </>
   );
 };
 

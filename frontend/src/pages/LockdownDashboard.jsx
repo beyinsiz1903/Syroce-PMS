@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -120,11 +120,11 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
+      <>
         <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -143,7 +143,7 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
   const recon = reconMetrics || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
+    <>
       <div className="space-y-6 p-4 lg:p-6 max-w-[1400px] mx-auto">
 
         {/* ─── Header ──────────────────────────────────────── */}
@@ -570,6 +570,6 @@ export default function LockdownDashboard({ user, tenant, onLogout }) {
           Son güncelleme: {status?.timestamp ? new Date(status.timestamp).toLocaleString('tr-TR') : '-'}
         </p>
       </div>
-    </Layout>
+    </>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import Layout from "@/components/Layout";
+
 import {
   AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck,
   Download, FileText, Loader2, RefreshCw, ScrollText, Save, ShieldCheck,
@@ -106,14 +106,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
   const yearOpts = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="mevzuat-raporlari"
-      title="Mevzuat Raporları"
-      subtitle="TÜİK Aylık Konaklama Anketi · Bakanlık Denetim Hazırlığı · Yıldız Sınıflama Self-Check"
-    >
+    <>
     <div className="p-4 lg:p-6 space-y-4">
 
       <div className="border-b">
@@ -376,7 +369,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
         </div>
       )}
     </div>
-    </Layout>
+    </>
   );
 }
 

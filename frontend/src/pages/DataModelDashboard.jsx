@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { TrendCharts } from '../components/TrendCharts';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -403,7 +403,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const lineageStats = ingestStatus?.pipeline?.lineage || {};
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div data-testid="data-model-dashboard" className="space-y-6 p-4 md:p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1428,7 +1428,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

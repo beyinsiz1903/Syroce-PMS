@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import Layout from "@/components/Layout";
+
 import {
   BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
   Package, Rocket, ScrollText, Search, Tag,
@@ -152,14 +152,7 @@ export default function HelpCenter({ user, tenant, onLogout }) {
   const html = useMemo(() => renderMarkdown(article?.body_markdown), [article]);
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="help"
-      title="Yardım Merkezi"
-      subtitle="Modül rehberleri, sık sorulanlar ve mevzuat bilgileri."
-    >
+    <>
     <div className="p-4 lg:p-6 space-y-4">
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2 w-full max-w-md">
@@ -254,6 +247,6 @@ export default function HelpCenter({ user, tenant, onLogout }) {
         </main>
       </div>
     </div>
-    </Layout>
+    </>
   );
 }

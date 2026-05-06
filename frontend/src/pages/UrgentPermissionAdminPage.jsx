@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -159,7 +159,7 @@ export default function UrgentPermissionAdminPage() {
   }, [toast]);
 
   return (
-    <Layout currentModule="urgent-permission-admin">
+    <>
       <div data-testid="urgent-permission-admin-page" className="min-h-screen bg-gray-50">
         <div className="max-w-5xl mx-auto p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -329,6 +329,6 @@ export default function UrgentPermissionAdminPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

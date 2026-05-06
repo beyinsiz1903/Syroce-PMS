@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -209,18 +209,18 @@ const PendingAR = ({ user, tenant, onLogout }) => {
 
   if (loading && agingLoading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pending-ar">
+      <>
         <div className="flex items-center justify-center h-screen">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </>
     );
   }
 
   const agingRows = flattenAgingRows();
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pending-ar">
+    <>
       <div className="p-6 space-y-6">
         <Tabs defaultValue="pending-ar">
           <TabsList className="mb-4">
@@ -642,7 +642,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

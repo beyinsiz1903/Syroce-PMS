@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import Layout from '../components/Layout';
+
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -242,11 +242,11 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
+      <>
         <div className="flex items-center justify-center h-96">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -258,7 +258,7 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
   const warningKeys = dashboard?.keys?.rotation_warnings || [];
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
+    <>
       <div className="space-y-6 p-6" data-testid="encryption-management-page">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -910,6 +910,6 @@ export default function EncryptionManagementPage({ user, tenant, onLogout }) {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 }

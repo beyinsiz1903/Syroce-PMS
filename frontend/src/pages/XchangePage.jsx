@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -138,14 +138,7 @@ const XchangePage = ({ user, tenant, onLogout }) => {
   }
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="xchange"
-      title="Syroce Xchange (SXI)"
-      subtitle="GDS, CRS ve ERP partner'larıyla HTNG 2024B mesaj bus'ı. OPERA PMSXchange (OXI) eşdeğeri."
-    >
+    <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-end flex-wrap gap-3">
         <div className="hidden"></div>
@@ -367,7 +360,7 @@ const XchangePage = ({ user, tenant, onLogout }) => {
         </div>
       )}
     </div>
-    </Layout>
+    </>
   );
 };
 

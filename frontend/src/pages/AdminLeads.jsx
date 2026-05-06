@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,7 +144,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-leads">
+    <>
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">PMS Lite Lead Listesi</h1>
@@ -364,7 +364,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

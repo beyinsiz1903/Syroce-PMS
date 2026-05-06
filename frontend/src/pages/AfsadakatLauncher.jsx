@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,11 +55,11 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="afsadakat">
+      <>
         <div className="min-h-[60vh] flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -68,7 +68,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
   const externalReady = !!status?.external_configured;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="afsadakat">
+    <>
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -165,6 +165,6 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
           </Card>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Users, Activity } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
 
 const HRComplete = lazy(() => import('@/pages/HRComplete'));
 const HRv2OpsDashboard = lazy(() => import('@/pages/HRv2OpsDashboard'));
@@ -21,7 +20,7 @@ export default function HRHub({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="hr">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="hr-hub">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
@@ -63,6 +62,6 @@ export default function HRHub({ user, tenant, onLogout }) {
           </Suspense>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '@/components/Layout';
 
 import { confirmDialog } from '@/lib/dialogs';
 const API = '/mailing';
@@ -49,7 +48,7 @@ export default function MailingPage({ user, tenant, onLogout }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mailing">
+    <>
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -95,7 +94,7 @@ export default function MailingPage({ user, tenant, onLogout }) {
         </TabsContent>
       </Tabs>
     </div>
-    </Layout>
+    </>
   );
 }
 

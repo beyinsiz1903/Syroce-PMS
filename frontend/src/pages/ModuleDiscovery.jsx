@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -119,7 +119,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-discovery" title="Modül Keşfi" subtitle="Sidebar'da görünmeyen sayfalar dahil tüm uygulama rotaları">
+    <>
       <div className="p-4 space-y-4">
         {/* Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -261,6 +261,6 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
           ))
         )}
       </div>
-    </Layout>
+    </>
   );
 }

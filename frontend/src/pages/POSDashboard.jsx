@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import Layout from '../components/Layout';
+
 import POSTableManagement from '../components/POSTableManagement';
 import POSMenuItems from '../components/POSMenuItems';
 import POSOutletManagement from '../components/POSOutletManagement';
@@ -78,7 +78,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
   const selectedOutlet = outlets.find(o => o.id === selectedOutletId);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pos">
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -230,7 +230,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

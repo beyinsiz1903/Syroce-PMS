@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -280,11 +280,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
+      <>
         <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -305,7 +305,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
   const phaseProgress = ro.phase_progress || [];
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
+    <>
       <div className="space-y-5 p-4 lg:p-6 max-w-[1400px] mx-auto">
 
         {/* ─── Header ──────────────────────────────────────── */}
@@ -861,6 +861,6 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
         )}
 
       </div>
-    </Layout>
+    </>
   );
 }

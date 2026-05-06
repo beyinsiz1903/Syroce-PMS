@@ -1,5 +1,5 @@
 import React, { useState, lazy, Suspense } from 'react';
-import Layout from '@/components/Layout';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Brain, BarChart3, Loader2 } from 'lucide-react';
 
@@ -19,7 +19,7 @@ export default function AIZekaPage({ user, tenant, onLogout }) {
   const [tab, setTab] = useState('ai-hub');
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">
+    <>
       <div className="p-4 lg:p-6 space-y-4" data-testid="ai-zeka-page">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">AI & Zeka</h1>
@@ -49,6 +49,6 @@ export default function AIZekaPage({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

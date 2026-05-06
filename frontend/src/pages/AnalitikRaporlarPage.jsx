@@ -1,5 +1,5 @@
 import React, { useState, lazy, Suspense } from 'react';
-import Layout from '@/components/Layout';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Download, Clock, Loader2, Brain } from 'lucide-react';
 
@@ -20,7 +20,7 @@ export default function AnalitikRaporlarPage({ user, tenant, onLogout }) {
   const [tab, setTab] = useState('rapor-export');
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
+    <>
       <div className="p-4 lg:p-6 space-y-4" data-testid="analitik-raporlar-page">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Analitik & Raporlar</h1>
@@ -59,6 +59,6 @@ export default function AnalitikRaporlarPage({ user, tenant, onLogout }) {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

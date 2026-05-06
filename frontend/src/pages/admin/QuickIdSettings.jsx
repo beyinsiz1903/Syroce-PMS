@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,11 +84,11 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
+      <>
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -101,7 +101,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
+    <>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -335,6 +335,6 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
           </p>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

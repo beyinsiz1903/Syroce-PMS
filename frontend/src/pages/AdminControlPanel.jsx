@@ -1,6 +1,6 @@
 import { useState, Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import Layout from '../components/Layout';
+
 import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi } from 'lucide-react';
 import { useAdminWebSocket } from '../hooks/useAdminWebSocket';
 
@@ -77,7 +77,7 @@ const AdminControlPanel = ({ user, tenant, onLogout }) => {
   const { connected, lastEvent } = useAdminWebSocket('default');
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin_control_panel">
+    <>
       <div data-testid="admin-control-panel" className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -128,7 +128,7 @@ const AdminControlPanel = ({ user, tenant, onLogout }) => {
           <TabContent tabId={activeTab} />
         </Suspense>
       </div>
-    </Layout>
+    </>
   );
 };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="fnb">
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -114,7 +114,7 @@ const FnBComplete = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

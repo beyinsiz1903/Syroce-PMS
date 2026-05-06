@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -175,7 +175,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
   );
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group-bookings">
+    <>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -458,6 +458,6 @@ export default function GroupBookings({ user, tenant, onLogout }) {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 }

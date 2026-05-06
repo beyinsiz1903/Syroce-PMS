@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "react-hot-toast";
 import { Store, CheckCircle2, Ban, Loader2, RefreshCw, ShoppingBag } from "lucide-react";
-import Layout from "@/components/Layout";
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const STATUS_BADGE = {
@@ -95,14 +94,7 @@ export default function AdminVendors({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="admin_vendors"
-      title="Tedarikçi Yönetimi"
-      subtitle="Tedarikçi başvurularını onaylayın, hesapları yönetin ve siparişleri takip edin."
-    >
+    <>
       <div className="max-w-7xl mx-auto p-4 space-y-4">
         {/* Tabs */}
         <div className="flex items-center gap-2 border-b border-gray-200">
@@ -287,6 +279,6 @@ export default function AdminVendors({ user, tenant, onLogout }) {
           </>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

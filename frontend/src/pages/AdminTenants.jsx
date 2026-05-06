@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -192,16 +192,16 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
 
   if (activeView === 'users') {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-tenants">
+      <>
         <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
           <AllUsersView onBack={() => setActiveView('tenants')} tenants={tenants} />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-tenants">
+    <>
       <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
         {/* Header */}
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -484,7 +484,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
           </div>
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 };
 

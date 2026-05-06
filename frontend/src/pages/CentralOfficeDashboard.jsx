@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import Layout from '@/components/Layout';
+
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
@@ -42,7 +42,7 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
   const kpi = dashboard?.chain_kpi;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -190,6 +190,6 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
           </Card>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

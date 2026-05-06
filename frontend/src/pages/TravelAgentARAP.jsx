@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -208,16 +208,16 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
 
   if (loading && !summary) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeItem="travel_agent_arap">
+      <>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeItem="travel_agent_arap">
+    <>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">{t('agentArap.title')}</h1>
@@ -733,7 +733,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           ) : null}
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 };
 

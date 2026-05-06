@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -273,16 +273,16 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
 
   if (configLoading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+      <>
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="report-builder-page">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -766,7 +766,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
           </Card>
         )}
       </div>
-    </Layout>
+    </>
   );
 };
 

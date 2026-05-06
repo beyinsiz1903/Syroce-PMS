@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,7 +112,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
@@ -341,7 +341,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

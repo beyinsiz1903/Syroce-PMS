@@ -17,7 +17,6 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import Layout from '@/components/Layout';
 
 const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
   const [content, setContent] = useState(null);
@@ -140,9 +139,9 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
   };
 
   if (loading) {
-    return <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    return <>
       <div className="flex justify-center py-20"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
-    </Layout>;
+    </>;
   }
 
   const pageContent = (
@@ -404,7 +403,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
     </div>
   );
 
-  return <Layout user={user} tenant={tenant} onLogout={onLogout}>{pageContent}</Layout>;
+  return <>{pageContent}</>;
 };
 
 export default AgencyContentDistribution;

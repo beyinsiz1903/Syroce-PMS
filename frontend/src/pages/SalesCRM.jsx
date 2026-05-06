@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -217,7 +217,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
   }), []);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="sales-crm">
+    <>
       <div className="p-6">
         {/* Başlık + Yeni Lead */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -618,7 +618,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

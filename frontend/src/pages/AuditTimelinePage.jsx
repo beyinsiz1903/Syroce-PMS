@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -138,14 +138,7 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="audit-timeline"
-      title="Audit Timeline"
-      subtitle="Compliance & operational audit trail"
-    >
+    <>
     <div data-testid="audit-timeline-page" className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
@@ -331,6 +324,6 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
         </div>
       </div>
     </div>
-    </Layout>
+    </>
   );
 }

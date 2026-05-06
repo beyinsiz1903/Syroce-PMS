@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -150,16 +150,16 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="city-ledger">
+      <>
         <div className="flex items-center justify-center h-screen">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="city-ledger">
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -437,7 +437,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

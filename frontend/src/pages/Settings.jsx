@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -360,7 +360,7 @@ const Settings = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="settings">
+    <>
       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1079,7 +1079,7 @@ const Settings = ({ user, tenant, onLogout }) => {
         onRoomsCreated={loadRooms}
         user={user}
       />
-    </Layout>
+    </>
   );
 };
 

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2, PlugZap, BarChart3, Settings2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
 
 const ChannelConnections = lazy(() => import('@/pages/ChannelConnections'));
 const ChannelManagerDashboardV2 = lazy(() => import('@/pages/ChannelManagerDashboardV2'));
@@ -31,7 +30,7 @@ export default function ChannelHub({ user, tenant, onLogout }) {
   const childProps = { user, tenant, onLogout, embedded: true };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channels">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="channel-hub">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
@@ -84,6 +83,6 @@ export default function ChannelHub({ user, tenant, onLogout }) {
           </Suspense>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Activity, AlertTriangle, ChevronLeft, ChevronRight, Clock3, RefreshCw, ShieldAlert, Waves } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from 'recharts';
 
-import Layout from '@/components/Layout';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -186,7 +186,7 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
   const shadowPageData = shadowEvents.slice((shadowPage - 1) * PAGE_SIZE, shadowPage * PAGE_SIZE);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+    <>
       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.16),_transparent_24%),linear-gradient(180deg,#f8fafc_0%,#fffdf7_100%)] p-4 md:p-6" data-testid="migration-observability-page">
         <div className="mx-auto max-w-7xl space-y-6">
           <section className="overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 text-white shadow-2xl shadow-slate-200/60" data-testid="migration-observability-hero">
@@ -538,6 +538,6 @@ export default function MigrationObservabilityPage({ user, tenant, onLogout }) {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

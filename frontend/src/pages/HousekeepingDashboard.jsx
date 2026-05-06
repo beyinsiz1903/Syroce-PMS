@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '../components/Layout';
+
 import StaffAssignment from '../components/StaffAssignment';
 import HousekeepingDetailedReports from '../components/HousekeepingDetailedReports';
 import HousekeepingQualityPanel from '../components/HousekeepingQualityPanel';
@@ -40,7 +40,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
     + (roomStatus?.status_counts?.maintenance ?? roomStatus?.summary?.out_of_service ?? 0);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="housekeeping">
+    <>
       <div className="p-6 space-y-6" data-testid="page-housekeeping">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -149,7 +149,7 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

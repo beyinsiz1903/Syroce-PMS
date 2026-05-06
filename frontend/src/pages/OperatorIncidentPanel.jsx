@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -216,11 +216,11 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -228,7 +228,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
   const criticals = summary?.by_severity?.critical || 0;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div data-testid="incident-panel" className="space-y-6 max-w-[1400px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -361,6 +361,6 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 }

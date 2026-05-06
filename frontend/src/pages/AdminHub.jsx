@@ -22,7 +22,6 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import Layout from '@/components/Layout';
 
 const SECTIONS = [
   {
@@ -103,7 +102,7 @@ export default function AdminHub({ user, tenant, onLogout }) {
   const sections = useMemo(() => SECTIONS, []);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="admin-hub">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
@@ -159,6 +158,6 @@ export default function AdminHub({ user, tenant, onLogout }) {
           ))}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

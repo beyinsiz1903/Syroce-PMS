@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../components/Layout';
+
 import POSTableManagement from '../components/POSTableManagement';
 import POSMenuItems from '../components/POSMenuItems';
 import StaffAssignment from '../components/StaffAssignment';
@@ -24,7 +24,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -200,7 +200,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

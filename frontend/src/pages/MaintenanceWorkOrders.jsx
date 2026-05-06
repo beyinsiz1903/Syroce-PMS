@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import Layout from "@/components/Layout";
+
 import axios from "axios";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -185,7 +185,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="maintenance">
+    <>
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -440,7 +440,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
           )}
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 };
 

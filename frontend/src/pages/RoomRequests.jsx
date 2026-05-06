@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useTranslation } from 'react-i18next';
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -155,7 +155,7 @@ export default function RoomRequests({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_requests">
+    <>
       <div className="p-6 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -321,7 +321,7 @@ export default function RoomRequests({ user, tenant, onLogout }) {
           )}
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 }
 

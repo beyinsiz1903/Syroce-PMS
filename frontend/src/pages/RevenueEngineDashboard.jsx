@@ -13,7 +13,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import Layout from '@/components/Layout';
 
 const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
@@ -33,7 +32,7 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
   const headers = { Authorization: `Bearer ${token}` };
 
   const wrap = (content) => embedded ? content : (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
+    <>{content}</>
   );
 
   const fetchAll = useCallback(async () => {

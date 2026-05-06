@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -304,7 +304,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
   const enabledRates = rateSelections.filter((s) => s.enabled && s.external_entity_id).length;
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="max-w-5xl mx-auto space-y-6" data-testid="room-mapping-wizard">
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -854,7 +854,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 };
 

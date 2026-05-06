@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../components/Layout';
+
 import MessagingTemplates from '../components/MessagingTemplates';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -101,7 +101,7 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -389,7 +389,7 @@ const MessagingCenter = ({ user, tenant, onLogout }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 };
 

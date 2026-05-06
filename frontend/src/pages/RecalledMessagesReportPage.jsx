@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -166,14 +166,7 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="recalled-messages-report"
-      title="Geri Alınan Mesajlar Raporu"
-      subtitle="Hangi kullanıcı hangi mesajını ne zaman geri aldı"
-    >
+    <>
       <div
         data-testid="recalled-messages-report-page"
         className="min-h-screen bg-gray-50"
@@ -655,6 +648,6 @@ export default function RecalledMessagesReportPage({ user, tenant, onLogout }) {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

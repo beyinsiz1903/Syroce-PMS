@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
-import Layout from "../components/Layout";
+
 import { ChannelHealth } from "../components/ChannelHealthDashboard";
 import { TechDebtDashboard } from "../components/TechDebtDashboard";
 import { WeeklyProof } from "../components/WeeklyProofDashboard";
@@ -625,7 +625,7 @@ function formatTime(isoStr) {
 // ─── Main Page ───────────────────────────────────────────────────
 export default function ControlPlane({ user, tenant, onLogout }) {
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentPage="control_plane">
+    <>
       <div className="min-h-screen bg-white text-gray-900" data-testid="control-plane-page">
         <div className="max-w-6xl mx-auto px-4 py-6">
           {/* Header */}
@@ -732,6 +732,6 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           </Tabs>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

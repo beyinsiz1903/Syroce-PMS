@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -255,16 +255,16 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <>
         <div className="flex items-center justify-center h-64">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -1070,7 +1070,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
           </div>
         </div>
       )}
-    </Layout>
+    </>
   );
 };
 

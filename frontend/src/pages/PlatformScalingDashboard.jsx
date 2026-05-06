@@ -14,7 +14,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import Layout from '@/components/Layout';
 
 const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899'];
@@ -65,16 +64,16 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
+      <>
         <div className="flex items-center justify-center h-96" data-testid="loading-spinner">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
+    <>
       <div className="space-y-6 p-6" data-testid="platform-scaling-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -117,7 +116,7 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
         {activeModule === 'multi_property' && <MultiPropertyPanel data={multiPropData} />}
         {activeModule === 'competitive' && <CompetitivePanel data={compData} headers={headers} fetchAll={fetchAll} />}
       </div>
-    </Layout>
+    </>
   );
 }
 

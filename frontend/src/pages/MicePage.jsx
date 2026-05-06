@@ -30,7 +30,6 @@ import {
   History as HistoryIcon, Pencil,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
-import Layout from '@/components/Layout';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 const MicePage = ({ user, tenant, onLogout }) => {
@@ -435,7 +434,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mice">
+    <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -757,7 +756,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
         <OpsModal opsData={opsData} onClose={() => setOpsData(null)} />
       )}
     </div>
-    </Layout>
+    </>
   );
 };
 

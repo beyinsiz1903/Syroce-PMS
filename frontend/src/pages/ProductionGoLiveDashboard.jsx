@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
-import Layout from "../components/Layout";
+
 import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play, Box, GitBranch, HardDrive, Lock, BarChart3, Download } from "lucide-react";
 
 const API = "";
@@ -190,8 +190,8 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
 
   useEffect(() => { if (activeTab === "deployment") fetchDeployment(); }, [activeTab, fetchDeployment]);
 
-  if (loading) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-gray-600 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></Layout>;
-  if (error) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></Layout>;
+  if (loading) return <><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-gray-600 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></>;
+  if (error) return <><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></>;
 
   const readiness = data?.readiness || {};
   const config = data?.configuration || {};
@@ -221,7 +221,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   ];
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive">
+    <>
       <div data-testid="production-golive-dashboard" className="space-y-5 pb-10">
         {/* Header */}
         <div className={`bg-gradient-to-r ${rColors.gradient} ${rColors.border} border rounded-2xl p-6 ring-1 ${rColors.ring}`}>
@@ -766,7 +766,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }
 

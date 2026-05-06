@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../components/Layout';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -190,7 +190,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="sales">
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -522,7 +522,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 };
 

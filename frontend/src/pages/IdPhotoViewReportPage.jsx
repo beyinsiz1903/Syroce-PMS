@@ -17,7 +17,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -198,14 +198,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="id-photo-view-report"
-      title="Kimlik Fotoğrafı Görüntüleme Raporu"
-      subtitle="KVKK denetimi — kim, ne zaman, hangi misafirin kimliğini açtı"
-    >
+    <>
       <div
         data-testid="id-photo-view-report-page"
         className="min-h-screen bg-gray-50"
@@ -667,6 +660,6 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

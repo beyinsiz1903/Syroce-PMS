@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Shield, Activity, Lock } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Layout from '@/components/Layout';
 
 const SecurityCenter = lazy(() => import('@/pages/SecurityCenter'));
 const SecurityDashboard = lazy(() => import('@/pages/SecurityDashboard'));
@@ -24,7 +23,7 @@ export default function SecurityHub({ user, tenant, onLogout }) {
   const childProps = { user, tenant, onLogout, embedded: true };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
+    <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="security-hub">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -73,6 +72,6 @@ export default function SecurityHub({ user, tenant, onLogout }) {
           </Suspense>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

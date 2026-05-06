@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
-import Layout from "../components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -466,7 +466,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
   );
 
   if (user && tenant) {
-    return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="folio_detail">{content}{chargeFormPanel}</Layout>;
+    return <>{content}{chargeFormPanel}</>;
   }
   return <>{content}{chargeFormPanel}</>;
 }

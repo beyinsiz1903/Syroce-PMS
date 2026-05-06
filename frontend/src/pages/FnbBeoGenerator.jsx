@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +51,7 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="fnb">
+    <>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -221,7 +221,7 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
           </Card>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -834,7 +834,7 @@ const DeployTab = () => {
    ================================================================ */
 const GovernancePanel = ({ user, tenant, onLogout }) => {
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="governance">
+    <>
       <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2" data-testid="governance-title">
@@ -860,7 +860,7 @@ const GovernancePanel = ({ user, tenant, onLogout }) => {
           <TabsContent value="deploy"><DeployTab /></TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 };
 

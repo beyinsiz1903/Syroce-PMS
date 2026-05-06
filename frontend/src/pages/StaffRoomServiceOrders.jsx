@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -267,7 +267,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
   }, [orders]);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pos">
+    <>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -459,7 +459,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 };
 

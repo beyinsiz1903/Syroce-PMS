@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import Layout from "@/components/Layout";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -150,7 +150,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="capx-integration">
+    <>
       <div className="p-6 space-y-6 max-w-5xl">
         <div className="flex items-center gap-3">
           <Network className="w-7 h-7 text-emerald-500" />
@@ -332,6 +332,6 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 }

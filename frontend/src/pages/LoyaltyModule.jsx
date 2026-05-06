@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -142,14 +142,14 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="loyalty">
+      <>
         <div className="p-6 text-center">{t("common.loading")}</div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="loyalty">
+    <>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -510,7 +510,7 @@ const LoyaltyModule = ({ user, tenant, onLogout }) => {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </>
   );
 };
 

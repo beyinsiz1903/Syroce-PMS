@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -1279,7 +1279,7 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
   }, []);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
+    <>
       <div data-testid="messaging-dashboard" className="p-4 lg:p-6 space-y-4 max-w-7xl mx-auto">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Mesajlasma Merkezi</h1>
@@ -1318,6 +1318,6 @@ export default function MessagingDashboard({ user, tenant, onLogout }) {
           <TabsContent value="settings"><SettingsTab /></TabsContent>
         </Tabs>
       </div>
-    </Layout>
+    </>
   );
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Button } from '@/components/ui/button';
 import {
   Package, AlertTriangle, ClipboardList, CheckCircle2, Truck,
@@ -213,14 +213,7 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
   ];
 
   return (
-    <Layout
-      user={user}
-      tenant={tenant}
-      onLogout={onLogout}
-      currentModule="procurement"
-      title={t('opsCenter.title')}
-      subtitle={t('opsCenter.subtitle')}
-    >
+    <>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         {/* Header strip */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -445,7 +438,7 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

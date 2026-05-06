@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Layout from '@/components/Layout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -173,7 +173,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+    <>
     <div className="p-6">
       {/* Header */}
       <div className="mb-8">
@@ -398,7 +398,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       onClose={() => setScanBookingId(null)}
       onExtracted={(doc) => { if (scanBookingId) applyScanToBooking(scanBookingId, doc); }}
     />
-    </Layout>
+    </>
   );
 };
 

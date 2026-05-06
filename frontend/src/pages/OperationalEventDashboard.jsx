@@ -8,7 +8,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import Layout from '@/components/Layout';
 
 const API = "";
 
@@ -102,16 +101,16 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
+      <>
         <div className="flex items-center justify-center h-64" data-testid="event-loading">
           <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
+    <>
       <div className="space-y-6 p-4 lg:p-6" data-testid="event-system-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -378,6 +377,6 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

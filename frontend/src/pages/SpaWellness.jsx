@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import Layout from '@/components/Layout';
+
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card';
@@ -132,16 +132,16 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
+      <>
         <div className="p-8 text-center text-gray-500">
           <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
         </div>
-      </Layout>
+      </>
     );
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
+    <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -466,7 +466,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         </Modal>
       )}
     </div>
-    </Layout>
+    </>
   );
 };
 

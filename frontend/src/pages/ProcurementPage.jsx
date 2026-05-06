@@ -15,7 +15,7 @@ import {
   Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw,
   Trash2, Send, History as HistoryIcon, X,
 } from 'lucide-react';
-import Layout from '@/components/Layout';
+
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
@@ -408,7 +408,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   };
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="procurement">
+    <>
     <div className="p-6 max-w-7xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <div>
@@ -1051,7 +1051,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           onClose={() => setHistory(null)} />
       )}
     </div>
-    </Layout>
+    </>
   );
 };
 
