@@ -120,9 +120,9 @@ export default function WalkinPage({ user, tenant, onLogout }) {
     finally { setLoadingRooms(false); }
   }, [nights]);
 
-  // LAZY: sadece Adım 2'ye geçildiğinde + nights değiştiğinde yükle (Adım 1'de gereksiz fetch yok)
+  // LAZY: sadece Adım 2'deyken + nights değiştiğinde yükle (Adım 1 ve Adım 3'te gereksiz fetch yok)
   useEffect(() => {
-    if (step >= 2) loadRooms(nights);
+    if (step === 2) loadRooms(nights);
     /* eslint-disable-next-line */
   }, [step, nights]);
 

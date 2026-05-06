@@ -23,13 +23,23 @@ const todayISO = () => {
 
 // SessionStorage cache: Layout her sayfa geçişinde remount oluyor; bu cache sayesinde
 // PMS tarihi anında görünür, sadece stale (>2dk) ise fetch tetiklenir.
+// Cache tenant_id ile scope edilir — hesap değişiminde başka tenant'ın
+// business-date'i sızmaz. Auth değişince App.clearAuthStorage cache key'i temizler.
 const BD_CACHE_KEY = "pms_bd_cache_v1";
+const currentTenantId = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem("user") || "null");
+    const t = JSON.parse(localStorage.getItem("tenant") || "null");
+    return u?.tenant_id || t?.id || t?._id || null;
+  } catch { return null; }
+};
 const readBdCache = () => {
   try {
     const raw = sessionStorage.getItem(BD_CACHE_KEY);
     if (!raw) return null;
     const c = JSON.parse(raw);
     if (Date.now() - (c.t || 0) > 2 * 60 * 1000) return null; // 2dk stale
+    if (c.tid && c.tid !== currentTenantId()) return null; // tenant mismatch
     return c;
   } catch { return null; }
 };
@@ -45,7 +55,7 @@ export default function PMSDateBadge() {
       const r = await api.get("/night-audit/business-date");
       const v = r?.data?.business_date || null;
       setBd(v);
-      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, t: Date.now() })); } catch {}
+      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, tid: currentTenantId(), t: Date.now() })); } catch {}
     } catch (e) {
       const code = e?.response?.status;
       if (code === 401 || code === 403 || code === 404) {

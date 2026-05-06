@@ -8,14 +8,22 @@ import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-reac
 const API = "";
 
 // SessionStorage cache: Layout her sayfa geçişinde remount oluyor (ProtectedRoute Layout sarmıyor).
-// Cache sayesinde notifications anında görünür, fetch arka planda gerçekleşir.
+// Cache user_id ile scope edilir — aynı tab'da hesap değişiminde başka kullanıcının
+// notification'ı sızmaz. Auth değişince App.clearAuthStorage cache key'i temizler.
 const CACHE_KEY = 'notif_cache_v1';
+const currentUserId = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || 'null');
+    return u?.id || u?._id || null;
+  } catch { return null; }
+};
 const readCache = () => {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const c = JSON.parse(raw);
     if (Date.now() - (c.t || 0) > 30000) return null; // 30sn stale
+    if (c.uid && c.uid !== currentUserId()) return null; // user mismatch
     return c;
   } catch { return null; }
 };
@@ -28,7 +36,7 @@ const NotificationBell = () => {
   const markingRef = useRef(false);
 
   useEffect(() => {
-    // Cache taze ise mount fetch'i atla — interval zaten 15sn'de yenileyecek
+    // Cache taze + aynı user ise mount fetch'i atla — interval zaten 15sn'de yenileyecek
     if (!cached) loadNotifications();
     const interval = setInterval(loadNotifications, 15000);
     return () => clearInterval(interval);
@@ -54,7 +62,7 @@ const NotificationBell = () => {
       const unread = response.data.unread_count || 0;
       setNotifications(list);
       setUnreadCount(unread);
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ notifications: list, unread_count: unread, t: Date.now() })); } catch {}
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ notifications: list, unread_count: unread, uid: currentUserId(), t: Date.now() })); } catch {}
     } catch (error) {
       console.error('Failed to load notifications:', error);
     }
