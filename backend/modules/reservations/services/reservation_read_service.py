@@ -29,18 +29,19 @@ class ReservationReadService:
         if not bookings:
             return []
 
-        # Batch-fetch guests and rooms to avoid N+1 lookups
-        missing_guest_ids = {
-            b["guest_id"]
-            for b in bookings
-            if b.get("guest_id") and not b.get("guest_name")
+        # guests koleksiyonu otorite — bookings.guest_name eski sync/import
+        # artigi olabilir ("V4 Refund", "X" gibi). TUM guest_id'ler icin lookup
+        # yap, gercek isim varsa booking.guest_name'i override et.
+        # Tenant scoping: lookup'lar tenant_id ile filtreli (IDOR-safe).
+        all_guest_ids = {
+            b["guest_id"] for b in bookings if b.get("guest_id")
         }
         room_ids = {b["room_id"] for b in bookings if b.get("room_id")}
 
         guest_map: dict[str, str] = {}
-        if missing_guest_ids:
+        if all_guest_ids:
             async for g in db.guests.find(
-                {"id": {"$in": list(missing_guest_ids)}},
+                {"id": {"$in": list(all_guest_ids)}, "tenant_id": tenant_id},
                 {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
                 name = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
@@ -50,7 +51,7 @@ class ReservationReadService:
         room_map: dict[str, dict[str, Any]] = {}
         if room_ids:
             async for r in db.rooms.find(
-                {"id": {"$in": list(room_ids)}},
+                {"id": {"$in": list(room_ids)}, "tenant_id": tenant_id},
                 {"_id": 0, "id": 1, "room_number": 1, "room_type": 1},
             ):
                 room_map[r["id"]] = r
@@ -61,8 +62,10 @@ class ReservationReadService:
         enriched: list[dict[str, Any]] = []
         for booking in bookings:
             booking = dict(booking)
-            if not booking.get("guest_name") and booking.get("guest_id"):
-                booking["guest_name"] = guest_map.get(booking["guest_id"], "Unknown Guest")
+            if booking.get("guest_id") and booking["guest_id"] in guest_map:
+                booking["guest_name"] = guest_map[booking["guest_id"]]
+            elif not booking.get("guest_name") and booking.get("guest_id"):
+                booking["guest_name"] = "Unknown Guest"
 
             if booking.get("room_id"):
                 room_doc = room_map.get(booking["room_id"])

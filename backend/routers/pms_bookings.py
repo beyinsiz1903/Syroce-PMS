@@ -249,22 +249,24 @@ async def get_arrivals(
     safe_limit = max(1, min(int(limit or 200), 500))
     bookings = await db.bookings.find(query, {"_id": 0}).sort("check_in", 1).limit(safe_limit).to_list(length=safe_limit)
 
-    # Enrich missing guest_name / room_number (same pattern as get_bookings).
-    missing_guest_ids = {b["guest_id"] for b in bookings if not b.get("guest_name") and b.get("guest_id")}
+    # Enrich guest_name / room_number — guests koleksiyonu otorite.
+    # bookings.guest_name eski sync artigi olabilir ("V4 Refund" gibi); guests'te
+    # gercek isim varsa override et. (get_bookings ile ayni mantik.)
+    all_guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
     missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
 
-    if missing_guest_ids:
+    if all_guest_ids:
         guest_name_map: dict[str, str] = {}
         async for g in db.guests.find(
-            {"id": {"$in": list(missing_guest_ids)}, "tenant_id": current_user.tenant_id},
+            {"id": {"$in": list(all_guest_ids)}, "tenant_id": current_user.tenant_id},
             {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
         ):
             nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
             if nm:
                 guest_name_map[g["id"]] = nm
         for b in bookings:
-            if not b.get("guest_name") and b.get("guest_id"):
-                b["guest_name"] = guest_name_map.get(b["guest_id"], "")
+            if b.get("guest_id") and b["guest_id"] in guest_name_map:
+                b["guest_name"] = guest_name_map[b["guest_id"]]
 
     if missing_room_ids:
         room_num_map: dict[str, str] = {}
@@ -340,17 +342,20 @@ async def get_bookings(
             ],
         }
         bookings = await db.bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
-        # Batch-fetch missing guest names and room numbers in one query each
-        missing_guest_ids = {b["guest_id"] for b in bookings if not b.get("guest_name") and b.get("guest_id")}
+        # Batch-fetch ALL guest names — guests koleksiyonu otorite. bookings.guest_name
+        # eski sync/import artigi olabilir ("V4 Refund", "X" gibi); guests'te gercek
+        # isim varsa onu tercih et, yoksa booking.guest_name fallback.
+        all_guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
         missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
         guest_name_map: dict[str, str] = {}
-        if missing_guest_ids:
+        if all_guest_ids:
             async for g in db.guests.find(
-                {"id": {"$in": list(missing_guest_ids)}, "tenant_id": current_user.tenant_id},
+                {"id": {"$in": list(all_guest_ids)}, "tenant_id": current_user.tenant_id},
                 {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
                 nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-                guest_name_map[g["id"]] = nm
+                if nm:
+                    guest_name_map[g["id"]] = nm
         room_num_map: dict[str, str] = {}
         if missing_room_ids:
             async for r in db.rooms.find(
@@ -359,8 +364,8 @@ async def get_bookings(
             ):
                 room_num_map[r["id"]] = r.get("room_number", "")
         for b in bookings:
-            if not b.get("guest_name") and b.get("guest_id"):
-                b["guest_name"] = guest_name_map.get(b["guest_id"], "")
+            if b.get("guest_id") and b["guest_id"] in guest_name_map:
+                b["guest_name"] = guest_name_map[b["guest_id"]]
             if b.get("room_id") and not b.get("room_number"):
                 b["room_number"] = room_num_map.get(b["room_id"], "")
         return {"bookings": bookings, "total": len(bookings)}
@@ -378,17 +383,20 @@ async def get_bookings(
                 # not warmed yet OR a booking references an id that wasn't
                 # in the warm snapshot (newly-created guest, etc.). This is
                 # what cuts the bookings endpoint from ~1.8s to ~200ms.
-                missing_guest_ids = {b['guest_id'] for b in page if b.get('guest_id') and not b.get('guest_name')}
+                # guests koleksiyonu otorite — bookings.guest_name eski sync artigi
+                # ("V4 Refund" gibi) olabilir. TUM guest_id'ler icin lookup yap,
+                # gercek isim varsa booking.guest_name'i override et.
+                all_guest_ids = {b['guest_id'] for b in page if b.get('guest_id')}
                 room_ids = {b['room_id'] for b in page if b.get('room_id')}
 
                 warm_guest_map = cache_warmer.get_cached(f"guest_map:{current_user.tenant_id}") or {}
                 warm_room_map = cache_warmer.get_cached(f"room_map:{current_user.tenant_id}") or {}
 
-                guest_map: dict[str, str] = {gid: warm_guest_map[gid] for gid in missing_guest_ids if gid in warm_guest_map}
+                guest_map: dict[str, str] = {gid: warm_guest_map[gid] for gid in all_guest_ids if gid in warm_guest_map}
                 room_map: dict[str, dict] = {rid: warm_room_map[rid] for rid in room_ids if rid in warm_room_map}
 
                 # Atlas fallback ONLY for ids the warm snapshot didn't cover.
-                still_missing_guests = missing_guest_ids - guest_map.keys()
+                still_missing_guests = all_guest_ids - guest_map.keys()
                 if still_missing_guests:
                     # Always scope batch lookups by tenant_id — the cache key is
                     # tenant-scoped but the lookup must be too, both for
@@ -412,8 +420,10 @@ async def get_bookings(
                 segment_map = {'business': 'corporate'}
                 bookings = []
                 for booking in page:
-                    if not booking.get('guest_name') and booking.get('guest_id'):
-                        booking['guest_name'] = guest_map.get(booking['guest_id'], 'Unknown Guest')
+                    if booking.get('guest_id') and booking['guest_id'] in guest_map:
+                        booking['guest_name'] = guest_map[booking['guest_id']]
+                    elif not booking.get('guest_name') and booking.get('guest_id'):
+                        booking['guest_name'] = 'Unknown Guest'
                     if booking.get('room_id'):
                         room = room_map.get(booking['room_id'])
                         if room:
