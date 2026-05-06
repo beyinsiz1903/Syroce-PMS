@@ -30,9 +30,22 @@ function RoomCell({ room, onDrop }) {
     <div
       onDragOver={e => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={e => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData('booking_id'); if (id) onDrop(id, room.id); }}
+      onDrop={e => {
+        e.preventDefault();
+        setOver(false);
+        const id = e.dataTransfer.getData('booking_id');
+        const srcRoomId = e.dataTransfer.getData('source_room_id');
+        if (!id) return;
+        if (srcRoomId && String(srcRoomId) === String(room.id)) return; // aynı odaya geri bırakıldı, no-op
+        onDrop(id, room.id);
+      }}
       draggable={occupied}
-      onDragStart={e => { if (occupied) e.dataTransfer.setData('booking_id', room.booking.booking_id); }}
+      onDragStart={e => {
+        if (occupied) {
+          e.dataTransfer.setData('booking_id', room.booking.booking_id);
+          e.dataTransfer.setData('source_room_id', String(room.id));
+        }
+      }}
       className={`border rounded-lg p-2 min-h-[92px] transition ${meta.color} ${over ? 'ring-2 ring-amber-400 ring-offset-1' : ''} ${occupied ? 'cursor-move' : ''}`}
       data-testid={`room-cell-${room.room_number}`}
     >
