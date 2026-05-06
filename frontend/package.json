@@ -70,6 +70,7 @@
     "zod": "^3.24.4"
   },
   "scripts": {
+    "guard:layout": "node ../tools/codemod-layout/guard.mjs",
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
