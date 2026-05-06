@@ -72,6 +72,7 @@ _Populate as you build_
 - **Pages Layout Wrapping (Default Pattern)**: Each page must import and wrap its content with `<Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="...">`.
 - **M5 Pilot — ProtectedRoute Opt-in Layout Wrap**: `ProtectedRoute` now accepts optional `wrapLayout: true` and `layoutModule: "..."` flags for automatic layout wrapping on selected routes. Pages leveraging this should remove manual `Layout` imports.
 - **WS Redis Pub/Sub Circuit Breaker**: Prevents log/CPU spam by enforcing a cool-down period if the Redis listener fast-exits repeatedly.
+- **HotelRunner Pull Retries**: `sync_scheduler.pull_for_tenant` initializes `HotelRunnerProvider(max_retries=…)` per call. Manual sync uses 3, scheduled cycles use 2 (was 0 — caused unhandled transient 504s to surface as ERROR logs even though the next cycle would compensate). With `base_delay=2.0`, `jitter=0.5`, 2 retries add ~3–9s (avg ~6s) — well within the 3-min cycle. Keep ≥1 to absorb single-shot HotelRunner gateway 504/timeouts.
 
 ## Pointers
 

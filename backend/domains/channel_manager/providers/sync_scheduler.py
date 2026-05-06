@@ -114,7 +114,7 @@ class ReservationPullScheduler:
 
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
-        retries = 3 if is_manual else 0
+        retries = 3 if is_manual else 2
         provider = HotelRunnerProvider(token=token, hr_id=hr_id, max_retries=retries)
         pull_start = datetime.now(UTC)
 
