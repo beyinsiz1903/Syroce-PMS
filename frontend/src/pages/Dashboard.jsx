@@ -539,11 +539,11 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
           <>
             {/* AI Daily Briefing Card */}
             {aiBriefing && (
-              <Card className="bg-gradient-to-r from-blue-500 to-purple-600 text-white mb-4">
+              <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg">
                 <CardHeader className="p-4">
                   <CardTitle className="flex items-center justify-between text-base md:text-lg">
-                    <span className="flex items-center">
-                      <span className="text-xl mr-2">{aiBriefing.ai_powered ? '🤖' : '📊'}</span>
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-amber-300" />
                       {aiBriefing.ai_powered ? t('ai.dailyBriefing') : t('ai.dailySummary')}
                     </span>
                     <Button 
@@ -596,7 +596,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
             )}
 
             {loadingAI && !aiBriefing && (
-              <Card className="bg-gradient-to-r from-blue-500 to-purple-600 text-white mb-6">
+              <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-6 border-0">
                 <CardContent className="py-8">
                   <div className="flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mr-3"></div>
@@ -612,57 +612,57 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
             {/* Quick Stats */}
             {stats?.pms && (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className="hover:shadow-md transition-shadow border-slate-200">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <BedDouble className="w-6 h-6 text-blue-500" />
+                      <div className="p-2 bg-slate-100 rounded-lg">
+                        <BedDouble className="w-6 h-6 text-slate-600" />
                       </div>
-                      <div className="text-2xl font-bold text-gray-900">{stats.pms.total_rooms}</div>
-                      <div className="text-xs font-medium text-gray-600">{t('dashboard.totalRooms')}</div>
+                      <div className="text-2xl font-bold text-slate-900">{stats.pms.total_rooms}</div>
+                      <div className="text-xs font-medium text-slate-600">{t('dashboard.totalRooms')}</div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className="hover:shadow-md transition-shadow border-amber-200 bg-amber-50/30">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <Hotel className="w-6 h-6 text-green-500" />
+                      <div className="p-2 bg-amber-100 rounded-lg">
+                        <Hotel className="w-6 h-6 text-amber-700" />
                       </div>
-                      <div className="text-2xl font-bold text-gray-900">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
-                      <div className="text-xs font-medium text-gray-600">{t('dashboard.occupancyRate')}</div>
+                      <div className="text-2xl font-bold text-amber-800">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
+                      <div className="text-xs font-medium text-slate-600">{t('dashboard.occupancyRate')}</div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className="hover:shadow-md transition-shadow border-emerald-200">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-purple-100 rounded-lg">
-                        <Calendar className="w-6 h-6 text-purple-500" />
+                      <div className="p-2 bg-emerald-100 rounded-lg">
+                        <Calendar className="w-6 h-6 text-emerald-700" />
                       </div>
-                      <div className="text-2xl font-bold text-gray-900">{stats.pms.today_checkins}</div>
-                      <div className="text-xs font-medium text-gray-600">{t('dashboard.todayCheckins')}</div>
+                      <div className="text-2xl font-bold text-slate-900">{stats.pms.today_checkins}</div>
+                      <div className="text-xs font-medium text-slate-600">{t('dashboard.todayCheckins')}</div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className="hover:shadow-md transition-shadow border-sky-200">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <Users className="w-6 h-6 text-orange-500" />
+                      <div className="p-2 bg-sky-100 rounded-lg">
+                        <Users className="w-6 h-6 text-sky-700" />
                       </div>
-                      <div className="text-2xl font-bold text-gray-900">{stats.pms.total_guests}</div>
-                      <div className="text-xs font-medium text-gray-600">{t('dashboard.totalGuests')}</div>
+                      <div className="text-2xl font-bold text-slate-900">{stats.pms.total_guests}</div>
+                      <div className="text-xs font-medium text-slate-600">{t('dashboard.totalGuests')}</div>
                     </div>
                   </CardContent>
                 </Card>
               </div>
             )}
 
-            <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#115e59_52%,#f59e0b_100%)] text-white shadow-xl shadow-teal-200/50" data-testid="migration-observability-dashboard-card">
+            <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
               <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
                 <div className="space-y-3">
                   <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
@@ -1061,15 +1061,16 @@ const DashboardLite = ({ user, tenant, stats }) => {
         )}
 
         {/* Quick actions */}
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm font-medium text-gray-900">{t('dashboard.quickActions')}</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-sm font-semibold text-slate-900">{t('dashboard.quickActions')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => window.location.assign("/app/pms#frontdesk")}>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => window.location.assign("/app/pms#frontdesk")}>
               {t('dashboard.newReservation')}
             </Button>
             <Button
               size="sm"
               variant="outline"
+              className="border-slate-300"
               onClick={() => window.location.assign("/app/reservation-calendar")}
             >
               {t('dashboard.openCalendar')}
@@ -1077,6 +1078,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
             <Button
               size="sm"
               variant="outline"
+              className="border-slate-300"
               onClick={() => window.location.assign("/app/pms#frontdesk")}
             >
               {t('dashboard.reservations')}
