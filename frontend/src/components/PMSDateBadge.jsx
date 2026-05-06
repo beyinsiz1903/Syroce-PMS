@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Calendar, AlertTriangle } from "lucide-react";
 import api from "@/api/axios";
 import { prefetchNightAudit } from "@/lib/prefetch";
@@ -46,6 +46,7 @@ const readBdCache = () => {
 
 export default function PMSDateBadge() {
   const navigate = useNavigate();
+  const location = useLocation();
   const cached = readBdCache();
   const [bd, setBd] = useState(cached?.bd || null);
   const [hidden, setHidden] = useState(false);
@@ -87,6 +88,13 @@ export default function PMSDateBadge() {
     setNavigating(true);
     navigate("/night-audit");
   }, [navigate]);
+
+  // Navigation tamamlanınca (path değişince) "Açılıyor…" state'ini sıfırla;
+  // aksi halde Night Audit sayfasına varıldıktan sonra bile takılı kalıyor.
+  useEffect(() => {
+    if (navigating) setNavigating(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   if (hidden) return null;
 
