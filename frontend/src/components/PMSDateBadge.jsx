@@ -90,31 +90,35 @@ export default function PMSDateBadge() {
 
   if (hidden) return null;
 
+  const containerClass = isStale
+    ? "flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-amber-50 text-amber-900 text-xs shadow-sm border border-amber-300"
+    : "flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 text-slate-700 text-xs shadow-sm border border-slate-200 backdrop-blur-sm";
+
   return (
-    <div className="fixed bottom-3 left-3 z-40 flex flex-col gap-1.5 select-none">
-      <div
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-900/90 text-white text-xs shadow-lg backdrop-blur-sm border border-gray-700"
-        data-testid="pms-date-badge"
-      >
-        <Calendar className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-        <span className="font-medium">PMS Tarihi:</span>
+    <div className="fixed bottom-3 left-3 z-40 select-none">
+      <div className={containerClass} data-testid="pms-date-badge">
+        {isStale ? (
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+        ) : (
+          <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+        )}
+        <span className="font-medium">PMS:</span>
         <span className="font-semibold tabular-nums">{fmtDate(bd)}</span>
+        {isStale && (
+          <button
+            type="button"
+            onClick={handleNavigate}
+            onMouseEnter={prefetchNightAudit}
+            onFocus={prefetchNightAudit}
+            disabled={navigating}
+            className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-700 disabled:cursor-wait text-white text-[11px] font-medium transition-colors"
+            data-testid="pms-date-stale-warning"
+            title="Gün sonu işlemini başlat"
+          >
+            {navigating ? "Açılıyor…" : "Gün Sonu Yap"}
+          </button>
+        )}
       </div>
-      {isStale && (
-        <button
-          type="button"
-          onClick={handleNavigate}
-          onMouseEnter={prefetchNightAudit}
-          onFocus={prefetchNightAudit}
-          disabled={navigating}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-amber-600 disabled:cursor-wait text-white text-xs font-medium shadow-lg transition-colors animate-pulse"
-          data-testid="pms-date-stale-warning"
-          title="Night Audit sayfasına git"
-        >
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span>{navigating ? "Açılıyor…" : "Tarih güncel değil — Gün sonu işlemini yapın"}</span>
-        </button>
-      )}
     </div>
   );
 }
