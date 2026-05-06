@@ -33,7 +33,7 @@ export const NAV_GROUPS = [
   },
   {
     id: "advanced",
-    label: "Gelismis",
+    label: "Gelişmiş",
     icon: "Zap",
   },
   {
@@ -43,12 +43,12 @@ export const NAV_GROUPS = [
   },
   {
     id: "infrastructure",
-    label: "Altyapi",
+    label: "Altyapı",
     icon: "Server",
   },
   {
     id: "admin",
-    label: "Yönetim",
+    label: "Sistem",
     icon: "Shield",
   },
 ];
