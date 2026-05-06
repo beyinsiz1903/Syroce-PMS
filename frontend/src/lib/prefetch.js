@@ -35,4 +35,14 @@ function prefetchOne(name, importer) {
 export function prefetchHeavyModules() {
   prefetchOne('PMSModule', () => import('@/pages/PMSModule'));
   prefetchOne('ReservationCalendar', () => import('@/pages/ReservationCalendar'));
+  // PMS tarihi geride kaldığında PMSDateBadge "Gün sonu işlemini yapın"
+  // butonu çıkarıyor; kullanıcı bastığında chunk hazır olsun diye
+  // login sonrası sessizce indirilir (734 satırlık ağır sayfa).
+  prefetchOne('NightAuditDashboard', () => import('@/pages/NightAuditDashboard'));
+}
+
+// PMSDateBadge gibi az kullanılan ama tıklama anında ağır sayfaya
+// yönlendiren UI elementleri için noktasal hover-prefetch helper'ı.
+export function prefetchNightAudit() {
+  prefetchOne('NightAuditDashboard', () => import('@/pages/NightAuditDashboard'));
 }

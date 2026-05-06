@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, AlertTriangle } from "lucide-react";
 import api from "@/api/axios";
+import { prefetchNightAudit } from "@/lib/prefetch";
 
 const MONTHS_TR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
@@ -43,10 +44,23 @@ export default function PMSDateBadge() {
     return () => clearInterval(id);
   }, [fetchBD]);
 
-  if (hidden) return null;
-
   const today = todayISO();
   const isStale = bd && bd < today;
+
+  // Stale durumu görünür hale gelir gelmez ağır chunk'ı sessizce indir;
+  // kullanıcı butonu okuyup tıklayana kadar bundle hazır olur.
+  // Hooks kuralı gereği erken return'den ÖNCE.
+  useEffect(() => {
+    if (isStale && !hidden) prefetchNightAudit();
+  }, [isStale, hidden]);
+
+  const [navigating, setNavigating] = useState(false);
+  const handleNavigate = useCallback(() => {
+    setNavigating(true);
+    navigate("/night-audit");
+  }, [navigate]);
+
+  if (hidden) return null;
 
   return (
     <div className="fixed bottom-3 left-3 z-40 flex flex-col gap-1.5 select-none">
@@ -61,13 +75,16 @@ export default function PMSDateBadge() {
       {isStale && (
         <button
           type="button"
-          onClick={() => navigate("/night-audit")}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium shadow-lg transition-colors animate-pulse"
+          onClick={handleNavigate}
+          onMouseEnter={prefetchNightAudit}
+          onFocus={prefetchNightAudit}
+          disabled={navigating}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-amber-600 disabled:cursor-wait text-white text-xs font-medium shadow-lg transition-colors animate-pulse"
           data-testid="pms-date-stale-warning"
           title="Night Audit sayfasına git"
         >
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span>Tarih güncel değil — Gün sonu işlemini yapın</span>
+          <span>{navigating ? "Açılıyor…" : "Tarih güncel değil — Gün sonu işlemini yapın"}</span>
         </button>
       )}
     </div>
