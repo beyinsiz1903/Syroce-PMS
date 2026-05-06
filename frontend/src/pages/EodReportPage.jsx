@@ -6,14 +6,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import {
   Loader2, FileText, Send, Download, Calendar, X as XIcon,
-  AlertTriangle, CheckCircle2, TrendingUp, DollarSign,
+  AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function KpiCard({ label, value, sub, accent = 'slate', icon: Icon }) {
+function KpiCard({ label, value, sub, accent = 'slate', icon: Icon, onClick }) {
   const tone = {
     slate: 'border-slate-200 bg-white',
     amber: 'border-amber-300 bg-amber-50/60',
@@ -28,14 +31,176 @@ function KpiCard({ label, value, sub, accent = 'slate', icon: Icon }) {
     rose: 'text-rose-700',
     sky: 'text-sky-700',
   }[accent];
+  const interactive = onClick
+    ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all'
+    : '';
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className={`border rounded-lg p-3 ${tone}`}>
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`border rounded-lg p-3 text-left w-full ${tone} ${interactive}`}
+    >
       <div className="flex items-center justify-between">
         <div className="text-[10px] uppercase text-slate-500 tracking-wide">{label}</div>
-        {Icon && <Icon className={`w-3.5 h-3.5 ${valueColor} opacity-60`} />}
+        <div className="flex items-center gap-1">
+          {onClick && <ExternalLink className="w-3 h-3 text-slate-400" />}
+          {Icon && <Icon className={`w-3.5 h-3.5 ${valueColor} opacity-60`} />}
+        </div>
       </div>
       <div className={`text-2xl font-bold mt-1 ${valueColor}`}>{value}</div>
       {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+    </Tag>
+  );
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch { return iso; }
+}
+
+function OpenFoliosDialog({ open, onClose, businessDate }) {
+  const [loading, setLoading] = useState(false);
+  const [folios, setFolios] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setFolios([]);
+    setTotal(0);
+    (async () => {
+      try {
+        const { data } = await api.get('/folio/list', {
+          params: { status: 'open', limit: 500 },
+          signal: controller.signal,
+        });
+        if (!active) return;
+        setFolios(data.folios || []);
+        setTotal(data.total || 0);
+      } catch (e) {
+        if (!active || controller.signal.aborted) return;
+        const msg = e.response?.data?.detail || e.message || 'Bilinmeyen hata';
+        setError(msg);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [open, reloadTick]);
+
+  // Çıkışı geçmiş ama folyo açık → kritik
+  const overdue = folios.filter(f => f.check_out && f.check_out < businessDate);
+  const inHouse = folios.filter(f => !(f.check_out && f.check_out < businessDate));
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            Açık Folyolar
+          </DialogTitle>
+          <DialogDescription>
+            Toplam {total} açık folyo. Çıkışı geçmiş olanlar gün sonundan önce kapatılmalıdır;
+            in-house misafirler için açık olması normaldir.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="py-12 text-center">
+            <Loader2 className="inline w-6 h-6 animate-spin text-slate-400" />
+          </div>
+        ) : error ? (
+          <div className="py-8 text-center">
+            <AlertTriangle className="inline w-8 h-8 text-rose-500 mb-2" />
+            <div className="text-sm text-rose-700 mb-3">Folyolar yüklenemedi: {error}</div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReloadTick(t => t + 1)}
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
+            >
+              Tekrar Dene
+            </Button>
+          </div>
+        ) : folios.length === 0 ? (
+          <div className="py-12 text-center text-slate-500">
+            <CheckCircle2 className="inline w-8 h-8 text-emerald-500 mb-2" /><br />
+            Açık folyo yok.
+          </div>
+        ) : (
+          <div className="max-h-[60vh] overflow-auto">
+            {overdue.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge className="bg-rose-100 text-rose-800 border-rose-200">
+                    Çıkışı Geçmiş — {overdue.length}
+                  </Badge>
+                  <span className="text-xs text-slate-500">öncelikli inceleme</span>
+                </div>
+                <FolioTable rows={overdue} highlight />
+              </div>
+            )}
+            {inHouse.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge className="bg-sky-100 text-sky-800 border-sky-200">
+                    Tesiste — {inHouse.length}
+                  </Badge>
+                  <span className="text-xs text-slate-500">çıkışta otomatik kapanır</span>
+                </div>
+                <FolioTable rows={inHouse} />
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FolioTable({ rows, highlight = false }) {
+  return (
+    <div className="border border-slate-200 rounded-md overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-slate-600 text-xs">
+          <tr>
+            <th className="text-left px-3 py-2 font-medium">Oda</th>
+            <th className="text-left px-3 py-2 font-medium">Misafir</th>
+            <th className="text-left px-3 py-2 font-medium">Giriş</th>
+            <th className="text-left px-3 py-2 font-medium">Çıkış</th>
+            <th className="text-right px-3 py-2 font-medium">Bakiye</th>
+            <th className="text-left px-3 py-2 font-medium">Folyo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((f) => (
+            <tr
+              key={f.id}
+              className={`border-t border-slate-100 ${highlight ? 'bg-rose-50/40' : 'hover:bg-slate-50'}`}
+            >
+              <td className="px-3 py-2 font-medium text-slate-900">{f.room_number || '—'}</td>
+              <td className="px-3 py-2 text-slate-700">{f.guest_name || '—'}</td>
+              <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_in)}</td>
+              <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_out)}</td>
+              <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                {(f.balance ?? 0).toLocaleString('tr-TR')} ₺
+              </td>
+              <td className="px-3 py-2 text-xs text-slate-400 font-mono">
+                #{(f.id || '').slice(0, 8)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -67,6 +232,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
   const [sending, setSending] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [showOpenFolios, setShowOpenFolios] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -194,9 +360,10 @@ export default function EodReportPage({ user, tenant, onLogout }) {
               <KpiCard
                 label="Açık Folyo"
                 value={data.open_folios}
-                sub={data.open_folios > 0 ? 'Hesap kapatılmadı — kontrol edin' : 'Tüm folyolar kapalı'}
+                sub={data.open_folios > 0 ? 'Detayları görmek için tıklayın' : 'Tüm folyolar kapalı'}
                 accent={data.open_folios > 0 ? 'amber' : 'emerald'}
                 icon={data.open_folios > 0 ? AlertTriangle : CheckCircle2}
+                onClick={data.open_folios > 0 ? () => setShowOpenFolios(true) : undefined}
               />
               <KpiCard
                 label="Onaylanmamış Devir"
@@ -280,6 +447,12 @@ export default function EodReportPage({ user, tenant, onLogout }) {
           )}
         </Card>
       </div>
+
+      <OpenFoliosDialog
+        open={showOpenFolios}
+        onClose={() => setShowOpenFolios(false)}
+        businessDate={businessDate}
+      />
     </>
   );
 }
