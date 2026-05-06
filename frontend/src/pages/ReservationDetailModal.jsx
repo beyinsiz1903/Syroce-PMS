@@ -154,8 +154,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </div>
               </div>
 
-              {/* Anahtar bilgiler — ikonlu, sade */}
-              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2 shadow-sm">
+              {/* Anahtar bilgiler — kompakt, şık */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-sm">
                 <div className="flex items-center gap-2 text-xs">
                   <DoorOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span className="text-slate-500">Oda</span>
@@ -166,22 +166,42 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <span className="text-slate-500">Kanal</span>
                   <span className="ml-auto font-medium text-slate-700 truncate">{channelLabel}</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <LogIn className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-slate-500">Giriş</span>
-                  <span className="ml-auto font-medium text-slate-700">{booking?.check_in?.toString().slice(0, 10)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <LogOut className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-slate-500">Çıkış</span>
-                  <span className="ml-auto font-medium text-slate-700">{booking?.check_out?.toString().slice(0, 10)}</span>
-                </div>
+
+                {/* Giriş → Çıkış tek satır görsel blok */}
+                {(() => {
+                  const ci = booking?.check_in ? new Date(booking.check_in) : null;
+                  const co = booking?.check_out ? new Date(booking.check_out) : null;
+                  const nights = ci && co ? Math.max(1, Math.ceil((co - ci) / 86400000)) : 0;
+                  const fmt = (d) => d ? d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }) : '—';
+                  const dow = (d) => d ? d.toLocaleDateString('tr-TR', { weekday: 'short' }) : '';
+                  return (
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-center flex-1">
+                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">Giriş</div>
+                          <div className="text-[13px] font-semibold text-slate-800 leading-tight">{fmt(ci)}</div>
+                          <div className="text-[10px] text-slate-400 capitalize">{dow(ci)}</div>
+                        </div>
+                        <div className="flex flex-col items-center text-amber-600">
+                          <div className="text-[9px] font-medium leading-none">{nights} gece</div>
+                          <div className="text-base leading-none mt-0.5">→</div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">Çıkış</div>
+                          <div className="text-[13px] font-semibold text-slate-800 leading-tight">{fmt(co)}</div>
+                          <div className="text-[10px] text-slate-400 capitalize">{dow(co)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {booking?.created_at && (
-                  <div className="flex items-center gap-2 text-xs pt-2 border-t border-slate-100">
-                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="text-slate-500">Oluşturulma</span>
-                    <span className="ml-auto text-[11px] text-slate-600" title={fmtDateTime(booking.created_at)}>
-                      {new Date(booking.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
+                    <Clock className="w-3 h-3 shrink-0" />
+                    <span>Oluşturuldu</span>
+                    <span className="ml-auto" title={fmtDateTime(booking.created_at)}>
+                      {new Date(booking.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
                     </span>
                   </div>
                 )}
