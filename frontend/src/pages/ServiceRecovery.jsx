@@ -36,7 +36,7 @@ const SEVERITIES = [
 const STATUSES = [
   { value: 'open', label: 'Açık', color: 'bg-red-100 text-red-700', icon: Clock },
   { value: 'in_progress', label: 'İşlemde', color: 'bg-yellow-100 text-yellow-700', icon: ArrowUpCircle },
-  { value: 'escalated', label: 'Eskalasyon', color: 'bg-indigo-100 text-indigo-700', icon: AlertTriangle },
+  { value: 'escalated', label: 'Yönetimde', color: 'bg-indigo-100 text-indigo-700', icon: AlertTriangle },
   { value: 'resolved', label: 'Çözüldü', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
 ];
 
@@ -67,8 +67,8 @@ const ESCALATION_TARGETS = [
 const HISTORY_ACTION_LABEL = {
   created: 'Oluşturuldu',
   updated: 'Güncellendi',
-  escalated: 'Eskalasyona alındı',
-  de_escalated: 'Eskalasyondan geri alındı',
+  escalated: 'Yönetime iletildi',
+  de_escalated: 'Yönetimden geri alındı',
   resolved: 'Çözüldü',
 };
 
@@ -101,7 +101,7 @@ const SlaBadge = ({ complaint }) => {
           ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
           : 'bg-gray-100 text-gray-600'
       }`}
-      title={`SLA: ${complaint.sla_hours} saat — şu an ${complaint.age_hours} saat`}
+      title={`Çözüm süresi: ${complaint.sla_hours} saat — geçen süre: ${complaint.age_hours} saat`}
     >
       <Clock className="w-3 h-3" />
       {label}
@@ -286,19 +286,19 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
 
   const handleEscalateSubmit = async () => {
     if (!escalateData.notes.trim()) {
-      toast.error('Eskalasyon notu zorunludur');
+      toast.error('Açıklama zorunludur');
       return;
     }
     setSubmitting(true);
     try {
       const res = await axios.post(`/service/complaints/${selectedComplaint.id}/escalate`, escalateData);
-      toast.success(res.data?.message || 'Eskalasyon tamamlandı');
+      toast.success(res.data?.message || 'Şikayet yönetime iletildi');
       setShowEscalateDialog(false);
       setEscalateData({ escalated_to: 'management', notes: '' });
       await refreshSelected(selectedComplaint.id);
       loadData();
     } catch {
-      toast.error('Eskalasyon başarısız');
+      toast.error('Yönetime iletilemedi');
     } finally {
       setSubmitting(false);
     }
@@ -310,7 +310,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
     if (!notes.trim()) { toast.error('Not zorunludur'); return; }
     try {
       await axios.post(`/service/complaints/${selectedComplaint.id}/de-escalate`, { notes });
-      toast.success('Eskalasyondan geri alındı');
+      toast.success('Şikayet geri alındı');
       await refreshSelected(selectedComplaint.id);
       loadData();
     } catch {
@@ -373,13 +373,13 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
   };
 
   const handleAutoEscalate = async () => {
-    if (!await confirmDialog({ message: 'SLA süresini aşmış tüm açık şikayetler yönetime havale edilecek. Devam edilsin mi?', variant: 'danger' })) return;
+    if (!await confirmDialog({ message: 'Çözüm süresini aşmış tüm açık şikayetler yönetime iletilecek. Devam edilsin mi?', variant: 'danger' })) return;
     try {
       const res = await axios.post('/service/complaints/auto-escalate');
-      toast.success(`${res.data.escalated_count || 0} şikayet otomatik eskalasyon edildi`);
+      toast.success(`${res.data.escalated_count || 0} şikayet otomatik olarak yönetime iletildi`);
       loadData();
     } catch {
-      toast.error('Otomatik eskalasyon başarısız');
+      toast.error('Toplu iletme başarısız');
     }
   };
 
@@ -464,9 +464,9 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
               onClick={handleAutoEscalate}
               disabled={!stats.overdue}
-              title={stats.overdue ? `${stats.overdue} şikayet SLA süresini aştı` : 'SLA aşan şikayet yok'}
+              title={stats.overdue ? `${stats.overdue} şikayetin çözüm süresi aşıldı` : 'Süresi aşılan şikayet yok'}
             >
-              <Zap className="w-4 h-4 mr-2" /> Otomatik Eskalasyon
+              <Zap className="w-4 h-4 mr-2" /> Gecikenleri Yönetime İlet
               {stats.overdue ? <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs">{stats.overdue}</span> : null}
             </Button>
             <Button onClick={openCreateDialog} className="bg-red-600 hover:bg-red-700">
@@ -481,9 +481,9 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             { label: 'Toplam', value: stats.total || 0, icon: MessageSquare, color: 'text-gray-600', bg: 'bg-gray-50' },
             { label: 'Açık', value: stats.open || 0, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'İşlemde', value: stats.in_progress || 0, icon: ArrowUpCircle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-            { label: 'Eskalasyon', value: stats.escalated || 0, icon: AlertTriangle, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Yönetimde', value: stats.escalated || 0, icon: AlertTriangle, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Çözüldü', value: stats.resolved || 0, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50' },
-            { label: 'SLA Aşan', value: stats.overdue || 0, icon: BellRing, color: 'text-red-700', bg: 'bg-red-50' },
+            { label: 'Süresi Aşılan', value: stats.overdue || 0, icon: BellRing, color: 'text-red-700', bg: 'bg-red-50' },
           ].map((s, i) => (
             <Card key={i} className={s.bg}>
               <CardContent className="pt-4 pb-3 text-center">
@@ -793,7 +793,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 {selectedComplaint.status === 'escalated' && (
                   <div className="bg-indigo-50 border border-indigo-200 p-3 rounded space-y-1">
                     <Label className="text-xs text-indigo-700 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Eskalasyon Bilgileri
+                      <AlertTriangle className="w-3 h-3" /> Yönetime İletme Bilgileri
                     </Label>
                     <p className="text-sm text-indigo-800">
                       <strong>Havale edilen:</strong>{' '}
@@ -872,7 +872,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                           className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
                           onClick={openEscalateDialog}
                         >
-                          <AlertTriangle className="w-3 h-3 mr-1" /> Eskalasyon
+                          <AlertTriangle className="w-3 h-3 mr-1" /> Yönetime İlet
                         </Button>
                       )}
                       {selectedComplaint.status === 'escalated' && (
@@ -908,7 +908,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showEscalateDialog} onOpenChange={setShowEscalateDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Şikayeti Eskalasyona Al</DialogTitle>
+              <DialogTitle>Şikayeti Yönetime İlet</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <p className="text-sm text-gray-600">
@@ -927,12 +927,12 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm font-medium">Eskalasyon Notu *</Label>
+                <Label className="text-sm font-medium">Açıklama *</Label>
                 <Textarea
                   value={escalateData.notes}
                   onChange={e => setEscalateData(p => ({ ...p, notes: e.target.value }))}
                   rows={3}
-                  placeholder="Neden eskalasyona alıyorsunuz? Ne yapılması gerekiyor?"
+                  placeholder="Neden yönetime iletiyorsunuz? Ne yapılması gerekiyor?"
                 />
               </div>
               <Button
@@ -940,7 +940,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 onClick={handleEscalateSubmit}
                 disabled={submitting}
               >
-                {submitting ? 'Gönderiliyor...' : 'Eskalasyonu Onayla'}
+                {submitting ? 'Gönderiliyor...' : 'Yönetime İlet'}
               </Button>
             </div>
           </DialogContent>
