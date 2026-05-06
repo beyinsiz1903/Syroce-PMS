@@ -179,7 +179,7 @@ export default function BlockManagementPage() {
         <CardHeader>
           <CardTitle>Aktif Bloklar</CardTitle>
           <CardDescription>
-            Tentative + definite statüsündeki tüm gruplar.
+            Beklemede + kesinleşmiş statüsündeki tüm gruplar.
           </CardDescription>
         </CardHeader>
         <CardContent>

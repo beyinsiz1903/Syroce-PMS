@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from '../_shared';
 import OperationsPanel from '../OperationsPanel';
-import { STATUS, SETUPS, EVENT_TYPES, AGENDA_KINDS } from './constants';
+import { STATUS, SETUPS, EVENT_TYPES, EVENT_TYPE_LABELS, AGENDA_KINDS } from './constants';
 
 const EventFormModal = ({
   editing,
@@ -60,7 +60,7 @@ const EventFormModal = ({
             <Field label="Tip">
               <select className="w-full border rounded px-2 py-1.5" value={form.event_type}
                       onChange={(e) => setForm({ ...form, event_type: e.target.value })}>
-                {EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}
+                {EVENT_TYPES.map((t) => <option key={t} value={t}>{EVENT_TYPE_LABELS[t] || t}</option>)}
               </select>
             </Field>
             <Field label="Durum">

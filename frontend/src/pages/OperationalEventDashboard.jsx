@@ -93,10 +93,10 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
   };
 
   const tabs = [
-    { id: 'feed', label: 'Canli Akis', icon: Radio },
-    { id: 'frontdesk', label: 'Front Desk Kuyrugu', icon: Users },
-    { id: 'housekeeping', label: 'Housekeeping Board', icon: Home },
-    { id: 'stats', label: 'Istatistikler', icon: Activity },
+    { id: 'feed', label: 'Canlı Akış', icon: Radio },
+    { id: 'frontdesk', label: 'Ön Büro Kuyruğu', icon: Users },
+    { id: 'housekeeping', label: 'Kat Hizmetleri Panosu', icon: Home },
+    { id: 'stats', label: 'İstatistikler', icon: Activity },
   ];
 
   if (loading) {
@@ -177,19 +177,22 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
           <div className="space-y-4">
             {/* Priority Filter */}
             <div className="flex gap-2" data-testid="priority-filter">
-              {[null, 'critical', 'high', 'medium', 'low'].map(p => (
-                <Button key={p || 'all'} variant={filterPriority === p ? 'default' : 'outline'} size="sm"
-                  data-testid={`filter-${p || 'all'}`}
-                  onClick={() => setFilterPriority(p)}>
-                  {p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Tumu'}
-                </Button>
-              ))}
+              {[null, 'critical', 'high', 'medium', 'low'].map(p => {
+                const labels = { critical: 'Kritik', high: 'Yüksek', medium: 'Orta', low: 'Düşük' };
+                return (
+                  <Button key={p || 'all'} variant={filterPriority === p ? 'default' : 'outline'} size="sm"
+                    data-testid={`filter-${p || 'all'}`}
+                    onClick={() => setFilterPriority(p)}>
+                    {p ? labels[p] : 'Tümü'}
+                  </Button>
+                );
+              })}
             </div>
 
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Radio className="w-4 h-4 text-red-500 animate-pulse" /> Canli Olay Akisi
+                  <Radio className="w-4 h-4 text-red-500 animate-pulse" /> Canlı Olay Akışı
                 </CardTitle>
               </CardHeader>
               <CardContent>
