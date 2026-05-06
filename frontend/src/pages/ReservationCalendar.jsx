@@ -349,9 +349,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
-    // Geçmiş tarih kontrolü: bugün veya business_date'den hangisi ilerdeyse onu kullan
+    // Gecmis tarih kontrolu: PMS business date hala aktif is gunudur.
+    // Gun sonu yapilmadiysa business_date takvim tarihinden geride kalir
+    // (orn: business=05-May, takvim=06-May). Bu durumda 05-May'a hala
+    // rezervasyon yapilabilmeli — min(business_date, today) kullaniyoruz.
     const today = new Date().toISOString().split('T')[0];
-    const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
+    const minDate = hotelBusinessDate && hotelBusinessDate < today ? hotelBusinessDate : today;
     const clickedDateStr = new Date(date).toISOString().split('T')[0];
     if (clickedDateStr < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
@@ -381,9 +384,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleCreateBooking = async (e) => {
     e.preventDefault();
 
-    // Geçmiş tarih kontrolü: bugün veya business_date'den hangisi ilerdeyse onu kullan
+    // Gecmis tarih kontrolu: PMS business date hala aktif is gunudur
+    // (gun sonu yapilmadiysa business_date takvim tarihinden geride olabilir).
     const today = new Date().toISOString().split('T')[0];
-    const minDate = hotelBusinessDate && hotelBusinessDate > today ? hotelBusinessDate : today;
+    const minDate = hotelBusinessDate && hotelBusinessDate < today ? hotelBusinessDate : today;
     if (newBooking.check_in < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
@@ -816,7 +820,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guests={guests}
         rooms={rooms}
         onSubmit={handleCreateBooking}
-        minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate > t ? hotelBusinessDate : t; })()}
+        minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate < t ? hotelBusinessDate : t; })()}
       />
 
       <Dialog open={showConflictsModal} onOpenChange={setShowConflictsModal}>
