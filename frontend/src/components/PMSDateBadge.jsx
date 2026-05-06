@@ -85,9 +85,15 @@ export default function PMSDateBadge() {
 
   const [navigating, setNavigating] = useState(false);
   const handleNavigate = useCallback(() => {
+    // Zaten Night Audit sayfasındaysak "Açılıyor…" göstermek anlamsız;
+    // doğrudan navigate et (no-op) ve state'i değiştirme.
+    if (location.pathname === "/night-audit") {
+      navigate("/night-audit");
+      return;
+    }
     setNavigating(true);
     navigate("/night-audit");
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
   // Navigation tamamlanınca (path değişince) "Açılıyor…" state'ini sıfırla;
   // aksi halde Night Audit sayfasına varıldıktan sonra bile takılı kalıyor.
@@ -95,6 +101,14 @@ export default function PMSDateBadge() {
     if (navigating) setNavigating(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
+
+  // Safety net: lazy chunk indirme uzun sürerse veya navigation hiç gerçekleşmezse
+  // (ör. router guard reddederse) buton 3sn sonra normale döner — kalıcı kilit olmaz.
+  useEffect(() => {
+    if (!navigating) return;
+    const id = setTimeout(() => setNavigating(false), 3000);
+    return () => clearTimeout(id);
+  }, [navigating]);
 
   if (hidden) return null;
 
