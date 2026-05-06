@@ -507,7 +507,18 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 return (
                   <div key={groupDef.id} className="mb-0.5">
                     <Button variant="ghost" size="sm"
-                      onClick={() => setExpandedMobileGroup(isExpanded ? null : groupDef.id)}
+                      onClick={() => {
+                        const opening = !isExpanded;
+                        setExpandedMobileGroup(opening ? groupDef.id : null);
+                        // Mobilde hover yok — grup acildiginda tum chunk'lari
+                        // paralel olarak arka planda indirmeye basla. Desktop
+                        // dropdown'daki onOpenChange ile ayni mantik.
+                        if (opening) {
+                          for (const it of items) {
+                            if (it?.path) preloadRoute(it.path);
+                          }
+                        }
+                      }}
                       className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}>
                       <div className="flex items-center">
                         <GroupIcon className="w-4 h-4 mr-2" />
