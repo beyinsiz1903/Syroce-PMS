@@ -51,11 +51,15 @@ def display_guest_name(raw_name: str | None, guest_id: str | None) -> str:
     """Gosterim icin kullanilacak ismi dondurur.
 
     - raw_name anlamli ise oldugu gibi dondurulur.
-    - placeholder ise `Misafir <ILK_8_KARAKTER>` formatinda fallback.
-    - guest_id da yoksa "Misafir" dondurulur.
+    - placeholder ise `Walk-in Misafir #XXXX` formatinda fallback (kisa, okunabilir).
+    - guest_id da yoksa "Walk-in Misafir" dondurulur.
     """
     if raw_name and not is_placeholder_guest_name(raw_name):
         return raw_name.strip()
     if guest_id:
-        return f"Misafir {guest_id[:8].upper()}"
-    return "Misafir"
+        # UUID'nin son 4 hex karakterini al — kisa, ayirt edici, gozu yormaz.
+        # Tireleri at, son 4'u kullan: "5bad4a34-...-741b7375a9cf" -> "A9CF"
+        clean = (guest_id or "").replace("-", "")
+        suffix = clean[-4:].upper() if clean else ""
+        return f"Walk-in Misafir #{suffix}" if suffix else "Walk-in Misafir"
+    return "Walk-in Misafir"
