@@ -218,7 +218,10 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                               className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white border">
                               <div className="min-w-0 flex items-center gap-2">
                                 <span className="font-medium text-gray-800 truncate">
-                                  {it.guest_name || it.confirmation_code || it.run_id || it.id || '-'}
+                                  {it.guest_name
+                                    || it.confirmation_code
+                                    || it.run_id
+                                    || (it.id ? `#${String(it.id).slice(0, 8)}` : '-')}
                                 </span>
                                 {it.room_no && (
                                   <span className="text-gray-500">Oda {it.room_no}</span>

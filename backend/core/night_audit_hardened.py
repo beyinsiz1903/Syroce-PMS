@@ -1010,15 +1010,60 @@ async def abort_night_audit(
 # ═══════════════════════════════════════════════════════════════
 
 async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
-    """Engelleyici/uyari listeleri icin orneklem rezervasyonlar (Duzelt linki)."""
+    """Engelleyici/uyari listeleri icin orneklem rezervasyonlar (Duzelt linki).
+
+    `guest_name` ve `room_no` bookings dokumaninda bos olabilir (ayri
+    guests/rooms koleksiyonlarinda tutulur). Bos olanlari toplu lookup ile
+    doldurarak UI'da UUID yerine gercek isim/oda no goster.
+    """
     cursor = db.bookings.find(
         query,
         {
-            "_id": 0, "id": 1, "guest_name": 1, "room_id": 1, "room_no": 1,
+            "_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
+            "room_id": 1, "room_no": 1,
             "check_in": 1, "check_out": 1, "status": 1, "confirmation_code": 1,
         },
     ).limit(limit)
-    return [b async for b in cursor]
+    items = [b async for b in cursor]
+
+    # Tenant scoping: lookup'lar SADECE caller'in kendi tenant'inda kalmali.
+    # query.tenant_id yoksa (regex/karmasik filter) lookup'lari atla — sizinti
+    # riskini almaktansa misafir adi gostermemeyi tercih et.
+    tenant_id = query.get("tenant_id") if isinstance(query.get("tenant_id"), str) else None
+    if not tenant_id:
+        return items
+
+    missing_guest_ids = {b["guest_id"] for b in items
+                        if not b.get("guest_name") and b.get("guest_id")}
+    missing_room_ids = {b["room_id"] for b in items
+                       if not b.get("room_no") and b.get("room_id")}
+
+    guest_map: dict = {}
+    if missing_guest_ids:
+        async for g in db.guests.find(
+            {"tenant_id": tenant_id, "id": {"$in": list(missing_guest_ids)}},
+            {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
+        ):
+            full = (g.get("name") or
+                    " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip())
+            if full:
+                guest_map[g["id"]] = full
+
+    room_map: dict = {}
+    if missing_room_ids:
+        async for r in db.rooms.find(
+            {"tenant_id": tenant_id, "id": {"$in": list(missing_room_ids)}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1},
+        ):
+            room_map[r["id"]] = r.get("room_number") or r.get("room_no")
+
+    for b in items:
+        if not b.get("guest_name") and b.get("guest_id") in guest_map:
+            b["guest_name"] = guest_map[b["guest_id"]]
+        if not b.get("room_no") and b.get("room_id") in room_map and room_map[b["room_id"]]:
+            b["room_no"] = room_map[b["room_id"]]
+
+    return items
 
 
 async def build_audit_preview(tenant_id: str, property_id: str | None = None) -> dict:
