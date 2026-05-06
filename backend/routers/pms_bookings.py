@@ -347,6 +347,7 @@ async def get_bookings(
         # isim varsa onu tercih et, yoksa booking.guest_name fallback.
         all_guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
         missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
+        from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
         guest_name_map: dict[str, str] = {}
         if all_guest_ids:
             async for g in db.guests.find(
@@ -354,7 +355,8 @@ async def get_bookings(
                 {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
                 nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-                if nm:
+                # Walk-in placeholder ("C4", "V4 Refund", "X") reddet — fallback devreye girsin.
+                if nm and not is_placeholder_guest_name(nm):
                     guest_name_map[g["id"]] = nm
         room_num_map: dict[str, str] = {}
         if missing_room_ids:
@@ -366,6 +368,8 @@ async def get_bookings(
         for b in bookings:
             if b.get("guest_id") and b["guest_id"] in guest_name_map:
                 b["guest_name"] = guest_name_map[b["guest_id"]]
+            elif is_placeholder_guest_name(b.get("guest_name")):
+                b["guest_name"] = display_guest_name(b.get("guest_name"), b.get("guest_id"))
             if b.get("room_id") and not b.get("room_number"):
                 b["room_number"] = room_num_map.get(b["room_id"], "")
         return {"bookings": bookings, "total": len(bookings)}
@@ -392,6 +396,7 @@ async def get_bookings(
                 warm_guest_map = cache_warmer.get_cached(f"guest_map:{current_user.tenant_id}") or {}
                 warm_room_map = cache_warmer.get_cached(f"room_map:{current_user.tenant_id}") or {}
 
+                from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
                 guest_map: dict[str, str] = {gid: warm_guest_map[gid] for gid in all_guest_ids if gid in warm_guest_map}
                 room_map: dict[str, dict] = {rid: warm_room_map[rid] for rid in room_ids if rid in warm_room_map}
 
@@ -407,7 +412,8 @@ async def get_bookings(
                         {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
                     ):
                         nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-                        if nm:
+                        # Walk-in placeholder reddet — display fallback devreye girsin.
+                        if nm and not is_placeholder_guest_name(nm):
                             guest_map[g['id']] = nm
                 still_missing_rooms = room_ids - room_map.keys()
                 if still_missing_rooms:
@@ -422,8 +428,11 @@ async def get_bookings(
                 for booking in page:
                     if booking.get('guest_id') and booking['guest_id'] in guest_map:
                         booking['guest_name'] = guest_map[booking['guest_id']]
-                    elif not booking.get('guest_name') and booking.get('guest_id'):
-                        booking['guest_name'] = 'Unknown Guest'
+                    elif is_placeholder_guest_name(booking.get('guest_name')):
+                        # Placeholder ("C4", "V4 Refund", "X") veya bos → fallback
+                        booking['guest_name'] = display_guest_name(
+                            booking.get('guest_name'), booking.get('guest_id')
+                        )
                     if booking.get('room_id'):
                         room = room_map.get(booking['room_id'])
                         if room:

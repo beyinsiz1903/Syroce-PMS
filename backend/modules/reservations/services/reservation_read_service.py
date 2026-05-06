@@ -1,6 +1,7 @@
 from typing import Any
 
 from core.database import db
+from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
 from modules.reservations.repository import ReservationsRepository
 
 
@@ -45,7 +46,9 @@ class ReservationReadService:
                 {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
                 name = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-                if name:
+                # Walk-in placeholder isimleri ("C4", "V4 Refund", "X" gibi) reddet —
+                # display fallback ("Misafir <SHORTID>") devreye girsin.
+                if name and not is_placeholder_guest_name(name):
                     guest_map[g["id"]] = name
 
         room_map: dict[str, dict[str, Any]] = {}
@@ -64,8 +67,12 @@ class ReservationReadService:
             booking = dict(booking)
             if booking.get("guest_id") and booking["guest_id"] in guest_map:
                 booking["guest_name"] = guest_map[booking["guest_id"]]
-            elif not booking.get("guest_name") and booking.get("guest_id"):
-                booking["guest_name"] = "Unknown Guest"
+            elif is_placeholder_guest_name(booking.get("guest_name")):
+                # guest doc anlamli isim vermedi (yoksa veya kendisi de placeholder)
+                # → "Misafir <SHORTID>" fallback.
+                booking["guest_name"] = display_guest_name(
+                    booking.get("guest_name"), booking.get("guest_id")
+                )
 
             if booking.get("room_id"):
                 room_doc = room_map.get(booking["room_id"])

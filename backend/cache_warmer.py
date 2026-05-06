@@ -61,7 +61,11 @@ class CacheWarmer:
                 if not gid:
                     continue
                 nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
-                if nm:
+                # Walk-in placeholder ("C4", "V4 Refund", "X" gibi) reddet — caller
+                # boyle bir id icin map'te bulamadiginda display fallback ("Misafir
+                # <SHORTID>") devreye girer.
+                from core.guest_name_utils import is_placeholder_guest_name
+                if nm and not is_placeholder_guest_name(nm):
                     guest_map[gid] = nm
 
             # Rooms: project number + type for the booking row
