@@ -8,10 +8,28 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
 import {
   Package, Plus, Search, RefreshCw, Trash2, UserCheck,
-  MapPin, Calendar, Tag, Archive, CheckCircle, Clock, Send
+  MapPin, Calendar, Tag, Archive, CheckCircle, Clock, Send,
+  PackageSearch, Boxes, UserCog, PackageCheck, Ban
 } from 'lucide-react';
+
+const STATUS_INTENT = {
+  found: 'info',
+  stored: 'warning',
+  claimed: 'neutral',
+  returned: 'success',
+  disposed: 'default',
+};
+const STATUS_ICONS = {
+  found: PackageSearch,
+  stored: Boxes,
+  claimed: UserCog,
+  returned: PackageCheck,
+  disposed: Ban,
+};
 
 const STATUS_CONFIG = {
   found: { label: 'Bulundu', color: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -131,34 +149,34 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
   return (
     <>
       <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto" data-testid="lost-found-page">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Package className="w-6 h-6 text-amber-600" />
-              Kayıp & Bulunan Eşyalar
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">Bulunan eşyaları kaydedin ve misafirlerle eşleştirin</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadItems(); }}>
-              <RefreshCw className="w-4 h-4 mr-1" /> Yenile
-            </Button>
-            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="create-lostfound-btn">
-              <Plus className="w-4 h-4 mr-1" /> Yeni Kayıt
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={Package}
+          iconClassName="text-amber-600"
+          title="Kayıp & Bulunan Eşyalar"
+          subtitle="Bulunan eşyaları kaydedin ve misafirlerle eşleştirin"
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadItems(); }}>
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+              </Button>
+              <Button size="sm" onClick={() => setShowCreate(true)} data-testid="create-lostfound-btn">
+                <Plus className="w-4 h-4 mr-1.5" /> Yeni Kayıt
+              </Button>
+            </>
+          }
+        />
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-            <Card
+            <KpiCard
               key={key}
-              className={`p-3 cursor-pointer transition-all hover:shadow-md ${filterStatus === key ? 'ring-2 ring-blue-400' : ''}`}
+              icon={STATUS_ICONS[key] || Package}
+              label={cfg.label}
+              value={stats[key] || 0}
+              intent={STATUS_INTENT[key] || 'default'}
+              active={filterStatus === key}
               onClick={() => setFilterStatus(filterStatus === key ? '' : key)}
-            >
-              <div className="text-xl font-bold">{stats[key] || 0}</div>
-              <div className="text-xs text-gray-500">{cfg.label}</div>
-            </Card>
+            />
           ))}
         </div>
 

@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
 import {
   AlarmClock, Plus, Phone, CheckCircle, XCircle, Clock,
   Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff
@@ -248,75 +250,42 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
   return (
     <>
       <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto" data-testid="wake-up-calls-page">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <AlarmClock className="w-6 h-6 text-indigo-600" />
-              Uyandırma Çağrısı Yönetimi
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">Misafir uyandırma çağrılarını planlayıp takip edin</p>
-          </div>
-          <div className="flex gap-2">
-            {!alertsArmed ? (
-              <Button
-                variant="outline" size="sm"
-                onClick={armAlerts}
-                className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                data-testid="arm-alerts-btn"
-              >
-                <BellOff className="w-4 h-4 mr-1" /> Sesli Alarmı Aç
+        <PageHeader
+          icon={AlarmClock}
+          iconClassName="text-indigo-600"
+          title="Uyandırma Çağrısı Yönetimi"
+          subtitle="Misafir uyandırma çağrılarını planlayıp takip edin"
+          actions={
+            <>
+              {!alertsArmed ? (
+                <Button
+                  variant="outline" size="sm"
+                  onClick={armAlerts}
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                  data-testid="arm-alerts-btn"
+                >
+                  <BellOff className="w-4 h-4 mr-1.5" /> Sesli Alarmı Aç
+                </Button>
+              ) : (
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 self-center">
+                  <Bell className="w-3 h-3" /> Alarm Aktif
+                </Badge>
+              )}
+              <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadCalls(); }}>
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
               </Button>
-            ) : (
-              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 self-center">
-                <Bell className="w-3 h-3" /> Alarm Aktif
-              </Badge>
-            )}
-            <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadCalls(); }}>
-              <RefreshCw className="w-4 h-4 mr-1" /> Yenile
-            </Button>
-            <Button size="sm" onClick={() => { setForm(f => ({ ...f, wake_date: filterDate })); setShowCreate(true); }} data-testid="create-wakeup-btn">
-              <Plus className="w-4 h-4 mr-1" /> Yeni Çağrı
-            </Button>
-          </div>
-        </div>
+              <Button size="sm" onClick={() => { setForm(f => ({ ...f, wake_date: filterDate })); setShowCreate(true); }} data-testid="create-wakeup-btn">
+                <Plus className="w-4 h-4 mr-1.5" /> Yeni Çağrı
+              </Button>
+            </>
+          }
+        />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="p-3">
-            <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-500" />
-              <div>
-                <div className="text-2xl font-bold">{stats.total_today || 0}</div>
-                <div className="text-xs text-gray-500">Bugün Toplam</div>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3">
-            <div className="flex items-center gap-2">
-              <AlarmClock className="w-5 h-5 text-amber-500" />
-              <div>
-                <div className="text-2xl font-bold">{stats.pending || 0}</div>
-                <div className="text-xs text-gray-500">Bekliyor</div>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-emerald-500" />
-              <div>
-                <div className="text-2xl font-bold">{stats.completed || 0}</div>
-                <div className="text-xs text-gray-500">Tamamlandı</div>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3">
-            <div className="flex items-center gap-2">
-              <XCircle className="w-5 h-5 text-red-500" />
-              <div>
-                <div className="text-2xl font-bold">{stats.missed || 0}</div>
-                <div className="text-xs text-gray-500">Cevapsız</div>
-              </div>
-            </div>
-          </Card>
+          <KpiCard icon={Clock} label="Bugün Toplam" value={stats.total_today || 0} intent="info" />
+          <KpiCard icon={AlarmClock} label="Bekliyor" value={stats.pending || 0} intent="warning" />
+          <KpiCard icon={CheckCircle} label="Tamamlandı" value={stats.completed || 0} intent="success" />
+          <KpiCard icon={XCircle} label="Cevapsız" value={stats.missed || 0} intent="danger" highlight={(stats.missed || 0) > 0} />
         </div>
 
         <div className="flex flex-wrap gap-3 items-center">

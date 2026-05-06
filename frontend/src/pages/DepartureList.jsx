@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, LogOut, AlertCircle, Wallet, Clock } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { LogOut, AlertCircle, Wallet, Clock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
@@ -20,7 +21,6 @@ const fmtTRY = (v) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(v || 0));
 
 const DepartureList = ({ user, tenant, onLogout }) => {
-  const navigate = useNavigate();
   const [departures, setDepartures] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -81,46 +81,22 @@ const DepartureList = ({ user, tenant, onLogout }) => {
 
   return (
     <>
-      <div className="p-6">
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={() => navigate('/')}>
-              <Home className="w-5 h-5" />
+      <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
+        <PageHeader
+          icon={LogOut}
+          title="Bugünün Çıkışları"
+          subtitle="Bugün check-out yapacak misafirler — folio bakiyesi ve hızlı çıkış"
+          actions={
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
             </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Bugünün Çıkışları</h1>
-              <p className="text-gray-600">
-                Bugün check-out yapacak misafirler — folio bakiyesi ve hızlı çıkış
-              </p>
-            </div>
-          </div>
-          <Button onClick={load} disabled={loading}>
-            Yenile
-          </Button>
-        </div>
+          }
+        />
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <LogOut className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{departures.length}</p>
-              <p className="text-sm text-gray-500">Toplam Çıkış</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{withDebt}</p>
-              <p className="text-sm text-gray-500">Bakiyeli Çıkış</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Wallet className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{fmtTRY(totalBalance)}</p>
-              <p className="text-sm text-gray-500">Toplam Açık Bakiye</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KpiCard icon={LogOut} label="Toplam Çıkış" value={departures.length} intent="info" />
+          <KpiCard icon={AlertCircle} label="Bakiyeli Çıkış" value={withDebt} intent="warning" highlight={withDebt > 0} />
+          <KpiCard icon={Wallet} label="Toplam Açık Bakiye" value={fmtTRY(totalBalance)} intent="success" />
         </div>
 
         <div className="space-y-3">

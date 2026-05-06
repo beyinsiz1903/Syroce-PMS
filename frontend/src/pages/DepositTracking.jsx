@@ -12,6 +12,8 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
 import {
   Loader2, Shield, Banknote, RefreshCw, Plus, RotateCcw, FileText,
   Search, X, ArrowDownCircle, ArrowUpCircle, Receipt
@@ -189,52 +191,50 @@ export default function DepositTracking({ user, tenant, onLogout }) {
 
   return (
     <>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800" data-testid="deposit-page-title">Depozito & Folio Yönetimi</h1>
-            <p className="text-sm text-gray-500 mt-1">Depozito kaydı, iade işlemi ve fatura oluşturma</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={loadDeposits} data-testid="refresh-deposits-btn">
-              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => setShowNewDeposit(true)}
-              data-testid="new-deposit-btn"
-            >
-              <Plus className="w-4 h-4 mr-1.5" /> Yeni Depozito
-            </Button>
-          </div>
-        </div>
+      <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto">
+        <PageHeader
+          icon={Shield}
+          iconClassName="text-emerald-600"
+          title="Depozito & Folio Yönetimi"
+          subtitle="Depozito kaydı, iade işlemi ve fatura oluşturma"
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={loadDeposits} data-testid="refresh-deposits-btn">
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowNewDeposit(true)}
+                data-testid="new-deposit-btn"
+              >
+                <Plus className="w-4 h-4 mr-1.5" /> Yeni Depozito
+              </Button>
+            </>
+          }
+        />
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <ArrowDownCircle className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs text-emerald-600 font-medium uppercase">Aktif Depozitolar</span>
-            </div>
-            <div className="text-2xl font-bold text-emerald-800">{totalAll.toLocaleString('tr-TR')} TL</div>
-            <div className="text-xs text-emerald-500 mt-1">{deposits.filter(d => d.status === 'received').length} kayıt</div>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <ArrowUpCircle className="w-4 h-4 text-amber-600" />
-              <span className="text-xs text-amber-600 font-medium uppercase">Iade Edilen</span>
-            </div>
-            <div className="text-2xl font-bold text-amber-800">{totalRefunded.toLocaleString('tr-TR')} TL</div>
-            <div className="text-xs text-amber-500 mt-1">{deposits.filter(d => d.status === 'refunded').length} iade</div>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Receipt className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-blue-600 font-medium uppercase">Toplam İşlem</span>
-            </div>
-            <div className="text-2xl font-bold text-blue-800">{deposits.length}</div>
-            <div className="text-xs text-blue-500 mt-1">depozito kaydı</div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KpiCard
+            icon={ArrowDownCircle}
+            label="Aktif Depozitolar"
+            value={`${totalAll.toLocaleString('tr-TR')} TL`}
+            sub={`${deposits.filter(d => d.status === 'received').length} kayıt`}
+            intent="success"
+          />
+          <KpiCard
+            icon={ArrowUpCircle}
+            label="İade Edilen"
+            value={`${totalRefunded.toLocaleString('tr-TR')} TL`}
+            sub={`${deposits.filter(d => d.status === 'refunded').length} iade`}
+            intent="warning"
+          />
+          <KpiCard
+            icon={Receipt}
+            label="Toplam İşlem"
+            value={deposits.length}
+            sub="depozito kaydı"
+            intent="info"
+          />
         </div>
 
         {/* Filters */}
@@ -451,7 +451,6 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDeposit(false)}>İptal</Button>
             <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
               onClick={handleNewDeposit}
               disabled={savingDeposit || !selectedBooking}
               data-testid="save-deposit-btn"
@@ -475,7 +474,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
 
           <div className="space-y-4">
             <div>
-              <Label className="text-sm">Iade Tutari (TL)</Label>
+              <Label className="text-sm">İade Tutarı (TL)</Label>
               <Input
                 type="number"
                 step="0.01"

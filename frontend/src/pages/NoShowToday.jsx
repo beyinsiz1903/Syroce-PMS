@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
 import {
-  Home,
   AlertTriangle,
   UserX,
   Calendar,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,7 +32,6 @@ const fmtTRY = (v) =>
  * üzerinden çalışır; oda boşaltma ve audit otomatik.
  */
 const NoShowToday = ({ user, tenant, onLogout }) => {
-  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -86,51 +86,26 @@ const NoShowToday = ({ user, tenant, onLogout }) => {
 
   const totalLoss = items.reduce((s, b) => s + (b.total_amount || 0), 0);
 
+  const guaranteedCount = items.filter((b) => (b.status || '').toLowerCase() === 'guaranteed').length;
+
   return (
     <>
-      <div className="p-6">
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={() => navigate('/')}>
-              <Home className="w-5 h-5" />
+      <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
+        <PageHeader
+          icon={UserX}
+          title="Bekleyen / No-Show Adayları"
+          subtitle="Bugün gelmesi gereken ama henüz check-in yapmamış misafirler — manuel no-show işaretleyin (gece denetimi otomatik tarar)."
+          actions={
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
             </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Bekleyen / No-Show Adayları</h1>
-              <p className="text-gray-600">
-                Bugün gelmesi gereken ama henüz check-in yapmamış misafirler — manuel no-show
-                işaretleyin (gece denetimi otomatik tarar).
-              </p>
-            </div>
-          </div>
-          <Button onClick={load} disabled={loading}>
-            Yenile
-          </Button>
-        </div>
+          }
+        />
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <Calendar className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{items.length}</p>
-              <p className="text-sm text-gray-500">Bekleyen Varış</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <AlertTriangle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">
-                {items.filter((b) => (b.status || '').toLowerCase() === 'guaranteed').length}
-              </p>
-              <p className="text-sm text-gray-500">Garantili Bekleyen</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <UserX className="w-8 h-8 text-red-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{fmtTRY(totalLoss)}</p>
-              <p className="text-sm text-gray-500">Potansiyel Kayıp</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KpiCard icon={Calendar} label="Bekleyen Varış" value={items.length} intent="info" />
+          <KpiCard icon={AlertTriangle} label="Garantili Bekleyen" value={guaranteedCount} intent="warning" highlight={guaranteedCount > 0} />
+          <KpiCard icon={UserX} label="Potansiyel Kayıp" value={fmtTRY(totalLoss)} intent="danger" />
         </div>
 
         <div className="space-y-3">
