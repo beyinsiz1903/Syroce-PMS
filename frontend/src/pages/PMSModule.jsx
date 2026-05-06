@@ -712,9 +712,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
-            <RefreshCw className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-lg font-medium text-gray-700">Loading PMS Data...</p>
-            <p className="text-sm text-gray-500 mt-2">Please wait while we load your data</p>
+            <RefreshCw className="w-12 h-12 animate-spin text-slate-700 mx-auto mb-4" />
+            <p className="text-lg font-medium text-gray-700">PMS verileri yükleniyor…</p>
+            <p className="text-sm text-gray-500 mt-2">Lütfen bekleyin</p>
           </div>
         </div>
       </Layout>
@@ -744,27 +744,27 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-gray-700">{t('pms.quickActions', 'Hızlı İşlemler')}:</div>
+        <Card className="border-slate-200 bg-white">
+          <CardContent className="p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                {t('pms.quickActions', 'Hızlı İşlemler')}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => setOpenDialog('booking')}>
-                  <Plus className="w-4 h-4 mr-2" />{t('pms.newBooking', 'Yeni Rezervasyon')}
+                  <Plus className="w-4 h-4 mr-1.5" />{t('pms.newBooking', 'Yeni Rezervasyon')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setOpenDialog('guest')}>
-                  <UserPlus className="w-4 h-4 mr-2" />{t('pms.newGuest', 'Yeni Misafir')}
+                  <UserPlus className="w-4 h-4 mr-1.5" />{t('pms.newGuest', 'Yeni Misafir')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
                   } catch (error) { toast.error('Rapor oluşturulamadı'); }
                 }}>
-                  <FileText className="w-4 h-4 mr-2" />{t('pms.flashReport', 'Flash Rapor')}
+                  <FileText className="w-4 h-4 mr-1.5" />{t('pms.flashReport', 'Flash Rapor')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => loadData()}>
-                  <RefreshCw className="w-4 h-4 mr-2" />{t('common.refresh', 'Yenile')}
+                  <RefreshCw className="w-4 h-4 mr-1.5" />{t('common.refresh', 'Yenile')}
                 </Button>
               </div>
             </div>

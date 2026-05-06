@@ -557,7 +557,7 @@ const OnlineCheckin = () => {
             <CardContent className="pt-12 pb-12 text-center">
               <CheckCircle2 className="w-20 h-20 text-green-600 mx-auto mb-6" />
               <h2 className="text-3xl font-bold text-gray-900 mb-4">
-                Online Check-in Tamamlandı! 🎉
+                Online Check-in Tamamlandı
               </h2>
               <p className="text-lg text-gray-700 mb-6">
                 Odanız tercihlerinize göre hazırlanıyor

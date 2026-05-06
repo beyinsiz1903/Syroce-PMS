@@ -599,7 +599,10 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             </div>
           ) : orders.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">Henüz sipariş yok</div>
+            <div className="text-center py-12 text-gray-500">
+              <p className="mb-1">Henüz sipariş yok</p>
+              <p className="text-xs text-gray-400">Tedarikçilerden ürün siparişi verdiğinizde burada listelenecek.</p>
+            </div>
           ) : (
             <div className="divide-y">
               {orders.map((o) => {

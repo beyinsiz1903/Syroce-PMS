@@ -210,7 +210,10 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
         ) : items.length === 0 ? (
           <Card className="p-12 text-center">
             <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">Kayıt bulunamadı</p>
+            <p className="text-gray-500 mb-4">Kayıt bulunamadı</p>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-1.5" /> Yeni Kayıt Ekle
+            </Button>
           </Card>
         ) : (
           <div className="grid gap-3">

@@ -217,7 +217,7 @@ export const getSourceColor = (booking) => {
 };
 
 // Turkish day names
-export const turkishDayNames = ['Paz', 'Pts', 'Sal', 'Car', 'Per', 'Cum', 'Cts'];
+export const turkishDayNames = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
 
 export const formatDateWithDay = (date) => {
   const dayName = turkishDayNames[date.getUTCDay()];

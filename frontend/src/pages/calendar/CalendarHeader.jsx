@@ -169,7 +169,7 @@ const CalendarHeader = ({
         <div className="text-sm font-semibold text-gray-800">
           {dateRange.length > 0 && (
             <>
-              {dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} – {dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} – {dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
             </>
           )}
         </div>

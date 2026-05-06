@@ -832,7 +832,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             </DialogTitle>
           </DialogHeader>
           {conflicts.length === 0 ? (
-            <div className="py-6 text-center text-sm text-gray-500">Çakışma kalmadı 🎉</div>
+            <div className="py-6 text-center text-sm text-gray-500">Çakışma kalmadı.</div>
           ) : (
             <div className="space-y-3">
               <p className="text-xs text-gray-600">

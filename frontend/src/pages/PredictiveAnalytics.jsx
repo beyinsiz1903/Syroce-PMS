@@ -121,7 +121,7 @@ const PredictiveAnalytics = () => {
           {noShowPredictions.length === 0 ? (
             <div className="text-center py-8">
               <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-              <p className="text-gray-600">Bugün için yüksek risk no-show yok 🎉</p>
+              <p className="text-gray-600">Bugün için yüksek risk no-show yok.</p>
             </div>
           ) : (
             <div className="space-y-3">

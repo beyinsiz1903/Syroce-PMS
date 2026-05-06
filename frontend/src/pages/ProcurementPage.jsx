@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw,
-  Trash2, Send, History as HistoryIcon, X,
+  Trash2, Send, History as HistoryIcon, X, Check, Ban,
 } from 'lucide-react';
 
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
@@ -488,25 +488,25 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                         <td className="p-2"><Badge className={`${cls} border-0`}>{prLabel(pr.status)}</Badge></td>
                         <td className="p-2 text-right space-x-1 whitespace-nowrap">
                           {pr.status === 'draft' &&
-                            <Button size="sm" variant="ghost"
-                              onClick={() => changePRStatus(pr.id, 'submitted')}>{t('procurement.prList.actions.send')}</Button>}
+                            <Button size="sm" variant="outline"
+                              onClick={() => changePRStatus(pr.id, 'submitted')}><Send className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.send')}</Button>}
                           {pr.status === 'submitted' && <>
                             {canApprovePR && !isOwnPR(pr) && <>
-                              <Button size="sm" variant="ghost"
-                                onClick={() => changePRStatus(pr.id, 'approved')}>{t('procurement.prList.actions.approve')}</Button>
-                              <Button size="sm" variant="ghost"
-                                onClick={() => changePRStatus(pr.id, 'rejected')}>{t('procurement.prList.actions.reject')}</Button>
+                              <Button size="sm" variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => changePRStatus(pr.id, 'approved')}><Check className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.approve')}</Button>
+                              <Button size="sm" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                onClick={() => changePRStatus(pr.id, 'rejected')}><X className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.reject')}</Button>
                             </>}
                             {(canApprovePR || isOwnPR(pr)) &&
-                              <Button size="sm" variant="ghost"
-                                onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>}
+                              <Button size="sm" variant="outline"
+                                onClick={() => changePRStatus(pr.id, 'cancelled')}><Ban className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.cancel')}</Button>}
                           </>}
                           {pr.status === 'approved' && <>
                             {canApprovePR &&
                               <Button size="sm" onClick={() => convertPRtoPO(pr)}>{t('procurement.prList.actions.convertToPo')}</Button>}
                             {canApprovePR &&
-                              <Button size="sm" variant="ghost"
-                                onClick={() => changePRStatus(pr.id, 'cancelled')}>{t('procurement.prList.actions.cancel')}</Button>}
+                              <Button size="sm" variant="outline"
+                                onClick={() => changePRStatus(pr.id, 'cancelled')}><Ban className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.cancel')}</Button>}
                           </>}
                           <Button size="sm" variant="ghost" title={t('procurement.prList.actions.history')}
                             onClick={() => setHistory({ type: 'proc_pr', id: pr.id, title: pr.pr_no })}>
