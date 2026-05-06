@@ -299,10 +299,19 @@ const FrontdeskTab = ({
           </Card>
         )}
         {noShows.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50">
+          <Card
+            role="button"
+            tabIndex={0}
+            aria-expanded={expandedKpi === 'noshow'}
+            onClick={() => toggleKpi('noshow')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKpi('noshow'); } }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:border-amber-400 border-amber-200 bg-amber-50 ${expandedKpi === 'noshow' ? 'ring-2 ring-amber-400' : ''}`}
+            data-testid="kpi-noshow"
+          >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-amber-700 flex items-center gap-1">
-                <Clock className="w-4 h-4" /> No-Show
+              <CardTitle className="text-sm text-amber-700 flex items-center justify-between">
+                <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> No-Show</span>
+                {expandedKpi === 'noshow' ? <ChevronUp className="w-4 h-4 text-amber-400" /> : <ChevronDown className="w-4 h-4 text-amber-400" />}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -322,8 +331,9 @@ const FrontdeskTab = ({
                 {expandedKpi === 'arrivals' && <><LogIn className="w-4 h-4" /> {t('pms.todayArrivals')}</>}
                 {expandedKpi === 'departures' && <><LogOut className="w-4 h-4" /> {t('pms.todayDepartures')}</>}
                 {expandedKpi === 'inhouse' && <><Users className="w-4 h-4" /> {t('pms.inHouseGuests')}</>}
+                {expandedKpi === 'noshow' && <><Clock className="w-4 h-4" /> No-Show</>}
                 <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700">
-                  {expandedKpi === 'arrivals' ? arrivals.length : expandedKpi === 'departures' ? departures.length : inhouse.length}
+                  {expandedKpi === 'arrivals' ? arrivals.length : expandedKpi === 'departures' ? departures.length : expandedKpi === 'inhouse' ? inhouse.length : noShows.length}
                 </Badge>
               </span>
               <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => setExpandedKpi(null)}>
@@ -335,13 +345,15 @@ const FrontdeskTab = ({
             {(() => {
               const list =
                 expandedKpi === 'arrivals' ? arrivals :
-                expandedKpi === 'departures' ? departures : inhouse;
+                expandedKpi === 'departures' ? departures :
+                expandedKpi === 'inhouse' ? inhouse : noShows;
               if (!list || list.length === 0) {
                 return (
                   <p className="text-center py-4 text-sm text-gray-400">
                     {expandedKpi === 'arrivals' && tf('noArrivalsToday')}
                     {expandedKpi === 'departures' && tf('noDeparturesToday')}
                     {expandedKpi === 'inhouse' && tf('noInhouseGuests')}
+                    {expandedKpi === 'noshow' && tf('didntCome')}
                   </p>
                 );
               }
