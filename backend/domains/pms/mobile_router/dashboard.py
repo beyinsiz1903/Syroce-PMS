@@ -205,7 +205,7 @@ async def get_critical_issues_mobile(
         'tenant_id': current_user.tenant_id,
         'check_in': {'$lte': today + timedelta(days=1)},
         'status': 'confirmed'
-    }, {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1, 'guest_name': 1, 'created_at': 1}).to_list(length=None)
+    }, {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1, 'guest_name': 1, 'guest_id': 1, 'created_at': 1}).to_list(length=None)
     occupied_room_ids: set = set()
     cb_room_ids = [b.get('room_id') for b in candidate_bookings if b.get('room_id')]
     if cb_room_ids:
@@ -214,12 +214,13 @@ async def get_critical_issues_mobile(
             {'_id': 0, 'id': 1},
         ):
             occupied_room_ids.add(r['id'])
+    from core.guest_name_utils import display_guest_name
     for booking in candidate_bookings:
         if booking.get('room_id') in occupied_room_ids:
             overbookings.append({
                 'id': booking.get('id'),
                 'title': f"Overbooking - Room {booking.get('room_number')}",
-                'description': f"Guest: {booking.get('guest_name')}",
+                'description': f"Guest: {display_guest_name(booking.get('guest_name'), booking.get('guest_id'))}",
                 'room_number': booking.get('room_number'),
                 'priority': 'urgent',
                 'created_at': booking.get('created_at'),

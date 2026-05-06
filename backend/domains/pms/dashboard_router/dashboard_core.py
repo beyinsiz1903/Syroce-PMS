@@ -282,12 +282,13 @@ async def get_role_based_dashboard(
                 {'_id': 0, 'id': 1, 'name': 1, 'preferences': 1, 'vip': 1},
             ):
                 guests_by_id[g['id']] = g
+        from core.guest_name_utils import display_guest_name
         vip_arrivals = []
         for booking in candidate_bookings:
             guest = guests_by_id.get(booking.get('guest_id'))
             if guest:
                 vip_arrivals.append({
-                    'guest_name': guest.get('name'),
+                    'guest_name': display_guest_name(guest.get('name'), booking.get('guest_id')),
                     'room_number': booking.get('room_number'),
                     'check_in': booking.get('check_in'),
                     'preferences': guest.get('preferences', 'None')
@@ -323,7 +324,7 @@ async def get_role_based_dashboard(
             'tenant_id': current_user.tenant_id,
             'check_in': {'$gte': today_start.isoformat(), '$lte': today_end.isoformat()},
             'status': {'$in': ['confirmed', 'guaranteed']}
-        }, {'_id': 0, 'id': 1, 'guest_name': 1, 'room_number': 1, 'check_in': 1, 'status': 1, 'room_id': 1}).limit(20).to_list(length=20)
+        }, {'_id': 0, 'id': 1, 'guest_name': 1, 'guest_id': 1, 'room_number': 1, 'check_in': 1, 'status': 1, 'room_id': 1}).limit(20).to_list(length=20)
         room_ids = [b.get('room_id') for b in fd_bookings if b.get('room_id')]
         rooms_by_id = {}
         if room_ids:
@@ -332,12 +333,13 @@ async def get_role_based_dashboard(
                 {'_id': 0, 'id': 1, 'status': 1},
             ):
                 rooms_by_id[r['id']] = r
+        from core.guest_name_utils import display_guest_name
         arrivals = []
         for booking in fd_bookings:
             room = rooms_by_id.get(booking.get('room_id'))
             arrivals.append({
                 'id': booking.get('id'),
-                'guest_name': booking.get('guest_name'),
+                'guest_name': display_guest_name(booking.get('guest_name'), booking.get('guest_id')),
                 'room_number': booking.get('room_number'),
                 'check_in_time': booking.get('check_in'),
                 'status': booking.get('status'),

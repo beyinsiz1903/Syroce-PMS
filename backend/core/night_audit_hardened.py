@@ -1039,6 +1039,7 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     missing_guest_ids = {b["guest_id"] for b in items if b.get("guest_id")}
     missing_room_ids = {b["room_id"] for b in items if b.get("room_id")}
 
+    from core.guest_name_utils import is_placeholder_guest_name
     guest_map: dict = {}
     if missing_guest_ids:
         async for g in db.guests.find(
@@ -1047,7 +1048,9 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
         ):
             full = (g.get("name") or
                     " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip())
-            if full:
+            # Placeholder ("C4", "V4 Refund") guest_map'e KOYMA — booking field'i
+            # _sample_bookings sonrasinda display_guest_name fallback'i alir.
+            if full and not is_placeholder_guest_name(full):
                 guest_map[g["id"]] = full
 
     room_map: dict = {}
@@ -1058,11 +1061,16 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
         ):
             room_map[r["id"]] = r.get("room_number") or r.get("room_no")
 
+    from core.guest_name_utils import display_guest_name
     for b in items:
         # guests/rooms her zaman OTORITE — bookings.guest_name eski sync
         # artigi olabilir ("V4 Refund" gibi). Lookup basarisizsa orijinal kalir.
         if b.get("guest_id") in guest_map:
             b["guest_name"] = guest_map[b["guest_id"]]
+        else:
+            # Hem guest doc'ta hem booking'de placeholder/bos varsa
+            # "Misafir <ID8>" fallback uygula.
+            b["guest_name"] = display_guest_name(b.get("guest_name"), b.get("guest_id"))
         if b.get("room_id") in room_map and room_map[b["room_id"]]:
             b["room_no"] = room_map[b["room_id"]]
 

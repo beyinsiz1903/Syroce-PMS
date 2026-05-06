@@ -275,14 +275,17 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
         async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
             guests_by_id[g['id']] = g
 
+    from core.guest_name_utils import display_guest_name
     due_out_rooms = []
     for booking, checkout, checkout_date in matched:
         room = rooms_by_id.get(booking.get('room_id'))
         guest = guests_by_id.get(booking.get('guest_id'))
+        # Guest doc yoksa bile bookings.guest_name'i veya guest_id fallback'ini kullan.
+        raw_name = (guest.get('name') if guest else None) or booking.get('guest_name')
         due_out_rooms.append({
             'room_number': room['room_number'] if room else 'N/A',
             'room_type': room['room_type'] if room else 'N/A',
-            'guest_name': guest['name'] if guest else 'N/A',
+            'guest_name': display_guest_name(raw_name, booking.get('guest_id')),
             'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
             'booking_id': booking['id'],
             'is_today': checkout_date == today
@@ -332,14 +335,16 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
         async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
             guests_by_id[g['id']] = g
 
+    from core.guest_name_utils import display_guest_name
     stayover_rooms = []
     for booking, checkout, checkout_date in matched:
         room = rooms_by_id.get(booking.get('room_id'))
         guest = guests_by_id.get(booking.get('guest_id'))
+        raw_name = (guest.get('name') if guest else None) or booking.get('guest_name')
         stayover_rooms.append({
             'room_number': room['room_number'] if room else 'N/A',
             'room_type': room['room_type'] if room else 'N/A',
-            'guest_name': guest['name'] if guest else 'N/A',
+            'guest_name': display_guest_name(raw_name, booking.get('guest_id')),
             'checkout_date': checkout.isoformat() if isinstance(checkout, datetime) else checkout,
             'nights_remaining': (checkout_date - today).days,
             'booking_id': booking['id']
@@ -387,7 +392,9 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
             continue
 
         guest = await db.guests.find_one({'id': booking.get('guest_id')}, {'_id': 0})
-        guest_name = guest.get('name') if guest else 'Unknown'
+        from core.guest_name_utils import display_guest_name
+        raw_name = (guest.get('name') if guest else None) or booking.get('guest_name')
+        guest_name = display_guest_name(raw_name, booking.get('guest_id'))
         room_number = room.get('room_number')
 
         # Check for DND flag
@@ -565,15 +572,17 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
         async for g in db.guests.find({'id': {'$in': guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
             guests_by_id[g['id']] = g
 
+    from core.guest_name_utils import display_guest_name
     arrival_rooms = []
     for booking, checkin in matched:
         room = rooms_by_id.get(booking.get('room_id'))
         guest = guests_by_id.get(booking.get('guest_id'))
+        raw_name = (guest.get('name') if guest else None) or booking.get('guest_name')
         arrival_rooms.append({
             'room_number': room['room_number'] if room else 'N/A',
             'room_type': room['room_type'] if room else 'N/A',
             'room_status': room['status'] if room else 'unknown',
-            'guest_name': guest['name'] if guest else 'N/A',
+            'guest_name': display_guest_name(raw_name, booking.get('guest_id')),
             'checkin_time': checkin.isoformat() if isinstance(checkin, datetime) else checkin,
             'booking_id': booking['id'],
             'booking_status': booking['status'],

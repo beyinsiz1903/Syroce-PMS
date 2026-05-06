@@ -455,6 +455,7 @@ class FinancialService:
             if rid:
                 room_ids.add(rid)
 
+        from core.guest_name_utils import is_placeholder_guest_name
         guest_map: dict = {}
         if guest_ids:
             async for g in self._db.guests.find(
@@ -463,7 +464,9 @@ class FinancialService:
             ):
                 full = (g.get("name") or
                         " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip())
-                if full:
+                # Placeholder ("C4", "V4 Refund") guest_map'e KOYMA —
+                # display_guest_name fallback'a düşsün.
+                if full and not is_placeholder_guest_name(full):
                     guest_map[g["id"]] = full
 
         room_map: dict = {}
@@ -474,6 +477,7 @@ class FinancialService:
             ):
                 room_map[r["id"]] = r.get("room_number") or r.get("room_no")
 
+        from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
         for it in items:
             b = booking_map.get(it.get("booking_id")) or {}
             # Onceligi guests koleksiyonu kazanir; lookup basarisiz olursa
@@ -482,8 +486,14 @@ class FinancialService:
             authoritative_name = guest_map.get(gid) if gid else None
             if authoritative_name:
                 it["guest_name"] = authoritative_name
-            elif not it.get("guest_name"):
-                it["guest_name"] = b.get("guest_name") or None
+            else:
+                # Booking'deki guest_name de placeholder olabilir — display_guest_name
+                # fallback uygulayarak "Misafir <ID8>" göster.
+                fallback_raw = it.get("guest_name") or b.get("guest_name")
+                if is_placeholder_guest_name(fallback_raw) and gid:
+                    it["guest_name"] = display_guest_name(fallback_raw, gid)
+                elif not it.get("guest_name"):
+                    it["guest_name"] = fallback_raw
             rid = it.get("room_id") or b.get("room_id")
             authoritative_room = room_map.get(rid) if rid else None
             if authoritative_room:

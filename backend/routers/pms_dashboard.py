@@ -188,6 +188,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     )
     currency_code, currency_symbol = currency_tuple
 
+    from core.guest_name_utils import display_guest_name
     alerts = []
 
     # 1) Dirty rooms blocking check-ins
@@ -198,7 +199,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         if rn in dirty_room_numbers:
             blocked_checkins.append({
                 "booking_id": arr["id"],
-                "guest_name": arr.get("guest_name", "Misafir"),
+                "guest_name": display_guest_name(arr.get("guest_name"), arr.get("guest_id")),
                 "room_number": rn,
                 "reason": "dirty"
             })
@@ -224,7 +225,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             total_outstanding += balance
             pending_payments.append({
                 "booking_id": b["id"],
-                "guest_name": b.get("guest_name", "Misafir"),
+                "guest_name": display_guest_name(b.get("guest_name"), b.get("guest_id")),
                 "room_number": str(b.get("room_number", "")),
                 "balance": balance
             })
@@ -257,7 +258,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         if guest and guest.get("vip_status"):
             vip_arrivals.append({
                 "booking_id": arr["id"],
-                "guest_name": guest.get("name", arr.get("guest_name", "VIP")),
+                "guest_name": display_guest_name(guest.get("name") or arr.get("guest_name"), arr.get("guest_id")),
                 "room_number": str(arr.get("room_number", "")),
                 "total_stays": guest.get("total_stays", 0),
                 "preferences": guest.get("preferences", {})
@@ -282,7 +283,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             bal = round((d.get("total_amount", 0) or 0) - (d.get("paid_amount", 0) or 0), 2)
             dep_items.append({
                 "booking_id": d["id"],
-                "guest_name": d.get("guest_name", "Misafir"),
+                "guest_name": display_guest_name(d.get("guest_name"), d.get("guest_id")),
                 "room_number": str(d.get("room_number", "")),
                 "balance": bal
             })
@@ -387,6 +388,7 @@ async def get_no_show_analytics(
             "channel": 1,
             "total_amount": 1,
             "guest_name": 1,
+            "guest_id": 1,
         },
     ).to_list(5000)
 
@@ -431,11 +433,12 @@ async def get_no_show_analytics(
     total_revenue_loss = sum(b.get("total_amount") or 0 for b in no_shows)
 
     # Recent no-shows (last 10)
+    from core.guest_name_utils import display_guest_name as _dgn
     recent = sorted(no_shows, key=lambda x: x.get("no_show_at", ""), reverse=True)[:10]
     recent_list = [
         {
             "id": b.get("id"),
-            "guest_name": b.get("guest_name") or "Bilinmiyor",
+            "guest_name": _dgn(b.get("guest_name"), b.get("guest_id")),
             "room_type": b.get("room_type") or "-",
             "channel": b.get("source_channel") or b.get("channel") or "direct",
             "reason": b.get("no_show_reason") or "belirtilmemis",

@@ -36,13 +36,16 @@ class FrontdeskService:
             "status": {"$in": ["confirmed", "guaranteed"]},
         }, {"_id": 0}).to_list(100)
 
+        from core.guest_name_utils import display_guest_name
         enriched = []
         for b in arrivals:
             guest = await self._db.guests.find_one({"id": b["guest_id"]}, {"_id": 0})
             room = await self._db.rooms.find_one({"id": b.get("room_id")}, {"_id": 0}) if b.get("room_id") else None
+            # Walk-in placeholder ("C4", "V4 Refund") tespit edilirse "Misafir <ID8>" fallback.
+            raw_name = guest.get("name") if guest else None
             enriched.append({
                 **b,
-                "guest_name": guest.get("name") if guest else "Unknown",
+                "guest_name": display_guest_name(raw_name, b.get("guest_id")),
                 "guest_email": guest.get("email") if guest else None,
                 "room_number": room.get("room_number") if room else None,
                 "vip_status": guest.get("vip_status", False) if guest else False,
@@ -245,10 +248,12 @@ class FrontdeskService:
                 continue
             guest = await self._db.guests.find_one({"id": b.get("guest_id")}, {"_id": 0})
             room = await self._db.rooms.find_one({"id": b.get("room_id")}, {"_id": 0}) if b.get("room_id") else None
+            from core.guest_name_utils import display_guest_name
+            raw_name = guest.get("name") if guest else None
             unchecked.append({
                 "booking_id": b.get("id"),
                 "reservation_number": b.get("reservation_number"),
-                "guest_name": guest.get("name") if guest else "Unknown",
+                "guest_name": display_guest_name(raw_name, b.get("guest_id")),
                 "guest_email": guest.get("email") if guest else None,
                 "room_number": room.get("room_number") if room else None,
                 "vip_status": guest.get("vip_status", False) if guest else False,
@@ -268,7 +273,9 @@ class FrontdeskService:
             owner_name = None
             if folio.get("folio_type") == "guest" and folio.get("guest_id"):
                 g = await self._db.guests.find_one({"id": folio["guest_id"]}, {"_id": 0})
-                owner_name = g.get("name") if g else None
+                if g:
+                    from core.guest_name_utils import display_guest_name
+                    owner_name = display_guest_name(g.get("name"), folio["guest_id"])
             item = {
                 "folio_id": folio.get("id"),
                 "folio_number": folio.get("folio_number"),
@@ -341,9 +348,10 @@ class FrontdeskService:
         priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
         alerts.sort(key=lambda x: priority_order.get(x.get("priority", "normal"), 2))
 
+        from core.guest_name_utils import display_guest_name
         return ServiceResult.success({
             "guest_id": guest_id,
-            "guest_name": guest.get("name"),
+            "guest_name": display_guest_name(guest.get("name"), guest_id),
             "total_alerts": len(alerts),
             "alerts": alerts,
         })
@@ -569,10 +577,11 @@ class FrontdeskService:
                 {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1},
             ):
                 room_map[r["id"]] = r
+        from core.guest_name_utils import display_guest_name
         for b in bookings:
             guest = guest_map.get(b.get("guest_id"))
             if guest:
-                b["guest_name"] = guest.get("name")
+                b["guest_name"] = display_guest_name(guest.get("name"), b.get("guest_id"))
                 b["guest_phone"] = guest.get("phone")
                 b["guest_email"] = guest.get("email")
             room = room_map.get(b.get("room_id"))
