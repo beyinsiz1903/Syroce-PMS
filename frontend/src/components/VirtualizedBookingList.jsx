@@ -31,31 +31,31 @@ const BookingRow = memo(({ index, style, data }) => {
         <div className="flex items-center justify-between">
           <div className="flex-1 grid grid-cols-4 gap-4">
             <div>
-              <div className="text-xs text-gray-500">Guest</div>
+              <div className="text-xs text-gray-500">Misafir</div>
               <div className="font-medium flex items-center gap-1">
                 <User className="w-3 h-3" />
-                {booking.guest_name || (booking.guest_id ? `Misafir ${booking.guest_id.slice(0, 8)}` : 'Bilinmiyor')}
+                {booking.guest_name || (booking.guest_id ? `Walk-in Misafir #${booking.guest_id.replace(/-/g,'').slice(-4).toUpperCase()}` : 'Bilinmiyor')}
               </div>
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Room</div>
+              <div className="text-xs text-gray-500">Oda</div>
               <div className="font-medium">
-                {booking.room_number || `Room ${booking.room_id}`}
+                {booking.room_number || `Oda ${booking.room_id}`}
               </div>
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Check-in / Check-out</div>
+              <div className="text-xs text-gray-500">Giriş / Çıkış</div>
               <div className="text-sm flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {new Date(booking.check_in).toLocaleDateString()} - 
-                {new Date(booking.check_out).toLocaleDateString()}
+                {new Date(booking.check_in).toLocaleDateString('tr-TR')} - 
+                {new Date(booking.check_out).toLocaleDateString('tr-TR')}
               </div>
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Amount</div>
+              <div className="text-xs text-gray-500">Tutar</div>
               <div className="font-medium flex items-center gap-1">
                 <DollarSign className="w-3 h-3" />
                 ${booking.total_amount?.toFixed(2) || '0.00'}
@@ -87,7 +87,7 @@ const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => 
   if (!bookings || bookings.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
-        No bookings found
+        Rezervasyon bulunamadı
       </div>
     );
   }
@@ -108,7 +108,7 @@ const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => 
       </List>
       
       <div className="p-2 bg-gray-50 border-t text-sm text-gray-600 text-center">
-        Showing {bookings.length} bookings (virtualized for performance)
+        {bookings.length} rezervasyon gösteriliyor (performans için sanallaştırıldı)
       </div>
     </div>
   );
