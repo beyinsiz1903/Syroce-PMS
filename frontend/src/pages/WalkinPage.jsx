@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
 import Layout from '@/components/Layout';
@@ -111,17 +111,20 @@ export default function WalkinPage({ user, tenant, onLogout }) {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const loadRooms = async (n = nights) => {
+  const loadRooms = useCallback(async (n = nights) => {
     setLoadingRooms(true);
     try {
       const { data } = await api.get('/pms/walkin/available-rooms', { params: { nights: n } });
       setRooms(data.rooms || []);
     } catch (e) { toast.error('Oda yükleme hatası'); }
     finally { setLoadingRooms(false); }
-  };
+  }, [nights]);
 
-  useEffect(() => { loadRooms(); /* eslint-disable-next-line */ }, []);
-  useEffect(() => { loadRooms(nights); /* eslint-disable-next-line */ }, [nights]);
+  // LAZY: sadece Adım 2'ye geçildiğinde + nights değiştiğinde yükle (Adım 1'de gereksiz fetch yok)
+  useEffect(() => {
+    if (step >= 2) loadRooms(nights);
+    /* eslint-disable-next-line */
+  }, [step, nights]);
 
   const selectedRoom = useMemo(() => rooms.find(r => r.id === form.room_id), [rooms, form.room_id]);
 

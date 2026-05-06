@@ -7,16 +7,32 @@ import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-reac
 
 const API = "";
 
+// SessionStorage cache: Layout her sayfa geçişinde remount oluyor (ProtectedRoute Layout sarmıyor).
+// Cache sayesinde notifications anında görünür, fetch arka planda gerçekleşir.
+const CACHE_KEY = 'notif_cache_v1';
+const readCache = () => {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (Date.now() - (c.t || 0) > 30000) return null; // 30sn stale
+    return c;
+  } catch { return null; }
+};
+
 const NotificationBell = () => {
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const cached = readCache();
+  const [notifications, setNotifications] = useState(cached?.notifications || []);
+  const [unreadCount, setUnreadCount] = useState(cached?.unread_count || 0);
   const [isOpen, setIsOpen] = useState(false);
   const markingRef = useRef(false);
 
   useEffect(() => {
-    loadNotifications();
+    // Cache taze ise mount fetch'i atla — interval zaten 15sn'de yenileyecek
+    if (!cached) loadNotifications();
     const interval = setInterval(loadNotifications, 15000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-mark all as read when dialog opens
@@ -34,8 +50,11 @@ const NotificationBell = () => {
       const response = await axios.get(`/notifications/list?limit=20`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setNotifications(response.data.notifications || []);
-      setUnreadCount(response.data.unread_count || 0);
+      const list = response.data.notifications || [];
+      const unread = response.data.unread_count || 0;
+      setNotifications(list);
+      setUnreadCount(unread);
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ notifications: list, unread_count: unread, t: Date.now() })); } catch {}
     } catch (error) {
       console.error('Failed to load notifications:', error);
     }

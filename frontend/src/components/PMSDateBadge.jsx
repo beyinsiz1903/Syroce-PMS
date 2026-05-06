@@ -21,15 +21,31 @@ const todayISO = () => {
   return `${y}-${m}-${day}`;
 };
 
+// SessionStorage cache: Layout her sayfa geçişinde remount oluyor; bu cache sayesinde
+// PMS tarihi anında görünür, sadece stale (>2dk) ise fetch tetiklenir.
+const BD_CACHE_KEY = "pms_bd_cache_v1";
+const readBdCache = () => {
+  try {
+    const raw = sessionStorage.getItem(BD_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (Date.now() - (c.t || 0) > 2 * 60 * 1000) return null; // 2dk stale
+    return c;
+  } catch { return null; }
+};
+
 export default function PMSDateBadge() {
   const navigate = useNavigate();
-  const [bd, setBd] = useState(null);
+  const cached = readBdCache();
+  const [bd, setBd] = useState(cached?.bd || null);
   const [hidden, setHidden] = useState(false);
 
   const fetchBD = useCallback(async () => {
     try {
       const r = await api.get("/night-audit/business-date");
-      setBd(r?.data?.business_date || null);
+      const v = r?.data?.business_date || null;
+      setBd(v);
+      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, t: Date.now() })); } catch {}
     } catch (e) {
       const code = e?.response?.status;
       if (code === 401 || code === 403 || code === 404) {
@@ -39,9 +55,11 @@ export default function PMSDateBadge() {
   }, []);
 
   useEffect(() => {
-    fetchBD();
+    // Cache taze ise mount fetch'i atla — interval 5dk'da bir zaten yenileyecek
+    if (!cached) fetchBD();
     const id = setInterval(fetchBD, 5 * 60 * 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchBD]);
 
   const today = todayISO();

@@ -66,6 +66,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
   const [recipients, setRecipients] = useState([]);
   const [recipientInput, setRecipientInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [lastResult, setLastResult] = useState(null);
 
   const load = async () => {
@@ -80,6 +81,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [businessDate]);
 
   const downloadPdf = async () => {
+    setDownloadingPdf(true);
     try {
       const r = await api.get('/pms/eod-report/pdf', { params: { business_date: businessDate }, responseType: 'blob' });
       const url = URL.createObjectURL(r.data);
@@ -87,6 +89,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
       a.href = url; a.download = `gun-sonu-${businessDate}.pdf`; a.click();
       URL.revokeObjectURL(url);
     } catch (e) { toast.error('Hata: ' + e.message); }
+    finally { setDownloadingPdf(false); }
   };
 
   const addRecipient = (raw) => {
@@ -250,8 +253,10 @@ export default function EodReportPage({ user, tenant, onLogout }) {
               {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
               E-posta Gönder
             </Button>
-            <Button onClick={downloadPdf} variant="outline" className="border-slate-300">
-              <Download className="w-4 h-4 mr-2" /> PDF İndir
+            <Button onClick={downloadPdf} disabled={downloadingPdf} variant="outline" className="border-slate-300">
+              {downloadingPdf
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Hazırlanıyor…</>
+                : <><Download className="w-4 h-4 mr-2" /> PDF İndir</>}
             </Button>
           </div>
 
