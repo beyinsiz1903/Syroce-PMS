@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
+import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
   RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
@@ -301,69 +303,65 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <h1 data-testid="night-audit-title" className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Moon className="w-6 h-6 text-indigo-600" />
-              Gece Denetimi
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Gün sonu işlemleri: oda masrafı kaydı, no-show işleme, folio bakiye kontrolü, finansal raporlama
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              data-testid="refresh-btn"
-              variant="outline"
-              size="sm"
-              onClick={loadAll}
-              disabled={loading}
-            >
-              <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-              Yenile
-            </Button>
-            <Button
-              data-testid="run-audit-btn"
-              size="sm"
-              onClick={() => setShowRunDialog(true)}
-              disabled={running}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              <Play className="w-4 h-4 mr-1" />
-              Denetim Başlat
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={Moon}
+          title="Gece Denetimi"
+          subtitle="Gün sonu işlemleri: oda masrafı kaydı, no-show işleme, folio bakiye kontrolü, finansal raporlama"
+          actions={
+            <>
+              <Button
+                data-testid="refresh-btn"
+                variant="outline"
+                size="sm"
+                onClick={loadAll}
+                disabled={loading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                Yenile
+              </Button>
+              <Button
+                data-testid="run-audit-btn"
+                size="sm"
+                onClick={() => setShowRunDialog(true)}
+                disabled={running}
+              >
+                <Play className="w-4 h-4 mr-1.5" />
+                Denetim Başlat
+              </Button>
+            </>
+          }
+        />
+        <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
 
         {/* Business Date & Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard
+          <KpiCard
             icon={Calendar}
-            label="İş Günü (Business Date)"
+            intent="info"
+            label="İş Günü"
             value={businessDate || "-"}
-            subValue={previousDate ? `Önceki: ${previousDate}` : undefined}
-            color="text-indigo-600"
+            sub={previousDate ? `Önceki: ${previousDate}` : undefined}
           />
-          <StatCard
+          <KpiCard
             icon={BarChart3}
+            intent="success"
             label="Toplam Denetim"
             value={historyTotal}
-            subValue={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
-            color="text-emerald-600"
+            sub={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
           />
-          <StatCard
+          <KpiCard
             icon={DollarSign}
+            intent="info"
             label="Son Oda Geliri"
             value={lastRun ? `${lastRun.total_room_revenue?.toFixed(2) || "0.00"} TL` : "-"}
-            subValue={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
-            color="text-blue-600"
+            sub={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
           />
-          <StatCard
+          <KpiCard
             icon={Users}
+            intent="warning"
             label="Son No-Show"
             value={lastRun?.no_shows_processed ?? "-"}
-            subValue={lastRun ? `${lastRun.rooms_processed || 0} oda işlendi` : undefined}
-            color="text-amber-600"
+            sub={lastRun ? `${lastRun.rooms_processed || 0} oda işlendi` : undefined}
           />
         </div>
 

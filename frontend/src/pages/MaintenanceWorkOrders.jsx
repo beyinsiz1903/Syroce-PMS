@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Wrench, Filter, RefreshCw, AlertTriangle, CheckCircle, Camera, Image, Video } from "lucide-react";
+import { PageHeader } from '@/components/ui/page-header';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import useMediaCapture from "@/hooks/useMediaCapture";
@@ -188,26 +189,17 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-              <Wrench className="w-5 h-5 text-amber-600" />
-              Maintenance {t('maintenance.workOrders')}
-            </h1>
-            <p className="text-xs md:text-sm text-gray-600">
-              Kat Hizmetleri, Ön Büro veya sensörler tarafından oluşturulan tüm bakım iş emirlerini takip edin.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={loadData}
-            disabled={loading}
-          >
-            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Yenile
-          </Button>
-        </div>
+        <PageHeader
+          icon={Wrench}
+          title={t('maintenance.workOrders')}
+          subtitle="Kat Hizmetleri, Ön Büro veya sensörler tarafından oluşturulan tüm bakım iş emirlerini takip edin."
+          actions={
+            <Button size="sm" variant="outline" onClick={loadData} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+          }
+        />
 
         {/* Filters */}
         <Card>

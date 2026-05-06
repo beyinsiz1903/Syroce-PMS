@@ -4,6 +4,8 @@ import axios from "axios";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Calendar, AlertTriangle, CheckCircle, RefreshCw, Users, FileText, LogOut, DoorOpen } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
@@ -34,80 +36,60 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-              Audit Öncesi Checklist
-            </h1>
-            <p className="text-xs md:text-sm text-gray-600">
-              Night audit öncesi front desk ve finance ekiplerinin hızlıca kontrol etmesi gereken kritik öğeler.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-xs md:text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <Calendar className="w-4 h-4" />
-              <span>{data?.date || ""}</span>
-            </div>
-            <Button size="sm" variant="outline" onClick={loadChecklist} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-              Yenile
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={AlertTriangle}
+          title="Audit Öncesi Checklist"
+          subtitle="Night audit öncesi front desk ve finance ekiplerinin hızlıca kontrol etmesi gereken kritik öğeler."
+          actions={
+            <>
+              {data?.date && (
+                <div className="flex items-center gap-1 text-xs text-slate-600 px-2">
+                  <Calendar className="w-4 h-4" />
+                  <span>{data.date}</span>
+                </div>
+              )}
+              <Button size="sm" variant="outline" onClick={loadChecklist} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                Yenile
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Check-in Bekleyenler</div>
-                <div className="text-xl font-semibold">{summary.unchecked_in_count ?? "-"}</div>
-                <div className="text-[11px] text-gray-500 mt-1">
-                  VIP: {summary.vip_unchecked_in ?? 0}
-                </div>
-              </div>
-              <Users className="w-7 h-7 text-blue-600" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Open Folios</div>
-                <div className="text-xl font-semibold">{summary.open_folio_count ?? "-"}</div>
-                <div className="text-[11px] text-gray-500 mt-1">
-                  Toplam Bakiye: €
-                  {summary.total_open_balance != null
-                    ? summary.total_open_balance.toFixed
-                      ? summary.total_open_balance.toFixed(2)
-                      : summary.total_open_balance
-                    : "-"}
-                </div>
-              </div>
-              <FileText className="w-7 h-7 text-indigo-600" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Unbalanced Folios</div>
-                <div className="text-xl font-semibold">{summary.unbalanced_folio_count ?? "-"}</div>
-              </div>
-              <AlertTriangle className="w-7 h-7 text-red-500" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Overdue Departures</div>
-                <div className="text-xl font-semibold">{summary.overdue_departures_count ?? "-"}</div>
-              </div>
-              <DoorOpen className="w-7 h-7 text-amber-600" />
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <KpiCard
+            icon={Users}
+            intent="info"
+            label="Check-in Bekleyenler"
+            value={summary.unchecked_in_count ?? "-"}
+            sub={`VIP: ${summary.vip_unchecked_in ?? 0}`}
+          />
+          <KpiCard
+            icon={FileText}
+            intent="neutral"
+            label="Açık Folio'lar"
+            value={summary.open_folio_count ?? "-"}
+            sub={`Toplam Bakiye: €${
+              summary.total_open_balance != null
+                ? summary.total_open_balance.toFixed
+                  ? summary.total_open_balance.toFixed(2)
+                  : summary.total_open_balance
+                : "-"
+            }`}
+          />
+          <KpiCard
+            icon={AlertTriangle}
+            intent="danger"
+            label="Dengesiz Folio'lar"
+            value={summary.unbalanced_folio_count ?? "-"}
+          />
+          <KpiCard
+            icon={DoorOpen}
+            intent="warning"
+            label="Geciken Çıkışlar"
+            value={summary.overdue_departures_count ?? "-"}
+          />
         </div>
 
         {/* Sections */}

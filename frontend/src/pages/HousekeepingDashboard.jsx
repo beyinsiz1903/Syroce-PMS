@@ -7,7 +7,9 @@ import HousekeepingDetailedReports from '../components/HousekeepingDetailedRepor
 import HousekeepingQualityPanel from '../components/HousekeepingQualityPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Bed, ArrowLeft, Smartphone, ClipboardList, Wrench } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { Bed, ArrowLeft, Smartphone, ClipboardList, Wrench, BedDouble, Sparkles, Brush, AlertOctagon } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
 import { useTranslation } from 'react-i18next';
 
@@ -43,55 +45,34 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-6 space-y-6" data-testid="page-housekeeping">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Bed className="w-8 h-8 text-blue-600" />
-              {t('hkDashboard.title')}
-            </h1>
-            <p className="text-gray-600 mt-1">{t('hkDashboard.subtitle')}</p>
-          </div>
-          <Button onClick={() => navigate('/')} variant="outline">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            {t('nav.dashboard')}
-          </Button>
-        </div>
+        <PageHeader
+          icon={Bed}
+          title={t('hkDashboard.title')}
+          subtitle={t('hkDashboard.subtitle')}
+          actions={
+            <Button onClick={() => navigate('/')} variant="outline" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-1.5" />
+              {t('nav.dashboard')}
+            </Button>
+          }
+        />
 
         {/* Today Snapshot — KPI Cards */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('hkDashboard.todaySnapshot')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Skeleton className="h-20" />
-                <Skeleton className="h-20" />
-                <Skeleton className="h-20" />
-                <Skeleton className="h-20" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div className="bg-blue-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">{t('hkDashboard.roomsTotal')}</div>
-                  <div className="text-2xl font-bold text-blue-700">{totalRooms}</div>
-                </div>
-                <div className="bg-green-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">{t('hkDashboard.vacantClean')}</div>
-                  <div className="text-2xl font-bold text-green-700">{vacantClean}</div>
-                </div>
-                <div className="bg-yellow-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">{t('hkDashboard.vacantDirty')}</div>
-                  <div className="text-2xl font-bold text-yellow-700">{vacantDirty}</div>
-                </div>
-                <div className="bg-red-50 p-3 rounded">
-                  <div className="text-xs text-gray-600">{t('hkDashboard.outOfOrderService')}</div>
-                  <div className="text-2xl font-bold text-red-700">{oooCount}</div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {loading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard icon={BedDouble} intent="info" label={t('hkDashboard.roomsTotal')} value={totalRooms} />
+            <KpiCard icon={Sparkles} intent="success" label={t('hkDashboard.vacantClean')} value={vacantClean} />
+            <KpiCard icon={Brush} intent="warning" label={t('hkDashboard.vacantDirty')} value={vacantDirty} />
+            <KpiCard icon={AlertOctagon} intent="danger" label={t('hkDashboard.outOfOrderService')} value={oooCount} />
+          </div>
+        )}
 
         {/* Detailed Reports */}
         <Card>

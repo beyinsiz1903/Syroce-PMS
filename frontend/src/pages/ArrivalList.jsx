@@ -5,7 +5,9 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
@@ -177,67 +179,49 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
     <div className="p-6">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate('/')}
-              className="hover:bg-green-50"
-            >
-              <Home className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Bugünün Varışları
-              </h1>
-              <p className="text-gray-600">
-                Bugün check-in yapacak misafirler — VIP, grup ve özel istekler
-              </p>
-            </div>
-          </div>
-          <Button onClick={loadTodayArrivals} disabled={loading}>
-            Yenile
-          </Button>
-        </div>
+        <PageHeader
+          icon={UserCheck}
+          title="Bugünün Varışları"
+          subtitle="Bugün check-in yapacak misafirler — VIP, grup ve özel istekler"
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => navigate('/')}>
+                <Home className="w-4 h-4 mr-1.5" /> Ana Sayfa
+              </Button>
+              <Button variant="outline" size="sm" onClick={loadTodayArrivals} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+              </Button>
+            </>
+          }
+        />
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <UserCheck className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold">{arrivals.length}</p>
-            <p className="text-sm text-gray-500">Toplam Varış</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <Crown className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold">
-              {arrivals.filter(a => a.vip_status || a.tags?.includes('vip')).length}
-            </p>
-            <p className="text-sm text-gray-500">VIP Varış</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <Users className="w-8 h-8 text-green-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold">
-              {arrivals.filter(a => a.group_block_id).length}
-            </p>
-            <p className="text-sm text-gray-500">Grup Varış</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <Clock className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold">
-              {arrivals.filter(a => a.online_checkin_completed).length}
-            </p>
-            <p className="text-sm text-gray-500">Online Check-in</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <KpiCard
+          icon={UserCheck}
+          intent="info"
+          label="Toplam Varış"
+          value={arrivals.length}
+        />
+        <KpiCard
+          icon={Crown}
+          intent="warning"
+          label="VIP Varış"
+          value={arrivals.filter(a => a.vip_status || a.tags?.includes('vip')).length}
+        />
+        <KpiCard
+          icon={Users}
+          intent="success"
+          label="Grup Varış"
+          value={arrivals.filter(a => a.group_block_id).length}
+        />
+        <KpiCard
+          icon={Clock}
+          intent="neutral"
+          label="Online Check-in"
+          value={arrivals.filter(a => a.online_checkin_completed).length}
+        />
       </div>
 
       {/* Arrivals List */}
