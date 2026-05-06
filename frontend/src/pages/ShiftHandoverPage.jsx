@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/api/axios';
+import Layout from '@/components/Layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,24 +9,25 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, ClipboardCheck, AlertTriangle, Check, Trash2, Plus } from 'lucide-react';
+import { Loader2, ClipboardCheck, AlertTriangle, Check, Trash2, Plus, Inbox } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
+
 const SHIFTS = [
-  { v: 'morning', l: 'Sabah (07:00–15:00)' },
+  { v: 'morning',   l: 'Sabah (07:00–15:00)' },
   { v: 'afternoon', l: 'Öğleden Sonra (15:00–23:00)' },
-  { v: 'night', l: 'Gece (23:00–07:00)' },
+  { v: 'night',     l: 'Gece (23:00–07:00)' },
 ];
 const PRIORITIES = [
-  { v: 'low', l: 'Düşük', cls: 'bg-gray-100 text-gray-700 border-gray-200' },
-  { v: 'normal', l: 'Normal', cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-  { v: 'high', l: 'Yüksek', cls: 'bg-red-100 text-red-700 border-red-200' },
+  { v: 'low',    l: 'Düşük',  cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+  { v: 'normal', l: 'Normal', cls: 'bg-sky-100 text-sky-800 border-sky-200' },
+  { v: 'high',   l: 'Acil',   cls: 'bg-rose-100 text-rose-800 border-rose-200' },
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-export default function ShiftHandoverPage() {
+export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
@@ -90,128 +92,157 @@ export default function ShiftHandoverPage() {
   const shiftLabel = (s) => SHIFTS.find(x => x.v === s)?.l || s;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="shift-handover-page">
-      <div className="flex items-center justify-between">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="dashboard">
+      <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4" data-testid="shift-handover-page">
+        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ClipboardCheck className="w-6 h-6 text-orange-600" /> Vardiya Devir Notları
+          <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
+            <ClipboardCheck className="w-6 h-6 text-amber-600" /> Vardiya Devir Notları
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Resepsiyon vardiyaları arasında kritik not aktarımı</p>
-        </div>
-      </div>
-
-      <Card className="p-4 border-orange-200">
-        <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Yeni Devir Notu</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div>
-            <Label className="text-xs">İş Günü</Label>
-            <Input type="date" value={form.business_date} onChange={e => setForm(p => ({ ...p, business_date: e.target.value }))} className="h-9" />
-          </div>
-          <div>
-            <Label className="text-xs">Vardiya</Label>
-            <Select value={form.shift} onValueChange={v => setForm(p => ({ ...p, shift: v }))}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>{SHIFTS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Devredilen Vardiya</Label>
-            <Select value={form.to_shift} onValueChange={v => setForm(p => ({ ...p, to_shift: v }))}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>{SHIFTS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Öncelik</Label>
-            <Select value={form.priority} onValueChange={v => setForm(p => ({ ...p, priority: v }))}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.v} value={p.v}>{p.l}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-          <div>
-            <Label className="text-xs">İlgili Oda (ops.)</Label>
-            <Input value={form.related_room} onChange={e => setForm(p => ({ ...p, related_room: e.target.value }))} placeholder="Örn. 204" className="h-9" />
-          </div>
-          <div>
-            <Label className="text-xs">İlgili Rezervasyon ID (ops.)</Label>
-            <Input value={form.related_booking_id} onChange={e => setForm(p => ({ ...p, related_booking_id: e.target.value }))} className="h-9" />
-          </div>
-        </div>
-        <div className="mt-3">
-          <Label className="text-xs">Not</Label>
-          <Textarea value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} rows={3}
-            placeholder="Örn: 312 nolu odada klima arızası, teknik servis 09:00 gelecek." />
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button onClick={create} disabled={creating} className="bg-orange-600 hover:bg-orange-700">
-            {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />} Devir Notu Ekle
-          </Button>
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-          <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-            <TabsList>
-              <TabsTrigger value="open">Açık</TabsTrigger>
-              <TabsTrigger value="acknowledged">Onaylanan</TabsTrigger>
-              <TabsTrigger value="all">Tümü</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <div className="flex items-center gap-2">
-            <Label className="text-xs whitespace-nowrap">İş Günü</Label>
-            <Input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} className="h-8 w-40" />
-            <Button size="sm" variant="outline" onClick={() => setBusinessDate('')}>Tümü</Button>
-          </div>
+          <p className="text-sm text-slate-500 mt-1">Resepsiyon vardiyaları arasında kritik not aktarımı</p>
         </div>
 
-        {loading && <div className="text-center py-8 text-gray-500"><Loader2 className="inline w-5 h-5 animate-spin" /> Yükleniyor...</div>}
+        {/* Yeni devir notu formu */}
+        <Card className="p-4 border-amber-200 bg-amber-50/30">
+          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-900">
+            <Plus className="w-4 h-4 text-amber-600" /> Yeni Devir Notu
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs">İş Günü</Label>
+              <Input type="date" value={form.business_date} onChange={e => setForm(p => ({ ...p, business_date: e.target.value }))} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">Devreden Vardiya</Label>
+              <Select value={form.shift} onValueChange={v => setForm(p => ({ ...p, shift: v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>{SHIFTS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Devralan Vardiya</Label>
+              <Select value={form.to_shift} onValueChange={v => setForm(p => ({ ...p, to_shift: v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>{SHIFTS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Öncelik</Label>
+              <Select value={form.priority} onValueChange={v => setForm(p => ({ ...p, priority: v }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.v} value={p.v}>{p.l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            <div>
+              <Label className="text-xs text-slate-600">İlgili Oda <span className="opacity-60">(opsiyonel)</span></Label>
+              <Input value={form.related_room} onChange={e => setForm(p => ({ ...p, related_room: e.target.value }))} placeholder="Örn. 204" className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-600">İlgili Rezervasyon ID <span className="opacity-60">(opsiyonel)</span></Label>
+              <Input value={form.related_booking_id} onChange={e => setForm(p => ({ ...p, related_booking_id: e.target.value }))} className="h-9" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <Label className="text-xs">Not <span className="text-rose-500">*</span></Label>
+            <Textarea
+              value={form.note}
+              onChange={e => setForm(p => ({ ...p, note: e.target.value }))}
+              rows={4}
+              className="min-h-[110px] resize-y"
+              placeholder="Örn: 312 nolu odada klima arızası, teknik servis 09:00 gelecek. VIP misafire yanlış oda atanmış, transfer yapılacak..."
+            />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button onClick={create} disabled={creating} className="bg-amber-600 hover:bg-amber-700 text-white">
+              {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Devir Notu Ekle
+            </Button>
+          </div>
+        </Card>
 
-        {!loading && items.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">Devir notu yok</div>
-        )}
+        {/* Liste filtreleri + içerik */}
+        <Card className="p-4 border-slate-200">
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+              <TabsList>
+                <TabsTrigger value="open">Açık</TabsTrigger>
+                <TabsTrigger value="acknowledged">Onaylanan</TabsTrigger>
+                <TabsTrigger value="all">Tümü</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs whitespace-nowrap text-slate-600">Tarih</Label>
+              <Input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} className="h-8 w-40" />
+              <Button size="sm" variant="outline" onClick={() => setBusinessDate('')} className="border-slate-300 text-slate-600">
+                Filtreyi Temizle
+              </Button>
+            </div>
+          </div>
 
-        <div className="space-y-2">
-          {items.map(it => {
-            const pm = prioMeta(it.priority);
-            return (
-              <div key={it.id} className={`border rounded-lg p-3 ${it.acknowledged ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <Badge className={pm.cls}>{pm.l}</Badge>
-                      <Badge variant="outline" className="text-xs">{it.business_date}</Badge>
-                      <Badge variant="outline" className="text-xs">{shiftLabel(it.shift)}{it.to_shift ? ` → ${shiftLabel(it.to_shift)}` : ''}</Badge>
-                      {it.related_room && <Badge variant="outline" className="text-xs">Oda {it.related_room}</Badge>}
-                      {it.acknowledged && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200"><Check className="w-3 h-3 mr-1" />Onaylandı</Badge>}
-                      {!it.acknowledged && it.priority === 'high' && <AlertTriangle className="w-4 h-4 text-red-600" />}
+          {loading && (
+            <div className="text-center py-8 text-slate-500">
+              <Loader2 className="inline w-5 h-5 animate-spin" /> Yükleniyor…
+            </div>
+          )}
+
+          {!loading && items.length === 0 && (
+            <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 rounded-lg">
+              <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <div className="text-sm font-medium text-slate-700">Bu vardiyada henüz devir notu yok</div>
+              <div className="text-xs text-slate-500 mt-1">Üstteki formdan ilk notu siz ekleyin.</div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {items.map(it => {
+              const pm = prioMeta(it.priority);
+              return (
+                <div key={it.id} className={`border rounded-lg p-3 ${it.acknowledged ? 'bg-slate-50 opacity-75 border-slate-200' : it.priority === 'high' ? 'bg-white border-rose-200' : 'bg-white border-slate-200'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                        <Badge className={pm.cls}>
+                          {it.priority === 'high' && <AlertTriangle className="w-3 h-3 mr-1" />}
+                          {pm.l}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs border-slate-200">{it.business_date}</Badge>
+                        <Badge variant="outline" className="text-xs border-slate-200">
+                          {shiftLabel(it.shift)}{it.to_shift ? ` → ${shiftLabel(it.to_shift)}` : ''}
+                        </Badge>
+                        {it.related_room && <Badge variant="outline" className="text-xs border-slate-200">Oda {it.related_room}</Badge>}
+                        {it.acknowledged && (
+                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                            <Check className="w-3 h-3 mr-1" />Onaylandı
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-slate-800 whitespace-pre-wrap">{it.note}</div>
+                      <div className="text-[11px] text-slate-500 mt-2">
+                        {it.from_user_name} · {new Date(it.created_at).toLocaleString('tr-TR')}
+                        {it.acknowledged && it.acknowledged_by_name && (
+                          <> · Onay: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString('tr-TR')})</>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap">{it.note}</div>
-                    <div className="text-[11px] text-gray-500 mt-2">
-                      {it.from_user_name} · {new Date(it.created_at).toLocaleString('tr-TR')}
-                      {it.acknowledged && it.acknowledged_by_name && (
-                        <> · Onay: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString('tr-TR')})</>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      {!it.acknowledged && (
+                        <Button size="sm" onClick={() => ack(it.id)} className="bg-emerald-600 hover:bg-emerald-700 h-8">
+                          <Check className="w-3.5 h-3.5 mr-1" /> Onayla
+                        </Button>
                       )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    {!it.acknowledged && (
-                      <Button size="sm" onClick={() => ack(it.id)} className="bg-emerald-600 hover:bg-emerald-700 h-8">
-                        <Check className="w-3.5 h-3.5 mr-1" /> Onayla
+                      <Button size="sm" variant="ghost" onClick={() => remove(it.id)} className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => remove(it.id)} className="h-8 text-red-600 hover:text-red-700">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-    </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+    </Layout>
   );
 }
