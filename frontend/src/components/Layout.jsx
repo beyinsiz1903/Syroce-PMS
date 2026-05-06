@@ -230,8 +230,21 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     const active = isGroupActive(groupDef.id);
     const label = t(`navGroups.${groupDef.id}`, groupDef.label);
 
+    // Dropdown acilir acilmaz grubun TUM item'larini paralel preload et.
+    // Hover preload tek basina yeterli degil: kullanici dropdown'i tiklayip
+    // ardindan tek hareketle bir item'a geciyor — hover suresi <50ms olunca
+    // chunk indirme tikladiktan sonra basliyor ve gorunur gecikme yaratiyor.
+    // onOpenChange ile menu acildiginda tum chunk'lar arka planda inmeye
+    // baslar; kullanici tiklayinca cogu zaman hazir olur.
+    const handleOpenChange = (open) => {
+      if (!open) return;
+      for (const it of items) {
+        if (it?.path) preloadRoute(it.path);
+      }
+    };
+
     return (
-      <DropdownMenu key={groupDef.id}>
+      <DropdownMenu key={groupDef.id} onOpenChange={handleOpenChange}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
