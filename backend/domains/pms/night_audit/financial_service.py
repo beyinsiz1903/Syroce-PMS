@@ -442,15 +442,17 @@ class FinancialService:
             ):
                 booking_map[b["id"]] = b
 
+        # guests/rooms koleksiyonlari OTORITE — bookings.guest_name eski sync
+        # artigi olabilir ("V4 Refund"). Tum guest_id/room_id'leri lookup'a koy.
         guest_ids = set()
         room_ids = set()
         for it in items:
             b = booking_map.get(it.get("booking_id")) or {}
             gid = it.get("guest_id") or b.get("guest_id")
             rid = it.get("room_id") or b.get("room_id")
-            if gid and not it.get("guest_name") and not b.get("guest_name"):
+            if gid:
                 guest_ids.add(gid)
-            if rid and not it.get("room_no") and not b.get("room_no"):
+            if rid:
                 room_ids.add(rid)
 
         guest_map: dict = {}
@@ -474,12 +476,20 @@ class FinancialService:
 
         for it in items:
             b = booking_map.get(it.get("booking_id")) or {}
-            if not it.get("guest_name"):
-                it["guest_name"] = b.get("guest_name") or guest_map.get(
-                    it.get("guest_id") or b.get("guest_id")) or None
-            if not it.get("room_no"):
-                rid = it.get("room_id") or b.get("room_id")
-                it["room_no"] = b.get("room_no") or (room_map.get(rid) if rid else None)
+            # Onceligi guests koleksiyonu kazanir; lookup basarisiz olursa
+            # booking_map ve son olarak it'in mevcut degeri fallback olur.
+            gid = it.get("guest_id") or b.get("guest_id")
+            authoritative_name = guest_map.get(gid) if gid else None
+            if authoritative_name:
+                it["guest_name"] = authoritative_name
+            elif not it.get("guest_name"):
+                it["guest_name"] = b.get("guest_name") or None
+            rid = it.get("room_id") or b.get("room_id")
+            authoritative_room = room_map.get(rid) if rid else None
+            if authoritative_room:
+                it["room_no"] = authoritative_room
+            elif not it.get("room_no"):
+                it["room_no"] = b.get("room_no") or None
             if not it.get("booking_id") and b.get("id"):
                 it["booking_id"] = b["id"]
             if not it.get("confirmation_code") and b.get("confirmation_code"):

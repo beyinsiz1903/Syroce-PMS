@@ -34,7 +34,7 @@ const BookingRow = memo(({ index, style, data }) => {
               <div className="text-xs text-gray-500">Guest</div>
               <div className="font-medium flex items-center gap-1">
                 <User className="w-3 h-3" />
-                {booking.guest_name || booking.guest_id}
+                {booking.guest_name || (booking.guest_id ? `Misafir ${booking.guest_id.slice(0, 8)}` : 'Bilinmiyor')}
               </div>
             </div>
             

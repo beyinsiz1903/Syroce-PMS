@@ -1033,10 +1033,11 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     if not tenant_id:
         return items
 
-    missing_guest_ids = {b["guest_id"] for b in items
-                        if not b.get("guest_name") and b.get("guest_id")}
-    missing_room_ids = {b["room_id"] for b in items
-                       if not b.get("room_no") and b.get("room_id")}
+    # guests/rooms koleksiyonlari OTORITE — bookings.guest_name eski sync
+    # artigi olabilir. Tum guest_id/room_id'ler icin lookup yap, gercek
+    # isim/oda no varsa booking field'ini override et.
+    missing_guest_ids = {b["guest_id"] for b in items if b.get("guest_id")}
+    missing_room_ids = {b["room_id"] for b in items if b.get("room_id")}
 
     guest_map: dict = {}
     if missing_guest_ids:
@@ -1058,9 +1059,11 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
             room_map[r["id"]] = r.get("room_number") or r.get("room_no")
 
     for b in items:
-        if not b.get("guest_name") and b.get("guest_id") in guest_map:
+        # guests/rooms her zaman OTORITE — bookings.guest_name eski sync
+        # artigi olabilir ("V4 Refund" gibi). Lookup basarisizsa orijinal kalir.
+        if b.get("guest_id") in guest_map:
             b["guest_name"] = guest_map[b["guest_id"]]
-        if not b.get("room_no") and b.get("room_id") in room_map and room_map[b["room_id"]]:
+        if b.get("room_id") in room_map and room_map[b["room_id"]]:
             b["room_no"] = room_map[b["room_id"]]
 
     return items

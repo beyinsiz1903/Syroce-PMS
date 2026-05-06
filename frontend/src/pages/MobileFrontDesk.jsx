@@ -436,7 +436,7 @@ const MobileFrontDesk = ({ user }) => {
                 return;
               }
               const target = candidates[0];
-              const guestLabel = target.guest_name || target.id;
+              const guestLabel = target.guest_name || `Rezervasyon ${target.id.slice(0, 8)}`;
               if (!window.confirm(`"${guestLabel}" no-show olarak işaretlensin mi?`)) return;
               try {
                 const res = await axios.post('/frontdesk/mobile/process-no-show', {
