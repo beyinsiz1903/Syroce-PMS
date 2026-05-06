@@ -89,7 +89,7 @@ const MetricDetailModal = ({ isOpen, onClose, metric }) => {
           {metric.actions && metric.actions.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Quick Actions</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600">Hızlı İşlemler</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">

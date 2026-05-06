@@ -748,23 +748,23 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-gray-700">{t('pms.quickActions', 'Quick Actions')}:</div>
+                <div className="text-sm font-semibold text-gray-700">{t('pms.quickActions', 'Hızlı İşlemler')}:</div>
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setOpenDialog('booking')}>
-                  <Plus className="w-4 h-4 mr-2" />{t('pms.newBooking', 'New Booking')}
+                  <Plus className="w-4 h-4 mr-2" />{t('pms.newBooking', 'Yeni Rezervasyon')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setOpenDialog('guest')}>
-                  <UserPlus className="w-4 h-4 mr-2" />{t('pms.newGuest', 'New Guest')}
+                  <UserPlus className="w-4 h-4 mr-2" />{t('pms.newGuest', 'Yeni Misafir')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={async () => {
-                  try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash report generated!'); setActiveTab('reports'); } else { toast.info('No flash report data available'); }
-                  } catch (error) { toast.error('Failed to generate report'); }
+                  try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
+                  } catch (error) { toast.error('Rapor oluşturulamadı'); }
                 }}>
-                  <FileText className="w-4 h-4 mr-2" />{t('pms.flashReport', 'Flash Report')}
+                  <FileText className="w-4 h-4 mr-2" />{t('pms.flashReport', 'Flash Rapor')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => loadData()}>
-                  <RefreshCw className="w-4 h-4 mr-2" />Refresh
+                  <RefreshCw className="w-4 h-4 mr-2" />{t('common.refresh', 'Yenile')}
                 </Button>
               </div>
             </div>
@@ -915,9 +915,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
         <FloatingActionButton
           actions={[
-            { label: t('pms.newBooking', 'New Booking'), icon: Calendar, onClick: () => setOpenDialog('booking') },
-            { label: t('pms.newGuest', 'New Guest'), icon: UserPlus, onClick: () => setOpenDialog('guest') },
-            { label: t('pms.newRoom', 'New Room'), icon: BedDouble, onClick: () => setOpenDialog('room') },
+            { label: t('pms.newBooking', 'Yeni Rezervasyon'), icon: Calendar, onClick: () => setOpenDialog('booking') },
+            { label: t('pms.newGuest', 'Yeni Misafir'), icon: UserPlus, onClick: () => setOpenDialog('guest') },
+            { label: t('pms.newRoom', 'Yeni Oda'), icon: BedDouble, onClick: () => setOpenDialog('room') },
           ]}
         />
       </div>

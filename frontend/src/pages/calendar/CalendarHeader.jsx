@@ -151,7 +151,7 @@ const CalendarHeader = ({
             className="text-xs h-8"
             data-testid="find-room-btn"
           >
-            Genel Bakis
+            Genel Bakış
           </Button>
           <Button
             onClick={onShowNewBookingDialog}

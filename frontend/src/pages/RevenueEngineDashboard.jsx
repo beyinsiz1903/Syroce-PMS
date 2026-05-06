@@ -67,7 +67,7 @@ export default function RevenueEngineDashboard({ user, tenant, onLogout, embedde
   };
 
   const tabs = [
-    { id: 'overview', label: 'Genel Bakis', icon: BarChart3 },
+    { id: 'overview', label: 'Genel Bakış', icon: BarChart3 },
     { id: 'forecast', label: 'Tahmin', icon: TrendingUp },
     { id: 'yield', label: 'Yield Kurallari', icon: Target },
     { id: 'channels', label: 'Kanal Analizi', icon: Globe },

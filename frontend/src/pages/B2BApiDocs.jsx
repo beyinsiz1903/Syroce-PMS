@@ -40,7 +40,7 @@ const navLabels = {
     folio: 'Folio & Billing', webhooks: 'Webhooks',
   },
   tr: {
-    overview: 'Genel Bakis', quickstart: 'Hızlı Baslangic', auth: 'Kimlik Dogrulama', errors: 'Hata Kodlari',
+    overview: 'Genel Bakış', quickstart: 'Hızlı Başlangıç', auth: 'Kimlik Doğrulama', errors: 'Hata Kodları',
     ratelimits: 'İstek Limitleri', pagination: 'Sayfalama', content: 'Icerik', availability: 'Musaitlik',
     rates: 'Fiyatlar', reservations: 'Rezervasyonlar', guests: 'Misafirler', loyalty: 'Sadakat Programi',
     housekeeping: 'Kat Hizmetleri', kbs: 'KBS / Emniyet', identity: 'Pasaport / Kimlik',

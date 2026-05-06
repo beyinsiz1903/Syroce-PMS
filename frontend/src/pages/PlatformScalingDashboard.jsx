@@ -56,7 +56,7 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const modules = [
-    { id: 'overview', label: 'Genel Bakis', icon: Layers },
+    { id: 'overview', label: 'Genel Bakış', icon: Layers },
     { id: 'events', label: 'Event Mimari', icon: Radio },
     { id: 'multi_property', label: 'Multi-Property', icon: Building2 },
     { id: 'competitive', label: 'CompSet Analiz', icon: Crosshair },

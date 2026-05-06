@@ -94,7 +94,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('booking.bookingDetails')}</DialogTitle>
-          <DialogDescription>Full reservation information and actions</DialogDescription>
+          <DialogDescription>Tüm rezervasyon bilgileri ve işlemler</DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4">
@@ -187,7 +187,17 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                     <div className="text-xs text-gray-600">{t('booking.adults')}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-indigo-700">{booking.status?.toUpperCase() || 'N/A'}</div>
+                    <div className="text-2xl font-bold text-indigo-700">{(() => {
+                      const statusMap = {
+                        confirmed: 'ONAYLANDI',
+                        pending: 'BEKLEMEDE',
+                        checked_in: 'GİRİŞ YAPILDI',
+                        checked_out: 'ÇIKIŞ YAPILDI',
+                        cancelled: 'İPTAL EDİLDİ',
+                        no_show: 'GELMEDİ',
+                      };
+                      return statusMap[booking.status] || booking.status?.toUpperCase() || 'YOK';
+                    })()}</div>
                     <div className="text-xs text-gray-600">{t('common.status')}</div>
                   </div>
                 </div>
@@ -196,15 +206,15 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               {company && !editing && (
                 <div className="grid grid-cols-2 gap-4 text-xs text-left bg-white/60 p-3 rounded border border-emerald-100">
                   <div className="space-y-1">
-                    <div className="text-[11px] font-semibold text-gray-700">Corporate</div>
+                    <div className="text-[11px] font-semibold text-gray-700">Kurumsal</div>
                     <div className="text-gray-800 font-medium">{company.name}</div>
-                    <div className="text-[11px] text-gray-500">Code: {company.corporate_code || 'N/A'}</div>
+                    <div className="text-[11px] text-gray-500">Kod: {company.corporate_code || 'YOK'}</div>
                   </div>
                   <div className="space-y-1">
-                    <div className="text-[11px] font-semibold text-gray-700">Rate Details</div>
-                    <div className="text-[11px] text-gray-600">Contracted: <span className="font-medium">{booking.contracted_rate || 'N/A'}</span></div>
-                    <div className="text-[11px] text-gray-600">Segment: <span className="font-medium">{booking.market_segment || 'corporate'}</span></div>
-                    <div className="text-[11px] text-gray-600">Policy: <span className="font-medium">{booking.cancellation_policy || 'standard'}</span></div>
+                    <div className="text-[11px] font-semibold text-gray-700">Tarife Detayları</div>
+                    <div className="text-[11px] text-gray-600">Sözleşmeli Fiyat: <span className="font-medium">{booking.contracted_rate || 'YOK'}</span></div>
+                    <div className="text-[11px] text-gray-600">Segment: <span className="font-medium">{booking.market_segment || 'kurumsal'}</span></div>
+                    <div className="text-[11px] text-gray-600">Politika: <span className="font-medium">{booking.cancellation_policy || 'standart'}</span></div>
                   </div>
                 </div>
               )}
