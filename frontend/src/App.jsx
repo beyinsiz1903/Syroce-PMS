@@ -308,6 +308,11 @@ function App() {
                           isAuthenticated={isAuthenticated}
                           targetPath={rc.targetPath}
                           element={<rc.component {...rc.props} />}
+                          wrapLayout={rc.wrapLayout}
+                          layoutModule={rc.layoutModule}
+                          user={user}
+                          tenant={tenant}
+                          onLogout={handleLogout}
                         />
                       );
                     } else if (rc.type === "module") {
@@ -318,6 +323,11 @@ function App() {
                           moduleEnabled={isSuperAdmin ? true : modules?.[rc.moduleKey]}
                           strict={rc.strict}
                           element={<rc.component {...rc.props} />}
+                          wrapLayout={rc.wrapLayout}
+                          layoutModule={rc.layoutModule}
+                          user={user}
+                          tenant={tenant}
+                          onLogout={handleLogout}
                         />
                       );
                     } else if (rc.type === "feature") {
@@ -326,7 +336,7 @@ function App() {
                       } else if (!hasFeature(rc.featureKey)) {
                         element = <Navigate to="/" replace />;
                       } else {
-                        element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
+                        element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} wrapLayout={rc.wrapLayout} layoutModule={rc.layoutModule} user={user} tenant={tenant} onLogout={handleLogout} />;
                       }
                     } else if (rc.requireSuperAdmin) {
                       const isSuperAdmin = (user?.roles || []).includes("super_admin") || user?.role === "super_admin";
@@ -335,10 +345,10 @@ function App() {
                       } else if (!isSuperAdmin) {
                         element = <Navigate to="/app/dashboard" replace />;
                       } else {
-                        element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
+                        element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} wrapLayout={rc.wrapLayout} layoutModule={rc.layoutModule} user={user} tenant={tenant} onLogout={handleLogout} />;
                       }
                     } else {
-                      element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} />;
+                      element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} wrapLayout={rc.wrapLayout} layoutModule={rc.layoutModule} user={user} tenant={tenant} onLogout={handleLogout} />;
                     }
 
                     return <Route key={rc.path} path={rc.path} element={element} />;

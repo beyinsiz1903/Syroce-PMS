@@ -7,73 +7,47 @@ An enterprise-grade, multi-tenant Hotel Property Management System with AI-power
 - **Frontend**:
   - Install dependencies: `cd frontend && yarn install`
   - Start dev server: `cd frontend && yarn run start`
-  - Build for deployment: `cd frontend && yarn build` (outputs to `frontend/build`)
+  - Build for deployment: `cd frontend && yarn build`
 - **Backend**:
   - Start services (MongoDB, Redis, FastAPI): `bash backend/start.sh`
-- **Environment Variables**:
-  - `JWT_SECRET`: Persistent environment variable for authentication.
-  - `RESEND_API_KEY`: For email services. Set `RESEND_FROM` for custom domains.
-  - `SENTRY_DSN` (backend), `VITE_SENTRY_DSN` (frontend): For error tracking.
-  - `QUICKID_SERVICE_KEY`, `QUICKID_URL`: Quick-ID microservice integration.
-  - `ENABLE_QUICKID_DEMO`: `true` for fake Quick-ID data in development.
-  - `ROOM_QR_SECRET`: HMAC secret for QR token generation.
-  - `PUBLIC_APP_URL`: Base URL for QR links.
-  - `AFSADAKAT_BASE_URL`, `AFSADAKAT_ADMIN_TOKEN`: For Af-sadakat integration.
-  - `ENABLE_SETUP_ENDPOINTS`: Enables setup endpoints (default `0`).
-  - `SETUP_SECRET`: Secret for setup endpoints.
-  - `EXELY_IP_WHITELIST`: Mandatory for Exely webhook, list of trusted IPs.
-  - `EXELY_TRUST_FORWARDED`: `1` to trust `X-Forwarded-For` header for Exely webhooks.
-  - `EXELY_TRUSTED_PROXY_IPS`: CIDR list of trusted proxies for Exely webhooks.
-  - `JWT_EXPIRATION_MINUTES`: Access token expiry (default 15 min).
-  - `REFRESH_TOKEN_EXPIRATION_DAYS`: Refresh token expiry (default 30 days).
-  - `DISABLE_EXPO_PUSH`: `1` to disable Expo Push.
-  - `MOBILE_PUSH_SCAN_SECONDS`: Push notification scan interval.
-  - `MOBILE_PUSH_VIP_WINDOW_MINUTES`: VIP arrival push window.
-  - `KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS`: Interval for ID photo view alerts.
+- **Environment Variables**: `JWT_SECRET`, `RESEND_API_KEY`, `SENTRY_DSN`, `VITE_SENTRY_DSN`, `QUICKID_SERVICE_KEY`, `QUICKID_URL`, `ENABLE_QUICKID_DEMO`, `ROOM_QR_SECRET`, `PUBLIC_APP_URL`, `AFSADAKAT_BASE_URL`, `AFSADAKAT_ADMIN_TOKEN`, `ENABLE_SETUP_ENDPOINTS`, `SETUP_SECRET`, `EXELY_IP_WHITELIST`, `EXELY_TRUST_FORWARDED`, `EXELY_TRUSTED_PROXY_IPS`, `JWT_EXPIRATION_MINUTES`, `REFRESH_TOKEN_EXPIRATION_DAYS`, `DISABLE_EXPO_PUSH`, `MOBILE_PUSH_SCAN_SECONDS`, `MOBILE_PUSH_VIP_WINDOW_MINUTES`, `KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS`.
 
 ## Stack
 
-- **Frontend**: React 19, Vite 8, Tailwind CSS, shadcn/ui, TanStack Query v5, React Router v7, i18next (10 languages), Yarn 1.22.22, Vitest.
+- **Frontend**: React 19, Vite 8, Tailwind CSS, shadcn/ui, TanStack Query v5, React Router v7, i18next, Yarn 1.22.22, Vitest.
 - **Backend**: FastAPI (Python 3.11+), MongoDB 7.0+ (motor), Redis, Celery, pytest.
 - **Auth**: JWT, AES-256-GCM, RBAC.
 
 ## Where things live
 
 - `frontend/`: React + Vite application.
-- `backend/`: FastAPI Python application.
-  - `bootstrap/`: App wiring and DI.
-  - `channel_manager/`: OTA adapters.
-  - `controlplane/`: Operational monitoring.
-  - `core/`: Entitlements, metering, crypto.
-  - `domains/`: DDD modules (pms, guest, revenue, ai, hr).
-  - `modules/`: Business logic (folio, inventory, reservations).
-  - `workers/`: Background tasks.
+- `backend/`: FastAPI Python application (contains `bootstrap/`, `channel_manager/`, `controlplane/`, `core/`, `domains/`, `modules/`, `workers/`).
 - `infra/`: Prometheus/Grafana/K8s config.
 - `deploy/`: Deployment scripts.
 - `docs/`: ADRs and playbooks.
 - **Key Files**:
-  - DB Schema: Managed by MongoDB collections; see `backend/models/schemas/` for Pydantic models.
-  - API Contracts: Defined by FastAPI routers (`backend/routers/`, `backend/domains/*/router.py`).
+  - DB Schema: `backend/models/schemas/` (Pydantic models).
+  - API Contracts: `backend/routers/`, `backend/domains/*/router.py`.
   - Theme Files: `frontend/tailwind.config.js`.
 
 ## Architecture decisions
 
-- **Multi-tenant Architecture**: Each hotel operates on an isolated data set within the same system instance, enforced by `tenant_id` scoping on all database operations and API calls.
-- **Property Type Profiling System**: Dynamically configures PMS modules, navigation, and features based on the chosen property type (e.g., pension, boutique, resort).
-- **Atomic Operations**: Critical workflows like multi-room booking, check-in/out, and resource locking (Spa/MICE) use MongoDB transactions or unique compound indexes to ensure atomicity and prevent race conditions.
-- **Security-First Development**: Extensive adversarial testing has led to robust defenses against IDOR, XSS, SSRF, mass assignment, JWT manipulation, deserialization, and various injection attacks.
-- **Event-Driven Integrations**: Syroce Xchange (SXI) bus for reliable, idempotent distribution of hotel events to partner systems (Sabre SynXis, SAP S/4HANA, generic webhooks) with SSRF protection.
-- **Fail-Closed Principle**: Security-critical configurations (e.g., `JWT_SECRET`, webhook secrets) default to fail-closed, refusing to boot or operate insecurely if not explicitly configured for production.
+- **Multi-tenant Architecture**: Isolated data sets per hotel enforced by `tenant_id` scoping.
+- **Property Type Profiling System**: Dynamic configuration of modules and features based on property type.
+- **Atomic Operations**: Critical workflows use MongoDB transactions or unique compound indexes for atomicity.
+- **Security-First Development**: Robust defenses against common web vulnerabilities.
+- **Event-Driven Integrations**: Syroce Xchange (SXI) bus for reliable, idempotent event distribution with SSRF protection.
+- **Fail-Closed Principle**: Security-critical configurations default to fail-closed, preventing insecure operation if not properly configured.
 
 ## Product
 
 - **Core PMS**: Front desk, reservations, housekeeping, financial folios, guest management.
-- **AI Integration**: AI-powered upsell offers, dynamic pricing, forecasting, no-show risk scoring, guest pattern analysis.
-- **Channel Management**: Unified Rate Manager, OTA sync with Exely and HotelRunner, SXI bus for external systems.
-- **Financial Operations**: Cashier module, PCI-DSS compliance dashboard, automated Turkish Accommodation Tax declarations, Procurement (PR/PO/GRN).
-- **Guest Experience**: Room QR requests, guest reviews & NPS, digital key, mobile staff/guest apps.
-- **Operational Efficiency**: Spa & MICE/Banquet management, shift handover, in-app help center, regulatory reports (TÜİK, Ministry inspection readiness).
-- **Security & Compliance**: 2FA/TOTP, KVKK/GDPR, comprehensive audit logging, Quick-ID integration for identity verification.
+- **AI Integration**: Upsell offers, dynamic pricing, forecasting, no-show risk, guest pattern analysis.
+- **Channel Management**: Unified Rate Manager, OTA sync (Exely, HotelRunner), SXI bus.
+- **Financial Operations**: Cashier module, PCI-DSS, automated Turkish Accommodation Tax, Procurement.
+- **Guest Experience**: Room QR requests, guest reviews & NPS, digital key, mobile apps.
+- **Operational Efficiency**: Spa & MICE, shift handover, in-app help, regulatory reports.
+- **Security & Compliance**: 2FA/TOTP, KVKK/GDPR, audit logging, Quick-ID.
 
 ## User preferences
 
@@ -81,22 +55,23 @@ _Populate as you build_
 
 ## Gotchas
 
-- **API Call Conventions**: Use relative paths WITHOUT `/api/` for `axios` calls (Vite proxy handles it). Use `/api/` explicitly for native `fetch` calls. Mixing these will lead to double prefixes or missing prefixes.
-- **MongoDB Atlas 500-Collection Limit**: Workarounds like embedded arrays (`price_tiers`/`promotions` in `supplies_market_products`) or discriminator fields (`_kind` for `kbs_reports`) are used to avoid creating new collections.
-- **JWT Lifespan**: Backend default `JWT_EXPIRATION_MINUTES=15` (security.py `_V3_DEFAULT_ACCESS_MINUTES`). Bu env Replit Secrets'ta `10080` (7 gün) olarak override edildi — kullanıcı arada atılmasın diye. Refresh token 30 gün (`REFRESH_TOKEN_EXPIRATION_DAYS`). Frontend `axiosConfig.js` 401 alınca **silent refresh** dener: `POST /api/auth/refresh-token` ile yeni access token alıp orijinal isteği tek sefer retry eder; başarısızsa `localStorage` temizlenip `/auth`'a atılır. Login response'u `refresh_token` döndürür → `App.handleLogin` `localStorage.refresh_token`'a yazar (clearAuthStorage da bu key'i siler). Revocation aktif (`auth_revoked_tokens`).
-- **CORS Configuration**: Ensure `CORS_ORIGINS` is correctly set in `.replit` to prevent subdomain bypass.
-- **Image Uploads**: Strict validation is in place for image files (type, size, dimensions). Attempts to upload non-image files or oversized images will result in 400/413 errors.
-- **Exely Webhook**: Requires `EXELY_IP_WHITELIST` to be explicitly set in production; otherwise, it will return a 503 error.
-- **Production Secret Management**: `JWT_SECRET` and other critical secrets must be set via Replit Secrets vault in production environments; hardcoded values in `.replit` will block startup if `STRICT_JWT_SECRET=1` or `ENV=production`.
-- **Night Audit N+1 Issues**: Performance-sensitive areas in night audit have been optimized with `asyncio.gather` and bulk operations. Avoid sequential DB calls in loops.
-- **Outbound HTTP Calls**: All tenant-configurable outbound URLs are protected with DNS-rebinding-safe transport, IP allowlisting, and transport pinning to prevent SSRF.
-- **Auth Cache Invalidation**: In multi-worker environments, user and tenant document cache invalidation is handled via Redis pub/sub to ensure consistency across instances.
-- **CapX Integration (UAT GREEN, May 2026)**: A-plan ile uçtan uca canlı. Tenant credential paketi (`base_url`, `api_key`, `webhook_secret`) `capx_tenant_credentials` koleksiyonunda AES-256-GCM şifreli; `PUT /api/capx/tenant-credentials/{tenant_id}` ile yazılır. Adapter şeması: availability `{date_start, date_end, rooms:[{room_type, available_count, price_min, price_max, currency, pax}], auto_publish, pms_external_ref}`; reservation event `event_type` regex `^reservation\.(created|updated|cancelled)$` + zorunlu `external_id`. Callback URL formatı `{PUBLIC_BASE_URL}/api/webhooks/capx/by-tenant/{tenant_id}` (HMAC iki yönlü). Scheduler env yoksa SADECE tenant credential olan tenant'ları gezer (`backend/integrations/capx/scheduler.py:_push_cycle`).
-- **Walk-in Placeholder Guest Names**: Eski import/sync akislari `guests` koleksiyonuna `name="C4"`, `name="V4 Refund"`, `name="X"` gibi anlamsiz placeholder isimler yazmis (email pattern: `walk-in-<id>@placeholder.local`). `backend/core/guest_name_utils.py` (`is_placeholder_guest_name`, `display_guest_name`) bu isimleri tespit edip API response'unda `Walk-in Misafir #XXXX` fallback'i uygular (UUID son 4 hex char, kisa ve okunabilir). DB'deki orijinal name korunur — sadece gosterim katmaninda override edilir. **Regex**: tek harf ("X"), harf+rakam ("C4","V12"), sadece rakam, "refund" iceren placeholder kabul edilir; **Turkce kisa gercek isimler "Ali","Su","Bo","Ece" KORUNUR** (regex daraltildi). **Uygulanan yerler** (operasyonel goruntuleme): `routers/pms_bookings.py` (search/cache hit/Atlas fallback + final loop), `cache_warmer.warm_guest_room_maps_cache`, `modules/reservations/services/reservation_read_service.list_reservations`, `domains/pms/frontdesk_service.py` (5 path: arrivals, audit-checklist, open folios owner_name, guest alerts, _enrich_bookings), `routers/housekeeping.py` (due-out, stayovers, room-status-report DND, arrivals), `routers/pms_dashboard.py` (operational-alerts blocked/pending/VIP/departures + no-show-analytics recent), `domains/pms/dashboard_router/dashboard_core.py` (GM VIP arrivals + front_desk arrivals), `domains/pms/mobile_router/dashboard.py` (overbooking), `core/night_audit_hardened._sample_bookings`, `domains/pms/night_audit/financial_service._enrich_with_guest_room`. **ATLANANLAR (regulasyon/legal)**: `frontdesk_router.py:957` (KBS polis bildirim), `routers/reports_pkg/dashboard_lists.py` (TUIK/resmi raporlar), `domains/guest/operations_router.py` (misafir kendi portali). Veri temizligi icin ayri migration gerekirse cinsiyetsiz secimle yapilmali.
-- **Renk Paleti Konvansiyonu (May 2026)**: Sistem-geneli `purple-*` → `indigo-*`, `orange-*` → `amber-*` migrate edildi (249 dosya, sed bulk). Yeni kod yazarken **mor (purple) ve turuncu (orange) Tailwind sınıfları kullanma** — palet: slate (nötr), amber (primary/CTA), emerald (success), sky (info, mor yerine), rose (danger), indigo (decoratif). Recharts hex renkleri (#8b5cf6 vb.) bilinçli olarak korundu — grafiklerde dataset ayrımı için. Brand özel renkler `tailwind.config.js`'te tanımlı.
-- **In-App Dialog System**: Native `window.confirm/alert/prompt` yerine `frontend/src/lib/dialogs.js` Promise API kullanılır (`confirmDialog/alertDialog/promptDialog`). Render: `frontend/src/components/DialogHost.jsx` (shadcn AlertDialog tabanlı, App.jsx'te mount). `variant: 'danger'` kırmızı destructive stil verir. Tüm sayfalar dönüştürüldü; yeni kod yazarken **asla** `window.alert/confirm/prompt` kullanma — `await confirmDialog({message, variant})` / `await alertDialog({message})` / `await promptDialog({message, defaultValue})` kullan. Callback'lerde `await` kullanıyorsan enclosing fn `async` olmalı.
-- **Sayfalar Layout'u Kendi İçinde Sarmalı**: `routes/ProtectedRoute.jsx` Layout sarmıyor — her sayfa `import Layout from '@/components/Layout'` edip return içinde `<Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="...">...</Layout>` ile sarmalıdır. Aksi takdirde üst menü/sidebar görünmez (örn. eskiden `RoomMapPage`, `WalkinPage`, `ShiftHandoverPage`, `EodReportPage`'de menü kayıptı — May 2026 fix). `user/tenant/onLogout` props'ları `routeDefinitions.jsx` `p()` helper'ından otomatik geçer.
-- **WS Redis Pub/Sub Circuit Breaker**: `backend/infra/ws_redis_adapter.py` listener `<1s` içinde 5 kez ardarda fast-exit ederse WARNING log'ları susturup 30s zorunlu cool-down uygular; 5 dk sonra otomatik reset. Gerçek arızayı maskelemez, sadece tight-loop log/CPU spam'ini engeller. Tunable: `_breaker_threshold/_breaker_cooldown_s/_breaker_window_s`.
+- **API Call Conventions**: Use relative paths WITHOUT `/api/` for `axios` calls; use `/api/` explicitly for native `fetch`.
+- **MongoDB Atlas 500-Collection Limit**: Workarounds like embedded arrays or discriminator fields are used.
+- **JWT Lifespan**: Backend default `JWT_EXPIRATION_MINUTES=15` overridden to `10080` (7 days) in Replit Secrets. Frontend attempts silent refresh on 401. Revocation is active.
+- **CORS Configuration**: Ensure `CORS_ORIGINS` is correctly set in `.replit`.
+- **Image Uploads**: Strict validation for type, size, and dimensions.
+- **Exely Webhook**: Requires `EXELY_IP_WHITELIST` in production, otherwise 503 error.
+- **Production Secret Management**: Critical secrets like `JWT_SECRET` must be set via Replit Secrets vault in production; hardcoded values may block startup.
+- **Night Audit N+1 Issues**: Optimized with `asyncio.gather` and bulk operations; avoid sequential DB calls in loops.
+- **Outbound HTTP Calls**: Tenant-configurable outbound URLs are protected with DNS-rebinding-safe transport, IP allowlisting, and transport pinning.
+- **Auth Cache Invalidation**: Handled via Redis pub/sub in multi-worker environments.
+- **CapX Integration**: Integration with A-plan via encrypted tenant credentials and event-driven updates.
+- **Walk-in Placeholder Guest Names**: API responses replace placeholder names (e.g., "C4", "X") with `Walk-in Misafir #XXXX` while preserving original DB values.
+- **Color Palette Convention**: Migrate from `purple-*` to `indigo-*` and `orange-*` to `amber-*` for Tailwind classes. Do not use `purple` or `orange` for new code.
+- **In-App Dialog System**: Use `frontend/src/lib/dialogs.js` Promise API (`confirmDialog/alertDialog/promptDialog`) instead of native `window.alert/confirm/prompt`.
+- **Pages Layout Wrapping (Default Pattern)**: Each page must import and wrap its content with `<Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="...">`.
+- **M5 Pilot — ProtectedRoute Opt-in Layout Wrap**: `ProtectedRoute` now accepts optional `wrapLayout: true` and `layoutModule: "..."` flags for automatic layout wrapping on selected routes. Pages leveraging this should remove manual `Layout` imports.
+- **WS Redis Pub/Sub Circuit Breaker**: Prevents log/CPU spam by enforcing a cool-down period if the Redis listener fast-exits repeatedly.
 
 ## Pointers
 

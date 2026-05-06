@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import api from '@/api/axios';
-import Layout from '@/components/Layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,7 +121,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
   const isAuditPending = data && (data.open_folios > 0 || data.open_handovers > 0);
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="dashboard">
+    <>
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4" data-testid="eod-report-page">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -281,6 +280,6 @@ export default function EodReportPage({ user, tenant, onLogout }) {
           )}
         </Card>
       </div>
-    </Layout>
+    </>
   );
 }

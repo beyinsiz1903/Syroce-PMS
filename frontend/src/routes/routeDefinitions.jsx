@@ -310,13 +310,16 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/folio-detail", ...p(FolioDetailView) },
     { path: "/folio-detail/:folioId", ...p(FolioDetailView) },
     { path: "/housekeeping-status", ...p(HousekeepingStatusPage) },
-    { path: "/shift-handover", ...p(ShiftHandoverPage) },
+    // M5 pilot (May 2026): Layout sarımı ProtectedRoute tarafından yapılır.
+    // Bu route'lar `wrapLayout: true` flag'i ile işaretli; sayfa dosyaları
+    // Layout import/sarımını kendi return'lerinden kaldırmıştır.
+    { path: "/shift-handover", ...p(ShiftHandoverPage), wrapLayout: true, layoutModule: "dashboard" },
     { path: "/settings/early-late-pricing", ...p(EarlyLatePricingSettings) },
-    { path: "/eod-report", ...p(EodReportPage) },
-    { path: "/walkin", ...p(WalkinPage) },
-    { path: "/room-map", ...p(RoomMapPage) },
-    { path: "/wake-up-calls", ...p(WakeUpCallsPage) },
-    { path: "/lost-found", ...p(LostFoundPage) },
+    { path: "/eod-report", ...p(EodReportPage), wrapLayout: true, layoutModule: "dashboard" },
+    { path: "/walkin", ...p(WalkinPage), wrapLayout: true, layoutModule: "dashboard" },
+    { path: "/room-map", ...p(RoomMapPage), wrapLayout: true, layoutModule: "dashboard" },
+    { path: "/wake-up-calls", ...p(WakeUpCallsPage), wrapLayout: true, layoutModule: "pms" },
+    { path: "/lost-found", ...p(LostFoundPage), wrapLayout: true, layoutModule: "pms" },
     { path: "/guest-journey", ...p(GuestJourney) },
     { path: "/operational-events", ...p(OperationalEventDashboard) },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage) },

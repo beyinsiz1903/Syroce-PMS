@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/api/axios';
-import Layout from '@/components/Layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -112,7 +111,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
   }, {});
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="dashboard">
+    <>
       <div className="p-4 md:p-6 space-y-4" data-testid="room-map-page">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -195,6 +194,6 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
           </Card>
         ))}
       </div>
-    </Layout>
+    </>
   );
 }
