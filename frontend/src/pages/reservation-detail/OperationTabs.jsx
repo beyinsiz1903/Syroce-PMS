@@ -65,7 +65,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       </div>
 
       <div className="border rounded-lg p-4 space-y-3">
-        <div className="text-sm font-semibold text-gray-700">Yeni Oda Sec</div>
+        <div className="text-sm font-semibold text-gray-700">Yeni Oda Seç</div>
         {loadingRooms ? (
           <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Müsait odalar yükleniyor...</div>
         ) : (
@@ -85,7 +85,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
               <div>
                 <Label className="text-xs">Oda</Label>
                 <select value={selectedRoomId} onChange={e => setSelectedRoomId(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-room-select">
-                  <option value="">Oda Seciniz...</option>
+                  <option value="">Oda Seçiniz...</option>
                   {selectedType && roomTypes.find(rt => rt.type === selectedType)?.rooms
                     .filter(r => r.is_available && r.id !== booking?.room_id)
                     .map(r => (
@@ -98,7 +98,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 
             {isUpgrade && selectedType && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-800">Ust Kategori Oda - Fiyat Farki: {fmtTL(priceDiff)} TL/gece</div>
+                <div className="text-xs font-semibold text-amber-800">Üst Kategori Oda - Fiyat Farkı: {fmtTL(priceDiff)} TL/gece</div>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
@@ -106,7 +106,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    Güncel fiyat farki ({fmtTL(priceDiff)} TL)
+                    Güncel fiyat farkı ({fmtTL(priceDiff)} TL)
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
@@ -120,26 +120,26 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
             )}
 
             <div>
-              <Label className="text-xs">Degisiklik Sebebi</Label>
+              <Label className="text-xs">Değişiklik Sebebi</Label>
               <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
-                <option value="">Sebep Seciniz...</option>
-                <option value="Misafir istegi">Misafir istegi</option>
-                <option value="Teknik ariza">Teknik ariza</option>
+                <option value="">Sebep Seçiniz...</option>
+                <option value="Misafir isteği">Misafir isteği</option>
+                <option value="Teknik arıza">Teknik arıza</option>
                 <option value="Upgrade">Upgrade</option>
                 <option value="Downgrade">Downgrade</option>
                 <option value="Temizlik sorunu">Temizlik sorunu</option>
-                <option value="Diger">Diger</option>
+                <option value="Diğer">Diğer</option>
               </select>
             </div>
           </>
         )}
         <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
-          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} Oda Degistir
+          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} Oda Değiştir
         </Button>
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">Oda Degisiklik Geçmişi</div>
+        <div className="text-xs font-semibold text-gray-500 uppercase">Oda Değişiklik Geçmişi</div>
         {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">Geçmiş oda değişikliği yok</div> : (
           roomMoves.map((rm, i) => (
             <div key={rm.id || i} className="border rounded-lg p-3 flex items-center gap-3">
@@ -166,8 +166,8 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
   const cancelTypes = {
     guest_request: 'Misafir Talebi', no_suitable_room: 'Uygun Oda Yok',
-    force_majeure: 'Mucbir Sebep', overbooking: 'Overbooking',
-    payment_issue: 'Ödeme Sorunu', other: 'Diger'
+    force_majeure: 'Mücbir Sebep', overbooking: 'Overbooking',
+    payment_issue: 'Ödeme Sorunu', other: 'Diğer'
   };
 
   const nights = booking ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
@@ -188,7 +188,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
         noshow_charge_type: applyNoshow ? noshowChargeType : null,
         noshow_charge_amount: applyNoshow ? parseFloat(noshowAmount) || 0 : null,
       });
-      toast.success(applyNoshow ? 'No-show olarak isaretlendi' : 'Rezervasyon iptal edildi');
+      toast.success(applyNoshow ? 'No-show olarak işaretlendi' : 'Rezervasyon iptal edildi');
       onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -197,7 +197,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
   return (
     <div data-testid="cancel-tab" className="space-y-4 max-w-lg">
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <div className="text-sm font-semibold text-red-800 mb-3">Rezervasyon Iptali</div>
+        <div className="text-sm font-semibold text-red-800 mb-3">Rezervasyon İptali</div>
         <div className="space-y-3">
           <div>
             <Label className="text-xs">İptal Nedeni *</Label>
@@ -207,7 +207,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
           </div>
           <div>
             <Label className="text-xs">Açıklama *</Label>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="İptal aciklamasi..." data-testid="cancel-reason-input" />
+            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="İptal açıklaması..." data-testid="cancel-reason-input" />
           </div>
 
           <div className="border-t pt-3">
@@ -219,7 +219,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
           {applyNoshow && (
             <div className="bg-white border rounded-lg p-3 space-y-2">
-              <div className="text-xs font-semibold text-gray-700">No-Show Ucreti</div>
+              <div className="text-xs font-semibold text-gray-700">No-Show Ücreti</div>
               <div className="flex gap-2">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />

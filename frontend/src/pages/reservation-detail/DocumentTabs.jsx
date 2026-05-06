@@ -214,7 +214,7 @@ export function InvoiceTab({ booking, bookingId }) {
     setTimeout(() => w.print(), 300);
   };
 
-  const catLabels = { room: 'Konaklama', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', room_service: 'Oda Servisi', other: 'Diger' };
+  const catLabels = { room: 'Konaklama', food: 'Yemek', beverage: 'İçecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', room_service: 'Oda Servisi', other: 'Diğer' };
 
   return (
     <div data-testid="invoice-tab" className="space-y-4">

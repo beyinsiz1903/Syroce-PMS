@@ -26,8 +26,10 @@ from models.schemas.bookings import BookingCreate
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
 )
+from security.field_encryption import get_field_encryption_service
 
 _create_reservation_service = CreateReservationService()
+_field_enc = get_field_encryption_service()
 
 
 def _request_with_idempotency_key(req: Request, key: str) -> Request:
@@ -319,6 +321,17 @@ async def get_reservation_full_detail(
     total_deposits = sum(dep.get("amount", 0) for dep in deposits if dep.get("status") != "refunded")
     room_total = booking.get("total_amount", 0)
     balance = room_total + total_charges + total_extra - total_payments
+
+    # Decrypt PII fields for authorized response (KVKK: only after auth/perm checks)
+    try:
+        if booking:
+            booking = _field_enc.decrypt_document(booking, collection="bookings")
+        if guest:
+            guest = _field_enc.decrypt_document(guest, collection="guests")
+        guests_list = [_field_enc.decrypt_document(g, collection="guests") for g in guests_list]
+    except Exception:
+        # Fail-open on decrypt errors: API still works, audit handled in service
+        pass
 
     return {
         "booking": booking,

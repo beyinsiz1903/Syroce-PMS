@@ -4,13 +4,15 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   X, Calendar, DollarSign, FileText, Users, Receipt,
   History, MessageSquare, Star, AlertTriangle,
-  LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard
+  LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard,
+  ChevronDown, DoorOpen, Globe, Clock,
 } from 'lucide-react';
 
-import { API, fmtTL, statusLabel } from './reservation-detail/helpers';
+import { API, fmtTL, fmtDateTime, statusLabel, translateValue, bookingRef, Avatar } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -23,6 +25,19 @@ import GuestAlertModal from '@/components/GuestAlertModal';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 import { confirmDialog } from '@/lib/dialogs';
+
+// Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
+const STATUS_PILL = {
+  confirmed: 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/30',
+  guaranteed: 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/30',
+  checked_in: 'bg-amber-500/20 text-amber-100 border border-amber-400/30',
+  in_house: 'bg-amber-500/20 text-amber-100 border border-amber-400/30',
+  checked_out: 'bg-slate-400/20 text-slate-100 border border-slate-300/30',
+  cancelled: 'bg-rose-500/20 text-rose-100 border border-rose-400/30',
+  no_show: 'bg-rose-500/20 text-rose-100 border border-rose-400/30',
+  pending: 'bg-slate-400/20 text-slate-100 border border-slate-300/30',
+};
+
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,14 +58,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   useEffect(() => { setLoading(true); loadData(); }, [loadData]);
 
-  const action = async (url, body = {}, msg = 'İşlem tamamlandi') => {
+  const action = async (url, body = {}, msg = 'İşlem tamamlandı') => {
     try { await axios.post(`${API}${url}`, body); toast.success(msg); loadData(); }
     catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
 
   if (loading) return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /><span className="text-sm text-gray-500">Yükleniyor...</span></div>
+      <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+        <span className="text-sm text-slate-500">Yükleniyor...</span>
+      </div>
     </div>
   );
 
@@ -58,75 +76,131 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   const { booking, guest, room, company, folios, charges, payments, extra_charges, notes, history, room_moves, daily_rates, guests, summary, communication_logs, deposits } = data;
 
-  const tabs = [
+  const balance = summary?.balance || 0;
+  const hasOpenBalance = balance > 0;
+
+  // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
+  const primaryTabs = [
     { id: 'general', label: 'Genel Bilgiler', icon: FileText },
-    { id: 'guests', label: `Misafirler (${guests?.length || 0})`, icon: Users },
-    { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
-    { id: 'vcc', label: 'Sanal Kart', icon: Shield },
+    { id: 'guests', label: `Misafirler${guests?.length ? ` (${guests.length})` : ''}`, icon: Users },
     { id: 'folios', label: 'Folyolar', icon: DollarSign },
-    { id: 'daily_rates', label: 'Günlük Fiyatlar', icon: Calendar },
+    { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
     { id: 'extras', label: 'Ek Ücretler', icon: Receipt },
-    { id: 'room_change', label: 'Oda Degistir', icon: Repeat2 },
-    { id: 'cancel', label: 'İptal', icon: AlertTriangle },
-    { id: 'voucher', label: 'Voucher', icon: FileText },
     { id: 'invoice', label: 'Fatura', icon: Receipt },
-    { id: 'deposits', label: `Depozito ${deposits?.length ? `(${deposits.length})` : ''}`, icon: Shield },
-    { id: 'communication', label: `İletişim ${communication_logs?.length ? `(${communication_logs.length})` : ''}`, icon: Mail },
-    { id: 'notes', label: `Notlar ${notes?.length ? `(${notes.length})` : ''}`, icon: MessageSquare },
     { id: 'history', label: 'Geçmiş', icon: History },
   ];
+  // İkincil sekmeler — "Daha Fazla" menüsünde gizli
+  const moreTabs = [
+    { id: 'vcc', label: 'Sanal Kart', icon: Shield },
+    { id: 'daily_rates', label: 'Günlük Fiyatlar', icon: Calendar },
+    { id: 'room_change', label: 'Oda Değiştir', icon: Repeat2 },
+    { id: 'cancel', label: 'İptal Et', icon: AlertTriangle },
+    { id: 'voucher', label: 'Voucher', icon: FileText },
+    { id: 'deposits', label: `Depozito${deposits?.length ? ` (${deposits.length})` : ''}`, icon: Shield },
+    { id: 'communication', label: `İletişim${communication_logs?.length ? ` (${communication_logs.length})` : ''}`, icon: Mail },
+    { id: 'notes', label: `Notlar${notes?.length ? ` (${notes.length})` : ''}`, icon: MessageSquare },
+  ];
+  const activeMore = moreTabs.find(t => t.id === activeTab);
+
+  const refLabel = bookingRef(booking);
+  const channelLabel = translateValue(booking?.source_channel || booking?.channel) || 'Doğrudan';
+  const guestName = guest?.name || booking?.guest_name || 'Misafir';
 
   return (
     <div className="fixed inset-0 z-[60]" data-testid="reservation-detail-modal">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-slate-800 to-slate-700">
-          <div className="flex items-center gap-4">
-            <h2 className="text-white font-semibold text-base">Rezervasyon - {booking?.ota_confirmation || booking?.id?.slice(0, 12) || ''}</h2>
-            <Badge className="bg-white/20 text-white border-white/30 text-xs">{statusLabel(booking?.status)}</Badge>
-            {booking?.group_booking_id && <Badge className="bg-amber-400/30 text-amber-100 border-amber-400/40 text-xs">Grup</Badge>}
+        {/* Header — sade, marka rengiyle */}
+        <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-slate-900 to-slate-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h2 className="text-white font-semibold text-base whitespace-nowrap">Rezervasyon</h2>
+              <span className="text-amber-300 font-mono text-sm tracking-wide truncate">{refLabel}</span>
+            </div>
+            <Badge className={`text-[11px] h-5 px-2 ${STATUS_PILL[booking?.status] || STATUS_PILL.pending}`}>
+              {statusLabel(booking?.status)}
+            </Badge>
+            {booking?.group_booking_id && (
+              <Badge className="bg-amber-400/20 text-amber-100 border border-amber-400/30 text-[11px] h-5 px-2">Grup</Badge>
+            )}
+            {hasOpenBalance && (
+              <Badge className="bg-rose-500/20 text-rose-100 border border-rose-400/30 text-[11px] h-5 px-2 hidden md:inline-flex">
+                <AlertTriangle className="w-3 h-3 mr-1" /> Bakiye: {fmtTL(balance)} TL
+              </Badge>
+            )}
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-2 transition-colors" data-testid="close-reservation-detail"><X className="w-5 h-5" /></button>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-2 transition-colors"
+            data-testid="close-reservation-detail"
+            aria-label="Kapat"
+          ><X className="w-5 h-5" /></button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar */}
-          <div className="w-64 border-r bg-gray-50 overflow-y-auto flex-shrink-0">
-            <div className="p-4 space-y-4">
-              <div className="text-center">
-                <div className="w-14 h-14 bg-teal-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-2">{(guest?.name || booking?.guest_name || 'M')[0]?.toUpperCase()}</div>
-                <div className="font-bold text-gray-800 text-sm">{guest?.name || booking?.guest_name}</div>
-                {guest?.vip_status && <Badge className="bg-amber-100 text-amber-700 border-amber-200 mt-1 text-xs"><Star className="w-3 h-3 mr-0.5" /> VIP</Badge>}
+          {/* Sol panel — sticky footer'lı */}
+          <aside className="w-72 border-r bg-slate-50 flex-shrink-0 flex flex-col">
+            <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
+              {/* Misafir başlığı */}
+              <div className="flex flex-col items-center text-center gap-2">
+                <Avatar name={guestName} size="xl" />
+                <div className="min-w-0 w-full">
+                  <div className="font-semibold text-slate-800 text-sm truncate" title={guestName}>{guestName}</div>
+                  {guest?.vip_status && (
+                    <Badge className="mt-1 bg-amber-100 text-amber-700 border-amber-200 text-[10px] h-4 px-1.5">
+                      <Star className="w-2.5 h-2.5 mr-0.5" /> VIP
+                    </Badge>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between"><span className="text-gray-500">Durum</span><Badge className="bg-emerald-100 text-emerald-700 text-xs h-5">{statusLabel(booking?.status)}</Badge></div>
-                <div className="flex justify-between"><span className="text-gray-500">Kanal</span><span className="font-medium text-gray-700">{booking?.source_channel || 'Direkt'}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Oda</span><span className="font-medium text-blue-600">{booking?.room_number || room?.room_number || '-'}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Giriş</span><span className="font-medium">{booking?.check_in?.toString().slice(0, 10)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Çıkış</span><span className="font-medium">{booking?.check_out?.toString().slice(0, 10)}</span></div>
+
+              {/* Anahtar bilgiler — ikonlu, sade */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2 shadow-sm">
+                <div className="flex items-center gap-2 text-xs">
+                  <DoorOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500">Oda</span>
+                  <span className="ml-auto font-semibold text-slate-800">{booking?.room_number || room?.room_number || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500">Kanal</span>
+                  <span className="ml-auto font-medium text-slate-700 truncate">{channelLabel}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <LogIn className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500">Giriş</span>
+                  <span className="ml-auto font-medium text-slate-700">{booking?.check_in?.toString().slice(0, 10)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <LogOut className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="text-slate-500">Çıkış</span>
+                  <span className="ml-auto font-medium text-slate-700">{booking?.check_out?.toString().slice(0, 10)}</span>
+                </div>
                 {booking?.created_at && (
-                  <div className="flex justify-between"><span className="text-gray-500">Olusturulma</span><span className="font-medium text-[10px]">{new Date(booking.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+                  <div className="flex items-center gap-2 text-xs pt-2 border-t border-slate-100">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-slate-500">Oluşturulma</span>
+                    <span className="ml-auto text-[11px] text-slate-600" title={fmtDateTime(booking.created_at)}>
+                      {new Date(booking.created_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 )}
               </div>
 
-              {/* Operational Status Panel */}
-              <div className="space-y-1.5 pt-2 border-t" data-testid="reservation-ops-panel">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Operasyonel Durum</p>
-                {/* Payment status */}
-                {(summary?.balance || 0) > 0 && (
-                  <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
-                    <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
-                    <span className="text-[11px] text-red-700 font-medium">Ödeme bekleniyor: {fmtTL(summary?.balance)} TL</span>
+              {/* Operasyonel Durum — yalnızca anlamlı olanlar */}
+              <div className="space-y-1.5" data-testid="reservation-ops-panel">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Operasyonel Durum</p>
+                {hasOpenBalance ? (
+                  <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
+                    <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
+                    <span className="text-[11px] text-rose-700 font-medium">Ödeme bekleniyor: {fmtTL(balance)} TL</span>
                   </div>
-                )}
-                {(summary?.balance || 0) <= 0 && (
+                ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
                     <span className="text-[11px] text-emerald-700">Ödeme tamam</span>
                   </div>
                 )}
-                {/* Room status */}
                 {room && (room.status === 'dirty' || room.status === 'cleaning') && (
                   <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid="ops-room-dirty">
                     <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
@@ -136,56 +210,108 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {room && room.status === 'available' && (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-room-ready">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">Oda hazir</span>
+                    <span className="text-[11px] text-emerald-700">Oda hazır</span>
                   </div>
                 )}
-                {/* VIP status */}
-                {guest?.vip_status && (
-                  <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-md px-2 py-1.5" data-testid="ops-vip">
-                    <Star className="w-3 h-3 text-purple-500 flex-shrink-0" />
-                    <span className="text-[11px] text-purple-700 font-medium">VIP Misafir</span>
-                  </div>
-                )}
-                {/* Repeat guest */}
                 {guest?.total_stays > 1 && (
-                  <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5" data-testid="ops-repeat">
-                    <Users className="w-3 h-3 text-blue-500 flex-shrink-0" />
-                    <span className="text-[11px] text-blue-700">{guest.total_stays}. konaklama</span>
+                  <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid="ops-repeat">
+                    <Repeat2 className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                    <span className="text-[11px] text-amber-700">{guest.total_stays}. konaklama</span>
                   </div>
                 )}
-                {/* Guest preferences */}
                 {guest?.preferences && Object.keys(guest.preferences).length > 0 && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5" data-testid="ops-preferences">
+                  <div className="bg-white border border-slate-200 rounded-md px-2 py-1.5" data-testid="ops-preferences">
                     <p className="text-[10px] text-slate-500 mb-0.5">Tercihler</p>
                     <div className="flex flex-wrap gap-1">
                       {Object.entries(guest.preferences).slice(0, 3).map(([k, v]) => (
-                        <span key={k} className="text-[10px] bg-white border rounded px-1.5 py-0.5 text-slate-600">
-                          {k}: {typeof v === 'boolean' ? (v ? 'Evet' : 'Hayir') : String(v)}
+                        <span key={k} className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600">
+                          {k}: {typeof v === 'boolean' ? (v ? 'Evet' : 'Hayır') : String(v)}
                         </span>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
-              <div className="border rounded-lg p-3 bg-white space-y-2">
-                <div className="flex justify-between text-xs"><span className="text-gray-500">TOPLAM</span><span className="font-bold">{fmtTL(summary?.total_amount)} TL</span></div>
-                <div className="flex justify-between text-xs"><span className="text-gray-500">ODENEN</span><span className="font-bold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span></div>
-                {(summary?.total_deposits || 0) > 0 && <div className="flex justify-between text-xs"><span className="text-gray-500">DEPOZITO</span><span className="font-bold text-blue-600">{fmtTL(summary?.total_deposits)} TL</span></div>}
-                <div className="border-t pt-2 flex justify-between text-xs"><span className="text-gray-500">BAKIYE</span><span className={`font-bold ${(summary?.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtTL(summary?.balance)} TL</span></div>
+
+              {/* Finansal özet — bakiye vurgulu */}
+              <div className={`rounded-xl p-3 space-y-1.5 shadow-sm ${
+                hasOpenBalance ? 'bg-rose-50 border-2 border-rose-300' : 'bg-white border border-slate-200'
+              }`} data-testid="financial-summary-card">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">Toplam</span>
+                  <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">Ödenen</span>
+                  <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
+                </div>
+                {(summary?.total_deposits || 0) > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Depozito</span>
+                    <span className="font-semibold text-sky-600">{fmtTL(summary?.total_deposits)} TL</span>
+                  </div>
+                )}
+                <div className={`pt-2 border-t flex justify-between items-baseline ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
+                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${hasOpenBalance ? 'text-rose-700' : 'text-slate-500'}`}>Bakiye</span>
+                  <span className={`text-base font-bold ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>
+                </div>
               </div>
+
+              {/* İkincil eylemler */}
               <div className="space-y-1.5">
                 <IdPhotoViewerButton
                   bookingId={bookingId}
-                  guestName={guest?.name || booking?.guest_name}
+                  guestName={guestName}
                   onlineCheckinCompleted={booking?.online_checkin_completed}
                   idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
-                  className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                  className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
-                {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
-                  <Button size="sm" variant="outline" onClick={() => setCheckinAlertOpen(true)} className="w-full h-8 text-xs justify-start bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"><LogIn className="w-3 h-3 mr-2" /> Giriş Yap</Button>
-                )}
-                {booking?.status === 'checked_in' && (
-                  <Button size="sm" variant="outline" onClick={async () => {
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <LogIn className="w-3 h-3 mr-2" /> Erken Giriş
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <LogOut className="w-3 h-3 mr-2" /> Geç Çıkış
+                </Button>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  const vip = data?.guest?.vip_status || false;
+                  try {
+                    await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`);
+                    toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı');
+                    loadData();
+                  } catch (_e) { toast.error('Hata'); }
+                }} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
+                  <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
+                  <X className="w-3 h-3 mr-2" /> İptal Et
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-voucher">
+                  <FileText className="w-3 h-3 mr-2" /> Voucher
+                </Button>
+              </div>
+            </div>
+
+            {/* Sticky footer — birincil eylem (Giriş/Çıkış) hep görünür */}
+            {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
+              <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+                <Button
+                  size="sm"
+                  onClick={() => setCheckinAlertOpen(true)}
+                  className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                  data-testid="btn-checkin"
+                >
+                  <LogIn className="w-4 h-4 mr-2" /> Giriş Yap
+                </Button>
+              </div>
+            )}
+            {booking?.status === 'checked_in' && (
+              <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+                <Button
+                  size="sm"
+                  onClick={async () => {
                     if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
                     try {
                       const res = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
@@ -203,32 +329,54 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                         toast.error('Hata: ' + detail);
                       }
                     }
-                  }} className="w-full h-8 text-xs justify-start bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"><LogOut className="w-3 h-3 mr-2" /> Çıkış Yap</Button>
-                )}
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start"><LogIn className="w-3 h-3 mr-2" /> Erken Giriş</Button>
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start"><LogOut className="w-3 h-3 mr-2" /> Geç Çıkış</Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  const vip = data?.guest?.vip_status || false;
-                  try { await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`); toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı'); loadData(); }
-                  catch (e) { toast.error('Hata'); }
-                }} className="w-full h-8 text-xs justify-start"><Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}</Button>
-                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50"><AlertTriangle className="w-3 h-3 mr-2" /> No-Show</Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-cancel-reservation"><X className="w-3 h-3 mr-2" /> İptal Et</Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start text-teal-600 border-teal-200 hover:bg-teal-50" data-testid="btn-voucher"><FileText className="w-3 h-3 mr-2" /> Voucher</Button>
+                  }}
+                  className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
+                  data-testid="btn-checkout"
+                >
+                  <LogOut className="w-4 h-4 mr-2" /> Çıkış Yap
+                </Button>
               </div>
-            </div>
-          </div>
+            )}
+          </aside>
 
-          {/* Main Content */}
-          <div className="flex-1 overflow-y-auto">
+          {/* Ana içerik */}
+          <div className="flex-1 overflow-y-auto bg-white">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <TabsList className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto">
-                {tabs.map(tab => (
-                  <TabsTrigger key={tab.id} value={tab.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-orange-500 data-[state=active]:text-orange-700 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors whitespace-nowrap">
+              <TabsList className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
+                {primaryTabs.map(tab => (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-600 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50/40 data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                  >
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
                   </TabsTrigger>
                 ))}
+                {/* Daha Fazla menüsü */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className={`rounded-none border-b-2 px-4 py-2.5 text-xs font-medium hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap inline-flex items-center ${
+                        activeMore ? 'border-amber-600 text-amber-700 bg-amber-50/40' : 'border-transparent text-slate-500'
+                      }`}
+                    >
+                      {activeMore ? (<><activeMore.icon className="w-3.5 h-3.5 mr-1.5" />{activeMore.label}</>) : (<>Daha Fazla</>)}
+                      <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-70" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    {moreTabs.map(tab => (
+                      <DropdownMenuItem
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`text-xs cursor-pointer ${activeTab === tab.id ? 'bg-amber-50 text-amber-700' : ''}`}
+                      >
+                        <tab.icon className="w-3.5 h-3.5 mr-2" />{tab.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </TabsList>
               <div className="flex-1 overflow-y-auto p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} /></TabsContent>

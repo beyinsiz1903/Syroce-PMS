@@ -81,7 +81,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Cari Hesap" value={cariForm.cari_account_id} onChange={v => setCariForm(p => ({ ...p, cari_account_id: v }))}
-              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+              options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
           </div>
           <FormField label="Açıklama" value={cariForm.description} onChange={v => setCariForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
         </FormPanel>
@@ -116,10 +116,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           })}>
           <div className="grid grid-cols-2 gap-3">
             <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v }))}
-              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+              options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
             <div>
               <SelectField label="Hedef Acente Hesabi" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
-                options={[['','Acente Seciniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
+                options={[['','Acente Seçiniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
               <Button size="sm" variant="ghost" className="h-6 text-xs text-indigo-600 mt-1 px-0" onClick={() => setShowNewCari(true)} data-testid="btn-new-cari"><Plus className="w-3 h-3 mr-1" /> Yeni Cari Olustur</Button>
             </div>
           </div>
@@ -177,10 +177,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           })}>
           <div className="grid grid-cols-2 gap-3">
             <SelectField label="Cari Hesap" value={reconcileForm.cari_account_id} onChange={v => setReconcileForm(p => ({ ...p, cari_account_id: v }))}
-              options={[['','Hesap Seciniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
+              options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
             <FormField label="Tutar (TL)" type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
-          <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma aciklamasi" />
+          <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma açıklaması" />
         </FormPanel>
       )}
 

@@ -146,7 +146,7 @@ export function HistoryTab({ history, roomMoves }) {
 
   const labels = {
     payment_recorded: 'Ödeme kaydedildi', transferred_to_cari: 'Cariye aktarildi', agency_payment_recorded: 'Acente ödemesi',
-    charge_split: 'Masraf bolundu', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
+    charge_split: 'Masraf bölündü', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
     early_checkin: 'Erken giriş', late_checkout: 'Gec çıkış', marked_noshow: 'No-show',
     vip_status_changed: 'VIP durumu', deposit_recorded: 'Depozito', deposit_refunded: 'Depozito iade',
     extra_charge_added: 'Ekstra ücret', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',

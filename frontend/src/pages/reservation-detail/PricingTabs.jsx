@@ -60,7 +60,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
   const [splitForm, setSplitForm] = useState({ target_booking_id: '', split_amount: '', reason: '' });
   const [loading, setLoading] = useState(false);
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
-  const cats = { room_service: 'Oda Servisi', room: 'Oda', food: 'Yemek', beverage: 'Icecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', other: 'Diger' };
+  const cats = { room_service: 'Oda Servisi', room: 'Oda', food: 'Yemek', beverage: 'İçecek', minibar: 'Minibar', spa: 'SPA', laundry: 'Çamaşır', parking: 'Otopark', telephone: 'Telefon', transfer: 'Transfer', other: 'Diğer' };
 
   const handleAdd = async () => {
     if (!form.description || !form.amount) { toast.error('Açıklama ve tutar zorunlu'); return; }
@@ -77,7 +77,7 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/split-charge`, { charge_id: chargeId, target_booking_id: splitForm.target_booking_id, split_amount: parseFloat(splitForm.split_amount), reason: splitForm.reason });
-      toast.success('Masraf bolundu'); setShowSplit(null); setSplitForm({ target_booking_id: '', split_amount: '', reason: '' }); onRefresh?.();
+      toast.success('Masraf bölündü'); setShowSplit(null); setSplitForm({ target_booking_id: '', split_amount: '', reason: '' }); onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
@@ -122,20 +122,20 @@ export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, al
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
-                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.split_from_booking_id && <span className="text-blue-500">(Aktarildi)</span>}</div>
+                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.split_from_booking_id && <span className="text-blue-500">(Aktarıldı)</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtTL(c.total || c.charge_amount || c.amount)} TL</div>
                 <Button size="sm" variant="ghost" onClick={() => setShowSplit(showSplit === c.id ? null : c.id)} className="h-7 px-2 text-xs text-blue-600"><ArrowRightLeft className="w-3 h-3" /></Button>
               </div>
               {showSplit === c.id && (
                 <div className="mt-3 border-t pt-3 space-y-2">
-                  <div className="text-xs font-semibold text-gray-700">Masraf Bol</div>
+                  <div className="text-xs font-semibold text-gray-700">Masraf Böl</div>
                   <div className="grid grid-cols-3 gap-2">
                     <FormField label="Tutar" type="number" value={splitForm.split_amount} onChange={v => setSplitForm(p => ({ ...p, split_amount: v }))} />
                     <SelectField label="Hedef Oda" value={splitForm.target_booking_id} onChange={v => setSplitForm(p => ({ ...p, target_booking_id: v }))}
-                      options={[['','Seciniz...'], ...(allBookings || []).filter(b => b.id !== booking.id).map(b => [b.id, `${b.room_number || ''} - ${b.guest_name || b.id?.slice(0,8)}`])]} />
+                      options={[['','Seçiniz...'], ...(allBookings || []).filter(b => b.id !== booking.id).map(b => [b.id, `${b.room_number || ''} - ${b.guest_name || b.id?.slice(0,8)}`])]} />
                     <div className="flex items-end">
-                      <Button size="sm" onClick={() => handleSplit(c.id)} disabled={loading} className="w-full h-8 text-xs bg-blue-600">Bol</Button>
+                      <Button size="sm" onClick={() => handleSplit(c.id)} disabled={loading} className="w-full h-8 text-xs bg-blue-600">Böl</Button>
                     </div>
                   </div>
                 </div>

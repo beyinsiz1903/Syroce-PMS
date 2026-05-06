@@ -17,16 +17,102 @@ export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
 
 export function statusLabel(s) {
-  return s === 'checked_in' ? 'Giriş Yapildi' : s === 'confirmed' ? 'Onaylandi' : s === 'checked_out' ? 'Çıkış Yapildi' : s === 'cancelled' ? 'İptal' : s === 'no_show' ? 'No-Show' : s || 'Beklemede';
+  return s === 'checked_in' ? 'Giriş Yapıldı'
+    : s === 'in_house' ? 'Otelde'
+    : s === 'confirmed' ? 'Onaylandı'
+    : s === 'guaranteed' ? 'Garantili'
+    : s === 'checked_out' ? 'Çıkış Yapıldı'
+    : s === 'cancelled' ? 'İptal Edildi'
+    : s === 'no_show' ? 'No-Show'
+    : s === 'pending' ? 'Beklemede'
+    : s || 'Beklemede';
+}
+
+// Yaygın değer çevirileri (İngilizce/teknik → Türkçe gösterim)
+export function translateValue(v) {
+  if (!v) return v;
+  const s = String(v).toLowerCase().trim();
+  const map = {
+    'direct': 'Doğrudan',
+    'walk-in': 'Walk-in',
+    'walkin': 'Walk-in',
+    'phone': 'Telefon',
+    'email': 'E-posta',
+    'website': 'Web Sitesi',
+    'web': 'Web',
+    'agency': 'Acente',
+    'corporate': 'Kurumsal',
+    'non-refundable': 'İade Edilemez',
+    'non_refundable': 'İade Edilemez',
+    'nonrefundable': 'İade Edilemez',
+    'refundable': 'İade Edilebilir',
+    'flexible': 'Esnek',
+    'standard': 'Standart',
+    'breakfast included': 'Kahvaltı Dahil',
+    'breakfast': 'Kahvaltı',
+    'half board': 'Yarım Pansiyon',
+    'full board': 'Tam Pansiyon',
+    'all inclusive': 'Her Şey Dahil',
+    'room only': 'Sadece Oda',
+    'bed and breakfast': 'Oda + Kahvaltı',
+    'bb': 'Oda + Kahvaltı',
+    'hb': 'Yarım Pansiyon',
+    'fb': 'Tam Pansiyon',
+    'ai': 'Her Şey Dahil',
+    'ro': 'Sadece Oda',
+  };
+  return map[s] || v;
+}
+
+// Kısa, okunaklı rezervasyon referansı
+export function bookingRef(booking) {
+  if (!booking) return '';
+  if (booking.ota_confirmation) return booking.ota_confirmation;
+  if (booking.confirmation_number) return booking.confirmation_number;
+  if (booking.booking_reference) return booking.booking_reference;
+  if (booking.reservation_number) return booking.reservation_number;
+  // UUID'in son 6 karakterini büyük harfle göster — kısa, kullanıcıya kolay
+  const id = booking.id || '';
+  const tail = id.replace(/-/g, '').slice(-6).toUpperCase();
+  return tail ? `RES-${tail}` : '';
 }
 
 export function InfoField({ label, value, className = '' }) {
-  return <div><Label className="text-xs text-gray-500 mb-1 block">{label}</Label><div className={`border rounded-lg px-3 py-2 text-sm bg-gray-50 ${className}`}>{value}</div></div>;
+  return (
+    <div>
+      <Label className="text-[11px] font-medium text-slate-500 mb-1 block">{label}</Label>
+      <div className={`border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50/60 text-slate-800 ${className}`}>{value}</div>
+    </div>
+  );
 }
 
+// Modern, gradient avatar — ad ilk harfini gösterir
 export function Avatar({ name, size = 'md' }) {
-  const s = size === 'lg' ? 'w-10 h-10 text-sm' : 'w-8 h-8 text-xs';
-  return <div className={`${s} bg-teal-600 text-white rounded-full flex items-center justify-center font-bold`}>{(name || 'M')[0]?.toUpperCase()}</div>;
+  const sizes = {
+    sm: 'w-7 h-7 text-[11px]',
+    md: 'w-9 h-9 text-sm',
+    lg: 'w-11 h-11 text-base',
+    xl: 'w-16 h-16 text-2xl',
+  };
+  const s = sizes[size] || sizes.md;
+  const letter = (name || 'M').trim()[0]?.toUpperCase() || 'M';
+  // Adın hash'inden tutarlı bir ton seç
+  const palettes = [
+    'from-amber-500 to-amber-600',
+    'from-rose-500 to-rose-600',
+    'from-indigo-500 to-indigo-600',
+    'from-emerald-500 to-emerald-600',
+    'from-sky-500 to-sky-600',
+    'from-violet-500 to-violet-600',
+  ];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash = ((hash << 5) - hash + (name || '').charCodeAt(i)) | 0;
+  const palette = palettes[Math.abs(hash) % palettes.length];
+  return (
+    <div className={`${s} bg-gradient-to-br ${palette} text-white rounded-full flex items-center justify-center font-semibold shadow-sm ring-2 ring-white`}>
+      {letter}
+    </div>
+  );
 }
 
 export function EmptyState({ icon: Icon, text }) {
@@ -67,6 +153,16 @@ export function FormPanel({ color, title, testid, children, onClose, onSubmit, l
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">İptal</Button>
       </div>
+    </div>
+  );
+}
+
+// Yardımcı: bölüm başlığı (form gruplarında kullanılır)
+export function SectionHeader({ icon: Icon, title }) {
+  return (
+    <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200">
+      {Icon && <Icon className="w-3.5 h-3.5 text-slate-500" />}
+      <h3 className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">{title}</h3>
     </div>
   );
 }
