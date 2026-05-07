@@ -7,10 +7,25 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_FROM = os.environ.get("RESEND_FROM", "Syroce <onboarding@resend.dev>")
+
+# Lightweight RFC-5322-ish guard: catches the common cases (empty string,
+# missing @, whitespace, no TLD, "Name <addr>" with bad addr) BEFORE we hit
+# the Resend API. Resend rejects malformed addresses with a hard validation
+# error which Sentry then surfaces as a high-priority alert; we'd rather
+# log+skip locally than spam Sentry every time a hotel admin row has a
+# typo in the email column.
+_EMAIL_RE = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+
+
+def _is_valid_email(addr: str | None) -> bool:
+    if not addr or not isinstance(addr, str):
+        return False
+    return bool(_EMAIL_RE.match(addr.strip()))
 
 
 def _provider() -> str:
@@ -83,6 +98,12 @@ async def send_email(
     """
     api_key = os.environ.get("RESEND_API_KEY")
     sender = from_addr or DEFAULT_FROM
+
+    # Pre-flight: skip obviously malformed recipients so Resend's hard
+    # validation error doesn't bubble to Sentry as an alert.
+    if not _is_valid_email(to):
+        logger.warning("[email] skipping send — invalid recipient %r (subject=%r)", to, subject)
+        return {"sent": False, "provider": "skipped", "error": "invalid_recipient"}
 
     if _provider() == "ses":
         return await _send_via_ses(to=to, subject=subject, html=html, text=text,
