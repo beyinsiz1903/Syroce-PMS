@@ -56,7 +56,7 @@ export default function PMSDateBadge() {
       const r = await api.get("/night-audit/business-date");
       const v = r?.data?.business_date || null;
       setBd(v);
-      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, tid: currentTenantId(), t: Date.now() })); } catch {}
+      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, tid: currentTenantId(), t: Date.now() })); } catch { /* sessionStorage quota / private mode — ignore */ }
     } catch (e) {
       const code = e?.response?.status;
       if (code === 401 || code === 403 || code === 404) {

@@ -1,5 +1,6 @@
 const js = require("@eslint/js");
 const react = require("eslint-plugin-react");
+const reactHooks = require("eslint-plugin-react-hooks");
 
 module.exports = [
   js.configs.recommended,
@@ -7,6 +8,7 @@ module.exports = [
     files: ["src/**/*.{js,jsx}"],
     plugins: {
       react,
+      "react-hooks": reactHooks,
     },
     languageOptions: {
       ecmaVersion: 2022,
@@ -148,6 +150,11 @@ module.exports = [
       "react/jsx-uses-react": "off",
       "react/react-in-jsx-scope": "off",
       "react/jsx-uses-vars": "error",
+      // react-hooks plugin: rules etkinleştirildi ki kod içindeki
+      // // eslint-disable-next-line react-hooks/exhaustive-deps yorumları
+      // "Definition for rule not found" hatası vermesin.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
   {

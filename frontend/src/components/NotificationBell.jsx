@@ -62,7 +62,7 @@ const NotificationBell = () => {
       const unread = response.data.unread_count || 0;
       setNotifications(list);
       setUnreadCount(unread);
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ notifications: list, unread_count: unread, uid: currentUserId(), t: Date.now() })); } catch {}
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ notifications: list, unread_count: unread, uid: currentUserId(), t: Date.now() })); } catch { /* sessionStorage quota / private mode — ignore */ }
     } catch (error) {
       console.error('Failed to load notifications:', error);
     }

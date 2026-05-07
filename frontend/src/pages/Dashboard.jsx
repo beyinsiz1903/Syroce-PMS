@@ -71,9 +71,10 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
   const isLite = plan === "pms_lite";
 
-  if (isLite) {
-    return <DashboardLite user={user} tenant={tenant} stats={stats} />;
-  }
+  // NOT: pms_lite erken-return'ü AŞAĞIDA tüm hook'lardan SONRA yapılıyor
+  // (react-hooks/rules-of-hooks: hook'lar koşullu çağrılamaz). DashboardLite
+  // render kararı `isLite` flag'ine göre tüm hook'lar deklare edildikten
+  // sonra alınır.
 
   const loadAIBriefing = useCallback(async () => {
     setLoadingAI(true);
@@ -552,6 +553,12 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
     return categories;
   }, [filteredModules]);
+
+  // pms_lite için DashboardLite render et — tüm hook'lar yukarıda
+  // koşulsuz olarak çağrıldıktan SONRA güvenle erken-return yapılabilir.
+  if (isLite) {
+    return <DashboardLite user={user} tenant={tenant} stats={stats} />;
+  }
 
   return (
     <>

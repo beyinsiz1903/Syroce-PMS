@@ -35,7 +35,9 @@ const STATUS_COLOR = {
 };
 
 const fmtDate = (iso) => {
-  const { t } = useTranslation();
+  // NOT: useTranslation() çağrısı buradan kaldırıldı —
+  // (a) `t` zaten kullanılmıyordu, (b) helper fonksiyon component değil,
+  // bu yüzden hook'a izin yok (react-hooks/rules-of-hooks).
   if (!iso) return "-";
   const d = new Date(iso);
   return d.toLocaleString("tr-TR", {
