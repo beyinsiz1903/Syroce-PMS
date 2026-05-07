@@ -104,6 +104,16 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   // Demo mode toggle is super_admin-only per product spec.
   const canToggleDemoMode = user?.role === 'super_admin';
 
+  // Per-tenant sub-section entitlement: tenant.modules['rms.<key>'] === false
+  // hides that section. Missing/undefined = visible (backward compatible).
+  // Super admin bypasses gating.
+  const isSuperAdmin = user?.role === 'super_admin'
+    || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const tenantModulesMap = tenant?.modules || {};
+  const isRmsSectionEnabled = (key) => isSuperAdmin || tenantModulesMap[`rms.${key}`] !== false;
+  const showDashboard = isRmsSectionEnabled('dashboard');
+  const showRecommendations = isRmsSectionEnabled('recommendations');
+
   const wrap = (content) => embedded ? content : (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
   );
@@ -332,7 +342,17 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
         </div>
       )}
 
+      {/* Empty state when both sub-sections are disabled */}
+      {!showDashboard && !showRecommendations && (
+        <div className="flex flex-col items-center justify-center text-center py-16 text-slate-500" data-testid="rms-empty">
+          <Info className="w-10 h-10 text-slate-300 mb-3" />
+          <p className="text-sm font-medium">{t('rmsModule.no_sections_enabled', 'RMS alt sekmelerinin tümü kapalı.')}</p>
+          <p className="text-xs mt-1">{t('rmsModule.no_sections_hint', 'Yönetici panelinden en az bir alt sekme açın.')}</p>
+        </div>
+      )}
+
       {/* KPI Cards */}
+      {showDashboard && (
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Card className="bg-gradient-to-br from-sky-50 to-white border-sky-100">
           <CardContent className="p-4">
@@ -395,8 +415,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Charts Row */}
+      {showDashboard && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Occupancy Trend */}
         <Card className="lg:col-span-2">
@@ -443,8 +465,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Room Type Performance */}
+      {showDashboard && (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-slate-600">{t('rmsModule.chart_room_type_perf')}</CardTitle>
@@ -468,8 +492,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Pricing Recommendations */}
+      {showRecommendations && (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-slate-600">
@@ -549,8 +575,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Channel Detail Table */}
+      {showDashboard && (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-slate-600">{t('rmsModule.channel_table_title')}</CardTitle>
@@ -596,6 +624,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           </div>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 };

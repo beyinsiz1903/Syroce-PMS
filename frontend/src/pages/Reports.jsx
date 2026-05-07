@@ -145,6 +145,12 @@ const Reports = ({ user, tenant, onLogout }) => {
     }
   ];
 
+  // Per-tenant report-list entitlement: tenant.modules['reports.<id>'] === false
+  // hides that report from the selector. Missing/undefined = visible (backward compatible).
+  const visibleReports = availableReports.filter(
+    (r) => tenantModulesMap[`reports.${r.id}`] !== false
+  );
+
   const addReport = (reportId) => {
     const report = availableReports.find(r => r.id === reportId);
     if (report && !selectedReports.find(r => r.id === reportId)) {
@@ -368,7 +374,7 @@ const Reports = ({ user, tenant, onLogout }) => {
                         <SelectValue placeholder="Choose a report..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableReports
+                        {visibleReports
                           .filter(r => !selectedReports.find(sr => sr.id === r.id))
                           .map(report => (
                             <SelectItem key={report.id} value={report.id}>

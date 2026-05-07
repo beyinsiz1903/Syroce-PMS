@@ -1,4 +1,4 @@
-import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText } from 'lucide-react';
+import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText, TrendingUp } from 'lucide-react';
 
 export const PLANS = {
   // Mini — Elektraweb Mini muadili: pansiyon, butik otel, apart için
@@ -184,6 +184,17 @@ export const MODULE_GROUPS = [
     ],
   },
   {
+    id: 'rms_submodules',
+    title: 'Gelir Yönetimi (RMS) Alt Sekmeleri',
+    icon: TrendingUp,
+    color: 'violet',
+    description: 'RMS modülü içinde hangi alt sekmelerin görüneceğini seçin. Üst-modül "Revenue Management" kapalıysa hiçbiri görünmez.',
+    items: [
+      { key: 'rms.dashboard', label: 'Dashboard', hint: 'KPI kartları, grafikler ve kanal kırılımı', tier: 'enterprise' },
+      { key: 'rms.recommendations', label: 'Fiyat Önerileri', hint: 'AI fiyat önerileri tablosu + onay aksiyonları', tier: 'enterprise' },
+    ],
+  },
+  {
     id: 'channels_submodules',
     title: 'Kanallar Alt Sekmeleri',
     icon: PlugZap,
@@ -203,6 +214,23 @@ export const MODULE_GROUPS = [
     items: [
       { key: 'reports.excel', label: 'Excel Raporları', hint: 'Hazır Excel rapor şablonları', tier: 'mini' },
       { key: 'reports.night_audit', label: 'Night Audit', hint: 'Gün sonu denetim raporları', tier: 'basic' },
+    ],
+  },
+  {
+    id: 'reports_items',
+    title: 'Rapor Listesi (Excel Raporları)',
+    icon: FileText,
+    color: 'sky',
+    description: 'Excel rapor seçim listesinde hangi raporların gösterileceğini seçin. Üst sekme "Excel Raporları" kapalıysa bu liste hiç görünmez.',
+    items: [
+      { key: 'reports.daily-flash', label: 'Günlük Flash Raporu', hint: 'Finans — günlük özet', tier: 'mini' },
+      { key: 'reports.company-aging', label: 'Şirket Yaşlandırma', hint: 'Finans — alacak yaşlandırma', tier: 'basic' },
+      { key: 'reports.revenue-detail', label: 'Gelir Detay Raporu', hint: 'Finans — tarih aralıklı', tier: 'basic' },
+      { key: 'reports.forecast-detail', label: 'Tahmin Detay Raporu', hint: 'Finans — tarih aralıklı', tier: 'professional' },
+      { key: 'reports.housekeeping-efficiency', label: 'Housekeeping Verimliliği', hint: 'Operasyon — tarih aralıklı', tier: 'basic' },
+      { key: 'reports.operations-daily-summary', label: 'Günlük Operasyon Özeti', hint: 'Operasyon — günlük', tier: 'mini' },
+      { key: 'reports.market-segment', label: 'Pazar Segmenti Analizi', hint: 'Pazar — tarih aralıklı', tier: 'professional' },
+      { key: 'reports.channel-distribution', label: 'Kanal Dağılımı', hint: 'Pazar — tarih aralıklı', tier: 'basic' },
     ],
   },
   {
