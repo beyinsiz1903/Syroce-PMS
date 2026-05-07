@@ -339,6 +339,9 @@ jobs:
 
       - name: Python dependency security audit (CRITICAL — hard gate)
         run: |
+          # CVE-2026-6357 fix: pip prior to 26.1 had a self-update timing issue.
+          # Upgrade pip itself before running the audit so pip is reported as patched.
+          python -m pip install --upgrade 'pip>=26.1'
           pip install pip-audit
           cd backend
           pip-audit --desc \
