@@ -31,17 +31,6 @@ export default function DialogHost() {
     }
   }, [state.open, state.type, state.defaultValue]);
 
-  // Confirm/alert için Enter klavye desteği (prompt kendi input onKeyDown'unu kullanır)
-  useEffect(() => {
-    if (!state.open || state.type === 'prompt') return;
-    const onKey = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.open, state.type]);
-
   const close = (val) => {
     setState({ open: false });
     _resolveDialog(val);
@@ -74,6 +63,9 @@ export default function DialogHost() {
         className="max-w-md rounded-xl border-gray-200 shadow-2xl"
         data-testid="app-dialog"
       >
+        <form
+          onSubmit={(e) => { e.preventDefault(); handleConfirm(); }}
+        >
         <AlertDialogHeader>
           <div className="flex items-start gap-3">
             <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}>
@@ -99,10 +91,6 @@ export default function DialogHost() {
               value={promptValue}
               onChange={(e) => setPromptValue(e.target.value)}
               placeholder={state.placeholder || ''}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); }
-                if (e.key === 'Escape') { e.preventDefault(); handleCancel(); }
-              }}
               data-testid="dialog-prompt-input"
             />
           </div>
@@ -120,14 +108,15 @@ export default function DialogHost() {
             </Button>
           )}
           <Button
-            type="button"
-            onClick={handleConfirm}
+            type="submit"
+            autoFocus={state.type !== 'prompt'}
             className={isDanger ? 'bg-red-600 hover:bg-red-700 text-white' : ''}
             data-testid="dialog-confirm-btn"
           >
             {confirmText}
           </Button>
         </AlertDialogFooter>
+        </form>
       </AlertDialogContent>
     </AlertDialog>
   );
