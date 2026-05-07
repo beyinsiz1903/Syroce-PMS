@@ -12,6 +12,16 @@ export class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info);
+    if (import.meta.env.VITE_SENTRY_DSN) {
+      import("@sentry/react")
+        .then((Sentry) => {
+          Sentry.withScope((scope) => {
+            scope.setExtras({ componentStack: info?.componentStack });
+            Sentry.captureException(error);
+          });
+        })
+        .catch(() => { /* Sentry yüklenemezse sessizce yut */ });
+    }
   }
 
   render() {
