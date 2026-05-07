@@ -115,6 +115,16 @@ class DatabaseOptimizer:
             ('notifications', [
                 ([('tenant_id', ASCENDING), ('created_at', DESCENDING)], {'name': 'idx_n_tid_created'}),
                 ([('tenant_id', ASCENDING), ('user_id', ASCENDING), ('read', ASCENDING)], {'name': 'idx_n_tid_user_read'}),
+                # Mayıs 2026 — p95 fix: GET /api/notifications/list 1.2-1.5s
+                # sürüyordu (3 prod log'unda SLOW REQUEST). Sebep: visibility
+                # filtresi target_roles üzerinde $or yapıyor ama sıralı index
+                # yok → tenant scope'undaki tüm notification scan'leniyor +
+                # ardından count_documents tekrar tarama yapıyor.
+                # Bu multikey-friendly compound (tenant + target_roles array
+                # eşleşme + created_at sort) hem find hem unread count yolunu
+                # kapsar; her iki sorgu da aynı index prefix'inden yararlanır.
+                ([('tenant_id', ASCENDING), ('target_roles', ASCENDING), ('created_at', DESCENDING)],
+                 {'name': 'idx_n_tid_roles_created'}),
             ]),
             ('communication_logs', [
                 ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_cl_tid_booking'}),
