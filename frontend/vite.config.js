@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+// rollup-plugin-visualizer is ESM-only; dynamically imported below when ANALYZE=1
+// to avoid breaking CJS config loading in default builds.
 
 /**
  * Permanent HMR reload suppression plugin for proxied environments.
@@ -89,12 +91,29 @@ function hmrReloadGuard() {
   };
 }
 
-export default defineConfig({
+export default defineConfig(async () => {
+  // Bundle analiz çıktısı: yalnızca ANALYZE=1 ile etkin.
+  // build sonrası frontend/build/stats.html üretir (gzip/brotli boyut treemap).
+  const analyzePlugins = [];
+  if (process.env.ANALYZE === '1') {
+    const { visualizer } = await import('rollup-plugin-visualizer');
+    analyzePlugins.push(
+      visualizer({
+        filename: 'build/stats.html',
+        gzipSize: true,
+        brotliSize: true,
+        template: 'treemap',
+      })
+    );
+  }
+
+  return {
   plugins: [
     hmrReloadGuard(),
     react({
       include: /\.(jsx|tsx)$/,
     }),
+    ...analyzePlugins,
   ],
   resolve: {
     alias: {
@@ -245,4 +264,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });

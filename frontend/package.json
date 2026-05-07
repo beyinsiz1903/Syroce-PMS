@@ -73,6 +73,7 @@
     "guard:layout": "node ../tools/codemod-layout/guard.mjs",
     "start": "vite",
     "build": "vite build",
+    "analyze": "ANALYZE=1 vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -97,6 +98,7 @@
     "globals": "15.15.0",
     "jsdom": "^29.0.2",
     "postcss": "^8.4.49",
+    "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^3.4.17",
     "vite": "^8.0.5",
     "vitest": "^4.1.4"
