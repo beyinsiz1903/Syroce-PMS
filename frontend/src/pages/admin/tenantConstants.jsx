@@ -1,4 +1,4 @@
-import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble } from 'lucide-react';
+import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText } from 'lucide-react';
 
 export const PLANS = {
   // Mini — Elektraweb Mini muadili: pansiyon, butik otel, apart için
@@ -181,6 +181,28 @@ export const MODULE_GROUPS = [
       { key: 'pms.manager_report', label: 'Müdür Raporu', hint: 'Günlük müdür raporu', tier: 'professional' },
       { key: 'pms.kbs', label: 'KBS / GİKS', hint: 'Polis bildirimi', tier: 'mini' },
       { key: 'pms.kvkk', label: 'KVKK', hint: 'KVKK yönetimi', tier: 'basic' },
+    ],
+  },
+  {
+    id: 'channels_submodules',
+    title: 'Kanallar Alt Sekmeleri',
+    icon: PlugZap,
+    color: 'amber',
+    description: 'Kanallar hub\'ında hangi alt sekmelerin görüneceğini seçin. Operasyon sekmesi her zaman sadece super admin\'e açıktır.',
+    items: [
+      { key: 'channels.connections', label: 'Bağlantılar', hint: 'OTA ve channel manager bağlantı ayarları', tier: 'mini' },
+      { key: 'channels.dashboard', label: 'Dashboard', hint: 'Kanal performansı ve sync durumu', tier: 'basic' },
+    ],
+  },
+  {
+    id: 'reports_submodules',
+    title: 'Raporlar Alt Sekmeleri',
+    icon: FileText,
+    color: 'sky',
+    description: 'Raporlar sayfasında hangi alt bölümlerin görüneceğini seçin.',
+    items: [
+      { key: 'reports.excel', label: 'Excel Raporları', hint: 'Hazır Excel rapor şablonları', tier: 'mini' },
+      { key: 'reports.night_audit', label: 'Night Audit', hint: 'Gün sonu denetim raporları', tier: 'basic' },
     ],
   },
   {

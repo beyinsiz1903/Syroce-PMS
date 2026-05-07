@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NightAuditModule from "@/components/NightAuditModule";
 import axios from 'axios';
@@ -47,6 +47,22 @@ const Reports = ({ user, tenant, onLogout }) => {
   const isLite = plan === 'pms_lite';
   const features = normalizeFeatures(tenant?.features || {});
   const isReportsLite = !!features.reports_lite || isLite;
+
+  // Per-tenant section entitlement: tenant.modules['reports.<key>'] === false
+  // hides that section. Missing/undefined = visible (backward compatible).
+  const tenantModulesMap = tenant?.modules || {};
+  const isReportSectionEnabled = (sectionKey) => tenantModulesMap[`reports.${sectionKey}`] !== false;
+  const showExcelSection = isReportSectionEnabled('excel');
+  const showNightAuditSection = isReportSectionEnabled('night_audit');
+
+  // Snap activeSection to a visible one if the current pick was disabled.
+  useEffect(() => {
+    if (activeSection === 'excel' && !showExcelSection && showNightAuditSection) {
+      setActiveSection('night_audit');
+    } else if (activeSection === 'night_audit' && !showNightAuditSection && showExcelSection) {
+      setActiveSection('excel');
+    }
+  }, [activeSection, showExcelSection, showNightAuditSection]);
 
   // All available reports
   const availableReports = [
@@ -282,28 +298,32 @@ const Reports = ({ user, tenant, onLogout }) => {
 
         {/* Section Tabs */}
         <div className="mb-4 flex gap-2 border-b pb-2 text-sm">
-          <button
-            type="button"
-            onClick={() => setActiveSection('excel')}
-            className={`px-3 py-1 rounded-t-md border-b-2 text-xs md:text-sm ${
-              activeSection === 'excel'
-                ? 'border-blue-600 text-blue-700 font-semibold'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Excel Raporları
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSection('night_audit')}
-            className={`px-3 py-1 rounded-t-md border-b-2 text-xs md:text-sm ${
-              activeSection === 'night_audit'
-                ? 'border-blue-600 text-blue-700 font-semibold'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Night Audit
-          </button>
+          {showExcelSection && (
+            <button
+              type="button"
+              onClick={() => setActiveSection('excel')}
+              className={`px-3 py-1 rounded-t-md border-b-2 text-xs md:text-sm ${
+                activeSection === 'excel'
+                  ? 'border-blue-600 text-blue-700 font-semibold'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Excel Raporları
+            </button>
+          )}
+          {showNightAuditSection && (
+            <button
+              type="button"
+              onClick={() => setActiveSection('night_audit')}
+              className={`px-3 py-1 rounded-t-md border-b-2 text-xs md:text-sm ${
+                activeSection === 'night_audit'
+                  ? 'border-blue-600 text-blue-700 font-semibold'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Night Audit
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate('/reports/builder')}
@@ -316,7 +336,7 @@ const Reports = ({ user, tenant, onLogout }) => {
         </div>
 
         {/* Excel Reports Section */}
-        {activeSection === 'excel' && (
+        {showExcelSection && activeSection === 'excel' && (
           <div>
             {/* Add Report Button */}
             <div className="mb-6">
