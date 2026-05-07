@@ -37,13 +37,13 @@ describe('reservation-detail helper components', () => {
     it('applies size classes', () => {
       const { container } = render(<Avatar name="Ali" size="lg" />);
       const el = container.firstChild;
-      expect(el.className).toContain('w-10');
+      expect(el.className).toContain('w-11');
     });
 
     it('defaults to md size', () => {
       const { container } = render(<Avatar name="Ali" />);
       const el = container.firstChild;
-      expect(el.className).toContain('w-8');
+      expect(el.className).toContain('w-9');
     });
   });
 

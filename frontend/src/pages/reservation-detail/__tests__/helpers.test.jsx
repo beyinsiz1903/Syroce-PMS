@@ -58,16 +58,19 @@ describe('reservation-detail/helpers', () => {
 
   describe('statusLabel', () => {
     it('returns correct labels for known statuses', () => {
-      expect(statusLabel('checked_in')).toBe('Giriş Yapildi');
-      expect(statusLabel('confirmed')).toBe('Onaylandi');
-      expect(statusLabel('checked_out')).toBe('Çıkış Yapildi');
-      expect(statusLabel('cancelled')).toBe('İptal');
+      expect(statusLabel('checked_in')).toBe('Giriş Yapıldı');
+      expect(statusLabel('confirmed')).toBe('Onaylandı');
+      expect(statusLabel('checked_out')).toBe('Çıkış Yapıldı');
+      expect(statusLabel('cancelled')).toBe('İptal Edildi');
       expect(statusLabel('no_show')).toBe('No-Show');
+      expect(statusLabel('pending')).toBe('Beklemede');
+      expect(statusLabel('in_house')).toBe('Otelde');
+      expect(statusLabel('guaranteed')).toBe('Garantili');
     });
 
     it('returns the raw status for unknown statuses', () => {
-      expect(statusLabel('pending')).toBe('pending');
       expect(statusLabel('custom_status')).toBe('custom_status');
+      expect(statusLabel('weird_unknown_xyz')).toBe('weird_unknown_xyz');
     });
 
     it('returns Beklemede for null/undefined/empty', () => {

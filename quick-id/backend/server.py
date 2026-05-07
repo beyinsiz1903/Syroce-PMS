@@ -7,6 +7,8 @@ Refactor R3a: split monolithic server.py into:
   - helpers.py     : serialize_doc, image-validate, audit, throttle, find_duplicates, extract_id_data
 This file keeps only app construction + lifespan + route handlers.
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -47,7 +49,17 @@ from kvkk import get_settings, run_data_cleanup  # noqa: E402
 from rate_limit import limiter  # noqa: E402  shared singleton (also used by routers/*)
 
 # --- FastAPI app ---
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Forward reference: _run_startup_tasks is defined further down in this
+    # module. Lookup happens at call time (during ASGI startup), so the
+    # forward reference is safe.
+    await _run_startup_tasks()
+    yield
+
+
 app = FastAPI(
+    lifespan=_lifespan,
     title="Quick ID Reader API",
     description="""
 ## Otel Kimlik Okuyucu Sistemi API
@@ -140,9 +152,8 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 
 # ===== STARTUP: Create default admin =====
-@app.on_event("startup")
-async def startup_tasks():
-    """Startup: create indexes + default users"""
+async def _run_startup_tasks():
+    """Startup: create indexes + default users (called from lifespan)."""
     # ===== MongoDB Indexes =====
     import logging
     logger = logging.getLogger("quickid.startup")

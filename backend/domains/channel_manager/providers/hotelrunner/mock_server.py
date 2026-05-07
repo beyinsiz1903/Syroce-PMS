@@ -232,11 +232,14 @@ async def _maybe_inject_error(request: Request) -> JSONResponse | None:
 # ── Create App ────────────────────────────────────────────────────────
 
 def create_mock_app() -> FastAPI:
-    app = FastAPI(title="HotelRunner Mock API", version="2.0")
+    from contextlib import asynccontextmanager
 
-    @app.on_event("startup")
-    async def startup():
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
         _reset_state()
+        yield
+
+    app = FastAPI(title="HotelRunner Mock API", version="2.0", lifespan=_lifespan)
 
     def _ensure_initialized():
         """Ensure state is initialized (for ASGI transport that skips startup)."""

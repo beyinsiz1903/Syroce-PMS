@@ -51,7 +51,8 @@ describe('dialog system', () => {
 
       const input = screen.getByTestId('dialog-prompt-input');
       fireEvent.change(input, { target: { value: 'Ahmet' } });
-      fireEvent.keyDown(input, { key: 'Enter' });
+      // jsdom does not auto-submit form on Enter inside <input>; trigger submit explicitly
+      fireEvent.submit(input.closest('form'));
 
       await promise;
       expect(result).toBe('Ahmet');
@@ -65,6 +66,8 @@ describe('dialog system', () => {
 
       const input = screen.getByTestId('dialog-prompt-input');
       fireEvent.keyDown(input, { key: 'Escape' });
+      // jsdom does not auto-trigger Radix's Escape→close; close via overlay handler
+      fireEvent.keyDown(document.body, { key: 'Escape' });
 
       await promise;
       expect(result).toBeNull();

@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ── App factory ─────────────────────────────────────────────────────
-from app import create_app  # noqa: E402
+from app import create_app, register_shutdown, register_startup  # noqa: E402
 
 app = create_app()
 
@@ -393,7 +393,7 @@ try:
     app.include_router(_sm_hotel_router)
     app.include_router(_sm_admin_router)
 
-    @app.on_event("startup")
+    @register_startup
     async def _supplies_market_indexes():
         await _sm_ensure_indexes()
 
@@ -546,7 +546,7 @@ except Exception as _enc_mgmt_err:
 from startup import on_shutdown, on_startup  # noqa: E402
 
 
-@app.on_event("startup")
+@register_startup
 async def _startup():
     await on_startup(app)
     try:
@@ -628,7 +628,7 @@ async def _startup():
                 )
 
 
-@app.on_event("shutdown")
+@register_shutdown
 async def _shutdown():
     await on_shutdown(app)
 

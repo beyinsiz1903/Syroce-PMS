@@ -6,12 +6,50 @@ This is the single source of truth for the application object.
 server.py imports from here and orchestrates bootstrap.
 """
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, ORJSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
+
+# ── Lifespan registry ────────────────────────────────────────────────
+# Modules import `register_startup` / `register_shutdown` to schedule
+# coroutines that should run during the FastAPI lifespan. Replaces the
+# deprecated `@app.on_event("startup"|"shutdown")` decorators.
+_startup_callbacks: list = []
+_shutdown_callbacks: list = []
+
+
+def register_startup(fn):
+    """Register a coroutine to be awaited during application startup."""
+    _startup_callbacks.append(fn)
+    return fn
+
+
+def register_shutdown(fn):
+    """Register a coroutine to be awaited during application shutdown."""
+    _shutdown_callbacks.append(fn)
+    return fn
+
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    for cb in list(_startup_callbacks):
+        try:
+            await cb()
+        except Exception as _e:
+            _log.exception("startup callback %s failed: %s", getattr(cb, "__name__", cb), _e)
+            raise
+    yield
+    for cb in list(_shutdown_callbacks):
+        try:
+            await cb()
+        except Exception as _e:
+            _log.warning("shutdown callback %s failed: %s", getattr(cb, "__name__", cb), _e)
 
 
 def _unique_operation_id(route: "APIRoute") -> str:
@@ -29,6 +67,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
 
     application = FastAPI(
+        lifespan=_lifespan,
         generate_unique_id_function=_unique_operation_id,
         title="Syroce PMS - Otel Yönetim Sistemi",
         description="""
