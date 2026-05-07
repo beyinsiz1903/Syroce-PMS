@@ -169,6 +169,51 @@ async def phase_d_perf_and_marketplace(app):
         else:
             logger.warning(f"Index creation warning: {e}")
 
+    # ── REDUNDANT INDEX CLEANUP (Atlas Performance Advisor, Mayıs 2026) ──
+    # Bağımsız try bloğu — yukarıdaki create_index zincirinde herhangi bir
+    # IndexOptionsConflict (code=85) hatası bu cleanup'ı atlatmasın diye
+    # ayrıldı. Drop idempotent: zaten yoksa drop_index NotFound atar (yutulur).
+    try:
+        _redundant = [
+            ("users", "tenant_id_1"),
+            ("bookings", "idx_booking_room_status"),
+            ("bookings", "idx_b_tid_chkin"),
+            ("bookings", "idx_b_tid_chkout"),
+            ("bookings", "idx_booking_tenant_guest"),
+            ("bookings", "guest_id_1"),
+            ("bookings", "guest_id_1_check_in_-1"),
+            ("bookings", "room_id_1"),
+            ("bookings", "room_id_1_check_in_-1"),
+            ("bookings", "check_in_-1"),
+            ("bookings", "check_in_-1_status_1"),
+            ("bookings", "check_out_-1"),
+            ("bookings", "created_at_-1"),
+            ("bookings", "created_at_-1_status_1"),
+            ("bookings", "status_1"),
+            ("bookings", "status_1_check_in_-1"),
+            ("bookings", "status_1_check_out_-1"),
+            ("bookings", "status_1_room_type_1"),
+            ("bookings", "channel_1"),
+            ("rooms", "status_1"),
+            ("rooms", "status_1_room_type_1"),
+            ("rooms", "room_number_1"),
+            ("rooms", "room_type_1"),
+            ("rooms", "floor_1"),
+        ]
+        _dropped: list[str] = []
+        for _coll, _name in _redundant:
+            try:
+                await _raw_db[_coll].drop_index(_name)
+                _dropped.append(f"{_coll}.{_name}")
+            except Exception:
+                pass  # IndexNotFound — beklenen (idempotent)
+        if _dropped:
+            logger.info(f"✅ Redundant index cleanup: {len(_dropped)} dropped → {', '.join(_dropped)}")
+        else:
+            logger.info("ℹ️ Redundant index cleanup: hepsi zaten yok (no-op)")
+    except Exception as e:
+        logger.warning(f"Redundant index cleanup error: {e}")
+
     # Entitlement, Metering & Feature Flag indexes
     try:
         from core.metering import ensure_metering_indexes

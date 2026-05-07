@@ -23,12 +23,15 @@ SECONDARY_COLLECTIONS = [
 ]
 
 EXPECTED_INDEXES = {
-    "users": ["email_1", "tenant_id_1"],
-    "bookings": ["tenant_id_1", "status_1", "check_in_1"],
-    "rooms": ["tenant_id_1", "room_number_1"],
-    "guests": ["tenant_id_1", "email_1"],
-    "folios": ["tenant_id_1", "booking_id_1"],
-    "audit_logs": ["tenant_id_1", "created_at_-1"],
+    # Mayıs 2026: Atlas Performance Advisor önerisiyle eski tek alanlı /
+    # tenant'sız index'ler kaldırıldı. Validator artık modern tenant öncüllü
+    # bileşik index isimlerini bekliyor (bkz. d_perf.py + perf_indexes.py).
+    "users": ["idx_u_tid_email", "idx_u_tid_role", "tenant_username_unique"],
+    "bookings": ["idx_bookings_tenant_checkin_checkout", "idx_bookings_tenant_status_checkin", "idx_booking_overlap_check"],
+    "rooms": ["idx_rooms_tenant_number", "idx_rooms_tenant_status_type"],
+    "guests": ["idx_guests_tenant_email", "idx_guests_tenant_phone"],
+    "folios": ["idx_folios_tenant_booking", "idx_folios_tenant_status_created"],
+    "audit_logs": ["idx_audit_log_timestamp", "idx_audit_log_action"],
 }
 
 

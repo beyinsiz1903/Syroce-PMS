@@ -76,8 +76,11 @@ class DatabaseOptimizer:
             ('bookings', [
                 ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_b_tid_id'}),
                 ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_b_tid_status'}),
-                ([('tenant_id', ASCENDING), ('check_in', ASCENDING)], {'name': 'idx_b_tid_chkin'}),
-                ([('tenant_id', ASCENDING), ('check_out', ASCENDING)], {'name': 'idx_b_tid_chkout'}),
+                # idx_b_tid_chkin: REDUNDANT — `idx_bookings_tenant_checkin_checkout`
+                # (tenant_id, check_in, check_out) prefix'i kapsıyor (d_perf.py).
+                # idx_b_tid_chkout: REDUNDANT — tenant+check_out tek başına asla
+                # sorgulanmıyor (overlap check her zaman check_in ile birlikte).
+                # Her ikisi de Atlas Performance Advisor önerisiyle kaldırıldı.
                 ([('tenant_id', ASCENDING), ('status', ASCENDING), ('check_in', ASCENDING)], {'name': 'idx_b_tid_status_chkin'}),
                 ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_b_tid_room'}),
                 ([('tenant_id', ASCENDING), ('guest_id', ASCENDING)], {'name': 'idx_b_tid_guest'}),
@@ -140,31 +143,20 @@ class DatabaseOptimizer:
         return {"created": total}
 
     async def create_booking_indexes(self):
-        """Bookings collection indexes"""
+        """Bookings collection indexes.
+
+        NOTE (Mayıs 2026): Eski tek alanlı ve tenant_id'siz bileşik index'ler
+        Atlas Performance Advisor tarafından REDUNDANT olarak işaretlendi —
+        hepsi tenant_id öncüllü modern bileşik index'lerin (perf_indexes.py /
+        d_perf.py / atomic_booking.py) prefix'leri. Yazma maliyetini azaltmak
+        için sadece tenant scope'u olmayan gerçekten benzersiz pattern'leri
+        burada tutuyoruz; tenant'lı olanlar create_tenant_compound_indexes()
+        ve perf_indexes.ensure_performance_indexes()'te yönetiliyor.
+        """
         bookings = self.db.bookings
 
         indexes = [
-            # Single field indexes
-            ([("guest_id", ASCENDING)], {}),
-            ([("room_id", ASCENDING)], {}),
-            ([("status", ASCENDING)], {}),
-            ([("check_in", DESCENDING)], {}),
-            ([("check_out", DESCENDING)], {}),
-            ([("created_at", DESCENDING)], {}),
-            ([("channel", ASCENDING)], {}),
-
-            # Compound indexes for common queries
-            ([("status", ASCENDING), ("check_in", DESCENDING)], {}),
-            ([("status", ASCENDING), ("check_out", DESCENDING)], {}),
-            ([("guest_id", ASCENDING), ("check_in", DESCENDING)], {}),
-            ([("room_id", ASCENDING), ("check_in", DESCENDING)], {}),
-            ([("check_in", ASCENDING), ("check_out", ASCENDING)], {}),
-
-            # Date range queries
-            ([("created_at", DESCENDING), ("status", ASCENDING)], {}),
-            ([("check_in", DESCENDING), ("status", ASCENDING)], {}),
-
-            # Text search
+            # Tek alanlı text index — tenant scope'a girmez, yine yararlı.
             ([("guest_name", TEXT)], {}),
         ]
 
@@ -215,15 +207,17 @@ class DatabaseOptimizer:
         return {"created": len(created), "indexes": created}
 
     async def create_room_indexes(self):
-        """Rooms collection indexes"""
+        """Rooms collection indexes.
+
+        NOTE (Mayıs 2026): `status_1` ve `status_1_room_type_1` Atlas
+        tarafından `idx_rooms_tenant_status_type` (tenant_id, status,
+        room_type) prefix'i olarak REDUNDANT işaretlendi. Listeden çıkarıldı.
+        """
         rooms = self.db.rooms
 
         indexes = [
-            ([("room_number", ASCENDING)], {}),
-            ([("status", ASCENDING)], {}),
             ([("room_type", ASCENDING)], {}),
             ([("floor", ASCENDING)], {}),
-            ([("status", ASCENDING), ("room_type", ASCENDING)], {}),
         ]
 
         created = []
@@ -260,13 +254,18 @@ class DatabaseOptimizer:
         return {"created": len(created), "indexes": created}
 
     async def create_user_indexes(self):
-        """Users collection indexes"""
+        """Users collection indexes.
+
+        NOTE (Mayıs 2026): `tenant_id_1` Atlas tarafından `idx_u_tid_email`
+        ve `idx_u_tid_role` prefix'i olarak REDUNDANT işaretlendi.
+        Tek alanlı `email` unique zaten farklı tenantlar için çakışırdı —
+        modern multi-tenant şema (tenant_id, email) compound'unu kullanıyor;
+        burada bırakılmadı.
+        """
         users = self.db.users
 
         indexes = [
-            ([("email", ASCENDING)], {"unique": True}),
             ([("role", ASCENDING)], {}),
-            ([("tenant_id", ASCENDING)], {}),
         ]
 
         created = []

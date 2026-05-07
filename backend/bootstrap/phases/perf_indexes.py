@@ -26,7 +26,9 @@ async def ensure_performance_indexes():
         ("pms_audit_trail", [("tenant_id", 1), ("entity_id", 1), ("timestamp", -1)], "idx_audit_entity", {}),
         # R5 audit ek index'ler
         ("bookings", [("tenant_id", 1), ("status", 1), ("check_out", 1)], "idx_booking_status_checkout", {}),
-        ("bookings", [("tenant_id", 1), ("room_id", 1), ("status", 1)], "idx_booking_room_status", {}),
+        # idx_booking_room_status: REDUNDANT — Atlas Advisor (Mayıs 2026):
+        # `idx_booking_overlap_check` (tenant_id, room_id, status, check_in,
+        # check_out) prefix'i ile tamamen kapsanıyor. Kaldırıldı.
         ("guests", [("tenant_id", 1), ("vip", 1)], "idx_guest_vip", {}),
         ("folios", [("tenant_id", 1), ("status", 1), ("balance", 1)], "idx_folio_status_balance", {}),
         ("folios", [("tenant_id", 1), ("folio_type", 1), ("status", 1)], "idx_folio_type_status", {}),

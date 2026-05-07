@@ -524,12 +524,9 @@ async def ensure_booking_indexes() -> None:
             "name": "idx_booking_overlap_check",
             "unique": False,
         },
-        {
-            "collection": "bookings",
-            "keys": [("tenant_id", 1), ("guest_id", 1)],
-            "name": "idx_booking_tenant_guest",
-            "unique": False,
-        },
+        # idx_booking_tenant_guest: REDUNDANT — Atlas Advisor (Mayıs 2026):
+        # `idx_booking_guest_status` (tenant_id, guest_id, status) prefix'i
+        # tarafından kapsanıyor (perf_indexes.py). Listeden kaldırıldı.
     ]
     for idx_def in indexes_to_create:
         coll = getattr(db, idx_def["collection"])
