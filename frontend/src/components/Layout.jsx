@@ -49,6 +49,7 @@ const ICON_BY_KEY = {
   ai: Bot,
   marketplace: ShoppingCart,
   supplies_market: ShoppingCart,
+  module_store: ShoppingCart,
   admin_tenants: Shield,
   admin_module_report: FileText,
   admin_leads: Users,
