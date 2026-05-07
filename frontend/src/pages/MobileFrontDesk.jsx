@@ -241,7 +241,7 @@ const MobileFrontDesk = ({ user }) => {
 
   const handlePassportScan = async () => {
     if (!passportFile || !passportBase64 || !selectedBookingForPassport) {
-      toast.error('⚠️ Lütfen kimlik fotoğrafı ekleyin');
+      toast.error('Lütfen kimlik fotoğrafı ekleyin');
       return;
     }
 
@@ -394,7 +394,7 @@ const MobileFrontDesk = ({ user }) => {
               if (arrivals.length > 0) {
                 handleCheckIn(arrivals[0].id);
               } else {
-                toast.error('⚠️ Giriş yapacak rezervasyon yok');
+                toast.error('Giriş yapacak rezervasyon yok');
               }
             }}
           >
@@ -410,7 +410,7 @@ const MobileFrontDesk = ({ user }) => {
               if (departures.length > 0) {
                 handleCheckOut(departures[0].id);
               } else {
-                toast.error('⚠️ Çıkış yapacak rezervasyon yok');
+                toast.error('Çıkış yapacak rezervasyon yok');
               }
             }}
           >
@@ -433,7 +433,7 @@ const MobileFrontDesk = ({ user }) => {
             onClick={async () => {
               const candidates = todayArrivals.filter(b => b.status === 'confirmed');
               if (candidates.length === 0) {
-                toast.error('⚠️ İşaretlenecek rezervasyon yok');
+                toast.error('İşaretlenecek rezervasyon yok');
                 return;
               }
               const target = candidates[0];
@@ -477,7 +477,7 @@ const MobileFrontDesk = ({ user }) => {
             onClick={() => {
               const confirmed = todayArrivals.filter(b => b.status === 'confirmed')[0];
               if (confirmed) openRoomAssignment(confirmed);
-              else toast.error('⚠️ Oda atanacak rezervasyon yok');
+              else toast.error('Oda atanacak rezervasyon yok');
             }}
           >
             <Home className="w-5 h-5 mb-1" />
@@ -490,7 +490,7 @@ const MobileFrontDesk = ({ user }) => {
             onClick={() => {
               const confirmed = todayArrivals.filter(b => b.status === 'confirmed')[0];
               if (confirmed) openPassportScan(confirmed);
-              else toast.error('⚠️ Kimlik okunacak rezervasyon yok');
+              else toast.error('Kimlik okunacak rezervasyon yok');
             }}
           >
             <Camera className="w-5 h-5 mb-1" />
@@ -503,7 +503,7 @@ const MobileFrontDesk = ({ user }) => {
             onClick={() => {
               const checkedIn = inHouse[0];
               if (checkedIn) openKeycardModal(checkedIn);
-              else toast.error('⚠️ Kart basılacak rezervasyon yok');
+              else toast.error('Kart basılacak rezervasyon yok');
             }}
           >
             <Key className="w-5 h-5 mb-1" />

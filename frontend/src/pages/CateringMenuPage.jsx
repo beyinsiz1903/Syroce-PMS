@@ -17,7 +17,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ChefHat, Plus, RefreshCw, Trash2, Save, Loader2, Leaf, Wheat } from "lucide-react";
+import { ChefHat, Plus, RefreshCw, Trash2, Save, Loader2, Leaf, Wheat, AlertTriangle } from "lucide-react";
 
 /**
  * Opera #7 — Catering Menu.
@@ -323,7 +323,7 @@ export default function CateringMenuPage() {
                           {it.is_vegetarian && !it.is_vegan && <Badge variant="outline">Vej</Badge>}
                           {it.is_gluten_free && <Badge variant="outline" className="bg-amber-50"><Wheat className="h-3 w-3 mr-1" />GF</Badge>}
                           {it.allergens?.length > 0 && (
-                            <span className="text-muted-foreground">⚠ {it.allergens.join(", ")}</span>
+                            <span className="text-muted-foreground inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{it.allergens.join(", ")}</span>
                           )}
                         </div>
                       </TableCell>

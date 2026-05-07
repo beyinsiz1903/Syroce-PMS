@@ -314,7 +314,7 @@ const MobileHousekeeping = ({ user }) => {
 
   const handleBulkStatusUpdate = async (newStatus) => {
     if (selectedRooms.length === 0) {
-      toast.error('⚠️ Oda seçin');
+      toast.error('Oda seçin');
       return;
     }
 

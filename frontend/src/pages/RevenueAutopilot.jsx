@@ -59,7 +59,7 @@ const RevenueAutopilot = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">⚡ Revenue Autopilot</h1>
+            <h1 className="text-3xl font-bold flex items-center gap-2"><Zap className="w-7 h-7 text-amber-500" /> Revenue Autopilot</h1>
             <p className="text-gray-600">Tam otomatik revenue management - Sıfır müdahale</p>
           </div>
         </div>

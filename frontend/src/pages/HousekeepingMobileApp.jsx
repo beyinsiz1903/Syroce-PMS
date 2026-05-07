@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CheckCircle, Clock, Camera, MessageSquare, Sparkles } from 'lucide-react';
+import { CheckCircle, Clock, Camera, MessageSquare, Sparkles, Zap, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const HousekeepingMobileApp = ({ user }) => {
@@ -56,7 +56,7 @@ const HousekeepingMobileApp = ({ user }) => {
     try {
       await axios.put(`/pms/housekeeping/rooms/${selectedRoom.id || selectedRoom._id}/status`, { status: 'inspected' });
 
-      toast.success(`✅ Room ${selectedRoom.room_number} cleaned & marked as inspected!`);
+      toast.success(`Oda ${selectedRoom.room_number} temizlendi ve denetlendi olarak işaretlendi`);
       setSelectedRoom(null);
       setChecklistItems([]);
       loadRooms();
@@ -215,14 +215,15 @@ const HousekeepingMobileApp = ({ user }) => {
               </div>
 
               {room.priority === 'urgent' && (
-                <div className="bg-red-50 text-red-700 text-sm p-2 rounded mb-3">
-                  ⚡ Priority: Guest checking in soon
+                <div className="bg-red-50 text-red-700 text-sm p-2 rounded mb-3 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4" /> Öncelikli: Misafir kısa süre içinde giriş yapacak
                 </div>
               )}
 
               {room.notes && (
-                <div className="bg-yellow-50 text-yellow-800 text-sm p-2 rounded mb-3">
-                  📝 {room.notes}
+                <div className="bg-yellow-50 text-yellow-800 text-sm p-2 rounded mb-3 flex items-start gap-1.5">
+                  <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{room.notes}</span>
                 </div>
               )}
 
@@ -241,9 +242,9 @@ const HousekeepingMobileApp = ({ user }) => {
                       variant="outline"
                       onClick={() => handleQuickStatusUpdate(room.id, room.room_number, 'cleaning')}
                       className="px-3"
-                      title="Mark as cleaning without checklist"
+                      title="Hızlı: Kontrol listesi olmadan temizleniyor olarak işaretle"
                     >
-                      ⚡
+                      <Zap className="w-4 h-4" />
                     </Button>
                   </>
                 )}

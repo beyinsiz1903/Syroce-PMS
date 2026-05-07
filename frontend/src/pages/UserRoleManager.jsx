@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
+import { ArrowUp, ArrowDown, Lightbulb } from 'lucide-react';
 
 const DEFAULT_ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
@@ -162,7 +163,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
                                 disabled={updating}
                                 className="text-xs"
                               >
-                                ⬆️ Super Admin Yap
+                                <ArrowUp className="w-3.5 h-3.5 mr-1" /> Super Admin Yap
                               </Button>
                             )}
                             {u.role === 'super_admin' && (
@@ -173,7 +174,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
                                 disabled={updating}
                                 className="text-xs"
                               >
-                                ⬇️ Admin Yap
+                                <ArrowDown className="w-3.5 h-3.5 mr-1" /> Admin Yap
                               </Button>
                             )}
                           </div>
@@ -187,9 +188,11 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
           </CardContent>
         </Card>
 
-        <Card className="bg-blue-50">
+        <Card className="bg-sky-50">
           <CardContent className="p-4">
-            <h3 className="font-semibold text-sm mb-2">💡 Hızlı İpucu</h3>
+            <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5">
+              <Lightbulb className="w-4 h-4 text-amber-500" /> Hızlı İpucu
+            </h3>
             <p className="text-xs text-gray-700">
               Production'da demo@hotel.com kullanıcısını super_admin yapmak için:
               <br />
@@ -197,7 +200,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
               <br />
               2. Ara butonuna tıklayın
               <br />
-              3. "⬆️ Super Admin Yap" butonuna tıklayın
+              3. "Super Admin Yap" butonuna tıklayın
               <br />
               4. Logout yapın ve tekrar login yapın
             </p>

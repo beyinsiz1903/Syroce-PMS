@@ -246,7 +246,8 @@ function NightAuditPanel({ token, onRefresh, t }) {
 
   useEffect(() => {
     axios.get(`/pms-core/night-audit/business-date`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => setBusinessDate(r.data.business_date)).catch(() => {});
+      .then(r => setBusinessDate(r.data.business_date))
+      .catch((err) => console.error('Business date load failed:', err));
   }, [token]);
 
   const runAudit = async () => {
@@ -294,8 +295,12 @@ function MultiPropertyAuditPanel({ token, t }) {
 
   useEffect(() => {
     const headers = { Authorization: `Bearer ${token}` };
-    axios.get(`/pms-core/multi-property/audit-board`, { headers }).then(r => setBoard(r.data)).catch(() => {});
-    axios.get(`/pms-core/multi-property/unresolved-blockers`, { headers }).then(r => setBlockers(r.data)).catch(() => {});
+    axios.get(`/pms-core/multi-property/audit-board`, { headers })
+      .then(r => setBoard(r.data))
+      .catch((err) => console.error('Audit board load failed:', err));
+    axios.get(`/pms-core/multi-property/unresolved-blockers`, { headers })
+      .then(r => setBlockers(r.data))
+      .catch((err) => console.error('Unresolved blockers load failed:', err));
   }, [token]);
 
   const statusColor = (s) => ({

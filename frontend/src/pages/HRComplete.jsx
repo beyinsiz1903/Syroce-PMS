@@ -206,17 +206,17 @@ const HRComplete = () => {
                   </div>
                   <Button
                     size="sm"
-                    className="bg-green-600"
+                    className="bg-emerald-600"
                     onClick={() => clockIn(selectedStaff.id)}
                   >
-                    ⏱️ Clock In
+                    <Clock className="w-4 h-4 mr-1.5" /> Giriş Yap
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => clockOut(selectedStaff.id)}
                   >
-                    ⏱️ Clock Out
+                    <Clock className="w-4 h-4 mr-1.5" /> Çıkış Yap
                   </Button>
                 </div>
               </CardHeader>

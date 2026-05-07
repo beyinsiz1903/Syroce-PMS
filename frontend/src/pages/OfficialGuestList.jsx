@@ -4,10 +4,12 @@ import axios from 'axios';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Calendar } from 'lucide-react';
+import { Calendar, CheckCircle2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const BOOL = (v) => (v ? '✅' : '❌');
+const BOOL = (v) => v
+  ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" aria-label="evet" />
+  : <XCircle className="w-4 h-4 text-rose-600 inline" aria-label="hayır" />;
 
 const OfficialGuestList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();

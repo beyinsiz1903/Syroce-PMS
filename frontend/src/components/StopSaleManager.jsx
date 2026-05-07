@@ -47,7 +47,7 @@ const StopSaleManager = ({ operators = [] }) => {
       if (newStatus) {
         toast.success(`🛑 ${operatorName} için stop-sale aktif edildi!`);
       } else {
-        toast.success(`✅ ${operatorName} için stop-sale kaldırıldı!`);
+        toast.success(`${operatorName} için stop-sale kaldırıldı!`);
       }
     } catch (error) {
       toast.error('Stop-sale durumu değiştirilemedi');

@@ -128,7 +128,7 @@ const DynamicPricing = () => {
                     target_date: targetDate,
                     new_rate: recommendation.recommended_price
                   });
-                  toast.success(`✅ Fiyat güncellendi! €${recommendation.recommended_price} tüm kanallara gönderildi.`);
+                  toast.success(`Fiyat güncellendi! €${recommendation.recommended_price} tüm kanallara gönderildi.`);
                   loadRecommendation();
                 } catch (error) {
                   toast.success(`✨ Fiyat uygulandı: €${recommendation.recommended_price} (Demo mode - gerçekte tüm OTA'lara gönderilir)`);

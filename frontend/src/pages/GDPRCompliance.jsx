@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { AlertTriangle } from 'lucide-react';
 
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -120,7 +121,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
                       <ul className="space-y-2">
                         {cs.recommendations.map((r, i) => (
                           <li key={i} className="flex items-center gap-2 text-sm">
-                            <span className="text-yellow-500">⚠</span> {r}
+                            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" /> {r}
                           </li>
                         ))}
                       </ul>

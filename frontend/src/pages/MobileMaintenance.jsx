@@ -33,7 +33,12 @@ import {
   Minus,
   QrCode,
   Activity,
-  Home
+  Home,
+  Snowflake,
+  Zap,
+  Droplet,
+  Hammer,
+  Sofa
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -933,7 +938,7 @@ const MobileMaintenance = ({ user }) => {
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="w-5 h-5 text-red-600" />
                     <p className="text-sm font-bold text-red-900">
-                      ⚠️ {partsInventory.filter(p => p.stock < p.min_stock).length} kalem kritik seviyede!
+                      {partsInventory.filter(p => p.stock < p.min_stock).length} kalem kritik seviyede!
                     </p>
                   </div>
                 </CardContent>
@@ -949,13 +954,13 @@ const MobileMaintenance = ({ user }) => {
                 <Card key={category}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center justify-between">
-                      <span>
-                        {category === 'HVAC' ? '❄️ HVAC' :
-                         category === 'Elektrik' ? '⚡ Elektrik' :
-                         category === 'Tesisat' ? '💧 Tesisat' :
-                         category === 'Yapısal' ? '🏗️ Yapısal' :
-                         category === 'Mobilya' ? '🪑 Mobilya' :
-                         '🔧 Genel Malzeme'}
+                      <span className="flex items-center gap-1.5">
+                        {category === 'HVAC' ? <><Snowflake className="w-3.5 h-3.5 text-sky-600" /> HVAC</> :
+                         category === 'Elektrik' ? <><Zap className="w-3.5 h-3.5 text-amber-600" /> Elektrik</> :
+                         category === 'Tesisat' ? <><Droplet className="w-3.5 h-3.5 text-sky-500" /> Tesisat</> :
+                         category === 'Yapısal' ? <><Hammer className="w-3.5 h-3.5 text-slate-600" /> Yapısal</> :
+                         category === 'Mobilya' ? <><Sofa className="w-3.5 h-3.5 text-amber-700" /> Mobilya</> :
+                         <><Wrench className="w-3.5 h-3.5 text-slate-600" /> Genel Malzeme</>}
                       </span>
                       <Badge variant="outline">{categoryParts.length}</Badge>
                     </CardTitle>
@@ -1012,8 +1017,9 @@ const MobileMaintenance = ({ user }) => {
 
                           {isLowStock && (
                             <div className="mt-2 flex items-center justify-between p-2 bg-red-100 rounded">
-                              <span className="text-xs text-red-900">
-                                ⚠️ {part.min_stock - part.stock} {part.unit} sipariş gerekli
+                              <span className="text-xs text-red-900 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                {part.min_stock - part.stock} {part.unit} sipariş gerekli
                               </span>
                               <Button 
                                 size="sm" 

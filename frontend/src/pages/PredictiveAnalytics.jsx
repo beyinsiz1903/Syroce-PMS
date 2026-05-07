@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, AlertTriangle, TrendingUp, Calendar, Target, CheckCircle } from 'lucide-react';
+import { Home, AlertTriangle, TrendingUp, Calendar, Target, CheckCircle, Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -177,9 +177,10 @@ const PredictiveAnalytics = () => {
               </div>
             ))}
           </div>
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              💡 <strong>AI Recommendation:</strong> Peak demand days detected. Consider increasing rates by 15-20%.
+          <div className="mt-4 p-4 bg-sky-50 rounded-lg">
+            <p className="text-sm text-sky-800 flex items-start gap-1.5">
+              <Lightbulb className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+              <span><strong>AI Recommendation:</strong> Peak demand days detected. Consider increasing rates by 15-20%.</span>
             </p>
           </div>
         </CardContent>

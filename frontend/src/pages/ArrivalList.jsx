@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, Calendar, LogIn, ScanLine, RefreshCw } from 'lucide-react';
+import { Home, UserCheck, Crown, Users, Clock, BedDouble, AlertCircle, AlertTriangle, CheckCircle, Calendar, LogIn, ScanLine, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
@@ -32,7 +32,9 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       if (doc.document_type) patch.guest_id_type = doc.document_type;
       if (doc.nationality) patch.guest_nationality = doc.nationality;
       if (doc.birth_date) patch.guest_birth_date = doc.birth_date;
-      await axios.patch(`/bookings/${bookingId}/guest-info`, patch).catch(() => {});
+      await axios.patch(`/bookings/${bookingId}/guest-info`, patch).catch((err) => {
+        console.error('Guest info patch failed:', err);
+      });
       toast.success('Kimlik bilgileri rezervasyona aktarıldı');
       loadTodayArrivals();
     } catch (e) {
@@ -308,16 +310,18 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
 
                     {booking.special_requests && (
                       <div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <p className="text-sm">
-                          <strong>⚠️ Özel İstek:</strong> {booking.special_requests}
+                        <p className="text-sm flex items-start gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                          <span><strong>Özel İstek:</strong> {booking.special_requests}</span>
                         </p>
                       </div>
                     )}
 
                     {booking.online_checkin_completed && (
                       <div className="mt-2">
-                        <p className="text-xs text-blue-600">
-                          ✅ Online check-in tamamlanmış - Express check-in hazır
+                        <p className="text-xs text-sky-600 flex items-center gap-1.5">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Online check-in tamamlanmış - Express check-in hazır
                         </p>
                       </div>
                     )}

@@ -56,7 +56,7 @@ const QRRoomAccess = () => {
       loadActiveSessions();
     } catch (error) {
       if (error.response?.status === 400) {
-        toast.error('⚠️ Aktif temizlik oturumu var');
+        toast.error('Aktif temizlik oturumu var');
       } else {
         toast.error('✗ Başlatma başarısız');
       }

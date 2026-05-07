@@ -24,6 +24,7 @@ import {
   ChevronDown, Server, CalendarCheck, X,
   BrainCircuit, MessageSquare, Clock, Rocket, Download
 } from 'lucide-react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
@@ -579,7 +580,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
       {/* Main Content - fills remaining viewport */}
       <main ref={mainRef} className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </main>
 
       <PMSDateBadge />

@@ -13,7 +13,7 @@ const BookingSearch = ({ onSelectBooking }) => {
 
   const handleSearch = async () => {
     if (!query.trim()) {
-      toast.error('⚠️ Arama terimi girin');
+      toast.error('Arama terimi girin');
       return;
     }
 

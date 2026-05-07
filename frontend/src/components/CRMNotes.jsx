@@ -48,7 +48,7 @@ const CRMNotes = ({ guestId }) => {
 
   const handleAddNote = async () => {
     if (!newNote.trim()) {
-      toast.error('⚠️ Not boş olamaz');
+      toast.error('Not boş olamaz');
       return;
     }
 

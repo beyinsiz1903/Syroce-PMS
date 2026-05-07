@@ -162,7 +162,10 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
 
   // Lazy: POs only when the user opens that tab.
   useEffect(() => {
-    if (tab === 'pos' && !posLoaded) loadPOs().catch(() => {});
+    if (tab === 'pos' && !posLoaded) loadPOs().catch((err) => {
+      console.error('Load POs failed:', err);
+      toast.error('Satınalma siparişleri yüklenemedi');
+    });
   }, [tab, posLoaded]);
 
   // Lazy: inventory list needed by both PR and PO form autocompletes.

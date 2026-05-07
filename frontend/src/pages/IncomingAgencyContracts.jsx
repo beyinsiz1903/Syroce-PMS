@@ -443,9 +443,10 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
             <DialogTitle>Sözleşmeyi Feshet — {terminateDlg?.agency_name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-amber-400 bg-amber-950/20 border border-amber-900 rounded p-2">
-              ⚠️ Fesih sonrası bu acente <strong>yeni rezervasyon</strong> yapamayacak.
-              Mevcut rezervasyonlar etkilenmez.
+            <p className="text-sm text-amber-400 bg-amber-950/20 border border-amber-900 rounded p-2 flex items-start gap-1.5">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Fesih sonrası bu acente <strong>yeni rezervasyon</strong> yapamayacak.
+              Mevcut rezervasyonlar etkilenmez.</span>
             </p>
             <div>
               <Label>Fesih Sebebi</Label>

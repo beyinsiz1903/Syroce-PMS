@@ -137,11 +137,11 @@ const MobileFnB = ({ user }) => {
   const handleSubmitOrder = async () => {
     try {
       if (!selectedOutlet) {
-        toast.error('⚠️ Outlet seçin');
+        toast.error('Outlet seçin');
         return;
       }
       if (orderItems.length === 0) {
-        toast.error('⚠️ Ürün ekleyin');
+        toast.error('Ürün ekleyin');
         return;
       }
 
@@ -851,7 +851,7 @@ const MobileFnB = ({ user }) => {
                   const res = await axios.post('/pos/menu-item', {
                     name, price, category, available: true
                   });
-                  toast.success(`✅ "${res.data?.name || name}" eklendi`);
+                  toast.success(`"${res.data?.name || name}" eklendi`);
                   loadData?.();
                 } catch (err) {
                   toast.error(err?.response?.data?.detail || 'Ürün eklenemedi');

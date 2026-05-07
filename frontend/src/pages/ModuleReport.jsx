@@ -9,8 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
 import { alertDialog } from '@/lib/dialogs';
+import { CheckCircle2, XCircle } from 'lucide-react';
 
-const BOOL_ICON = (val) => (val ? '✅' : '❌');
+const BOOL_ICON = (val) => val
+  ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" aria-label="evet" />
+  : <XCircle className="w-4 h-4 text-rose-600 inline" aria-label="hayır" />;
 
 const ModuleReport = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();

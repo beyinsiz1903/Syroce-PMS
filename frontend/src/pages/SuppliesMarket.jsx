@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "react-hot-toast";
 import {
+  AlertTriangle,
   ShoppingCart,
   Package,
   Truck,
@@ -361,8 +362,9 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               ) : (
                 <>
                   {cartVendorIds.length > 1 && (
-                    <div className="mb-3 p-2 text-xs bg-red-50 text-red-700 rounded">
-                      ⚠ Tek siparişte yalnızca bir toptancıdan ürün eklenebilir.
+                    <div className="mb-3 p-2 text-xs bg-red-50 text-red-700 rounded flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>Tek siparişte yalnızca bir toptancıdan ürün eklenebilir.</span>
                     </div>
                   )}
                   <div className="space-y-3 max-h-80 overflow-y-auto">

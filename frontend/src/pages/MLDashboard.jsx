@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Smile, Frown, Meh } from 'lucide-react';
 
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -230,7 +231,7 @@ export default function MLDashboard({ user, tenant, onLogout }) {
                   <div className="p-4 border rounded-lg">
                     <div className="flex items-center gap-3">
                       <span className="text-3xl">
-                        {sentimentResult.sentiment === 'positive' ? '😊' : sentimentResult.sentiment === 'negative' ? '😞' : '😐'}
+                        {sentimentResult.sentiment === 'positive' ? <Smile className="w-8 h-8 text-emerald-600" /> : sentimentResult.sentiment === 'negative' ? <Frown className="w-8 h-8 text-rose-600" /> : <Meh className="w-8 h-8 text-slate-500" />}
                       </span>
                       <div>
                         <Badge className={{
