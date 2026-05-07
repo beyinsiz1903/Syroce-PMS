@@ -659,6 +659,16 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
   },
   {
+    key: "integrations_overview",
+    label: "Entegrasyon Genel Bakış",
+    path: "/admin/integrations-overview",
+    moduleKey: "admin_panel",
+    tier: "professional",
+    group: "professional",
+    navGroup: "admin",
+    requireSuperAdmin: true,
+  },
+  {
     key: "integration_credentials",
     label: "Entegrasyon Anahtarları",
     path: "/admin/integration-credentials",

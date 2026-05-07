@@ -484,6 +484,14 @@ try:
 except Exception as _wa_wh_err:
     logger.warning(f"WhatsApp webhook router skipped: {_wa_wh_err}")
 
+# Integrations Overview (super-admin) — kod hazır / API gerekli / geliştirme
+try:
+    from routers.integrations_overview import router as integrations_overview_router
+    app.include_router(integrations_overview_router)
+    logger.info("  ✅ Integrations Overview router loaded")
+except Exception as _io_err:
+    logger.warning(f"Integrations Overview router skipped: {_io_err}")
+
 # Security Classification & PII Management
 try:
     from security.classification_router import router as classification_router
