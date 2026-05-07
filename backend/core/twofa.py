@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 
 import pyotp
 from cryptography.fernet import Fernet, InvalidToken
-from passlib.context import CryptContext
+from core._pwd import BcryptContext
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ BACKUP_CODE_COUNT = 10
 BACKUP_CODE_LEN = 8  # 8 hex chars = 32 bits entropy per code
 
 # Bcrypt for backup codes — same context as passwords, separate purpose.
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd = BcryptContext()
 
 
 def _derive_key() -> bytes:

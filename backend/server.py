@@ -554,6 +554,13 @@ async def _startup():
         await load_credentials_to_env()
     except Exception as _e:
         logging.getLogger(__name__).warning("integration credentials startup skipped: %s", _e)
+    # Pre-create notifications compound indexes so the very first dashboard
+    # poll after a cold start hits an indexed query (was 1.2s, now < 50ms).
+    try:
+        from domains.pms.notification_router import _ensure_notif_indexes
+        await _ensure_notif_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("notif index prewarm skipped: %s", _e)
     try:
         from core.database import db as _db
         from scripts.ensure_demo_user import ensure_demo_user

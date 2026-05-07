@@ -33,8 +33,8 @@ class CredentialGuard:
         """Scan for users with known weak passwords or default credentials.
         Limits to admin/super_admin roles first, then samples others for performance.
         """
-        from passlib.context import CryptContext
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        from core._pwd import BcryptContext
+        pwd_ctx = BcryptContext()
 
         query: dict[str, Any] = {}
         if tenant_id:

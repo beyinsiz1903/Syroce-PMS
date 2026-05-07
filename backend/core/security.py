@@ -6,12 +6,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Silence harmless passlib/bcrypt version-detection warning emitted on import.
-# passlib 1.7.4 reads `bcrypt.__about__.__version__` which was removed in
-# bcrypt>=4.1, producing a noisy "(trapped) error reading bcrypt version"
-# warning even though hashing works correctly.
-logging.getLogger("passlib").setLevel(logging.ERROR)
-
 import base64
 import io
 import os
@@ -22,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
 
+from core._pwd import BcryptContext
 from core.database import db
 from models.enums import UserRole
 
@@ -98,8 +92,8 @@ def invalidate_user_doc_cache(user_id: str | None = None) -> None:
         # eviction has already happened so this worker is correct.
         pass
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing — direct bcrypt (passlib retired, see core/_pwd.py)
+pwd_context = BcryptContext()
 
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET')

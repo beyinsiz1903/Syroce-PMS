@@ -202,8 +202,8 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
 async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    from passlib.context import CryptContext
-    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    from core._pwd import BcryptContext
+    pwd_ctx = BcryptContext()
 
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}

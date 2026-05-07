@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from _pwd import BcryptContext
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
@@ -35,7 +35,7 @@ ACCOUNT_LOCKOUT_THRESHOLD = 5      # Başarısız deneme sayısı
 ACCOUNT_LOCKOUT_DURATION_MINUTES = 15  # Kilitleme süresi (dakika)
 ACCOUNT_LOCKOUT_WINDOW_MINUTES = 15    # Deneme penceresi (dakika)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = BcryptContext()
 security = HTTPBearer(auto_error=False)
 
 

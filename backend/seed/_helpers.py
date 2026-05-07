@@ -2,9 +2,9 @@
 import uuid
 from datetime import UTC, datetime
 
-from passlib.context import CryptContext
+from core._pwd import BcryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = BcryptContext()
 
 DEMO_EMAIL = "info@syroce.com"
 DEMO_PASSWORD = "demo123"

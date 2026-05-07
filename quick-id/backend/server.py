@@ -28,9 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("quickid")
 
-# Suppress cosmetic passlib bcrypt-version detection warning.
-logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
-logging.getLogger("passlib").setLevel(logging.ERROR)
+# passlib retired in favor of direct bcrypt (see _pwd.py); no warning suppression needed.
 
 # --- Local module imports (R3a split). Order matters: load_dotenv() above must
 # run first so DB/env-dependent modules see their environment. noqa: E402 below.

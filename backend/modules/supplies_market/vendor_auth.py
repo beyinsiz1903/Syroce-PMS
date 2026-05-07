@@ -14,7 +14,7 @@ from typing import Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
+from core._pwd import BcryptContext
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ if not JWT_SECRET:
 JWT_ALGORITHM = "HS256"
 TOKEN_TTL_HOURS = 24
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd = BcryptContext()
 _security = HTTPBearer(auto_error=False)
 
 

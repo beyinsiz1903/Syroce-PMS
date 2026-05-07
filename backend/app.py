@@ -124,6 +124,20 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     async def deployment_health_check():
         return {"status": "healthy"}
 
+    # ── Cosmetic root + favicon (kill noisy 404s in logs) ───────────
+    # Browsers and uptime checks request `/` and `/favicon.ico` even though
+    # the SPA is served by the frontend. Returning a quiet response keeps
+    # access logs clean without affecting the API.
+    from fastapi.responses import RedirectResponse, Response
+
+    @application.get("/", include_in_schema=False)
+    async def _root_redirect():
+        return RedirectResponse(url="/api/docs", status_code=307)
+
+    @application.get("/favicon.ico", include_in_schema=False)
+    async def _favicon_noop():
+        return Response(status_code=204)
+
     # ── Screenshots download ────────────────────────────────────────
     _backend_dir = Path(__file__).parent
     @application.get("/api/download/screenshots", include_in_schema=False)

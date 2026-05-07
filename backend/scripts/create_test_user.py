@@ -6,9 +6,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from datetime import datetime, timezone
 import uuid
-from passlib.context import CryptContext
+from core._pwd import BcryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = BcryptContext()
 
 async def create_test_user():
     # Connect to MongoDB
