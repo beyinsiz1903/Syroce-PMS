@@ -514,5 +514,18 @@ async def analyze_revenue(
             "last_month_revenue": last_month_revenue,
             "change_percent": ((current_month_revenue - last_month_revenue) / last_month_revenue * 100) if last_month_revenue > 0 else 0
         }
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        # LLM backend yapılandırılmamış / kullanılamıyor → 503 (geçici servis dışı).
+        # Frontend ErrorBoundary tetiklemek yerine "AI özelliği şu an
+        # kullanılamıyor" mesajı gösterebilsin diye 500'den ayrıştırıldı.
+        msg = str(e)
+        if "LLM backend not available" in msg:
+            raise HTTPException(
+                status_code=503,
+                detail="AI servisi şu anda yapılandırılmamış. Lütfen sistem yöneticisi ile iletişime geçin.",
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to analyze revenue: {msg}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to analyze revenue: {str(e)}")
