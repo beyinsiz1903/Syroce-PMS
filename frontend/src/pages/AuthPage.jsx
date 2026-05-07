@@ -604,7 +604,7 @@ const AuthPage = ({ onLogin }) => {
                       <div className="space-y-4">
                         <div className="bg-blue-50 p-4 rounded-lg">
                           <p className="text-sm text-blue-800 font-medium mb-2">
-                            📧 {t('auth.emailVerification')}
+                            {t('auth.emailVerification')}
                           </p>
                           <p className="text-xs text-blue-600">
                             <strong>{hotelRegisterData.email}</strong> {t('auth.verificationSentTo')}
@@ -656,7 +656,7 @@ const AuthPage = ({ onLogin }) => {
                       {isMobile && (
                         <div className="bg-indigo-50 p-3 rounded-lg mb-4">
                           <p className="text-sm text-indigo-800 font-medium">
-                            👤 {t('auth.guestMobileAccess')}
+                            {t('auth.guestMobileAccess')}
                           </p>
                           <p className="text-xs text-indigo-600 mt-1">
                             {t('auth.viewBookingsManageStay')}

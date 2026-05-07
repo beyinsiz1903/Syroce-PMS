@@ -57,11 +57,11 @@ const CRMNotes = ({ guestId }) => {
         content: newNote,
         category: 'general'
       });
-      toast.success('✓ Not eklendi');
+      toast.success('Not eklendi');
       setNewNote('');
       loadNotes();
     } catch (error) {
-      toast.error('✗ Not eklenemedi');
+      toast.error('Not eklenemedi');
     }
   };
 

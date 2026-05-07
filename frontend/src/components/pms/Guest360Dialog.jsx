@@ -74,13 +74,13 @@ const Guest360Dialog = ({
 <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
   <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
     <DialogHeader>
-      <DialogTitle className="text-2xl">🌟 Guest 360° Profile</DialogTitle>
+      <DialogTitle className="text-2xl">Guest 360° Profile</DialogTitle>
       <DialogDescription>Complete guest intelligence and relationship data</DialogDescription>
     </DialogHeader>
     
     {loadingGuest360 ? (
       <div className="text-center py-12">
-        <div className="text-4xl mb-4">⏳</div>
+        <div className="text-4xl mb-4"></div>
         <div>Loading guest profile...</div>
       </div>
     ) : guest360Data ? (
@@ -269,26 +269,26 @@ const Guest360Dialog = ({
               <div className="font-semibold mb-2">Current Benefits:</div>
               {guest360Data.profile?.loyalty_status === 'vip' || guest360Data.guest?.loyalty_tier === 'vip' ? (
                 <>
-                  <div className="flex items-center gap-2">✨ Suite Upgrades</div>
-                  <div className="flex items-center gap-2">🎁 Welcome Gifts</div>
-                  <div className="flex items-center gap-2">🍾 Complimentary Services</div>
-                  <div className="flex items-center gap-2">⚡ Priority Check-in/out</div>
+                  <div className="flex items-center gap-2">Suite Upgrades</div>
+                  <div className="flex items-center gap-2">Welcome Gifts</div>
+                  <div className="flex items-center gap-2">Complimentary Services</div>
+                  <div className="flex items-center gap-2">Priority Check-in/out</div>
                 </>
               ) : guest360Data.profile?.loyalty_status === 'gold' || guest360Data.guest?.loyalty_tier === 'gold' ? (
                 <>
-                  <div className="flex items-center gap-2">🔄 Free Room Upgrade</div>
-                  <div className="flex items-center gap-2">☕ Complimentary Breakfast</div>
-                  <div className="flex items-center gap-2">📅 Late Check-out</div>
+                  <div className="flex items-center gap-2">Free Room Upgrade</div>
+                  <div className="flex items-center gap-2">Complimentary Breakfast</div>
+                  <div className="flex items-center gap-2">Late Check-out</div>
                 </>
               ) : guest360Data.profile?.loyalty_status === 'silver' || guest360Data.guest?.loyalty_tier === 'silver' ? (
                 <>
-                  <div className="flex items-center gap-2">💰 10% Discount</div>
-                  <div className="flex items-center gap-2">🎯 Points on Stays</div>
+                  <div className="flex items-center gap-2">10% Discount</div>
+                  <div className="flex items-center gap-2">Points on Stays</div>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center gap-2">⭐ Earn Points</div>
-                  <div className="flex items-center gap-2">📧 Exclusive Offers</div>
+                  <div className="flex items-center gap-2">Earn Points</div>
+                  <div className="flex items-center gap-2">Exclusive Offers</div>
                 </>
               )}
             </div>
@@ -441,7 +441,7 @@ const Guest360Dialog = ({
                         
                         {booking.special_requests && (
                           <div className="mt-2 text-xs text-gray-600 italic">
-                            💬 &quot;{booking.special_requests}&quot;
+                            &quot;{booking.special_requests}&quot;
                           </div>
                         )}
                       </div>

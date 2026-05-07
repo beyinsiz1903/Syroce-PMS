@@ -14,7 +14,7 @@ const KitchenModal = ({ kitchenData, onClose }) => (
 
       {kitchenData.all_allergens?.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded p-2 text-xs">
-          <strong className="text-red-700">⚠ Alerjenler:</strong> {kitchenData.all_allergens.join(', ')}
+          <strong className="text-red-700">Alerjenler:</strong> {kitchenData.all_allergens.join(', ')}
         </div>
       )}
       {kitchenData.all_dietary_tags?.length > 0 && (

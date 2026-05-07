@@ -346,11 +346,11 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
   };
 
   const channelLogos = {
-    booking_com: '🅱️',
-    expedia: '🅴',
-    airbnb: '🅰️',
-    agoda: '🅰️',
-    tripadvisor: '🅣'
+    booking_com: 'B',
+    expedia: 'E',
+    airbnb: 'A',
+    agoda: 'A',
+    tripadvisor: 'T'
   };
 
   return (
@@ -626,7 +626,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
               )}
 
                           <div className="text-4xl">
-                            {channelLogos[conn.channel_type] || '🌐'}
+                            {channelLogos[conn.channel_type] || ''}
                           </div>
                           <div>
                             <h3 className="font-semibold text-lg">{conn.channel_name}</h3>
@@ -883,11 +883,11 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                               {getStatusBadge(reservation.status)}
                             </div>
                             <div className="text-sm text-gray-600 space-y-1">
-                              <p>📧 {reservation.guest_email}</p>
-                              <p>📞 {reservation.guest_phone}</p>
-                              <p>🏨 Room: {reservation.room_type}</p>
-                              <p>📅 {reservation.check_in} → {reservation.check_out}</p>
-                              <p>💰 ${reservation.total_amount}</p>
+                              <p>{reservation.guest_email}</p>
+                              <p>{reservation.guest_phone}</p>
+                              <p>Room: {reservation.room_type}</p>
+                              <p>{reservation.check_in} → {reservation.check_out}</p>
+                              <p>${reservation.total_amount}</p>
                               <p className="text-xs text-gray-500">
                                 Channel: {reservation.channel_type} | OTA ID: {reservation.ota_booking_id}
                               </p>

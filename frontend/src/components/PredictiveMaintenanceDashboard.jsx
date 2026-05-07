@@ -83,13 +83,13 @@ const PredictiveMaintenanceDashboard = () => {
   return (
     <div className="p-6 bg-white">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">🔮 Predictive Maintenance</h1>
+        <h1 className="text-3xl font-bold">Predictive Maintenance</h1>
         <button
           onClick={runAnalysis}
           disabled={loading}
           className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
         >
-          {loading ? '⏳ Analyzing...' : '🤖 Run AI Analysis'}
+          {loading ? 'Analyzing...' : 'Run AI Analysis'}
         </button>
       </div>
 
@@ -145,16 +145,16 @@ const PredictiveMaintenanceDashboard = () => {
                   <span className="text-lg font-bold">Room {alert.room_number}</span>
                   <span className="text-gray-600">{alert.equipment}</span>
                 </div>
-                <p className="text-gray-800 mb-2">🔍 {alert.prediction}</p>
+                <p className="text-gray-800 mb-2">{alert.prediction}</p>
                 {alert.days_until_failure && (
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-red-600 font-semibold">
-                      ⏰ Estimated failure in {alert.days_until_failure} days
+                      Estimated failure in {alert.days_until_failure} days
                     </span>
                   </div>
                 )}
                 <div className="bg-white p-3 rounded border mt-2">
-                  <p className="font-semibold text-sm text-gray-700 mb-1">✅ Recommended Action:</p>
+                  <p className="font-semibold text-sm text-gray-700 mb-1">Recommended Action:</p>
                   <p className="text-sm">{alert.recommended_action}</p>
                 </div>
               </div>
@@ -163,7 +163,7 @@ const PredictiveMaintenanceDashboard = () => {
                 onClick={() => assignTask(alert, idx)}
                 disabled={assigningId === idx || !!assignedIds[idx]}
               >
-                {assignedIds[idx] ? '✓ Assigned' : assigningId === idx ? 'Assigning…' : 'Assign Task'}
+                {assignedIds[idx] ? 'Assigned' : assigningId === idx ? 'Assigning…' : 'Assign Task'}
               </button>
             </div>
           </div>

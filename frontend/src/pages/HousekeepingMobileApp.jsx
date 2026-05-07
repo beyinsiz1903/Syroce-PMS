@@ -254,7 +254,7 @@ const HousekeepingMobileApp = ({ user }) => {
                     onClick={() => handleQuickStatusUpdate(room.id, room.room_number, 'inspected')}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
-                    ✓ Mark as Clean
+                    Mark as Clean
                   </Button>
                 )}
                 {room.hk_status === 'inspected' && (
@@ -263,7 +263,7 @@ const HousekeepingMobileApp = ({ user }) => {
                     onClick={() => handleQuickStatusUpdate(room.id, room.room_number, 'available')}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
-                    ✓ Mark as Ready
+                    Mark as Ready
                   </Button>
                 )}
               </div>

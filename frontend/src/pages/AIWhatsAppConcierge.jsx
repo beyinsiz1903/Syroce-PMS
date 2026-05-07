@@ -70,7 +70,7 @@ const AIWhatsAppConcierge = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🤖 AI WhatsApp Concierge</h1>
+            <h1 className="text-3xl font-bold">AI WhatsApp Concierge</h1>
             <p className="text-gray-600">24/7 Otomatik misafir hizmeti - Sıfır insan müdahalesi</p>
           </div>
         </div>
@@ -113,7 +113,7 @@ const AIWhatsAppConcierge = () => {
       {/* Test Interface */}
       <Card className="mb-6 bg-gradient-to-r from-green-50 to-blue-50">
         <CardHeader>
-          <CardTitle>🧪 Test Interface - AI Concierge Deneyin</CardTitle>
+          <CardTitle>Test Interface - AI Concierge Deneyin</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -195,7 +195,7 @@ const AIWhatsAppConcierge = () => {
                           <p className="text-sm">{conv.ai_response}</p>
                           {conv.action_taken && (
                             <Badge className="mt-2 bg-green-600">
-                              ✅ Aksiyon: {conv.action_taken}
+                              Aksiyon: {conv.action_taken}
                             </Badge>
                           )}
                         </div>

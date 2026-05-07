@@ -134,7 +134,7 @@ const AIRMSDashboard = () => {
             </div>
           </div>
           <div className="bg-blue-100 border-l-4 border-blue-500 p-4 rounded">
-            <p className="font-semibold text-blue-900">💡 {marketCompression.recommendation}</p>
+            <p className="font-semibold text-blue-900">{marketCompression.recommendation}</p>
           </div>
         </div>
       )}
@@ -146,21 +146,21 @@ const AIRMSDashboard = () => {
           disabled={loading}
           className="p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
-          🔍 Scrape Competitor Rates
+          Scrape Competitor Rates
         </button>
         <button
           onClick={calculateElasticity}
           disabled={loading}
           className="p-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
         >
-          📈 Calculate Elasticity
+          Calculate Elasticity
         </button>
         <button
           onClick={fetchMarketCompression}
           disabled={loading}
           className="p-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
         >
-          🎯 Refresh Compression
+          Refresh Compression
         </button>
       </div>
 

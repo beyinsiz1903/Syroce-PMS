@@ -151,7 +151,7 @@ const SystemPerformanceMonitor = ({ user }) => {
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`text-white hover:bg-white/20 p-2 text-xs ${autoRefresh ? 'bg-white/10' : ''}`}
             >
-              {autoRefresh ? '⏸ Otomatik' : '▶ Manuel'}
+              {autoRefresh ? 'Otomatik' : 'Manuel'}
             </Button>
             <Button
               variant="ghost"

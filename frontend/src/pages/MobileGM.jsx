@@ -502,7 +502,7 @@ const MobileGM = ({ user }) => {
                 <Target className="w-5 h-5 text-indigo-600" />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-900 mb-1">📊 Executive Snapshot</h4>
+                <h4 className="font-semibold text-gray-900 mb-1">Executive Snapshot</h4>
                 <p className="text-sm text-gray-600">
                   Tüm operasyonlarınızın özeti mobil cihazınızda. 
                   Detaylı analizler için tam dashboard'u ziyaret edin.
@@ -609,7 +609,7 @@ const MobileGM = ({ user }) => {
       <Dialog open={pickupModalOpen} onOpenChange={setPickupModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📊 Pickup Analizi</DialogTitle>
+            <DialogTitle>Pickup Analizi</DialogTitle>
           </DialogHeader>
           {pickupData && (
             <div className="space-y-4">
@@ -658,13 +658,13 @@ const MobileGM = ({ user }) => {
       <Dialog open={anomalyModalOpen} onOpenChange={setAnomalyModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>⚠️ Anomali Tespiti</DialogTitle>
+            <DialogTitle>Anomali Tespiti</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {anomalies.length === 0 ? (
               <div className="text-center py-8">
                 <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
-                <p className="text-gray-600">Hiç anomali tespit edilmedi! ✨</p>
+                <p className="text-gray-600">Hiç anomali tespit edilmedi!</p>
               </div>
             ) : (
               anomalies.map((anomaly, idx) => (
@@ -708,7 +708,7 @@ const MobileGM = ({ user }) => {
       <Dialog open={forecastModalOpen} onOpenChange={setForecastModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📅 Tahminler</DialogTitle>
+            <DialogTitle>Tahminler</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Card>
@@ -933,13 +933,13 @@ const MobileGM = ({ user }) => {
                       <p className={`text-sm ${
                         selectedProperty?.id === property.id ? 'text-red-100' : 'text-gray-600'
                       }`}>
-                        📍 {property.location}
+                        {property.location}
                       </p>
                       <div className="flex items-center space-x-3 mt-1">
                         <span className={`text-xs ${
                           selectedProperty?.id === property.id ? 'text-red-100' : 'text-gray-500'
                         }`}>
-                          🛏️ {property.rooms} oda
+                          {property.rooms} oda
                         </span>
                         <Badge className={
                           property.status === 'active' 
@@ -961,7 +961,7 @@ const MobileGM = ({ user }) => {
             {/* Portfolio Summary */}
             <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 mt-4">
               <CardContent className="p-4">
-                <p className="text-sm font-bold text-gray-900 mb-2">📊 Portföy Özeti</p>
+                <p className="text-sm font-bold text-gray-900 mb-2">Portföy Özeti</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="text-center p-2 bg-white rounded">
                     <p className="text-xs text-gray-600">Toplam Tesis</p>

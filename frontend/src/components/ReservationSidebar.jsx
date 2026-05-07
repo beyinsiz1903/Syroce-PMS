@@ -248,7 +248,7 @@ const ReservationSidebar = ({
               )}
               {booking.contracted_rate && (
                 <div className="bg-green-50 border border-green-200 rounded p-2 text-sm text-green-800">
-                  ✓ Contracted Rate Applied
+                  Contracted Rate Applied
                 </div>
               )}
             </div>
@@ -348,7 +348,7 @@ const ReservationSidebar = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Turndown Service:</span>
-                <span className="font-semibold">✓ Completed</span>
+                <span className="font-semibold">Completed</span>
               </div>
             </div>
           </CardContent>

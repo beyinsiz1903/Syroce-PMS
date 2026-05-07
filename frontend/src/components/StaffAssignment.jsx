@@ -134,7 +134,7 @@ const StaffAssignment = () => {
                     </Badge>
                     {member.role === 'Supervisor' && (
                       <Badge className="bg-yellow-100 text-yellow-700">
-                        ⭐ {member.role}
+                        {member.role}
                       </Badge>
                     )}
                   </div>
@@ -213,7 +213,7 @@ const StaffAssignment = () => {
               <Users className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900 mb-1">💡 Staff Management</h4>
+              <h4 className="font-semibold text-gray-900 mb-1">Staff Management</h4>
               <p className="text-sm text-gray-600">
                 {stats && `${stats.total} staff members managing ${stats.totalRooms} rooms. Average efficiency: ${stats.avgEfficiency}%.`}
                 Click on any staff member to view details and assign rooms.

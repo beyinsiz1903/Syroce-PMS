@@ -138,7 +138,7 @@ const MobileHousekeeping = ({ user }) => {
       setAllRooms(roomsRes.data || []);
     } catch (error) {
       console.error('Failed to load housekeeping data:', error);
-      toast.error('✗ Yükleme');
+      toast.error('Yükleme');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -216,10 +216,10 @@ const MobileHousekeeping = ({ user }) => {
   const handleQuickStatusUpdate = async (roomId, newStatus) => {
     try {
       await axios.put(`/housekeeping/room/${roomId}/status`, { new_status: newStatus });
-      toast.success('✓ Güncellendi');
+      toast.success('Güncellendi');
       loadData();
     } catch (error) {
-      toast.error('✗ Hata');
+      toast.error('Hata');
     }
   };
 
@@ -229,7 +229,7 @@ const MobileHousekeeping = ({ user }) => {
       setLostFoundItems(res.data.items || []);
       setLostFoundModalOpen(true);
     } catch (error) {
-      toast.error('✗ Kayıp Eşya');
+      toast.error('Kayıp Eşya');
     }
   };
 
@@ -239,7 +239,7 @@ const MobileHousekeeping = ({ user }) => {
       setInventoryItems(res.data.inventory_items || []);
       setInventoryModalOpen(true);
     } catch (error) {
-      toast.error('✗ Envanter');
+      toast.error('Envanter');
     }
   };
 
@@ -249,7 +249,7 @@ const MobileHousekeeping = ({ user }) => {
       setTaskAssignments(res.data.assignments || []);
       setTaskAssignmentsModalOpen(true);
     } catch (error) {
-      toast.error('✗ Görev');
+      toast.error('Görev');
     }
   };
 
@@ -259,7 +259,7 @@ const MobileHousekeeping = ({ user }) => {
       setStatusLogs(res.data.logs || []);
       setStatusLogsModalOpen(true);
     } catch (error) {
-      toast.error('✗ Kayıt');
+      toast.error('Kayıt');
     }
   };
 
@@ -273,10 +273,10 @@ const MobileHousekeeping = ({ user }) => {
         room_number: formData.get('room_number'),
         notes: formData.get('notes')
       });
-      toast.success('✓ Kaydedildi');
+      toast.success('Kaydedildi');
       loadLostFound();
     } catch (error) {
-      toast.error('✗ Hata');
+      toast.error('Hata');
     }
   };
 
@@ -290,13 +290,13 @@ const MobileHousekeeping = ({ user }) => {
     
     try {
       await axios.put(`/housekeeping/room/${pendingStatusChange.roomId}/status?new_status=${pendingStatusChange.newStatus}`);
-      toast.success(`✓ Oda ${pendingStatusChange.roomNumber}`);
+      toast.success(`Oda ${pendingStatusChange.roomNumber}`);
       loadData(); // Reload data
       setConfirmDialogOpen(false);
       setPendingStatusChange(null);
     } catch (error) {
       console.error('Status update error:', error);
-      toast.error('✗ Hata');
+      toast.error('Hata');
       setConfirmDialogOpen(false);
     }
   };
@@ -324,12 +324,12 @@ const MobileHousekeeping = ({ user }) => {
           axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`)
         )
       );
-      toast.success(`✓ ${selectedRooms.length} oda güncellendi`);
+      toast.success(`${selectedRooms.length} oda güncellendi`);
       setSelectedRooms([]);
       setBulkUpdateMode(false);
       loadData();
     } catch (error) {
-      toast.error('✗ Toplu güncelleme hatası');
+      toast.error('Toplu güncelleme hatası');
     }
   };
 
@@ -384,12 +384,12 @@ const MobileHousekeeping = ({ user }) => {
 
   const getStatusIcon = (status) => {
     switch(status) {
-      case 'dirty': return '🟥';
-      case 'cleaning': return '🟨';
-      case 'inspected': return '🟦';
-      case 'available': return '✅';
-      case 'occupied': return '🟪';
-      default: return '⬜';
+      case 'dirty': return '';
+      case 'cleaning': return '';
+      case 'inspected': return '';
+      case 'available': return '\u2713';
+      case 'occupied': return '';
+      default: return '';
     }
   };
 
@@ -473,28 +473,28 @@ const MobileHousekeeping = ({ user }) => {
                   className="h-8 text-xs bg-yellow-600 hover:bg-yellow-700"
                   onClick={() => handleBulkStatusUpdate('cleaning')}
                 >
-                  🧹 Başla
+                  Başla
                 </Button>
                 <Button
                   size="sm"
                   className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
                   onClick={() => handleBulkStatusUpdate('inspected')}
                 >
-                  ✓ Kontrol
+                  Kontrol
                 </Button>
                 <Button
                   size="sm"
                   className="h-8 text-xs bg-green-600 hover:bg-green-700"
                   onClick={() => handleBulkStatusUpdate('available')}
                 >
-                  ✓ Müsait
+                  Müsait
                 </Button>
                 <Button
                   size="sm"
                   className="h-8 text-xs bg-red-600 hover:bg-red-700"
                   onClick={() => handleBulkStatusUpdate('dirty')}
                 >
-                  🔴 Kirli
+                   Kirli
                 </Button>
               </div>
             </CardContent>
@@ -505,7 +505,7 @@ const MobileHousekeeping = ({ user }) => {
             className="w-full h-10 bg-indigo-600 hover:bg-indigo-700"
             onClick={() => setBulkUpdateMode(true)}
           >
-            📋 Toplu İşlem Modu
+            Toplu İşlem Modu
           </Button>
         )}
 
@@ -628,7 +628,7 @@ const MobileHousekeeping = ({ user }) => {
                         <p className="text-sm text-gray-600">{room.guest_name}</p>
                       </div>
                       <Badge className={room.ready ? 'bg-green-500' : 'bg-red-500'}>
-                        {room.ready ? '✓ Hazır' : '✗ Hazır Değil'}
+                        {room.ready ? 'Hazır' : 'Hazır Değil'}
                       </Badge>
                     </div>
                   ))}
@@ -711,7 +711,7 @@ const MobileHousekeeping = ({ user }) => {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center">
-                        <span className="text-2xl mr-2">🔴</span>
+                        <span className="text-2xl mr-2"></span>
                         <div className="text-left">
                           <p className="font-bold text-gray-900">Kirli Odalar</p>
                           <p className="text-xs text-gray-500">{getRoomsByStatus('dirty').length} oda</p>
@@ -744,7 +744,7 @@ const MobileHousekeeping = ({ user }) => {
                               className="h-7 text-xs px-3 bg-yellow-600 hover:bg-yellow-700"
                               onClick={() => handleStatusChangeRequest(room.id, room.room_number, room.status, getNextStatus(room.status))}
                             >
-                              🧹 Başla
+                              Başla
                             </Button>
                           )}
                         </div>
@@ -764,7 +764,7 @@ const MobileHousekeeping = ({ user }) => {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center">
-                        <span className="text-2xl mr-2">🟡</span>
+                        <span className="text-2xl mr-2"></span>
                         <div className="text-left">
                           <p className="font-bold text-gray-900">{t("housekeeping.cleaning")}</p>
                           <p className="text-xs text-gray-500">{getRoomsByStatus('cleaning').length} oda</p>
@@ -788,7 +788,7 @@ const MobileHousekeeping = ({ user }) => {
                             className="h-7 text-xs px-3 bg-green-600 hover:bg-green-700"
                             onClick={() => handleStatusChangeRequest(room.id, room.room_number, room.status, getNextStatus(room.status))}
                           >
-                            ✓ Temizlendi
+                            Temizlendi
                           </Button>
                         </div>
                       </div>
@@ -807,7 +807,7 @@ const MobileHousekeeping = ({ user }) => {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center">
-                        <span className="text-2xl mr-2">🔵</span>
+                        <span className="text-2xl mr-2"></span>
                         <div className="text-left">
                           <p className="font-bold text-gray-900">Kontrol Edildi</p>
                           <p className="text-xs text-gray-500">{getRoomsByStatus('inspected').length} oda</p>
@@ -831,7 +831,7 @@ const MobileHousekeeping = ({ user }) => {
                             className="h-7 text-xs px-3 bg-blue-600 hover:bg-blue-700"
                             onClick={() => handleStatusChangeRequest(room.id, room.room_number, room.status, getNextStatus(room.status))}
                           >
-                            ✓ Müsait Yap
+                            Müsait Yap
                           </Button>
                         </div>
                       </div>
@@ -850,7 +850,7 @@ const MobileHousekeeping = ({ user }) => {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center">
-                        <span className="text-2xl mr-2">🟢</span>
+                        <span className="text-2xl mr-2"></span>
                         <div className="text-left">
                           <p className="font-bold text-gray-900">Müsait Odalar</p>
                           <p className="text-xs text-gray-500">{getRoomsByStatus('available').length} oda</p>
@@ -874,7 +874,7 @@ const MobileHousekeeping = ({ user }) => {
                             className="h-7 text-xs px-3 bg-red-600 hover:bg-red-700"
                             onClick={() => handleStatusChangeRequest(room.id, room.room_number, room.status, getNextStatus(room.status))}
                           >
-                            🧹 Kirli
+                            Kirli
                           </Button>
                         </div>
                       </div>
@@ -905,7 +905,7 @@ const MobileHousekeeping = ({ user }) => {
                     </p>
                   </div>
                   <Badge variant="outline" className="bg-white">
-                    {staff.performance_rating}⭐
+                    {staff.performance_rating}
                   </Badge>
                 </div>
               ))}
@@ -955,7 +955,7 @@ const MobileHousekeeping = ({ user }) => {
       <Dialog open={photoModalOpen} onOpenChange={setPhotoModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📷 Fotoğraf & Kalite Kontrol</DialogTitle>
+            <DialogTitle>Fotoğraf & Kalite Kontrol</DialogTitle>
           </DialogHeader>
           {selectedPhotoRoom ? (
             <div className="space-y-4">
@@ -1042,7 +1042,7 @@ const MobileHousekeeping = ({ user }) => {
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>🔍 Kayıp Eşya ({lostFoundItems.length})</span>
+              <span>Kayıp Eşya ({lostFoundItems.length})</span>
               <Dialog>
                 <DialogTrigger asChild>
                   <Button size="sm" className="bg-amber-600">
@@ -1104,7 +1104,7 @@ const MobileHousekeeping = ({ user }) => {
                     <div className="flex-1">
                       <p className="font-bold text-gray-900">{item.item_description}</p>
                       <p className="text-sm text-gray-600">
-                        📍 {item.location_found} • Oda {item.room_number || 'N/A'}
+                        {item.location_found} • Oda {item.room_number || 'N/A'}
                       </p>
                       <p className="text-xs text-gray-500">
                         Bulan: {item.found_by} • {new Date(item.found_date).toLocaleDateString('tr-TR')}
@@ -1129,7 +1129,7 @@ const MobileHousekeeping = ({ user }) => {
       <Dialog open={inventoryModalOpen} onOpenChange={setInventoryModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📦 Envanter ({inventoryItems.length})</DialogTitle>
+            <DialogTitle>Envanter ({inventoryItems.length})</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {inventoryItems.map((item) => (
@@ -1157,7 +1157,7 @@ const MobileHousekeeping = ({ user }) => {
                   </div>
                   {item.is_low_stock && (
                     <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-700">
-                      ⚠️ Düşük stok uyarısı! Yeniden sipariş gerekli.
+                      Düşük stok uyarısı! Yeniden sipariş gerekli.
                     </div>
                   )}
                 </CardContent>
@@ -1171,7 +1171,7 @@ const MobileHousekeeping = ({ user }) => {
       <Dialog open={taskAssignmentsModalOpen} onOpenChange={setTaskAssignmentsModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>🗺️ Görev Dağılımı ({taskAssignments.length} Personel)</DialogTitle>
+            <DialogTitle>Görev Dağılımı ({taskAssignments.length} Personel)</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             {taskAssignments.map((staff, idx) => (
@@ -1180,9 +1180,9 @@ const MobileHousekeeping = ({ user }) => {
                   <div className="flex items-center justify-between mb-2">
                     <p className="font-bold text-gray-900">{staff.staff_name}</p>
                     <div className="flex space-x-2">
-                      <Badge className="bg-green-500">{staff.completed} ✓</Badge>
-                      <Badge className="bg-yellow-500">{staff.in_progress} ⏳</Badge>
-                      <Badge className="bg-gray-500">{staff.pending} ⏸</Badge>
+                      <Badge className="bg-green-500">{staff.completed}</Badge>
+                      <Badge className="bg-yellow-500">{staff.in_progress} </Badge>
+                      <Badge className="bg-gray-500">{staff.pending}</Badge>
                     </div>
                   </div>
                   <div className="text-xs text-gray-600 mb-2">
@@ -1207,7 +1207,7 @@ const MobileHousekeeping = ({ user }) => {
       <Dialog open={statusLogsModalOpen} onOpenChange={setStatusLogsModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📝 Durum Değişim Kayıtları ({statusLogs.length})</DialogTitle>
+            <DialogTitle>Durum Değişim Kayıtları ({statusLogs.length})</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {statusLogs.map((log) => (
@@ -1239,9 +1239,9 @@ const MobileHousekeeping = ({ user }) => {
             <AlertDialogTitle className="text-base font-bold flex items-center space-x-2">
               <span className="text-2xl">
                 {pendingStatusChange && (
-                  pendingStatusChange.currentStatus === 'dirty' ? '🧹' :
-                  pendingStatusChange.currentStatus === 'cleaning' ? '✓' :
-                  pendingStatusChange.currentStatus === 'inspected' ? '🟢' : '🔴'
+                  pendingStatusChange.currentStatus === 'dirty' ? '' :
+                  pendingStatusChange.currentStatus === 'cleaning' ? '' :
+                  pendingStatusChange.currentStatus === 'inspected' ? '' : ''
                 )}
               </span>
               <span>

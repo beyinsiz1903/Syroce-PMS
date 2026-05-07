@@ -131,11 +131,11 @@ const DynamicPricing = () => {
                   toast.success(`Fiyat güncellendi! €${recommendation.recommended_price} tüm kanallara gönderildi.`);
                   loadRecommendation();
                 } catch (error) {
-                  toast.success(`✨ Fiyat uygulandı: €${recommendation.recommended_price} (Demo mode - gerçekte tüm OTA'lara gönderilir)`);
+                  toast.success(`Fiyat uygulandı: €${recommendation.recommended_price} (Demo mode - gerçekte tüm OTA'lara gönderilir)`);
                 }
               }}>
                 <Zap className="w-4 h-4 mr-2" />
-                ⚡ Fiyatı Uygula ve Tüm Kanallara Gönder
+                Fiyatı Uygula ve Tüm Kanallara Gönder
               </Button>
             </CardContent>
           </Card>

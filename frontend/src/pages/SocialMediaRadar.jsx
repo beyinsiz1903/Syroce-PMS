@@ -69,7 +69,7 @@ const SocialMediaRadar = () => {
             {alerts.map((alert, idx) => (
               <div key={idx} className="bg-white p-4 rounded-lg">
                 <p className="font-bold text-red-600">{alert.description}</p>
-                <p className="text-sm mt-2">🎯 {alert.recommended_action}</p>
+                <p className="text-sm mt-2">{alert.recommended_action}</p>
               </div>
             ))}
           </CardContent>

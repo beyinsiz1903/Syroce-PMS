@@ -23,12 +23,12 @@ const STATUS_COLORS = {
 };
 
 const TYPE_ICONS = {
-  housekeeping: '🏠',
-  maintenance: '🔧',
-  concierge: '🛎',
-  room_service: '🍽',
-  amenity: '🧴',
-  complaint: '⚠',
+  housekeeping: '',
+  maintenance: '',
+  concierge: '',
+  room_service: '',
+  amenity: '',
+  complaint: '',
 };
 
 export default function GuestJourneyDashboard({ user, tenant, onLogout }) {

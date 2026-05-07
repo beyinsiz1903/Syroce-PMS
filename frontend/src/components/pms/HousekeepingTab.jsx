@@ -31,7 +31,7 @@ const AssignPopover = ({ task, staffOptions, currentUserName, onAssign }) => {
       <PopoverContent className="w-64 p-2 space-y-1" align="end">
         {currentUserName && (
           <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(currentUserName)}>
-            🙋 Bana ata ({currentUserName})
+            Bana ata ({currentUserName})
           </Button>
         )}
         {staffOptions.length > 0 && (
@@ -284,7 +284,7 @@ const HousekeepingTab = ({
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs flex items-center justify-between">
                     <span className={room.ready ? 'text-green-600 font-semibold' : 'text-yellow-600'}>
-                      {room.ready ? `✓ ${tc('ready')}` : `⚠ ${room.room_status}`}
+                      {room.ready ? `${tc('ready')}` : `${room.room_status}`}
                     </span>
                   </div>
                 </div>
@@ -343,7 +343,7 @@ const HousekeepingTab = ({
                             }`}
                             onClick={() => quickUpdateRoomStatus(room.id, 'cleaning')}
                           >
-                            {tc('clean')} {needsCleaning && '⚡'}
+                            {tc('clean')}
                           </Button>
                         )}
                         {room.status === 'cleaning' && (
@@ -515,10 +515,10 @@ const HousekeepingTab = ({
                         }`}
                       >
                         {task.status === 'completed'
-                          ? `✅ ${tc('completed')}`
+                          ? `${tc('completed')}`
                           : task.status === 'in_progress'
-                          ? `🔄 ${tc('ongoing')}`
-                          : `⏸️ ${tc('waiting')}`}
+                          ? `${tc('ongoing')}`
+                          : `${tc('waiting')}`}
                       </span>
                     </div>
                   </div>

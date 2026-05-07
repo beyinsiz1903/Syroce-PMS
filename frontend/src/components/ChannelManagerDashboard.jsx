@@ -29,7 +29,7 @@ const ChannelManagerDashboard = () => {
       setRevenueByChannel(revenueRes.data);
     } catch (error) {
       console.error('Failed to load channel manager data:', error);
-      toast.error('✗ Veri yüklenemedi');
+      toast.error('Veri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -41,12 +41,12 @@ const ChannelManagerDashboard = () => {
 
   const getChannelLogo = (channel) => {
     const logos = {
-      booking_com: '🏛️',
-      expedia: '✈️',
-      airbnb: '🏠',
-      direct: '🌐'
+      booking_com: 'BC',
+      expedia: 'EX',
+      airbnb: 'AB',
+      direct: ''
     };
-    return logos[channel] || '🏛️';
+    return logos[channel] || 'CH';
   };
 
   return (

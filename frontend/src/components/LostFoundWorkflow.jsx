@@ -35,7 +35,7 @@ const LostFoundWorkflow = () => {
       const response = await axios.get(`/housekeeping/lost-found/item/${itemId}/history`);
       setHistory(response.data);
     } catch (error) {
-      toast.error('✗ Geçmiş yüklenemedi');
+      toast.error('Geçmiş yüklenemedi');
     }
   };
 
@@ -53,11 +53,11 @@ const LostFoundWorkflow = () => {
         item_id: itemId,
         ...statusData
       });
-      toast.success('✓ Durum güncellendi');
+      toast.success('Durum güncellendi');
       loadItems();
       setDetailsOpen(false);
     } catch (error) {
-      toast.error('✗ Güncelleme başarısız');
+      toast.error('Güncelleme başarısız');
     }
   };
 
@@ -71,11 +71,11 @@ const LostFoundWorkflow = () => {
         from_location: selectedItem.current_location || selectedItem.location_found,
         to_location: toLocation
       });
-      toast.success('✓ Transfer tamamlandı');
+      toast.success('Transfer tamamlandı');
       loadItems();
       loadItemHistory(itemId);
     } catch (error) {
-      toast.error('✗ Transfer başarısız');
+      toast.error('Transfer başarısız');
     }
   };
 
@@ -101,13 +101,13 @@ const LostFoundWorkflow = () => {
 
   const getCategoryIcon = (category) => {
     const icons = {
-      electronics: '📱',
-      clothing: '👔',
-      jewelry: '💍',
-      documents: '📄',
-      other: '📦'
+      electronics: '',
+      clothing: '',
+      jewelry: '',
+      documents: '',
+      other: ''
     };
-    return icons[category] || '📦';
+    return icons[category] || '';
   };
 
   if (loading) {

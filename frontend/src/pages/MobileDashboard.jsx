@@ -199,7 +199,7 @@ const MobileDashboard = ({ user, onLogout }) => {
         <Card className="mb-4 border-amber-200 bg-amber-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              🔔 {t('mobileDashboard.todaysAlerts')}
+              {t('mobileDashboard.todaysAlerts')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -274,7 +274,7 @@ const MobileDashboard = ({ user, onLogout }) => {
                 <Smartphone className="w-5 h-5 text-blue-600" />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-900 mb-1">📱 {t('mobileDashboard.mobileOptimized')}</h4>
+                <h4 className="font-semibold text-gray-900 mb-1">{t('mobileDashboard.mobileOptimized')}</h4>
                 <p className="text-sm text-gray-600">
                   {t('mobileDashboard.mobileOptimizedDesc')}
                 </p>

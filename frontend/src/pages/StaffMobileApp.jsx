@@ -145,7 +145,7 @@ const StaffMobileApp = ({ user }) => {
 
               {task.room_number && (
                 <div className="text-sm bg-blue-50 p-2 rounded mb-2">
-                  📍 Room {task.room_number}
+                  Oda {task.room_number}
                 </div>
               )}
 
@@ -188,7 +188,7 @@ const StaffMobileApp = ({ user }) => {
                 )}
                 {task.status === 'completed' && (
                   <div className="flex-1 text-center text-green-600 font-semibold text-sm">
-                    ✓ Completed
+                    Completed
                   </div>
                 )}
               </div>

@@ -62,7 +62,7 @@ const KitchenDisplay = () => {
       await axios.put(`/fnb/kitchen-order/${orderId}/status`, null, {
         params: { status },
       });
-      toast.success(`✓ Sipariş ${status}`);
+      toast.success(`Sipariş ${status}`);
     } catch (error) {
       toast.error('Hata');
     }
@@ -71,7 +71,7 @@ const KitchenDisplay = () => {
   const completeOrder = async (orderId) => {
     try {
       await axios.post(`/fnb/kitchen-order/${orderId}/complete`);
-      toast.success('✓ Sipariş hazır!');
+      toast.success('Sipariş hazır!');
       loadOrders();
     } catch (error) {
       toast.error('Hata');
@@ -141,7 +141,7 @@ const KitchenDisplay = () => {
   }, [urgentOrders]);
 
   const triggerLocalNotification = async (order) => {
-    const title = `⚠️ ${order.table_name || 'Order'} gecikiyor`;
+    const title = `${order.table_name || 'Order'} gecikiyor`;
     const body = `Sipariş ${getElapsedTime(order.ordered_at)} dk oldu. İstasyon: ${order.items?.[0]?.station || 'Genel'}`;
 
     if ('Notification' in window && Notification.permission === 'granted') {
@@ -171,7 +171,7 @@ const KitchenDisplay = () => {
               <Home className="w-6 h-6" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">🍳 {t('dashboard.kitchenDisplay')}</h1>
+              <h1 className="text-3xl font-bold">{t('dashboard.kitchenDisplay')}</h1>
               <p className="text-sm text-amber-100">Real-time Order Management</p>
             </div>
           </div>
@@ -324,7 +324,7 @@ const KitchenDisplay = () => {
                           <div>
                             <p className="text-xl font-bold">{item.quantity}x {item.name}</p>
                             {item.notes && (
-                              <p className="text-sm text-yellow-200 mt-1">⚠️ {item.notes}</p>
+                              <p className="text-sm text-yellow-200 mt-1">{item.notes}</p>
                             )}
                             {item.modifications && item.modifications.length > 0 && (
                               <div className="mt-1 space-y-1">
@@ -362,7 +362,7 @@ const KitchenDisplay = () => {
                       className="w-full h-16 text-xl font-bold bg-green-600 hover:bg-green-700"
                       onClick={() => completeOrder(order.id)}
                     >
-                      ✓ SİPARİŞ HAZIR
+                      SİPARİŞ HAZIR
                     </Button>
                   ) : (
                     <Button 

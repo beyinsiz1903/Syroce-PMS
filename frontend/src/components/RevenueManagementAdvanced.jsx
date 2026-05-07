@@ -344,7 +344,7 @@ const RevenueManagementAdvanced = () => {
                     <div className="bg-yellow-50 p-4 rounded-lg">
                       <div className="text-sm text-gray-600 mb-1">Avg Rating</div>
                       <div className="text-2xl font-bold text-yellow-600">
-                        {compsetData.compset_summary?.avg_rating} ⭐
+                        {compsetData.compset_summary?.avg_rating}
                       </div>
                     </div>
                   </div>

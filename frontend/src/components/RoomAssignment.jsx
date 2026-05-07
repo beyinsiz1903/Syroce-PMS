@@ -25,7 +25,7 @@ const RoomAssignment = ({ booking }) => {
       });
       setAvailableRooms(response.data.rooms || []);
     } catch (error) {
-      toast.error('✗ Odalar yüklenemedi');
+      toast.error('Odalar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -37,10 +37,10 @@ const RoomAssignment = ({ booking }) => {
         booking_id: booking.id,
         room_id: roomId
       });
-      toast.success(`✓ Oda ${roomNumber} atandı`);
+      toast.success(`Oda ${roomNumber} atandı`);
       setDialogOpen(false);
     } catch (error) {
-      toast.error('✗ Oda atanamadı');
+      toast.error('Oda atanamadı');
     }
   };
 

@@ -86,7 +86,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
     <>
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">👥 Kullanıcı Role Yönetimi</h1>
+          <h1 className="text-3xl font-bold">Kullanıcı Role Yönetimi</h1>
           <p className="text-gray-600">Tüm kullanıcıların role'lerini görüntüleyin ve güncelleyin (Super Admin)</p>
         </div>
 
@@ -114,7 +114,7 @@ const UserRoleManager = ({ user, tenant, onLogout, roleOptions }) => {
               </div>
               <div className="flex items-end">
                 <Button onClick={loadUsers} disabled={loading}>
-                  🔍 Ara
+                  Ara
                 </Button>
               </div>
             </div>

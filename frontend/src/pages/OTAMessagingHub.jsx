@@ -271,7 +271,7 @@ const OTAMessagingHub = () => {
                     className="text-xs"
                   >
                     <FileText className="w-3 h-3 mr-2" />
-                    Message Templates {upsellData && '(💰 Upsell Available)'}
+                    Message Templates {upsellData && '(Upsell Available)'}
                   </Button>
                   
                   {showTemplates && (
@@ -280,12 +280,12 @@ const OTAMessagingHub = () => {
                       <div 
                         onClick={() => applyTemplate({
                           name: 'Upgrade Offer',
-                          content: `Dear {GUEST_NAME},\n\nWe have an exclusive upgrade opportunity for you! 🌟\n\nUpgrade Type: {UPGRADE_TYPE}\nSpecial Price: ${upsellData?.offers?.[0]?.price || '99'}\n\n{BENEFITS}\n\nThis offer is valid for 24 hours. Reply YES to confirm!\n\nBest regards,\n{HOTEL_NAME}`
+                          content: `Dear {GUEST_NAME},\n\nWe have an exclusive upgrade opportunity for you! \n\nUpgrade Type: {UPGRADE_TYPE}\nSpecial Price: ${upsellData?.offers?.[0]?.price || '99'}\n\n{BENEFITS}\n\nThis offer is valid for 24 hours. Reply YES to confirm!\n\nBest regards,\n{HOTEL_NAME}`
                         })}
                         className="p-3 bg-white rounded border hover:border-green-500 cursor-pointer hover:shadow-md transition"
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-sm">🎁 Upgrade Offer</span>
+                          <span className="font-semibold text-sm">Upgrade Offer</span>
                           {upsellData && (
                             <Badge className="bg-green-500 text-xs">AI-Powered</Badge>
                           )}
@@ -341,7 +341,7 @@ const OTAMessagingHub = () => {
                 {/* Upsell Data Indicator */}
                 {upsellData && upsellData.offers?.length > 0 && (
                   <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
-                    💰 AI Upsell Available: {upsellData.offers[0].type} - ${upsellData.offers[0].price} 
+                    AI Upsell Available: {upsellData.offers[0].type} - ${upsellData.offers[0].price} 
                     <span className="text-green-700 ml-2">({Math.round(upsellData.offers[0].confidence * 100)}% confidence)</span>
                   </div>
                 )}

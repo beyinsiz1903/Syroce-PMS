@@ -657,8 +657,8 @@ const GuestPortal = ({ user, onLogout }) => {
                       <div className="bg-teal-50 border border-teal-200 rounded p-3">
                         <p className="text-sm text-teal-800">
                           {cleaningRequestType === 'urgent' 
-                            ? '⚡ Acil temizlik: 30-60 dakika içinde'
-                            : '⏰ Normal temizlik: 2-3 saat içinde'}
+                            ? 'Acil temizlik: 30-60 dakika içinde'
+                            : 'Normal temizlik: 2-3 saat içinde'}
                         </p>
                       </div>
 
@@ -700,7 +700,7 @@ const GuestPortal = ({ user, onLogout }) => {
                     <div className="space-y-4">
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <p className="text-sm text-blue-800">
-                          ✅ Your check-in is almost complete! Please review your details below.
+                          Your check-in is almost complete! Please review your details below.
                         </p>
                       </div>
                       
@@ -809,7 +809,7 @@ const GuestPortal = ({ user, onLogout }) => {
                             
                             {booking.qr_code_data ? (
                               <div className="bg-white rounded-lg p-6 mx-auto inline-block">
-                                <div className="text-6xl">🔑</div>
+                                <div className="text-6xl"></div>
                                 <p className="text-gray-800 font-mono text-sm mt-2">{booking.confirmation_number}</p>
                               </div>
                             ) : (
@@ -879,7 +879,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Room Upgrade',
                       description: 'Upgrade to a deluxe suite with panoramic city views',
                       price: 50,
-                      icon: '🏆',
+                      icon: '',
                       category: 'Room'
                     },
                     {
@@ -887,7 +887,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Late Checkout',
                       description: 'Extend your stay until 4 PM (subject to availability)',
                       price: 30,
-                      icon: '🕐',
+                      icon: '',
                       category: 'Service'
                     },
                     {
@@ -895,7 +895,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Breakfast Package',
                       description: 'Daily continental breakfast for 2 guests',
                       price: 25,
-                      icon: '🍳',
+                      icon: '',
                       category: 'Dining'
                     },
                     {
@@ -903,7 +903,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Spa Treatment',
                       description: '60-minute relaxing massage at our wellness center',
                       price: 80,
-                      icon: '💆',
+                      icon: '',
                       category: 'Wellness'
                     },
                     {
@@ -911,7 +911,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Airport Transfer',
                       description: 'Private car service to/from the airport',
                       price: 45,
-                      icon: '🚗',
+                      icon: '',
                       category: 'Transport'
                     },
                     {
@@ -919,7 +919,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       title: 'Welcome Package',
                       description: 'Champagne, chocolates, and fresh flowers in your room',
                       price: 35,
-                      icon: '🍾',
+                      icon: '',
                       category: 'Amenity'
                     }
                   ];

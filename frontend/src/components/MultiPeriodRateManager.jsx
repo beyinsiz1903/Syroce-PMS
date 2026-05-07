@@ -167,7 +167,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
 
                 {/* Period Display */}
                 <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-                  📅 {period.start_date ? new Date(period.start_date).toLocaleDateString('tr-TR') : '??.??.????'} 
+                  {period.start_date ? new Date(period.start_date).toLocaleDateString('tr-TR') : '??.??.????'} 
                   {' '}-{' '}
                   {period.end_date ? new Date(period.end_date).toLocaleDateString('tr-TR') : '??.??.????'}
                   {period.rate > 0 && (

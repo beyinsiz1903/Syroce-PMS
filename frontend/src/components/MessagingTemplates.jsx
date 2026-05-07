@@ -303,7 +303,7 @@ const MessagingTemplates = () => {
               <MessageSquare className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900 mb-1">💬 Multi-Channel Messaging</h4>
+              <h4 className="font-semibold text-gray-900 mb-1">Multi-Channel Messaging</h4>
               <p className="text-sm text-gray-600">
                 Send automated messages via WhatsApp, SMS, and Email. 
                 Templates support dynamic variables for personalization. 

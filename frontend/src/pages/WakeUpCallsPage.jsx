@@ -125,7 +125,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       fresh.forEach(c => {
         try {
-          const n = new Notification('⏰ Uyandırma Çağrısı Zamanı', {
+          const n = new Notification('Uyandırma Çağrısı Zamanı', {
             body: `Oda ${c.room_number}${c.guest_name ? ` — ${c.guest_name}` : ''} • ${c.wake_time}`,
             tag: `wakeup-${c.id}`,
             requireInteraction: true,
@@ -137,7 +137,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
 
     // Toast (her zaman gösterilir, izin gerekmez)
     fresh.forEach(c => {
-      toast.warning(`⏰ Oda ${c.room_number} — uyandırma saati (${c.wake_time})`, {
+      toast.warning(`Oda ${c.room_number} — uyandırma saati (${c.wake_time})`, {
         duration: 15000,
       });
     });

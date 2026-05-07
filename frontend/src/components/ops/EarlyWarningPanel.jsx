@@ -21,6 +21,7 @@ import {
   Play,
   Square,
   Sparkles,
+  X,
 } from 'lucide-react';
 
 const API = "";
@@ -519,7 +520,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
                 Uyarı Detayı
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setSelectedWarning(null)}>
-                ✕
+                <X className="w-4 h-4" />
               </Button>
             </div>
           </CardHeader>

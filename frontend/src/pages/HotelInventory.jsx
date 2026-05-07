@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen, X,
-  ArrowDownCircle, ArrowUpCircle, Edit3, BedDouble, Trash2, Play,
+  ArrowDownCircle, ArrowUpCircle, Edit3, BedDouble, Droplet, Trash2, Play,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -245,12 +245,12 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
 
   const getCategoryIcon = (category) => {
     const icons = {
-      'Banyo Ürünleri': '🛁',
-      'Oda Ürünleri': '🏠',
-      'Yatak Ürünleri': '🛏️',
-      'Temizlik': '🧹'
+      'Banyo Ürünleri': '',
+      'Oda Ürünleri': '',
+      'Yatak Ürünleri': '',
+      'Temizlik': ''
     };
-    return icons[category] || '📦';
+    return icons[category] || '';
   };
 
   if (loading) {
@@ -395,7 +395,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                       <p className="font-semibold">{item.name}</p>
                                       {item.is_consumable === false && (
                                         <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
-                                          🛏️ Çok Kullanımlık
+                                          Çok Kullanımlık
                                         </Badge>
                                       )}
                                     </div>
@@ -454,7 +454,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     onClick={() => toggleConsumable(item)}
                                     title={item.is_consumable === false ? 'Çok kullanımlık (stoktan düşmez) — değiştir' : 'Tek kullanımlık — değiştir'}
                                   >
-                                    {item.is_consumable === false ? '🛏️' : '🧴'}
+                                    {item.is_consumable === false ? <BedDouble className="w-3.5 h-3.5" /> : <Droplet className="w-3.5 h-3.5" />}
                                   </Button>
                                 </div>
                                 {item.quantity <= item.reorder_level && (
@@ -652,7 +652,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                 {alerts.length > 0 ? (
                   <div className="space-y-2">
                     <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                      <p className="font-semibold mb-2">📦 Toplu Sipariş Özeti</p>
+                      <p className="font-semibold mb-2">Toplu Sipariş Özeti</p>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
                           <p className="text-gray-600">Toplam Ürün:</p>
@@ -837,7 +837,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                   <>
                     {consumables.length > 0 && (
                       <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm">
-                        <p className="font-medium text-amber-900 mb-2">🧴 Stoktan düşecek (tek kullanımlık):</p>
+                        <p className="font-medium text-amber-900 mb-2">Stoktan düşecek (tek kullanımlık):</p>
                         <ul className="space-y-1">
                           {consumables.map((ln, i) => (
                             <li key={i} className="flex justify-between">
@@ -850,7 +850,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                     )}
                     {reusables.length > 0 && (
                       <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 text-sm">
-                        <p className="font-medium text-indigo-900 mb-2">🛏️ Sadece odaya konacak (çok kullanımlık — stoktan düşmez):</p>
+                        <p className="font-medium text-indigo-900 mb-2">Sadece odaya konacak (çok kullanımlık — stoktan düşmez):</p>
                         <ul className="space-y-1">
                           {reusables.map((ln, i) => (
                             <li key={i} className="flex justify-between">
@@ -1044,13 +1044,13 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                     <button type="button"
                       className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable !== false ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
                       onClick={() => setNewItem({ ...newItem, is_consumable: true })}>
-                      <div className="font-semibold text-sm">🧴 Tek Kullanımlık</div>
+                      <div className="font-semibold text-sm">Tek Kullanımlık</div>
                       <div className="text-xs text-gray-600 mt-0.5">Kullanınca tükenir, stoktan düşer (şampuan, sabun, kahve)</div>
                     </button>
                     <button type="button"
                       className={`flex-1 border rounded-lg p-3 text-left transition ${newItem.is_consumable === false ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
                       onClick={() => setNewItem({ ...newItem, is_consumable: false })}>
-                      <div className="font-semibold text-sm">🛏️ Çok Kullanımlık</div>
+                      <div className="font-semibold text-sm">Çok Kullanımlık</div>
                       <div className="text-xs text-gray-600 mt-0.5">Tekrar tekrar kullanılır, stoktan düşmez (havlu, nevresim, bornoz)</div>
                     </button>
                   </div>

@@ -45,7 +45,7 @@ const StopSaleManager = ({ operators = [] }) => {
       });
 
       if (newStatus) {
-        toast.success(`🛑 ${operatorName} için stop-sale aktif edildi!`);
+        toast.success(`${operatorName} için stop-sale aktif edildi!`);
       } else {
         toast.success(`${operatorName} için stop-sale kaldırıldı!`);
       }
@@ -116,11 +116,11 @@ const StopSaleManager = ({ operators = [] }) => {
                       <div className="text-xs text-gray-600">
                         {isStopSale ? (
                           <span className="text-red-700 font-semibold">
-                            🛑 Stop-Sale Aktif - Satışlar Durdu
+                            Stop-Sale Aktif - Satışlar Durdu
                           </span>
                         ) : (
                           <span className="text-green-700 font-semibold">
-                            ✅ Aktif - Satışlar Devam Ediyor
+                            Aktif - Satışlar Devam Ediyor
                           </span>
                         )}
                       </div>
@@ -168,10 +168,10 @@ const StopSaleManager = ({ operators = [] }) => {
             <strong>Özet:</strong>
             <div className="mt-2 flex gap-4">
               <span className="text-green-700">
-                ✅ Aktif: {Object.values(stopSaleStatus).filter(s => !s).length}
+                Aktif: {Object.values(stopSaleStatus).filter(s => !s).length}
               </span>
               <span className="text-red-700">
-                🛑 Stop-Sale: {Object.values(stopSaleStatus).filter(s => s).length}
+                Stop-Sale: {Object.values(stopSaleStatus).filter(s => s).length}
               </span>
             </div>
           </div>

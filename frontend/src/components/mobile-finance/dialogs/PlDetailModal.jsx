@@ -40,7 +40,7 @@ export default function PlDetailModal(props) {
             {/* Revenue Section */}
             <Card>
               <CardHeader className="pb-3 bg-green-50">
-                <CardTitle className="text-base text-green-800">💰 Gelirler</CardTitle>
+                <CardTitle className="text-base text-green-800">Gelirler</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
                 <div className="flex justify-between p-2 bg-green-50 rounded">
@@ -67,7 +67,7 @@ export default function PlDetailModal(props) {
             {/* Cost of Sales Section */}
             <Card>
               <CardHeader className="pb-3 bg-amber-50">
-                <CardTitle className="text-base text-amber-800">📦 Satış Maliyeti</CardTitle>
+                <CardTitle className="text-base text-amber-800">Satış Maliyeti</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
                 <div className="flex justify-between p-2 bg-amber-50 rounded">
@@ -107,7 +107,7 @@ export default function PlDetailModal(props) {
             {/* Operating Expenses */}
             <Card>
               <CardHeader className="pb-3 bg-indigo-50">
-                <CardTitle className="text-base text-indigo-800">🏢 Faaliyet Giderleri</CardTitle>
+                <CardTitle className="text-base text-indigo-800">Faaliyet Giderleri</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
                 <div className="flex justify-between p-2 bg-indigo-50 rounded">
@@ -145,7 +145,7 @@ export default function PlDetailModal(props) {
                 <div className="flex justify-between items-center">
                   <div>
                     <p className={`text-lg font-bold ${plData.net_profit >= 0 ? 'text-green-900' : 'text-red-900'}`}>
-                      {plData.net_profit >= 0 ? '✅ NET KAR' : '❌ NET ZARAR'}
+                      {plData.net_profit >= 0 ? 'NET KAR' : 'NET ZARAR'}
                     </p>
                     <p className={`text-sm mt-1 ${plData.net_profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                       Net Kar Marjı: {formatPercent(plData.net_profit_margin || 0)}
@@ -162,7 +162,7 @@ export default function PlDetailModal(props) {
             {plData.key_metrics && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">📊 Anahtar Metrikler</CardTitle>
+                  <CardTitle className="text-base">Anahtar Metrikler</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3">
                   <div className="text-center p-3 bg-blue-50 rounded">

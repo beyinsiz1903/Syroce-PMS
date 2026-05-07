@@ -104,13 +104,13 @@ const EnhancedFrontDesk = () => {
             onClick={() => setShowPassportScan(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
           >
-            📷 {t('frontDeskEnhanced.scanPassport')}
+            {t('frontDeskEnhanced.scanPassport')}
           </button>
           <button
             onClick={() => setShowWalkIn(true)}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
           >
-            🚶 {t('frontDeskEnhanced.walkInBooking')}
+            {t('frontDeskEnhanced.walkInBooking')}
           </button>
         </div>
       </div>
@@ -134,10 +134,10 @@ const EnhancedFrontDesk = () => {
                     </span>
                   </div>
                   <div className="text-gray-600 space-y-1">
-                    <div>📧 {booking.guest_email}</div>
-                    <div>🛏️ {t('frontDeskEnhanced.room')} {booking.room_number || t('frontDeskEnhanced.tba')}</div>
-                    <div>👥 {t('frontDeskEnhanced.adultsChildren', { adults: booking.adults, children: booking.children })}</div>
-                    <div>💰 ${booking.total_amount}</div>
+                    <div>{booking.guest_email}</div>
+                    <div>{t('frontDeskEnhanced.room')} {booking.room_number || t('frontDeskEnhanced.tba')}</div>
+                    <div>{t('frontDeskEnhanced.adultsChildren', { adults: booking.adults, children: booking.children })}</div>
+                    <div>${booking.total_amount}</div>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -148,7 +148,7 @@ const EnhancedFrontDesk = () => {
                     }}
                     className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
                   >
-                    🔔 {t('frontDeskEnhanced.alerts')}
+                    {t('frontDeskEnhanced.alerts')}
                   </button>
                   <IdPhotoViewerButton
                     bookingId={booking.id}
@@ -161,7 +161,7 @@ const EnhancedFrontDesk = () => {
                       onClick={() => handleQuickCheckin(booking.id)}
                       className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
                     >
-                      ✓ {t('frontDeskEnhanced.quickCheckin')}
+                      {t('frontDeskEnhanced.quickCheckin')}
                     </button>
                   )}
                 </div>

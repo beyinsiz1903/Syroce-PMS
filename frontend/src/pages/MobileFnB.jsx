@@ -96,7 +96,7 @@ const MobileFnB = ({ user }) => {
       setTopItems(menuList.slice(0, 5));
     } catch (error) {
       console.error('Failed to load F&B data:', error);
-      toast.error('✗ Yükleme');
+      toast.error('Yükleme');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -152,13 +152,13 @@ const MobileFnB = ({ user }) => {
         notes: ''
       });
 
-      toast.success('✓ Sipariş');
+      toast.success('Sipariş');
       setOrderModalOpen(false);
       setOrderItems([]);
       setTableNumber('');
       loadData();
     } catch (error) {
-      toast.error('✗ Sipariş');
+      toast.error('Sipariş');
     }
   };
 
@@ -173,7 +173,7 @@ const MobileFnB = ({ user }) => {
       setZReportData(res.data);
       setZReportModalOpen(true);
     } catch (error) {
-      toast.error('✗ Z Raporu');
+      toast.error('Z Raporu');
     }
   };
 
@@ -184,7 +184,7 @@ const MobileFnB = ({ user }) => {
       setVoidTransactions(res.data.void_transactions || []);
       setVoidReportModalOpen(true);
     } catch (error) {
-      toast.error('✗ İptal Raporu');
+      toast.error('İptal Raporu');
     }
   };
 
@@ -804,11 +804,11 @@ const MobileFnB = ({ user }) => {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm capitalize flex items-center justify-between">
                       <span>
-                        {category === 'food' ? '🍽️ Yemekler' : 
-                         category === 'beverage' ? '☕ İçecekler' :
-                         category === 'dessert' ? '🍰 Tatlılar' :
-                         category === 'appetizer' ? '🥗 Mezeler' :
-                         '🍷 Alkollü İçecekler'}
+                        {category === 'food' ? 'Yemekler' : 
+                         category === 'beverage' ? 'İçecekler' :
+                         category === 'dessert' ? 'Tatlılar' :
+                         category === 'appetizer' ? 'Mezeler' :
+                         'Alkollü İçecekler'}
                       </span>
                       <Badge variant="outline">{items.length}</Badge>
                     </CardTitle>
@@ -886,7 +886,7 @@ const MobileFnB = ({ user }) => {
                       <p className="text-sm text-gray-600">Şu anda görüntülenen:</p>
                       <p className="font-bold text-gray-900">{activeOutlet.name}</p>
                       <p className="text-xs text-gray-500">
-                        📍 {activeOutlet.location} • 🪑 {activeOutlet.capacity} kişi
+                        {activeOutlet.location} • Kapasite: {activeOutlet.capacity}
                       </p>
                     </div>
                   </div>
@@ -926,13 +926,13 @@ const MobileFnB = ({ user }) => {
                       <p className={`text-sm ${
                         activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-600'
                       }`}>
-                        📍 {outlet.location}
+                        {outlet.location}
                       </p>
                       <div className="flex items-center space-x-3 mt-1">
                         <span className={`text-xs ${
                           activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
                         }`}>
-                          🪑 {outlet.capacity} kişi
+                          Kapasite: {outlet.capacity}
                         </span>
                         <span className={`text-xs ${
                           activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
@@ -951,7 +951,7 @@ const MobileFnB = ({ user }) => {
                         <p className={`text-xs mt-1 ${
                           activeOutlet?.id === outlet.id ? 'text-amber-100' : 'text-gray-500'
                         }`}>
-                          🕐 {outlet.operating_hours}
+                          {outlet.operating_hours}
                         </p>
                       )}
                     </div>
@@ -966,7 +966,7 @@ const MobileFnB = ({ user }) => {
             {/* Outlets Summary */}
             <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 mt-4">
               <CardContent className="p-4">
-                <p className="text-sm font-bold text-gray-900 mb-2">📊 F&B Özeti</p>
+                <p className="text-sm font-bold text-gray-900 mb-2">F&B Özeti</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="text-center p-2 bg-white rounded">
                     <p className="text-xs text-gray-600">Toplam Outlet</p>

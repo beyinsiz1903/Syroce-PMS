@@ -105,26 +105,26 @@ const EnhancedFolioManager = ({ bookingId }) => {
             onClick={() => setShowChargeModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            ➕ Masraf Ekle
+            Masraf Ekle
           </button>
           <button
             onClick={() => setShowPaymentModal(true)}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
-            💳 Ödeme Kaydet
+            Ödeme Kaydet
           </button>
           <button
             onClick={() => setShowSplitModal(true)}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
             disabled={folio.status !== 'open'}
           >
-            ✂️ Split Folio
+            Split Folio
           </button>
           <button
             onClick={handleCheckout}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            🚪 Çıkış Yap
+            Çıkış Yap
           </button>
         </div>
       </div>

@@ -58,11 +58,11 @@ const PhotoUploadComponent = ({
       });
 
       if (result.offlineQueued) {
-        toast.message('📶 Fotoğraf sıraya alındı', {
+        toast.message('Fotoğraf sıraya alındı', {
           description: 'Bağlantı geldiğinde otomatik yükleme yapılacak.'
         });
       } else {
-        toast.success(`✓ ${photoType === 'before' ? 'Önce' : 'Sonra'} fotoğrafı yüklendi!`);
+        toast.success(`${photoType === 'before' ? 'Önce' : 'Sonra'} fotoğrafı yüklendi!`);
       }
 
       setPhoto(null);
@@ -76,10 +76,10 @@ const PhotoUploadComponent = ({
   };
 
   const getTitle = () => {
-    if (photoType === 'before') return '📷 Önce Fotoğrafı';
-    if (photoType === 'after') return '✅ Sonra Fotoğrafı';
-    if (photoType === 'issue') return '⚠️ Hasar Kaydı';
-    return '📸 Fotoğraf';
+    if (photoType === 'before') return 'Önce Fotoğrafı';
+    if (photoType === 'after') return 'Sonra Fotoğrafı';
+    if (photoType === 'issue') return 'Hasar Kaydı';
+    return 'Fotoğraf';
   };
 
   return (

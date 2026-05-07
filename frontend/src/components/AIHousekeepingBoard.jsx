@@ -59,13 +59,13 @@ const AIHousekeepingBoard = () => {
   return (
     <div className="p-6 bg-white">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">🧺 AI Housekeeping Board</h1>
+        <h1 className="text-3xl font-bold">AI Housekeeping Board</h1>
         <div className="flex gap-4">
           <button
             onClick={generateAISchedule}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
           >
-            🤖 Regenerate Schedule
+            Regenerate Schedule
           </button>
           <input
             type="date"
@@ -129,8 +129,8 @@ const AIHousekeepingBoard = () => {
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-lg font-semibold">{assignment.staff_name}</h3>
                   <div className="flex gap-4">
-                    <span className="text-gray-600">📋 {assignment.total_tasks} tasks</span>
-                    <span className="text-gray-600">⏱️ {assignment.estimated_minutes} min</span>
+                    <span className="text-gray-600">{assignment.total_tasks} tasks</span>
+                    <span className="text-gray-600">{assignment.estimated_minutes} min</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">

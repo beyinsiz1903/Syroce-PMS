@@ -260,12 +260,12 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
               <div className="flex items-center gap-2 text-xs">
                 {filterCat && (
                   <Badge className={`${CATEGORY_BADGE[filterCat].cls} cursor-pointer`} onClick={() => setFilterCat('')}>
-                    {CATEGORY_BADGE[filterCat].label} ✕
+                    {CATEGORY_BADGE[filterCat].label} 
                   </Badge>
                 )}
                 {filterRoom && (
                   <Badge className="bg-blue-100 text-blue-700 border-blue-200 cursor-pointer" onClick={() => setFilterRoom('')}>
-                    Oda {filterRoom} ✕
+                    Oda {filterRoom} 
                   </Badge>
                 )}
               </div>

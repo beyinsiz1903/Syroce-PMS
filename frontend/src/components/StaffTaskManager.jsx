@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 const TASK_TYPE_KEYS = ['maintenance', 'cleaning', 'repair', 'inspection', 'setup', 'delivery'];
-const TASK_ICONS = { maintenance: '🔧', cleaning: '🧹', repair: '🔨', inspection: '👁️', setup: '📦', delivery: '🚚' };
+const TASK_ICONS = { maintenance: '', cleaning: '', repair: '', inspection: '', setup: '', delivery: '' };
 const DEPT_KEYS = ['engineering', 'housekeeping', 'maintenance', 'frontdesk', 'fb'];
 const PRIORITY_KEYS = ['urgent', 'high', 'normal', 'low'];
 const PRIORITY_COLORS = {
@@ -217,7 +217,7 @@ const StaffTaskManager = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((task) => {
             const ttLabel = ts(`taskTypes.${task.task_type}`) || task.task_type;
-            const ttIcon = TASK_ICONS[task.task_type] || '📋';
+            const ttIcon = TASK_ICONS[task.task_type] || '';
             const StIcon = STATUS_ICONS[task.status] || AlertCircle;
             const stColor = STATUS_COLORS[task.status] || 'text-gray-500';
             const prColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;

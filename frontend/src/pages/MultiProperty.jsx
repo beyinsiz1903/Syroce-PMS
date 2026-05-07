@@ -28,7 +28,7 @@ const MultiProperty = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🏢 Multi-Property Dashboard</h1>
+            <h1 className="text-3xl font-bold">Multi-Property Dashboard</h1>
             <p className="text-gray-600">Çoklu otel yönetimi ve konsolide raporlar</p>
           </div>
         </div>

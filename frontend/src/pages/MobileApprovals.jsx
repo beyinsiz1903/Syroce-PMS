@@ -375,13 +375,13 @@ const MobileApprovals = ({ user }) => {
 
                     {request.status === 'approved' && request.approved_by && (
                       <div className="text-xs text-green-600 bg-green-50 p-2 rounded">
-                        ✓ {t('mobileApprovals.approvedBy', { name: request.approved_by })}
+                        {t('mobileApprovals.approvedBy', { name: request.approved_by })}
                       </div>
                     )}
 
                     {request.status === 'rejected' && request.rejection_reason && (
                       <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                        ✗ {t('mobileApprovals.rejectionLabel')} {request.rejection_reason}
+                        {t('mobileApprovals.rejectionLabel')} {request.rejection_reason}
                       </div>
                     )}
                   </CardContent>

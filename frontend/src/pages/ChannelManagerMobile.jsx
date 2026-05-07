@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import { ArrowLeft, Globe, CheckCircle, AlertTriangle, BarChart3, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Globe, CheckCircle, AlertTriangle, BarChart3, RefreshCw, Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ChannelManagerMobile = ({ user }) => {
@@ -81,11 +81,11 @@ const ChannelManagerMobile = ({ user }) => {
                   <div className="text-xs text-gray-600">Bugün</div>
                 </div>
                 <div className="text-center bg-blue-50 p-2 rounded">
-                  <div className="font-bold text-blue-600">{channel.inventory_synced ? '✓' : '✗'}</div>
+                  <div className="font-bold text-blue-600 flex justify-center">{channel.inventory_synced ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}</div>
                   <div className="text-xs text-gray-600">Envanter</div>
                 </div>
                 <div className="text-center bg-indigo-50 p-2 rounded">
-                  <div className="font-bold text-indigo-600">{channel.rates_synced ? '✓' : '✗'}</div>
+                  <div className="font-bold text-indigo-600 flex justify-center">{channel.rates_synced ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}</div>
                   <div className="text-xs text-gray-600">Fiyat</div>
                 </div>
               </div>

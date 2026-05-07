@@ -341,7 +341,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                           <span>{it.label}</span>
                           {it.required && (
                             <span className="ml-2 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
-                              {checklist.target_star}★ için zorunlu
+                              {checklist.target_star} için zorunlu
                             </span>
                           )}
                         </div>
@@ -351,9 +351,9 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                               x.key === it.key ? { ...x, state: e.target.value } : x);
                             setChecklist({ ...checklist, items: items2 });
                           }}>
-                          <option value="yes">✓ Var</option>
+                          <option value="yes">Var</option>
                           <option value="partial">~ Kısmen</option>
-                          <option value="no">✗ Yok</option>
+                          <option value="no">Yok</option>
                         </select>
                       </li>
                     ))}

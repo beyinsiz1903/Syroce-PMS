@@ -24,7 +24,7 @@ const QRMaintenanceScanner = () => {
       
       setScannedAsset(mockAsset);
       setScanning(false);
-      toast.success('✓ QR Kod Okundu');
+      toast.success('QR Kod Okundu');
     }, 1500);
   };
 
@@ -41,10 +41,10 @@ const QRMaintenanceScanner = () => {
         description: `${scannedAsset.name} için bakım görevi (QR ile oluşturuldu)`
       });
       
-      toast.success('✓ Bakım görevi oluşturuldu');
+      toast.success('Bakım görevi oluşturuldu');
       setScannedAsset(null);
     } catch (error) {
-      toast.error('✗ Görev oluşturulamadı');
+      toast.error('Görev oluşturulamadı');
     }
   };
 
@@ -89,7 +89,7 @@ const QRMaintenanceScanner = () => {
                 <div className="flex-1">
                   <h3 className="font-bold text-gray-900">{scannedAsset.name}</h3>
                   <p className="text-sm text-gray-600">
-                    📍 {scannedAsset.location}
+                    {scannedAsset.location}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Tip: {scannedAsset.type}

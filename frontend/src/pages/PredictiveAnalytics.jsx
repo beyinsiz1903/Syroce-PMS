@@ -65,7 +65,7 @@ const PredictiveAnalytics = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">🔮 Predictive Analytics - AI Oracle</h1>
+            <h1 className="text-3xl font-bold">Predictive Analytics - AI Oracle</h1>
             <p className="text-gray-600">Geleceği görün: No-show, talep, şikayet tahminleri</p>
           </div>
         </div>
@@ -109,7 +109,7 @@ const PredictiveAnalytics = () => {
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>🚨 No-Show Risk Tahminleri</CardTitle>
+            <CardTitle>No-Show Risk Tahminleri</CardTitle>
             <input
               type="date"
               value={selectedDate}
@@ -137,7 +137,7 @@ const PredictiveAnalytics = () => {
                   </div>
                   <div className="mt-3">
                     <p className="text-sm font-semibold text-amber-600">
-                      🎯 {pred.recommended_action}
+                      {pred.recommended_action}
                     </p>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {pred.factors?.map((factor, i) => (
@@ -157,7 +157,7 @@ const PredictiveAnalytics = () => {
       {/* Demand Forecast */}
       <Card>
         <CardHeader>
-          <CardTitle>📈 30 Günlük Talep Tahmini</CardTitle>
+          <CardTitle>30 Günlük Talep Tahmini</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-7 gap-2">

@@ -107,7 +107,7 @@ const MobileFrontDesk = ({ user }) => {
       setAllRooms(roomsRes.data.rooms || []);
     } catch (error) {
       console.error('Failed to load front desk data:', error);
-      toast.error('✗ Yükleme');
+      toast.error('Yükleme');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -122,20 +122,20 @@ const MobileFrontDesk = ({ user }) => {
   const handleCheckIn = async (bookingId) => {
     try {
       await axios.post(`/frontdesk/checkin/${bookingId}`);
-      toast.success('✓ Check-in');
+      toast.success('Check-in');
       loadData();
     } catch (error) {
-      toast.error('✗ Check-in');
+      toast.error('Check-in');
     }
   };
 
   const handleCheckOut = async (bookingId) => {
     try {
       await axios.post(`/frontdesk/checkout/${bookingId}`);
-      toast.success('✓ Check-out');
+      toast.success('Check-out');
       loadData();
     } catch (error) {
-      toast.error('✗ Check-out');
+      toast.error('Check-out');
     }
   };
 
@@ -145,7 +145,7 @@ const MobileFrontDesk = ({ user }) => {
       setGuestAlerts(res.data.alerts || []);
       setGuestAlertsModalOpen(true);
     } catch (error) {
-      toast.error('✗ Uyarılar');
+      toast.error('Uyarılar');
     }
   };
 
@@ -158,7 +158,7 @@ const MobileFrontDesk = ({ user }) => {
       });
       setCalculatedFees(res.data);
     } catch (error) {
-      toast.error('✗ Hesaplama');
+      toast.error('Hesaplama');
     }
   };
 
@@ -172,7 +172,7 @@ const MobileFrontDesk = ({ user }) => {
       const res = await axios.get(`/frontdesk/rooms-with-filters?${params.toString()}`);
       setFilteredRooms(res.data.rooms || []);
     } catch (error) {
-      toast.error('✗ Filtre');
+      toast.error('Filtre');
     }
   };
 
@@ -186,7 +186,7 @@ const MobileFrontDesk = ({ user }) => {
       setSearchResults(res.data.bookings || []);
       toast.success(`${res.data.count} rezervasyon bulundu`);
     } catch (error) {
-      toast.error('✗ Arama başarısız');
+      toast.error('Arama başarısız');
     }
   };
 
@@ -199,7 +199,7 @@ const MobileFrontDesk = ({ user }) => {
       setAvailableRooms(res.data.rooms || []);
       setRoomAssignModalOpen(true);
     } catch (error) {
-      toast.error('✗ Müsait odalar yüklenemedi');
+      toast.error('Müsait odalar yüklenemedi');
     }
   };
 
@@ -209,11 +209,11 @@ const MobileFrontDesk = ({ user }) => {
         booking_id: selectedBookingForRoom.id,
         room_id: roomId
       });
-      toast.success('✓ Oda atandı');
+      toast.success('Oda atandı');
       setRoomAssignModalOpen(false);
       loadData();
     } catch (error) {
-      toast.error('✗ Oda atanamadı');
+      toast.error('Oda atanamadı');
     }
   };
 
@@ -264,7 +264,7 @@ const MobileFrontDesk = ({ user }) => {
       });
 
       if (result.offlineQueued) {
-        toast.message('📶 Kimlik fotoğrafı sıraya alındı', {
+        toast.message('Kimlik fotoğrafı sıraya alındı', {
           description: 'Bağlantı sağlandığında otomatik yüklenecek.'
         });
         setPassportScanModalOpen(false);
@@ -276,7 +276,7 @@ const MobileFrontDesk = ({ user }) => {
         image_data: passportBase64
       });
 
-      toast.success('✓ Kimlik okundu');
+      toast.success('Kimlik okundu');
       if (res.data.extracted_data) {
         toast.info(
           `${res.data.extracted_data.name || ''} ${res.data.extracted_data.surname || ''}`.trim()
@@ -286,7 +286,7 @@ const MobileFrontDesk = ({ user }) => {
       setPassportScanModalOpen(false);
     } catch (error) {
       console.error('Passport scan failed', error);
-      toast.error('✗ Kimlik okunamadı');
+      toast.error('Kimlik okunamadı');
     } finally {
       setPassportProcessing(false);
     }
@@ -322,11 +322,11 @@ const MobileFrontDesk = ({ user }) => {
         card_type: keycardType,
         validity_hours: 48
       });
-      toast.success(`✓ ${keycardType === 'physical' ? 'Fiziksel' : keycardType === 'mobile' ? 'Mobil' : 'QR'} kart basıldı`);
+      toast.success(`${keycardType === 'physical' ? 'Fiziksel' : keycardType === 'mobile' ? 'Mobil' : 'QR'} kart basıldı`);
       toast.info(`Kart No: ${res.data.card_data}`);
       setKeycardModalOpen(false);
     } catch (error) {
-      toast.error('✗ Kart basılamadı');
+      toast.error('Kart basılamadı');
     }
   };
 
@@ -446,8 +446,8 @@ const MobileFrontDesk = ({ user }) => {
                 const fee = res.data?.no_show_fee;
                 toast.success(
                   fee > 0
-                    ? `✅ No-show işlendi • ücret: ${fee} TL`
-                    : '✅ No-show işlendi'
+                    ? `No-show işlendi • ücret: ${fee} TL`
+                    : 'No-show işlendi'
                 );
                 loadData?.();
               } catch (err) {
@@ -783,7 +783,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={guestAlertsModalOpen} onOpenChange={setGuestAlertsModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>⭐ Misafir Uyarıları ({guestAlerts.length})</DialogTitle>
+            <DialogTitle>Misafir Uyarıları ({guestAlerts.length})</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {guestAlerts.length === 0 ? (
@@ -819,7 +819,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={feeCalculatorModalOpen} onOpenChange={setFeeCalculatorModalOpen}>
         <DialogContent className="max-w-full w-[95vw]">
           <DialogHeader>
-            <DialogTitle>💰 Ücret Hesaplayıcı</DialogTitle>
+            <DialogTitle>Ücret Hesaplayıcı</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -895,7 +895,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={roomFilterModalOpen} onOpenChange={setRoomFilterModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>🔍 Oda Filtrele</DialogTitle>
+            <DialogTitle>Oda Filtrele</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
@@ -979,7 +979,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={searchModalOpen} onOpenChange={setSearchModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>🔍 Rezervasyon Ara</DialogTitle>
+            <DialogTitle>Rezervasyon Ara</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
@@ -1049,7 +1049,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={roomAssignModalOpen} onOpenChange={setRoomAssignModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>🏠 Oda Atama</DialogTitle>
+            <DialogTitle>Oda Atama</DialogTitle>
           </DialogHeader>
           {selectedBookingForRoom && (
             <div className="space-y-4">
@@ -1095,7 +1095,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={passportScanModalOpen} onOpenChange={handlePassportModalChange}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📷 Kimlik Okuma</DialogTitle>
+            <DialogTitle>Kimlik Okuma</DialogTitle>
           </DialogHeader>
           {selectedBookingForPassport && (
             <div className="space-y-4">
@@ -1154,7 +1154,7 @@ const MobileFrontDesk = ({ user }) => {
       <Dialog open={keycardModalOpen} onOpenChange={setKeycardModalOpen}>
         <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>🔑 Kart Basma</DialogTitle>
+            <DialogTitle>Kart Basma</DialogTitle>
           </DialogHeader>
           {selectedBookingForKeycard && (
             <div className="space-y-4">

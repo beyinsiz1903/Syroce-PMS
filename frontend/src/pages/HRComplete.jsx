@@ -121,7 +121,7 @@ const HRComplete = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">👥 HR Management Suite</h1>
+            <h1 className="text-3xl font-bold">HR Management Suite</h1>
             <p className="text-gray-600">Time & Attendance, Payroll, Leave, Recruitment</p>
           </div>
         </div>

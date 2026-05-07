@@ -96,14 +96,14 @@ const MaintenanceReports = () => {
               onClick={() => setReportType('weekly')}
               className="w-full"
             >
-              📅 Haftalık
+              Haftalık
             </Button>
             <Button
               variant={reportType === 'monthly' ? 'default' : 'outline'}
               onClick={() => setReportType('monthly')}
               className="w-full"
             >
-              📊 Aylık
+              Aylık
             </Button>
           </div>
 

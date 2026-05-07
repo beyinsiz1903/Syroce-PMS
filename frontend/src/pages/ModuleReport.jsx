@@ -177,7 +177,7 @@ const ModuleReport = ({ user, tenant, onLogout }) => {
             <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
               <DialogTrigger asChild>
                 <Button variant="default" size="sm" className="text-xs bg-blue-600 hover:bg-blue-700 text-white">
-                  ➕ Yeni Otel Oluştur
+                  Yeni Otel Oluştur
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

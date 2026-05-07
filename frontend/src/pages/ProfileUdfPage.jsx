@@ -338,7 +338,7 @@ export default function ProfileUdfPage() {
                       <TableCell><code className="text-xs">{d.key}</code></TableCell>
                       <TableCell className="font-medium">{d.label}</TableCell>
                       <TableCell>{TYPES.find((t) => t.v === d.type)?.l || d.type}</TableCell>
-                      <TableCell className="text-center">{d.required ? "✓" : ""}</TableCell>
+                      <TableCell className="text-center">{d.required ? "" : ""}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {(d.options || []).join(", ")}
                       </TableCell>

@@ -658,7 +658,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                             <p className="text-lg font-bold text-gray-900">{record.amount}€</p>
                             <p className="text-[10px] text-gray-400">{record.currency} / {record.billing_cycle === 'yearly' ? 'yıl' : 'ay'}</p>
                             <span className={`inline-flex text-[10px] px-1.5 py-0.5 rounded mt-1 ${record.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                              {record.status === 'completed' ? '✓ Tamamlandı' : record.status}
+                              {record.status === 'completed' ? 'Tamamlandı' : record.status}
                             </span>
                           </div>
                         </div>

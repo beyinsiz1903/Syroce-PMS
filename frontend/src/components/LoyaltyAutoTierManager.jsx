@@ -62,20 +62,20 @@ const LoyaltyAutoTierManager = () => {
   return (
     <div className="p-6 bg-white">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">🏆 AI Loyalty & Guest Intelligence</h1>
+        <h1 className="text-3xl font-bold">AI Loyalty & Guest Intelligence</h1>
         <div className="flex gap-4">
           <button
             onClick={fetchGuestInsights}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            🔍 Refresh Insights
+            Refresh Insights
           </button>
           <button
             onClick={runAutoTierUpgrade}
             disabled={loading}
             className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-pink-600 text-white rounded-lg hover:from-indigo-700 hover:to-pink-700 disabled:opacity-50"
           >
-            {loading ? '⏳ Processing...' : '🤖 Run Auto-Tier Upgrade'}
+            {loading ? 'Processing...' : 'Run Auto-Tier Upgrade'}
           </button>
         </div>
       </div>
@@ -131,12 +131,12 @@ const LoyaltyAutoTierManager = () => {
         <h2 className="text-xl font-semibold mb-4">Guest Persona Intelligence</h2>
         <div className="grid grid-cols-3 gap-4">
           {[
-            { type: 'price_sensitive', icon: '💰', color: 'blue', label: 'Price Sensitive' },
-            { type: 'experience_seeker', icon: '✨', color: 'purple', label: 'Experience Seeker' },
-            { type: 'high_ltv', icon: '⭐', color: 'yellow', label: 'High LTV' },
-            { type: 'upsell_candidate', icon: '📎', color: 'green', label: 'Upsell Candidate' },
-            { type: 'ota_to_direct_candidate', icon: '🎯', color: 'orange', label: 'OTA → Direct' },
-            { type: 'complainer', icon: '😤', color: 'red', label: 'Complainer' }
+            { type: 'price_sensitive', icon: '', color: 'blue', label: 'Price Sensitive' },
+            { type: 'experience_seeker', icon: '', color: 'purple', label: 'Experience Seeker' },
+            { type: 'high_ltv', icon: '', color: 'yellow', label: 'High LTV' },
+            { type: 'upsell_candidate', icon: '', color: 'green', label: 'Upsell Candidate' },
+            { type: 'ota_to_direct_candidate', icon: '', color: 'orange', label: 'OTA → Direct' },
+            { type: 'complainer', icon: '', color: 'red', label: 'Complainer' }
           ].map(persona => (
             <div key={persona.type} className={`bg-${persona.color}-50 border-2 border-${persona.color}-200 rounded-lg p-4`}>
               <div className="text-3xl mb-2">{persona.icon}</div>

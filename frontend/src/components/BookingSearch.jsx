@@ -24,10 +24,10 @@ const BookingSearch = ({ onSelectBooking }) => {
       });
       setResults(response.data.bookings || []);
       if (response.data.count === 0) {
-        toast.info('🔍 Sonuç bulunamadı');
+        toast.info('Sonuç bulunamadı');
       }
     } catch (error) {
-      toast.error('✗ Arama başarısız');
+      toast.error('Arama başarısız');
     } finally {
       setLoading(false);
     }

@@ -420,7 +420,7 @@ const StaffRoomServiceOrders = ({ user, tenant, onLogout }) => {
                       ))}
                       {order.special_instructions && (
                         <p className="text-xs italic text-amber-700 mt-2">
-                          ⚠️ {order.special_instructions}
+                          {order.special_instructions}
                         </p>
                       )}
                       <div className="border-t mt-2 pt-2 flex items-center justify-between font-semibold text-sm">

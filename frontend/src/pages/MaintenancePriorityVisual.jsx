@@ -174,9 +174,9 @@ const MaintenancePriorityVisual = () => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center justify-between">
                   <span className="capitalize">
-                    {priority === 'urgent' ? '🔴 Acil Görevler' :
-                     priority === 'high' ? '🟠 Yüksek Öncelik' :
-                     priority === 'normal' ? '🔵 Normal Görevler' : '⚪ Düşük Öncelik'}
+                    {priority === 'urgent' ? ' Acil Görevler' :
+                     priority === 'high' ? ' Yüksek Öncelik' :
+                     priority === 'normal' ? 'Normal Görevler' : ' Düşük Öncelik'}
                   </span>
                   <Badge className={getPriorityColor(priority)}>
                     {priorityTasks.length}

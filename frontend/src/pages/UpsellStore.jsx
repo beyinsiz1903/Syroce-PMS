@@ -160,12 +160,12 @@ const UpsellStore = ({ bookingId }) => {
                       <h3 className="font-bold text-lg">{offer.title}</h3>
                       {(offer.ai_recommended || offer.ai_score) && (
                         <Badge className="mt-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
-                          🤖 AI Score: {offer.ai_score ? `${(offer.ai_score * 100).toFixed(0)}%` : 'Recommended'}
+                          AI Score: {offer.ai_score ? `${(offer.ai_score * 100).toFixed(0)}%` : 'Recommended'}
                         </Badge>
                       )}
                       {offer.popular && (
                         <Badge className="mt-1 ml-1 bg-amber-100 text-amber-700 hover:bg-amber-100">
-                          🔥 Popular
+                          Popular
                         </Badge>
                       )}
                     </div>
@@ -184,7 +184,7 @@ const UpsellStore = ({ bookingId }) => {
                   <ul className="text-sm space-y-1 mb-4">
                     {offer.features.map((feature, index) => (
                       <li key={index} className="flex items-center gap-2">
-                        <span className="text-green-600">✓</span>
+                        <span className="text-green-600"></span>
                         <span>{feature}</span>
                       </li>
                     ))}
@@ -193,7 +193,7 @@ const UpsellStore = ({ bookingId }) => {
 
                 {offer.limited_availability && (
                   <div className="bg-amber-50 text-amber-700 text-xs p-2 rounded mb-4">
-                    ⚡ Limited availability - Only {offer.available_count} left!
+                    Limited availability - Only {offer.available_count} left!
                   </div>
                 )}
 

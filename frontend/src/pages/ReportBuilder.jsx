@@ -438,7 +438,7 @@ const ReportBuilder = ({ user, tenant, onLogout }) => {
                     <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-xs ${
                       selectedColumns.includes(key) ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'
                     }`}>
-                      {selectedColumns.includes(key) && '✓'}
+                      {selectedColumns.includes(key) && ''}
                     </div>
                     <span className="truncate">{col.label}</span>
                     <Badge variant="outline" className="text-[9px] ml-auto shrink-0 capitalize">{col.type}</Badge>

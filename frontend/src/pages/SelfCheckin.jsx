@@ -362,9 +362,9 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
             <div className="border-t pt-4 mt-4">
               <div className="bg-blue-50 p-4 rounded-lg mb-4">
                 <div className="text-sm text-blue-800">
-                  ✓ Guest information verified<br />
-                  ✓ Payment method authorized<br />
-                  ✓ Room preferences noted
+                  Guest information verified<br />
+                  Payment method authorized<br />
+                  Room preferences noted
                 </div>
               </div>
             </div>

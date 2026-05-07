@@ -28,7 +28,7 @@ const RISK_STYLES = {
   low: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-700' },
 };
 
-const CONFIDENCE_ICONS = { low: '🔴', medium: '🟡', high: '🟢' };
+const CONFIDENCE_ICONS = { low: '', medium: '', high: '' };
 
 const WEEKDAY_SHORT = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz'];
 

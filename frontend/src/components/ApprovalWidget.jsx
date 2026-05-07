@@ -44,11 +44,11 @@ const ApprovalWidget = ({ userRole }) => {
       await axios.post(`/approvals/${approvalId}/approve`, {
         note: 'Onaylandı'
       });
-      toast.success('✓ Talep onaylandı');
+      toast.success('Talep onaylandı');
       loadData();
       setDetailsOpen(false);
     } catch (error) {
-      toast.error('✗ Onaylama başarısız');
+      toast.error('Onaylama başarısız');
     }
   };
 
@@ -60,22 +60,22 @@ const ApprovalWidget = ({ userRole }) => {
       await axios.post(`/approvals/${approvalId}/reject`, {
         reason: reason
       });
-      toast.success('✓ Talep reddedildi');
+      toast.success('Talep reddedildi');
       loadData();
       setDetailsOpen(false);
     } catch (error) {
-      toast.error('✗ Reddetme başarısız');
+      toast.error('Reddetme başarısız');
     }
   };
 
   const getTypeIcon = (type) => {
     switch (type) {
-      case 'discount': return '💰';
-      case 'rate_override': return '💲';
-      case 'budget': return '📊';
-      case 'refund': return '↩️';
-      case 'complimentary': return '🎁';
-      default: return '📋';
+      case 'discount': return '';
+      case 'rate_override': return '';
+      case 'budget': return '';
+      case 'refund': return 'R';
+      case 'complimentary': return '';
+      default: return '';
     }
   };
 

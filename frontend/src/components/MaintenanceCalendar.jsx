@@ -121,7 +121,7 @@ const MaintenanceCalendar = () => {
         </div>
 
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-          <div className="font-medium text-blue-900 mb-1">📅 Bu Ay Toplam:</div>
+          <div className="font-medium text-blue-900 mb-1">Bu Ay Toplam:</div>
           <div className="text-blue-700">
             {calendarItems.length} rutin bakım görevi planlanmış
           </div>

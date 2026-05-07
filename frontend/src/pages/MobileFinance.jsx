@@ -133,7 +133,7 @@ const MobileFinance = ({ user }) => {
       setBankBalances(bankBalancesRes.data);
     } catch (error) {
       console.error('Failed to load finance data:', error);
-      toast.error('✗ Veri yükleme hatası');
+      toast.error('Veri yükleme hatası');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -148,11 +148,11 @@ const MobileFinance = ({ user }) => {
   const handleRecordPayment = async (formData) => {
     try {
       await axios.post('/finance/mobile/record-payment', formData);
-      toast.success('✓ Ödeme');
+      toast.success('Ödeme');
       setPaymentModalOpen(false);
       loadData();
     } catch (error) {
-      toast.error('✗ Ödeme');
+      toast.error('Ödeme');
     }
   };
 
@@ -171,7 +171,7 @@ const MobileFinance = ({ user }) => {
       setPlData(res.data);
       setPlDetailModalOpen(true);
     } catch (error) {
-      toast.error('✗ P&L');
+      toast.error('P&L');
     }
   };
 
@@ -181,7 +181,7 @@ const MobileFinance = ({ user }) => {
       setShiftReportData(res.data);
       setCashierShiftModalOpen(true);
     } catch (error) {
-      toast.error('✗ Vardiya');
+      toast.error('Vardiya');
     }
   };
 
@@ -192,7 +192,7 @@ const MobileFinance = ({ user }) => {
       setCashFlowData(res.data);
       setCashFlowModalOpen(true);
     } catch (error) {
-      toast.error('✗ Nakit akışı yüklenemedi');
+      toast.error('Nakit akışı yüklenemedi');
     }
   };
 
@@ -211,7 +211,7 @@ const MobileFinance = ({ user }) => {
       setSuspiciousReceivables(suspiciousRes.data);
       setRiskModalOpen(true);
     } catch (error) {
-      toast.error('✗ Risk verileri yüklenemedi');
+      toast.error('Risk verileri yüklenemedi');
     }
   };
 
@@ -221,7 +221,7 @@ const MobileFinance = ({ user }) => {
       setSelectedFolioExtract(res.data);
       setFolioExtractModalOpen(true);
     } catch (error) {
-      toast.error('✗ Folio ekstresi yüklenemedi');
+      toast.error('Folio ekstresi yüklenemedi');
     }
   };
 
@@ -237,7 +237,7 @@ const MobileFinance = ({ user }) => {
       setEnhancedInvoices(res.data.invoices || []);
       setInvoicesModalOpen(true);
     } catch (error) {
-      toast.error('✗ Faturalar yüklenemedi');
+      toast.error('Faturalar yüklenemedi');
     }
   };
 
@@ -276,10 +276,10 @@ const MobileFinance = ({ user }) => {
       link.remove();
       window.URL.revokeObjectURL(url);
       
-      toast.success('✓ İndirildi');
+      toast.success('İndirildi');
     } catch (error) {
       // Fallback: Create a simple HTML print version
-      toast.info('⏳ Yazdırılıyor...');
+      toast.info('Yazdırılıyor...');
       setTimeout(() => {
         window.print();
       }, 500);

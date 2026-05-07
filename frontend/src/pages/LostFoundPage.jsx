@@ -40,12 +40,12 @@ const STATUS_CONFIG = {
 };
 
 const CATEGORY_CONFIG = {
-  electronics: { label: 'Elektronik', icon: '📱' },
-  clothing: { label: 'Giyim', icon: '👔' },
-  jewelry: { label: 'Mücevher', icon: '💍' },
-  documents: { label: 'Belge', icon: '📄' },
-  bags: { label: 'Çanta/Bavul', icon: '👜' },
-  other: { label: 'Diğer', icon: '📦' },
+  electronics: { label: 'Elektronik', icon: '' },
+  clothing: { label: 'Giyim', icon: '' },
+  jewelry: { label: 'Mücevher', icon: '' },
+  documents: { label: 'Belge', icon: '' },
+  bags: { label: 'Çanta/Bavul', icon: '' },
+  other: { label: 'Diğer', icon: '' },
 };
 
 const LostFoundPage = ({ user, tenant, onLogout }) => {

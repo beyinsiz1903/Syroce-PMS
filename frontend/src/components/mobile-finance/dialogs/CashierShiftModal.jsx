@@ -59,7 +59,7 @@ export default function CashierShiftModal(props) {
             {/* Opening/Closing Balance */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">💰 Kasa Durumu</CardTitle>
+                <CardTitle className="text-base">Kasa Durumu</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex justify-between p-3 bg-blue-50 rounded">
@@ -113,7 +113,7 @@ export default function CashierShiftModal(props) {
             {/* Transaction Summary */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">📊 İşlem Özeti</CardTitle>
+                <CardTitle className="text-base">İşlem Özeti</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
@@ -149,7 +149,7 @@ export default function CashierShiftModal(props) {
             {shiftReportData.payment_methods && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">💳 Ödeme Yöntemleri</CardTitle>
+                  <CardTitle className="text-base">Ödeme Yöntemleri</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {Object.entries(shiftReportData.payment_methods).map(([method, data]) => (
@@ -157,10 +157,10 @@ export default function CashierShiftModal(props) {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p className="font-bold text-gray-900 capitalize">
-                            {method === 'cash' ? '💵 Nakit' : 
-                             method === 'card' ? '💳 Kredi Kartı' :
-                             method === 'transfer' ? '🏦 Havale' :
-                             method === 'check' ? '📄 Çek' : method}
+                            {method === 'cash' ? 'Nakit' : 
+                             method === 'card' ? 'Kredi Kartı' :
+                             method === 'transfer' ? 'Havale' :
+                             method === 'check' ? 'Çek' : method}
                           </p>
                           <p className="text-xs text-gray-500">
                             {data.count || 0} işlem
@@ -180,7 +180,7 @@ export default function CashierShiftModal(props) {
             {shiftReportData.notes && (
               <Card className="bg-yellow-50">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">📝 Notlar</CardTitle>
+                  <CardTitle className="text-base">Notlar</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-gray-700">{shiftReportData.notes}</p>

@@ -357,7 +357,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
               <strong>${folioBalance.toFixed(2)}</strong>
               {customTotal >= folioBalance && folioBalance > 0 && (
                 <span className="text-red-600 ml-2">
-                  ⚠ Bakiyeden küçük olmalı (orijinalde bir miktar kalmalı)
+                  Bakiyeden küçük olmalı (orijinalde bir miktar kalmalı)
                 </span>
               )}
             </p>
@@ -419,7 +419,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
         <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
           <p className="text-xs text-yellow-700">
-            ⚠️ <strong>Uyarı:</strong> Bu işlem geri alınamaz. "Eşit" ve "Özel" modlarında yeni
+            <strong>Uyarı:</strong> Bu işlem geri alınamaz. "Eşit" ve "Özel" modlarında yeni
             folioya tek bir "Folio bölme aktarımı" kalemi yazılır; orijinal folioya da eşdeğer
             negatif ayarlama eklenir, böylece toplam bakiye korunur.
           </p>

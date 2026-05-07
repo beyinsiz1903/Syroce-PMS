@@ -14,7 +14,8 @@ import {
   MessageSquare,
   Sparkles,
   ArrowLeft,
-  Menu
+  Menu,
+  ShoppingBag
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { alertDialog } from '@/lib/dialogs';
@@ -74,7 +75,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <UtensilsCrossed className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">🍽️ {t('featuresShowcase.tableMgmt')}</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">{t('featuresShowcase.tableMgmt')}</h4>
                       <p className="text-sm text-gray-600">
                         {t('featuresShowcase.tableMgmtDesc')}
                       </p>
@@ -96,7 +97,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <Menu className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">📋 {t('featuresShowcase.menuMgmt')}</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">{t('featuresShowcase.menuMgmt')}</h4>
                       <p className="text-sm text-gray-600">
                         {t('featuresShowcase.menuMgmtDesc')}
                       </p>
@@ -118,7 +119,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <Users className="w-5 h-5 text-green-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">👥 {t('featuresShowcase.staffMgmt')}</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">{t('featuresShowcase.staffMgmt')}</h4>
                       <p className="text-sm text-gray-600">
                         {t('featuresShowcase.staffMgmtDesc')}
                       </p>
@@ -140,7 +141,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                       <MessageSquare className="w-5 h-5 text-indigo-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">💬 {t('featuresShowcase.messagingTitle')}</h4>
+                      <h4 className="font-semibold text-gray-900 mb-1">{t('featuresShowcase.messagingTitle')}</h4>
                       <p className="text-sm text-gray-600">
                         {t('featuresShowcase.messagingDesc')}
                       </p>
@@ -165,7 +166,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 className="h-24 flex flex-col items-center justify-center"
                 onClick={() => navigate('/cost-management')}
               >
-                <span className="text-2xl mb-2">💰</span>
+                <span className="text-2xl mb-2"></span>
                 <span className="text-sm">{t('featuresShowcase.costManagement')}</span>
               </Button>
               <Button
@@ -173,7 +174,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                 className="h-24 flex flex-col items-center justify-center"
                 onClick={() => navigate('/rms')}
               >
-                <span className="text-2xl mb-2">📊</span>
+                <span className="text-2xl mb-2"></span>
                 <span className="text-sm">{t('featuresShowcase.revenueBreakdown')}</span>
               </Button>
               <Button
@@ -183,7 +184,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                   alertDialog({ message: 'Navigate to any booking and open Upsell Store to see AI products' });
                 }}
               >
-                <span className="text-2xl mb-2">🛍️</span>
+                <ShoppingBag className="w-6 h-6 mb-2" />
                 <span className="text-sm">{t('featuresShowcase.aiUpsellCenter')}</span>
               </Button>
               <Button
@@ -193,7 +194,7 @@ const FeaturesShowcase = ({ user, tenant, onLogout }) => {
                   alertDialog({ message: 'Split Folio: Open any folio and use Split button (to be added to Folio Manager)' });
                 }}
               >
-                <span className="text-2xl mb-2">📑</span>
+                <span className="text-2xl mb-2"></span>
                 <span className="text-sm">{t('featuresShowcase.splitFolio')}</span>
               </Button>
             </div>

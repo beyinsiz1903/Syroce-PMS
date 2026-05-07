@@ -52,13 +52,13 @@ const QRRoomAccess = () => {
         action: 'start'
       });
       
-      toast.success(`✓ Oda ${roomData.room_number} temizliğe başlandı`);
+      toast.success(`Oda ${roomData.room_number} temizliğe başlandı`);
       loadActiveSessions();
     } catch (error) {
       if (error.response?.status === 400) {
         toast.error('Aktif temizlik oturumu var');
       } else {
-        toast.error('✗ Başlatma başarısız');
+        toast.error('Başlatma başarısız');
       }
     }
   };
@@ -71,10 +71,10 @@ const QRRoomAccess = () => {
         action: 'end'
       });
       
-      toast.success(`✓ Oda ${session.room_number} tamamlandı (${response.data.duration_minutes} dk)`);
+      toast.success(`Oda ${session.room_number} tamamlandı (${response.data.duration_minutes} dk)`);
       loadActiveSessions();
     } catch (error) {
-      toast.error('✗ Bitirme başarısız');
+      toast.error('Bitirme başarısız');
     }
   };
 

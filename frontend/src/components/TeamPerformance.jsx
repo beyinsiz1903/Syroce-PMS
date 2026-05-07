@@ -53,7 +53,7 @@ const TeamPerformance = () => {
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold text-blue-600">{dept.avg_performance_score}%</div>
-                  <div className="text-xs text-gray-500">⭐ {dept.guest_satisfaction}</div>
+                  <div className="text-xs text-gray-500">{dept.guest_satisfaction}</div>
                 </div>
               </div>
 

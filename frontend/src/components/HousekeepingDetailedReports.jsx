@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Moon, DoorClosed, AlertTriangle, Award, Clock } from 'lucide-react';
+import { Moon, DoorClosed, AlertTriangle, Award, Clock, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const HousekeepingDetailedReports = () => {
@@ -309,9 +309,7 @@ const HousekeepingDetailedReports = () => {
                                 <div className="flex items-center gap-2">
                                   <div className="flex">
                                     {[...Array(5)].map((_, j) => (
-                                      <span key={j} className={j < feedback.rating ? 'text-yellow-400' : 'text-gray-300'}>
-                                        ★
-                                      </span>
+                                      <Star key={j} className={`w-3.5 h-3.5 ${j < feedback.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
                                     ))}
                                   </div>
                                   <span className="text-sm text-gray-600">{feedback.date}</span>

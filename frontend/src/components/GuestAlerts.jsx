@@ -27,7 +27,7 @@ const GuestAlerts = ({ guest, booking }) => {
       alerts.push({
         type: 'birthday',
         icon: Cake,
-        label: 'Birthday Today! 🎂',
+        label: 'Birthday Today! ',
         color: 'bg-pink-500'
       });
     }
@@ -48,7 +48,7 @@ const GuestAlerts = ({ guest, booking }) => {
     alerts.push({
       type: 'honeymoon',
       icon: Gift,
-      label: 'Honeymoon 💑',
+      label: 'Honeymoon ',
       color: 'bg-red-500'
     });
   }

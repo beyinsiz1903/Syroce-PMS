@@ -136,7 +136,7 @@ const ReviewSentimentAnalysis = ({ reviewText = '', onAnalysisComplete }) => {
                   {analysis.issues.map((issue, idx) => (
                     <div key={idx} className="flex items-start gap-2 p-2 bg-white rounded border">
                       <span className={`text-${issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'yellow'}-600 font-bold text-xs mt-0.5`}>
-                        {issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟠' : '🟡'}
+                        {issue.severity === 'high' ? 'H' : issue.severity === 'medium' ? 'M' : 'L'}
                       </span>
                       <div className="flex-1">
                         <div className="font-semibold text-sm">{issue.category}</div>
@@ -161,7 +161,7 @@ const ReviewSentimentAnalysis = ({ reviewText = '', onAnalysisComplete }) => {
                 <div className="space-y-2">
                   {analysis.highlights.map((highlight, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-2 bg-green-50 rounded border border-green-200">
-                      <span className="text-green-600">✓</span>
+                      <span className="text-green-600"></span>
                       <div className="flex-1">
                         <div className="font-semibold text-sm text-green-900">{highlight.category}</div>
                         <div className="text-xs text-green-700">{highlight.description}</div>

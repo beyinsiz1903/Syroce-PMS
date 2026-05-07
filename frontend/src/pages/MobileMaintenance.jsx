@@ -985,7 +985,7 @@ const MobileMaintenance = ({ user }) => {
                                   <Badge className="bg-red-500 text-xs">DİKKAT</Badge>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">📍 {part.location}</p>
+                              <p className="text-xs text-gray-500 mt-1">{part.location}</p>
                             </div>
                             <div className="text-right">
                               <p className="font-bold text-lg text-indigo-700">{part.unit_price} ₺</p>

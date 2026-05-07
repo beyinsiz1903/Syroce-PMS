@@ -234,7 +234,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Bugün girişli ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>📥 Bugün Girişliler</Button>
+              }}>Bugün Girişliler</Button>
             <Button size="sm" variant="secondary" type="button"
               onClick={async () => {
                 try {
@@ -243,7 +243,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Bugün çıkışlı ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>📤 Bugün Çıkışlılar</Button>
+              }}>Bugün Çıkışlılar</Button>
             <Button size="sm" variant="secondary" type="button"
               onClick={async () => {
                 try {
@@ -252,7 +252,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Otelde konaklayan ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>🏨 İçeride Konaklayanlar</Button>
+              }}>İçeride Konaklayanlar</Button>
           </div>
           <div className="flex gap-2 mb-3">
             <Input placeholder="İsim veya e-posta ara…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -579,7 +579,7 @@ function CreditsTab({ credits }) {
       <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-white">
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className="text-4xl">🛒</div>
+            <div className="text-4xl"></div>
             <div className="flex-1">
               <h3 className="text-lg font-semibold mb-1">Kredi yüklemek ister misiniz?</h3>
               <p className="text-sm text-muted-foreground mb-4">

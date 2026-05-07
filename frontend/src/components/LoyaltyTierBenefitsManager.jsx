@@ -18,7 +18,7 @@ const LoyaltyTierBenefitsManager = () => {
     {
       name: 'Silver',
       color: 'gray',
-      icon: '🥈',
+      icon: '',
       benefits: {
         free_breakfast: false,
         late_checkout: false,
@@ -32,7 +32,7 @@ const LoyaltyTierBenefitsManager = () => {
     {
       name: 'Gold',
       color: 'yellow',
-      icon: '🥇',
+      icon: '',
       benefits: {
         free_breakfast: true,
         late_checkout: true,
@@ -46,7 +46,7 @@ const LoyaltyTierBenefitsManager = () => {
     {
       name: 'Platinum',
       color: 'purple',
-      icon: '💎',
+      icon: '',
       benefits: {
         free_breakfast: true,
         late_checkout: true,
@@ -236,7 +236,7 @@ const LoyaltyTierBenefitsManager = () => {
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4">
           <div className="text-sm text-blue-900">
-            <strong>💡 Pro Tip:</strong> These benefits are automatically applied when guest books.
+            <strong>Pro Tip:</strong> These benefits are automatically applied when guest books.
             Arrivals screen shows "VIP / Loyalty Gold" tags. Messaging Center sends auto-congratulation
             when guest upgrades tier.
           </div>

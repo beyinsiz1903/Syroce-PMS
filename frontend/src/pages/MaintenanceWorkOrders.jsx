@@ -104,11 +104,11 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
       });
 
       if (result.offlineQueued) {
-        toast.message("📶 Medya sıraya alındı", {
+        toast.message("Medya sıraya alındı", {
           description: "Bağlantı sağlandığında otomatik yüklenecek."
         });
       } else {
-        toast.success("✓ Medya yüklendi");
+        toast.success("Medya yüklendi");
         await fetchMedia(selectedWorkOrder.id);
       }
     } catch (error) {

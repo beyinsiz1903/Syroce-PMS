@@ -138,7 +138,7 @@ const SimpleAdminPanel = () => {
                 </li>
               </ol>
               <div className="mt-4 p-4 bg-white rounded border border-blue-200">
-                <p className="text-sm text-blue-900 font-semibold mb-2">💡 Örnek Mesajlar:</p>
+                <p className="text-sm text-blue-900 font-semibold mb-2">Örnek Mesajlar:</p>
                 <ul className="text-sm text-blue-800 space-y-1">
                   <li>• "Login sayfası çalışmıyor"</li>
                   <li>• "Dashboard yavaş yükleniyor"</li>

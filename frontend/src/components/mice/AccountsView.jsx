@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Briefcase, Check } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 
@@ -109,7 +109,7 @@ const AccountsView = ({ accounts, reload }) => {
                           <td className="p-1">{c.title}</td>
                           <td className="p-1">{c.email}</td>
                           <td className="p-1">{c.phone}</td>
-                          <td className="p-1 text-center">{c.is_primary ? '✓' : ''}</td>
+                          <td className="p-1 text-center">{c.is_primary ? <Check className="w-4 h-4 inline text-emerald-600" /> : null}</td>
                         </tr>
                       ))}
                     </tbody>

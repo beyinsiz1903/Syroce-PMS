@@ -325,7 +325,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
                 </div>
                 {balance <= 0 && (
                   <div className="mt-2 p-2 bg-green-100 text-green-800 rounded text-center font-semibold">
-                    ✓ PAID IN FULL
+                    PAID IN FULL
                   </div>
                 )}
               </div>

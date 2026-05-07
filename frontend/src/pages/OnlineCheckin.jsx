@@ -186,7 +186,7 @@ const OnlineCheckin = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
-                      📄 Pasaport Bilgileri
+                      Pasaport Bilgileri
                     </h3>
                     <Button
                       type="button" size="sm" variant="outline"
@@ -528,7 +528,7 @@ const OnlineCheckin = () => {
                       onClick={() => handleUpsellAction(offer.id, 'accept')}
                       className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                     >
-                      ✨ Kabul Et
+                      Kabul Et
                     </Button>
                     <Button
                       onClick={() => handleUpsellAction(offer.id, 'reject')}

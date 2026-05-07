@@ -176,17 +176,17 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                 <div className="mt-2 text-xs text-center">
                   {allotment.status === 'critical' && (
                     <span className="text-red-700 font-semibold">
-                      ⚠️ Allotment doldu - Acil aksiyon gerekli!
+                      Allotment doldu - Acil aksiyon gerekli!
                     </span>
                   )}
                   {allotment.status === 'warning' && (
                     <span className="text-yellow-700 font-semibold">
-                      ⏰ Düşük stok - Takibe alın
+                      Düşük stok - Takibe alın
                     </span>
                   )}
                   {allotment.status === 'good' && (
                     <span className="text-green-700 font-semibold">
-                      ✓ Sağlıklı seviyede
+                      Sağlıklı seviyede
                     </span>
                   )}
                 </div>
@@ -200,7 +200,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
               <TrendingUp className="w-6 h-6 text-indigo-600 mt-1" />
               <div>
                 <div className="font-bold text-indigo-900 mb-1">
-                  🎯 Demo Pitch: "Allotment Kaosunu Tek Tuşla Yönetin"
+                  Demo Pitch: "Allotment Kaosunu Tek Tuşla Yönetin"
                 </div>
                 <p className="text-sm text-indigo-800">
                   Tüm operatörlerin allotment durumunu tek ekranda görün. Kalan oda sayısını 

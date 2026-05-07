@@ -178,9 +178,9 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                   <span className="font-medium">{status.configured ? "Yapılandırılmış" : "Yapılandırma eksik"}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-sm">
-                  <Badge variant={status.base_url_set ? "default" : "destructive"}>Base URL {status.base_url_set ? "✓" : "✗"}</Badge>
-                  <Badge variant={status.api_key_set ? "default" : "destructive"}>API Key {status.api_key_set ? "✓" : "✗"}</Badge>
-                  <Badge variant={status.webhook_secret_set ? "default" : "destructive"}>Webhook Secret {status.webhook_secret_set ? "✓" : "✗"}</Badge>
+                  <Badge variant={status.base_url_set ? "default" : "destructive"}>Base URL {status.base_url_set ? "OK" : "Eksik"}</Badge>
+                  <Badge variant={status.api_key_set ? "default" : "destructive"}>API Key {status.api_key_set ? "OK" : "Eksik"}</Badge>
+                  <Badge variant={status.webhook_secret_set ? "default" : "destructive"}>Webhook Secret {status.webhook_secret_set ? "OK" : "Eksik"}</Badge>
                 </div>
                 {status.base_url && <p className="text-xs text-slate-500 break-all">{status.base_url}</p>}
                 {!status.configured && (

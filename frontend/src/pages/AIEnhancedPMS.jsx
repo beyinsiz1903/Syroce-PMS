@@ -65,11 +65,11 @@ const AIEnhancedPMS = () => {
             <div>
               <h3 className="font-bold text-lg mb-2">{t('aiEnhancedPms.aiFeaturesActive')}</h3>
               <ul className="text-sm space-y-1 opacity-80">
-                <li>✅ {t('aiEnhancedPms.aiPricingEngine')}</li>
-                <li>✅ {t('aiEnhancedPms.guestPersona')}</li>
-                <li>✅ {t('aiEnhancedPms.predMaintenance')}</li>
-                <li>✅ {t('aiEnhancedPms.aiHousekeepingScheduler')}</li>
-                <li>✅ {t('aiEnhancedPms.autoTierLoyalty')}</li>
+                <li>{t('aiEnhancedPms.aiPricingEngine')}</li>
+                <li>{t('aiEnhancedPms.guestPersona')}</li>
+                <li>{t('aiEnhancedPms.predMaintenance')}</li>
+                <li>{t('aiEnhancedPms.aiHousekeepingScheduler')}</li>
+                <li>{t('aiEnhancedPms.autoTierLoyalty')}</li>
               </ul>
             </div>
             <div className="text-right">

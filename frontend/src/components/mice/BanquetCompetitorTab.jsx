@@ -165,7 +165,7 @@ const BanquetCompetitorTab = () => {
                     <td className="p-2 font-medium">{c.name}
                       {!c.active && <Badge className="ml-1" variant="outline">Pasif</Badge>}
                     </td>
-                    <td className="p-2">{c.hotel_class || '—'} ★</td>
+                    <td className="p-2">{c.hotel_class || '—'} </td>
                     <td className="p-2">{(c.capacity_max || 0).toLocaleString('tr-TR')}</td>
                     <td className="p-2 text-xs">{(c.venues || []).join(', ') || '—'}</td>
                     <td className="p-2 text-right space-x-1">

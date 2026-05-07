@@ -176,7 +176,7 @@ const DigitalKey = ({ bookingId }) => {
 
           {/* Security Note */}
           <div className="text-xs text-gray-500 text-center">
-            🔒 This key is unique to you and expires at checkout.
+            This key is unique to you and expires at checkout.
             Do not share with others.
           </div>
         </CardContent>

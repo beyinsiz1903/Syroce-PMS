@@ -360,7 +360,7 @@ const POSEnhancements = () => {
                           <div>
                             <div className="font-semibold flex items-center gap-2">
                               Order #{order.id?.slice(0, 8)}
-                              {order.folio_id && <span className="text-xs text-green-600">📋</span>}
+                              {order.folio_id && <Check className="w-3.5 h-3.5 text-green-600" />}
                             </div>
                             <div className="text-sm text-gray-600">
                               {new Date(order.created_at).toLocaleString()}
@@ -388,7 +388,7 @@ const POSEnhancements = () => {
                         {order.folio_id && (
                           <div className="mt-2">
                             <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
-                              ✓ Posted to Room Folio
+                              Posted to Room Folio
                             </Badge>
                           </div>
                         )}

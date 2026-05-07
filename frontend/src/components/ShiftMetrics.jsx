@@ -40,9 +40,9 @@ const ShiftMetrics = () => {
   };
 
   const shiftIcons = {
-    morning: '☀️',
-    afternoon: '🌞',
-    evening: '🌙'
+    morning: '',
+    afternoon: '',
+    evening: ''
   };
 
   return (

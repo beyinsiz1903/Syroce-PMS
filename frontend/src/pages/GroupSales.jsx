@@ -266,7 +266,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              👥 Grup Satış Yönetimi
+              Grup Satış Yönetimi
             </h1>
             <p className="text-gray-600">
               Grup rezervasyonları, bloklar ve rooming list yönetimi
