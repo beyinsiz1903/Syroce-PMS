@@ -105,6 +105,16 @@ async def phase_d_perf_and_marketplace(app):
             pass
         await _raw_db.guests.create_index([("tenant_id", 1), ("email", 1)], name="idx_guests_tenant_email")
         await _raw_db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
+        # messaging_automation_rules: every read/write is tenant-scoped
+        # (list_automation_rules, count, distinct, automation worker scan).
+        # Atlas profiler showed 425ms write samples on this collection — no
+        # tenant index existed. Compound (tenant_id, trigger_event) covers
+        # the worker's `find({tenant_id, trigger_event, enabled})` pattern
+        # too, while still serving plain tenant_id scans as a prefix.
+        await _raw_db.messaging_automation_rules.create_index(
+            [("tenant_id", 1), ("trigger_event", 1), ("enabled", 1)],
+            name="idx_msg_auto_rules_tenant_trigger",
+        )
         await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
         # KBS v2 atomik tekillik
