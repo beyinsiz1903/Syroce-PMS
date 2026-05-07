@@ -193,9 +193,20 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
   ];
 
-  const visibleTabs = isLite
-    ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key))
-    : ALL_TABS;
+  // Per-tenant sub-tab entitlement: tenant.modules['pms.<key>'] === false
+  // hides that tab. Missing/undefined = visible (backward compatible).
+  // Always keeps `frontdesk` visible so the tab strip is never empty.
+  const tenantModulesMap = tenant?.modules || {};
+  const isPmsSubTabEnabled = useCallback((tabKey) => {
+    if (tabKey === 'frontdesk') return true;
+    return tenantModulesMap[`pms.${tabKey}`] !== false;
+  }, [tenantModulesMap]);
+
+  const visibleTabs = useMemo(() => {
+    const base = isLite ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key)) : ALL_TABS;
+    return base.filter((tab) => isPmsSubTabEnabled(tab.key));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ALL_TABS / LITE_TABS modül scope sabitleri
+  }, [isLite, isPmsSubTabEnabled]);
 
   const validTabKeys = useMemo(() => new Set(visibleTabs.map((t) => t.key)), [visibleTabs]);
 

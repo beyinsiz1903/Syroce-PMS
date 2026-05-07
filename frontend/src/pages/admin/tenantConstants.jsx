@@ -1,4 +1,4 @@
-import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles } from 'lucide-react';
+import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble } from 'lucide-react';
 
 export const PLANS = {
   // Mini — Elektraweb Mini muadili: pansiyon, butik otel, apart için
@@ -152,6 +152,35 @@ export const MODULE_GROUPS = [
       { key: 'ai_chatbot', label: 'AI Chatbot', hint: 'Akıllı misafir asistanı', tier: 'enterprise' },
       { key: 'ai_pricing', label: 'AI Dynamic Pricing', hint: 'ML fiyat önerileri', tier: 'enterprise' },
       { key: 'ai_predictive', label: 'AI Tahminler', hint: 'No-show, demand prediction', tier: 'enterprise' },
+    ],
+  },
+  {
+    id: 'pms_submodules',
+    title: 'PMS Alt Sekmeleri',
+    icon: BedDouble,
+    color: 'sky',
+    description: 'PMS modülünün hangi alt sekmelerinin görüneceğini seçin. İşaretsiz olanlar operatöre hiç gözükmez.',
+    items: [
+      { key: 'pms.frontdesk', label: 'Ön Büro', hint: 'Check-in/out, varış, ayrılış, in-house', tier: 'mini' },
+      { key: 'pms.rooms', label: 'Odalar', hint: 'Oda envanteri', tier: 'mini' },
+      { key: 'pms.guests', label: 'Misafirler', hint: 'Misafir kartları', tier: 'mini' },
+      { key: 'pms.bookings', label: 'Rezervasyonlar', hint: 'Rezervasyon listesi', tier: 'mini' },
+      { key: 'pms.housekeeping', label: 'Kat Hizmetleri', hint: 'Oda durumu, görevler', tier: 'mini' },
+      { key: 'pms.cashier', label: 'Kasa', hint: 'Kasa hareketleri', tier: 'basic' },
+      { key: 'pms.upsell', label: 'Upsell', hint: 'Ek hizmet satışı', tier: 'basic' },
+      { key: 'pms.internal_chat', label: 'İletişim', hint: 'Personel chat', tier: 'basic' },
+      { key: 'pms.reports', label: 'PMS Raporları', hint: 'PMS sekmesi içi raporlar', tier: 'basic' },
+      { key: 'pms.flash', label: 'Flash Rapor', hint: 'Anlık özet', tier: 'basic' },
+      { key: 'pms.tasks', label: 'Görevler', hint: 'Personel görev kuyruğu', tier: 'basic' },
+      { key: 'pms.feedback', label: 'Geri Bildirim', hint: 'Misafir geri bildirim sistemi', tier: 'basic' },
+      { key: 'pms.allotment', label: 'Kontenjan', hint: 'Allotment grid', tier: 'professional' },
+      { key: 'pms.pos', label: 'POS', hint: 'Restoran/bar POS', tier: 'professional' },
+      { key: 'pms.laundry', label: 'Çamaşırhane', hint: 'Çamaşır siparişleri', tier: 'professional' },
+      { key: 'pms.concierge', label: 'Concierge', hint: 'Concierge masası', tier: 'professional' },
+      { key: 'pms.revenue', label: 'Gelir Kontrol', hint: 'Gelir kontrol panelleri', tier: 'professional' },
+      { key: 'pms.manager_report', label: 'Müdür Raporu', hint: 'Günlük müdür raporu', tier: 'professional' },
+      { key: 'pms.kbs', label: 'KBS / GİKS', hint: 'Polis bildirimi', tier: 'mini' },
+      { key: 'pms.kvkk', label: 'KVKK', hint: 'KVKK yönetimi', tier: 'basic' },
     ],
   },
   {

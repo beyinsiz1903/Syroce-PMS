@@ -80,6 +80,11 @@ class TenantRegister(BaseModel):
     subscription_days: int | None = None
     subscription_plan: str | None = None
     subscription_tier: str | None = "basic"
+    # Per-tenant module overrides selected during registration. When provided
+    # they are merged on top of property-type / tier defaults so the operator
+    # can hand-pick which top-level modules and sub-modules (e.g. `pms.frontdesk`,
+    # `pms.cashier`) are visible. Missing keys fall back to defaults.
+    modules: dict[str, bool] | None = None
 
 class GuestRegister(BaseModel):
     email: EmailStr

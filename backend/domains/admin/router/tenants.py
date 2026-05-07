@@ -519,6 +519,18 @@ async def create_tenant(
         nav_config = {"hidden_nav_groups": [], "hidden_nav_items": []}
         dashboard_layout = "standard"
 
+    # Per-tenant module override: operator picked specific modules / sub-modules
+    # in the registration form. Merge on top of property-type defaults so any
+    # key the operator did NOT touch keeps its profile default.
+    if payload.modules:
+        for key, value in payload.modules.items():
+            if not isinstance(key, str) or not key:
+                continue
+            try:
+                combined_modules[key] = bool(value)
+            except Exception:
+                continue
+
     from core.hotel_ids import generate_unique_hotel_id
     new_hotel_id = await generate_unique_hotel_id(sys_db)
 
