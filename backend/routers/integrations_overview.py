@@ -121,6 +121,18 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "code_status": "ready",
         "module_key": "messaging_email",
     },
+    {
+        "key": "mailing",
+        "name": "Syroce Mailing (Kredi Bazlı Kampanya)",
+        "category": "messaging",
+        "description": "Otele kredi paketi olarak satılan toplu e-posta kampanya modülü "
+                       "(şablon + otomasyon + delivery tracking). Resend altyapısı + iyzico ödeme.",
+        "required_envs": ["RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "PUBLIC_APP_URL"],
+        "code_status": "ready",
+        "module_key": "mailing",
+        "pricing_note": "Otele paket satışı: 1.000 / 5.000 / 25.000 kredi (TRY). "
+                        "Ödeme tahsilatı için iyzico tamamlanmalı.",
+    },
 
     # ─── Channel Manager ────────────────────────────────────────
     {
