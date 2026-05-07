@@ -76,6 +76,15 @@ async def ensure_performance_indexes():
          "idx_monitoring_metrics_tenant_name_ts", {}),
         ("monitoring_metrics_history", [("timestamp", -1)],
          "idx_monitoring_metrics_ts", {}),
+        # WhatsApp inbound idempotency — Meta retry'larda duplicate önler.
+        # Webhook upsert'i (tenant_id, wa_message_id) key'iyle yapıyor;
+        # concurrency altında race-free garanti için unique index gerekli.
+        ("wa_inbound_messages", [("tenant_id", 1), ("wa_message_id", 1)],
+         "idx_wa_inbound_unique", {"unique": True}),
+        # WhatsApp webhook tenant lookup — phone_number_id'den config'e.
+        ("messaging_provider_configs",
+         [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)],
+         "idx_msg_provider_phone_lookup", {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
