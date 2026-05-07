@@ -3,8 +3,12 @@
  * Provides offline functionality and aggressive caching
  */
 
-const CACHE_VERSION = 'v1.0.0';
+// Bumped when caching topology değişiyor — eski client'lar otomatik yeni
+// CACHE_NAME'e geçer (activate handler eskileri siler).
+const CACHE_VERSION = 'v1.1.0';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
+// Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
+// client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
 const OFFLINE_DB_NAME = 'SyroceOffline';
 const OFFLINE_DB_VERSION = 1;
 const MEDIA_QUEUE_STORE = 'mediaQueue';
@@ -41,17 +45,41 @@ const CACHE_STRATEGIES = {
   STALE_WHILE_REVALIDATE: 'stale-while-revalidate',
 };
 
-// Route patterns and their strategies
+// SWR (stale-while-revalidate) tercih edilen rotalar — anlık UI yanıtı +
+// arka planda taze veri. UI tarafında React Query refetchOnWindowFocus zaten
+// senkronize ediyor; SW sadece "ilk paint hızlı" amacıyla cache servisliyor.
+const NO_CACHE_PATTERNS = [
+  /\/api\/auth\/(login|logout|refresh|2fa|verify|password)/i,
+  /\/api\/payments?\/(charge|refund|capture)/i,
+  /\/api\/cashier/i,
+  /\/api\/folios?\/(charge|payment|void|adjust)/i,
+  /\/api\/bookings?\/(create|cancel|check.?in|check.?out)/i,
+  /\/api\/night-audit/i,
+  /\/api\/admin/i,
+  /\/api\/quick-?id/i,
+];
+
 const ROUTE_STRATEGIES = [
   {
     pattern: /\/api\/optimization\/(health|cache\/stats|views\/stats)/,
     strategy: CACHE_STRATEGIES.NETWORK_FIRST,
     cacheDuration: 60 * 1000, // 1 minute
   },
+  // Read-heavy listeler: SWR — ilk paint cache'ten, arka planda taze çek
   {
-    pattern: /\/api\/(pms|bookings|rooms|guests)/,
+    pattern: /\/api\/(rooms|guests|room-types|rate-plans|amenities)\/?(\?|$)/,
+    strategy: CACHE_STRATEGIES.STALE_WHILE_REVALIDATE,
+    cacheDuration: 5 * 60 * 1000,
+  },
+  {
+    pattern: /\/api\/(pms|bookings)/,
     strategy: CACHE_STRATEGIES.NETWORK_FIRST,
-    cacheDuration: 5 * 60 * 1000, // 5 minutes
+    cacheDuration: 5 * 60 * 1000,
+  },
+  {
+    pattern: /\/api\/(dashboard|kpis|widgets)/,
+    strategy: CACHE_STRATEGIES.STALE_WHILE_REVALIDATE,
+    cacheDuration: 2 * 60 * 1000,
   },
   {
     pattern: /\/api\/reports/,
@@ -115,7 +143,16 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
-  
+
+  // Güvenlik: hassas/auth-mutasyon rotalarında kesinlikle cache yok.
+  // (Auth-protected GET listesi bile olsa, kullanıcı değişimi sonrası
+  // AUTH_CHANGED message handler tüm cache'i drop ediyor.)
+  for (const noCache of NO_CACHE_PATTERNS) {
+    if (noCache.test(url.pathname)) {
+      return; // SW araya girmesin → varsayılan network
+    }
+  }
+
   // Find matching strategy
   let strategy = CACHE_STRATEGIES.NETWORK_FIRST; // Default
   let cacheDuration = 5 * 60 * 1000; // 5 minutes default
@@ -252,35 +289,67 @@ async function cacheFirst(request, cacheDuration) {
 async function staleWhileRevalidate(request, cacheDuration) {
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(request);
-  
-  // Fetch from network in background
-  const fetchPromise = fetch(request).then((networkResponse) => {
-    if (networkResponse.ok) {
-      const headers = new Headers(networkResponse.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const responseToCache = new Response(networkResponse.body, {
-        status: networkResponse.status,
-        statusText: networkResponse.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, responseToCache);
-    }
-    
-    return networkResponse;
-  }).catch(() => {
-    // Ignore network errors
-  });
-  
-  // Return cached response immediately if available
+
+  // Cache TTL aşıldıysa "stale" sayma — fetch sonucunu bekle.
+  let cacheStillFresh = false;
   if (cachedResponse) {
+    const cachedAt = cachedResponse.headers.get('sw-cached-at');
+    if (cachedAt) {
+      cacheStillFresh = Date.now() - parseInt(cachedAt, 10) < cacheDuration;
+    }
+  }
+
+  // Fetch from network in background
+  const fetchPromise = fetch(request)
+    .then((networkResponse) => {
+      // Hatalı yanıtları ASLA cache'leme (401/403/5xx leak'ini engelle).
+      if (networkResponse && networkResponse.ok) {
+        // Cache-Control: no-store / private respect
+        const cc = (networkResponse.headers.get('Cache-Control') || '').toLowerCase();
+        if (!cc.includes('no-store') && !cc.includes('private')) {
+          const headers = new Headers(networkResponse.headers);
+          headers.append('sw-cached-at', Date.now().toString());
+          const responseToCache = new Response(networkResponse.clone().body, {
+            status: networkResponse.status,
+            statusText: networkResponse.statusText,
+            headers,
+          });
+          cache.put(request, responseToCache).catch(() => {});
+        }
+      }
+      return networkResponse;
+    })
+    .catch(() => null);
+
+  // Taze cache varsa hemen dön (background'da revalidate sürer)
+  if (cacheStillFresh) {
     return cachedResponse;
   }
-  
-  // Otherwise wait for network
-  return fetchPromise;
+  // Stale cache varsa ve network başarısızsa fallback dön
+  const fresh = await fetchPromise;
+  if (fresh) return fresh;
+  if (cachedResponse) return cachedResponse;
+  return new Response('Offline - No cached data available', {
+    status: 503,
+    statusText: 'Service Unavailable',
+    headers: new Headers({ 'Content-Type': 'text/plain' }),
+  });
 }
+
+// Auth değişiminde tüm dynamic cache'i drop et — cross-user data leak guard.
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'AUTH_CHANGED' || data.type === 'CLEAR_CACHE') {
+    event.waitUntil(
+      caches.keys().then((names) =>
+        Promise.all(names.filter((n) => n.startsWith('hotel-pms-')).map((n) => caches.delete(n)))
+      )
+    );
+  }
+  if (data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 // Background sync for offline actions
 self.addEventListener('sync', (event) => {

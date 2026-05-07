@@ -1,0 +1,30 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": [
+        "src/main.jsx",
+        "src/App.jsx",
+        "src/serviceWorkerRegistration.jsx",
+        "src/i18n.js",
+        "src/test-setup.js",
+        "vite.config.js",
+        "vitest.config.js",
+        "playwright.config.js",
+        "e2e/**/*.spec.js"
+    ],
+    "project": ["src/**/*.{js,jsx,ts,tsx}"],
+    "ignore": [
+        "src/**/*.test.{js,jsx}",
+        "src/**/*.spec.{js,jsx}",
+        "src/components/ui/**",
+        "src/locales/**"
+    ],
+    "ignoreDependencies": [
+        "@radix-ui/.*",
+        "tailwindcss-animate",
+        "vaul",
+        "embla-carousel-react",
+        "input-otp",
+        "react-day-picker"
+    ],
+    "ignoreBinaries": ["lighthouse"]
+}

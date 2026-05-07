@@ -1,0 +1,107 @@
+name: Frontend Quality Gates
+
+on:
+    push:
+        branches: [main, develop, staging]
+    pull_request:
+        branches: [main, develop]
+
+env:
+    NODE_VERSION: '22'
+
+jobs:
+    # ============ KNIP DEAD-CODE GUARD (SOFT GATE) ============
+    knip:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Run knip (advisory)
+              # Soft gate: çıktıyı PR'da göster ama exit kodu fail etmesin.
+              # Sıfırlamak için: && exit 1 ekle.
+              run: cd frontend && yarn knip --reporter compact || true
+
+    # ============ E2E SMOKE (HARD GATE on PR) ============
+    e2e-smoke:
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        services:
+            mongodb:
+                image: mongo:7.0
+                ports: ['27017:27017']
+                options: >-
+                    --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+                    --health-interval 10s --health-timeout 5s --health-retries 5
+            redis:
+                image: redis:7-alpine
+                ports: ['6379:6379']
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 10s --health-timeout 5s --health-retries 5
+        env:
+            MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+            DB_NAME: hotel_pms_test
+            REDIS_URL: redis://localhost:6379/0
+            JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+            E2E_BASE_URL: http://localhost:3000
+            E2E_HOTEL_ID: '100001'
+            E2E_USERNAME: demo
+            E2E_PASSWORD: demo123
+            E2E_EMAIL: demo@syroce.com
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: '3.11'
+                  cache: 'pip'
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install backend deps
+              run: |
+                  cd backend
+                  pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+                  bash scripts/post_install.sh
+            - name: Seed demo user
+              run: cd backend && python create_demo_users.py || python scripts/create_test_user.py
+            - name: Start backend
+              run: |
+                  cd backend
+                  uvicorn server:app --host 0.0.0.0 --port 8000 &
+                  for i in $(seq 1 30); do
+                      if curl -s http://localhost:8000/api/docs >/dev/null 2>&1; then break; fi
+                      sleep 2
+                  done
+            - name: Install frontend
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Install Playwright browsers
+              run: cd frontend && yarn e2e:install
+            - name: Build + serve frontend
+              run: |
+                  cd frontend
+                  yarn build
+                  npx --yes serve -s build -l 3000 &
+                  for i in $(seq 1 20); do
+                      if curl -s http://localhost:3000 >/dev/null 2>&1; then break; fi
+                      sleep 2
+                  done
+            - name: Run e2e smoke
+              run: cd frontend && yarn e2e
+            - name: Upload Playwright report
+              uses: actions/upload-artifact@v5
+              if: always()
+              with:
+                  name: playwright-report
+                  path: frontend/playwright-report/
+                  retention-days: 14

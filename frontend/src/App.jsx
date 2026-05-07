@@ -46,6 +46,18 @@ function DigitalKeyRoute() {
 // (30 gün) bir cihazda yerel kontrol ek bir savunma katmanı sağlıyor.
 const TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+function notifyServiceWorkerAuthChanged() {
+  // SW v1.1.0+ AUTH_CHANGED mesajına karşılık tüm `hotel-pms-*` cache'leri
+  // siler. Login/logout/clearAuthStorage akışlarından çağrılır → cross-user
+  // veri sızıntısı önlenir (User A'nın cache'lediği /api/rooms response'u
+  // User B'ye servis edilmez).
+  try {
+    if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: "AUTH_CHANGED" });
+    }
+  } catch { /* ignore — SW yoksa zaten cache de yok */ }
+}
+
 function clearAuthStorage() {
   localStorage.removeItem("token");
   localStorage.removeItem("token_ts");
@@ -59,6 +71,7 @@ function clearAuthStorage() {
     sessionStorage.removeItem("notif_cache_v1");
     sessionStorage.removeItem("pms_bd_cache_v1");
   } catch { /* ignore */ }
+  notifyServiceWorkerAuthChanged();
 }
 
 function isTokenExpiredLocally() {
@@ -113,6 +126,9 @@ function App() {
   }, []);
 
   const handleLogin = async (token, userData, tenantData, refreshToken) => {
+    // clearAuthStorage() içinden notifyServiceWorkerAuthChanged() çağrılıyor
+    // → eski kullanıcının cache'i SW tarafında temizlenir, yeni token ile
+    // taze veri çekilir.
     clearAuthStorage();
     localStorage.setItem("token", token);
     localStorage.setItem("token_ts", String(Date.now()));
