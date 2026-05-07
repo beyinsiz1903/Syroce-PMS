@@ -405,10 +405,29 @@ async def ai_chat(
                         seen_ids.add(f['id'])
                         all_folios.append(f)
 
+                # N+1 fix: tüm folio_charges ve bookings'i tek $in sorgusunda topla.
+                folio_ids = [f['id'] for f in all_folios]
+                booking_ids = [f.get('booking_id') for f in all_folios if f.get('booking_id')]
+                charges_by_folio: dict[str, list] = {}
+                bookings_by_id: dict[str, dict] = {}
+                if folio_ids:
+                    # Defense-in-depth: tenant_id ile de filtrele (folio_id zaten
+                    # tenant'a scope'lu folios sorgusundan geldi, bu ek katman).
+                    all_charges = await db.folio_charges.find({
+                        "tenant_id": current_user.tenant_id,
+                        "folio_id": {"$in": folio_ids}, "voided": {"$ne": True}
+                    }).to_list(len(folio_ids) * 50)
+                    for ch in all_charges:
+                        charges_by_folio.setdefault(ch.get('folio_id'), []).append(ch)
+                if booking_ids:
+                    all_bookings = await db.bookings.find({
+                        "tenant_id": current_user.tenant_id,
+                        "id": {"$in": booking_ids}
+                    }).to_list(len(booking_ids))
+                    bookings_by_id = {b['id']: b for b in all_bookings}
+
                 for f in all_folios:
-                    charges = await db.folio_charges.find({
-                        "folio_id": f['id'], "voided": {"$ne": True}
-                    }).to_list(50)
+                    charges = charges_by_folio.get(f['id'], [])
 
                     charge_lines = []
                     total = 0
@@ -417,8 +436,8 @@ async def ai_chat(
                         total += amt
                         charge_lines.append(f"  - {ch.get('description','')}: {amt:.2f} TL")
 
-                    # Get booking info
-                    booking = await db.bookings.find_one({"id": f.get('booking_id')})
+                    # Get booking info (pre-fetched)
+                    booking = bookings_by_id.get(f.get('booking_id'))
                     guest = next((g for g in guests if g['id'] == f.get('guest_id')), None)
                     guest_full = f"{guest.get('first_name','')} {guest.get('last_name','')}" if guest else f.get('guest_name', 'Bilinmiyor')
 
@@ -444,14 +463,31 @@ async def ai_chat(
                     "status": "open"
                 }).to_list(10)
 
+                # N+1 fix: charges + bookings tek $in sorgusu
+                of_folio_ids = [f['id'] for f in open_folios]
+                of_booking_ids = [f.get('booking_id') for f in open_folios if f.get('booking_id')]
+                of_charges_by_folio: dict[str, list] = {}
+                of_bookings_by_id: dict[str, dict] = {}
+                if of_folio_ids:
+                    of_all_charges = await db.folio_charges.find({
+                        "tenant_id": current_user.tenant_id,
+                        "folio_id": {"$in": of_folio_ids}, "voided": {"$ne": True}
+                    }).to_list(len(of_folio_ids) * 50)
+                    for ch in of_all_charges:
+                        of_charges_by_folio.setdefault(ch.get('folio_id'), []).append(ch)
+                if of_booking_ids:
+                    of_all_bookings = await db.bookings.find({
+                        "tenant_id": current_user.tenant_id,
+                        "id": {"$in": of_booking_ids}
+                    }).to_list(len(of_booking_ids))
+                    of_bookings_by_id = {b['id']: b for b in of_all_bookings}
+
                 for f in open_folios:
-                    charges = await db.folio_charges.find({
-                        "folio_id": f['id'], "voided": {"$ne": True}
-                    }).to_list(50)
+                    charges = of_charges_by_folio.get(f['id'], [])
                     total = sum(ch.get('total', ch.get('amount', 0)) for ch in charges)
                     charge_summary = ", ".join(ch.get('description','') for ch in charges[:5])
 
-                    booking = await db.bookings.find_one({"id": f.get('booking_id')})
+                    booking = of_bookings_by_id.get(f.get('booking_id'))
                     folios_found.append(
                         f"Folio #{f.get('folio_number','')} | {f.get('guest_name','Bilinmiyor')} | "
                         f"Oda {booking.get('room_number','') if booking else '-'} | "

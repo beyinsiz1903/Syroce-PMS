@@ -353,17 +353,23 @@ async def solve_overbooking(
     # Get all rooms
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
 
-    # Find overbookings (multiple bookings on same room same date)
+    # N+1 fix: tüm odalar için tek sorgu, sonra Python tarafında gruplama.
+    # Önceki versiyon her oda için ayrı find() açıyordu (M sorgu).
+    room_ids = [r['id'] for r in rooms]
+    all_bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'room_id': {'$in': room_ids},
+        'status': {'$in': ['confirmed', 'guaranteed']},
+        'check_in': {'$lte': end_of_day.isoformat()},
+        'check_out': {'$gte': start_of_day.isoformat()}
+    }, {'_id': 0}).to_list(len(room_ids) * 100) if room_ids else []
+    bookings_by_room: dict[str, list] = {}
+    for b in all_bookings:
+        bookings_by_room.setdefault(b.get('room_id'), []).append(b)
+
     conflicts = []
     for room in rooms:
-        bookings = await db.bookings.find({
-            'tenant_id': current_user.tenant_id,
-            'room_id': room['id'],
-            'status': {'$in': ['confirmed', 'guaranteed']},
-            'check_in': {'$lte': end_of_day.isoformat()},
-            'check_out': {'$gte': start_of_day.isoformat()}
-        }, {'_id': 0}).to_list(100)
-
+        bookings = bookings_by_room.get(room['id'], [])
         if len(bookings) > 1:
             conflicts.append({
                 'room': room,
