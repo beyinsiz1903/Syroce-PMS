@@ -218,6 +218,81 @@ class WhatsAppProvider(BaseProvider):
                     "error_class": self.classify_error(err_str),
                     "latency_ms": round((time.time() - start) * 1000, 2)}
 
+    async def send_template(
+        self,
+        recipient: str,
+        template_name: str,
+        language_code: str = "tr",
+        components: list | None = None,
+        credentials: dict | None = None,
+        mode: str = ProviderMode.LIVE,
+    ) -> dict[str, Any]:
+        """Meta WhatsApp template (HSM) message gönderimi.
+
+        24 saatlik konuşma penceresi dışında veya ilk temas için Meta
+        zorunlu olarak onaylı template ister. `components` Meta'nın
+        beklediği yapıdadır:
+          [{"type": "body", "parameters": [{"type": "text", "text": "..."}]}]
+        """
+        creds = credentials or {}
+        access_token = creds.get("access_token", "")
+        phone_number_id = creds.get("phone_number_id", "")
+
+        if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
+            return {
+                "success": True,
+                "provider_message_id": f"sandbox_wa_tpl_{int(time.time())}",
+                "error": None,
+                "mode": mode,
+                "latency_ms": 8,
+                "note": f"[SANDBOX] WhatsApp template '{template_name}' → {recipient}",
+            }
+
+        if not access_token or not phone_number_id:
+            return {
+                "success": False,
+                "error": "WhatsApp API bilgileri eksik (access_token ve phone_number_id gerekli)",
+                "provider_message_id": None,
+                "error_class": "authentication_error",
+            }
+
+        start = time.time()
+        try:
+            import httpx
+            url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+            template_payload: dict[str, Any] = {
+                "name": template_name,
+                "language": {"code": language_code},
+            }
+            if components:
+                template_payload["components"] = components
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient,
+                "type": "template",
+                "template": template_payload,
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                    json=payload,
+                )
+            latency_ms = round((time.time() - start) * 1000, 2)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                msg_id = data.get("messages", [{}])[0].get("id", "")
+                return {"success": True, "provider_message_id": msg_id, "error": None, "latency_ms": latency_ms}
+            err = f"WhatsApp template HTTP {resp.status_code}: {resp.text[:200]}"
+            return {"success": False, "error": err, "provider_message_id": None,
+                    "error_class": self.classify_error(err), "latency_ms": latency_ms}
+        except Exception as e:
+            logger.exception("WhatsApp send_template error")
+            err_str = str(e)[:300]
+            return {"success": False, "error": err_str, "provider_message_id": None,
+                    "error_class": self.classify_error(err_str),
+                    "latency_ms": round((time.time() - start) * 1000, 2)}
+
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
             return {"status": "healthy", "mode": mode, "checked_at": datetime.now(UTC).isoformat()}

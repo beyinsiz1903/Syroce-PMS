@@ -476,6 +476,14 @@ try:
 except Exception as _qid_err:
     logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")
 
+# WhatsApp Business Cloud API — Inbound webhook (Meta verification + messages + statuses)
+try:
+    from routers.whatsapp_webhook import router as whatsapp_webhook_router
+    app.include_router(whatsapp_webhook_router)
+    logger.info("  ✅ WhatsApp webhook router loaded")
+except Exception as _wa_wh_err:
+    logger.warning(f"WhatsApp webhook router skipped: {_wa_wh_err}")
+
 # Security Classification & PII Management
 try:
     from security.classification_router import router as classification_router

@@ -57,6 +57,8 @@ class WhatsAppSettingsReq(BaseModel):
     access_token: str
     phone_number_id: str
     business_name: str = ""
+    webhook_verify_token: str = ""  # Meta verification handshake (GET /api/whatsapp/webhook)
+    app_secret: str = ""  # HMAC-SHA256 secret for X-Hub-Signature-256 verification
     is_sandbox: bool = False
     enabled: bool = True
 
@@ -98,6 +100,8 @@ async def get_messaging_settings(current_user: User = Depends(get_current_user))
                 "access_token": _mask(creds.get("access_token", ""), show=8),
                 "phone_number_id": creds.get("phone_number_id", ""),
                 "business_name": creds.get("business_name", ""),
+                "webhook_verify_token": "********" if creds.get("webhook_verify_token") else "",
+                "app_secret": "********" if creds.get("app_secret") else "",
             }
             result["whatsapp"] = {
                 "id": cfg["id"],
@@ -165,6 +169,8 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
         "access_token": req.access_token,
         "phone_number_id": req.phone_number_id,
         "business_name": req.business_name,
+        "webhook_verify_token": req.webhook_verify_token,
+        "app_secret": req.app_secret,
     }
     existing = await db.messaging_provider_configs.find_one(
         {"tenant_id": current_user.tenant_id, "provider_type": "whatsapp"}, {"_id": 0}
@@ -322,6 +328,93 @@ async def send_message(req: SendReq, current_user: User = Depends(get_current_us
         variables=req.variables, booking_id=req.booking_id, guest_id=req.guest_id,
         property_id=req.property_id, use_case=req.use_case,
     )
+    return result
+
+
+# ════════════════════════════════════════════════════════
+# WhatsApp Template (HSM) Send
+# ════════════════════════════════════════════════════════
+
+class WhatsAppTemplateReq(BaseModel):
+    """Meta'nın onayladığı template ile mesaj gönderir.
+
+    24 saatlik konuşma penceresi dışında ya da ilk temas için
+    sadece onaylı template'ler gönderilebilir (Meta kuralı).
+
+    `components` Meta'nın beklediği yapıdadır, örnek:
+      [{"type": "body",
+        "parameters": [{"type": "text", "text": "Ahmet"},
+                       {"type": "text", "text": "16:00"}]}]
+    """
+    recipient: str
+    template_name: str
+    language_code: str = "tr"
+    components: list[dict] = []
+    booking_id: str | None = None
+    guest_id: str | None = None
+
+
+@router.post("/send-template")
+async def send_whatsapp_template(
+    req: WhatsAppTemplateReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    db = _get_db()
+    cfg = await db.messaging_provider_configs.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "provider_type": "whatsapp",
+            "enabled": True,
+        },
+        {"_id": 0},
+    )
+    if not cfg:
+        raise HTTPException(
+            status_code=400,
+            detail="WhatsApp yapılandırılmamış (önce /settings/whatsapp ile credentials ekleyin)",
+        )
+
+    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
+    from modules.messaging.models import ProviderType, new_delivery_log
+
+    provider = PROVIDER_MAP[ProviderType.WHATSAPP.value]
+    creds = cfg.get("credentials_encrypted", {}) or {}
+    mode = ProviderMode.SANDBOX if cfg.get("is_sandbox") else ProviderMode.LIVE
+
+    result = await provider.send_template(
+        recipient=req.recipient,
+        template_name=req.template_name,
+        language_code=req.language_code,
+        components=req.components,
+        credentials=creds,
+        mode=mode,
+    )
+
+    # delivery log
+    try:
+        log = new_delivery_log(
+            tenant_id=current_user.tenant_id,
+            property_id=None,
+            channel="whatsapp",
+            provider_type=ProviderType.WHATSAPP.value,
+            recipient=req.recipient,
+            template_id=None,
+            subject=None,
+            body=f"[template:{req.template_name}]",
+            booking_id=req.booking_id,
+            guest_id=req.guest_id,
+            use_case="template",
+        )
+        log["status"] = "sent" if result.get("success") else "failed"
+        log["provider_message_id"] = result.get("provider_message_id")
+        log["error_message"] = result.get("error")
+        log["template_name"] = req.template_name
+        log["template_language"] = req.language_code
+        await db.messaging_delivery_logs.insert_one(log)
+    except Exception:
+        logger.exception("template send delivery log insert failed")
+
     return result
 
 
