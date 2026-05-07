@@ -1,95 +1,115 @@
 #!/usr/bin/env node
-import fs from "node:fs";
-import path from "node:path";
+/**
+ * Layout regression guard.
+ *
+ * Fails (exit 1) if any route in `frontend/src/routes/routeDefinitions.jsx`
+ * with `wrapLayout: true` points to a page file that still imports the real
+ * `Layout` component. This prevents the double-wrap class of bug introduced
+ * by partial M5 migrations (route owns Layout, page must NOT also wrap it).
+ *
+ * What is allowed:
+ *  - `import { MaybeLayout }` — conditional embed helper
+ *  - `import LayoutSomething` (different name)
+ *  - Pages NOT referenced from a wrapLayout:true route
+ *
+ * What is rejected:
+ *  - `import Layout from ...` in a page that a wrapLayout:true route renders
+ *
+ * Usage: `node frontend/tools/codemod-layout/guard.mjs`
+ *        or `cd frontend && yarn guard:layout`
+ */
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const ROUTE_FILE = path.join(REPO_ROOT, "frontend/src/routes/routeDefinitions.jsx");
-const PAGES_DIR = path.join(REPO_ROOT, "frontend/src/pages");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// guard.mjs lives at <workspace>/tools/codemod-layout/, frontend at <workspace>/frontend/
+const FRONTEND_ROOT = resolve(__dirname, "../../frontend");
+const ROUTE_DEF_PATH = resolve(FRONTEND_ROOT, "src/routes/routeDefinitions.jsx");
 
-function resolvePagePath(importSpec) {
-  let rel = importSpec;
-  if (rel.startsWith("@/")) rel = rel.slice(2);
-  else if (rel.startsWith("./") || rel.startsWith("../")) {
-    rel = path.relative(
-      path.join(REPO_ROOT, "frontend/src"),
-      path.resolve(path.dirname(ROUTE_FILE), rel),
-    );
-  }
-  for (const ext of [".jsx", ".js", ".tsx", ".ts"]) {
-    const full = path.join(REPO_ROOT, "frontend/src", rel + ext);
-    if (fs.existsSync(full)) return full;
-  }
-  return null;
+if (!existsSync(ROUTE_DEF_PATH)) {
+  console.error(`[guard:layout] routeDefinitions not found at ${ROUTE_DEF_PATH}`);
+  process.exit(2);
 }
 
-function main() {
-  if (!fs.existsSync(ROUTE_FILE)) {
-    console.error(`[guard] Route file not found: ${ROUTE_FILE}`);
-    process.exit(2);
-  }
+const src = readFileSync(ROUTE_DEF_PATH, "utf8");
 
-  const src = fs.readFileSync(ROUTE_FILE, "utf8");
-
-  const lazyMap = new Map();
-  const lazyRe = /^const\s+(\w+)\s*=\s*lazy\(\s*\(\)\s*=>\s*import\(\s*["']([^"']+)["']\s*\)\s*\)\s*;/gm;
-  for (const m of src.matchAll(lazyRe)) {
-    const [, name, spec] = m;
-    const filePath = resolvePagePath(spec);
-    if (filePath) lazyMap.set(name, filePath);
-  }
-
-  const violations = [];
-  const warnings = [];
-  const lines = src.split("\n");
-  lines.forEach((line, idx) => {
-    if (!/wrapLayout\s*:\s*true/.test(line)) return;
-    if (/^\s*\/\//.test(line)) return;
-    const callMatch = line.match(/\b(?:p|pm|pf|pa|pp)\s*\(\s*(\w+)/);
-    if (!callMatch) {
-      warnings.push({ line: idx + 1, content: line.trim(), reason: "wrapLayout: true present but component name could not be parsed" });
-      return;
+/* --- 1) Build identifier -> source path map from top-of-file imports --- */
+const importMap = new Map();
+const importRe = /import\s+(?:\{([^}]+)\}|(\w+))(?:\s*,\s*\{([^}]+)\})?\s+from\s+["']([^"']+)["']/g;
+let m;
+while ((m = importRe.exec(src)) !== null) {
+  const [, namedA, defaultName, namedB, source] = m;
+  if (defaultName) importMap.set(defaultName, source);
+  for (const block of [namedA, namedB]) {
+    if (!block) continue;
+    for (const part of block.split(",")) {
+      const cleaned = part.trim().split(/\s+as\s+/)[0].trim();
+      if (cleaned) importMap.set(cleaned, source);
     }
-    const compName = callMatch[1];
-    const filePath = lazyMap.get(compName);
-    if (!filePath) {
-      warnings.push({ line: idx + 1, component: compName, reason: "lazy import not found in route file" });
-      return;
-    }
-    const pageSrc = fs.readFileSync(filePath, "utf8");
-    const hasLayoutImport = /^\s*import\s+Layout\s+from\s+["'](?:@\/components\/Layout|\.\.\/components\/Layout)["'];?/m.test(pageSrc);
-    if (hasLayoutImport) {
-      const hasJsxUse = /<Layout[\s/>]/.test(pageSrc);
-      violations.push({
-        line: idx + 1,
-        component: compName,
-        file: path.relative(REPO_ROOT, filePath),
-        kind: hasJsxUse ? "double-wrap (Layout still rendered)" : "stale import (no JSX use)",
-      });
-    }
-  });
-
-  if (warnings.length) {
-    console.warn(`\n[guard] ${warnings.length} warning(s):`);
-    for (const w of warnings) console.warn(`  - L${w.line} ${w.component ?? ""} — ${w.reason}`);
   }
-
-  if (violations.length === 0) {
-    console.log(`[guard] OK — no double-wrap regressions detected (scanned ${lazyMap.size} lazy imports).`);
-    process.exit(0);
-  }
-
-  console.error(`\n[guard] FAIL — ${violations.length} double-wrap regression(s) detected:\n`);
-  for (const v of violations) {
-    console.error(`  • ${v.component} (route L${v.line})`);
-    console.error(`      file:   ${v.file}`);
-    console.error(`      reason: ${v.kind}`);
-    console.error(`      fix:    remove "import Layout" + "<Layout>" wrap from the page (route owns the layout)`);
-    console.error("");
-  }
-  console.error("See replit.md → 'Pages Layout Wrap' gotcha for the migration pattern.\n");
-  process.exit(1);
 }
 
-main();
+/* --- 2) Find route entries with wrapLayout: true and capture component identifiers --- */
+const wrapped = new Set();
+const lines = src.split("\n");
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  if (!line.includes("wrapLayout: true")) continue;
+  // Look for component: X or p(X, ...) / pm(X, ...) / pa(X, ...) on the same line
+  const match =
+    line.match(/component:\s*(\w+)/) ||
+    line.match(/\bp[am]?\s*\(\s*(\w+)/) ||
+    line.match(/\.\.\.p[am]?\s*\(\s*(\w+)/);
+  if (match) {
+    wrapped.add(match[1]);
+  }
+}
+
+/* --- 3) For each wrapped component, resolve its file and check imports --- */
+const violations = [];
+for (const ident of wrapped) {
+  const importPath = importMap.get(ident);
+  if (!importPath) continue;
+  if (!importPath.startsWith("@/") && !importPath.startsWith("./") && !importPath.startsWith("../")) {
+    continue; // 3rd-party
+  }
+
+  // Resolve to filesystem path
+  const relPath = importPath.startsWith("@/")
+    ? resolve(FRONTEND_ROOT, "src", importPath.slice(2))
+    : resolve(dirname(ROUTE_DEF_PATH), importPath);
+
+  const candidates = [
+    relPath,
+    `${relPath}.jsx`,
+    `${relPath}.js`,
+    `${relPath}.tsx`,
+    `${relPath}.ts`,
+    `${relPath}/index.jsx`,
+    `${relPath}/index.js`,
+  ];
+  const filePath = candidates.find((p) => existsSync(p));
+  if (!filePath) continue;
+
+  const body = readFileSync(filePath, "utf8");
+  // Match `import Layout from ...` (default import — the real Layout)
+  // Allow `import { MaybeLayout }` and `import LayoutSomething` (different identifier).
+  if (/^\s*import\s+Layout\s+from\s+/m.test(body)) {
+    violations.push({ ident, filePath: filePath.replace(FRONTEND_ROOT + "/", "") });
+  }
+}
+
+if (violations.length === 0) {
+  console.log(`[guard:layout] OK — ${wrapped.size} wrapLayout routes clean.`);
+  process.exit(0);
+}
+
+console.error(`[guard:layout] ${violations.length} violation(s):`);
+for (const v of violations) {
+  console.error(`  - ${v.ident} (${v.filePath}) imports Layout but route uses wrapLayout: true`);
+}
+console.error("");
+console.error("Fix: remove `import Layout` and the <Layout> wrapper from the page.");
+console.error("Routes wrap with Layout via routeDefinitions.jsx — pages must return content only.");
+process.exit(1);
