@@ -2,10 +2,18 @@
 Create test user for the test hotel
 """
 import asyncio
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import sys
 from datetime import datetime, timezone
 import uuid
+
+# Ensure `backend/` is on sys.path so `core.*` resolves regardless of CWD
+# (CI invokes us from `backend/` but `core` lives at `backend/core/`).
+_BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from motor.motor_asyncio import AsyncIOMotorClient
 from core._pwd import BcryptContext
 
 pwd_context = BcryptContext()
