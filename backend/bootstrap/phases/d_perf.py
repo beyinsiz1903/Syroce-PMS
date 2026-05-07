@@ -199,6 +199,34 @@ async def phase_d_perf_and_marketplace(app):
             ("rooms", "room_number_1"),
             ("rooms", "room_type_1"),
             ("rooms", "floor_1"),
+            # 2026-05-07: bookings 16 index → 9-10'a indir.
+            #   tüm bunlar tenant-prefixli compound'larla (perf_indexes.py +
+            #   atomic_*.py + d_perf.py) kapsanıyor; database_optimizer.py'dan
+            #   da çıkarıldılar.
+            ("bookings", "idx_b_tid_id"),
+            ("bookings", "idx_b_tid_status"),
+            ("bookings", "idx_b_tid_status_chkin"),
+            ("bookings", "idx_b_tid_room"),
+            ("bookings", "idx_b_tid_guest"),
+            ("bookings", "idx_b_tid_created"),
+            # folios 13 → 8: tenant-scope'suz tek-alanlı index'ler asla
+            # query plan'ında seçilmiyor (tüm find tenant_db.py üstünden
+            # tenant_id ile çağrılıyor).
+            ("folios", "booking_id_1"),
+            ("folios", "guest_id_1"),
+            ("folios", "status_1"),
+            ("folios", "created_at_-1"),
+            ("folios", "folio_type_1"),
+            ("folios", "booking_id_1_folio_type_1"),
+            ("folios", "idx_f_tid_booking"),  # ↔ idx_folio_tenant_booking
+            ("folios", "idx_f_tid_status"),   # ⊂ idx_folio_status_balance
+            # housekeeping_tasks: tenant-prefixsiz duplikatlar + exact-dup'lar
+            ("housekeeping_tasks", "idx_hk_tid_status"),  # ⊂ idx_hk_status_room
+            ("housekeeping_tasks", "idx_hk_tid_done"),    # = idx_hk_completed
+            ("housekeeping_tasks", "room_id_1"),
+            ("housekeeping_tasks", "assigned_to_1"),
+            ("housekeeping_tasks", "status_1"),
+            ("housekeeping_tasks", "task_type_1"),
         ]
         _dropped: list[str] = []
         for _coll, _name in _redundant:

@@ -12,6 +12,14 @@ async def ensure_performance_indexes():
         ("bookings", [("tenant_id", 1), ("status", 1), ("check_in", 1)], "idx_booking_status_checkin", {}),
         ("bookings", [("tenant_id", 1), ("room_id", 1), ("check_in", 1), ("check_out", 1)], "idx_booking_room_dates", {}),
         ("bookings", [("tenant_id", 1), ("guest_id", 1), ("status", 1)], "idx_booking_guest_status", {}),
+        # Global guest_id index (TENANT'SIZ, BİLİNÇLİ): Guest App "tüm
+        # otellerimdeki rezervasyonlarım" akışı (guest_app.py:285,
+        # operations_router.py:535) `find({guest_id: {$in: [...]}})` yapıyor;
+        # tenant_id dahil değil (cross-tenant guest deneyimi). idx_booking_*
+        # tenant-prefixli compound'lar bu sorguda seçilemiyor — collection
+        # scan'e düşüyordu. 2026-05-07 audit'te tespit edildi (architect
+        # NEEDS_FIXES'ı kapatır).
+        ("bookings", [("guest_id", 1)], "idx_booking_guest_global", {}),
         ("bookings", [("tenant_id", 1), ("created_at", -1)], "idx_booking_created", {}),
         # Rooms
         ("rooms", [("tenant_id", 1), ("is_active", 1), ("room_type", 1)], "idx_room_type_active", {}),

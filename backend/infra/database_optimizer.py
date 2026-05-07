@@ -73,19 +73,15 @@ class DatabaseOptimizer:
         """
         # (collection_name, [(index_spec, options), ...])
         plan = [
-            ('bookings', [
-                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_b_tid_id'}),
-                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_b_tid_status'}),
-                # idx_b_tid_chkin: REDUNDANT — `idx_bookings_tenant_checkin_checkout`
-                # (tenant_id, check_in, check_out) prefix'i kapsıyor (d_perf.py).
-                # idx_b_tid_chkout: REDUNDANT — tenant+check_out tek başına asla
-                # sorgulanmıyor (overlap check her zaman check_in ile birlikte).
-                # Her ikisi de Atlas Performance Advisor önerisiyle kaldırıldı.
-                ([('tenant_id', ASCENDING), ('status', ASCENDING), ('check_in', ASCENDING)], {'name': 'idx_b_tid_status_chkin'}),
-                ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_b_tid_room'}),
-                ([('tenant_id', ASCENDING), ('guest_id', ASCENDING)], {'name': 'idx_b_tid_guest'}),
-                ([('tenant_id', ASCENDING), ('created_at', DESCENDING)], {'name': 'idx_b_tid_created'}),
-            ]),
+            # bookings tenant_compound: TÜMÜ KALDIRILDI (Mayıs 2026, Atlas Advisor):
+            #   • idx_b_tid_id        ↔ idx_booking_tenant_id (atomic_checkin_checkout.py, unique)
+            #   • idx_b_tid_status    ⊂ idx_booking_status_checkin (perf_indexes.py: tid,status,check_in)
+            #   • idx_b_tid_status_chkin EXACT-DUP idx_booking_status_checkin
+            #   • idx_b_tid_room      ⊂ idx_booking_room_dates  (perf_indexes.py: tid,room_id,check_in,check_out)
+            #   • idx_b_tid_guest     ⊂ idx_booking_guest_status (perf_indexes.py: tid,guest_id,status)
+            #   • idx_b_tid_created   EXACT-DUP idx_booking_created (perf_indexes.py: tid,created_at:-1)
+            # idx_b_tid_chkin/chkout zaten önceki turda kaldırılmıştı.
+            # Drop'lar d_perf.py _redundant listesinde idempotent olarak çalışır.
             ('rooms', [
                 ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_r_tid_id'}),
                 ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_r_tid_status'}),
@@ -95,18 +91,20 @@ class DatabaseOptimizer:
                 ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_g_tid_id'}),
                 ([('tenant_id', ASCENDING), ('vip', ASCENDING)], {'name': 'idx_g_tid_vip'}),
             ]),
-            ('folios', [
-                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_f_tid_booking'}),
-                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_f_tid_status'}),
-            ]),
+            # folios tenant_compound: KALDIRILDI (Mayıs 2026):
+            #   • idx_f_tid_booking ↔ idx_folio_tenant_booking (atomic_checkin_checkout.py)
+            #     ve idx_folios_tenant_booking (d_perf.py) — üçlü duplikasyon.
+            #   • idx_f_tid_status ⊂ idx_folio_status_balance (perf_indexes.py: tid,status,balance)
             ('folio_charges', [
                 ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_fc_tid_booking'}),
                 ([('tenant_id', ASCENDING), ('date', ASCENDING)], {'name': 'idx_fc_tid_date'}),
             ]),
             ('housekeeping_tasks', [
-                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_hk_tid_status'}),
+                # idx_hk_tid_status: KALDIRILDI ⊂ idx_hk_status_room (perf_indexes.py)
+                # idx_hk_tid_done:   KALDIRILDI EXACT-DUP idx_hk_completed (perf_indexes.py)
+                # idx_hk_tid_room kalıyor — perf_indexes'te {tid,room_id} prefix'li
+                # bağımsız index yok (idx_hk_status_room'un prefix'i sadece tid+status).
                 ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_hk_tid_room'}),
-                ([('tenant_id', ASCENDING), ('completed_at', DESCENDING)], {'name': 'idx_hk_tid_done'}),
             ]),
             ('users', [
                 ([('tenant_id', ASCENDING), ('email', ASCENDING)], {'name': 'idx_u_tid_email'}),
@@ -241,17 +239,25 @@ class DatabaseOptimizer:
         return {"created": len(created), "indexes": created}
 
     async def create_folio_indexes(self):
-        """Folios collection indexes"""
+        """Folios collection indexes.
+
+        NOTE (Mayıs 2026): Tek alanlı non-tenant index'ler (`booking_id_1`,
+        `guest_id_1`, `status_1`, `created_at_-1`, `folio_type_1`,
+        `booking_id_1_folio_type_1`) Atlas Performance Advisor tarafından
+        REDUNDANT işaretlendi. Sebep:
+          • Tüm folio sorguları tenant_id ile scope'lanır (`tenant_db.py`),
+            tek-alanlı index'ler asla seçilmez.
+          • Mevcut compound'lar zaten kapsıyor:
+              idx_folio_booking_status (tid, booking_id, status)
+              idx_folio_status_balance (tid, status, balance)
+              idx_folio_type_status    (tid, folio_type, status)
+              idx_folios_tenant_booking (d_perf.py)
+              idx_folios_tenant_status_created (d_perf.py)
+        Drop'lar d_perf.py _redundant listesinde idempotent çalışır.
+        """
         folios = self.db.folios
 
-        indexes = [
-            ([("booking_id", ASCENDING)], {}),
-            ([("guest_id", ASCENDING)], {}),
-            ([("status", ASCENDING)], {}),
-            ([("created_at", DESCENDING)], {}),
-            ([("folio_type", ASCENDING)], {}),
-            ([("booking_id", ASCENDING), ("folio_type", ASCENDING)], {}),
-        ]
+        indexes: list = []  # Tüm tek-alanlı non-tenant index'ler kaldırıldı.
 
         created = []
         for index_spec, options in indexes:
