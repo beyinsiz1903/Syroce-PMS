@@ -230,14 +230,25 @@ class FinancialService:
                 })
             seen_charges[key] = c
 
-        # Check for charges without matching bookings
+        # Bulk-fetch all referenced bookings in ONE round-trip (was N+1).
+        # Single $in over the union of charge.booking_id values; we read all
+        # fields needed by both the orphan check and the rate-discrepancy
+        # check so the second loop hits memory only.
         booking_ids = {c.get("booking_id") for c in charges if c.get("booking_id")}
-        for bid in booking_ids:
-            booking = await self._db.bookings.find_one(
-                {"id": bid, "tenant_id": ctx.tenant_id},
-                {"_id": 0, "id": 1, "status": 1},
+        bookings_by_id: dict[str, dict] = {}
+        if booking_ids:
+            bookings_cursor = self._db.bookings.find(
+                {"id": {"$in": list(booking_ids)}, "tenant_id": ctx.tenant_id},
+                {"_id": 0, "id": 1, "status": 1, "room_rate": 1, "rate": 1},
             )
-            if not booking:
+            async for b in bookings_cursor:
+                bid = b.get("id")
+                if bid:
+                    bookings_by_id[bid] = b
+
+        # Check for charges without matching bookings
+        for bid in booking_ids:
+            if bid not in bookings_by_id:
                 discrepancies.append({
                     "type": "orphan_charge",
                     "severity": "error",
@@ -248,23 +259,22 @@ class FinancialService:
         # Check for rate discrepancy (room charges vs booking rate)
         room_charges = [c for c in charges if c.get("charge_category") == "room"]
         for rc in room_charges:
-            if rc.get("booking_id"):
-                booking = await self._db.bookings.find_one(
-                    {"id": rc["booking_id"], "tenant_id": ctx.tenant_id},
-                    {"_id": 0, "room_rate": 1, "rate": 1},
-                )
-                if booking:
-                    expected_rate = booking.get("room_rate") or booking.get("rate") or 0
-                    actual_rate = rc.get("amount", 0)
-                    if expected_rate > 0 and abs(actual_rate - expected_rate) > 0.01:
-                        discrepancies.append({
-                            "type": "rate_discrepancy",
-                            "severity": "warning",
-                            "message": f"Oran tutarsizligi: Beklenen {expected_rate} TL, Gercek {actual_rate} TL",
-                            "booking_id": rc.get("booking_id"),
-                            "expected": expected_rate,
-                            "actual": actual_rate,
-                        })
+            bid = rc.get("booking_id")
+            if not bid:
+                continue
+            booking = bookings_by_id.get(bid)
+            if booking:
+                expected_rate = booking.get("room_rate") or booking.get("rate") or 0
+                actual_rate = rc.get("amount", 0)
+                if expected_rate > 0 and abs(actual_rate - expected_rate) > 0.01:
+                    discrepancies.append({
+                        "type": "rate_discrepancy",
+                        "severity": "warning",
+                        "message": f"Oran tutarsizligi: Beklenen {expected_rate} TL, Gercek {actual_rate} TL",
+                        "booking_id": bid,
+                        "expected": expected_rate,
+                        "actual": actual_rate,
+                    })
 
         # Check high-value unbalanced folios
         high_balance_folios = []

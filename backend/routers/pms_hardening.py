@@ -178,6 +178,9 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
     result = await front_desk.checkout(current_user.tenant_id, req.booking_id, current_user.id, current_user.name, req.force)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    # Folio finalization shifts revenue/payment buckets → drop dashboards.
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.get("/checkout-preview/{booking_id}", tags=["front-desk"])
@@ -316,6 +319,8 @@ async def api_post_charge(req: ChargePostRequest, current_user: User = Depends(g
     result = await folio_svc.post_charge(current_user.tenant_id, req.folio_id, req.booking_id, req.model_dump(), current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.post("/folio/payment", tags=["folio"])
@@ -325,6 +330,8 @@ async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends
     result = await folio_svc.post_payment(current_user.tenant_id, req.folio_id, req.booking_id, req.model_dump(), current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.post("/folio/refund", tags=["folio"])
@@ -334,6 +341,8 @@ async def api_post_refund(req: RefundRequest, current_user: User = Depends(get_c
     result = await folio_svc.post_refund(current_user.tenant_id, req.folio_id, req.booking_id, req.amount, req.reason, req.method, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.post("/folio/void-charge", tags=["folio"])
@@ -345,6 +354,8 @@ async def api_void_charge(req: VoidRequest, current_user: User = Depends(get_cur
     result = await folio_svc.void_charge(current_user.tenant_id, req.charge_id, req.reason, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.post("/folio/void-payment", tags=["folio"])
@@ -356,6 +367,8 @@ async def api_void_payment(req: VoidRequest, current_user: User = Depends(get_cu
     result = await folio_svc.void_payment(current_user.tenant_id, req.payment_id, req.reason, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from domains.pms.night_audit.router import invalidate_finance_cache
+    invalidate_finance_cache(current_user.tenant_id)
     return result
 
 @router.post("/folio/split", tags=["folio"])

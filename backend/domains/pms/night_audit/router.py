@@ -20,25 +20,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/night-audit", tags=["Night Audit Core"])
 
 # Short-TTL cache for read-only finance dashboards. Mutations
-# (run/checkin/checkout/folio post) call _invalidate_finance_cache.
+# (run / resume / checkout / folio charge / payment / refund) call
+# `invalidate_finance_cache` to bound staleness to <1s instead of 30s.
 _FIN_CACHE_TTL = 30
+_FIN_CACHE_PREFIXES = ("na_preview", "na_financial_summary", "na_integrity_check")
 
 
 def _fin_cache_key(name: str, tenant_id: str, business_date: str) -> str:
+    # Mirrors `cache:{tenant_id}:{entity_prefix}:{date}` so safe_invalidate
+    # with the same entity_prefix can sweep all dates in one pattern.
     return f"cache:{tenant_id}:na_{name}:{business_date}"
 
 
-def _invalidate_finance_cache(tenant_id: str) -> None:
-    """Drop all cached financial dashboards for a tenant.
+def invalidate_finance_cache(tenant_id: str) -> None:
+    """Drop all cached night-audit finance dashboards for a tenant.
 
-    Called on any mutation that can change the day's revenue, payments,
-    folio balances, or integrity-check inputs. Pattern delete is safe
-    because the prefix `cache:{tenant_id}:na_*` is namespaced per tenant.
+    Uses `cache.safe_invalidate` (regex-validated tenant_id, glob-safe
+    prefix) so we get observability metrics + defense-in-depth instead
+    of raw `delete_pattern`. Best-effort: failures are logged by the
+    cache layer; never raised to the request path.
+
+    Exposed at module level so other routers (front-desk, folio) can
+    call it after their own mutations without depending on the night
+    audit router internals.
     """
-    try:
-        _cache.delete_pattern(f"cache:{tenant_id}:na_*")
-    except Exception as e:  # pragma: no cover — cache layer best-effort
-        logger.debug("na finance cache invalidation skipped: %s", e)
+    for prefix in _FIN_CACHE_PREFIXES:
+        try:
+            _cache.safe_invalidate(tenant_id, prefix)
+        except Exception as e:  # pragma: no cover — best-effort
+            logger.debug("finance cache invalidation skipped (%s): %s", prefix, e)
+
+
+# Backwards-compat alias for in-file callers added before the rename.
+_invalidate_finance_cache = invalidate_finance_cache
 
 
 def _admin_guard(user: User):
