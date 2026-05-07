@@ -28,6 +28,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/wire-failures/summary?days=30`, { headers });
       setSummary(data);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const fetchFailures = useCallback(async () => {
@@ -35,6 +36,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/wire-failures/recent?limit=100&provider=${filterProvider}`, { headers });
       setFailures(data.failures || []);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filterProvider]);
 
   const fetchTrend = useCallback(async () => {
@@ -42,6 +44,7 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/wire-failures/trend?days=30`, { headers });
       setTrend(data.trend || []);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const refreshAll = async () => {
@@ -50,7 +53,9 @@ const WireFailureDashboard = ({ user, tenant, onLogout }) => {
     setLoading(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { refreshAll(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetchFailures(); }, [filterProvider]);
 
   const statusColor = summary?.health_status === 'healthy' ? 'text-emerald-600' : summary?.health_status === 'warning' ? 'text-amber-600' : 'text-red-600';

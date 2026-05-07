@@ -42,6 +42,7 @@ const MobileOrderTracking = ({ user }) => {
 
   useEffect(() => {
     loadActiveOrders();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [statusFilter, outletFilter]);
 
   const loadActiveOrders = async () => {

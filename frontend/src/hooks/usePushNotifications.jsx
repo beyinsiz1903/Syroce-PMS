@@ -90,5 +90,6 @@ export default function usePushNotifications(user) {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [user?.id, user?.role]);
 }

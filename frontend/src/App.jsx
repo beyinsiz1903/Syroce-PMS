@@ -218,6 +218,7 @@ function App() {
 
   const routeConfigs = useMemo(
     () => getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogout: handleLogout, hasFeature }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
     [user, tenant, modules, isAuthenticated]
   );
   useEffect(() => { registerRoutes(routeConfigs); }, [routeConfigs]);

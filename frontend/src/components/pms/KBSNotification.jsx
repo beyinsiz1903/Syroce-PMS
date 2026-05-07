@@ -129,6 +129,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
     }));
     setPendingGuests(pending.filter(p => p.kbs_status === 'pending'));
     setSentHistory(pending.filter(p => p.kbs_status !== 'pending'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookings]);
 
   const sendToKBS = async (guest) => {

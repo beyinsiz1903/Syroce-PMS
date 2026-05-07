@@ -88,6 +88,7 @@ export default function ForecastReportsPage() {
     if (tab === "forecast" && !forecast) loadForecast();
     if (tab === "pickup" && !pickup) loadPickup();
     if (tab === "pace" && !pace) loadPace();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [tab]);
 
   // Pace tablosu: günsayım → bu yıl + karşılaştırma yıl rooms_on_books

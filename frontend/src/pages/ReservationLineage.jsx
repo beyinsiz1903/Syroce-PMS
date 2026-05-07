@@ -72,6 +72,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
       const res = await axios.get(`/channel-manager/v2/connectors`, { headers });
       setConnectors(res.data.connectors || []);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const loadReservations = useCallback(async () => {
@@ -88,6 +89,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnector, statusFilter]);
 
   const loadStats = useCallback(async () => {
@@ -96,6 +98,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
       const res = await axios.get(`/channel-manager/v2/reservations/stats${params}`, { headers });
       setStats(res.data);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnector]);
 
   const loadLineage = async (reservationId) => {

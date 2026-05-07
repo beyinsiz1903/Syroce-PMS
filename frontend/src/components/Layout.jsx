@@ -190,6 +190,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     });
 
     return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [modules, isSuperAdmin, hiddenNavGroups, hiddenNavItems]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {

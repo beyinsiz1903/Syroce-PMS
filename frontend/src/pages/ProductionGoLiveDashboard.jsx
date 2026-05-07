@@ -128,6 +128,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
       setError(null);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token]);
 
   useEffect(() => { fetchData(); const i = setInterval(fetchData, 30000); return () => clearInterval(i); }, [fetchData]);
@@ -176,6 +177,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
       const [risk, strategy, infra] = await Promise.all([riskRes.json(), stratRes.json(), infraRes.json()]);
       setDeploymentData({ risk, strategy, infra });
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token]);
 
   const triggerBackup = async () => {

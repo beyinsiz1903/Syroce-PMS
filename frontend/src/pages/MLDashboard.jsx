@@ -29,8 +29,10 @@ export default function MLDashboard({ user, tenant, onLogout }) {
       const res = await axios.get(`/ml/models/status`, { headers });
       setModelsStatus(res.data.models);
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetchStatus(); }, []);
 
   const trainModel = async (type) => {

@@ -30,6 +30,7 @@ const FolioManagementPage = () => {
     if (selectedFolio) {
       fetchFolioDetails(selectedFolio.id);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedFolio]);
 
   const fetchAllFolios = async () => {

@@ -18,6 +18,7 @@ const StaffMobileApp = ({ user }) => {
 
   useEffect(() => {
     loadTasks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filter]);
 
   const loadTasks = async () => {

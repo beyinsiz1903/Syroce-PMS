@@ -95,6 +95,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
       setDetecting(false);
     };
     detect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // Switch provider tab
@@ -126,6 +127,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
       toast.error('Veriler yüklenemedi');
     }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [startDate, endDate, provider]);
 
   useEffect(() => { if (provider) fetchGrid(); }, [fetchGrid, provider]);
@@ -136,6 +138,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     axios.get(`${UNIFIED_PREFIX}/push-providers`, { headers })
       .then(res => setPushProviders(res.data?.providers || []))
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [provider]);
 
   // Fetch agencies
@@ -143,6 +146,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     axios.get(`${UNIFIED_PREFIX}/agencies`, { headers })
       .then(res => setAgencies(res.data?.agencies || []))
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // Room type tree

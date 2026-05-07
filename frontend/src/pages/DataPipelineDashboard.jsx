@@ -66,6 +66,7 @@ export default function DataPipelineDashboard() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);

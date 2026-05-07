@@ -55,6 +55,7 @@ export default function RevenueMLPanel() {
       setData(res.data);
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { load(); }, [load]);

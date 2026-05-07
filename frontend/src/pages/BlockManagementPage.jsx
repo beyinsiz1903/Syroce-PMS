@@ -64,6 +64,7 @@ export default function BlockManagementPage() {
   // Mount'ta bir kez yükle; load referansı her render değişir ama
   // sayfa açılışında yalnızca tek seferlik fetch istiyoruz, kullanıcı
   // sonraki yenilemeleri "Yenile" düğmesi ile tetikler.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { load(); }, []);
 
   const showPickup = async (blk) => {

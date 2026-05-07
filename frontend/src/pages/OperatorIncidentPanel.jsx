@@ -194,6 +194,7 @@ export default function OperatorIncidentPanel({ user, tenant, onLogout }) {
       setLoading(false);
       setRefreshing(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token, filter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);

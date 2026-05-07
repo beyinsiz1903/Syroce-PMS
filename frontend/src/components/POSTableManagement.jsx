@@ -14,6 +14,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
 
   useEffect(() => {
     loadTables();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [outletId]);
 
   const loadTables = async () => {

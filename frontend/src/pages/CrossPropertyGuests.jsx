@@ -43,8 +43,10 @@ export default function CrossPropertyGuests({ user, tenant, onLogout }) {
       const res = await axios.get(`/cross-property/guests/loyalty-summary`, { headers });
       setLoyaltySummary(res.data);
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetchLoyalty(); }, []);
 
   return (

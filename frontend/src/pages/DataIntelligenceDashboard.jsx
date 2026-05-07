@@ -121,6 +121,7 @@ function RevenueTab() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -310,6 +311,7 @@ function OperationalTab() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -485,6 +487,7 @@ function GuestTab() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);

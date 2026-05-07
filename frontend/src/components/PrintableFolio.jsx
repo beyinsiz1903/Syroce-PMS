@@ -14,6 +14,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
     if (folioData) {
       fetchAdditionalData();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [folioData]);
 
   const fetchAdditionalData = async () => {

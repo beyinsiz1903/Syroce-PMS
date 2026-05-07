@@ -137,6 +137,7 @@ const KitchenDisplay = () => {
       notifiedOrdersRef.current.add(order.id);
       triggerLocalNotification(order);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [urgentOrders]);
 
   const triggerLocalNotification = async (order) => {

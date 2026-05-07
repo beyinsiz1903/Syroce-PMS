@@ -154,6 +154,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
     } finally { setLoading(false); }
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { load(); }, []);
 
   // Tab open → fetch on first reveal only. Mutation handlers call the

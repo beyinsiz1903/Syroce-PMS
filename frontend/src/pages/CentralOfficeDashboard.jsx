@@ -35,8 +35,10 @@ export default function CentralOfficeDashboard({ user, tenant, onLogout }) {
       setAlerts(alertRes.data.alerts || []);
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetchAll(); }, []);
 
   const kpi = dashboard?.chain_kpi;

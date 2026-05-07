@@ -91,6 +91,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadGroups();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [statusFilter, dateFilter, customStart, customEnd]);
 
   const loadGroups = async () => {

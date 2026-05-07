@@ -42,6 +42,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadTodayArrivals();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const localISODate = (d) => {

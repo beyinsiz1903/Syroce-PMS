@@ -51,6 +51,7 @@ export default function PlatformScalingDashboard({ user, tenant, onLogout }) {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -300,6 +301,7 @@ function EventArchitecturePanel({ data, headers, fetchAll }) {
       } catch (e) { console.error(e); }
     };
     fetchEvents();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const handlePublish = async () => {

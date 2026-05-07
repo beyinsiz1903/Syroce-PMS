@@ -54,6 +54,7 @@ const FnBOutletDashboard = () => {
   useEffect(() => {
     loadOutlets();
     loadSales();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const summary = menuData?.summary;

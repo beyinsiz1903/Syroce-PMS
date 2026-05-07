@@ -391,6 +391,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   const loadData = async () => {

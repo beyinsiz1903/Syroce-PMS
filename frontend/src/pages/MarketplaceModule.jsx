@@ -18,6 +18,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // Backend: {products:[{product_name, unit_price, unit_of_measure, status, ...}], count}

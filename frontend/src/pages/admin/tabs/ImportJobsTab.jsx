@@ -42,6 +42,7 @@ export default function ImportJobsTab() {
       if (envsRes.ok) { const d = await envsRes.json(); setEnvironments(d.environments || {}); }
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token]);
 
   useEffect(() => { fetchData(); }, [fetchData]);

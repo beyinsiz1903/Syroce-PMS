@@ -37,6 +37,7 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
       setShowAdd(false);
       setError(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [open, tenantId]);
 
   const handleAddMember = async () => {

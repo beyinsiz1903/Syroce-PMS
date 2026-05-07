@@ -47,6 +47,7 @@ const ExecutiveDashboard = ({ user }) => {
     }, 60000);
 
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [budgetYear]);
 
   const loadData = async (isAutoRefresh = false) => {

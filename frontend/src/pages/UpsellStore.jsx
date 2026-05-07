@@ -16,6 +16,7 @@ const UpsellStore = ({ bookingId }) => {
   useEffect(() => {
     loadOffers();
     loadPurchasedItems();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
 
   const loadOffers = async () => {

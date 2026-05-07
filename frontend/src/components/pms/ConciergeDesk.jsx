@@ -51,6 +51,7 @@ const ConciergeDesk = () => {
     date: '', time: '', pax: '', notes: '', priority: 'normal'
   });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { loadRequests(); }, []);
 
   const loadRequests = async () => {

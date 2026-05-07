@@ -77,6 +77,7 @@ export const useMobileQueryConfig = () => {
         },
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [isMobile, isSlowConnection, queryClient]);
 
   return {

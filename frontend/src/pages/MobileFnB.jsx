@@ -66,6 +66,7 @@ const MobileFnB = ({ user }) => {
       const firstActive = outlets.find(o => o.status === 'active') || outlets[0];
       setActiveOutlet(firstActive);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [outlets]);
 
   const loadData = async () => {

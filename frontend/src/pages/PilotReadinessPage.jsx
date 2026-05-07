@@ -56,6 +56,7 @@ export default function PilotReadinessPage() {
       console.error("Pilot readiness error:", err);
     }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);

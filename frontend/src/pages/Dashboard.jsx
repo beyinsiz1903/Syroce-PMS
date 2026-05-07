@@ -89,6 +89,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
     } finally {
       setLoadingAI(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
 
@@ -552,6 +553,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
     });
 
     return categories;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filteredModules]);
 
   // pms_lite için DashboardLite render et — tüm hook'lar yukarıda

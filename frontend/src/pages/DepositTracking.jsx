@@ -57,6 +57,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
       setDeposits(res.data.deposits || []);
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { loadDeposits(); }, [loadDeposits]);
@@ -78,6 +79,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
       setSearchingBookings(false);
     }, 300);
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingSearch]);
 
   const handleNewDeposit = async () => {

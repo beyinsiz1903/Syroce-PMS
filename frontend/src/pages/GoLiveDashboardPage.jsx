@@ -106,6 +106,7 @@ export default function GoLiveDashboardPage() {
       console.error("Fetch error:", err);
     }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);

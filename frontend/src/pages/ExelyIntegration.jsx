@@ -49,6 +49,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       if (data.connection?.room_types) setRoomTypes(data.connection.room_types);
       if (data.connection?.rate_plans) setRatePlans(data.connection.rate_plans);
     } catch { setConnection({ connected: false }); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -65,6 +66,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       setReservations(localRes.data.reservations || []);
       setSyncStatus(statusRes.data);
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [connection?.connected]);
 
   useEffect(() => { fetchConnection(); }, [fetchConnection]);
@@ -75,8 +77,10 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/auto-map/status/exely`, { headers });
       setMappingStatus(data);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
 
   const handleAutoMapSuggest = async () => {

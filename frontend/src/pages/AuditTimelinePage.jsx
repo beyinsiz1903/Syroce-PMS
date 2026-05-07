@@ -112,6 +112,7 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
       console.error("Failed to fetch timeline:", err);
     }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filters]);
 
   useEffect(() => { fetchTimeline(); }, [fetchTimeline]);

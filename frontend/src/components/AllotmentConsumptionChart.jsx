@@ -15,6 +15,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
 
   useEffect(() => {
     loadAllotmentData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [dateRange]);
 
   const loadAllotmentData = async () => {

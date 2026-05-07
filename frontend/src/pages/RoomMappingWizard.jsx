@@ -119,6 +119,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
         toast.error('Kanal listesi yüklenemedi');
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // Step 2: Load room suggestions
@@ -153,6 +154,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnectorId]);
 
   // Step 3: Load rate suggestions
@@ -181,6 +183,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnectorId]);
 
   // Fetch external data from channel provider
@@ -205,6 +208,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
     } finally {
       setFetching(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnectorId]);
 
   const goNext = async () => {

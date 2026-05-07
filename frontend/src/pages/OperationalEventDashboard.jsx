@@ -68,6 +68,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filterPriority]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);

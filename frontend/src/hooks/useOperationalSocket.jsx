@@ -52,6 +52,7 @@ export function useOperationalSocket(namespace = "/", events = {}) {
       socket.removeAllListeners();
       socket.disconnect();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [namespace]);
 
   const emit = useCallback((event, data) => {

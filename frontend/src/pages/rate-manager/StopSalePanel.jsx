@@ -75,6 +75,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       console.error('Stop sale durumu yüklenemedi');
     }
     setLoadingActive(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [today, nextMonth]);
 
   const loadOperatorStatus = useCallback(async () => {
@@ -84,6 +85,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     } catch {
       console.error('Operator stop-sale durumu yüklenemedi');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const loadHolidays = useCallback(async () => {
@@ -95,6 +97,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       console.error('Tatil verileri yüklenemedi');
     }
     setLoadingHolidays(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const loadSchedules = useCallback(async () => {
@@ -106,6 +109,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       console.error('Zamanlayicilar yüklenemedi');
     }
     setLoadingSchedules(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => {

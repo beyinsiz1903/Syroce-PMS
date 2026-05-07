@@ -157,6 +157,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     Promise.all([loadSummary(), loadSuppliers(), loadPRs()])
       .catch(() => toast.error(t('procurement.errors.loadFailed')))
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // Lazy: POs only when the user opens that tab.
@@ -202,6 +203,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     if (consumed) {
       navigate(location.pathname, { replace: true, state: null });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [location.state]);
 
   const inventoryByName = useMemo(

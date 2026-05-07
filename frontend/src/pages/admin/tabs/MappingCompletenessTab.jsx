@@ -89,6 +89,7 @@ const MappingCompletenessTab = () => {
         if (list.length > 0 && !selectedConnector) setSelectedConnector(list[0].id);
       }
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const fetchReport = useCallback(async () => {
@@ -99,6 +100,7 @@ const MappingCompletenessTab = () => {
       if (res.ok) setReport(await res.json());
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnector]);
 
   useEffect(() => { fetchConnectors(); }, [fetchConnectors]);

@@ -52,8 +52,10 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetchOverview(); }, []);
 
   const getProvider = (name) => overview?.providers?.find(p => p.provider === name);

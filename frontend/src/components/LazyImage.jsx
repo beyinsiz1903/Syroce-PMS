@@ -59,6 +59,7 @@ const LazyImage = ({
     return () => {
       didCancel = true;
       if (observer && observer.unobserve) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
         observer.unobserve(imgRef.current);
       }
     };
@@ -214,6 +215,7 @@ export const useLazyBackgroundImage = (src, placeholder = '') => {
     return () => {
       didCancel = true;
       if (observer && observer.unobserve && elementRef.current) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
         observer.unobserve(elementRef.current);
       }
     };

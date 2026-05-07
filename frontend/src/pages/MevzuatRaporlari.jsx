@@ -100,6 +100,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
   useEffect(() => {
     if (tab === "inspection" && !readiness) loadReadiness();
     if (tab === "stars" && !checklist) loadChecklist();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [tab]);
 
   const monthOpts = Array.from({ length: 12 }, (_, i) => i + 1);

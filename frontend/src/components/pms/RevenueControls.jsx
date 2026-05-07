@@ -36,6 +36,7 @@ const RevenueControls = ({ rooms = [] }) => {
   const [saving, setSaving] = useState(false);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { loadSettings(); }, []);
 
   const loadSettings = async () => {

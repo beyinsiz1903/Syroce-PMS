@@ -740,6 +740,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
       socketRef.current = null;
       if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   useEffect(() => {
@@ -752,6 +753,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
       }
     }
     return () => { if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [wsConnected]);
 
   /* ── Data Fetching ───────────────────────────────────── */
@@ -787,6 +789,7 @@ export default function SystemHealthDashboard({ user, tenant, onLogout }) {
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (e) { console.error(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);

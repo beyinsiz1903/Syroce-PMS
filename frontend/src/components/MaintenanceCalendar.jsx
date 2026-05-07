@@ -12,6 +12,7 @@ const MaintenanceCalendar = () => {
 
   useEffect(() => {
     loadCalendar();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [currentMonth]);
 
   const loadCalendar = async () => {

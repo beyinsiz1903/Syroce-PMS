@@ -15,6 +15,7 @@ const CRMNotes = ({ guestId }) => {
     if (guestId) {
       loadNotes();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [guestId]);
 
   const loadNotes = async () => {

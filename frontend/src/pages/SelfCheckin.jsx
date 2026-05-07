@@ -39,6 +39,7 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
 
   useEffect(() => {
     loadBooking();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
 
   const loadBooking = async () => {

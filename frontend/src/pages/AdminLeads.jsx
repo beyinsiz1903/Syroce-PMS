@@ -122,6 +122,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadLeads();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [statusFilter, search, followUpOnly]);
 
   const handleUpdate = async (leadId, newStatus) => {

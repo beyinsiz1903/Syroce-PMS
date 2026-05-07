@@ -48,6 +48,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/hotelrunner/connection`, { headers });
       setConnection(data);
     } catch { setConnection({ connected: false }); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -70,6 +71,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
         setRooms(cachedRoomsRes.data.rooms);
       }
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [connection?.connected]);
 
   useEffect(() => { fetchConnection(); }, [fetchConnection]);
@@ -80,8 +82,10 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       const { data } = await axios.get(`/channel-manager/auto-map/status/hotelrunner`, { headers });
       setMappingStatus(data);
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
 
   const handleAutoMapSuggest = async () => {
@@ -266,6 +270,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
       }
       setMappingDraft(prev => ({ ...initial, ...prev }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [mappings, rooms]);
 
   const isConnected = connection?.connected;

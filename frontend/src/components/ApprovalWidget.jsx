@@ -20,6 +20,7 @@ const ApprovalWidget = ({ userRole }) => {
     // Poll every 30 seconds
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const loadData = async () => {

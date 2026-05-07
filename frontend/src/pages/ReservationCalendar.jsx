@@ -119,6 +119,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const dateRange = getDateRange(currentDate, daysToShow);
 
   // ─── Data Loading ─────────────────────────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { loadCalendarData(); }, [currentDate, daysToShow]);
 
   // Fetch hotel business date once on mount

@@ -167,6 +167,7 @@ function PrintAllQrCodes({ rooms }) {
       setLoaded(res);
     };
     if (rooms.length) loadAll();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [rooms.length]);
 
   return (

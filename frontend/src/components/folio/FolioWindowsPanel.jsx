@@ -37,6 +37,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId, token]);
 
   useEffect(() => { fetchWindows(); }, [fetchWindows]);

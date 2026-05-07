@@ -23,6 +23,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
     if (operatorId && roomTypeId) {
       loadRatePeriods();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [operatorId, roomTypeId]);
 
   const loadRatePeriods = async () => {

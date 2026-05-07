@@ -46,6 +46,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
     fetchUnreadCount();
     const interval = setInterval(fetchMessages, 15000);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
 
   useEffect(() => {

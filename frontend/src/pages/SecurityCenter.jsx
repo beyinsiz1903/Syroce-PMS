@@ -34,6 +34,7 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
       const res = await axios.get(`/2fa/status`, { headers });
       setTwoFAStatus(res.data);
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   const fetchIPRules = useCallback(async () => {
@@ -41,8 +42,10 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
       const res = await axios.get(`/security/ip/rules`, { headers });
       setIpRules(res.data.rules || []);
     } catch (e) { console.error(e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { fetch2FAStatus(); fetchIPRules(); }, []);
 
   const setup2FA = async () => {

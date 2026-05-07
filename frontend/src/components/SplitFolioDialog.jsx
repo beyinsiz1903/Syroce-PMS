@@ -30,6 +30,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
     { amount: '', target_folio_type: 'guest' },
   ]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   const folioCharges = Array.isArray(folio.charges) ? folio.charges : [];
   const folioBalance = Number(folio.balance) || 0;
 

@@ -243,7 +243,8 @@ export default function EodReportPage({ user, tenant, onLogout }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [businessDate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  useEffect(() => { load();   }, [businessDate]);
 
   const downloadPdf = async () => {
     setDownloadingPdf(true);

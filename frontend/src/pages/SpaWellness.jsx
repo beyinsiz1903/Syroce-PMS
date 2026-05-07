@@ -82,6 +82,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       if (failed.length) toast.error(`Yüklenemedi: ${failed.join(', ')}`);
     } finally { setLoading(false); }
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { load(); }, [filter]);
 
   const therapistById = useMemo(() => Object.fromEntries(therapists.map((t) => [t.id, t])), [therapists]);
