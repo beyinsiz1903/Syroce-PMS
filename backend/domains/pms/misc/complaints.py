@@ -1,6 +1,7 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
 import html as _html
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -66,13 +67,9 @@ async def _push_history(complaint_id: str, tenant_id: str, entry: dict) -> None:
 
 
 async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, notes: str, actor: User) -> None:
-    """Send escalation notification e-mail to all managers (admin + supervisor)."""
-    try:
-        from core.email import send_email
-    except Exception as exc:  # pragma: no cover
-        logger.warning("[complaints] email module unavailable: %s", exc)
-        return
-
+    """Notify managers (admin + supervisor) of an escalation via 3 best-effort channels:
+    e-mail, in-app bell (db.notifications), and Expo push. Each channel is isolated
+    so a failure in one does not block the others."""
     try:
         managers = await db.users.find(
             {
@@ -80,7 +77,7 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
                 "role": {"$in": [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]},
                 "is_active": True,
             },
-            {"_id": 0, "email": 1, "full_name": 1},
+            {"_id": 0, "id": 1, "email": 1, "full_name": 1},
         ).to_list(50)
     except Exception as exc:
         logger.warning("[complaints] manager lookup failed: %s", exc)
@@ -111,13 +108,78 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
       <p style="margin-top:16px;color:#6b7280;font-size:12px">Açıklama: {safe_desc}</p>
     </div>
     """
+    # Channel 1: e-mail (best-effort; isolated from bell/push so import errors don't block them)
+    try:
+        from core.email import send_email
+        for m in managers:
+            if not m.get("email"):
+                continue
+            try:
+                await send_email(m["email"], subject_line, html)
+            except Exception as exc:
+                logger.warning("[complaints] escalation email to %s failed: %s", m.get("email"), exc)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("[complaints] email module unavailable: %s", exc)
+
+    # Channel 2 + 3: in-app bell + Expo push — best-effort, never raises.
+    notif_priority = "high" if severity in ("critical", "high") else "normal"
+    notif_title = f"Şikayet yönetime iletildi: {complaint.get('subject', '-')}"
+    notif_message = (
+        f"{actor.email or 'Bir kullanıcı'} bir şikayeti {target_label}'e havale etti. "
+        f"Misafir: {complaint.get('guest_name') or '-'}, "
+        f"Oda: {complaint.get('room_number') or '-'}, "
+        f"Önem: {severity_label}."
+    )
+    action_url = f"/service-recovery?complaint={complaint.get('id', '')}"
+    now_iso = datetime.now(UTC).isoformat()
+
+    manager_user_ids: list[str] = []
+    _seen_uids: set[str] = set()
     for m in managers:
-        if not m.get("email"):
+        uid = m.get("id")
+        if not uid or uid in _seen_uids:
             continue
+        _seen_uids.add(uid)
+        manager_user_ids.append(uid)
         try:
-            await send_email(m["email"], subject_line, html)
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": actor.tenant_id,
+                "user_id": uid,
+                "type": "complaint_escalated",
+                "title": notif_title,
+                "message": notif_message,
+                "priority": notif_priority,
+                "read": False,
+                "action_url": action_url,
+                "context": {
+                    "complaint_id": complaint.get("id"),
+                    "escalated_to": escalated_to,
+                    "severity": severity,
+                    "actor_email": actor.email,
+                },
+                "created_at": now_iso,
+            })
         except Exception as exc:
-            logger.warning("[complaints] escalation email to %s failed: %s", m.get("email"), exc)
+            logger.warning("[complaints] notification insert for %s failed: %s", uid, exc)
+
+    if manager_user_ids:
+        try:
+            from services.expo_push import fire_and_forget_expo_push
+            fire_and_forget_expo_push(
+                actor.tenant_id,
+                title=notif_title,
+                body=notif_message,
+                data={
+                    "type": "complaint_escalated",
+                    "complaint_id": complaint.get("id"),
+                    "action_url": action_url,
+                },
+                user_ids=manager_user_ids,
+                priority="high" if notif_priority == "high" else "default",
+            )
+        except Exception as exc:
+            logger.warning("[complaints] expo push dispatch failed: %s", exc)
 
 
 async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: User) -> None:
