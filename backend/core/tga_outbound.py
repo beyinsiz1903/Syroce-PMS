@@ -300,6 +300,7 @@ def _build_iso3_index() -> dict[str, str]:
 
 # Geriye dönük uyumluluk: dış kod hâlâ `ISO3_BY_KEY` referansı kullanabilir.
 ISO3_BY_KEY: dict[str, str] = _build_iso3_index()
+_ISO3_VALUES: frozenset[str] = frozenset(ISO3_BY_KEY.values())
 
 
 def _to_iso3(raw: str | None) -> str:
@@ -316,13 +317,12 @@ def _to_iso3(raw: str | None) -> str:
     s = str(raw).strip()
     if not s:
         return "ZZZ"
-    iso3_values = {v for v in ISO3_BY_KEY.values()}
     for key in _norm_variants(s):
         hit = ISO3_BY_KEY.get(key)
         if hit:
             return hit
         # 3 harfli geçerli ISO3 doğrudan kabul (örn. mapping kapsamı dışı yeni kod)
-        if len(key) == 3 and key.isalpha() and key in iso3_values:
+        if len(key) == 3 and key.isalpha() and key in _ISO3_VALUES:
             return key
     return "ZZZ"
 
