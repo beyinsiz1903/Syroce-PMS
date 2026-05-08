@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,16 +34,19 @@ const CalendarHeader = ({
   const overdueCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'overdue').length;
   const todayCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'today').length;
   const hasUrgent = overdueCount > 0 || todayCount > 0;
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const datePickerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (datePickerRef.current && !datePickerRef.current.contains(e.target)) setShowDatePicker(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // Native date picker — popover yok. Tarihe Git butonu hidden input'un
+  // showPicker()'ını tetikler; tarayıcının kendi takvimi açılır, ←/→ ile
+  // ay içinde gezilebilir, dış tıklama veya Esc ile kapanır (browser yönetir).
+  const dateInputRef = useRef(null);
+  const openNativePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === 'function') {
+      try { el.showPicker(); return; } catch (_) { /* fallback */ }
+    }
+    el.focus();
+    el.click();
+  };
 
   return (
     <>
@@ -94,30 +97,25 @@ const CalendarHeader = ({
           <Button variant="outline" size="sm" onClick={onNavigatePrevious} className="h-8 w-8 p-0" data-testid="nav-prev-btn">
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <div className="relative" ref={datePickerRef}>
-            <Button variant="outline" size="sm" onClick={() => setShowDatePicker(!showDatePicker)} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
+          <div className="relative inline-flex items-center">
+            <Button variant="outline" size="sm" onClick={openNativePicker} className="h-8 px-3 text-xs font-medium" data-testid="go-today-btn">
               Tarihe Git
             </Button>
-            {showDatePicker && (
-              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 bg-white border rounded-lg shadow-lg p-3" data-testid="date-picker-popup">
-                <input
-                  type="date"
-                  className="border rounded-md px-3 py-2 text-sm w-44"
-                  data-testid="go-to-date-input"
-                  autoFocus
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      onGoToDate(new Date(e.target.value + 'T00:00:00'));
-                      setShowDatePicker(false);
-                    }
-                  }}
-                />
-                <div className="mt-2 flex gap-1">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => { onGoToDate(new Date()); setShowDatePicker(false); }}>Bugün</Button>
-                </div>
-              </div>
-            )}
+            <input
+              ref={dateInputRef}
+              type="date"
+              data-testid="go-to-date-input"
+              className="sr-only absolute inset-0 opacity-0 pointer-events-none"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(e) => {
+                if (e.target.value) onGoToDate(new Date(e.target.value + 'T00:00:00'));
+              }}
+            />
           </div>
+          <Button variant="outline" size="sm" onClick={() => onGoToDate(new Date())} className="h-8 px-3 text-xs font-medium" data-testid="go-today-shortcut-btn">
+            Bugün
+          </Button>
           <Button variant="outline" size="sm" onClick={onNavigateNext} className="h-8 w-8 p-0" data-testid="nav-next-btn">
             <ChevronRight className="w-4 h-4" />
           </Button>
