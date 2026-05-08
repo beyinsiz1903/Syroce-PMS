@@ -82,7 +82,7 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
                     <span className="text-xs text-slate-500"> / gece</span>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-amber-700 mt-1.5">Tarife belirleyin</div>
+                  <div className="text-[11px] text-amber-700 mt-1.5">Fiyat sonraki adımda girilecek</div>
                 )}
                 {sel && nights > 1 && rate > 0 && (
                   <div className="text-[11px] text-slate-500 mt-0.5">Toplam: {(rate * nights).toLocaleString('tr-TR')} ₺</div>
