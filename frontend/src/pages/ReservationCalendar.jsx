@@ -655,15 +655,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Navigation ────────────────────────────────────────────
-  const SCROLL_DAYS = Math.max(3, Math.floor(daysToShow / 3));
+  // Ok tuşları gün-gün ilerler (kullanıcı kontrolü). Daha büyük adım için
+  // "Tarihe Git" picker'ı kullanılabilir.
   const navigatePrevious = () => {
     const nd = new Date(currentDate);
-    nd.setDate(nd.getDate() - SCROLL_DAYS);
+    nd.setDate(nd.getDate() - 1);
     setCurrentDate(nd);
   };
   const navigateNext = () => {
     const nd = new Date(currentDate);
-    nd.setDate(nd.getDate() + SCROLL_DAYS);
+    nd.setDate(nd.getDate() + 1);
     setCurrentDate(nd);
   };
   const goToDate = (date) => { setCurrentDate(date); };
