@@ -85,17 +85,45 @@ def _matches(doc: dict[str, Any], query: dict[str, Any]) -> bool:
 class _FakeCollection:
     def __init__(self, docs: list[dict[str, Any]] | None = None):
         self.docs: list[dict[str, Any]] = list(docs or [])
+        self.inserted: list[dict[str, Any]] = []
+        self.insert_should_raise: Exception | None = None
 
     def find(self, query: dict[str, Any] | None = None,
              projection: dict[str, Any] | None = None) -> _FakeCursor:
         q = query or {}
         return _FakeCursor([d for d in self.docs if _matches(d, q)])
 
+    async def find_one(self, query: dict[str, Any] | None = None,
+                       projection: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        q = query or {}
+        for d in self.docs:
+            if _matches(d, q):
+                return dict(d)
+        return None
+
+    async def insert_one(self, doc: dict[str, Any]):
+        if self.insert_should_raise is not None:
+            raise self.insert_should_raise
+        self.inserted.append(doc)
+        doc.setdefault("_id", f"oid-{len(self.inserted)}")
+
+        class _Result:
+            inserted_id = doc["_id"]
+        return _Result()
+
 
 class _FakeDB:
     def __init__(self):
         self.bookings = _FakeCollection()
         self.guests = _FakeCollection()
+        self.tenants = _FakeCollection()
+        self._extra: dict[str, _FakeCollection] = {}
+
+    def __getitem__(self, name: str) -> _FakeCollection:
+        # Allow ``db[OUTBOX_COLL]`` style access used by ``send_batch``.
+        if name not in self._extra:
+            self._extra[name] = _FakeCollection()
+        return self._extra[name]
 
 
 @pytest.fixture
@@ -486,3 +514,376 @@ class TestBuildDailyPayload:
         ]
         p = await tga.build_daily_payload(TENANT, target)
         assert p["net_oda_geliri"] == 300.0
+
+
+# ── Helpers for send_batch / envelope tests ─────────────────────────────────
+
+class _FakeResponse:
+    """``safe_post_async`` dönüş objesi için minimal yüzey
+    (``status_code`` + ``text``).
+    """
+    def __init__(self, status_code: int, text: str = ""):
+        self.status_code = status_code
+        self.text = text
+
+
+def _seed_tenant(
+    fake_db: _FakeDB,
+    *,
+    tenant_id: str = TENANT,
+    enabled: bool = True,
+    belge_no: str = "BLG-1",
+    vergi_no: str = "VRG-1",
+    api_key_enc: str | None = "ENC-KEY",
+    environment: str = "test",
+) -> None:
+    """Tenants koleksiyonuna TGA config içeren bir tenant doc'u koyar.
+
+    ``api_key_enc`` ham string'dir; ``get_tga_config`` decrypt'e
+    girdiğinde ``_StubCrypto`` aynı string'i geri döner.
+    """
+    tga_cfg: dict[str, Any] = {
+        "belge_no": belge_no,
+        "vergi_no": vergi_no,
+        "environment": environment,
+        "enabled": enabled,
+    }
+    if api_key_enc is not None:
+        tga_cfg["api_key_enc"] = api_key_enc
+    fake_db.tenants.docs = [{"id": tenant_id, "tga": tga_cfg}]
+
+
+class _StubCrypto:
+    """``get_crypto_service`` yerine geçen stub: ``decrypt`` çağrısında
+    ciphertext'i olduğu gibi geri verir; testler beklenen api_key'i
+    bilebilsin diye.
+    """
+    def decrypt(self, ciphertext: str, *, aad: Any = None) -> str:  # noqa: ARG002
+        return ciphertext
+
+
+@pytest.fixture
+def stub_crypto(monkeypatch):
+    monkeypatch.setattr(tga, "get_crypto_service", lambda: _StubCrypto())
+
+
+# ── Tests: build_batch_envelope ─────────────────────────────────────────────
+
+class TestBuildBatchEnvelope:
+    async def test_envelope_has_correct_day_count_and_summary_matches(
+        self, fake_db, stub_crypto,
+    ):
+        """N günlük envelope:
+          * ``data`` uzunluğu == ``days``
+          * Tarihler artan sırada (en eski → en yeni = ``end_date``)
+          * ``tesis_belge_no`` / ``vergi_no`` config ile eşleşir
+          * ``request_summary`` toplamı (send_batch içinde hesaplanan)
+            payload'lardaki ``toplam_oda`` ve ``net_oda_geliri`` ile
+            birebir aynı.
+        """
+        _seed_tenant(fake_db, belge_no="BLG-XYZ", vergi_no="VRG-99")
+        # 3 gün boyunca, her güne 1 farklı booking → toplam_oda toplamı = 3
+        fake_db.guests.docs = [
+            _guest(id="g1", nationality="TR"),
+            _guest(id="g2", nationality="DE"),
+            _guest(id="g3", nationality="GB"),
+        ]
+        fake_db.bookings.docs = [
+            _booking(
+                id="b1",
+                check_in="2026-05-08T14:00:00+00:00",
+                check_out="2026-05-09T11:00:00+00:00",
+                guest_id="g1", adults=2, total_amount=400.0,
+                status="checked_in",
+            ),
+            _booking(
+                id="b2",
+                check_in="2026-05-09T14:00:00+00:00",
+                check_out="2026-05-10T11:00:00+00:00",
+                guest_id="g2", adults=2, total_amount=500.0,
+                status="checked_in",
+            ),
+            _booking(
+                id="b3",
+                check_in="2026-05-10T14:00:00+00:00",
+                check_out="2026-05-11T11:00:00+00:00",
+                guest_id="g3", adults=1, total_amount=600.0,
+                status="checked_in",
+            ),
+        ]
+
+        env = await tga.build_batch_envelope(
+            TENANT, date(2026, 5, 10), days=3,
+        )
+
+        assert env["tesis_belge_no"] == "BLG-XYZ"
+        assert env["vergi_no"] == "VRG-99"
+        assert len(env["data"]) == 3
+        # Tarihler artan sırada; sonuncusu end_date'tir
+        assert [d["rapor_tarihi"] for d in env["data"]] == [
+            "2026-05-08", "2026-05-09", "2026-05-10",
+        ]
+        # Toplamlar (send_batch'in request_summary'sinde kullanılan formül)
+        assert sum(d["toplam_oda"] for d in env["data"]) == 3
+        assert round(sum(d["net_oda_geliri"] for d in env["data"]), 2) == 1500.0
+
+    async def test_envelope_default_days_is_seven(self, fake_db, stub_crypto):
+        """Varsayılan ``days=7`` → tam 7 günlük tarih dizisi üretir,
+        son eleman ``end_date`` olur.
+        """
+        _seed_tenant(fake_db)
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+        env = await tga.build_batch_envelope(TENANT, date(2026, 5, 10))
+        assert len(env["data"]) == 7
+        assert env["data"][-1]["rapor_tarihi"] == "2026-05-10"
+        assert env["data"][0]["rapor_tarihi"] == "2026-05-04"
+
+
+# ── Tests: send_batch ───────────────────────────────────────────────────────
+
+class TestSendBatch:
+    async def test_skipped_when_disabled(self, fake_db, stub_crypto, monkeypatch):
+        """``enabled=false`` ise ne POST atılır ne de outbox'a yazılır;
+        sonuç ``status=skipped, reason=disabled`` döner.
+        """
+        _seed_tenant(fake_db, enabled=False)
+
+        called = {"n": 0}
+
+        async def _should_not_be_called(*a, **kw):  # pragma: no cover - guard
+            called["n"] += 1
+            raise AssertionError("safe_post_async must not be called when disabled")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _should_not_be_called)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=3)
+        assert result == {"status": "skipped", "reason": "disabled"}
+        assert called["n"] == 0
+        # Outbox'a hiçbir şey yazılmamış olmalı
+        assert fake_db[tga.OUTBOX_COLL].inserted == []
+
+    async def test_skipped_when_missing_api_key(self, fake_db, stub_crypto, monkeypatch):
+        """API anahtarı (api_key_enc) yoksa ``missing_config`` ile skip."""
+        _seed_tenant(fake_db, api_key_enc=None)
+
+        async def _should_not_be_called(*a, **kw):  # pragma: no cover - guard
+            raise AssertionError("safe_post_async must not be called when api_key missing")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _should_not_be_called)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=2)
+        assert result == {"status": "skipped", "reason": "missing_config"}
+        assert fake_db[tga.OUTBOX_COLL].inserted == []
+
+    async def test_skipped_when_missing_belge_no(self, fake_db, stub_crypto, monkeypatch):
+        """``belge_no`` boşsa da ``missing_config`` ile skip — eksik
+        regülasyon kimliği TGA'ya gönderilmemeli.
+        """
+        _seed_tenant(fake_db, belge_no="")
+
+        async def _should_not_be_called(*a, **kw):  # pragma: no cover - guard
+            raise AssertionError("safe_post_async must not be called")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _should_not_be_called)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=2)
+        assert result["status"] == "skipped"
+        assert result["reason"] == "missing_config"
+
+    async def test_successful_post_writes_sent_outbox(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """200 dönen POST → outbox kaydı ``status=sent``, request_summary
+        toplamları payload toplamlarıyla aynı, gerçek HTTP çağrısı yok.
+        """
+        _seed_tenant(fake_db, environment="test", api_key_enc="my-secret")
+        fake_db.guests.docs = [_guest(id="g1", nationality="TR")]
+        fake_db.bookings.docs = [
+            _booking(
+                id="b1",
+                check_in="2026-05-09T14:00:00+00:00",
+                check_out="2026-05-10T11:00:00+00:00",
+                guest_id="g1", adults=2, total_amount=750.0,
+                status="checked_in",
+            ),
+        ]
+
+        captured: dict[str, Any] = {}
+
+        async def _fake_post(url, *, timeout, json, headers):
+            captured["url"] = url
+            captured["timeout"] = timeout
+            captured["json"] = json
+            captured["headers"] = headers
+            return _FakeResponse(200, '{"ok":true}')
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        result = await tga.send_batch(
+            TENANT, date(2026, 5, 10), days=3, triggered_by="unit-test",
+        )
+
+        # Çağrı parametreleri
+        assert captured["url"].endswith(tga.TGA_PATH)
+        assert tga.TGA_BASE_URL_TEST in captured["url"]
+        assert captured["headers"]["X-API-Key"] == "my-secret"
+        assert captured["headers"]["Content-Type"] == "application/json"
+        assert captured["timeout"] == tga.HTTP_TIMEOUT_S
+        assert captured["json"]["tesis_belge_no"] == "BLG-1"
+        assert len(captured["json"]["data"]) == 3
+
+        # Sonuç
+        assert result["status"] == "sent"
+        assert result["http_status"] == 200
+        assert result["response_text"] == '{"ok":true}'
+        assert result["triggered_by"] == "unit-test"
+        assert result["environment"] == "test"
+        assert result["end_date"] == "2026-05-10"
+        assert result["days"] == 3
+        # request_summary toplamları payload toplamlarıyla bire bir eşleşmeli
+        assert result["request_summary"]["tesis_belge_no"] == "BLG-1"
+        assert result["request_summary"]["rapor_tarihleri"] == [
+            "2026-05-08", "2026-05-09", "2026-05-10",
+        ]
+        assert result["request_summary"]["toplam_oda_sum"] == sum(
+            d["toplam_oda"] for d in captured["json"]["data"]
+        )
+        assert result["request_summary"]["net_oda_geliri_sum"] == round(
+            sum(d["net_oda_geliri"] for d in captured["json"]["data"]), 2,
+        )
+        # 1 gece in-house, 750 TL → toplam 750
+        assert result["request_summary"]["toplam_oda_sum"] == 1
+        assert result["request_summary"]["net_oda_geliri_sum"] == 750.0
+
+        # Outbox'a yazılmış olmalı (aynı doc, status=sent)
+        outbox = fake_db[tga.OUTBOX_COLL].inserted
+        assert len(outbox) == 1
+        assert outbox[0]["status"] == "sent"
+        assert outbox[0]["http_status"] == 200
+        assert outbox[0]["tenant_id"] == TENANT
+
+    async def test_http_5xx_marks_failed_and_writes_outbox(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """5xx yanıt → ``status=failed`` ama outbox kaydı yine de yazılır."""
+        _seed_tenant(fake_db)
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+
+        async def _fake_post(url, *, timeout, json, headers):
+            return _FakeResponse(503, "service unavailable")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=2)
+
+        assert result["status"] == "failed"
+        assert result["http_status"] == 503
+        assert result["response_text"] == "service unavailable"
+        assert "finished_at" in result
+        # Outbox'a yazılmalı
+        outbox = fake_db[tga.OUTBOX_COLL].inserted
+        assert len(outbox) == 1
+        assert outbox[0]["status"] == "failed"
+        assert outbox[0]["http_status"] == 503
+
+    async def test_egress_denied_marks_failed(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """``EgressDenied`` → ``status=failed`` ve ``error`` alanı
+        ``egress_denied:`` ön ekiyle dolu olmalı; outbox'a yazılır.
+        """
+        _seed_tenant(fake_db)
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+
+        from integrations.xchange import safety as _safety
+
+        async def _fake_post(url, *, timeout, json, headers):
+            raise _safety.EgressDenied("host not allowed: tesis-entegrasyon.tga.gov.tr")
+
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=2)
+
+        assert result["status"] == "failed"
+        assert "http_status" not in result
+        assert result["error"].startswith("egress_denied:")
+        assert "host not allowed" in result["error"]
+        outbox = fake_db[tga.OUTBOX_COLL].inserted
+        assert len(outbox) == 1
+        assert outbox[0]["status"] == "failed"
+        assert outbox[0]["error"].startswith("egress_denied:")
+
+    async def test_generic_exception_marks_failed(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """Beklenmedik network hatası (ör. timeout) → ``status=failed`` ve
+        ``error`` mesajı 500 char ile sınırlanır. Outbox kaydı yazılır.
+        """
+        _seed_tenant(fake_db)
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+
+        async def _fake_post(url, *, timeout, json, headers):
+            raise TimeoutError("read timeout after 30s")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=1)
+        assert result["status"] == "failed"
+        assert result["error"] == "read timeout after 30s"
+        outbox = fake_db[tga.OUTBOX_COLL].inserted
+        assert len(outbox) == 1
+        assert outbox[0]["status"] == "failed"
+
+    async def test_live_environment_uses_live_base_url(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """``environment=live`` → POST URL'si LIVE base'i kullanır."""
+        _seed_tenant(fake_db, environment="live")
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+
+        captured: dict[str, Any] = {}
+
+        async def _fake_post(url, *, timeout, json, headers):
+            captured["url"] = url
+            return _FakeResponse(200, "{}")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        await tga.send_batch(TENANT, date(2026, 5, 10), days=1)
+        assert captured["url"].startswith(tga.TGA_BASE_URL_LIVE)
+        assert captured["url"].endswith(tga.TGA_PATH)
+
+    async def test_outbox_insert_failure_does_not_break_caller(
+        self, fake_db, stub_crypto, monkeypatch,
+    ):
+        """Outbox insert hata verirse bile ``send_batch`` çağrı sahibine
+        sonucu döndürmeli — log'la geçilir, exception bubble etmez.
+        """
+        _seed_tenant(fake_db)
+        fake_db.guests.docs = []
+        fake_db.bookings.docs = []
+        fake_db[tga.OUTBOX_COLL].insert_should_raise = RuntimeError("mongo down")
+
+        async def _fake_post(url, *, timeout, json, headers):
+            return _FakeResponse(200, "ok")
+
+        from integrations.xchange import safety as _safety
+        monkeypatch.setattr(_safety, "safe_post_async", _fake_post)
+
+        result = await tga.send_batch(TENANT, date(2026, 5, 10), days=1)
+        assert result["status"] == "sent"
+        assert result["http_status"] == 200
+        # Caller _id görmemeli
+        assert "_id" not in result
