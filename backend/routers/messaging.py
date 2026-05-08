@@ -375,8 +375,8 @@ async def send_whatsapp_template(
             detail="WhatsApp yapılandırılmamış (önce /settings/whatsapp ile credentials ekleyin)",
         )
 
-    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
     from modules.messaging.models import ProviderType, new_delivery_log
+    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
 
     provider = PROVIDER_MAP[ProviderType.WHATSAPP.value]
     creds = cfg.get("credentials_encrypted", {}) or {}

@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 
 import pyotp
 from cryptography.fernet import Fernet, InvalidToken
+
 from core._pwd import BcryptContext
 
 logger = logging.getLogger(__name__)

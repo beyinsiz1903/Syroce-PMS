@@ -14,6 +14,7 @@ from typing import Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from core._pwd import BcryptContext
 
 logger = logging.getLogger(__name__)
