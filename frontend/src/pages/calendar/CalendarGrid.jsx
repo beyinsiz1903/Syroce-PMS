@@ -30,8 +30,7 @@ const CalendarGrid = ({
   showDeluxePanel,
   groupColorMap,
   setGroupColorMap,
-  // Enterprise / AI helpers
-  rateLeakages,
+  // AI helpers
   aiRoomMoves,
   aiOverbookingSolutions,
   aiNoShowPredictions,
@@ -62,10 +61,6 @@ const CalendarGrid = ({
       date >= new Date(c.overlap_start) &&
       date < new Date(c.overlap_end)
     );
-  };
-
-  const hasRateLeakage = (bookingId) => {
-    return rateLeakages.find(l => l.booking_id === bookingId);
   };
 
   const getAIRecommendation = (bookingId) => {
@@ -479,11 +474,6 @@ const CalendarGrid = ({
                                         </div>
                                       </div>
                                     </div>
-                                    {hasRateLeakage(booking.id) && (
-                                      <div className="absolute top-0 left-0 bg-red-600 text-white text-[7px] px-0.5 rounded-br font-bold" title={`Rate Leakage: -$${hasRateLeakage(booking.id).difference_per_night}/night`}>
-                                        LEAK
-                                      </div>
-                                    )}
                                     {hasConflict(room.id, date) && (
                                       <div className="absolute top-0 right-0 bg-red-600 text-white text-[7px] px-0.5 rounded-bl font-bold animate-pulse">
                                         !!

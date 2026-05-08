@@ -85,9 +85,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [moveReason, setMoveReason] = useState('');
 
   // Enterprise / AI Mode
-  const [showEnterprisePanel, setShowEnterprisePanel] = useState(false);
-  const [rateLeakages, setRateLeakages] = useState([]);
-  const [availabilityHeatmap, setAvailabilityHeatmap] = useState([]);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiOverbookingSolutions, setAiOverbookingSolutions] = useState([]);
   const [aiRoomMoves, setAiRoomMoves] = useState([]);
@@ -266,21 +263,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     } finally { setSyncing(false); }
   };
 
-  // ─── Enterprise / AI / Deluxe Data Loading ─────────────────
-  const loadEnterpriseData = async ({ roomsCount } = {}) => {
-    try {
-      if (typeof roomsCount === 'number' && roomsCount === 0) { setRateLeakages([]); setAvailabilityHeatmap([]); return; }
-      const sd = currentDate.toISOString().split('T')[0];
-      const ed = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const [leakageRes, heatmapRes] = await Promise.all([
-        axios.get(`/enterprise/rate-leakage?start_date=${sd}&end_date=${ed}`).catch(() => ({ data: { leakages: [] } })),
-        axios.get(`/enterprise/availability-heatmap?start_date=${sd}&end_date=${ed}`).catch(() => ({ data: { heatmap: [] } }))
-      ]);
-      setRateLeakages(leakageRes.data.leakages || []);
-      setAvailabilityHeatmap(heatmapRes.data.heatmap || []);
-    } catch (error) { console.error('Failed to load enterprise data:', error); }
-  };
-
+  // ─── AI / Deluxe Data Loading ─────────────────
   const loadAIRecommendations = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -656,12 +639,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     if (newState && (calendarMeta.rooms || 0) > 0) loadDeluxeFeatures();
   };
 
-  const toggleEnterprise = () => {
-    const newState = !showEnterprisePanel;
-    setShowEnterprisePanel(newState);
-    if (newState) loadEnterpriseData({ roomsCount: rooms.length });
-  };
-
   // ─── Navigation ────────────────────────────────────────────
   // Ok tuşları gün-gün ilerler (kullanıcı kontrolü). Daha büyük adım için
   // "Tarihe Git" picker'ı kullanılabilir.
@@ -700,13 +677,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           bookings={bookings}
           conflicts={conflicts}
           syncing={syncing}
-          showEnterprisePanel={showEnterprisePanel}
           showAIPanel={showAIPanel}
           onNavigatePrevious={navigatePrevious}
           onNavigateNext={navigateNext}
           onGoToDate={goToDate}
           onSyncReservations={handleSyncReservations}
-          onToggleEnterprise={toggleEnterprise}
           onToggleAI={toggleAIMode}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
@@ -782,7 +757,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           showDeluxePanel={showDeluxePanel}
           groupColorMap={groupColorMap}
           setGroupColorMap={setGroupColorMap}
-          rateLeakages={rateLeakages}
           aiRoomMoves={aiRoomMoves}
           aiOverbookingSolutions={aiOverbookingSolutions}
           aiNoShowPredictions={aiNoShowPredictions}

@@ -15,13 +15,11 @@ const CalendarHeader = ({
   bookings,
   conflicts,
   syncing,
-  showEnterprisePanel,
   showAIPanel,
   onNavigatePrevious,
   onNavigateNext,
   onGoToDate,
   onSyncReservations,
-  onToggleEnterprise,
   onToggleAI,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
@@ -179,15 +177,6 @@ const CalendarHeader = ({
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={showEnterprisePanel ? "default" : "outline"}
-              onClick={onToggleEnterprise}
-              className="h-7 text-xs px-2"
-              data-testid="enterprise-toggle"
-            >
-              Ayarlar
-            </Button>
             <Button
               size="sm"
               variant={showAIPanel ? "default" : "outline"}
