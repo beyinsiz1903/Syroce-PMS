@@ -288,9 +288,11 @@ async def start_night_audit(
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
     datetime.fromisoformat(audit_date).replace(tzinfo=UTC)
+    # Whitelist: gece denetimi icin gercekten odayi isgal eden statuler.
+    # checked_out da sayilmali (denetim gunu icinde cikis yapanlar gecede dolu sayilir).
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
-        'status': 'checked_in',
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
         'check_in': {'$lte': audit_date},
         'check_out': {'$gt': audit_date}
     })
@@ -326,7 +328,7 @@ async def start_night_audit(
         'statistics': {
             'total_rooms': audit.total_rooms,
             'occupied_rooms': audit.occupied_rooms,
-            'occupancy_pct': round((occupied_rooms / total_rooms * 100), 1) if total_rooms > 0 else 0,
+            'occupancy_pct': round(min((occupied_rooms / total_rooms * 100), 100.0), 1) if total_rooms > 0 else 0,
             'total_revenue': audit.total_revenue,
             'room_revenue': audit.room_revenue
         }

@@ -55,7 +55,7 @@ async def get_occupancy_report(
         end = end.replace(tzinfo=UTC)
 
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']},
+    bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
                                        '$or': [{'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}},
                                               {'check_out': {'$gte': start.isoformat(), '$lte': end.isoformat()}},
                                               {'check_in': {'$lte': start.isoformat()}, 'check_out': {'$gte': end.isoformat()}}]}, {'_id': 0}).to_list(1000)
@@ -75,7 +75,8 @@ async def get_occupancy_report(
         overlap_end = min(end, check_out)
         if overlap_start < overlap_end:
             occupied_room_nights += (overlap_end - overlap_start).days
-    occupancy_rate = (occupied_room_nights / total_room_nights * 100) if total_room_nights > 0 else 0
+    # Cap %100 (overbooking / cakisma korumasi)
+    occupancy_rate = min((occupied_room_nights / total_room_nights * 100), 100.0) if total_room_nights > 0 else 0
     return {'start_date': start_date, 'end_date': end_date, 'total_rooms': total_rooms, 'total_room_nights': total_room_nights,
             'occupied_room_nights': occupied_room_nights, 'occupancy_rate': round(occupancy_rate, 2)}
 
@@ -100,7 +101,7 @@ async def get_revenue_report(
         start_date = start.date().isoformat()
     else:
         start = datetime.fromisoformat(start_date)
-    bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['checked_in', 'checked_out']},
+    bookings = await db.bookings.find({'tenant_id': current_user.tenant_id, 'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
                                        'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()}}, {'_id': 0}).to_list(1000)
     total_revenue = sum(float(b.get('total_amount') or 0) for b in bookings)
     total_room_nights = 0
@@ -145,7 +146,7 @@ async def get_daily_summary(
                                        'processed_at': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()}}, {'_id': 0}).to_list(1000)
     daily_revenue = sum(p['amount'] for p in payments)
     return {'date': target_date.isoformat(), 'arrivals': arrivals, 'departures': departures, 'inhouse': inhouse, 'total_rooms': total_rooms,
-            'occupancy_rate': round((inhouse / total_rooms * 100) if total_rooms > 0 else 0, 2), 'daily_revenue': round(daily_revenue, 2)}
+            'occupancy_rate': round(min((inhouse / total_rooms * 100), 100.0) if total_rooms > 0 else 0, 2), 'daily_revenue': round(daily_revenue, 2)}
 
 
 @sub_router.get("/reports/forecast")
@@ -163,7 +164,7 @@ async def get_forecast(
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'checked_in']},
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
         'check_in': {'$lte': window_end.isoformat()},
         'check_out': {'$gte': window_start.isoformat()},
     }, {'_id': 0, 'check_in': 1, 'check_out': 1}).to_list(10000)
@@ -181,7 +182,8 @@ async def get_forecast(
     for i in range(days):
         forecast_date = today + timedelta(days=i)
         count = sum(1 for ci, co in parsed if ci <= forecast_date <= co)
-        occupancy = round((count / total_rooms * 100) if total_rooms > 0 else 0, 2)
+        # Cap %100 (cakisma/overbooking korumasi)
+        occupancy = round(min((count / total_rooms * 100), 100.0) if total_rooms > 0 else 0, 2)
         forecast_data.append({'date': forecast_date.isoformat(), 'bookings': count, 'total_rooms': total_rooms, 'occupancy_rate': occupancy})
     return forecast_data
 

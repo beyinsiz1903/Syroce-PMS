@@ -87,14 +87,17 @@ async def get_flash_report(
 
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
+    # Whitelist: gercekten odayi isgal eden statuler. Gecmis tarihli flash icin
+    # checked_out da sayilmali; gelecekteki rezervasyonlar icin confirmed/guaranteed.
     occupied_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
-        'status': 'checked_in',
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
         'check_in': {'$lte': today_end.isoformat()},
         'check_out': {'$gte': today_start.isoformat()}
     })
 
-    occupancy_rate = (occupied_today / total_rooms * 100) if total_rooms > 0 else 0
+    # Cap %100 (overbooking/seed cakisma korumasi)
+    occupancy_rate = min((occupied_today / total_rooms * 100), 100.0) if total_rooms > 0 else 0
 
     arrivals_today = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
@@ -395,15 +398,16 @@ async def get_daily_flash_report(
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
-    # Get occupancy (checked-in bookings)
+    # Get occupancy (whitelist: gercekte odayi isgal eden statuler)
     occupied_rooms = await db.bookings.count_documents({
         'tenant_id': current_user.tenant_id,
-        'status': 'checked_in',
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
         'check_in': {'$lte': end_of_day.isoformat()},
         'check_out': {'$gte': start_of_day.isoformat()}
     })
 
-    occupancy_rate = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 2)
+    # Cap %100 (overbooking/seed cakisma korumasi)
+    occupancy_rate = round(min((occupied_rooms / total_rooms * 100), 100.0) if total_rooms > 0 else 0, 2)
 
     # Get arrivals & departures count
     arrivals = await db.bookings.count_documents({

@@ -30,10 +30,13 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
 
     rooms_total = await db.rooms.count_documents({"tenant_id": tenant_id})
 
-    # Bugun aktif konaklamalar (occupancy)
+    # Is gunundeki aktif konaklamalar (occupancy).
+    # Whitelist: gercekte odayi isgal eden statuler. Gecmis is gunleri icin
+    # checked_out da sayilmali (tarihsel rapor); confirmed/guaranteed ise
+    # check-in yapilmamis ama o tarihte konaklamasi beklenen rezervasyon.
     occupied = await db.bookings.count_documents({
         "tenant_id": tenant_id,
-        "status": {"$in": ["checked_in", "in_house"]},
+        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
         "check_in": {"$lte": business_date},
         "check_out": {"$gt": business_date},
     })
@@ -95,7 +98,10 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         "acknowledged": False,
     })
 
-    occ_rate = (occupied / rooms_total * 100.0) if rooms_total else 0.0
+    # Cap %100: overbooking veya seed verisindeki cakisma durumlarinda
+    # raporda imkansiz oran (ornegin %127) gostermemek icin.
+    raw_occ_rate = (occupied / rooms_total * 100.0) if rooms_total else 0.0
+    occ_rate = min(raw_occ_rate, 100.0)
 
     return {
         "business_date": business_date,

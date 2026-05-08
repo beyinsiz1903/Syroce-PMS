@@ -102,7 +102,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         'total_rooms': total_rooms,
         'occupied_rooms': occupied_rooms,
         'available_rooms': max(0, total_rooms - occupied_rooms),
-        'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
+        'occupancy_rate': round(min((occupied_rooms / total_rooms * 100), 100.0), 2) if total_rooms > 0 else 0,
         'today_checkins': today_checkins,
         'total_guests': total_guests,
         'currency': currency_code,

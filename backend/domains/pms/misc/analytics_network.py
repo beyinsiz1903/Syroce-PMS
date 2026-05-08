@@ -208,10 +208,12 @@ async def get_occupancy_trend(
     end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=days)
 
-    # Get all bookings in date range
+    # Get all bookings in date range.
+    # Whitelist: yalnızca odayı GERÇEKTEN işgal eden (veya etmiş) statüler.
+    # no_show/cancelled/pending → odayı işgal etmez, doluluk hesabına dahil değildir.
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
-        'status': {'$ne': 'cancelled'},
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']},
         '$and': [
             {'check_out': {'$gt': start_date.isoformat()}},
             {'check_in': {'$lt': end_date.isoformat()}}

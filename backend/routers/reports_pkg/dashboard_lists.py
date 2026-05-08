@@ -215,7 +215,7 @@ async def get_basic_reports_dashboard(
             month_bookings.append(bk)
             recent_guests_data.append({'guest_name': bk.get('guest_name'), 'guest_email': bk.get('guest_email'), 'guest_phone': bk.get('guest_phone'), 'room_number': bk.get('room_number'), 'room_type': bk.get('room_type'), 'check_in': ci, 'check_out': co, 'total_amount': amt, 'status': status, 'nationality': bk.get('nationality'), 'id_number': bk.get('id_number'), 'passport_number': bk.get('passport_number'), 'booking_source': bk.get('booking_source')})
 
-    occupancy_pct = round((occupied_today / total_rooms * 100), 1) if total_rooms > 0 else 0
+    occupancy_pct = round(min((occupied_today / total_rooms * 100), 100.0), 1) if total_rooms > 0 else 0
     adr = round(today_revenue / occupied_today, 2) if occupied_today > 0 else 0
     revpar = round(today_revenue / total_rooms, 2) if total_rooms > 0 else 0
 
@@ -228,9 +228,11 @@ async def get_basic_reports_dashboard(
         occ_c = 0; day_r = 0
         for bk in all_bk:
             ci, co, st2 = bk.get('check_in',''), bk.get('check_out',''), bk.get('status','')
-            if st2 in ('checked_in','checked_out','confirmed') and ci <= de and co >= ds: occ_c += 1
-            if st2 in ('confirmed','checked_in','checked_out') and ci >= ds and ci <= de: day_r += bk.get('total_amount',0) or 0
-        occupancy_trend.append({'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%d %b'), 'occupancy': round((occ_c/total_rooms*100),1) if total_rooms>0 else 0, 'rooms_occupied': occ_c})
+            if st2 in ('checked_in','checked_out','confirmed','guaranteed') and ci <= de and co >= ds: occ_c += 1
+            if st2 in ('confirmed','guaranteed','checked_in','checked_out') and ci >= ds and ci <= de: day_r += bk.get('total_amount',0) or 0
+        # Cap %100 (overbooking veya cakisma durumlarinda)
+        _occ_pct = round((occ_c/total_rooms*100),1) if total_rooms>0 else 0
+        occupancy_trend.append({'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%d %b'), 'occupancy': min(_occ_pct, 100.0), 'rooms_occupied': occ_c})
         revenue_trend.append({'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%d %b'), 'revenue': round(day_r, 2)})
 
     hk_completed = len([t for t in hk_tasks if t.get('status') == 'completed'])
