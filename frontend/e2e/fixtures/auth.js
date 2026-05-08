@@ -16,18 +16,19 @@ export const STORAGE_STATE = path.resolve('./e2e/.auth/state.json');
  */
 export async function loginAsDemo(page) {
     const email = process.env.E2E_EMAIL || 'demo@syroce.com';
-    await page.goto('/');
-    // AuthPage yüklendi mi?
+    // `/` LandingPage gösterir; auth ekranı için doğrudan /auth'a git.
+    await page.goto('/auth');
+    // AuthPage yüklendi mi? (lazy chunk + i18n için tolerans)
     await expect(
-        page.getByRole('heading', { name: /syroce|otel|hotel|giriş/i }).first()
-    ).toBeVisible({ timeout: 15_000 });
+        page.locator('[data-testid="hotel-login-email"], input[type="email"]').first()
+    ).toBeVisible({ timeout: 20_000 });
 
-    // Email + password input'larını generic seç (placeholder/label varyasyonları)
+    // Hotel-login tab default açık; data-testid önce, fallback generic seçici.
     const emailInput = page
-        .locator('input[type="email"], input[name="email"], input[placeholder*="mail" i]')
+        .locator('[data-testid="hotel-login-email"], input[type="email"], input[name="email"], input[placeholder*="mail" i]')
         .first();
     const passwordInput = page
-        .locator('input[type="password"], input[name="password"]')
+        .locator('[data-testid="hotel-login-password"], input[type="password"], input[name="password"]')
         .first();
 
     await emailInput.fill(email);

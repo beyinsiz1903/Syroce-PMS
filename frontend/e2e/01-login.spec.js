@@ -6,7 +6,7 @@ import { loginAsDemo, STORAGE_STATE, PASSWORD } from './fixtures/auth.js';
 
 test.describe.serial('Login', () => {
     test('hatalı şifre toast/hata gösterir', async ({ page }) => {
-        await page.goto('/');
+        await page.goto('/auth');
         const emailInput = page
             .locator('input[type="email"], input[name="email"], input[placeholder*="mail" i]')
             .first();
