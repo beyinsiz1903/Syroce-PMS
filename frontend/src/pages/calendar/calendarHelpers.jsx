@@ -41,11 +41,13 @@ export const isRoomOccupiedOnDay = (roomId, day, bookings) => {
 };
 
 // Get booking for room on specific date
+// NOT: checked_out olan geçmiş rezervasyonlar takvimde turuncu kart olarak gösterilir
+// (HotelRunner stili). Sadece cancelled / no_show gösterilmez.
 export const getBookingForRoomOnDate = (roomId, date, bookings) => {
   const dayStr = toDateStringUTC(date);
   return bookings.find(booking => {
     if (booking.room_id !== roomId) return false;
-    if (booking.status === 'cancelled' || booking.status === 'checked_out' || booking.status === 'no_show') return false;
+    if (booking.status === 'cancelled' || booking.status === 'no_show') return false;
     const checkIn = toDateStringUTC(booking.check_in);
     const checkOut = toDateStringUTC(booking.check_out);
     return dayStr >= checkIn && dayStr < checkOut;
@@ -105,7 +107,7 @@ export const getStatusColor = (status) => {
   const colors = {
     confirmed: 'bg-blue-600',
     checked_in: 'bg-green-600',
-    checked_out: 'bg-slate-400',
+    checked_out: 'bg-amber-500',
     cancelled: 'bg-red-500',
     guaranteed: 'bg-cyan-600'
   };
@@ -156,7 +158,7 @@ export const getStatusLabel = (status) => {
   const labels = {
     confirmed: 'Confirmed',
     checked_in: 'In-House',
-    checked_out: 'Departed',
+    checked_out: 'Çıkış Yapıldı',
     cancelled: 'Cancelled',
     guaranteed: 'Guaranteed'
   };
@@ -187,8 +189,8 @@ export const getBookingStatusColor = (booking) => {
   const checkOut = toDateStringUTC(booking.check_out);
   // In-house: vibrant green
   if (status === 'checked_in') return { bg: '#16a34a', border: '#15803d' };
-  // Departed: muted slate
-  if (status === 'checked_out') return { bg: '#94a3b8', border: '#64748b' };
+  // Departed: warm orange/amber (HotelRunner stili — geçmişte kalan misafirler)
+  if (status === 'checked_out') return { bg: '#f97316', border: '#ea580c' };
   // Past but not checked out: soft red
   if (checkOut <= today) return { bg: '#f87171', border: '#ef4444' };
   // Guaranteed: vivid teal
