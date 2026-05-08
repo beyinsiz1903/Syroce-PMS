@@ -338,7 +338,7 @@ async def get_group_bookings(
         'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
     }, {'_id': 0}).to_list(10000)
 
-    # Group by company_id and check_in date
+    # ── Source A: company_id + check_in tarihi üzerinden otomatik tespit ──
     groups = {}
     for booking in bookings:
         company_id = booking.get('company_id')
@@ -346,11 +346,13 @@ async def get_group_bookings(
             continue
 
         check_in = booking['check_in']
-        key = f"{company_id}_{check_in}"
+        key = f"company_{company_id}_{check_in}"
 
         if key not in groups:
             groups[key] = {
+                'source': 'company',
                 'company_id': company_id,
+                'group_name': None,
                 'check_in': check_in,
                 'check_out': booking['check_out'],
                 'bookings': [],
@@ -362,9 +364,41 @@ async def get_group_bookings(
         groups[key]['room_count'] += 1
         groups[key]['total_revenue'] += booking.get('total_amount', 0)
 
-    # Filter groups with min_rooms or more — N+1 fix: companies tek $in sorgusu
+    # ── Source B: db.group_bookings koleksiyonu (Group Folio sayfasındaki
+    # gerçek gruplar — manuel oluşturulmuş, company_id'ye bağımlı değil) ──
+    bookings_by_id = {b['id']: b for b in bookings}
+    async for gb in db.group_bookings.find(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0}
+    ):
+        gb_id = gb.get('id')
+        if not gb_id:
+            # id'siz dokümanlar `group_None` altında üst üste yazılır — atla
+            continue
+        gb_booking_ids = gb.get('booking_ids') or []
+        # Tarih aralığında olan booking'leri al
+        gb_bookings = [bookings_by_id[bid] for bid in gb_booking_ids if bid in bookings_by_id]
+        if not gb_bookings:
+            continue
+        check_ins = sorted({b.get('check_in') for b in gb_bookings if b.get('check_in')})
+        check_outs = sorted({b.get('check_out') for b in gb_bookings if b.get('check_out')})
+        key = f"group_{gb_id}"
+        groups[key] = {
+            'source': 'group_booking',
+            'company_id': None,
+            'group_name': gb.get('group_name'),
+            'check_in': check_ins[0] if check_ins else None,
+            'check_out': check_outs[-1] if check_outs else None,
+            'bookings': gb_bookings,
+            'room_count': len(gb_bookings),
+            'total_revenue': sum(b.get('total_amount', 0) for b in gb_bookings),
+        }
+
+    # min_rooms eşiğini uygula
     qualified = [(k, g) for k, g in groups.items() if g['room_count'] >= min_rooms]
-    qualified_company_ids = list({g['company_id'] for _, g in qualified})
+
+    # Company isimlerini tek $in ile çek
+    qualified_company_ids = list({g['company_id'] for _, g in qualified if g.get('company_id')})
     companies_map = {}
     if qualified_company_ids:
         async for c in db.companies.find(
@@ -372,22 +406,29 @@ async def get_group_bookings(
             {'_id': 0, 'id': 1, 'name': 1},
         ):
             companies_map[c['id']] = c
+
     group_bookings = []
     for key, group in qualified:
+        if group['source'] == 'company':
             company = companies_map.get(group['company_id'])
-            group_bookings.append({
-                'group_id': key,
-                'company_id': group['company_id'],
-                'company_name': company.get('name', 'Unknown') if company else 'Unknown',
-                'check_in': group['check_in'],
-                'check_out': group['check_out'],
-                'room_count': group['room_count'],
-                'total_revenue': round(group['total_revenue'], 2),
-                'avg_rate': round(group['total_revenue'] / group['room_count'], 2),
-                'room_numbers': [b.get('room_number', 'TBD') for b in group['bookings']],
-                'booking_ids': [b['id'] for b in group['bookings']],
-                'is_large_group': group['room_count'] >= 10
-            })
+            display_name = company.get('name', 'Unknown') if company else 'Unknown'
+        else:
+            display_name = group.get('group_name') or 'Grup'
+        group_bookings.append({
+            'group_id': key,
+            'source': group['source'],
+            'company_id': group.get('company_id'),
+            'company_name': display_name,
+            'group_name': group.get('group_name'),
+            'check_in': group['check_in'],
+            'check_out': group['check_out'],
+            'room_count': group['room_count'],
+            'total_revenue': round(group['total_revenue'], 2),
+            'avg_rate': round(group['total_revenue'] / group['room_count'], 2) if group['room_count'] else 0,
+            'room_numbers': [b.get('room_number', 'TBD') for b in group['bookings']],
+            'booking_ids': [b['id'] for b in group['bookings']],
+            'is_large_group': group['room_count'] >= 10
+        })
 
     # Sort by room count descending
     group_bookings.sort(key=lambda x: x['room_count'], reverse=True)
@@ -796,11 +837,16 @@ async def optimize_channel_mix(
     current_mix = {}
     total_revenue = 0
     total_commission = 0
+    explicit_channel_count = 0  # ota_channel alanı dolu olan rezervasyon sayısı
 
     for booking in bookings:
-        channel = booking.get('ota_channel') or 'direct'
+        raw_channel = booking.get('ota_channel')
+        channel = raw_channel or 'direct'
         amount = booking.get('total_amount', 0)
         commission_pct = booking.get('commission_pct', 0)
+
+        if raw_channel:
+            explicit_channel_count += 1
 
         if channel not in current_mix:
             current_mix[channel] = {
@@ -824,38 +870,82 @@ async def optimize_channel_mix(
         data['revenue_pct'] = round((data['revenue'] / total_revenue * 100) if total_revenue > 0 else 0, 1)
         data['booking_pct'] = round((data['bookings'] / len(bookings) * 100) if bookings else 0, 1)
 
-    # AI Optimal Mix Recommendation
-    optimal_mix = {
-        'direct': {'target_pct': 40, 'reason': 'Zero commission, highest margin'},
-        'booking_com': {'target_pct': 25, 'reason': 'High volume, acceptable commission'},
-        'expedia': {'target_pct': 20, 'reason': 'Good conversion, premium segment'},
-        'airbnb': {'target_pct': 10, 'reason': 'Alternative segment, unique guests'},
-        'other': {'target_pct': 5, 'reason': 'Diversification'}
-    }
+    # ── Veri yeterliliği kontrolü ───────────────────────────────────────
+    # Anlamlı bir kanal-mix önerisi yapabilmek için en az birkaç rezervasyonda
+    # gerçek `ota_channel` ve `commission_pct` verisi olmalı. Aksi halde tüm
+    # rezervasyonlar varsayılan olarak 'direct' sayılır ve "öneri" yanıltıcı
+    # olur (uydurma %40/25/20/10/5 hedefler ve hayali tasarruf rakamları).
+    has_channel_data = explicit_channel_count > 0
+    has_commission_data = total_commission > 0
 
-    # Calculate potential savings with optimal mix
+    if not bookings or not has_channel_data:
+        return {
+            'period': {'start_date': start.isoformat(), 'end_date': end.isoformat()},
+            'insufficient_data': True,
+            'reason': (
+                'no_bookings'
+                if not bookings
+                else 'no_channel_data'
+            ),
+            'message': (
+                'Bu dönemde rezervasyon bulunamadı.'
+                if not bookings
+                else (
+                    f'{len(bookings)} rezervasyonun hiçbirinde OTA kanal bilgisi (ota_channel) '
+                    'kayıtlı değil. Kanal mix önerisi için rezervasyonların kanal alanı '
+                    'doldurulmalı (Booking.com, Expedia, Direct vb.).'
+                )
+            ),
+            'analysis': {
+                'total_bookings': len(bookings),
+                'total_revenue': round(total_revenue, 2),
+                'bookings_with_channel': explicit_channel_count,
+                'bookings_with_commission': sum(
+                    1 for b in bookings if (b.get('commission_pct') or 0) > 0
+                ),
+            },
+            'current_mix': {},
+            'optimal_mix': None,
+            'recommendations': [],
+        }
+
+    # Yeterli veri var — gerçek hesaplama
     current_commission_rate = (total_commission / total_revenue * 100) if total_revenue > 0 else 0
-    optimal_commission_rate = 12  # Industry benchmark
-    potential_savings = (current_commission_rate - optimal_commission_rate) * total_revenue / 100
+    optimal_commission_rate = 12  # Endüstri benchmark
+    potential_savings = (
+        (current_commission_rate - optimal_commission_rate) * total_revenue / 100
+        if has_commission_data else 0
+    )
+
+    optimal_mix = {
+        'direct': {'target_pct': 40, 'reason': 'Komisyon yok, en yüksek marj'},
+        'booking_com': {'target_pct': 25, 'reason': 'Yüksek hacim, kabul edilebilir komisyon'},
+        'expedia': {'target_pct': 20, 'reason': 'İyi dönüşüm, premium segment'},
+        'airbnb': {'target_pct': 10, 'reason': 'Alternatif segment, farklı misafir profili'},
+        'other': {'target_pct': 5, 'reason': 'Çeşitlendirme'}
+    }
 
     return {
         'period': {'start_date': start.isoformat(), 'end_date': end.isoformat()},
+        'insufficient_data': False,
         'current_mix': current_mix,
         'optimal_mix': optimal_mix,
         'analysis': {
             'total_bookings': len(bookings),
             'total_revenue': round(total_revenue, 2),
+            'bookings_with_channel': explicit_channel_count,
             'current_commission_cost': round(total_commission, 2),
             'current_commission_rate': round(current_commission_rate, 1),
             'optimal_commission_rate': optimal_commission_rate,
-            'potential_annual_savings': round(potential_savings * 12, 2),
-            'direct_booking_gap': round(40 - current_mix.get('direct', {}).get('revenue_pct', 0), 1)
+            'potential_annual_savings': round(potential_savings * 12, 2) if has_commission_data else None,
+            'direct_booking_gap': round(40 - current_mix.get('direct', {}).get('revenue_pct', 0), 1),
+            'commission_data_available': has_commission_data,
         },
         'recommendations': [
-            "Increase direct bookings through better website conversion",
-            "Offer rate parity + perks for direct (free wifi, late checkout)",
-            "Reduce dependency on high-commission OTAs",
-            "Implement direct booking loyalty rewards program"
+            "Web sitesi dönüşümünü iyileştirerek direkt rezervasyonları artır",
+            "Direkt rezervasyona ek ayrıcalıklar tanı (ücretsiz wifi, geç çıkış)",
+            "Yüksek komisyonlu OTA'lara bağımlılığı azalt",
+            "Direkt rezervasyon sadakat programı uygula",
         ]
     }
 
