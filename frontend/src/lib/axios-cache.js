@@ -59,23 +59,23 @@ function pruneCache() {
 }
 
 export function installAxiosCache(axios) {
-  if (axios.__cacheInstalled) return;
-  axios.__cacheInstalled = true;
-
-  // axios v1+ defaults.adapter genellikle ["xhr","http","fetch"] gibi
-  // string adı taşıyan bir liste/string'tir; doğrudan çağrılamaz.
-  // getAdapter() ile gerçek fonksiyona resolve etmek gerekir.
-  const rawAdapter = axios.defaults.adapter;
-  const originalAdapter =
-    typeof rawAdapter === 'function'
-      ? rawAdapter
-      : (typeof axios.getAdapter === 'function' ? axios.getAdapter(rawAdapter) : rawAdapter);
-
-  if (typeof originalAdapter !== 'function') {
-    // Resolve edemediysek cache'i hiç kurma — orijinal davranışı bozma.
-    axios.__cacheInstalled = false;
-    return;
+  // HMR-safe install: orijinal adapter'ı tek bir kez yedekle ve sakla.
+  // Bu sayede HMR sırasında axios-cache.js veya axiosConfig.js yeniden
+  // yüklendiğinde önceki cachingAdapter'ı orijinal sanıp recursion'a
+  // girmiyoruz; yeni install eski cachingAdapter'ı yeni sürümle değiştirir.
+  if (!axios.__originalAdapter) {
+    const rawAdapter = axios.defaults.adapter;
+    const resolved =
+      typeof rawAdapter === 'function'
+        ? rawAdapter
+        : (typeof axios.getAdapter === 'function' ? axios.getAdapter(rawAdapter) : rawAdapter);
+    if (typeof resolved !== 'function') {
+      // Adapter'ı resolve edemedik → cache'i hiç kurma, orijinal davranışı bozma.
+      return;
+    }
+    axios.__originalAdapter = resolved;
   }
+  const originalAdapter = axios.__originalAdapter;
 
   axios.defaults.adapter = function cachingAdapter(config) {
     if (shouldSkip(config)) return originalAdapter(config);
