@@ -62,7 +62,20 @@ export function installAxiosCache(axios) {
   if (axios.__cacheInstalled) return;
   axios.__cacheInstalled = true;
 
-  const originalAdapter = axios.defaults.adapter;
+  // axios v1+ defaults.adapter genellikle ["xhr","http","fetch"] gibi
+  // string adı taşıyan bir liste/string'tir; doğrudan çağrılamaz.
+  // getAdapter() ile gerçek fonksiyona resolve etmek gerekir.
+  const rawAdapter = axios.defaults.adapter;
+  const originalAdapter =
+    typeof rawAdapter === 'function'
+      ? rawAdapter
+      : (typeof axios.getAdapter === 'function' ? axios.getAdapter(rawAdapter) : rawAdapter);
+
+  if (typeof originalAdapter !== 'function') {
+    // Resolve edemediysek cache'i hiç kurma — orijinal davranışı bozma.
+    axios.__cacheInstalled = false;
+    return;
+  }
 
   axios.defaults.adapter = function cachingAdapter(config) {
     if (shouldSkip(config)) return originalAdapter(config);
