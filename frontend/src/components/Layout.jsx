@@ -211,11 +211,30 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return { standaloneItems: standalone, groupedItems: grouped };
   }, [visibleNav]);
 
+  // Tab-aware active match: bazı menü öğeleri /channels?tab=X gibi
+  // query-paramlı sayfalara redirect eder (örn. /cm-dashboard →
+  // /channels?tab=dashboard). Bu durumda location.pathname her zaman
+  // /channels olur ve sadece "Kanallar Hub" highlight olurdu.
+  // tabBase + tabKey alanları bunu çözer.
+  const currentTabParam = new URLSearchParams(location.search).get('tab');
+  const isItemPathActive = (item) => {
+    if (item.tabBase) {
+      const bases = Array.isArray(item.tabBase) ? item.tabBase : [item.tabBase];
+      if (bases.includes(location.pathname)) {
+        // tabKey null → hub: yalnızca tab seçilmediğinde aktif (bilinen tab
+        // değerleri varsa hub asla highlight olmasın — sub-item highlight olur).
+        if (item.tabKey == null) return !currentTabParam;
+        return currentTabParam === item.tabKey;
+      }
+    }
+    return location.pathname === item.path;
+  };
+
   const isGroupActive = (groupId) => {
     const items = groupedItems[groupId] || [];
     return items.some((item) => {
       if (normalizedCurrentModule === normalizeKey(item.key)) return true;
-      if (location.pathname === item.path) return true;
+      if (isItemPathActive(item)) return true;
       return false;
     });
   };
@@ -277,12 +296,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
           {(() => {
             const normalItems = items.filter(i => !i.requireSuperAdmin);
             const adminItems = items.filter(i => i.requireSuperAdmin);
-            const groupHasPathMatch = items.some(i => location.pathname === i.path);
+            const groupHasPathMatch = items.some(i => isItemPathActive(i));
             return (
               <>
                 {normalItems.map((item) => {
                   const Icon = ICON_BY_KEY[item.key] || Home;
-                  const isItemActive = location.pathname === item.path || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
+                  const isItemActive = isItemPathActive(item) || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
                   return (
                     <DropdownMenuItem
                       key={item.key}
@@ -305,7 +324,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                     </DropdownMenuLabel>
                     {adminItems.map((item) => {
                       const Icon = ICON_BY_KEY[item.key] || Home;
-                      const isItemActive = location.pathname === item.path || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
+                      const isItemActive = isItemPathActive(item) || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
                       return (
                         <DropdownMenuItem
                           key={item.key}
@@ -355,7 +374,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
-                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
                 return (
                   <TooltipProvider key={item.key} delayDuration={300}>
                     <Tooltip>
@@ -397,7 +416,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               {/* Settings button - always visible */}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
-                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
                 return (
                   <TooltipProvider key={item.key} delayDuration={300}>
                     <Tooltip>
@@ -491,7 +510,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
-                const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
                 return (
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
@@ -533,7 +552,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       <div className="pl-4 py-1 space-y-0.5">
                         {items.map((item) => {
                           const Icon = ICON_BY_KEY[item.key] || Home;
-                          const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
+                          const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
                           return (
                             <Button key={item.key} variant="ghost" size="sm"
                               onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}

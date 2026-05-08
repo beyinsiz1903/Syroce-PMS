@@ -112,6 +112,11 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "channels",
+    // Hub yalnızca tab seçilmediğinde (ya da sub-item'la eşleşmeyen tab'da)
+    // aktif görünsün; sub-item seçildiğinde alttaki cm_dashboard /
+    // channel_connections / channel_ops aktif olur.
+    tabBase: ["/channels", "/app/channels"],
+    tabKey: null,
   },
   {
     key: "hr_hub",
@@ -427,6 +432,9 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "channels",
+    // /cm-dashboard → /channels?tab=dashboard redirect; aktif eşleşme tab ile.
+    tabBase: ["/channels", "/app/channels"],
+    tabKey: "dashboard",
   },
   {
     key: "go_live_readiness",
@@ -529,6 +537,9 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "channels",
     requireSuperAdmin: true,
+    // /channel-ops → /channels?tab=ops redirect; aktif eşleşme tab ile.
+    tabBase: ["/channels", "/app/channels"],
+    tabKey: "ops",
   },
   {
     key: "channel_connections",
@@ -539,6 +550,9 @@ export const NAV_ITEMS = [
     group: "professional",
     navGroup: "channels",
     requireSuperAdmin: true,
+    // /channel-connections → /channels?tab=connections redirect; aktif eşleşme tab ile.
+    tabBase: ["/channels", "/app/channels"],
+    tabKey: "connections",
   },
   {
     key: "wire_failures",
