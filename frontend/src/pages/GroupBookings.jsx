@@ -68,8 +68,8 @@ export default function GroupBookings({ user, tenant, onLogout }) {
     setGroupName('');
     setSelectedBookingIds([]);
     setNewRows([emptyRow()]);
-    loadBookings();
-    loadRooms();
+    // Dialog açılışında bookings + rooms paralel yüklensin (sıralı await yok).
+    Promise.all([loadBookings(), loadRooms()]);
   };
 
   useEffect(() => { loadGroups(); }, [loadGroups]);

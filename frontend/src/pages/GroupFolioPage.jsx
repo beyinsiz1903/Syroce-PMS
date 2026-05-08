@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { runIdle } from '@/lib/idle';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -176,8 +177,10 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
   }, []);
 
   useEffect(() => {
+    // Ana liste hemen; KPI özet kartları idle'da → ilk paint hızlanır.
     loadGroups();
-    loadSummary();
+    const cancel = runIdle(() => { loadSummary(); }, { timeout: 1500 });
+    return cancel;
   }, [loadGroups, loadSummary]);
 
   const loadGroupDetail = async (groupId) => {
