@@ -3,6 +3,7 @@
  * Configures base URL, interceptors, and error handling.
  */
 import axios from "axios";
+import { installAxiosCache, clearAxiosCache } from "@/lib/axios-cache";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -11,6 +12,11 @@ const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
 
 axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
+
+// Global GET dedupe + 1.5sn micro-cache. Aynı endpoint'in art arda
+// (sayfa geçişi, paralel bileşenler, KPI/Layout overlap) çağrılmasında
+// tek backend hit'e indirir. Mutation sonrası otomatik invalidate.
+installAxiosCache(axios);
 
 // Request interceptor — token injection + cache headers
 axios.interceptors.request.use(
@@ -64,6 +70,8 @@ function _hardLogout() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  // Eski oturum cache'i yeni kullanıcıya sızmasın.
+  clearAxiosCache();
   delete axios.defaults.headers.common["Authorization"];
   if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
     window.location.assign("/auth");
