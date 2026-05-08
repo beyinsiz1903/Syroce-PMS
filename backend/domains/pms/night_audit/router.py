@@ -24,7 +24,12 @@ router = APIRouter(prefix="/api/night-audit", tags=["Night Audit Core"])
 # (run / resume / checkout / folio charge / payment / refund) call
 # `invalidate_finance_cache` to bound staleness to <1s instead of 30s.
 _FIN_CACHE_TTL = 30
-_FIN_CACHE_PREFIXES = ("na_preview", "na_financial_summary", "na_integrity_check")
+_FIN_CACHE_PREFIXES = (
+    "na_preview",
+    "na_financial_summary",
+    "na_payment_reconciliation",
+    "na_integrity_check",
+)
 
 
 def _fin_cache_key(name: str, tenant_id: str, business_date: str) -> str:
@@ -298,8 +303,11 @@ async def get_schedule_status(
 
 
 @router.get("/financial-summary")
-async def get_financial_summary(date: str = Query(None), current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+async def get_financial_summary(
+    date: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
@@ -308,9 +316,10 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
         bd_result = await night_audit_core_service.get_business_date(ctx)
         date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
     cache_key = _fin_cache_key("financial_summary", ctx.tenant_id, date)
-    cached = _cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if not _nocache:
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
     result = await financial_service.get_daily_financial_summary(ctx, date)
     payload = result.data
     _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
@@ -318,8 +327,11 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 
 
 @router.get("/payment-reconciliation")
-async def get_payment_reconciliation(date: str = Query(None), current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+async def get_payment_reconciliation(
+    date: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
@@ -327,8 +339,15 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
     if not date:
         bd_result = await night_audit_core_service.get_business_date(ctx)
         date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
+    cache_key = _fin_cache_key("payment_reconciliation", ctx.tenant_id, date)
+    if not _nocache:
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
     result = await financial_service.get_payment_reconciliation(ctx, date)
-    return result.data
+    payload = result.data
+    _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
+    return payload
 
 
 @router.get("/financial-report")
@@ -354,8 +373,11 @@ async def get_financial_report(
 
 
 @router.get("/integrity-check")
-async def get_integrity_check(date: str = Query(None), current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+async def get_integrity_check(
+    date: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
     from domains.pms.night_audit.service import night_audit_core_service
@@ -364,9 +386,10 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
         bd_result = await night_audit_core_service.get_business_date(ctx)
         date = bd_result.data.get("business_date", datetime.now(UTC).date().isoformat())
     cache_key = _fin_cache_key("integrity_check", ctx.tenant_id, date)
-    cached = _cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if not _nocache:
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
     result = await financial_service.get_integrity_check(ctx, date)
     payload = result.data
     _cache.set(cache_key, payload, ttl=_FIN_CACHE_TTL)
