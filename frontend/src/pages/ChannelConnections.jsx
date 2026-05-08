@@ -42,21 +42,40 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
 
   const headers = { Authorization: `Bearer ${user?.token || user?.access_token}` };
 
-  const fetchOverview = useCallback(async () => {
+  const fetchOverview = useCallback(async ({ silent = false } = {}) => {
+    // Geçici ağ hatasında (backend restart, vite proxy ECONNREFUSED) tek
+    // retry — gerçek 4xx ise atlanır, 5xx/network ise 1.5sn sonra tekrar.
+    const tryOnce = () => axios.get(`/channel-manager/connections/overview`, { headers });
     try {
       setLoading(true);
-      const { data } = await axios.get(`/channel-manager/connections/overview`, { headers });
-      setOverview(data);
+      let resp;
+      try {
+        resp = await tryOnce();
+      } catch (firstErr) {
+        const status = firstErr?.response?.status;
+        if (status && status >= 400 && status < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        resp = await tryOnce();
+      }
+      setOverview(resp.data);
     } catch (err) {
-      toast.error('Bağlantı durumu alınamadı');
+      // eslint-disable-next-line no-console
+      console.error('[CM Connections] fetch failed:',
+        err?.response?.status, err?.response?.data || err?.message);
+      if (!silent) {
+        const detail = err?.response?.data?.detail
+          || (err?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
+        toast.error(detail
+          ? `Bağlantı durumu alınamadı: ${detail}`
+          : 'Bağlantı durumu alınamadı');
+      }
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { fetchOverview(); }, []);
+  useEffect(() => { fetchOverview({ silent: true }); }, [fetchOverview]);
 
   const getProvider = (name) => overview?.providers?.find(p => p.provider === name);
 

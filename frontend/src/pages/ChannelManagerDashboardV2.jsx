@@ -74,20 +74,42 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
 
   const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async ({ silent = false } = {}) => {
+    // Geçici ağ hatasında (backend restart, vite proxy ECONNREFUSED) tek
+    // retry — kullanıcı görmeden önce. Backend gerçekten çökmüşse ikinci
+    // denemede de hata alır, toast düşer.
+    const tryOnce = () => axios.get('/channel-manager/v2/dashboard/overview', { headers });
     try {
       setLoading(true);
-      const { data: d } = await axios.get('/channel-manager/v2/dashboard/overview', { headers });
-      setData(d);
-    } catch {
-      toast.error('Dashboard verileri yüklenemedi');
+      let resp;
+      try {
+        resp = await tryOnce();
+      } catch (firstErr) {
+        const status = firstErr?.response?.status;
+        // 4xx auth/yetki gerçek hata — retry etme
+        if (status && status >= 400 && status < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        resp = await tryOnce();
+      }
+      setData(resp.data);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[CM Dashboard] fetch failed:',
+        err?.response?.status, err?.response?.data || err?.message);
+      if (!silent) {
+        const detail = err?.response?.data?.detail
+          || (err?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
+        toast.error(detail
+          ? `Dashboard verileri yüklenemedi: ${detail}`
+          : 'Dashboard verileri yüklenemedi');
+      }
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
   }, []);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => { fetchDashboard({ silent: true }); }, [fetchDashboard]);
 
   const openDrilldown = useCallback(async (connectorId) => {
     setDrilldown(connectorId);
