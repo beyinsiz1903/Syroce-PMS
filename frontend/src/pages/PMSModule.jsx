@@ -397,7 +397,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
 
-  useEffect(() => { loadData(); setTimeout(() => { loadAuditLogs(); loadChannelManagerData(); }, 1000); }, []);
+  // Initial load: kritik verileri (rooms/guests/bookings/companies) hemen çek;
+  // ikincil veriler (audit log + channel manager pending items) initial paint
+  // sonrasına ertele. requestIdleCallback varsa ana iş parçacığı boştayken
+  // yüklenir; yoksa 3 sn fallback timeout. Eskiden 1 sn timeout idi → ilk
+  // mount'ta 6+ paralel çağrı kullanıcının ilk paint deneyimini yavaşlatıyordu.
+  useEffect(() => {
+    loadData();
+    const idleFn = () => { loadAuditLogs(); loadChannelManagerData(); };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(idleFn, { timeout: 4000 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(idleFn, 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
@@ -408,12 +422,16 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const loadData = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 90);
+      // Initial fetch range 90gün → 30gün, limit 200 → 120: ilk render için
+      // yeterli (KPI + arrival/departure pencereleri 30 gün içine düşer).
+      // Bookings sekmesine girildiğinde tam tarih aralığı zaten ayrı fetch
+      // ile genişletilebilir. Backend cache hit oranı da yükseliyor.
+      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 30);
       const futureDateStr = futureDate.toISOString().split('T')[0];
       const results = await Promise.allSettled([
         axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
         axios.get('/pms/guests?limit=100', { timeout: 15000 }),
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=200`, { timeout: 15000 }),
+        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 15000 }),
         axios.get('/companies?limit=50', { timeout: 15000 })
       ]);
       const [roomsRes, guestsRes, bookingsRes, companiesRes] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
@@ -442,7 +460,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         axios.get('/frontdesk/arrivals'), axios.get('/frontdesk/departures'), axios.get('/frontdesk/inhouse')
       ]);
       setArrivals(arrivalsRes.data); setDepartures(departuresRes.data); setInhouse(inhouseRes.data);
-      loadAIInsights();
+      // AI insights ana frontdesk render'ını blokemeli — idle'da yüklensin.
+      // Eskiden render hemen ardından 2 ek AI çağrısı yapıyordu (occupancy
+      // prediction + guest patterns); ikisi de yavaş, ana panel için kritik
+      // değil (sadece secondary insight kartları).
+      const idle = (fn) =>
+        (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function')
+          ? window.requestIdleCallback(fn, { timeout: 5000 })
+          : setTimeout(fn, 1500);
+      idle(() => loadAIInsights());
     } catch (error) {
       const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
       setFdError(msg); toast.error('Failed to load front desk data');
