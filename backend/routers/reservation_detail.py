@@ -31,6 +31,25 @@ from security.field_encryption import get_field_encryption_service
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
 
+# ── Group bookings cache (TTL 30s) ─────────────────────────────
+# /pms/group-bookings list endpoint'i her grup için bookings.find()
+# çağırıyordu (N+1). Single-query bucket pattern'a geçirdikten sonra
+# tek tenant başına 30s'lik bir snapshot tutmak yeterli; mutasyon
+# yapan endpoint'ler (create/check-in-all/check-out-all/add-room)
+# tenant cache'ini düşürür.
+from cache_manager import cache as _gb_cache  # noqa: E402
+
+_GROUP_BOOKINGS_CACHE_TTL = 30
+_GROUP_BOOKINGS_CACHE_PREFIX = "group_bookings_list"
+
+
+def _gb_cache_key(tenant_id: str) -> str:
+    return f"cache:{tenant_id}:{_GROUP_BOOKINGS_CACHE_PREFIX}"
+
+
+def _invalidate_group_bookings_cache(tenant_id: str) -> None:
+    _gb_cache.safe_invalidate(tenant_id, _GROUP_BOOKINGS_CACHE_PREFIX)
+
 
 def _request_with_idempotency_key(req: Request, key: str) -> Request:
     """Aynı HTTP isteği içinde N alt-rezervasyon yaratırken her birine
@@ -1455,6 +1474,7 @@ async def create_group_booking(
         )
 
     group.pop("_id", None)
+    _invalidate_group_bookings_cache(tid)
     return {
         "success": True,
         "group": group,
@@ -1463,25 +1483,51 @@ async def create_group_booking(
 
 
 @router.get("/group-bookings")
-async def list_group_bookings(current_user: User = Depends(get_current_user)):
-    """List all group bookings."""
+async def list_group_bookings(
+    current_user: User = Depends(get_current_user),
+    nocache: bool = False,
+):
+    """List all group bookings (single-query bucket; N+1 yok).
+
+    Önceki sürüm her grup için ayrı bookings.find() yapıyordu (50 grup =
+    50 sorgu). Şimdi tüm booking_ids tek bir $in sorgusunda çekilip
+    Python tarafında group_id'ye göre bucket'lanır.
+    """
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    groups = []
+    cache_key = _gb_cache_key(tid)
+    if not nocache:
+        cached = _gb_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    # 1) Tüm grupları çek
+    groups: list[dict] = []
+    all_booking_ids: list[str] = []
     async for g in db.group_bookings.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        # Enrich with booking details
-        group_bookings = []
-        async for b in db.bookings.find(
-            {"id": {"$in": g.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
-        ):
-            group_bookings.append(b)
-        g["bookings"] = group_bookings
-        g["total_amount"] = sum(b.get("total_amount", 0) for b in group_bookings)
-        g["total_paid"] = sum(b.get("paid_amount", 0) for b in group_bookings)
+        bids = g.get("booking_ids") or []
+        all_booking_ids.extend(bids)
         groups.append(g)
 
-    return {"groups": groups}
+    # 2) Tüm bookings'i tek $in sorgusunda al
+    bookings_by_id: dict[str, dict] = {}
+    if all_booking_ids:
+        async for b in db.bookings.find(
+            {"id": {"$in": all_booking_ids}, "tenant_id": tid}, {"_id": 0}
+        ):
+            bookings_by_id[b["id"]] = b
+
+    # 3) Bucket: her gruba kendi rezervasyonlarını ata + toplamları hesapla
+    for g in groups:
+        bks = [bookings_by_id[bid] for bid in (g.get("booking_ids") or []) if bid in bookings_by_id]
+        g["bookings"] = bks
+        g["total_amount"] = sum(b.get("total_amount", 0) for b in bks)
+        g["total_paid"] = sum(b.get("paid_amount", 0) for b in bks)
+
+    payload = {"groups": groups}
+    _gb_cache.set(cache_key, payload, ttl=_GROUP_BOOKINGS_CACHE_TTL)
+    return payload
 
 
 @router.get("/group-bookings/{group_id}")
@@ -1545,6 +1591,7 @@ async def add_room_to_group(
             {"$set": {"group_booking_id": group_id}},
         )
 
+    _invalidate_group_bookings_cache(tid)
     return {"success": True}
 
 
@@ -1579,6 +1626,7 @@ async def group_check_in_all(
         except CheckInError as e:
             errors.append({"booking_id": bid, "error": str(e)})
 
+    _invalidate_group_bookings_cache(tid)
     return {"success": True, "checked_in_count": checked_in, "errors": errors}
 
 
@@ -1614,6 +1662,7 @@ async def group_check_out_all(
         except CheckOutError as e:
             errors.append({"booking_id": bid, "error": str(e)})
 
+    _invalidate_group_bookings_cache(tid)
     return {"success": True, "checked_out_count": checked_out, "errors": errors}
 
 
