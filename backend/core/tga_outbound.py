@@ -40,6 +40,25 @@ TGA_PATH = "/otel-veri/"
 HTTP_TIMEOUT_S = 30.0
 OUTBOX_COLL = "integration_tga_outbox"
 
+# ── Retry / backoff ─────────────────────────────────────────────────────────
+# Failed outbox kayıtları exponential backoff ile yeniden gönderilir.
+# Adımlar (saniye): 5dk, 15dk, 1sa, 4sa. Toplam ~5sa20dk; sonrasında 4sa
+# aralıklarla 24 saat dolana kadar denenir, 24sa+ hâlâ başarısız ise
+# alert (audit "TGA_DELIVERY_FAILED") yazılıp `failed_permanent`'e geçer.
+RETRY_BACKOFF_STEPS: list[int] = [300, 900, 3600, 14400]
+ALERT_THRESHOLD_SECONDS: int = 24 * 3600
+
+
+def _next_backoff_seconds(retry_count: int) -> int:
+    """`retry_count` = bu denemeden ÖNCE yapılan retry sayısı (0 ise hiç).
+
+    Sıralı adımlardan birini döner; aşılırsa son adımı kullanır (4sa cap).
+    """
+    if retry_count < 0:
+        retry_count = 0
+    idx = min(retry_count, len(RETRY_BACKOFF_STEPS) - 1)
+    return RETRY_BACKOFF_STEPS[idx]
+
 # ── ISO 3-letter country mapping (TGA payload requires ISO-3166-1 alpha-3) ──
 # Yaygın ülkeler — tam liste değil; bilinmeyenler "ZZZ" olarak işaretlenir.
 ISO3_BY_KEY: dict[str, str] = {
@@ -400,11 +419,40 @@ def _base_url(env: str) -> str:
     return TGA_BASE_URL_LIVE if env == "live" else TGA_BASE_URL_TEST
 
 
+async def _post_envelope(cfg: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
+    """TGA endpoint'ine tek POST. Sadece sonuç dict'i döner; outbox'a yazmaz.
+
+    Çıktı alanları: ``status`` (sent|failed), opsiyonel ``http_status``,
+    ``response_text``, ``error``.
+    """
+    url = f"{_base_url(cfg['environment']).rstrip('/')}{TGA_PATH}"
+    headers = {"Content-Type": "application/json", "X-API-Key": cfg["api_key"]}
+    # Lazy import — tests / CLI import bu modülü httpx olmadan da kullanabilsin.
+    from integrations.xchange.safety import EgressDenied, safe_post_async
+    try:
+        r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, json=envelope, headers=headers)
+        ok = 200 <= r.status_code < 300
+        return {
+            "status": "sent" if ok else "failed",
+            "http_status": r.status_code,
+            "response_text": (r.text or "")[:1000],
+        }
+    except EgressDenied as ed:
+        return {"status": "failed", "error": f"egress_denied: {ed}"}
+    except Exception as exc:  # network / timeout
+        return {"status": "failed", "error": str(exc)[:500]}
+
+
 async def send_batch(
     tenant_id: str, end_date: date, *, days: int = 7,
     triggered_by: str = "scheduler",
 ) -> dict[str, Any]:
-    """Son `days` günü TGA'ya gönderir, sonucu outbox'a yazar."""
+    """Son `days` günü TGA'ya gönderir, sonucu outbox'a yazar.
+
+    Başarısız olursa ``retry_count=0`` ve ``next_retry_at`` (ilk backoff
+    adımı, varsayılan 5dk) ile kayıt yazılır; ``retry_failed_outbox`` bu
+    kayıtları ilerleyen ticklerde tekrar dener.
+    """
     cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
     if not cfg.get("enabled"):
         return {"status": "skipped", "reason": "disabled"}
@@ -412,12 +460,8 @@ async def send_batch(
         return {"status": "skipped", "reason": "missing_config"}
 
     envelope = await build_batch_envelope(tenant_id, end_date, days=days)
-    url = f"{_base_url(cfg['environment']).rstrip('/')}{TGA_PATH}"
-    headers = {"Content-Type": "application/json", "X-API-Key": cfg["api_key"]}
-    started_at = datetime.now(UTC).isoformat()
-
-    # Lazy import — tests / CLI import bu modülü httpx olmadan da kullanabilsin.
-    from integrations.xchange.safety import EgressDenied, safe_post_async
+    started_dt = datetime.now(UTC)
+    started_at = started_dt.isoformat()
 
     out_doc: dict[str, Any] = {
         "tenant_id": tenant_id,
@@ -434,29 +478,20 @@ async def send_batch(
                 sum(d["net_oda_geliri"] for d in envelope["data"]), 2
             ),
         },
+        "retry_count": 0,
+        "next_retry_at": None,
     }
 
-    try:
-        r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, json=envelope, headers=headers)
-        ok = 200 <= r.status_code < 300
-        out_doc.update({
-            "status": "sent" if ok else "failed",
-            "http_status": r.status_code,
-            "response_text": (r.text or "")[:1000],
-            "finished_at": datetime.now(UTC).isoformat(),
-        })
-    except EgressDenied as ed:
-        out_doc.update({
-            "status": "failed",
-            "error": f"egress_denied: {ed}",
-            "finished_at": datetime.now(UTC).isoformat(),
-        })
-    except Exception as exc:  # network / timeout
-        out_doc.update({
-            "status": "failed",
-            "error": str(exc)[:500],
-            "finished_at": datetime.now(UTC).isoformat(),
-        })
+    result = await _post_envelope(cfg, envelope)
+    finished_dt = datetime.now(UTC)
+    out_doc.update(result)
+    out_doc["finished_at"] = finished_dt.isoformat()
+
+    if out_doc.get("status") == "failed":
+        out_doc["first_failed_at"] = started_at
+        out_doc["next_retry_at"] = (
+            finished_dt + timedelta(seconds=_next_backoff_seconds(0))
+        ).isoformat()
 
     try:
         await db[OUTBOX_COLL].insert_one(out_doc)
@@ -465,6 +500,214 @@ async def send_batch(
 
     out_doc.pop("_id", None)
     return out_doc
+
+
+async def _emit_delivery_failed_alert(
+    tenant_id: str, doc: dict[str, Any], age_seconds: float, attempts: int,
+) -> None:
+    """24 saat içinde başarılamayan gönderim için yönetici uyarısı.
+
+    `audit_logs` koleksiyonuna ``TGA_DELIVERY_FAILED`` action'ı yazar; ayrıca
+    tenant kapsamlı bir notification (varsa servis) ile yöneticilere ulaşır.
+    """
+    try:
+        await db.audit_logs.insert_one({
+            "tenant_id": tenant_id,
+            "user_id": "system",
+            "user_name": "TGA Scheduler",
+            "user_role": "system",
+            "action": "TGA_DELIVERY_FAILED",
+            "entity_type": "integration_tga",
+            "entity_id": tenant_id,
+            "changes": {
+                "outbox_id": str(doc.get("_id") or ""),
+                "end_date": doc.get("end_date"),
+                "days": doc.get("days"),
+                "retry_count": attempts,
+                "age_hours": round(age_seconds / 3600.0, 2),
+                "http_status": doc.get("http_status"),
+                "last_error": (doc.get("error") or doc.get("response_text") or "")[:500],
+                "environment": doc.get("environment"),
+            },
+            "ip_address": None,
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+    except Exception as exc:
+        logger.warning("[tga] alert audit insert failed tenant=%s err=%s", tenant_id, exc)
+
+
+async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
+    """`status=failed` ve `next_retry_at <= now` olan kayıtları tekrar dener.
+
+    İade: ``{"attempted": n, "succeeded": n, "failed": n, "alerted": n,
+    "skipped": n}``. Her başarısız retry, ``retry_count``'u arttırır ve
+    bir sonraki ``next_retry_at``'i exponential backoff ile günceller.
+    24 saatten eski hâlâ başarısız kayıtlar ``failed_permanent``'e alınır
+    ve yönetici uyarısı yazılır.
+    """
+    now = datetime.now(UTC)
+    iso_now = now.isoformat()
+    cur = db[OUTBOX_COLL].find({
+        "status": "failed",
+        "next_retry_at": {"$ne": None, "$lte": iso_now},
+    }).sort("next_retry_at", 1).limit(max_docs)
+    docs = await cur.to_list(length=max_docs)
+    stats = {"attempted": 0, "succeeded": 0, "failed": 0,
+             "alerted": 0, "skipped": 0}
+    for doc in docs:
+        stats["attempted"] += 1
+        tenant_id = doc.get("tenant_id") or ""
+        try:
+            end_d = date.fromisoformat(str(doc.get("end_date") or "")[:10])
+        except Exception:
+            # Bozuk kayıt — tekrar denemeyi durdur.
+            await db[OUTBOX_COLL].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"next_retry_at": None,
+                          "status": "failed_permanent",
+                          "error": "invalid_end_date"}},
+            )
+            stats["skipped"] += 1
+            continue
+        days = int(doc.get("days") or 7)
+
+        # Config okuma transient bir nedenle (Mongo timeout, decrypt hatası,
+        # vault erişilemez) başarısız olursa: retry'yi durdurma; bir
+        # sonraki backoff'a ertele. Yalnızca tenant **kasten** disabled ise
+        # ya da kalıcı eksik konfig (belge_no/vergi_no boş) varsa
+        # `failed_skipped`'e al ve observability için audit yaz.
+        try:
+            cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
+            cfg_read_ok = True
+        except Exception as exc:
+            logger.warning("[tga-retry] config read failed tenant=%s err=%s",
+                           tenant_id, exc)
+            cfg = {}
+            cfg_read_ok = False
+
+        intentionally_disabled = cfg_read_ok and (
+            cfg.get("enabled") is False
+            or not cfg.get("belge_no")
+            or not cfg.get("vergi_no")
+        )
+        if intentionally_disabled:
+            update = {"next_retry_at": None,
+                      "status": "failed_skipped",
+                      "last_retry_at": iso_now}
+            await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+            # Observability — sessizce düşmesin.
+            try:
+                await db.audit_logs.insert_one({
+                    "tenant_id": tenant_id,
+                    "user_id": "system",
+                    "user_name": "TGA Scheduler",
+                    "user_role": "system",
+                    "action": "TGA_DELIVERY_SKIPPED",
+                    "entity_type": "integration_tga",
+                    "entity_id": tenant_id,
+                    "changes": {
+                        "outbox_id": str(doc.get("_id") or ""),
+                        "end_date": doc.get("end_date"),
+                        "reason": "tenant_disabled_or_missing_config",
+                    },
+                    "ip_address": None,
+                    "timestamp": iso_now,
+                })
+            except Exception as exc:
+                logger.warning("[tga-retry] skipped-audit insert failed: %s", exc)
+            stats["skipped"] += 1
+            continue
+
+        # Config okunamadı veya api_key transient olarak yok → retry'yi
+        # durdurma; mevcut retry_count'a göre backoff ile yeniden planla.
+        if (not cfg_read_ok) or not cfg.get("api_key"):
+            new_count = int(doc.get("retry_count") or 0) + 1
+            ffa_raw = doc.get("first_failed_at") or doc.get("started_at")
+            ffa = _parse_dt(ffa_raw) or now
+            age = (now - ffa).total_seconds()
+            update = {
+                "retry_count": new_count,
+                "last_retry_at": iso_now,
+                "error": ("config_unavailable" if not cfg_read_ok
+                          else "api_key_unavailable"),
+            }
+            if age >= ALERT_THRESHOLD_SECONDS:
+                update["status"] = "failed_permanent"
+                update["next_retry_at"] = None
+                update["alerted_at"] = iso_now
+                await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+                merged = {**doc, **update}
+                await _emit_delivery_failed_alert(tenant_id, merged, age, new_count)
+                stats["alerted"] += 1
+            else:
+                update["status"] = "failed"
+                next_secs = _next_backoff_seconds(new_count)
+                update["next_retry_at"] = (
+                    now + timedelta(seconds=next_secs)
+                ).isoformat()
+                await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+                stats["failed"] += 1
+            continue
+
+        try:
+            envelope = await build_batch_envelope(tenant_id, end_d, days=days)
+            result = await _post_envelope(cfg, envelope)
+        except Exception as exc:
+            result = {"status": "failed", "error": f"build_or_post: {exc!s:.500}"}
+
+        new_count = int(doc.get("retry_count") or 0) + 1
+        ffa_raw = doc.get("first_failed_at") or doc.get("started_at")
+        ffa = _parse_dt(ffa_raw) or now
+        update: dict[str, Any] = {
+            "retry_count": new_count,
+            "last_retry_at": iso_now,
+            "finished_at": iso_now,
+            "http_status": result.get("http_status"),
+            "response_text": result.get("response_text"),
+            "error": result.get("error"),
+        }
+
+        if result.get("status") == "sent":
+            update["status"] = "sent"
+            update["next_retry_at"] = None
+            update["error"] = None
+            stats["succeeded"] += 1
+            await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+            logger.info(
+                "[tga-retry] tenant=%s end_date=%s attempt=%s -> sent",
+                tenant_id, end_d.isoformat(), new_count,
+            )
+            continue
+
+        age = (now - ffa).total_seconds()
+        if age >= ALERT_THRESHOLD_SECONDS:
+            update["status"] = "failed_permanent"
+            update["next_retry_at"] = None
+            update["alerted_at"] = iso_now
+            await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+            # Outbox'taki güncellenmiş alanları kullanarak alert yaz.
+            merged = {**doc, **update}
+            await _emit_delivery_failed_alert(tenant_id, merged, age, new_count)
+            stats["alerted"] += 1
+            logger.warning(
+                "[tga-retry] tenant=%s end_date=%s attempt=%s age=%.1fh -> alerted",
+                tenant_id, end_d.isoformat(), new_count, age / 3600.0,
+            )
+            continue
+
+        update["status"] = "failed"
+        next_secs = _next_backoff_seconds(new_count)
+        update["next_retry_at"] = (
+            now + timedelta(seconds=next_secs)
+        ).isoformat()
+        await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+        stats["failed"] += 1
+        logger.info(
+            "[tga-retry] tenant=%s end_date=%s attempt=%s -> failed, next in %ss",
+            tenant_id, end_d.isoformat(), new_count, next_secs,
+        )
+
+    return stats
 
 
 async def list_send_log(tenant_id: str, *, days: int = 30) -> list[dict[str, Any]]:
@@ -480,6 +723,8 @@ async def ensure_indexes() -> None:
     try:
         await db[OUTBOX_COLL].create_index([("tenant_id", 1), ("started_at", -1)])
         await db[OUTBOX_COLL].create_index([("status", 1), ("started_at", -1)])
+        # Retry worker bu indeksi kullanır.
+        await db[OUTBOX_COLL].create_index([("status", 1), ("next_retry_at", 1)])
     except Exception as exc:
         logger.warning("[tga] index ensure failed: %s", exc)
 
