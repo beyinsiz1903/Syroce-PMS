@@ -17,14 +17,20 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
+from cache_manager import cached
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/regulatory", tags=["regulatory"])
 
@@ -181,8 +187,10 @@ async def tuik_monthly(
 # ─────────────────────────────────────────────────────────────────────
 
 @router.get("/inspection-readiness")
+@cached(ttl=300, key_prefix="regulatory_inspection_readiness")
 async def inspection_readiness(
     current_user: User = Depends(get_current_user),
+    _nocache: bool = Query(False, alias="nocache"),
 ) -> dict[str, Any]:
     tenant = await db.tenants.find_one(
         {"id": current_user.tenant_id},
@@ -363,8 +371,10 @@ class ChecklistSubmission(BaseModel):
 
 
 @router.get("/star-classification/checklist")
+@cached(ttl=300, key_prefix="regulatory_star_checklist")
 async def get_star_checklist(
     current_user: User = Depends(get_current_user),
+    _nocache: bool = Query(False, alias="nocache"),
 ) -> dict[str, Any]:
     saved = await db.regulatory_star_checklists.find_one(
         {"tenant_id": current_user.tenant_id}, {"_id": 0}) or {}
@@ -430,4 +440,10 @@ async def save_star_checklist(
         entity_id=current_user.tenant_id,
         changes={"target_star": payload.target_star,
                  "entry_count": len(cleaned)})
-    return await get_star_checklist(current_user)
+    # Invalidate cached checklist so next GET reads fresh state.
+    try:
+        _cache.safe_invalidate(current_user.tenant_id, "regulatory_star_checklist")
+    except Exception as e:  # pragma: no cover
+        logger.debug("regulatory_star_checklist cache invalidation skipped: %s", e)
+    # Bypass cache on the immediate read-back (write-through guarantee).
+    return await get_star_checklist(current_user, _nocache=True)

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from cache_manager import cache as _cache
+from cache_manager import cached
 from common.context import OperationContext
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
@@ -96,6 +97,12 @@ async def run_night_audit(request: RunNightAuditRequest, current_user: User = De
         raise HTTPException(status_code=status_code, detail=result)
     # Successful run mutates folio charges, payments, balances → drop dashboards.
     _invalidate_finance_cache(current_user.tenant_id)
+    # History/business-date also change after a successful audit run.
+    for prefix in ("na_history", "na_business_date"):
+        try:
+            _cache.safe_invalidate(current_user.tenant_id, prefix)
+        except Exception as e:  # pragma: no cover
+            logger.debug("na cache invalidation skipped (%s): %s", prefix, e)
     return result
 
 
@@ -174,6 +181,11 @@ async def resume_run(run_id: str, current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=status_code, detail=result)
     # Resume can finalize remaining steps → mutates folio/payment state.
     _invalidate_finance_cache(current_user.tenant_id)
+    for prefix in ("na_history", "na_business_date"):
+        try:
+            _cache.safe_invalidate(current_user.tenant_id, prefix)
+        except Exception as e:  # pragma: no cover
+            logger.debug("na cache invalidation skipped (%s): %s", prefix, e)
     return result
 
 
@@ -192,6 +204,11 @@ async def abort_run(run_id: str, current_user: User = Depends(get_current_user),
         code = result.get("code", "UNKNOWN")
         status_code = {"NOT_FOUND": 404, "ALREADY_COMPLETED": 409}.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
+    # Abort changes run status → invalidate history cache.
+    try:
+        _cache.safe_invalidate(current_user.tenant_id, "na_history")
+    except Exception as e:  # pragma: no cover
+        logger.debug("na_history cache invalidation skipped: %s", e)
     return result
 
 
@@ -200,8 +217,12 @@ async def abort_run(run_id: str, current_user: User = Depends(get_current_user),
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/history")
-async def get_audit_history(limit: int = 20, skip: int = 0, current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+@cached(ttl=60, key_prefix="na_history")
+async def get_audit_history(
+    limit: int = 20, skip: int = 0,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get night audit run history."""
     from domains.pms.night_audit.service import night_audit_core_service
@@ -221,8 +242,11 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 
 
 @router.get("/business-date")
-async def get_business_date(current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+@cached(ttl=60, key_prefix="na_business_date")
+async def get_business_date(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -231,8 +255,11 @@ _perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
 
 
 @router.get("/schedule")
-async def get_schedule(current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+@cached(ttl=300, key_prefix="na_schedule")
+async def get_schedule(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
@@ -248,12 +275,21 @@ async def update_schedule(request: NightAuditScheduleRequest, current_user: User
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_core_service.update_schedule(ctx, request.model_dump())
+    # Invalidate schedule + status caches so next GET shows the new schedule.
+    for prefix in ("na_schedule", "na_schedule_status"):
+        try:
+            _cache.safe_invalidate(current_user.tenant_id, prefix)
+        except Exception as e:  # pragma: no cover
+            logger.debug("schedule cache invalidation skipped (%s): %s", prefix, e)
     return result.data
 
 
 @router.get("/schedule/status")
-async def get_schedule_status(current_user: User = Depends(get_current_user),
-_perm=Depends(require_op("view_finance_reports"))  # v102 DW finance leak fix
+@cached(ttl=30, key_prefix="na_schedule_status")
+async def get_schedule_status(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
     ctx = OperationContext.from_user(current_user)

@@ -165,7 +165,27 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
     }
   };
 
-  useEffect(() => { loadConfig(); loadHistory(); }, []);
+  // Mount: config + history paralel; tek setLoading toggle.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [cfgRes, histRes] = await Promise.allSettled([
+          axios.get("/finance/konaklama-vergisi/config"),
+          axios.get("/finance/konaklama-vergisi/declarations"),
+        ]);
+        if (cancelled) return;
+        if (cfgRes.status === "fulfilled") setConfig(cfgRes.value.data);
+        else toast.error("Yapılandırma yüklenemedi");
+        if (histRes.status === "fulfilled") setHistory(histRes.value.data.items || []);
+        else toast.error("Beyanname geçmişi yüklenemedi");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const saveConfig = async () => {
     setSaving(true);

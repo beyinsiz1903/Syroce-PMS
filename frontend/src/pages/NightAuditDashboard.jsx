@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import axios from "axios";
 
@@ -164,17 +164,38 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     }
   }, []);
 
+  // Mount waterfall fix: 4+3 sıralı round-trip → 7 paralel.
+  // financial-summary/payment-reconciliation/integrity-check `date=null`
+  // gönderildiğinde backend bugün'e default eder; businessDate gelmesini
+  // beklemeye gerek yok. Sonraki businessDate değişimleri için
+  // initialLoadRef ile ilk render'ı atlayıp re-fetch sadece manuel
+  // değişimde tetiklenir.
+  const initialLoadRef = useRef(true);
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchBusinessDate(), fetchHistory(), fetchSchedule(), fetchScheduleStatus()]);
+    initialLoadRef.current = true; // skip the businessDate effect after this
+    await Promise.all([
+      fetchBusinessDate(),
+      fetchHistory(),
+      fetchSchedule(),
+      fetchScheduleStatus(),
+      fetchFinancialSummary(),
+      fetchReconciliation(),
+      fetchIntegrityCheck(),
+    ]);
     setLoading(false);
-  }, [fetchBusinessDate, fetchHistory, fetchSchedule, fetchScheduleStatus]);
+  }, [fetchBusinessDate, fetchHistory, fetchSchedule, fetchScheduleStatus, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
 
   useEffect(() => {
+    if (initialLoadRef.current) {
+      // İlk yüklemede (veya loadAll sonrası) finansal endpoint'ler zaten çekildi
+      initialLoadRef.current = false;
+      return;
+    }
     if (businessDate) {
       fetchFinancialSummary(businessDate);
       fetchReconciliation(businessDate);

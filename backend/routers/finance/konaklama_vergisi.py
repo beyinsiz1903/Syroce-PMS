@@ -17,9 +17,11 @@ from datetime import UTC, datetime
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
+from cache_manager import cached
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
@@ -72,7 +74,11 @@ async def _load_config(tenant_id: str) -> dict[str, Any]:
 
 
 @router.get("/config")
-async def get_config(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
+@cached(ttl=300, key_prefix="kvb_config")
+async def get_config(
+    current_user: User = Depends(get_current_user),
+    _nocache: bool = Query(False, alias="nocache"),
+) -> dict[str, Any]:
     return await _load_config(current_user.tenant_id)
 
 
@@ -107,6 +113,11 @@ async def update_config(
         entity_id=current_user.tenant_id,
         changes=payload,
     )
+    # Invalidate cached config so the next GET reads fresh values.
+    try:
+        _cache.safe_invalidate(current_user.tenant_id, "kvb_config")
+    except Exception as e:  # pragma: no cover
+        logger.debug("kvb_config cache invalidation skipped: %s", e)
     return await _load_config(current_user.tenant_id)
 
 

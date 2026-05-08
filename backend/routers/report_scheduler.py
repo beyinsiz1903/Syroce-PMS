@@ -23,11 +23,22 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from cache_manager import cache as _cache
+from cache_manager import cached
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
+
+
+def _invalidate_scheduler_cache(tenant_id: str) -> None:
+    """Drop scheduler list/history caches for a tenant after writes."""
+    for prefix in ("report_scheduler_schedules", "report_scheduler_history"):
+        try:
+            _cache.safe_invalidate(tenant_id, prefix)
+        except Exception as e:  # pragma: no cover — best-effort
+            logger.debug("scheduler cache invalidation skipped (%s): %s", prefix, e)
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +204,7 @@ def _compute_next_run(frequency: str, send_time: str, day_of_week: str | None, d
 
 
 @router.get("/report-types")
+@cached(ttl=3600, key_prefix="report_scheduler_types")  # static lookup, 1h
 async def get_report_types(current_user: User = Depends(get_current_user)):
     _require_hotel_role(current_user)
     return {"report_types": REPORT_TYPES, "frequencies": FREQUENCY_OPTIONS, "formats": FORMAT_OPTIONS, "days_of_week": DAYS_OF_WEEK}
@@ -225,11 +237,16 @@ async def create_schedule(body: ScheduleCreate, current_user: User = Depends(get
 
     await db.report_schedules.insert_one(schedule)
     logger.info(f"Schedule created: {schedule['_id']} by {current_user.email}")
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": "Zamanlama olusturuldu", "schedule": schedule}
 
 
 @router.get("/schedules")
-async def list_schedules(current_user: User = Depends(get_current_user)):
+@cached(ttl=60, key_prefix="report_scheduler_schedules")
+async def list_schedules(
+    current_user: User = Depends(get_current_user),
+    _nocache: bool = Query(False, alias="nocache"),
+):
     _require_hotel_role(current_user)
 
     cursor = db.report_schedules.find({"tenant_id": _get_tenant_id(current_user)}).sort("created_at", -1)
@@ -267,6 +284,7 @@ async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: 
     await db.report_schedules.update_one({"_id": schedule_id}, {"$set": updates})
 
     updated = await db.report_schedules.find_one({"_id": schedule_id})
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": "Zamanlama guncellendi", "schedule": updated}
 
 
@@ -280,6 +298,7 @@ async def delete_schedule(schedule_id: str, current_user: User = Depends(get_cur
     await db.report_schedules.delete_one({"_id": schedule_id})
 
     await db.report_schedule_history.delete_many({"schedule_id": schedule_id})
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": "Zamanlama silindi"}
 
 
@@ -300,6 +319,7 @@ async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_cur
         )
 
     await db.report_schedules.update_one({"_id": schedule_id}, {"$set": updates})
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": f"Zamanlama {'aktif' if new_status else 'pasif'} edildi", "is_active": new_status}
 
 
@@ -312,15 +332,18 @@ async def send_now(schedule_id: str, current_user: User = Depends(get_current_us
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
 
     result = await _execute_schedule(schedule, triggered_by=current_user.email)
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return result
 
 
 @router.get("/history")
+@cached(ttl=60, key_prefix="report_scheduler_history")
 async def get_history(
     schedule_id: str | None = Query(None),
     status: str | None = Query(None),
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     _require_hotel_role(current_user)
 
@@ -362,6 +385,7 @@ async def retry_send(history_id: str, current_user: User = Depends(get_current_u
     )
 
     result = await _execute_schedule(schedule, triggered_by=current_user.email, history_id=history_id)
+    _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return result
 
 
