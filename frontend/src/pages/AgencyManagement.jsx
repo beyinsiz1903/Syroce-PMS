@@ -42,12 +42,27 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   const [generatedKey, setGeneratedKey] = useState(null);
   const [apiKeyLoading, setApiKeyLoading] = useState({});
 
-  const fetchAgencies = async () => {
+  const fetchAgencies = async ({ silent = false } = {}) => {
+    // 4xx hariç (auth/yetki) tek retry: backend restart / geçici 5xx / network için.
+    const tryOnce = () => axios.get('/agencies').then(r => r.data);
     try {
-      const { data } = await axios.get('/agencies');
-      setAgencies(data);
-    } catch {
-      toast.error('Acenteler yüklenemedi');
+      let data;
+      try {
+        data = await tryOnce();
+      } catch (firstErr) {
+        const status = firstErr?.response?.status;
+        if (status && status >= 400 && status < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        data = await tryOnce();
+      }
+      setAgencies(Array.isArray(data) ? data : []);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[AgencyManagement] fetch failed:', err?.response?.status, err?.response?.data);
+      if (!silent) {
+        const detail = err?.response?.data?.detail;
+        toast.error(detail ? `Acenteler yüklenemedi: ${detail}` : 'Acenteler yüklenemedi');
+      }
     } finally {
       setLoading(false);
     }
@@ -57,12 +72,13 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.get(`/agencies/${agencyId}/users`);
       setAgencyUsers(prev => ({ ...prev, [agencyId]: data }));
-    } catch {
-      toast.error('Kullanicilar yüklenemedi');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(detail ? `Kullanıcılar yüklenemedi: ${detail}` : 'Kullanıcılar yüklenemedi');
     }
   };
 
-  useEffect(() => { fetchAgencies(); }, []);
+  useEffect(() => { fetchAgencies({ silent: true }); }, []);
 
   const handleToggleExpand = (agencyId) => {
     if (expandedAgency === agencyId) {
