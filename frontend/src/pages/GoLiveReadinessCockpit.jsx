@@ -102,29 +102,51 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
 
   const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async ({ silent = false } = {}) => {
     setLoading(true);
     const errors = [];
+    // Geçici ağ hatasında (backend restart, ECONNREFUSED, 5xx) tek retry.
+    // 4xx (auth/yetki) → retry yok. Network/5xx → 1.5sn sonra tek deneme.
+    const fetchWithRetry = async (url) => {
+      const tryOnce = () => axios.get(url, { headers }).then(r => r.data);
+      try {
+        return await tryOnce();
+      } catch (firstErr) {
+        const status = firstErr?.response?.status;
+        if (status && status >= 400 && status < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        return await tryOnce();
+      }
+    };
     try {
       const [connRes, dashRes, scoreRes] = await Promise.allSettled([
-        axios.get('/channel-manager/connections/overview', { headers }).then(r => r.data),
-        axios.get('/channel-manager/v2/dashboard/overview', { headers }).then(r => r.data),
-        axios.get('/validation/golive-score', { headers }).then(r => r.data),
+        fetchWithRetry('/channel-manager/connections/overview'),
+        fetchWithRetry('/channel-manager/v2/dashboard/overview'),
+        fetchWithRetry('/validation/golive-score'),
       ]);
       if (connRes.status === 'fulfilled') { setConnections(connRes.value); } else { errors.push('Bağlantı verileri'); setConnections(null); }
       if (dashRes.status === 'fulfilled') { setDashboard(dashRes.value); } else { errors.push('Dashboard verileri'); setDashboard(null); }
-      if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value?.data || scoreRes.value); } else { errors.push('Hazirlik skoru'); setGoliveScore(null); }
+      if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value?.data || scoreRes.value); } else { errors.push('Hazırlık skoru'); setGoliveScore(null); }
       setFetchErrors(errors);
-      if (errors.length > 0) toast.error(`Yuklenemedi: ${errors.join(', ')}`);
-    } catch {
-      toast.error('Veriler yuklenirken hata olustu');
+      if (errors.length > 0) {
+        // eslint-disable-next-line no-console
+        console.error('[GoLive Cockpit] partial fetch failures:',
+          { connections: connRes.reason?.response?.status || connRes.reason?.message,
+            dashboard: dashRes.reason?.response?.status || dashRes.reason?.message,
+            score: scoreRes.reason?.response?.status || scoreRes.reason?.message });
+        if (!silent) toast.error(`Yüklenemedi: ${errors.join(', ')}`);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[GoLive Cockpit] fetchAll fatal:', err);
+      if (!silent) toast.error('Veriler yüklenirken hata oluştu');
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchAll({ silent: true }); }, [fetchAll]);
 
   const handleTestConnection = async (connectorId) => {
     setTestingConnector(connectorId);
