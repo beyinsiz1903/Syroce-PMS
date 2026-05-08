@@ -75,8 +75,28 @@ args = "cd mobile && EXPO_PUBLIC_API_URL=https://8000-${REPLIT_DEV_DOMAIN} EXPO_
 waitForPort = 8080
 
 [[ports]]
-localPort = 6380
+localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
+[[ports]]
+localPort = 6380
+externalPort = 3001
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8099
+externalPort = 8099
 
 [deployment]
 deploymentTarget = "static"
