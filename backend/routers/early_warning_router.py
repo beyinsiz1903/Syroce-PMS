@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -104,6 +105,7 @@ async def get_early_warnings(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/summary")
+@cached(ttl=30, key_prefix="early_warnings_summary")  # 2.4s → cache 30s; polling 30s ile uyumlu
 async def get_early_warnings_summary(
     current_user: User = Depends(get_current_user),
 ):

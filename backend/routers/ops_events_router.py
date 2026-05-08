@@ -343,6 +343,7 @@ async def get_channel_health(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/dashboard-summary")
+@cached(ttl=30, key_prefix="ops_dashboard_summary")  # 1.9s → cache 30s
 async def get_dashboard_summary(
     current_user: User = Depends(get_current_user),
 ):

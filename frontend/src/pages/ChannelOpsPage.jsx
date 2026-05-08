@@ -369,20 +369,28 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
   const [earlyWarningSummary, setEarlyWarningSummary] = useState(null);
   const [highlightProvider, setHighlightProvider] = useState(null);
 
+  // 5xx/network için 1.5s sonra tek sessiz retry; 4xx için retry yok
+  const _retryGet = async (url) => {
+    try {
+      return await axios.get(url, { headers: getAuthHeaders() });
+    } catch (e) {
+      const st = e?.response?.status;
+      if (st && st >= 400 && st < 500) throw e;
+      await new Promise(r => setTimeout(r, 1500));
+      return axios.get(url, { headers: getAuthHeaders() });
+    }
+  };
+
   const fetchEarlyWarningSummary = useCallback(async () => {
     try {
-      const resp = await axios.get(`/ops-events/early-warnings/summary`, {
-        headers: getAuthHeaders(),
-      });
+      const resp = await _retryGet(`/ops-events/early-warnings/summary`);
       setEarlyWarningSummary(resp.data);
     } catch (e) { /* silently ignore */ }
   }, []);
 
   const fetchDashboard = useCallback(async () => {
     try {
-      const resp = await axios.get(`/ops-events/dashboard-summary`, {
-        headers: getAuthHeaders(),
-      });
+      const resp = await _retryGet(`/ops-events/dashboard-summary`);
       setData(resp.data);
       setError(null);
     } catch (err) {
@@ -441,15 +449,29 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
   }, []);
 
   useEffect(() => {
-    fetchDashboard();
-    fetchPrioritizedIncidents();
-    fetchConnectorsHealth();
-    fetchEarlyWarningSummary();
+    // İlk yükte 4 endpoint paralel; en hızlısı dönünce loading'i kapat → kullanıcı 600ms'de UI görür
+    // (eskisi: dashboard 1.9s tamamlanana kadar tüm sayfa spinner). setLoading(false) ilk dönen
+    // çağrıda flip; geri kalan kartlar dolarken iskelet/önceki state korunur.
+    let firstSettled = false;
+    const settleOnce = () => {
+      if (firstSettled) return;
+      firstSettled = true;
+      setLoading(false);
+    };
+    Promise.allSettled([
+      fetchDashboard().then(settleOnce, settleOnce),
+      fetchPrioritizedIncidents().then(settleOnce, settleOnce),
+      fetchConnectorsHealth().then(settleOnce, settleOnce),
+      fetchEarlyWarningSummary().then(settleOnce, settleOnce),
+    ]);
+    // Polling 15s → 30s: ağır endpoint'ler artık 30s cache'li, daha sık çekmenin faydası yok
     const interval = setInterval(() => {
+      // Tab/sekme arka planda iken atla — gereksiz CPU/network
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchDashboard();
       fetchPrioritizedIncidents();
       fetchEarlyWarningSummary();
-    }, 15000); // 15s auto-refresh
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchDashboard, fetchPrioritizedIncidents, fetchConnectorsHealth, fetchEarlyWarningSummary]);
 
