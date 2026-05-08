@@ -152,6 +152,27 @@ def _period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     return start, end
 
 
+async def _tenant_summary(tenant_id: str) -> dict[str, Any]:
+    """Beyanname başlığı için tenant alanlarını normalize et.
+
+    Tarihsel tenant şeması heterojen: hotel_name yok ama name veya
+    property_name var; tax_no yok ama tax_number olabilir. Frontend
+    DeclRow `tenant.hotel_name || '-'` formatıyla okuduğu için boş
+    görünmesin diye burada normalize ediyoruz.
+    """
+    doc = await db.tenants.find_one(
+        {"id": tenant_id},
+        {"_id": 0, "hotel_name": 1, "name": 1, "property_name": 1,
+         "tax_no": 1, "tax_number": 1, "hotel_id": 1},
+    ) or {}
+    return {
+        "hotel_name": (doc.get("hotel_name") or doc.get("name")
+                       or doc.get("property_name") or ""),
+        "tax_no": doc.get("tax_no") or doc.get("tax_number") or "",
+        "hotel_id": doc.get("hotel_id") or "",
+    }
+
+
 async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, Any]:
     start, end = _period_bounds(year, month)
     cfg = await _load_config(tenant_id)
@@ -225,9 +246,7 @@ async def declaration(
     if month is None:
         month = today.month
     agg = await _aggregate_period(current_user.tenant_id, year, month)
-    tenant = await db.tenants.find_one(
-        {"id": current_user.tenant_id}, {"_id": 0, "hotel_name": 1, "tax_no": 1, "hotel_id": 1}
-    ) or {}
+    tenant = await _tenant_summary(current_user.tenant_id)
     due_day = 26
     due_month = month + 1 if month < 12 else 1
     due_year = year if month < 12 else year + 1
@@ -338,9 +357,7 @@ async def finalize_declaration(
 
     agg = await _aggregate_period(current_user.tenant_id, body.year,
                                   body.month)
-    tenant = await db.tenants.find_one(
-        {"id": current_user.tenant_id},
-        {"_id": 0, "hotel_name": 1, "tax_no": 1, "hotel_id": 1}) or {}
+    tenant = await _tenant_summary(current_user.tenant_id)
     due_month = body.month + 1 if body.month < 12 else 1
     due_year = body.year if body.month < 12 else body.year + 1
     snapshot = {
