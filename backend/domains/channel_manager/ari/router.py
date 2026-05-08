@@ -73,6 +73,7 @@ async def list_events(
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """List recent ARI events."""
     tenant_id = tenant_id or current_user.tenant_id
@@ -90,6 +91,7 @@ async def list_change_sets(
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """List ARI change sets."""
     tenant_id = tenant_id or current_user.tenant_id
@@ -137,6 +139,7 @@ async def list_outbound_logs(
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """List outbound push logs."""
     tenant_id = tenant_id or current_user.tenant_id
@@ -153,6 +156,7 @@ async def list_drift_states(
     drift_only: bool = False,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """List drift states."""
     tenant_id = tenant_id or current_user.tenant_id
@@ -186,7 +190,9 @@ async def reconcile(req: DriftCheckRequest,
 
 
 @router.get("/drift/mode")
-async def get_drift_worker_mode():
+async def get_drift_worker_mode(
+    _perm=Depends(require_op("view_system_diagnostics")),  # önceki sürümde HİÇ auth yoktu
+):
     """Get current drift worker mode (normal/recovery)."""
     mode = get_drift_mode()
     config = DRIFT_CONFIG[mode]
@@ -209,6 +215,7 @@ async def get_stats(
     tenant_id: str | None = None,
     property_id: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """Get aggregate ARI push statistics."""
     tenant_id = tenant_id or current_user.tenant_id
@@ -218,7 +225,9 @@ async def get_stats(
 
 
 @router.get("/engine-stats")
-async def get_engine_stats():
+async def get_engine_stats(
+    _perm=Depends(require_op("view_system_diagnostics")),  # önceki sürümde HİÇ auth yoktu — runtime/process bilgisi açıkta
+):
     """Get ARI push engine runtime statistics."""
     return outbound_service.get_engine_stats()
 
@@ -226,7 +235,9 @@ async def get_engine_stats():
 # ── Provider Test Harness ────────────────────────────────────────────
 
 @router.get("/test-harness/checklist/{provider}")
-async def get_provider_checklist(provider: str):
+async def get_provider_checklist(provider: str,
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     """Get the validation checklist for a provider."""
     checklist = get_checklist(provider)
     if not checklist:
@@ -267,7 +278,9 @@ async def run_provider_test(provider: str, step: str | None = None,
 
 
 @router.get("/test-harness/metrics")
-async def get_provider_metrics(tenant_id: str, property_id: str):
+async def get_provider_metrics(tenant_id: str, property_id: str,
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     """Get operational metrics: provider health, latency percentiles, queue stats."""
     metrics = await repo.get_operational_metrics(tenant_id, property_id)
     return metrics
