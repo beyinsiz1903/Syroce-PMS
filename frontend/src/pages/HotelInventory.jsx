@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { runIdle } from '@/lib/idle';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -205,9 +206,14 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
   });
 
   useEffect(() => {
+    // Mount: birincil envanter listesini hemen çek; ikincil widget'lar
+    // (uyarılar + kit'ler) idle anına ertelenir → ilk paint hızlanır.
     loadInventory();
-    loadAlerts();
-    loadKits();
+    const cancel = runIdle(() => {
+      loadAlerts();
+      loadKits();
+    }, { timeout: 600 });
+    return cancel;
   }, []);
 
   const loadInventory = async () => {

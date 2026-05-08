@@ -99,8 +99,9 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
   };
 
   useEffect(() => {
-    loadCategories();
-    loadProducts();
+    // Mount: kategori + ürün listesini paralel çek; sıralı await yerine
+    // Promise.all → tek RTT'lik gecikmede iki yanıt birden gelir.
+    Promise.all([loadCategories(), loadProducts()]).catch(() => { /* her loader kendi toast'unu gösterir */ });
   }, []);
 
   useEffect(() => {
