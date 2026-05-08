@@ -1,10 +1,17 @@
 """Phase D — Agency/Redis/Cache/Optim/CM/Tenant/DB-Optimizer/KBS-migration/Metering/Flag/Deploy."""
+import asyncio
 import logging
 import os
 
 from core.database import _raw_db, db
 
 logger = logging.getLogger(__name__)
+
+# Boot readiness flag — `/health/ready` bunu kontrol eder.
+# Phase D tamamlandığında True olur; arka plan indeks görevleri bunu beklemez
+# (boot'u bloke etmemek için ayrı task'ta koşarlar).
+BOOT_READY = False
+PERF_INDEXES_DONE = False
 
 
 async def phase_d_perf_and_marketplace(app):
@@ -92,6 +99,20 @@ async def phase_d_perf_and_marketplace(app):
         logger.warning(f"Database optimization warning: {e}")
 
     # Performance indexes (large-scale ops + KBS migration)
+    # ⚠️ KRİTİK: Bu blok arka plan task'ına alındı çünkü Atlas'ın yavaş yanıt
+    # verdiği anlarda 10+ create_index zinciri boot'u 30+ sn bloke ediyordu;
+    # platform sağlık kontrolü timeout görünce konteyneri kill ediyor → 502.
+    # Şimdi boot devam eder, indeksler arka planda hazırlanır.
+    async def _create_perf_indexes_bg():
+        global PERF_INDEXES_DONE
+        try:
+            await _create_perf_indexes_inner()
+        finally:
+            PERF_INDEXES_DONE = True
+
+    asyncio.create_task(_create_perf_indexes_bg())
+
+async def _create_perf_indexes_inner():
     try:
         logger.info("🚀 Creating performance indexes for large-scale operations...")
         await _raw_db.bookings.create_index([("tenant_id", 1), ("check_in", 1), ("check_out", 1)], name="idx_bookings_tenant_checkin_checkout")
@@ -266,3 +287,9 @@ async def phase_d_perf_and_marketplace(app):
         logger.info("✅ Deploy pipeline indexes ensured")
     except Exception as e:
         logger.warning(f"Deploy pipeline index creation: {e}")
+
+    # Phase D tamamlandı → readiness probe artık 200 dönebilir.
+    # Arka planda hâlâ koşan perf-index task'ı bunu beklemez.
+    global BOOT_READY
+    BOOT_READY = True
+    logger.info("✅ Boot phase D complete — readiness probe is now green")

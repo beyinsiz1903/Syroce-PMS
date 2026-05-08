@@ -5,6 +5,7 @@ Creates the FastAPI instance and mounts static files.
 This is the single source of truth for the application object.
 server.py imports from here and orchestrates bootstrap.
 """
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -123,6 +124,33 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     @application.get("/health/", include_in_schema=False)
     async def deployment_health_check():
         return {"status": "healthy"}
+
+    # ── Liveness vs Readiness ayrımı (Kubernetes/Replit Deploy uyumlu) ──
+    # /health/live  → süreç ayakta mı? (her zaman 200 — DB sorgulamaz)
+    # /health/ready → trafik almaya hazır mı? (DB ping + boot tamam mı)
+    # Platform readiness 503 görürse trafiği başka instance'a yönlendirir;
+    # liveness 200 olduğu için konteyneri öldürmez. Bu sayede Atlas yavaşlığı
+    # gibi geçici durumlarda restart döngüsüne girmiyoruz.
+    @application.get("/health/live", include_in_schema=False)
+    async def liveness_check():
+        return {"status": "alive"}
+
+    @application.get("/health/ready", include_in_schema=False)
+    async def readiness_check():
+        from fastapi.responses import JSONResponse
+        try:
+            from bootstrap.phases.d_perf import BOOT_READY
+        except Exception:
+            BOOT_READY = False
+        if not BOOT_READY:
+            return JSONResponse({"status": "starting"}, status_code=503)
+        try:
+            # Hızlı DB ping (~1-2 ms) — Atlas erişilemiyorsa 503
+            from core.database import _raw_db
+            await asyncio.wait_for(_raw_db.command("ping"), timeout=2.0)
+        except Exception as e:
+            return JSONResponse({"status": "db_unavailable", "error": str(e)[:120]}, status_code=503)
+        return {"status": "ready"}
 
     # ── Cosmetic root + favicon (kill noisy 404s in logs) ───────────
     # Browsers and uptime checks request `/` and `/favicon.ico` even though
