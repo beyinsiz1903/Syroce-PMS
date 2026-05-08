@@ -88,7 +88,7 @@ function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buyin
                   disabled={buying === product.key}
                   size="sm"
                   variant="outline"
-                  className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                  className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
                 >
                   <Gift className="w-3.5 h-3.5 mr-1" />
                   {product.trial_days} Gün Ücretsiz Dene
@@ -195,19 +195,32 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
     return g;
   }, [products]);
 
-  if (loading) {
-    return (
-      <>
-        <div className="min-h-[60vh] flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+  const SkeletonCard = () => (
+    <Card className="flex flex-col animate-pulse">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-lg bg-slate-200" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 bg-slate-200 rounded w-2/3" />
+            <div className="h-3 bg-slate-100 rounded w-1/3" />
+          </div>
         </div>
-      </>
-    );
-  }
+      </CardHeader>
+      <CardContent className="flex flex-col flex-1 gap-3">
+        <div className="h-3 bg-slate-100 rounded w-full" />
+        <div className="h-3 bg-slate-100 rounded w-5/6" />
+        <div className="h-3 bg-slate-100 rounded w-4/6" />
+        <div className="mt-auto pt-3 border-t flex items-end justify-between">
+          <div className="h-7 bg-slate-200 rounded w-24" />
+          <div className="h-8 bg-slate-200 rounded w-20" />
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <>
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -242,41 +255,60 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
           </TabsList>
 
           <TabsContent value="store" className="space-y-8 mt-6">
-            {[
-              { key: "module", title: "Modüller" },
-              { key: "integration", title: "Entegrasyonlar" },
-              { key: "credit_pack", title: "Kredi Paketleri" },
-            ].map((sec) => grouped[sec.key].length > 0 && (
-              <section key={sec.key}>
-                <h2 className="text-lg font-semibold text-slate-900 mb-3">
-                  {sec.title}
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {grouped[sec.key].map((p) => (
-                    <ProductCard
-                      key={p.key}
-                      product={p}
-                      owned={subs}
-                      onPurchase={handlePurchase}
-                      onStartTrial={handleStartTrial}
-                      onLaunch={handleLaunch}
-                      buying={buying}
-                    />
-                  ))}
+            {loading ? (
+              <section>
+                <div className="h-5 w-28 bg-slate-200 rounded mb-3 animate-pulse" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
                 </div>
               </section>
-            ))}
+            ) : products.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6 text-center text-slate-500">
+                  Şu anda gösterilecek ürün yok.
+                </CardContent>
+              </Card>
+            ) : (
+              [
+                { key: "module", title: "Modüller" },
+                { key: "integration", title: "Entegrasyonlar" },
+                { key: "credit_pack", title: "Kredi Paketleri" },
+              ].map((sec) => grouped[sec.key].length > 0 && (
+                <section key={sec.key}>
+                  <h2 className="text-lg font-semibold text-slate-900 mb-3">
+                    {sec.title}
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {grouped[sec.key].map((p) => (
+                      <ProductCard
+                        key={p.key}
+                        product={p}
+                        owned={subs}
+                        onPurchase={handlePurchase}
+                        onStartTrial={handleStartTrial}
+                        onLaunch={handleLaunch}
+                        buying={buying}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
           </TabsContent>
 
           <TabsContent value="subs" className="mt-6">
-            {subs.length === 0 ? (
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+            ) : subs.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-slate-500">
                   Henüz aktif aboneliğiniz yok.
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {subs.map((s) => {
                   const product = products.find((p) => p.key === s.product_key);
                   const Icon = ICONS[product?.icon] || Package;
