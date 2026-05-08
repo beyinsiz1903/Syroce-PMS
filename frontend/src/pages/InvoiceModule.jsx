@@ -286,7 +286,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-bold text-lg">{invoice.invoice_number}</div>
-                        <div className="text-sm text-gray-600">{invoice.customer_name || '-'}</div>
+                        <div className="text-sm text-gray-600">
+                          {(invoice.customer_name || '').trim()
+                            ? invoice.customer_name
+                            : <span className="italic text-gray-400">(İsimsiz Müşteri)</span>}
+                        </div>
                         {invoice.customer_tax_number && (
                           <div className="text-xs text-gray-500">{t('invoice.labels.taxNo')}: {invoice.customer_tax_number}</div>
                         )}

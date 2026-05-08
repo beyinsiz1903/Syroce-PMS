@@ -25,6 +25,7 @@ from models.schemas import (
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
 from modules.pms_core.role_permission_service import require_op
+from routers.finance.accounting import _validate_invoice_customer_name
 
 try:
     from cache_manager import cached
@@ -48,8 +49,12 @@ async def create_invoice(
     count = await db.invoices.count_documents({'tenant_id': current_user.tenant_id})
     invoice_number = f"INV-{count + 1:05d}"
     due_date_dt = datetime.fromisoformat(invoice_data.due_date.replace('Z', '+00:00'))
+    # v95.5 — validate customer_name (anti-XML/HTML, min length) on this path too
+    payload = {k: v for k, v in invoice_data.model_dump().items() if k != 'due_date'}
+    if 'customer_name' in payload:
+        payload['customer_name'] = _validate_invoice_customer_name(payload.get('customer_name'))
     invoice = Invoice(tenant_id=current_user.tenant_id, invoice_number=invoice_number, due_date=due_date_dt,
-                     **{k: v for k, v in invoice_data.model_dump().items() if k != 'due_date'})
+                     **payload)
     invoice_dict = invoice.model_dump()
     invoice_dict['issue_date'] = invoice_dict['issue_date'].isoformat()
     invoice_dict['due_date'] = invoice_dict['due_date'].isoformat()

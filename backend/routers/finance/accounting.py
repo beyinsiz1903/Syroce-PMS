@@ -1,5 +1,6 @@
 """Auto-split from finance.py — section: accounting."""
 import asyncio
+import re as _re
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -457,6 +458,35 @@ async def create_stock_movement(
     return movement
 
 
+# Block ANY HTML/XML-like tag (`<word`, `</word>`, `<...>`), event handlers,
+# javascript: pseudo-URLs. Catches unknown tags too (e.g. `<x>`, `<EVIL>`).
+_INVOICE_NAME_BLOCK = _re.compile(
+    r"<\s*/?\s*[A-Za-z][\w:-]*"      # opening or closing tag start: <tag, </tag
+    r"|on\w+\s*=|javascript:|data:",
+    _re.IGNORECASE,
+)
+
+
+def _validate_invoice_customer_name(name: str | None) -> str:
+    """Reject empty / unsafe / XML-injection customer names at write time.
+    Check the RAW input for HTML/XML tag patterns first (sanitize_plaintext
+    silently strips tags, which would otherwise mask injection attempts).
+    Then sanitize and verify minimum length."""
+    raw = (name or "").strip()
+    if _INVOICE_NAME_BLOCK.search(raw):
+        raise HTTPException(
+            status_code=400,
+            detail="Müşteri adı geçersiz karakterler içeriyor (HTML/XML kabul edilmez).",
+        )
+    cleaned = (sanitize_plaintext(raw, max_length=200) or "").strip()
+    if len(cleaned) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Müşteri adı en az 2 karakter olmalıdır.",
+        )
+    return cleaned
+
+
 class AccountingInvoiceCreateRequest(BaseModel):
     invoice_type: str
     customer_name: str
@@ -558,7 +588,7 @@ async def create_accounting_invoice(
         tenant_id=current_user.tenant_id,
         invoice_number=invoice_number,
         invoice_type=request.invoice_type,
-        customer_name=sanitize_plaintext(request.customer_name, max_length=200),
+        customer_name=_validate_invoice_customer_name(request.customer_name),
         customer_email=request.customer_email,
         customer_tax_office=sanitize_plaintext(request.customer_tax_office, max_length=120),
         customer_tax_number=sanitize_plaintext(request.customer_tax_number, max_length=20),
@@ -1125,9 +1155,9 @@ async def create_multi_currency_invoice(
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'invoice_number': invoice_number,
-        'customer_name': request.customer_name,
+        'customer_name': _validate_invoice_customer_name(request.customer_name),
         'customer_email': request.customer_email,
-        'customer_address': request.customer_address,
+        'customer_address': sanitize_plaintext(request.customer_address, max_length=500),
         'items': request.items,
         'currency': request.currency,
         'exchange_rate': rate,
@@ -1195,7 +1225,10 @@ async def generate_invoice_from_folio(
         invoice_items.append(item)
 
     # Get customer info from booking or folio
-    customer_name = booking.get('guest_name') if booking else folio.get('guest_name', 'Guest')
+    raw_customer_name = booking.get('guest_name') if booking else folio.get('guest_name', 'Guest')
+    # Apply same validator as manual create — guest_name from booking/folio could
+    # have been seeded with HTML/XML payloads in older data; reject those here.
+    customer_name = _validate_invoice_customer_name(raw_customer_name)
     customer_email = booking.get('guest_email') if booking else folio.get('guest_email', '')
 
     # Create invoice
