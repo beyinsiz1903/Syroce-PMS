@@ -258,7 +258,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
       {/* B9: cross-link metni — iki sayfanın AYRI sistemler olduğunu net söyler */}
       <p className="text-xs text-slate-500 -mt-2">
-        Not: <strong>Grup Blok Kontenjanı</strong> (cutoff/wash/pickup) ayrı bir koleksiyonda yönetilir; bu sayfa
+        Not: <strong>Grup Blok Kontenjanı</strong> ayrı bir sayfada yönetilir; bu sayfa
         bireysel rezervasyon gruplarıdır. İki sistem otomatik bağlı değildir.
       </p>
 
