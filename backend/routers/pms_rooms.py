@@ -134,7 +134,144 @@ async def create_room(
     return room
 
 
-@router.get("/pms/rooms", response_model=list[Room])
+# Average cleaning estimates in minutes — must match
+# modules/pms_core/auto_housekeeping_service.py:CLEANING_TIMES
+_CLEANING_ESTIMATE_BY_TYPE = {
+    "Standard": 30,
+    "Deluxe": 40,
+    "Suite": 55,
+    "Presidential": 75,
+    "default": 35,
+}
+
+
+def _hk_estimate_for(room: dict) -> int:
+    return _CLEANING_ESTIMATE_BY_TYPE.get(
+        room.get("room_type") or "default",
+        _CLEANING_ESTIMATE_BY_TYPE["default"],
+    )
+
+
+async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> list[dict]:
+    """Aktif housekeeping görevlerinden gerçek süre/personel/ilerleme bilgisini
+    her oda için `housekeeping` subdoc'una ekler. Mobil HK uygulaması
+    `/api/housekeeping/start-cleaning/{room_id}` çağırdığında oda belgesinde
+    `current_task_id` + `cleaning_started_at` set edilir; burada o görevi
+    okuyup canlı durum çıkarıyoruz. Cache'lenmemeli — anlık gösterim için.
+    """
+    target_rooms = [r for r in rooms if r.get("status") in ("dirty", "cleaning")]
+    if not target_rooms:
+        return rooms
+
+    # Aktif task'ları tek sorguda topla (room_id veya current_task_id)
+    task_ids = {r.get("current_task_id") for r in target_rooms if r.get("current_task_id")}
+    room_ids = {r.get("id") for r in target_rooms if r.get("id")}
+
+    tasks_by_room: dict[str, dict] = {}
+    if task_ids or room_ids:
+        # Aktif statü filtresi her iki branch'e de uygulanır — odanın
+        # `current_task_id` alanı bayatlamış (completed/cancelled task'a
+        # işaret ediyor) olabilir; bu durumda bayat görevi seçip yanlış
+        # ilerleme göstermeyi önlüyoruz.
+        active_statuses = ["pending", "in_progress"]
+        or_conds: list[dict] = []
+        if task_ids:
+            or_conds.append({
+                "id": {"$in": list(task_ids)},
+                "status": {"$in": active_statuses},
+            })
+        if room_ids:
+            or_conds.append({
+                "room_id": {"$in": list(room_ids)},
+                "status": {"$in": active_statuses},
+            })
+        cursor = db.housekeeping_tasks.find(
+            {"tenant_id": tenant_id, "$or": or_conds},
+            {
+                "_id": 0, "id": 1, "room_id": 1, "status": 1,
+                "started_at": 1, "estimated_minutes": 1,
+                "assigned_to": 1, "assigned_to_name": 1,
+                "priority": 1, "task_type": 1,
+            },
+        )
+        async for t in cursor:
+            rid = t.get("room_id")
+            if not rid:
+                continue
+            existing = tasks_by_room.get(rid)
+            # in_progress'i pending'e tercih et
+            if existing is None or (
+                existing.get("status") != "in_progress"
+                and t.get("status") == "in_progress"
+            ):
+                tasks_by_room[rid] = t
+
+    now = datetime.now(UTC)
+    for room in target_rooms:
+        rid = room.get("id")
+        task = tasks_by_room.get(rid) if rid else None
+        estimated = _hk_estimate_for(room)
+        hk: dict[str, Any] = {
+            "state": "waiting",  # waiting | in_progress
+            "estimated_minutes": estimated,
+            "elapsed_minutes": None,
+            "progress_pct": None,
+            "started_at": None,
+            "assigned_to_name": room.get("assigned_cleaner"),
+            "task_id": room.get("current_task_id"),
+            "priority": None,
+        }
+        if task:
+            hk["task_id"] = task.get("id") or hk["task_id"]
+            hk["assigned_to_name"] = (
+                task.get("assigned_to_name")
+                or task.get("assigned_to")
+                or hk["assigned_to_name"]
+            )
+            hk["estimated_minutes"] = task.get("estimated_minutes") or estimated
+            hk["priority"] = task.get("priority")
+            started_raw = task.get("started_at") or room.get("cleaning_started_at")
+            if task.get("status") == "in_progress" and started_raw:
+                try:
+                    started_dt = (
+                        started_raw if isinstance(started_raw, datetime)
+                        else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
+                    )
+                    if started_dt.tzinfo is None:
+                        started_dt = started_dt.replace(tzinfo=UTC)
+                    elapsed = max(0.0, (now - started_dt).total_seconds() / 60.0)
+                    hk["state"] = "in_progress"
+                    hk["started_at"] = started_dt.isoformat()
+                    hk["elapsed_minutes"] = round(elapsed, 1)
+                    if hk["estimated_minutes"]:
+                        pct = (elapsed / hk["estimated_minutes"]) * 100.0
+                        hk["progress_pct"] = round(min(100.0, max(0.0, pct)), 1)
+                except (ValueError, TypeError):
+                    pass
+        elif room.get("status") == "cleaning" and room.get("cleaning_started_at"):
+            # Task kaydı yoksa bile oda alanından çıkar
+            try:
+                started_raw = room["cleaning_started_at"]
+                started_dt = (
+                    started_raw if isinstance(started_raw, datetime)
+                    else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
+                )
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=UTC)
+                elapsed = max(0.0, (now - started_dt).total_seconds() / 60.0)
+                hk["state"] = "in_progress"
+                hk["started_at"] = started_dt.isoformat()
+                hk["elapsed_minutes"] = round(elapsed, 1)
+                if estimated:
+                    hk["progress_pct"] = round(min(100.0, (elapsed / estimated) * 100.0), 1)
+            except (ValueError, TypeError):
+                pass
+        room["housekeeping"] = hk
+
+    return rooms
+
+
+@router.get("/pms/rooms")
 async def get_rooms(
     p: PaginationParams = Depends(paginate(default_limit=100, max_limit=2000)),
     status: str | None = None,
@@ -160,7 +297,8 @@ async def get_rooms(
                 cached = redis_cache.get(cache_key)
                 if cached:
                     # Filter virtual from cached data
-                    return [r for r in cached if not r.get('is_virtual')]
+                    base = [r for r in cached if not r.get('is_virtual')]
+                    return await _enrich_rooms_with_housekeeping(current_user.tenant_id, base)
         except Exception:
             logger.debug("pms_rooms: redis cache read failed", exc_info=True)
 
@@ -193,7 +331,7 @@ async def get_rooms(
                         room['capacity'] = 2
 
                     rooms.append(room)
-                return rooms
+                return await _enrich_rooms_with_housekeeping(current_user.tenant_id, rooms)
 
     # Build query with filters
     # Backward compatible: old room docs may not have is_active field.
@@ -215,7 +353,8 @@ async def get_rooms(
         query['amenities'] = amenity
 
     # Fallback: Ultra-minimal projection with pagination
-    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1}
+    # cleaning_started_at/current_task_id/assigned_cleaner: HK enrichment için
+    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1, 'cleaning_started_at': 1, 'current_task_id': 1, 'assigned_cleaner': 1}
     rooms_raw = await db.rooms.find(query, projection).skip(offset).limit(limit).to_list(limit)
 
     # Fix field mapping
@@ -239,6 +378,8 @@ async def get_rooms(
         rooms.append(room)
 
     # Cache result in Redis for 30 seconds (only for full lists)
+    # NOT: HK enrichment cache'lenmez — anlık değişen alanlar (started_at,
+    # elapsed) için her okuyuşta canlı hesaplanır.
     if use_cache:
         try:
             from redis_cache import redis_cache
@@ -248,7 +389,7 @@ async def get_rooms(
         except Exception:
             logger.debug("pms_rooms: redis cache write failed", exc_info=True)
 
-    return rooms
+    return await _enrich_rooms_with_housekeeping(current_user.tenant_id, rooms)
 
 
 @router.post("/pms/rooms/bulk/range", response_model=RoomBulkCreateResponse)

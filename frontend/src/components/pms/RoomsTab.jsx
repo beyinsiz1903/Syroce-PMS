@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
 
 const RoomsTab = ({
   rooms,
@@ -38,6 +38,27 @@ const RoomsTab = ({
   // Quick payment dialog state
   const [paymentDialog, setPaymentDialog] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState(null);
+
+  // ── Canlı HK senkronizasyonu ──
+  // Mobil HK uygulaması "Temizliğe Başla" / "Tamamla" çağırdığında oda
+  // belgesi anında güncellenir; bu polling ile maks 30sn içinde kart
+  // üzerinde de görünür (refresh butonuna gerek kalmaz). Tab gizliyken
+  // uyutulur (visibilitychange).
+  const refreshRef = useRef(onDataRefresh);
+  useEffect(() => { refreshRef.current = onDataRefresh; }, [onDataRefresh]);
+  useEffect(() => {
+    if (typeof refreshRef.current !== 'function') return;
+    const hasActiveCleaning = (rooms || []).some(
+      r => r.status === 'dirty' || r.status === 'cleaning'
+    );
+    if (!hasActiveCleaning) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible' && typeof refreshRef.current === 'function') {
+        refreshRef.current();
+      }
+    }, 30000);
+    return () => clearInterval(id);
+  }, [rooms]);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -429,22 +450,61 @@ const RoomsTab = ({
                 <p className="text-xs text-slate-400">Kat {room.floor} &bull; {room.capacity} kişi</p>
 
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
-                {(room.status === 'dirty' || room.status === 'cleaning') && (
-                  <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid={`room-cleaning-${room.room_number}`}>
-                    <div className="flex items-center justify-between text-[10px] text-amber-700 mb-1">
-                      <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${room.status === 'cleaning' ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
-                        {room.status === 'cleaning' ? 'Temizleniyor' : 'Temizlik bekliyor'}
-                      </span>
-                      <span className="font-medium">~{room.cleaning_time || (room.status === 'cleaning' ? '8' : '15')} dk</span>
-                    </div>
-                    {room.status === 'cleaning' && (
-                      <div className="w-full h-1 bg-amber-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-amber-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+                {(room.status === 'dirty' || room.status === 'cleaning') && (() => {
+                  const hk = room.housekeeping || {};
+                  const isInProgress = hk.state === 'in_progress';
+                  const estimated = hk.estimated_minutes;
+                  const elapsed = hk.elapsed_minutes;
+                  const remaining = (estimated != null && elapsed != null)
+                    ? Math.max(0, Math.round(estimated - elapsed))
+                    : null;
+                  const progressPct = hk.progress_pct;
+                  const showSeparate = isInProgress && elapsed != null && remaining != null;
+                  const sizeLabel = !isInProgress && estimated != null
+                    ? `~${estimated} dk`
+                    : null;
+                  return (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid={`room-cleaning-${room.room_number}`}>
+                      <div className="flex items-center justify-between text-[10px] text-amber-700 mb-1">
+                        <span className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
+                          {isInProgress ? 'Temizleniyor' : 'Temizlik bekliyor'}
+                        </span>
+                        {showSeparate ? (
+                          <span className="font-medium tabular-nums">
+                            {Math.round(elapsed)} / {estimated} dk
+                          </span>
+                        ) : sizeLabel && (
+                          <span className="font-medium">{sizeLabel}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
+                      {hk.assigned_to_name && (
+                        <div className="text-[10px] text-amber-800/80 mb-1 truncate flex items-center gap-1" title={hk.assigned_to_name}>
+                          <UserCircle2 className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{hk.assigned_to_name}</span>
+                        </div>
+                      )}
+                      {isInProgress && progressPct != null && (
+                        <div className="w-full h-1 bg-amber-200 rounded-full overflow-hidden" title={`${progressPct}%${remaining != null ? ` • ${remaining} dk kaldı` : ''}`}>
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${progressPct >= 100 ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'}`}
+                            style={{ width: `${Math.min(100, Math.max(2, progressPct))}%` }}
+                          />
+                        </div>
+                      )}
+                      {isInProgress && progressPct != null && progressPct >= 100 && (
+                        <div className="text-[10px] text-rose-700 mt-0.5 flex items-center gap-1">
+                          <AlertOctagon className="w-3 h-3" /> Süreyi aştı
+                        </div>
+                      )}
+                      {isInProgress && remaining != null && progressPct != null && progressPct < 100 && (
+                        <div className="text-[10px] text-amber-700/80 mt-0.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> ~{remaining} dk kaldı
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Next check-in indicator for available rooms with arrivals */}
                 {room.status === 'available' && guestInfo && guestInfo.isCheckInToday && (
