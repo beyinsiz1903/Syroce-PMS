@@ -441,28 +441,51 @@ class RevenueMLDashboard:
         self.cancellation = CancellationPredictionModel()
 
     async def get_ml_dashboard(self, tenant_id: str) -> dict[str, Any]:
-        """Get comprehensive ML insights dashboard."""
-        demand_forecast = await self.demand.forecast_demand(tenant_id, 14)
-        price_points = await self.elasticity.get_optimal_price_points(tenant_id)
-        conversion_rates = await self.booking_prob.get_portfolio_conversion_rates(tenant_id)
-        at_risk = await self.cancellation.get_at_risk_bookings(tenant_id, 0.3)
+        """Get comprehensive ML insights dashboard.
+
+        Subpipeline'lar paralel ve fault-tolerant: biri patlarsa kalanlar yine
+        döner, hata sectionErrors içinde bildirilir (kısmi sonuç stratejisi).
+        """
+        import asyncio
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+
+        results = await asyncio.gather(
+            self.demand.forecast_demand(tenant_id, 14),
+            self.elasticity.get_optimal_price_points(tenant_id),
+            self.booking_prob.get_portfolio_conversion_rates(tenant_id),
+            self.cancellation.get_at_risk_bookings(tenant_id, 0.3),
+            return_exceptions=True,
+        )
+        section_names = ("demand_forecast", "price_optimization", "conversion_rates", "cancellation_risk")
+        section_errors: dict[str, str] = {}
+        normalized: list[dict[str, Any]] = []
+        for name, res in zip(section_names, results, strict=True):
+            if isinstance(res, Exception):
+                _log.exception("ml_dashboard subpipeline %s failed for tenant %s", name, tenant_id, exc_info=res)
+                section_errors[name] = f"{type(res).__name__}: {res}"
+                normalized.append({})
+            else:
+                normalized.append(res)
+        demand_forecast, price_points, conversion_rates, at_risk = normalized
 
         # Summarize
-        high_demand_days = sum(1 for f in demand_forecast.get("forecast", []) if f["demand_level"] == "high")
-        low_demand_days = sum(1 for f in demand_forecast.get("forecast", []) if f["demand_level"] == "low")
+        high_demand_days = sum(1 for f in demand_forecast.get("forecast", []) if f.get("demand_level") == "high")
+        low_demand_days = sum(1 for f in demand_forecast.get("forecast", []) if f.get("demand_level") == "low")
 
         return {
             "tenant_id": tenant_id,
             "summary": {
                 "high_demand_days_next_14": high_demand_days,
                 "low_demand_days_next_14": low_demand_days,
-                "at_risk_bookings": at_risk["at_risk_count"],
-                "at_risk_revenue": at_risk["total_at_risk_revenue"],
+                "at_risk_bookings": at_risk.get("at_risk_count", 0),
+                "at_risk_revenue": at_risk.get("total_at_risk_revenue", 0),
                 "price_optimization_opportunities": len(price_points.get("price_points", [])),
             },
             "demand_forecast": demand_forecast,
             "price_optimization": price_points,
             "conversion_rates": conversion_rates,
             "cancellation_risk": at_risk,
+            "section_errors": section_errors,
             "generated_at": datetime.now(UTC).isoformat(),
         }

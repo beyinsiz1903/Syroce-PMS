@@ -12,8 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
-const API = "";
+import { toast } from 'sonner';
 
 function StatBox({ label, value, color = 'text-slate-800' }) {
   return (
@@ -44,23 +43,42 @@ function ActionBadge({ action }) {
 export default function RevenueMLPanel() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await axios.get(`/platform/ml/dashboard`, { headers });
+      const res = await axios.get(`/platform/ml/dashboard`, { timeout: 45000 });
       setData(res.data);
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch (e) {
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail || e?.message || 'Bilinmeyen hata';
+      let msg;
+      if (status === 403) msg = 'Yetki yok: Bu paneli görüntülemek için "Yönetici Raporları" izni gerekli.';
+      else if (e?.code === 'ECONNABORTED') msg = 'Zaman aşımı: ML servisi 45 saniye içinde yanıt vermedi.';
+      else if (status) msg = `ML servisi hatası (${status}): ${detail}`;
+      else msg = `Bağlantı hatası: ${detail}`;
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /><span className="ml-3 text-sm text-muted-foreground">ML hesaplanıyor...</span></div>;
+
+  if (error) return (
+    <Card data-testid="revenue-ml-error">
+      <CardContent className="py-12 text-center space-y-3">
+        <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
+        <p className="text-sm text-slate-700">{error}</p>
+        <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-1.5" />Yenile</Button>
+      </CardContent>
+    </Card>
+  );
 
   const forecast = data?.demand_forecast?.forecast || [];
   const priceOpt = data?.price_optimization?.price_points || [];
