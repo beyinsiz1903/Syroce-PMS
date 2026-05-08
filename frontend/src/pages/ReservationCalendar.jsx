@@ -119,8 +119,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const dateRange = getDateRange(currentDate, daysToShow);
 
   // ─── Data Loading ─────────────────────────────────────────────
+  // Race-safe: hızlı ok navigasyonunda eski fetch sonucu yeni state'i ezmesin.
+  // useEffect cleanup ile cancelled flag set edilir; yarışı kaybeden response
+  // setBookings çağırmaz.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { loadCalendarData(); }, [currentDate, daysToShow]);
+  useEffect(() => {
+    let cancelled = false;
+    loadCalendarData(() => cancelled);
+    return () => { cancelled = true; };
+  }, [currentDate, daysToShow]);
 
   // Fetch hotel business date once on mount
   useEffect(() => {
@@ -135,8 +142,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
   }, []);
 
-  const loadCalendarData = async () => {
-    setLoading(true);
+  const loadCalendarData = async (isCancelled = () => false) => {
+    // İlk yüklemede full-screen spinner; sonraki fetch'lerde mevcut takvimi
+    // koru (boş ekran flash yok). bookings.length === 0 = ilk yükleme.
+    const isInitialLoad = bookings.length === 0;
+    if (isInitialLoad) setLoading(true);
     try {
       const startDate = new Date(currentDate);
       startDate.setDate(startDate.getDate() - 7);
@@ -150,6 +160,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         axios.get('/companies').catch(() => ({ data: [] })),
         axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } }))
       ]);
+
+      // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
+      // eski response state'i ezmemeli.
+      if (isCancelled()) return;
 
       setCalendarMeta({
         start_date: startDate.toISOString().split('T')[0],
